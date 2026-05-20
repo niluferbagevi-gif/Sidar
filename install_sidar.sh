@@ -2275,6 +2275,57 @@ check_host_ollama_healthy() {
     curl -sf "$version_url" >/dev/null 2>&1
 }
 
+log_host_ollama_runtime_diagnostics() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local base_url=""
+    local host=""
+
+    base_url=$(resolve_ollama_base_url "$env_file")
+    host="${base_url#http://}"
+    host="${host#https://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+
+    info "Host Ollama çalışma tanısı toplanıyor (GPU kullanımı opsiyonel kontrol)."
+
+    if command -v ollama &>/dev/null; then
+        if ollama ps >/tmp/sidar_ollama_ps.log 2>&1; then
+            info "Host Ollama modelleri (ollama ps):"
+            sed 's/^/       /' /tmp/sidar_ollama_ps.log
+        else
+            warn "ollama ps komutu çalıştırılamadı; host Ollama GPU durumu CLI üzerinden doğrulanamadı."
+        fi
+    else
+        warn "ollama CLI bulunamadı; host Ollama GPU kullanımı için ollama ps çıktısı alınamadı."
+    fi
+
+    if [[ -z "$host" || "$host" == "localhost" || "$host" == "127.0.0.1" ]]; then
+        local smi_cmd=""
+        if command -v nvidia-smi &>/dev/null; then
+            smi_cmd="nvidia-smi"
+        elif command -v nvidia-smi.exe &>/dev/null; then
+            smi_cmd="nvidia-smi.exe"
+        fi
+
+        if [[ -n "$smi_cmd" ]]; then
+            if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
+                if awk -F, 'tolower($2) ~ /ollama/ {found=1} END {exit !found}' /tmp/sidar_ollama_gpu_apps.log; then
+                    info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
+                    awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
+                else
+                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
+                fi
+            else
+                warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
+            fi
+        else
+            info "nvidia-smi bulunamadı; host Ollama GPU süreci doğrulaması atlandı."
+        fi
+    else
+        info "Host Ollama uzak bir adreste (${base_url}); yerel nvidia-smi ile GPU süreci doğrulaması atlandı."
+    fi
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -5917,6 +5968,7 @@ launch_docker_services() {
                     info "Host Ollama bulunamadı veya healthy değil; Docker Ollama konteyneri kullanılacak."
                 else
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
+                    log_host_ollama_runtime_diagnostics "$env_file"
                 fi
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
