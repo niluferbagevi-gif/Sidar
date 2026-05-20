@@ -672,15 +672,24 @@ logger = logging.getLogger(__name__)
 _DEPENDENCY_AUTO = object()
 
 
-def _log_once_env(flag: str, fn, *args):
-    if os.environ.get(flag) == "1":
+def _log_once_env(flag: str, fn, *args, fingerprint: str | None = None):
+    current = os.environ.get(flag, "")
+    token = fingerprint or "1"
+    if current == token:
+        logger.debug("Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s", flag)
         return
-    os.environ[flag] = "1"
+    os.environ[flag] = token
     fn(*args)
 
 
 if ENV_PATH.exists():
-    _log_once_env("SIDAR_ENV_LOGGED", logger.info, "✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
+    _log_once_env(
+        "SIDAR_ENV_LOGGED",
+        logger.info,
+        "✅ Ortam değişkenleri yüklendi: %s",
+        ENV_PATH,
+        fingerprint=str(ENV_PATH.resolve()),
+    )
 
 # ═══════════════════════════════════════════════════════════════
 # SANDBOX KAYNAK KOTALARI (Docker/cgroups)
@@ -1897,7 +1906,14 @@ def get_config() -> "Config":
 # BAŞLANGIÇ
 # ═══════════════════════════════════════════════════════════════
 _config_banner_log = logger.debug if get_bool_env("SIDAR_CONFIG_QUIET", False) else logger.info
-_config_banner_log("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)
+_log_once_env(
+    "SIDAR_CONFIG_BANNER_LOGGED",
+    _config_banner_log,
+    "✅ %s v%s yapılandırması yüklendi.",
+    Config.PROJECT_NAME,
+    Config.VERSION,
+    fingerprint=f"{Config.PROJECT_NAME}:{Config.VERSION}:{ENV_PATH.resolve()}",
+)
 
 if __name__ == "__main__":
     Config.initialize_directories()

@@ -6112,7 +6112,7 @@ run_doctor_phase() {
         fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
     fi
 
-    if "${doctor_cmd[@]}"; then
+    if SIDAR_CONFIG_QUIET=1 "${doctor_cmd[@]}"; then
         ok "Doctor raporu üretildi: artifacts/install/doctor.json"
     else
         warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
