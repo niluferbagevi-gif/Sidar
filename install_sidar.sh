@@ -823,12 +823,18 @@ ensure_docker_daemon_running() {
 
         if [[ "$in_integrated" == true ]]; then
             ok "WSL entegrasyonu '${current_distro}' için açık."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için kapalı olabilir."
+            fi
             return 0
         fi
 
         if [[ "$default_covers" == true ]]; then
             info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
             warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için explicit açılması gerekir."
+            fi
             return 0
         fi
 
