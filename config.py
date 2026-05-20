@@ -47,6 +47,15 @@ _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
 _DOTENV_MANAGED_KEYS: set[str] = set()
 _DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
 _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
+_FIRST_CONFIG_LOAD_LOGGED = False
+
+
+def _log_first_load_info(message: str, *args: Any) -> None:
+    """Log as INFO only on first config load cycle, DEBUG on later reloads."""
+    if _FIRST_CONFIG_LOAD_LOGGED:
+        logger.debug(message, *args)
+    else:
+        logger.info(message, *args)
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -740,7 +749,9 @@ def check_hardware() -> HardwareInfo:
 
     wsl2 = _is_wsl2()
     if wsl2:
-        logger.info("ℹ️  WSL2 ortamı tespit edildi — CUDA, Windows sürücüsü üzerinden erişilecek.")
+        _log_first_load_info(
+            "ℹ️  WSL2 ortamı tespit edildi — CUDA, Windows sürücüsü üzerinden erişilecek."
+        )
 
     if not get_bool_env("USE_GPU", True):
         logger.info("ℹ️  GPU kullanımı .env ile devre dışı bırakıldı.")
@@ -755,7 +766,7 @@ def check_hardware() -> HardwareInfo:
             info.gpu_count = torch.cuda.device_count()
             info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
-            logger.info(
+            _log_first_load_info(
                 "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
                 info.gpu_name,
                 info.gpu_count,
@@ -799,7 +810,7 @@ def check_hardware() -> HardwareInfo:
                 if multi_gpu and info.gpu_count > 1:
                     for device_idx in range(info.gpu_count):
                         torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
-                    logger.info(
+                    _log_first_load_info(
                         "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
                         frac * 100,
                         info.gpu_count,
@@ -808,7 +819,7 @@ def check_hardware() -> HardwareInfo:
                     if info.gpu_count > 0:
                         target_device = min(target_device, info.gpu_count - 1)
                     torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
-                    logger.info(
+                    _log_first_load_info(
                         "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)",
                         frac * 100,
                         target_device,
@@ -1371,7 +1382,7 @@ class Config:
     @classmethod
     def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
         """Log the effective dotenv load chain and actionable missing-key guidance."""
-        global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
+        global _FIRST_CONFIG_LOAD_LOGGED, _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
         loaded = [event for event in _DOTENV_LOAD_EVENTS if event.get("loaded")]
         missing_files = [
             event
@@ -1385,10 +1396,13 @@ class Config:
             )
             chain_changed = chain_signature != _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
             _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = chain_signature
-            (logger.info if chain_changed else logger.debug)(
-                "Runtime env yükleme zinciri: %s",
-                chain_text,
-            )
+            if chain_changed:
+                _log_first_load_info("Runtime env yükleme zinciri: %s", chain_text)
+            else:
+                logger.debug(
+                    "Runtime env yükleme zinciri: %s",
+                    chain_text,
+                )
         else:
             logger.warning(
                 "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri kullanılacak."
@@ -1415,6 +1429,7 @@ class Config:
                 "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan ~/.sidar_keys.env) içine ekleyin.",
                 ", ".join(missing_keys),
             )
+        _FIRST_CONFIG_LOAD_LOGGED = True
 
     def __init__(self) -> None:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
@@ -1831,7 +1846,6 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     _DOTENV_MANAGED_KEYS.clear()
     _DOTENV_LOAD_EVENTS.clear()
     _DOTENV_KEY_SOURCES.clear()
-    _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = None
 
     base_path = BASE_DIR / ".env"
     advanced_path = BASE_DIR / ".env.advanced"
