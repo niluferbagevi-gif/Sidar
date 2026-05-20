@@ -237,6 +237,9 @@ sync_database_passwords_before_smoke_tests() {
 }
 
 sidar_phase_services_and_validation() {
+    if declare -F phase06_docker_daemon_gate_or_fail >/dev/null 2>&1; then
+        phase06_docker_daemon_gate_or_fail
+    fi
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
     launch_docker_services
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then

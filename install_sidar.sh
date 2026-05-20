@@ -1265,6 +1265,43 @@ wait_for_compose_services_health() {
     return 0
 }
 
+phase06_docker_daemon_gate_or_fail() {
+    local max_attempts=3
+    local attempt=1
+    local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+    while (( attempt <= max_attempts )); do
+        if docker info >/dev/null 2>&1; then
+            if (( attempt > 1 )); then
+                ok "Docker daemon doğrulaması ${attempt}. denemede başarılı."
+            fi
+            return 0
+        fi
+
+        warn "Phase 06 öncesi Docker daemon erişilemiyor (deneme ${attempt}/${max_attempts})."
+        if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel") ]]; then
+            info "Bu oturumda WSL integration autofix uygulandı; Docker Desktop açılışı gecikmiş olabilir."
+        fi
+
+        if (( attempt >= max_attempts )); then
+            break
+        fi
+
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            info "Etkileşimsiz mod: yeniden deneme öncesi 10sn bekleniyor."
+            sleep 10
+        else
+            info "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
+            clear_stdin_buffer
+            read -r -p "Devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
+        fi
+
+        ((attempt += 1))
+    done
+
+    fail "Phase 06 öncesi Docker daemon doğrulanamadı (${max_attempts} deneme). Docker Compose adımlarına geçilmeden kurulum durduruldu."
+}
+
 
 sidar_add_unique_value() {
     local array_name="$1"
