@@ -942,10 +942,14 @@ ensure_docker_daemon_running() {
 
         info "Docker Desktop yeniden başlatıldı; WSL Integration ayarının uygulanması bekleniyor..."
         local attempt
-        for attempt in 1 2 3 4 5; do
-            sleep 4
+        for attempt in $(seq 1 20); do
+            sleep 3
             if _wsl_integration_distro_listed "$current_distro"; then
                 ok "Docker Desktop WSL Integration: '${current_distro}' artık aktif."
+                return 0
+            fi
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                info "Docker Desktop WSL Integration listesi henüz güncellenmedi ancak daemon socket erişilebilir; '${current_distro}' için doğrulama fonksiyonel olarak başarılı."
                 return 0
             fi
         done
