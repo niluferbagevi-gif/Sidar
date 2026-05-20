@@ -47,6 +47,11 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resume çağrılarında önceki çalışma dizinini koru (örn. one-shot fetch sonrası
+# 02_repo/03_runtime fazları atlandığında relative yolların sapmaması için).
+if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
+    cd "${SIDAR_INSTALL_RESUME_CWD}"
+fi
 # WSL integration autofix sentinel should not leak across reinstall attempts
 rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"

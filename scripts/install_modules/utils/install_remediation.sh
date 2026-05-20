@@ -182,6 +182,7 @@ sidar_resume_after_remediation() {
     local resume_runtime_mode_selected="${APP_RUNTIME_MODE_SELECTED:-}"
     local resume_runtime_mode="${APP_RUNTIME_MODE:-}"
     local resume_gpu_available="${GPU_AVAILABLE:-}"
+    local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
 
     warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
@@ -190,9 +191,11 @@ sidar_resume_after_remediation() {
         SIDAR_INSTALL_RESUME_FROM_PHASE="$phase" \
         SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt" \
         SIDAR_INSTALL_AUTO_HEAL="${SIDAR_INSTALL_AUTO_HEAL:-1}" \
+        SIDAR_INSTALL_RESUME_CWD="$resume_cwd" \
         APP_RUNTIME_MODE_SELECTED="$resume_runtime_mode_selected" \
         APP_RUNTIME_MODE="$resume_runtime_mode" \
         GPU_AVAILABLE="$resume_gpu_available" \
+        bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \
         "$ORIGINAL_SCRIPT_PATH" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
