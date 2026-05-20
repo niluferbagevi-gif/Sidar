@@ -893,10 +893,16 @@ ensure_docker_daemon_running() {
             if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
             Copy-Item \$p \"\$p.bak\" -Force; \
             \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
-            if (\$null -eq \$cfg.IntegratedWslDistros) { \$cfg | Add-Member -NotePropertyName IntegratedWslDistros -NotePropertyValue @() -Force }; \
-            \$list=@(\$cfg.IntegratedWslDistros); \
+            \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; \
+            if (\$null -eq \$prop) { \
+                \$cfg | Add-Member -NotePropertyName 'integratedWslDistros' -NotePropertyValue @() -Force; \
+                \$propName='integratedWslDistros'; \
+            } else { \
+                \$propName=\$prop.Name; \
+            }; \
+            \$list=@(\$cfg.\$propName); \
             if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
-            \$cfg.IntegratedWslDistros=\$list; \
+            \$cfg.\$propName=\$list; \
             \$cfg | ConvertTo-Json -Depth 100 | Set-Content \$p -Encoding UTF8; \
             if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
                 Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
