@@ -3743,7 +3743,10 @@ WSLCFG
                 else
                     local upgrade_mem_reply
                     upgrade_mem_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 memory=${cur_mem} düşük görünüyor. ${target_memory} değerine otomatik yükseltelim mi? [E/h]: ")
-                    [[ "$upgrade_mem_reply" == "yes" ]] && should_upgrade_mem=true
+                    upgrade_mem_reply="${upgrade_mem_reply^^}"
+                    if [[ "$upgrade_mem_reply" == "E" || "$upgrade_mem_reply" == "EVET" || "$upgrade_mem_reply" == "Y" || "$upgrade_mem_reply" == "YES" || -z "$upgrade_mem_reply" ]]; then
+                        should_upgrade_mem=true
+                    fi
                 fi
                 if [[ "$should_upgrade_mem" == true ]] && _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory"; then
                     ok "WSL2: .wslconfig memory ${cur_mem} -> ${target_memory} olarak yükseltildi."
@@ -3779,7 +3782,10 @@ WSLCFG
                 else
                     local upgrade_swap_reply
                     upgrade_swap_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 swap=${cur_swap} düşük görünüyor. ${target_swap} değerine otomatik yükseltelim mi? [E/h]: ")
-                    [[ "$upgrade_swap_reply" == "yes" ]] && should_upgrade_swap=true
+                    upgrade_swap_reply="${upgrade_swap_reply^^}"
+                    if [[ "$upgrade_swap_reply" == "E" || "$upgrade_swap_reply" == "EVET" || "$upgrade_swap_reply" == "Y" || "$upgrade_swap_reply" == "YES" || -z "$upgrade_swap_reply" ]]; then
+                        should_upgrade_swap=true
+                    fi
                 fi
                 if [[ "$should_upgrade_swap" == true ]] && _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap"; then
                     ok "WSL2: .wslconfig swap ${cur_swap} -> ${target_swap} olarak yükseltildi."
