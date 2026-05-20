@@ -736,6 +736,40 @@ def _ensure_rag_index_placeholder(rag_dir: Path) -> Path:
     return index_path
 
 
+def _query_entity_graph_counts_from_store(rag_dir: Path) -> dict[str, Any]:
+    """Read GraphRAG entity counts from DocumentStore for post-fix verification."""
+    try:
+        from types import SimpleNamespace
+
+        from config import Config
+        from core.rag import DocumentStore
+
+        cfg = SimpleNamespace(
+            BASE_DIR=BASE_DIR,
+            RAG_DIR=rag_dir,
+            ENABLE_GRAPH_RAG=getattr(Config, "ENABLE_GRAPH_RAG", True),
+            RAG_VECTOR_BACKEND=getattr(Config, "RAG_VECTOR_BACKEND", "chroma"),
+            RAG_LOCAL_ENABLE_HYBRID=getattr(Config, "RAG_LOCAL_ENABLE_HYBRID", False),
+            AI_PROVIDER=getattr(Config, "AI_PROVIDER", "ollama"),
+            PGVECTOR_TABLE=getattr(Config, "PGVECTOR_TABLE", "rag_embeddings"),
+            PGVECTOR_EMBEDDING_DIM=getattr(Config, "PGVECTOR_EMBEDDING_DIM", 384),
+            PGVECTOR_EMBEDDING_MODEL=getattr(Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+            DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
+        )
+        store = DocumentStore(rag_dir, cfg=cfg, initialize_vector=False)
+        graph = store._ensure_entity_graph()  # noqa: SLF001 - doctor verification probe.
+        nodes = graph.get("nodes", {})
+        edges = graph.get("edges", [])
+        return {
+            "ok": True,
+            "entity_node_count": len(nodes) if isinstance(nodes, dict) else 0,
+            "entity_edge_count": len(edges) if isinstance(edges, list) else 0,
+            "source": "document_store",
+        }
+    except Exception as exc:  # pragma: no cover - diagnostic fallback.
+        return {"ok": False, "error": str(exc), "source": "document_store"}
+
+
 def check_rag_index_ready() -> DoctorCheck:
     state = _rag_readiness_state()
     details = state["details"]
@@ -808,6 +842,24 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
     entity_memory_empty = bool(state["entity_memory_empty"])
     graph_enabled = bool(details.get("graph_rag_enabled"))
     entity_warnings = [w for w in warnings if "GraphRAG entity memory is empty" in w]
+    rag_dir = Path(str(details.get("rag_dir", BASE_DIR / "data/rag")))
+    if not rag_dir.is_absolute():
+        rag_dir = BASE_DIR / rag_dir
+    store_counts = _query_entity_graph_counts_from_store(rag_dir)
+    details["entity_store_probe"] = store_counts
+    if store_counts.get("ok"):
+        details["entity_node_count_store"] = int(store_counts.get("entity_node_count", 0))
+        details["entity_edge_count_store"] = int(store_counts.get("entity_edge_count", 0))
+        if details["entity_node_count_store"] != int(details.get("entity_node_count", 0)):
+            details["entity_count_mismatch"] = True
+            details["entity_count_mismatch_note"] = (
+                "entity_node_count (doctor state) and store probe node count differ; verify GraphRAG projection persistence"
+            )
+        entity_memory_empty = details["entity_node_count_store"] == 0
+        if entity_memory_empty:
+            entity_warnings = [
+                "GraphRAG entity memory is empty after store probe; run metadata seed and verify real entity node count"
+            ]
 
     if not graph_enabled:
         details["auto_fix"] = ""
