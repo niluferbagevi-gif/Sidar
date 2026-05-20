@@ -911,8 +911,16 @@ ensure_docker_daemon_running() {
             if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
             Copy-Item \$p \"\$p.bak\" -Force; \
             if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) { \
-                Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
-                Start-Sleep -Seconds 3; \
+                Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -ErrorAction SilentlyContinue; \
+                \$stopped=\$false; \
+                for (\$i=0; \$i -lt 10; \$i++) { \
+                    Start-Sleep -Seconds 1; \
+                    if (!(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) { \$stopped=\$true; break }; \
+                }; \
+                if (-not \$stopped) { \
+                    Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Stop-Process -Force; \
+                    Start-Sleep -Seconds 3; \
+                }; \
             }; \
             \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
             \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; \
@@ -926,10 +934,6 @@ ensure_docker_daemon_running() {
             if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
             \$cfg.\$propName=\$list; \
             [System.IO.File]::WriteAllText(\$p, (\$cfg | ConvertTo-Json -Depth 100), (New-Object System.Text.UTF8Encoding \$false)); \
-            if (!(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)) { \
-                Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue; \
-                Start-Sleep -Seconds 2; \
-            }; \
             Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
         " >/dev/null 2>&1; then
             warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
