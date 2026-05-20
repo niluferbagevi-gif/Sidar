@@ -38,6 +38,14 @@ sidar_phase_index() {
     esac
 }
 
+sidar_phase_is_informational() {
+    local phase="$1"
+    case "$phase" in
+        01_context) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 sidar_should_skip_phase_for_resume() {
     local phase="$1"
     local resume_from="${SIDAR_INSTALL_RESUME_FROM_PHASE:-}"
@@ -192,6 +200,11 @@ sidar_handle_install_failure() {
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
 
     [[ -n "$phase" ]] || return 1
+    if sidar_phase_is_informational "$phase"; then
+        warn "Auto-heal: ${phase} bilgilendirme fazı; retry/resume atlanıyor (warn-only)."
+        sidar_write_remediation_report "$phase" "informational-phase" "warn-only;no-retry;no-resume"
+        return 1
+    fi
     sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
