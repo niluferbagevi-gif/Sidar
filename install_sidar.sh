@@ -2268,6 +2268,13 @@ wait_for_ollama_api_ready() {
     return 1
 }
 
+check_host_ollama_healthy() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local version_url=""
+    version_url=$(resolve_ollama_version_url "$env_file")
+    curl -sf "$version_url" >/dev/null 2>&1
+}
+
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -5736,8 +5743,9 @@ print_summary() {
     echo -e "  3️⃣  Arka plan servisleri durumu:"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
         echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
-        echo "       Altyapı servisleri: docker compose up -d postgres redis ollama jaeger prometheus grafana"
-        echo "       Durdurma: docker compose stop postgres redis ollama jaeger prometheus grafana"
+        echo "       Altyapı servisleri: docker compose up -d postgres redis jaeger prometheus grafana"
+        echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
+        echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
     else
         echo "       Çalışma modu: Tam Docker (web/agent dahil)."
         echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
@@ -5836,7 +5844,7 @@ launch_docker_services() {
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
     local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"
-    local -a infra_services=(postgres redis ollama jaeger prometheus grafana)
+    local -a infra_services=(postgres redis jaeger prometheus grafana)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -5903,6 +5911,12 @@ launch_docker_services() {
             validate_monitoring_mount_paths
             if [[ "$runtime_mode" == "local" ]]; then
                 info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)"
+                if ! check_host_ollama_healthy "$env_file"; then
+                    infra_services+=(ollama)
+                    info "Host Ollama bulunamadı veya healthy değil; Docker Ollama konteyneri kullanılacak."
+                else
+                    info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
+                fi
                 if "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
