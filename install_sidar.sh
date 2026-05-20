@@ -4137,7 +4137,8 @@ for event in config.get_dotenv_load_report():
     path = event.get("path") or event.get("raw_path") or "-"
     status = "loaded" if event.get("loaded") else f"skipped:{event.get('reason') or 'not_loaded'}"
     override = "override" if event.get("override") else "no-override"
-    print(f"  - {label}: {status} ({override}) {path}")
+    suffix = f" ({override}) {path}" if event.get("loaded") else ""
+    print(f"  - {label}: {status}{suffix}")
 
 missing = config.Config.get_missing_critical_runtime_keys()
 if missing:
