@@ -2999,10 +2999,11 @@ ensure_prerequisites() {
         else
             # Windows'ta kurulu ama WSL2'de çalışmıyorsa entegrasyon bozuktur
             info "Docker şu anda WSL içinde kullanılamıyor; yeni bir dağıtım sonrası Docker Desktop entegrasyonu kopmuş olabilir."
-            info "Lütfen şu adımları uygulayın:"
+            info "WSL Integration otomatik düzeltmesi denendi. Lütfen doğrulama için şu adımları uygulayın:"
             echo "  1. Windows'ta Docker Desktop'ı açın."
-            echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-            echo "  3. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
+            echo "  2. Settings > Resources > WSL Integration menüsünde '${WSL_DISTRO_NAME:-Ubuntu}' dağıtımının açık olduğunu doğrulayın."
+            echo "  3. Gerekirse Apply & restart yapın."
+            echo "  4. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             echo ""
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
