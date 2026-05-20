@@ -56,6 +56,8 @@ class DummyConfig:
 CONFIG_IMPORT_OK = True
 logger = logging.getLogger(__name__)
 _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
+_DOCTOR_APPLY_ALL_APPROVED: bool | None = None
+_LAUNCHER_DOCTOR_AUTO_FIX_YES = False
 
 try:
     import config as config_module
@@ -660,7 +662,9 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     return False
 
 
-def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
+def _run_doctor_auto_fix(
+    check: Any, check_func: Any | None = None, *, apply_all_mode: bool = False
+) -> bool:
     """Run Doctor auto-fix command(s), optionally revalidating after each successful step."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
@@ -673,17 +677,19 @@ def _run_doctor_auto_fix(check: Any, check_func: Any | None = None) -> bool:
     auto_fix_commands = _doctor_auto_fix_commands(details)
     if not auto_fix_commands or not sys.stdin.isatty():
         return False
-    auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
-
-    prompt_suffix = "adımları" if len(auto_fix_commands) > 1 else "komutu"
-    if not confirm(
-        f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} şimdi çalıştırılsın mı?",
-        False,
-    ):
-        return False
+    if apply_all_mode:
+        selected_auto_fix_commands = auto_fix_commands
+    else:
+        selected_auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
+        prompt_suffix = "adımları" if len(selected_auto_fix_commands) > 1 else "komutu"
+        if not confirm(
+            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} şimdi çalıştırılsın mı?",
+            False,
+        ):
+            return False
 
     ran_any = False
-    for auto_fix in auto_fix_commands:
+    for auto_fix in selected_auto_fix_commands:
         if not _run_doctor_auto_fix_command(auto_fix):
             return ran_any
         ran_any = True
@@ -763,7 +769,7 @@ def _revalidate_doctor_check_after_auto_fix(
     return updated_check
 
 
-def _run_launcher_doctor_preflight() -> None:
+def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> None:
     try:
         from core.doctor import (
             check_database_connectivity,
@@ -777,6 +783,15 @@ def _run_launcher_doctor_preflight() -> None:
         return
 
     print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
+    apply_all_mode = doctor_apply_all_yes
+    global _DOCTOR_APPLY_ALL_APPROVED
+    _DOCTOR_APPLY_ALL_APPROVED = None if not doctor_apply_all_yes else True
+    if sys.stdin.isatty() and not doctor_apply_all_yes:
+        apply_all_mode = confirm(
+            "Doctor için bulunan tüm auto-fix önerileri tek seferde otomatik uygulansın mı?",
+            False,
+        )
+        _DOCTOR_APPLY_ALL_APPROVED = apply_all_mode
     skip_database_dependents = False
     skip_summary_printed = False
     def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
@@ -798,7 +813,7 @@ def _run_launcher_doctor_preflight() -> None:
         try:
             check = check_func()
             _print_doctor_check_summary(check)
-            _run_doctor_auto_fix(check, check_func)
+            _run_doctor_auto_fix(check, check_func, apply_all_mode=apply_all_mode)
             if check_name == "database_env":
                 final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION or check
                 final_status = str(getattr(final_check, "status", "warn") or "warn")
@@ -843,10 +858,10 @@ def _run_launcher_doctor_preflight() -> None:
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
             continue
         _print_doctor_check_summary(result)
-        _run_doctor_auto_fix(result, check_func)
+        _run_doctor_auto_fix(result, check_func, apply_all_mode=apply_all_mode)
 
 
-def preflight(provider: str) -> None:
+def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
     _maybe_bootstrap_development_env()
@@ -865,7 +880,7 @@ def preflight(provider: str) -> None:
     elif "://" not in database_url:
         logger.warning("DATABASE_URL beklenen şema biçiminde değil: %s", database_url)
 
-    _run_launcher_doctor_preflight()
+    _run_launcher_doctor_preflight(doctor_apply_all_yes=doctor_apply_all_yes)
 
     if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
         message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
@@ -1138,7 +1153,7 @@ def run_wizard() -> int:
     )
     _save_launcher_session(selection)
 
-    preflight(provider)
+    preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
 
     runtime_ok, runtime_error = validate_runtime_dependencies(mode)
     if not runtime_ok:
@@ -1245,7 +1260,15 @@ def main() -> None:
         "--child-log",
         help="Alt süreç stdout/stderr çıktısını dosyaya kaydet (ör. logs/child.log)",
     )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Doctor preflight için tüm auto-fix önerilerini tek onayla uygula",
+    )
     args = parser.parse_args()
+    global _LAUNCHER_DOCTOR_AUTO_FIX_YES
+    _LAUNCHER_DOCTOR_AUTO_FIX_YES = bool(args.yes)
 
     use_last_env = os.getenv("SIDAR_LAUNCHER_USE_LAST", "").strip().lower() in {"1", "true", "yes", "on"}
     use_last = bool(args.last or args.use_last or use_last_env)
@@ -1325,6 +1348,7 @@ def main() -> None:
         print(f"{RED}⛔ {runtime_error}{RESET}")
         sys.exit(2)
 
+    preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
     cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
     sys.exit(
         execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log)
