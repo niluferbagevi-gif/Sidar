@@ -315,6 +315,35 @@ open_artifact() {
   fi
 }
 
+apply_dark_mode_to_frontend_coverage_report() {
+  local coverage_dir="$1"
+  local base_css="${coverage_dir}/base.css"
+  local dark_css="${coverage_dir}/sidar_dark_mode.css"
+
+  if [ ! -f "${base_css}" ]; then
+    return 0
+  fi
+
+  cat > "${dark_css}" <<'CSS_DARK'
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background-color: #0f1117 !important;
+  color: #e6edf3 !important;
+}
+
+a {
+  color: #58a6ff !important;
+}
+CSS_DARK
+
+  if ! grep -Fq '@import url("./sidar_dark_mode.css");' "${base_css}"; then
+    printf '\n@import url("./sidar_dark_mode.css");\n' >> "${base_css}"
+  fi
+}
+
 resolve_docker_compose_cmd() {
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     DOCKER_COMPOSE_CMD=(docker compose)
@@ -1085,8 +1114,8 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
       fi
 
       if [ -f "coverage/base.css" ]; then
-        echo "Frontend test raporuna karanlık mod (dark mode) uygulanıyor..."
-        echo 'html { filter: invert(95%) hue-rotate(180deg); background-color: #121212; }' >> coverage/base.css
+        echo "Frontend test raporuna kalıcı karanlık tema (dark mode) uygulanıyor..."
+        apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"
       fi
 
       # coverage/lcov-report/index.html CI araçları (ör. SonarQube) için korunur,

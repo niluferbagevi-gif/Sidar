@@ -44,4 +44,5 @@ exclude_lines =
 [html]
 directory = htmlcov
 title = Sidar Test Coverage
+# Backend coverage HTML raporları varsayılan dark mode deneyimi için özel CSS ile üretilir.
 extra_css = assets/dark_mode.css
