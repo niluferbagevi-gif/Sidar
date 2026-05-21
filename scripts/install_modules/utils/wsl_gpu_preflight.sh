@@ -170,6 +170,15 @@ run_wsl2_gpu_preflight() {
     ok "WSL2 / NVIDIA / Ollama donanım pre-flight kontrolü geçti."
 }
 
+sidar_windows_json_sanitize() {
+    sed '1s/^\xEF\xBB\xBF//' | tr -d '\r'
+}
+
+sidar_read_docker_settings_json() {
+    wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { Get-Content \$p -Raw }" \
+        | sidar_windows_json_sanitize
+}
+
 docker_desktop_wsl_integration_preflight() {
     step "Docker Desktop WSL Integration Durum Raporu"
     export WSL_INTEGRATION_PREFLIGHT_REPORTED=true
@@ -190,7 +199,7 @@ docker_desktop_wsl_integration_preflight() {
         return 0
     fi
 
-    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm="" docker_settings_json=""
     local in_integrated=false default_covers=false
     current_distro="${WSL_DISTRO_NAME:-}"
     if [[ -z "$current_distro" ]]; then
@@ -199,8 +208,14 @@ docker_desktop_wsl_integration_preflight() {
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
     default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
-    enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" || true)"
-    integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" || true)"
+    docker_settings_json="$(sidar_read_docker_settings_json || true)"
+    if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
+        enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // empty' 2>/dev/null || true)"
+        integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '(.IntegratedWslDistros // .integratedWslDistros // []) | map(tostring) | join(",")' 2>/dev/null || true)"
+    else
+        enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" || true)"
+        integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" || true)"
+    fi
 
     integrated_norm=",${integrated_csv// /},"
     [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
