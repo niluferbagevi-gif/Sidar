@@ -838,6 +838,11 @@ ensure_docker_cli_available() {
         return 0
     fi
     if [[ "$default_covers" == true ]]; then
+        if [[ "${WSL_INTEGRATION_HARDEN_EXPLICIT:-true}" == "true" ]]; then
+            export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
+            info "Default-distro toggle '${current_distro}' kapsıyor; explicit toggle eklenmesi için postcheck'e devredildi."
+            return 1
+        fi
         info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
         warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
         return 0
