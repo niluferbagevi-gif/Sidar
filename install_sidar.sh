@@ -355,6 +355,9 @@ bootstrap_single_file_install_from_repo() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
+        fail "SIDAR_BUNDLE_MODE=1 algılandı ancak gömülü modüller bulunamadı. Bundle dosyası bozuk olabilir; lütfen bundle artefaktını yeniden üretin."
+    fi
     warn "Tek dosyalık çalıştırma algılandı."
     if bootstrap_single_file_install_from_repo; then
         fail "Repo bootstrap akışı beklenmedik şekilde geri döndü."
