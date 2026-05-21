@@ -257,7 +257,20 @@ docker_desktop_wsl_integration_preflight() {
     if [[ "$in_integrated" == true ]]; then
         ok "Docker Desktop WSL Integration: '${current_distro}' explicit toggle açık."
     elif [[ "$default_covers" == true ]]; then
-        warn "Docker Desktop WSL Integration: explicit toggle kapalı, default-distro toggle ile kapsanıyor. Default distro değişirse kırılabilir."
+        if [[ "${WSL_INTEGRATION_HARDEN_EXPLICIT:-true}" == "true" ]]; then
+            info "Docker Desktop default-distro toggle '${current_distro}' dağıtımını şu an kapsıyor; default distro değişimine karşı explicit toggle ekleniyor."
+            export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
+            if declare -F apply_wsl_integration_autofix >/dev/null 2>&1 \
+               && apply_wsl_integration_autofix "$current_distro"; then
+                export _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT
+                _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT="$(date +%s)"
+                ok "Preflight hardening: '${current_distro}' explicit toggle eklendi."
+            else
+                warn "Preflight hardening tamamlanamadı; Docker daemon kontrol aşamasında tekrar denenecek."
+            fi
+        else
+            warn "Docker Desktop WSL Integration: explicit toggle kapalı, default-distro toggle ile kapsanıyor. Default distro değişirse kırılabilir. (WSL_INTEGRATION_HARDEN_EXPLICIT=true ile otomatik düzeltilebilir.)"
+        fi
     else
         export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
         warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
