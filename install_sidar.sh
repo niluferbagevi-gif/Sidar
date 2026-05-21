@@ -253,6 +253,33 @@ download_remote_install_modules() {
     done
 }
 
+resolve_remote_install_module_base_url() {
+    local explicit_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    local repo_url="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+    local repo_branch="${SIDAR_REPO_BRANCH:-main}"
+    local repo_slug=""
+
+    if [[ -n "$explicit_base" ]]; then
+        echo "$explicit_base"
+        return 0
+    fi
+
+    repo_url="${repo_url%.git}"
+    if [[ "$repo_url" =~ ^https?://github\.com/([^/]+/[^/]+)$ ]]; then
+        repo_slug="${BASH_REMATCH[1]}"
+    elif [[ "$repo_url" =~ ^git@github\.com:([^/]+/[^/]+)$ ]]; then
+        repo_slug="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ -n "$repo_slug" ]]; then
+        echo "https://raw.githubusercontent.com/${repo_slug}/${repo_branch}/scripts/install_modules"
+        return 0
+    fi
+
+    warn "SIDAR_REPO_URL GitHub biçiminde ayrıştırılamadı, varsayılan modül kaynağı kullanılacak: $repo_url"
+    echo "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+}
+
 bootstrap_single_file_install_from_repo() {
     local existing_repo_dir=""
     local bootstrap_repo_url="${SIDAR_REPO_URL:-${REPO_URL:-${SIDAR_REPO_URL_DEFAULT:-https://github.com/niluferbagevi-gif/Sidar.git}}}"
@@ -305,7 +332,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    REMOTE_MODULE_BASE="$(resolve_remote_install_module_base_url)"
 
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
     ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
@@ -2274,6 +2301,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     OFFLINE_INSTALL=true|false     (equivalent to --offline/--air-gapped)
     SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
     SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
+    SIDAR_REPO_BRANCH=main       Branch used for raw install module fallback URL derivation
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
@@ -2331,6 +2359,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)
     SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
     SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
+    SIDAR_REPO_BRANCH=main       Raw install module fallback URL'i türetmek için branch adı
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
