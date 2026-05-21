@@ -506,7 +506,21 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
+    local keep_temp_modules_raw="${KEEP_TEMP_MODULES:-${SIDAR_KEEP_TEMP_MODULES:-0}}"
+    local keep_temp_modules=""
+    local exit_code="${INSTALL_EXIT_CODE:-0}"
+
+    keep_temp_modules="$(normalize_bool "$keep_temp_modules_raw")"
     if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if [[ "$keep_temp_modules" == "true" ]]; then
+            warn "Geçici modül dizini korunuyor (SIDAR_KEEP_TEMP_MODULES/--keep-temp-modules aktif): $INSTALL_HELPERS_TEMP_DIR"
+            return 0
+        fi
+        if [[ "$exit_code" -ne 0 ]]; then
+            warn "Kurulum hata ile sonlandı (exit=$exit_code); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
+            warn "Temizlemek için: rm -rf \"$INSTALL_HELPERS_TEMP_DIR\""
+            return 0
+        fi
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
     fi
@@ -530,7 +544,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
+trap 'INSTALL_EXIT_CODE=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
@@ -2286,7 +2300,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--keep-temp-modules] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -2306,6 +2320,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --download-models  Download Ollama models by default
   --build-ui  Rebuild the React Web UI even when cache exists
   --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
+  --keep-temp-modules  Keep one-shot temporary install modules directory for debugging
   --ci / --no-interaction  Run non-interactively without prompting the user
   --non-interactive / --headless / --yes / -y  Short aliases for --no-interaction
   --silent  Quiet CI/CD install: DEBIAN_FRONTEND=noninteractive + safe automatic defaults
@@ -2334,6 +2349,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
     SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
     SIDAR_REPO_BRANCH=main       Branch used for raw install module fallback URL derivation
+    SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary downloaded one-shot modules on exit (debug)
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
@@ -2344,7 +2360,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--keep-temp-modules] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -2364,6 +2380,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --download-models  Ollama modellerini varsayılan olarak indir
   --build-ui  React Web UI yeniden build et (cache olsa bile)
   --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
+  --keep-temp-modules  Tek dosyalık kurulum geçici modül dizinini debug için koru
   --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır
   --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar
   --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar
@@ -2392,6 +2409,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
     SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
     SIDAR_REPO_BRANCH=main       Raw install module fallback URL'i türetmek için branch adı
+    SIDAR_KEEP_TEMP_MODULES=1|0  Tek dosyalık indirilen geçici modülleri çıkışta korur (debug)
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
@@ -2441,6 +2459,7 @@ for arg in "$@"; do
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
         --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
         --strict-docker) STRICT_DOCKER=true ;;
+        --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
@@ -2483,6 +2502,7 @@ resolve_env_type_choice() {
 
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
+KEEP_TEMP_MODULES="$(normalize_bool "${SIDAR_KEEP_TEMP_MODULES:-false}")"
 STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
