@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_SCRIPT="${ROOT_DIR}/install_sidar.sh"
 MODULE_DIR="${ROOT_DIR}/scripts/install_modules"
 OUTPUT_SCRIPT="${ROOT_DIR}/dist/install_sidar.sh"
+MODULE_HASHES_FILE="${ROOT_DIR}/scripts/install_modules/MODULE_HASHES.txt"
 
 mkdir -p "${ROOT_DIR}/dist"
 
@@ -67,3 +68,16 @@ in_block == 0 { print }
 
 chmod +x "$OUTPUT_SCRIPT"
 echo "Bundle oluşturuldu: $OUTPUT_SCRIPT"
+
+if command -v sha256sum &>/dev/null; then
+    (
+        cd "$MODULE_DIR"
+        find . -type f \( -name "*.sh" -o -name "*.ps1" \) | sort | sed 's|^\./||' | while IFS= read -r mod_file; do
+            sha256sum "$mod_file" | awk '{print $1}' > "${mod_file}.sha256"
+            sha256sum "$mod_file"
+        done
+    ) > "$MODULE_HASHES_FILE"
+    echo "Modül hash dosyaları (.sha256) ve hash listesi güncellendi: $MODULE_HASHES_FILE"
+else
+    echo "Uyarı: sha256sum bulunamadı, MODULE_HASHES.txt üretilmedi." >&2
+fi
