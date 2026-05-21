@@ -361,6 +361,7 @@ class LLMClientSettings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434/api"
     OLLAMA_TIMEOUT: int = 600
     OLLAMA_KEEP_ALIVE: str = "30m"
+    OLLAMA_CODING_NUM_CTX: int = 8192
     OLLAMA_CONTEXT_MAX_CHARS: int = 12000
     OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
     CODING_MODEL: str = "qwen2.5-coder:7b"
@@ -934,6 +935,9 @@ class Config:
     OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
     OLLAMA_KEEP_ALIVE: str = LLM_SETTINGS.OLLAMA_KEEP_ALIVE
+    OLLAMA_CODING_NUM_CTX: int = get_int_env(
+        "OLLAMA_CODING_NUM_CTX", LLM_SETTINGS.OLLAMA_CODING_NUM_CTX
+    )
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     CODING_MODEL: str = LLM_SETTINGS.CODING_MODEL
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
@@ -966,6 +970,7 @@ class Config:
     CPU_COUNT: int = os.cpu_count() or 1
     CUDA_VERSION: str = "N/A"
     DRIVER_VERSION: str = "N/A"
+    GPU_VRAM_MB: int = 0
 
     _hardware_loaded: bool = False
 
@@ -1453,6 +1458,7 @@ class Config:
             cls.GPU_COUNT = 0
             cls.CUDA_VERSION = "N/A"
             cls.DRIVER_VERSION = "N/A"
+            cls.GPU_VRAM_MB = 0
             cls.CPU_COUNT = os.cpu_count() or 1
             cls._hardware_loaded = True
             return
@@ -1464,7 +1470,31 @@ class Config:
         cls.CPU_COUNT = hw.cpu_count or (os.cpu_count() or 1)
         cls.CUDA_VERSION = hw.cuda_version
         cls.DRIVER_VERSION = hw.driver_version
+        cls._autoselect_ollama_coding_ctx_window()
         cls._hardware_loaded = True
+
+    @classmethod
+    def _autoselect_ollama_coding_ctx_window(cls) -> None:
+        """Auto-tune Ollama coding context for GPU VRAM unless explicitly overridden."""
+        if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
+            return
+        if not cls.USE_GPU:
+            return
+        vram_mb = 0
+        try:
+            import torch
+
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                props = torch.cuda.get_device_properties(0)
+                vram_mb = int(getattr(props, "total_memory", 0) / (1024 * 1024))
+        except Exception:
+            vram_mb = 0
+
+        cls.GPU_VRAM_MB = max(0, int(vram_mb))
+        if cls.GPU_VRAM_MB >= 16384:
+            cls.OLLAMA_CODING_NUM_CTX = 16384
+        elif cls.GPU_VRAM_MB >= 8192:
+            cls.OLLAMA_CODING_NUM_CTX = 8192
 
     @classmethod
     def trusted_proxies_as_list(cls) -> list[str]:

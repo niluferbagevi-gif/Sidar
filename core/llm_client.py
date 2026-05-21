@@ -542,6 +542,9 @@ class OllamaClient(BaseLLMClient):
         url = f"{self.base_url}/api/chat"
 
         options: dict[str, Any] = {"temperature": temperature}
+        ollama_coding_num_ctx = int(_setting(self.config, "OLLAMA_CODING_NUM_CTX", 8192))
+        if ollama_coding_num_ctx > 0:
+            options["num_ctx"] = ollama_coding_num_ctx
         if bool(_setting(self.config, "USE_GPU", False)):
             options["num_gpu"] = -1
 
