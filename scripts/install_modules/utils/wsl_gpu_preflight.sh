@@ -229,19 +229,21 @@ docker_desktop_wsl_integration_preflight() {
     default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
     if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
-        enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // empty' 2>/dev/null || true)"
+        enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
         integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '
             (
                 .IntegratedWslDistros
                 // .integratedWslDistros
-                // .wsl.distros.enabled
-                // (.wsl.distros | to_entries | map(select(.value == true) | .key))
+                // .wsl.distros
+                // .integration.wslDistros
                 // []
-            ) | map(tostring) | join(",")
+            )
+            | (if type=="array" then map(tostring) else [(.|keys[])] end)
+            | join(",")
         ' 2>/dev/null || true)"
     else
-        enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$v=\$cfg.EnableIntegrationWithDefaultWslDistro; if (\$null -eq \$v) { \$v=\$cfg.enableIntegrationWithDefaultWslDistro }; if (\$null -eq \$v) { \$v=\$cfg.wslEngineEnabled }; if (\$null -eq \$v) { '' } else { [string]\$v } }" || true)"
-        integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$list=\$null; if (\$cfg.IntegratedWslDistros) { \$list=@(\$cfg.IntegratedWslDistros) } elseif (\$cfg.integratedWslDistros) { \$list=@(\$cfg.integratedWslDistros) } elseif (\$null -ne \$cfg.wsl -and \$null -ne \$cfg.wsl.distros) { if (\$cfg.wsl.distros.enabled) { \$list=@(\$cfg.wsl.distros.enabled) } else { \$list=@(\$cfg.wsl.distros.PSObject.Properties | Where-Object { \$_.Value -eq \$true } | Select-Object -ExpandProperty Name) } }; if (\$list) { \$list -join ',' } }" || true)"
+        enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$v=\$cfg.EnableIntegrationWithDefaultWslDistro; if (\$null -eq \$v) { \$v=\$cfg.enableIntegrationWithDefaultWslDistro }; if (\$null -eq \$v) { \$v=\$cfg.wslEngineEnabled }; if (\$null -eq \$v -and \$null -ne \$cfg.integration) { \$v=\$cfg.integration.wslEngineEnabled }; if (\$null -eq \$v) { '' } else { [string]\$v } }" || true)"
+        integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$list=\$null; if (\$cfg.IntegratedWslDistros) { \$list=@(\$cfg.IntegratedWslDistros) } elseif (\$cfg.integratedWslDistros) { \$list=@(\$cfg.integratedWslDistros) } elseif (\$null -ne \$cfg.wsl -and \$null -ne \$cfg.wsl.distros) { if (\$cfg.wsl.distros -is [System.Array]) { \$list=@(\$cfg.wsl.distros) } else { \$list=@(\$cfg.wsl.distros.PSObject.Properties | Select-Object -ExpandProperty Name) } } elseif (\$null -ne \$cfg.integration -and \$null -ne \$cfg.integration.wslDistros) { if (\$cfg.integration.wslDistros -is [System.Array]) { \$list=@(\$cfg.integration.wslDistros) } else { \$list=@(\$cfg.integration.wslDistros.PSObject.Properties | Select-Object -ExpandProperty Name) } }; if (\$list) { \$list | ForEach-Object { [string]\$_ } | Where-Object { \$_ } | Select-Object -Unique | Join-String -Separator ',' } }" || true)"
     fi
 
     integrated_norm=",${integrated_csv// /},"
