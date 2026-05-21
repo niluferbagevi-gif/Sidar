@@ -159,6 +159,7 @@ def _build_supervisor(*, max_qa_retries: int = 2, has_coverage: bool = True) -> 
         ("github issue review et", "review"),
         ("seo kampanya planı", "marketing"),
         ("eksik test yaz ve coverage artır", "coverage"),
+        ("selam", "chat"),
         ("yeni bir python fonksiyonu yaz", "code"),
     ],
 )
@@ -318,6 +319,22 @@ def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> Non
     result = asyncio.run(sup.run_task("eksik test yaz"))
 
     assert result.startswith("qa:coverage:")
+
+
+def test_run_task_chat_intent_skips_agent_delegation() -> None:
+    sup = _build_supervisor(has_coverage=True)
+    calls: list[tuple[str, str, str]] = []
+
+    async def fake_delegate(receiver: str, prompt: str, intent: str, parent_task_id: str | None = None):
+        calls.append((receiver, prompt, intent))
+        return TaskResult(task_id="unexpected", status="completed", summary="unexpected")
+
+    sup._delegate = fake_delegate  # type: ignore[assignment]
+
+    result = asyncio.run(sup.run_task("selam"))
+
+    assert result == "Merhaba! Size nasıl yardımcı olabilirim?"
+    assert calls == []
 
 
 def test_run_task_code_flow_retries_and_returns_final_review_summary() -> None:

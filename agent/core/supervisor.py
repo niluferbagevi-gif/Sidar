@@ -163,7 +163,18 @@ class SupervisorAgent(BaseAgent):
 
     @staticmethod
     def _intent(prompt: str) -> str:
-        text = (prompt or "").lower()
+        text = (prompt or "").strip().lower()
+        if text in {
+            "selam",
+            "merhaba",
+            "selamlar",
+            "hey",
+            "hi",
+            "hello",
+            "nasılsın",
+            "naber",
+        }:
+            return "chat"
         if any(
             t in text
             for t in ("araştır", "web", "url", "kaynak", "docs", "doküman", "nedir", "yenilik")
@@ -390,6 +401,10 @@ class SupervisorAgent(BaseAgent):
         self.memory_hub.add_global(task_prompt)
         max_turns = self._max_turns()
         turn_count = 0
+
+        if intent == "chat":
+            await self.events.publish("supervisor", "Sohbet niyeti algılandı; ajan delegasyonu atlanıyor.")
+            return "Merhaba! Size nasıl yardımcı olabilirim?"
 
         def _consume_turn() -> bool:
             nonlocal turn_count
