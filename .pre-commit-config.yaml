@@ -28,3 +28,10 @@ repos:
         entry: uv run shellcheck --severity=warning -x
         language: system
         files: ^(install_sidar\.sh|autonomous_loop\.sh|run_tests\.sh|scripts/.*\.(sh|bash)|tests/shell/.*\.bats)$
+
+      - id: shellcheck-installer-modules
+        name: shellcheck installer modules
+        entry: bash -lc 'shopt -s globstar nullglob; uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh'
+        language: system
+        pass_filenames: false
+        files: ^(install_sidar\.sh|scripts/install_modules/.*\.sh)$

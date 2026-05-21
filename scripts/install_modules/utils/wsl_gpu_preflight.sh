@@ -42,6 +42,12 @@ sidar_report_wsl_gpu_problem() {
     esac
 }
 
+wsl_powershell_read() {
+    local ps_command="$1"
+    powershell.exe -NoProfile -Command "$ps_command" 2>/dev/null \
+        | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1
+}
+
 run_wsl2_gpu_preflight() {
     step "WSL2 / NVIDIA GPU Pre-Flight Kontrolü"
 
@@ -162,4 +168,83 @@ run_wsl2_gpu_preflight() {
     fi
 
     ok "WSL2 / NVIDIA / Ollama donanım pre-flight kontrolü geçti."
+}
+
+sidar_windows_json_sanitize() {
+    sed '1s/^\xEF\xBB\xBF//' | tr -d '\r'
+}
+
+sidar_read_docker_settings_json() {
+    wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { Get-Content \$p -Raw }" \
+        | sidar_windows_json_sanitize
+}
+
+docker_desktop_wsl_integration_preflight() {
+    step "Docker Desktop WSL Integration Durum Raporu"
+    export WSL_INTEGRATION_PREFLIGHT_REPORTED=true
+    export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
+    local _had_errexit=false
+    [[ $- == *e* ]] && _had_errexit=true
+    set +e
+
+    if [[ "${WSL2:-false}" != true ]]; then
+        info "WSL2 tespit edilmedi; Docker Desktop WSL Integration raporu atlandı."
+        [[ "$_had_errexit" == true ]] && set -e
+        return 0
+    fi
+
+    if ! command -v powershell.exe &>/dev/null; then
+        warn "powershell.exe bulunamadı; Docker Desktop WSL Integration durumu doğrulanamadı."
+        [[ "$_had_errexit" == true ]] && set -e
+        return 0
+    fi
+
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm="" docker_settings_json=""
+    local in_integrated=false default_covers=false
+    current_distro="${WSL_DISTRO_NAME:-}"
+    if [[ -z "$current_distro" ]]; then
+        current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+    fi
+    [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
+
+    default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+    docker_settings_json="$(sidar_read_docker_settings_json || true)"
+    if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
+        enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // empty' 2>/dev/null || true)"
+        integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '(.IntegratedWslDistros // .integratedWslDistros // []) | map(tostring) | join(",")' 2>/dev/null || true)"
+    else
+        enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" || true)"
+        integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" || true)"
+    fi
+
+    integrated_norm=",${integrated_csv// /},"
+    [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+    if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+        default_covers=true
+    fi
+
+    info "WSL Integration raporu: distro='${current_distro}', default='${default_distro:-bilinmiyor}', default-toggle='${enable_default:-bilinmiyor}', explicit-list='${integrated_csv:-boş}'."
+
+    if [[ "$in_integrated" == true ]]; then
+        ok "Docker Desktop WSL Integration: '${current_distro}' explicit toggle açık."
+    elif [[ "$default_covers" == true ]]; then
+        warn "Docker Desktop WSL Integration: explicit toggle kapalı, default-distro toggle ile kapsanıyor. Default distro değişirse kırılabilir."
+    else
+        export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
+        warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
+        if declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
+            info "Preflight aşamasında erken autofix denemesi başlatılıyor: '${current_distro}'."
+            if apply_wsl_integration_autofix "$current_distro"; then
+                export _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT
+                _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT="$(date +%s)"
+                ok "Preflight autofix: Docker Desktop WSL Integration '${current_distro}' için etkinleştirildi."
+            else
+                warn "Preflight autofix tamamlanamadı; Docker daemon kontrol aşamasında tekrar denenecek."
+            fi
+        else
+            info "Preflight autofix yardımcı fonksiyonu bu bağlamda yüklü değil; düzeltme Docker daemon kontrol aşamasına devredildi."
+        fi
+    fi
+
+    [[ "$_had_errexit" == true ]] && set -e
 }

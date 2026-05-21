@@ -7,7 +7,10 @@ Create Date: 2026-04-16 00:00:00
 
 from __future__ import annotations
 
+import os
+
 from alembic import op
+from sqlalchemy import text
 
 revision = "0005_pgvector_hnsw_index"
 down_revision = "0004_faz_e_tables"
@@ -21,31 +24,40 @@ def upgrade() -> None:
     if bind.engine.name != "postgresql":
         return
 
-    # pgvector mevcut değilse migrasyonu sessizce atla (ChromaDB fallback çalışmaya devam eder).
-    op.execute(
-        """
-        DO $$
-        DECLARE
-            vector_available BOOLEAN;
-        BEGIN
+    vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
+    require_pgvector = vector_backend == "pgvector"
+
+    vector_available = bind.execute(
+        text(
+            """
             SELECT EXISTS (
                 SELECT 1
                 FROM pg_available_extensions
                 WHERE name = 'vector'
             )
-            INTO vector_available;
+            """
+        )
+    ).scalar()
 
-            IF NOT vector_available THEN
-                RETURN;
-            END IF;
+    if not vector_available:
+        if require_pgvector:
+            raise RuntimeError(
+                "RAG_VECTOR_BACKEND=pgvector but pgvector extension is not available in this PostgreSQL image."
+            )
+        return
 
-            BEGIN
-                EXECUTE 'CREATE EXTENSION IF NOT EXISTS vector';
-            EXCEPTION
-                WHEN insufficient_privilege THEN
-                    RETURN;
-            END;
+    if require_pgvector:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    else:
+        try:
+            op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception:
+            return
 
+    op.execute(
+        """
+        DO $$
+        BEGIN
             EXECUTE '
                 CREATE TABLE IF NOT EXISTS rag_embeddings (
                     doc_id TEXT NOT NULL,

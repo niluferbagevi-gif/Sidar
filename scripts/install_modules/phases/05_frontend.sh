@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 sidar_phase_frontend_assets() {
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         setup_react_frontend
         install_playwright_browsers
     else

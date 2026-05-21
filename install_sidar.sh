@@ -47,6 +47,13 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resume çağrılarında önceki çalışma dizinini koru (örn. one-shot fetch sonrası
+# 02_repo/03_runtime fazları atlandığında relative yolların sapmaması için).
+if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
+    cd "${SIDAR_INSTALL_RESUME_CWD}"
+fi
+# WSL integration autofix sentinel should not leak across reinstall attempts
+rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
 ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
@@ -140,6 +147,10 @@ sidar_t() {
 
 ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
 info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
+debug() {
+    [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
+    echo -e "${BLUE}🔍  $*${NC}" >&2
+}
 warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
     echo -e "${RED}❌  $*${NC}" >&2
@@ -168,6 +179,7 @@ INSTALL_HELPERS_TEMP_DIR=""
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
+    "utils/wsl_integration_autofix.sh"
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
     "utils/python_env.sh"
@@ -294,6 +306,7 @@ load_install_phase_modules() {
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 sidar_source_install_utils \
+    "wsl_integration_autofix.sh" \
     "wsl_gpu_preflight.sh" \
     "gpu_utils.sh" \
     "python_env.sh" \
@@ -752,6 +765,12 @@ install_docker_cli_from_apt() {
     fi
 }
 
+wsl_powershell_read() {
+    local ps_command="$1"
+    powershell.exe -NoProfile -Command "$ps_command" 2>/dev/null \
+        | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1
+}
+
 ensure_docker_cli_available() {
     DOCKER_CLI_WSL_WARNED="${DOCKER_CLI_WSL_WARNED:-false}"
     local mode="${DOCKER_CLI_INSTALL_MODE:-auto}"
@@ -786,14 +805,214 @@ ensure_docker_cli_available() {
     install_docker_cli_from_apt
 }
 
+verify_wsl_integration_listed() {
+    [[ "$WSL2" == true ]] || return 0
+    command -v powershell.exe &>/dev/null || return 0
+
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local in_integrated=false default_covers=false
+    local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+    current_distro="${WSL_DISTRO_NAME:-}"
+    if [[ -z "$current_distro" ]]; then
+        current_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+    fi
+    [[ -n "$current_distro" ]] || return 0
+
+    default_distro="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+    enable_default="$(wsl_powershell_read "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }")"
+    integrated_csv="$(wsl_powershell_read "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$found=\$false; \$keys=@('integratedWslDistros','IntegratedWslDistros','enabledWslIntegrations'); foreach (\$k in \$keys) { \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq \$k } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ','; \$found=\$true; break } }; if (-not \$found -and \$null -ne \$cfg.wsl) { \$nested=\$cfg.wsl.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedDistros' -or \$_.Name -ieq 'enabledWslIntegrations' } | Select-Object -First 1; if (\$null -ne \$nested -and \$null -ne \$cfg.wsl.(\$nested.Name)) { @(\$cfg.wsl.(\$nested.Name)) -join ',' } } }")"
+
+    integrated_norm=",${integrated_csv// /},"
+    [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+    if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+        default_covers=true
+    fi
+
+    if [[ "$in_integrated" == true ]]; then
+        ok "WSL entegrasyonu '${current_distro}' için açık."
+        return 0
+    fi
+    if [[ "$default_covers" == true ]]; then
+        info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
+        warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+        return 0
+    fi
+    if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+        warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
+        return 0
+    fi
+    warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+    return 1
+}
+
 ensure_docker_daemon_running() {
+    _docker_ready_with_socket() {
+        if ! docker info &>/dev/null; then
+            return 1
+        fi
+
+        if [[ "$WSL2" == true ]]; then
+            DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        else
+            docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        fi
+
+        return 0
+    }
+
+    _detect_current_wsl_distro_name() {
+        if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+            printf '%s\n' "$WSL_DISTRO_NAME"
+            return 0
+        fi
+        if command -v powershell.exe &>/dev/null; then
+            powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}'
+            return 0
+        fi
+        printf '%s\n' ""
+    }
+
+
+    _wsl_integration_distro_listed() {
+        local distro_name="$1"
+        [[ "$WSL2" == true ]] || return 1
+        command -v powershell.exe &>/dev/null || return 1
+        [[ -n "$distro_name" ]] || return 1
+
+        local integrated_csv integrated_norm
+        integrated_csv="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedWslDistros' } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ',' } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+        integrated_norm=",${integrated_csv// /},"
+        [[ "$integrated_norm" == *",$distro_name,"* ]]
+    }
+
+    _wait_for_docker_socket_mount_after_autofix() {
+        local mount_wait_timeout="${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}"
+        if ! [[ "$mount_wait_timeout" =~ ^[0-9]+$ ]] || (( mount_wait_timeout < 10 )); then
+            mount_wait_timeout=30
+        fi
+
+        local elapsed=0
+        while (( elapsed < mount_wait_timeout )); do
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                ok "Docker socket mount doğrulandı (autofix sonrası)."
+                return 0
+            fi
+            sleep 2
+            ((elapsed += 2))
+        done
+        return 1
+    }
+
+    _docker_wsl_integration_postcheck() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+        local in_integrated=false default_covers=false
+        local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+        current_distro="$(_detect_current_wsl_distro_name)"
+        [[ -n "$current_distro" ]] || return 0
+
+        default_distro="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+        enable_default="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+        integrated_csv="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$found=\$false; \$keys=@('integratedWslDistros','IntegratedWslDistros','enabledWslIntegrations'); foreach (\$k in \$keys) { \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq \$k } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ','; \$found=\$true; break } }; if (-not \$found -and \$null -ne \$cfg.wsl) { \$nested=\$cfg.wsl.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedDistros' -or \$_.Name -ieq 'enabledWslIntegrations' } | Select-Object -First 1; if (\$null -ne \$nested -and \$null -ne \$cfg.wsl.(\$nested.Name)) { @(\$cfg.wsl.(\$nested.Name)) -join ',' } } }" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1)"
+
+        integrated_norm=",${integrated_csv// /},"
+        [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+
+        if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+            default_covers=true
+        fi
+
+        if [[ "$in_integrated" == true ]]; then
+            ok "WSL entegrasyonu '${current_distro}' için açık."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için kapalı olabilir."
+            fi
+            return 0
+        fi
+
+        if [[ "$default_covers" == true ]]; then
+            info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
+            warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için explicit açılması gerekir."
+            fi
+            return 0
+        fi
+
+        if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                if [[ "${_WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN:-false}" != "true" ]]; then
+                    info "Docker Desktop WSL Integration UI listesi henüz güncellenmedi; daemon socket erişilebilir, kurulum devam ediyor."
+                    _WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN=true
+                fi
+                return 0
+            fi
+            warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
+            info "Autofix sonrası Docker socket mount doğrulaması başlatılıyor (maks. ${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}sn, 2sn aralıklarla)."
+            if _wait_for_docker_socket_mount_after_autofix; then
+                return 0
+            fi
+            warn "Autofix sonrası Docker socket mount doğrulanamadı; daemon hazırlanıyor olabilir."
+            return 0
+        fi
+
+        local should_apply=false
+        if [[ "${WSL_INTEGRATION_AUTOFIX_ELIGIBLE:-false}" == "true" ]]; then
+            should_apply=true
+            info "Preflight '${current_distro}' için autofix-eligible işareti verdi; aynı oturumda tekrar prompt göstermeden otomatik düzeltme uygulanacak."
+        else
+            warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+        fi
+        if [[ "$should_apply" != true && ( "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ) ]]; then
+            should_apply=true
+            info "NO_INTERACTION/AUTO_INSTALL etkin: '${current_distro}' için Docker Desktop WSL entegrasyonu otomatik etkinleştirilecek."
+        elif [[ "$should_apply" != true ]]; then
+            local reply
+            reply=$(prompt_yes_no_with_timeout_default_yes "'${current_distro}' için Docker Desktop WSL Integration ayarı otomatik açılsın mı? [E/h]: ")
+            reply="${reply^^}"
+            if [[ "$reply" == "E" || "$reply" == "EVET" || "$reply" == "Y" || "$reply" == "YES" || -z "$reply" ]]; then
+                should_apply=true
+            fi
+        fi
+
+        if [[ "$should_apply" != true ]]; then
+            warn "WSL Integration otomatik güncellemesi atlandı. Docker Desktop > Settings > Resources > WSL Integration bölümünden '${current_distro}' anahtarını açın."
+            return 1
+        fi
+
+        if ! apply_wsl_integration_autofix "$current_distro"; then
+            warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
+            return 1
+        fi
+
+        info "Docker Desktop yeniden başlatıldı; WSL Integration ayarının uygulanması bekleniyor..."
+        local attempt
+        for attempt in $(seq 1 20); do
+            sleep 3
+            if _wsl_integration_distro_listed "$current_distro"; then
+                ok "Docker Desktop WSL Integration: '${current_distro}' artık aktif."
+                return 0
+            fi
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                info "Docker Desktop WSL Integration listesi henüz güncellenmedi ancak daemon socket erişilebilir; '${current_distro}' için doğrulama fonksiyonel olarak başarılı."
+                return 0
+            fi
+        done
+
+        warn "PowerShell autofix denendi fakat '${current_distro}' Docker Desktop tarafından hâlâ tanınmadı; Settings > Resources > WSL Integration üzerinden manuel açın."
+        return 1
+    }
+
     if ! docker_cli_healthy; then
         return 1
     fi
 
-    if docker info &>/dev/null; then
-        return 0
-    fi
+    if _docker_ready_with_socket; then return 0; fi
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
@@ -806,21 +1025,61 @@ ensure_docker_daemon_running() {
     fi
 
     if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
+        local desktop_timeout
+        desktop_timeout="${DOCKER_DESKTOP_READY_TIMEOUT:-240}"
+        if ! [[ "$desktop_timeout" =~ ^[0-9]+$ ]] || (( desktop_timeout < 30 )); then
+            desktop_timeout=240
+        fi
+        if [[ "${_DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT:-}" =~ ^[0-9]+$ ]]; then
+            local now_ts elapsed_since_autofix remaining_warmup
+            now_ts="$(date +%s)"
+            elapsed_since_autofix=$(( now_ts - _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT ))
+            if (( elapsed_since_autofix < 0 )); then
+                elapsed_since_autofix=0
+            fi
+            if (( elapsed_since_autofix < 300 )); then
+                remaining_warmup=$(( 300 - elapsed_since_autofix ))
+                desktop_timeout=$(( desktop_timeout + remaining_warmup ))
+                info "Preflight autofix sonrası Docker Desktop hâlâ ısınma penceresinde (${elapsed_since_autofix}sn); bekleme süresi ${remaining_warmup}sn uzatıldı (toplam ${desktop_timeout}sn)."
+            fi
+        fi
+        local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+        if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+            desktop_timeout=$(( desktop_timeout * 2 ))
+            info "WSL integration autofix bu oturumda uygulandığı için Docker Desktop bekleme süresi uzatıldı (${desktop_timeout}sn)."
+        fi
+
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
-        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. ${desktop_timeout}sn)..."
         local elapsed=0
-        while (( elapsed < 60 )); do
-            if docker info &>/dev/null; then
+        local sleep_step=3
+        local progress_mark=30
+        while (( elapsed < desktop_timeout )); do
+            if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
                 return 0
             fi
-            sleep 3
-            ((elapsed += 3))
+            sleep "$sleep_step"
+            ((elapsed += sleep_step))
+            if (( elapsed >= progress_mark )); then
+                info "Docker daemon hâlâ hazırlanıyor... (${elapsed}/${desktop_timeout}sn)"
+                progress_mark=$(( progress_mark + 30 ))
+            fi
+            if (( sleep_step < 12 )); then
+                sleep_step=$(( sleep_step * 2 ))
+                (( sleep_step > 12 )) && sleep_step=12
+            fi
         done
-        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
+        warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi (${desktop_timeout}sn)."
     fi
 
-    docker info &>/dev/null
+    if _docker_ready_with_socket; then return 0; fi
+
+    if [[ "$STRICT_DOCKER" == "true" ]]; then
+        fail "Docker daemon erişilemedi. --strict-docker / SIDAR_REQUIRE_DOCKER=1 etkin olduğu için kurulum fail-fast durduruldu."
+    fi
+
+    return 1
 }
 
 ensure_current_user_in_docker_group() {
@@ -949,7 +1208,7 @@ start_docker_services_or_fail() {
     rm -f "$stderr_file"
 
     if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
-        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
     fi
 
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
@@ -1008,6 +1267,43 @@ wait_for_compose_services_health() {
     done
 
     return 0
+}
+
+phase06_docker_daemon_gate_or_fail() {
+    local max_attempts=3
+    local attempt=1
+    local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+    while (( attempt <= max_attempts )); do
+        if docker info >/dev/null 2>&1; then
+            if (( attempt > 1 )); then
+                ok "Docker daemon doğrulaması ${attempt}. denemede başarılı."
+            fi
+            return 0
+        fi
+
+        warn "Phase 06 öncesi Docker daemon erişilemiyor (deneme ${attempt}/${max_attempts})."
+        if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel") ]]; then
+            info "Bu oturumda WSL integration autofix uygulandı; Docker Desktop açılışı gecikmiş olabilir."
+        fi
+
+        if (( attempt >= max_attempts )); then
+            break
+        fi
+
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            info "Etkileşimsiz mod: yeniden deneme öncesi 10sn bekleniyor."
+            sleep 10
+        else
+            info "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
+            clear_stdin_buffer
+            read -r -p "Devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
+        fi
+
+        ((attempt += 1))
+    done
+
+    fail "Phase 06 öncesi Docker daemon doğrulanamadı (${max_attempts} deneme). Docker Compose adımlarına geçilmeden kurulum durduruldu."
 }
 
 
@@ -1609,6 +1905,7 @@ verify_postgres_auth_with_psql() {
     if psql_output=$(
         PGPASSWORD="$db_password" psql \
             "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+            -w \
             -tAc "SELECT 1" 2>&1
     ); then
         return 0
@@ -1741,6 +2038,7 @@ try_recover_postgres_password_with_alter_user() {
             if command -v psql &>/dev/null; then
                 if PGPASSWORD="$candidate" psql \
                     "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+                    -w \
                     -v ON_ERROR_STOP=1 \
                     -c "ALTER USER \"${escape_sql_identifier_user}\" WITH PASSWORD '${escape_sql_literal_password}';" \
                     >/dev/null 2>&1; then
@@ -1812,6 +2110,7 @@ APP_RUNTIME_MODE="ask"
 ENABLE_AUDIO=true
 FORCE_POSTGRES_VOLUME_CLEANUP=false
 AUTO_INSTALL=false
+STRICT_DOCKER=false
 AUTO_RUNTIME_MODE="ask"
 AUTO_START_DOCKER_SERVICES="ask"
 AUTO_RESET_POSTGRES_VOLUMES="ask"
@@ -1847,13 +2146,14 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
   --cpu  Force CPU mode even when a GPU is detected
   --docker-only  Do not install PostgreSQL/Redis on the host; use Docker services only
   --runtime-mode=local|docker  Runtime mode: local=app local + infrastructure in Docker, docker=all services in Docker
+  --strict-docker  Fail-fast if Docker daemon cannot be reached after retries
   --force-postgres-volume-cleanup / --force-docker-cleanup  Enable project-scoped aggressive docker rm -f cleanup after DB password hardening
   --kubernetes / --helm  Use the Helm chart/Kubernetes flow instead of local installation
   --helm-release=<name>  Helm release name (default: sidar)
@@ -1896,18 +2196,21 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
+    SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
   --cpu  GPU algılansa bile CPU modunda kur
   --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan
   --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker
+  --strict-docker  Docker daemon hazır değilse retry sonunda fail-fast dur
   --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir
   --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap
   --helm-release=<ad>  Helm release adı (varsayılan: sidar)
@@ -1950,6 +2253,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
+    SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
 EOF
@@ -1993,6 +2298,7 @@ for arg in "$@"; do
         --docker-only) DOCKER_ONLY=true ;;
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
         --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
+        --strict-docker) STRICT_DOCKER=true ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
@@ -2034,6 +2340,8 @@ resolve_env_type_choice() {
 }
 
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
+SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
+STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
@@ -2148,21 +2456,58 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
+_visible_width() {
+    local value="${1-}"
+    python3 - "$value" <<'PY'
+import sys
+import unicodedata
+
+text = sys.argv[1] if len(sys.argv) > 1 else ""
+width = 0
+for ch in text:
+    if unicodedata.combining(ch):
+        continue
+    width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+print(width)
+PY
+}
+
+_pad_visible() {
+    local value="${1-}" target_width="${2:-0}"
+    local current_width pad_len
+    current_width="$(_visible_width "$value")"
+    pad_len=$(( target_width - current_width ))
+    if (( pad_len < 0 )); then
+        pad_len=0
+    fi
+    printf '%s%*s' "$value" "$pad_len" ""
+}
+
+_center_visible() {
+    local value="${1-}" target_width="${2:-60}"
+    local current_width left_pad right_pad
+    current_width="$(_visible_width "$value")"
+    left_pad=$(( (target_width - current_width) / 2 ))
+    (( left_pad < 0 )) && left_pad=0
+    right_pad=$(( target_width - current_width - left_pad ))
+    (( right_pad < 0 )) && right_pad=0
+    printf '%*s%s%*s' "$left_pad" "" "$value" "$right_pad" ""
+}
+
 banner() {
+
     local version_suffix=""
     local banner_text=""
+    local centered_banner=""
     if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
         version_suffix=" (v$INSTALL_SIDAR_VERSION)"
     fi
     banner_text="$(sidar_t banner_title)${version_suffix}"
+    centered_banner="$(_center_visible "$banner_text" 60)"
 
     echo -e "${BOLD}${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    if [[ -n "$version_suffix" ]]; then
-        printf "║          %-46s║\n" "$banner_text"
-    else
-        printf "║              %-38s║\n" "$banner_text"
-    fi
+    printf "║%s║\n" "$(_pad_visible "$centered_banner" 60)"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -2317,7 +2662,9 @@ log_host_ollama_runtime_diagnostics() {
             smi_cmd="nvidia-smi.exe"
         fi
 
-        if [[ "$ollama_ps_reports_gpu" == true ]]; then
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2: ollama ps doğrulaması yeterli; nvidia-smi compute-apps sorgusu atlandı."
+        elif [[ "$ollama_ps_reports_gpu" == true ]]; then
             info "GPU kullanımı ollama ps ile doğrulandı; nvidia-smi compute-apps sorgusu atlandı."
         elif [[ -n "$smi_cmd" ]]; then
             if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
@@ -2325,11 +2672,7 @@ log_host_ollama_runtime_diagnostics() {
                     info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
                     awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
                 else
-                    if [[ "$WSL2" == true ]]; then
-                        info "nvidia-smi çalıştı ancak Ollama süreci görünmedi; WSL2'de compute-apps sorgusu host süreçlerini göstermeyebilir."
-                    else
-                        warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
-                    fi
+                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
                 fi
             else
                 warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
@@ -2508,13 +2851,19 @@ install_system_dependencies() {
         local -a ns_source_files=()
         mapfile -t ns_source_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null" || true)
         if [[ "${#ns_source_files[@]}" -gt 0 ]]; then
-            info "NodeSource apt girdileri nodistro formatına normalize ediliyor..."
+            local -a ns_needs_normalize_files=()
+            mapfile -t ns_needs_normalize_files < <(sudo sh -c "grep -Rsl 'deb .*deb.nodesource.com/${node_target_series}' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | xargs -r grep -LE 'deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series}\\s+nodistro\\s+main'" || true)
             local src_file=""
-            for src_file in "${ns_source_files[@]}"; do
-                sudo sed -E -i \
-                    "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
-                    "$src_file"
-            done
+            if [[ "${#ns_needs_normalize_files[@]}" -gt 0 ]]; then
+                for src_file in "${ns_needs_normalize_files[@]}"; do
+                    sudo sed -E -i \
+                        "s#(deb(\\s+\\[[^]]+\\])?\\s+https?://deb\\.nodesource\\.com/${node_target_series})\\s+[[:alnum:]_.-]+\\s+main#\\1 nodistro main#g" \
+                        "$src_file"
+                done
+                ok "NodeSource apt girdileri nodistro formatına normalize edildi (${#ns_needs_normalize_files[@]} dosya)."
+            else
+                debug "NodeSource apt girdileri zaten nodistro formatında; normalize adımı değişiklik yapmadan atlandı."
+            fi
         fi
 
         if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
@@ -2728,8 +3077,24 @@ ensure_prerequisites() {
         ensure_current_user_in_docker_group
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
+            verify_wsl_integration_listed || true
         else
             warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
+            verify_wsl_integration_listed || true
+            if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu."
+            fi
+
+            info "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
+            clear_stdin_buffer
+            read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
+
+            if ensure_docker_daemon_running; then
+                ok "Docker daemon manuel müdahale sonrası erişilebilir."
+                verify_wsl_integration_listed || true
+            else
+                fail "Docker daemon manuel yeniden denemeden sonra da erişilemedi. Kurulum devam ettirilmiyor."
+            fi
         fi
         if docker compose version &>/dev/null; then
             ok "Docker Compose eklentisi mevcut."
@@ -2771,10 +3136,11 @@ ensure_prerequisites() {
         else
             # Windows'ta kurulu ama WSL2'de çalışmıyorsa entegrasyon bozuktur
             info "Docker şu anda WSL içinde kullanılamıyor; yeni bir dağıtım sonrası Docker Desktop entegrasyonu kopmuş olabilir."
-            info "Lütfen şu adımları uygulayın:"
+            info "WSL Integration otomatik düzeltmesi denendi. Lütfen doğrulama için şu adımları uygulayın:"
             echo "  1. Windows'ta Docker Desktop'ı açın."
-            echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-            echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+            echo "  2. Settings > Resources > WSL Integration menüsünde '${WSL_DISTRO_NAME:-Ubuntu}' dağıtımının açık olduğunu doğrulayın."
+            echo "  3. Gerekirse Apply & restart yapın."
+            echo "  4. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             echo ""
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
@@ -2785,13 +3151,13 @@ ensure_prerequisites() {
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! command -v docker &>/dev/null; then
-                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. Docker Desktop > Settings > Resources > WSL Integration altında Ubuntu entegrasyonunu açıp yeniden deneyin."
+                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             if ! docker_cli_healthy; then
                 fail "[ENTER] sonrası docker CLI hâlâ sağlıksız. Docker Desktop entegrasyonunu ve WSL erişimini doğrulayın."
             fi
             if ! docker info &>/dev/null; then
-                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). Docker Desktop'ı açıp entegrasyonu Apply & restart ile yenileyin."
+                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             ok "WSL2 Docker Desktop entegrasyonu doğrulandı (docker CLI + docker info)."
         fi
@@ -2853,8 +3219,9 @@ ensure_prerequisites() {
 
     # Servisin anlık olarak yanıt verip vermediğini kontrol et
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum 10 saniye)..."
-    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" 10 1; then
+    local ollama_healthcheck_wait_seconds="${OLLAMA_API_HEALTHCHECK_MAX_WAIT_SECONDS:-30}"
+    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum ${ollama_healthcheck_wait_seconds} saniye)..."
+    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" "$ollama_healthcheck_wait_seconds" 1; then
         ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
     else
         warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
@@ -3372,19 +3739,23 @@ ASOUNDRC
         local wmic_bytes=""
         local ps_bytes=""
 
-        if command -v cmd.exe &>/dev/null; then
-            wmic_bytes=$(cmd.exe /c "wmic ComputerSystem get TotalPhysicalMemory /value" 2>/dev/null \
-                | tr -d '\r' \
-                | awk -F= '/^TotalPhysicalMemory=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}')
-        fi
-        if [[ -n "$wmic_bytes" ]]; then
-            total_bytes="$wmic_bytes"
-        elif command -v powershell.exe &>/dev/null; then
+        # Win11 24H2+ sürümlerde WMIC kaldırılabildiği için önce PowerShell/CIM yolunu dene.
+        if command -v powershell.exe &>/dev/null; then
             ps_bytes=$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory" 2>/dev/null \
                 | tr -d '\r' \
-                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}')
+                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}' || true)
             if [[ -n "$ps_bytes" ]]; then
                 total_bytes="$ps_bytes"
+            fi
+        fi
+        if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]] \
+            && command -v cmd.exe &>/dev/null \
+            && command -v wmic.exe &>/dev/null; then
+            wmic_bytes=$(cmd.exe /c "wmic ComputerSystem get TotalPhysicalMemory /value" 2>/dev/null \
+                | tr -d '\r' \
+                | awk -F= '/^TotalPhysicalMemory=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}' || true)
+            if [[ -n "$wmic_bytes" ]]; then
+                total_bytes="$wmic_bytes"
             fi
         fi
 
@@ -3471,10 +3842,60 @@ ASOUNDRC
         ' "$cfg_file" > "$tmp_file"
 
         if ! cmp -s "$cfg_file" "$tmp_file"; then
-            mv "$tmp_file" "$cfg_file"
-            return 0
+            if mv "$tmp_file" "$cfg_file" 2>/dev/null || { cp "$tmp_file" "$cfg_file" && rm -f "$tmp_file"; }; then
+                return 0
+            fi
+            rm -f "$tmp_file"
+            return 2
         fi
 
+        rm -f "$tmp_file"
+        return 1
+    }
+
+    # [wsl2] bölümünde anahtar değerini zorla günceller (ilkini değiştirir, tekrarları temizler).
+    _set_wsl2_key_value() {
+        local cfg_file="$1"
+        local cfg_key="$2"
+        local cfg_value="$3"
+        local tmp_file
+        tmp_file=$(mktemp)
+
+        awk -v key="$cfg_key" -v value="$cfg_value" '
+            BEGIN { in_wsl2=0; set_key=0 }
+            {
+                if ($0 ~ /^\[.*\]$/) {
+                    if (in_wsl2 && !set_key) {
+                        print key "=" value
+                        set_key=1
+                    }
+                    in_wsl2 = ($0 == "[wsl2]")
+                    print
+                    next
+                }
+                if (in_wsl2 && $0 ~ ("^" key "=")) {
+                    if (!set_key) {
+                        print key "=" value
+                        set_key=1
+                    }
+                    next
+                }
+                print
+            }
+            END {
+                if (in_wsl2 && !set_key) {
+                    print key "=" value
+                }
+            }
+        ' "$cfg_file" > "$tmp_file"
+
+        if ! cmp -s "$cfg_file" "$tmp_file"; then
+            if mv "$tmp_file" "$cfg_file" 2>/dev/null || { cp "$tmp_file" "$cfg_file" && rm -f "$tmp_file"; }; then
+                return 0
+            fi
+            rm -f "$tmp_file"
+            return 2
+        fi
         rm -f "$tmp_file"
         return 1
     }
@@ -3501,10 +3922,20 @@ WSLCFG
             fi
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory"; then
-                ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
-                changed=true
-            fi
+            local ensure_memory_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory" || ensure_memory_rc=$?
+            case $ensure_memory_rc in
+                0)
+                    ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
+                    changed=true
+                    ;;
+                1)
+                    : # no-op: zaten istenen durumda
+                    ;;
+                2)
+                    warn "WSL2: .wslconfig memory satırı güncellenemedi (dosya yazma hatası)."
+                    ;;
+            esac
 
             local cur_mem cur_mem_gb
             cur_mem=$(awk '
@@ -3515,6 +3946,36 @@ WSLCFG
             cur_mem_gb=$(_parse_gb "$cur_mem")
             if [[ "$cur_mem_gb" -lt "$target_memory_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — bu makine için düşük olabilir (önerilen: ${target_memory})."
+                local should_upgrade_mem=false
+                if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                    should_upgrade_mem=true
+                else
+                    local upgrade_mem_reply
+                    upgrade_mem_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 memory=${cur_mem} düşük görünüyor. ${target_memory} değerine otomatik yükseltelim mi? [E/h]: ")
+                    upgrade_mem_reply="${upgrade_mem_reply^^}"
+                    if [[ "$upgrade_mem_reply" == "E" || "$upgrade_mem_reply" == "EVET" || "$upgrade_mem_reply" == "Y" || "$upgrade_mem_reply" == "YES" || -z "$upgrade_mem_reply" ]]; then
+                        should_upgrade_mem=true
+                    fi
+                fi
+                if [[ "$should_upgrade_mem" == true ]]; then
+                    local set_memory_rc=0
+                    _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory" || set_memory_rc=$?
+                    case $set_memory_rc in
+                        0)
+                            ok "WSL2: .wslconfig memory ${cur_mem} -> ${target_memory} olarak yükseltildi."
+                            changed=true
+                            cur_mem="$target_memory"
+                            ;;
+                        2)
+                            warn "WSL2: .wslconfig memory yazılamadı (${cur_mem} -> ${target_memory}). Lütfen dosya izinlerini kontrol edin."
+                            ;;
+                        *)
+                            warn "WSL2: .wslconfig memory düşük kaldı (${cur_mem}). İsterseniz daha sonra ${target_memory} olarak güncelleyebilirsiniz."
+                            ;;
+                    esac
+                else
+                    warn "WSL2: .wslconfig memory düşük kaldı (${cur_mem}). İsterseniz daha sonra ${target_memory} olarak güncelleyebilirsiniz."
+                fi
             elif [[ "$cur_mem_gb" -ge "$host_ram_gb" ]]; then
                 warn "WSL2: .wslconfig memory=${cur_mem} — Windows host RAM'i (${host_ram_gb}GB) ile aynı/üstü; host için RAM tamponu bırakmıyor olabilir."
             else
@@ -3522,10 +3983,20 @@ WSLCFG
             fi
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
-            if _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap"; then
-                ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
-                changed=true
-            fi
+            local ensure_swap_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap" || ensure_swap_rc=$?
+            case $ensure_swap_rc in
+                0)
+                    ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
+                    changed=true
+                    ;;
+                1)
+                    : # no-op: zaten istenen durumda
+                    ;;
+                2)
+                    warn "WSL2: .wslconfig swap satırı güncellenemedi (dosya yazma hatası)."
+                    ;;
+            esac
 
             local cur_swap cur_swap_gb
             cur_swap=$(awk '
@@ -3536,6 +4007,36 @@ WSLCFG
             cur_swap_gb=$(_parse_gb "$cur_swap")
             if [[ "$cur_swap_gb" -lt "$target_swap_gb" ]]; then
                 warn "WSL2: .wslconfig swap=${cur_swap} — bu makine için düşük olabilir (önerilen: ${target_swap})."
+                local should_upgrade_swap=false
+                if [[ "$SIDAR_WSL_AUTO_UPGRADE" == "true" || "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+                    should_upgrade_swap=true
+                else
+                    local upgrade_swap_reply
+                    upgrade_swap_reply=$(prompt_yes_no_with_timeout_default_yes "WSL2 swap=${cur_swap} düşük görünüyor. ${target_swap} değerine otomatik yükseltelim mi? [E/h]: ")
+                    upgrade_swap_reply="${upgrade_swap_reply^^}"
+                    if [[ "$upgrade_swap_reply" == "E" || "$upgrade_swap_reply" == "EVET" || "$upgrade_swap_reply" == "Y" || "$upgrade_swap_reply" == "YES" || -z "$upgrade_swap_reply" ]]; then
+                        should_upgrade_swap=true
+                    fi
+                fi
+                if [[ "$should_upgrade_swap" == true ]]; then
+                    local set_swap_rc=0
+                    _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap" || set_swap_rc=$?
+                    case $set_swap_rc in
+                        0)
+                            ok "WSL2: .wslconfig swap ${cur_swap} -> ${target_swap} olarak yükseltildi."
+                            changed=true
+                            cur_swap="$target_swap"
+                            ;;
+                        2)
+                            warn "WSL2: .wslconfig swap yazılamadı (${cur_swap} -> ${target_swap}). Lütfen dosya izinlerini kontrol edin."
+                            ;;
+                        *)
+                            warn "WSL2: .wslconfig swap düşük kaldı (${cur_swap}). İsterseniz daha sonra ${target_swap} olarak güncelleyebilirsiniz."
+                            ;;
+                    esac
+                else
+                    warn "WSL2: .wslconfig swap düşük kaldı (${cur_swap}). İsterseniz daha sonra ${target_swap} olarak güncelleyebilirsiniz."
+                fi
             else
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
@@ -4519,6 +5020,8 @@ prompt_post_install_sidar_env_mode() {
         ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
+        info "Development ortamı seçildi; veritabanı migrasyonu tekrar doğrulanıyor..."
+        run_migrations
     fi
 
     ok "Sidar kullanıma hazır!"
@@ -5213,6 +5716,10 @@ PY
         DB_USER=$(echo "$DB_CONN_INFO" | cut -d'|' -f3)
         DB_NAME=$(echo "$DB_CONN_INFO" | cut -d'|' -f4)
         DB_PASSWORD=$(echo "$DB_CONN_INFO" | cut -d'|' -f5-)
+        if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
+            DB_PASSWORD="$POSTGRES_PASSWORD"
+        fi
+        ensure_postgres_databases_exist "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASSWORD" "$DB_NAME"
 
         if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD=()
@@ -5346,6 +5853,51 @@ PY
     fi
 }
 
+ensure_postgres_databases_exist() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_password="$4"
+    local primary_db="$5"
+    local -a required_dbs=("$primary_db" "sidar" "sidar_development" "sidar_test")
+    local db_name=""
+    local unique_dbs=""
+
+    if ! command -v psql &>/dev/null; then
+        warn "psql bulunamadı; veritabanı varlık kontrolü atlandı."
+        return 0
+    fi
+
+    unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
+    while IFS= read -r db_name; do
+        [[ -n "$db_name" ]] || continue
+        local psql_err_file
+        psql_err_file="$(mktemp)"
+        if ! PGPASSWORD="$db_password" psql -w \
+            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
+            if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                rm -f "$psql_err_file"
+                fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+            fi
+            info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
+            if ! PGPASSWORD="$db_password" psql -w \
+                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+                -v ON_ERROR_STOP=1 \
+                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
+                if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                    rm -f "$psql_err_file"
+                    fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+                fi
+                rm -f "$psql_err_file"
+                return 1
+            fi
+            ok "Veritabanı hazır: ${db_name}"
+        fi
+        rm -f "$psql_err_file"
+    done <<<"$unique_dbs"
+}
+
 
 seed_rag_metadata_after_migrations() {
     local seed_mode="${AUTO_SEED_RAG_METADATA:-true}"
@@ -5394,7 +5946,7 @@ prepare_docker_for_migrations() {
     if ! ensure_docker_daemon_running; then
         warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
         if [[ "$WSL2" == true ]]; then
-            info "WSL2 için öneri: Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+            info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
         fi
         info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
         MIGRATION_DOCKER_POLICY="disabled"
@@ -5810,10 +6362,12 @@ run_test_artifact_audit() {
 
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
+    local summary_banner=""
+    summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
     echo ""
     echo -e "${BOLD}${GREEN}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║              Sidar AI Kurulumu Tamamlandı!                  ║"
+    printf "║%s║\n" "$(_pad_visible "$summary_banner" 60)"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 
@@ -6000,7 +6554,7 @@ launch_docker_services() {
             else
                 warn "Docker motoruna erişilemediği için arka plan servis başlatma adımı atlandı."
                 if [[ "$WSL2" == true ]]; then
-                    info "Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+                    info "$(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
                 fi
                 info "Entegrasyon tamamlandıktan sonra manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d"
                 return

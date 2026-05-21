@@ -29,6 +29,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker_setup/postgres/init.d/01_create_envs.sql:/docker-entrypoint-initdb.d/01_create_envs.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sidar} -d $${POSTGRES_DB:-sidar}"]
       interval: 5s

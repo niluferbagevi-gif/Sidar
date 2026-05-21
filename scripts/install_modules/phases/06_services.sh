@@ -2,9 +2,14 @@
 
 sidar_phase_local_migrations_and_models() {
     sidar_source_install_utils "ollama_models.sh"
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
+        local pg_pw="${POSTGRES_PASSWORD:-}"
+        if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
+            pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
+        fi
+        ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
@@ -232,9 +237,12 @@ sync_database_passwords_before_smoke_tests() {
 }
 
 sidar_phase_services_and_validation() {
+    if declare -F phase06_docker_daemon_gate_or_fail >/dev/null 2>&1; then
+        phase06_docker_daemon_gate_or_fail
+    fi
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
     launch_docker_services
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         sync_database_passwords_before_smoke_tests
         run_smoke_tests
         run_test_artifact_audit

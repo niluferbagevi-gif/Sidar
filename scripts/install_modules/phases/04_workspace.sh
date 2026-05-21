@@ -2,7 +2,7 @@
 
 sidar_phase_workspace_config() {
     sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"
-    if [[ "$APP_RUNTIME_MODE_SELECTED" == "local" ]]; then
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # Modern paket yönetimi standardı: ortam kurulumu yalnızca uv venv + uv sync ile yapılır.
         install_uv_cli
         create_uv_venv

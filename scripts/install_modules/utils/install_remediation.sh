@@ -17,6 +17,13 @@ sidar_install_auto_heal_enabled() {
     esac
 }
 
+wsl_integration_remediation_message() {
+    local distro="${1:-${WSL_DISTRO_NAME:-Ubuntu}}"
+    cat <<EOF
+Docker Desktop WSL Integration için '${distro}' dağıtımında otomatik düzeltme denendi ancak başarısız oldu. Lütfen Docker Desktop > Settings > Resources > WSL Integration bölümünde '${distro}' için explicit toggle'ı açıp Apply & restart yapın. Not: "Enable integration with my default WSL distro" açık olsa bile yalnızca default distro'yu kapsar; default distro değiştiğinde explicit toggle kapalıysa Docker socket mount'u bozulabilir.
+EOF
+}
+
 sidar_phase_index() {
     case "$1" in
         01_context) echo 10 ;;
@@ -28,6 +35,22 @@ sidar_phase_index() {
         06_services) echo 70 ;;
         07_finish) echo 80 ;;
         *) echo 999 ;;
+    esac
+}
+
+sidar_phase_is_informational() {
+    local phase="$1"
+    case "$phase" in
+        01_context) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidar_is_non_retryable_failure_code() {
+    local exit_code="${1:-0}"
+    case "$exit_code" in
+        2|127) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
@@ -164,6 +187,10 @@ sidar_phase_remediation_strategy() {
 sidar_resume_after_remediation() {
     local phase="$1"
     local next_attempt="${2:-1}"
+    local resume_runtime_mode_selected="${APP_RUNTIME_MODE_SELECTED:-}"
+    local resume_runtime_mode="${APP_RUNTIME_MODE:-}"
+    local resume_gpu_available="${GPU_AVAILABLE:-}"
+    local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
 
     warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
@@ -172,6 +199,11 @@ sidar_resume_after_remediation() {
         SIDAR_INSTALL_RESUME_FROM_PHASE="$phase" \
         SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt" \
         SIDAR_INSTALL_AUTO_HEAL="${SIDAR_INSTALL_AUTO_HEAL:-1}" \
+        SIDAR_INSTALL_RESUME_CWD="$resume_cwd" \
+        APP_RUNTIME_MODE_SELECTED="$resume_runtime_mode_selected" \
+        APP_RUNTIME_MODE="$resume_runtime_mode" \
+        GPU_AVAILABLE="$resume_gpu_available" \
+        bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \
         "$ORIGINAL_SCRIPT_PATH" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
@@ -185,9 +217,21 @@ sidar_handle_install_failure() {
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
 
     [[ -n "$phase" ]] || return 1
+    if sidar_phase_is_informational "$phase"; then
+        warn "Auto-heal: ${phase} bilgilendirme fazı; retry/resume atlanıyor (warn-only)."
+        sidar_write_remediation_report "$phase" "informational-phase" "warn-only;no-retry;no-resume"
+        return 1
+    fi
     sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
+
+    if sidar_is_non_retryable_failure_code "$exit_code"; then
+        warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
+        sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+
     if (( attempt >= max_attempts )); then
         warn "Auto-heal: ${phase} fazı için retry limiti aşıldı (${attempt}/${max_attempts})."
         return 1

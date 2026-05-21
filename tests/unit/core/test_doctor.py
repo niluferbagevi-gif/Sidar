@@ -1127,3 +1127,19 @@ def test_database_env_reports_database_url_override_source(monkeypatch, tmp_path
     assert f"DATABASE_URL is overridden in {database_env}" in check.message
     assert check.details["database_url_source"] == str(database_env)
     assert check.details["postgres_password_source"] == str(secret_env)
+
+
+def test_check_pgvector_ready_fails_when_extension_missing(monkeypatch):
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+    async def _fake_probe(database_url, timeout_seconds=0.25):
+        return {"select_1": True, "pgvector_extension_installed": False}
+
+    monkeypatch.setattr(doctor, "_probe_postgres_connectivity", _fake_probe)
+
+    check = doctor.check_pgvector_ready()
+
+    assert check.status == "fail"
+    assert "extension is not installed" in check.message
+    assert check.details["required"] is True
+    assert check.details["auto_fix"] == "docker compose pull postgres && docker compose up -d postgres"

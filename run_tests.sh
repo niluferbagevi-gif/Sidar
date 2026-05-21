@@ -246,11 +246,13 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
+  RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
 else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
+  RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -864,6 +866,29 @@ PY
   fi
 }
 
+run_bats_shell_tests() {
+  if [ "${RUN_BATS_TESTS}" != "1" ]; then
+    echo "ℹ️ BATS shell testleri atlandı (RUN_BATS_TESTS=${RUN_BATS_TESTS})."
+    return 0
+  fi
+
+  if ! command -v bats >/dev/null 2>&1; then
+    echo "⚠️ BATS bulunamadı; shell testleri atlandı (kurulum: bats)."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  echo "🐚 BATS shell testleri çalıştırılıyor..."
+  if bats tests/shell; then
+    echo "✅ BATS shell testleri geçti."
+    return 0
+  fi
+
+  echo "❌ BATS shell testleri başarısız."
+  BACKEND_EXIT_CODE=1
+  return 1
+}
+
 enforce_combined_coverage_gate() {
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
     echo "ℹ️ Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı."
@@ -947,6 +972,7 @@ PY_RATCHET_GATE
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
 if ensure_uv_available && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
+  run_bats_shell_tests
   update_progressive_coverage_gate
 else
   echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."

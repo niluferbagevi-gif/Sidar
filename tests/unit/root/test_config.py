@@ -1869,3 +1869,19 @@ def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(mon
     assert observed_during_second_reload
     assert set(observed_during_second_reload) == {"postgresql://sidar:first@localhost:5432/sidar"}
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:second@localhost:5432/sidar"
+
+
+def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
+    monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", False)
+    caplog.set_level("DEBUG", logger="sidar")
+
+    config._log_first_load_info("first-load-message")
+    monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", True)
+    config._log_first_load_info("reload-message")
+
+    assert "first-load-message" in caplog.text
+    assert "reload-message" in caplog.text
+    first_record = next(r for r in caplog.records if "first-load-message" in r.message)
+    second_record = next(r for r in caplog.records if "reload-message" in r.message)
+    assert first_record.levelname == "INFO"
+    assert second_record.levelname == "DEBUG"
