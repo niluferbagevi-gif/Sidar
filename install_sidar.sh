@@ -253,9 +253,54 @@ download_remote_install_modules() {
     done
 }
 
+bootstrap_single_file_install_from_repo() {
+    local existing_repo_dir=""
+    local bootstrap_repo_url="${SIDAR_REPO_URL:-${REPO_URL:-${SIDAR_REPO_URL_DEFAULT:-https://github.com/niluferbagevi-gif/Sidar.git}}}"
+    local bootstrap_target_dir="${TARGET_DIR:-$HOME/Sidar}"
+
+    if [[ -d "$HOME/Sidar/.git" ]]; then
+        existing_repo_dir="$HOME/Sidar"
+    elif [[ -d "$bootstrap_target_dir/.git" ]]; then
+        existing_repo_dir="$bootstrap_target_dir"
+    fi
+
+    if [[ -n "$existing_repo_dir" ]]; then
+        INSTALL_MODULE_DIR="${existing_repo_dir}/scripts/install_modules"
+        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+        if [[ -f "$INSTALL_HELPERS_MODULE" ]]; then
+            ok "Mevcut Sidar deposu bulundu; kurulum modülleri repo içinden kullanılacak: $INSTALL_MODULE_DIR"
+            return 0
+        fi
+        warn "Mevcut repo bulundu ancak kurulum modülleri eksik: $INSTALL_HELPERS_MODULE"
+    fi
+
+    if command -v git &>/dev/null; then
+        if [[ -d "$bootstrap_target_dir/.git" ]]; then
+            info "Mevcut Sidar deposu güncelleniyor: $bootstrap_target_dir"
+            (
+                cd "$bootstrap_target_dir"
+                git pull --rebase origin main
+            ) || fail "Tek dosyalık bootstrap için mevcut repo güncellenemedi: $bootstrap_target_dir"
+        else
+            info "Tek dosyalık bootstrap: önce repo klonlanıyor: $bootstrap_repo_url → $bootstrap_target_dir"
+            git clone --depth=1 "$bootstrap_repo_url" "$bootstrap_target_dir" || fail "Tek dosyalık bootstrap için repo klonlanamadı: $bootstrap_repo_url"
+        fi
+
+        info "Repo bootstrap tamamlandı; kurulum scripti repo üzerinden yeniden başlatılıyor."
+        exec "$bootstrap_target_dir/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    warn "git bulunamadı; tek dosyalık fallback olarak uzaktan modül indirme akışı kullanılacak."
+    return 1
+}
+
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı."
+    if bootstrap_single_file_install_from_repo; then
+        fail "Repo bootstrap akışı beklenmedik şekilde geri döndü."
+    fi
+    warn "Repo bootstrap kullanılamadı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
