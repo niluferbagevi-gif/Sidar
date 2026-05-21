@@ -767,8 +767,8 @@ install_docker_cli_from_apt() {
 
 wsl_powershell_read() {
     local ps_command="$1"
-    powershell.exe -NoProfile -Command "$ps_command" 2>/dev/null \
-        | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1
+    powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; \$OutputEncoding=[System.Text.Encoding]::UTF8; $ps_command" 2>/dev/null \
+        | tr -d '\r' | tail -n1
 }
 
 ensure_docker_cli_available() {
@@ -812,6 +812,10 @@ verify_wsl_integration_listed() {
     local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
     local in_integrated=false default_covers=false
     local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+    local docker_socket_ready=false
+    if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null || docker info &>/dev/null; then
+        docker_socket_ready=true
+    fi
 
     current_distro="${WSL_DISTRO_NAME:-}"
     if [[ -z "$current_distro" ]]; then
@@ -839,7 +843,15 @@ verify_wsl_integration_listed() {
         return 0
     fi
     if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
+        if [[ "$docker_socket_ready" == true ]]; then
+            info "Docker Desktop WSL Integration UI listesi '${current_distro}' için gecikmeli görünebilir; daemon socket erişilebilir."
+            return 0
+        fi
         warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
+        return 0
+    fi
+    if [[ "$docker_socket_ready" == true ]]; then
+        info "Docker daemon socket erişilebilir; '${current_distro}' için WSL Integration UI listesi ile runtime durum farklı olabilir."
         return 0
     fi
     warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
@@ -966,6 +978,10 @@ ensure_docker_daemon_running() {
             should_apply=true
             info "Preflight '${current_distro}' için autofix-eligible işareti verdi; aynı oturumda tekrar prompt göstermeden otomatik düzeltme uygulanacak."
         else
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null || docker info &>/dev/null; then
+                info "Docker daemon socket erişilebilir; '${current_distro}' için WSL Integration UI listesi gecikmeli/yanıltıcı olabilir."
+                return 0
+            fi
             warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
         fi
         if [[ "$should_apply" != true && ( "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ) ]]; then
