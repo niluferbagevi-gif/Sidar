@@ -2127,7 +2127,6 @@ PY
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
 # Geliştirme bağımlılıkları Sidar self-healing için standart kurulumun parçasıdır.
-INSTALL_DEV=true
 UPGRADE_LOCK=false
 ALLOW_FULL_ACCESS=false
 FORCE_CPU=false
@@ -2300,7 +2299,7 @@ EOF
 INSTALL_SUBCOMMAND="full"
 for arg in "$@"; do
     case "$arg" in
-        --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ; INSTALL_DEV=true ;;
+        --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ;;
         --upgrade-lock) UPGRADE_LOCK=true ;;
         --i-understand-full-access) ALLOW_FULL_ACCESS=true ;;
         doctor|prepare-system|sync-deps|provision-models|smoke) INSTALL_SUBCOMMAND="$arg" ;;
@@ -3571,7 +3570,7 @@ setup_react_frontend() {
         warn "Sadece Windows Interop node bulundu ($(command -v node)). React build için Linux Node.js kullanılmalı."
     fi
 
-    if [[ "$FORCE_REACT_BUILD" != true && "$INSTALL_DEV" == false && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
+    if [[ "$FORCE_REACT_BUILD" != true && -d "$REACT_DIR/dist" && -d "$REACT_DIR/node_modules" ]]; then
         ok "React Web UI zaten build edilmiş. Yeniden derleme atlanıyor (--build-ui ile zorlayabilirsiniz)."
         REACT_UI_STATUS="hazır_cache"
         return
