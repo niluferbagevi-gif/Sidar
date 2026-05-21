@@ -44,8 +44,8 @@ sidar_report_wsl_gpu_problem() {
 
 wsl_powershell_read() {
     local ps_command="$1"
-    powershell.exe -NoProfile -Command "$ps_command" 2>/dev/null \
-        | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | tail -n1
+    powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; \$OutputEncoding=[System.Text.Encoding]::UTF8; $ps_command" 2>/dev/null \
+        | tr -d '\r' | tail -n1
 }
 
 run_wsl2_gpu_preflight() {
@@ -171,7 +171,26 @@ run_wsl2_gpu_preflight() {
 }
 
 sidar_windows_json_sanitize() {
-    sed '1s/^\xEF\xBB\xBF//' | tr -d '\r'
+    python3 -c '
+import sys
+
+raw = sys.stdin.buffer.read()
+if not raw:
+    raise SystemExit(0)
+
+if raw.startswith(b"\xff\xfe"):
+    text = raw.decode("utf-16le", errors="replace")
+elif raw.startswith(b"\xfe\xff"):
+    text = raw.decode("utf-16be", errors="replace")
+elif raw.startswith(b"\xef\xbb\xbf"):
+    text = raw.decode("utf-8-sig", errors="replace")
+elif b"\x00" in raw:
+    text = raw.decode("utf-16le", errors="replace")
+else:
+    text = raw.decode("utf-8", errors="replace")
+
+sys.stdout.write(text.replace("\r", ""))
+'
 }
 
 sidar_read_docker_settings_json() {
