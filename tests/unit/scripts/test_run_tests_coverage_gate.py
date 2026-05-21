@@ -498,6 +498,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
     expected_modules = (
         "install_helpers.sh",
         "utils/install_remediation.sh",
+        "utils/wsl_integration_autofix.ps1",
         "utils/wsl_gpu_preflight.sh",
         "utils/gpu_utils.sh",
         "utils/python_env.sh",
