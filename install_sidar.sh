@@ -147,6 +147,10 @@ sidar_t() {
 
 ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
 info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
+debug() {
+    [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
+    echo -e "${BLUE}🔍  $*${NC}" >&2
+}
 warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
     echo -e "${RED}❌  $*${NC}" >&2
