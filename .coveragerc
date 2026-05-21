@@ -43,3 +43,5 @@ exclude_lines =
 
 [html]
 directory = htmlcov
+title = Sidar Test Coverage
+extra_css = assets/dark_mode.css
