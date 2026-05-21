@@ -68,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     zstd \
+    # docker.io: docker-out-of-docker erişimi için (sock mount edildiğinde)
     docker.io \
     portaudio19-dev \
     python3-pyaudio \
