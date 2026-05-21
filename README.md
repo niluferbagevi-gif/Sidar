@@ -459,6 +459,9 @@ Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirir; betik repo ch
 yoksa `scripts/install_modules/` altındaki güncel yardımcı ve faz modüllerini
 GitHub üzerinden otomatik indirir. Böylece kurulum tek parça bir araç gibi
 hissedilirken kaynak kod modüler kalır:
+Tek dosyalık çalıştırmada `install_sidar.sh` önce `~/Sidar` altına repoyu klonlar,
+sonra klonlanan kopyadan kendini re-exec eder; betiği zaten klonlanmış repo
+dizininden çalıştırırsanız bu ek bootstrap adımı atlanır.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
