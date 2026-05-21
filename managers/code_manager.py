@@ -581,6 +581,13 @@ class CodeManager:
                 self._warn_gpu_image_runtime_mismatch(candidate)
                 return
 
+        logger.warning(
+            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
+            "Öneri: `docker build -t sidar:latest .` ve `.env` içine `DOCKER_TEST_IMAGE=sidar:latest` ekleyin "
+            "veya host ortamında `uv sync --frozen --all-extras` çalıştırın.",
+            self.docker_test_image,
+        )
+
     def _gpu_runtime_available(self) -> bool:
         cached = getattr(self, "_gpu_runtime_available_cached", None)
         if cached is not None:

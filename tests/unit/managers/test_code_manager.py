@@ -2314,14 +2314,14 @@ def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager,
 
     def fake_run(cmd, **kwargs):
         inspected.append(cmd)
-        return SimpleNamespace(returncode=0 if cmd[-1] == "sidar-gpu:latest" else 1)
+        return SimpleNamespace(returncode=0 if cmd[-1] == "sidar:latest" else 1)
 
     monkeypatch.setattr(cm.subprocess, "run", fake_run)
 
     manager._autodetect_project_test_image()
 
-    assert manager.docker_test_image == "sidar-gpu:latest"
-    assert [cmd[-1] for cmd in inspected] == ["sidar:latest", "sidar-gpu:latest"]
+    assert manager.docker_test_image == "sidar:latest"
+    assert [cmd[-1] for cmd in inspected] == ["sidar:latest"]
 
 
 def test_autodetect_project_test_image_remaps_missing_legacy_explicit_image(manager, monkeypatch):
@@ -2357,7 +2357,9 @@ def test_autodetect_project_test_image_respects_explicit_override(manager, monke
     assert manager.docker_test_image == "custom:test"
 
 
-def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(manager, monkeypatch):
+def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(
+    manager, monkeypatch, caplog
+):
     manager.docker_available = True
     manager.docker_client = None
     manager.docker_test_image = manager.docker_image
@@ -2370,6 +2372,8 @@ def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(ma
     manager._autodetect_project_test_image()
 
     assert manager.docker_test_image == manager.docker_image
+    assert "DOCKER_TEST_IMAGE otomatik bulunamadı" in caplog.text
+    assert "docker build -t sidar:latest ." in caplog.text
 
 
 def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(manager) -> None:
