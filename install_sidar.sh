@@ -805,7 +805,7 @@ ensure_docker_cli_available() {
     install_docker_cli_from_apt
 }
 
-verify_wsl_integration_listed() {
+    verify_wsl_integration_listed() {
     [[ "$WSL2" == true ]] || return 0
     command -v powershell.exe &>/dev/null || return 0
 
@@ -844,7 +844,7 @@ verify_wsl_integration_listed() {
     fi
     if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
         if [[ "$docker_socket_ready" == true ]]; then
-            info "Docker Desktop WSL Integration UI listesi '${current_distro}' için gecikmeli görünebilir; daemon socket erişilebilir."
+            ok "WSL Integration runtime doğrulandı: daemon socket erişilebilir (UI listesi '${current_distro}' için gecikmeli olabilir)."
             return 0
         fi
         warn "Docker Desktop WSL Integration hâlâ '${current_distro}' için kapalı görünüyor; daha önce bu oturumda otomatik düzeltme uygulandı, Docker Desktop senkronizasyonu bekleniyor."
@@ -959,7 +959,7 @@ ensure_docker_daemon_running() {
         if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
             if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
                 if [[ "${_WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN:-false}" != "true" ]]; then
-                    info "Docker Desktop WSL Integration UI listesi henüz güncellenmedi; daemon socket erişilebilir, kurulum devam ediyor."
+                    ok "WSL Integration runtime doğrulandı: daemon socket erişilebilir (UI listesi henüz güncellenmemiş olabilir)."
                     _WSL_INTEGRATION_POSTFIX_NOTICE_SHOWN=true
                 fi
                 return 0
@@ -1014,12 +1014,16 @@ ensure_docker_daemon_running() {
                 ok "Docker Desktop WSL Integration: '${current_distro}' artık aktif."
                 return 0
             fi
-            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
-                info "Docker Desktop WSL Integration listesi henüz güncellenmedi ancak daemon socket erişilebilir; '${current_distro}' için doğrulama fonksiyonel olarak başarılı."
+            if DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null || docker info &>/dev/null; then
+                ok "WSL Integration runtime doğrulandı: daemon socket erişilebilir (UI listesi '${current_distro}' için henüz güncellenmemiş olabilir)."
                 return 0
             fi
         done
 
+        if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" ]] && (DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null || docker info &>/dev/null); then
+            ok "Autofix sonrası daemon erişilebilir; WSL Integration runtime çalışıyor, UI senkronizasyonu bekleniyor."
+            return 0
+        fi
         warn "PowerShell autofix denendi fakat '${current_distro}' Docker Desktop tarafından hâlâ tanınmadı; Settings > Resources > WSL Integration üzerinden manuel açın."
         return 1
     }
