@@ -51,6 +51,7 @@ dependencies = [
   "PyJWT>=2.12.0",
   # ── HTTP istemcisi ─────────────────────────────────────────────────────
   "requests>=2.32.5",
+  "tenacity>=8.0.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
   "tiktoken~=0.12.0",
   "rank-bm25==0.2.2",
@@ -320,7 +321,7 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*"]
+include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*", "web*"]
 exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
