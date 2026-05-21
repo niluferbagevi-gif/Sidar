@@ -198,72 +198,40 @@ INSTALL_PHASE_MODULES=(
     "phases/07_finish.sh"
 )
 
-INSTALL_REMOTE_MODULES=(
-    "install_helpers.sh"
-    "${INSTALL_UTILITY_MODULES[@]}"
-    "utils/wsl_integration_autofix.ps1"
-    "${INSTALL_PHASE_MODULES[@]}"
-)
+bootstrap_clone_and_reexec() {
+    local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
+    local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
+    local clone_name="${SIDAR_BOOTSTRAP_CLONE_DIRNAME:-Sidar}"
+    local clone_target="${clone_parent%/}/${clone_name}"
 
-download_remote_install_module() {
-    local module_rel="$1"
-    local remote_module_base="$2"
-    local destination_root="$3"
-    local remote_module_url="${remote_module_base}/${module_rel}"
-    local destination_path="${destination_root}/${module_rel}"
-    local tmp_module_path=""
+    warn "Yerel modüller eksik. Geçici /tmp modül indirme yerine bootstrap clone akışı başlatılıyor."
 
-    mkdir -p "$(dirname "$destination_path")"
-    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    command -v git >/dev/null 2>&1 || fail "Bootstrap clone için git gerekli ancak sistemde bulunamadı."
+    mkdir -p "$clone_parent"
 
-    if command -v curl &>/dev/null; then
-        if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
-            return 1
-        fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
-            return 1
-        fi
+    if [[ -d "$clone_target/.git" ]]; then
+        info "Mevcut Sidar deposu bulundu, güncelleniyor: $clone_target"
+        git -C "$clone_target" fetch --all --tags --prune || fail "Mevcut depo güncellenemedi: $clone_target"
+        git -C "$clone_target" checkout -q main || fail "main dalına geçilemedi: $clone_target"
+        git -C "$clone_target" pull --ff-only || fail "Depo fast-forward güncellenemedi: $clone_target"
+    elif [[ -e "$clone_target" ]]; then
+        fail "Bootstrap clone hedefi mevcut ama git deposu değil: $clone_target (devam edilemiyor)."
     else
-        rm -f "$tmp_module_path"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+        step "Sidar deposu bootstrap clone ile indiriliyor"
+        git clone "$clone_url" "$clone_target" || fail "Git clone başarısız: $clone_url"
     fi
 
-    install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
-}
-
-download_remote_install_modules() {
-    local remote_module_base="$1"
-    local destination_root="$2"
-    local module_rel=""
-
-    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" ]] && rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        fail "Ne curl ne de wget bulundu; modül indirilemiyor."
-    fi
-
-    for module_rel in "${INSTALL_REMOTE_MODULES[@]}"; do
-        if ! download_remote_install_module "$module_rel" "$remote_module_base" "$destination_root"; then
-            [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" ]] && rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-            fail "Gerekli modül indirilemedi: ${remote_module_base}/${module_rel}"
-        fi
-    done
+    local next_script="$clone_target/install_sidar.sh"
+    [[ -f "$next_script" ]] || fail "Clone sonrası install_sidar.sh bulunamadı: $next_script"
+    chmod +x "$next_script" || true
+    cd "$clone_target" || fail "Clone sonrası dizine geçilemedi: $clone_target"
+    info "Bootstrap clone tamamlandı; yerel kurulum betiği yeniden başlatılıyor."
+    exec "$next_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
-
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
-    ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+    bootstrap_clone_and_reexec
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
