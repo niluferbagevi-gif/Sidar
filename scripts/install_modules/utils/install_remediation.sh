@@ -17,6 +17,13 @@ sidar_install_auto_heal_enabled() {
     esac
 }
 
+wsl_integration_remediation_message() {
+    local distro="${1:-${WSL_DISTRO_NAME:-Ubuntu}}"
+    cat <<EOF
+Docker Desktop > Settings > Resources > WSL Integration bölümünde '${distro}' için explicit toggle'ı açıp Apply & restart yapın. Not: "Enable integration with my default WSL distro" açık olsa bile yalnızca default distro'yu kapsar; default distro değiştiğinde explicit toggle kapalıysa Docker socket mount'u bozulabilir.
+EOF
+}
+
 sidar_phase_index() {
     case "$1" in
         01_context) echo 10 ;;
@@ -28,6 +35,14 @@ sidar_phase_index() {
         06_services) echo 70 ;;
         07_finish) echo 80 ;;
         *) echo 999 ;;
+    esac
+}
+
+sidar_phase_is_informational() {
+    local phase="$1"
+    case "$phase" in
+        01_context) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
@@ -185,6 +200,11 @@ sidar_handle_install_failure() {
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
 
     [[ -n "$phase" ]] || return 1
+    if sidar_phase_is_informational "$phase"; then
+        warn "Auto-heal: ${phase} bilgilendirme fazı; retry/resume atlanıyor (warn-only)."
+        sidar_write_remediation_report "$phase" "informational-phase" "warn-only;no-retry;no-resume"
+        return 1
+    fi
     sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1

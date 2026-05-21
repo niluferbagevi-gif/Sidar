@@ -787,12 +787,132 @@ ensure_docker_cli_available() {
 }
 
 ensure_docker_daemon_running() {
+    _docker_ready_with_socket() {
+        if ! docker info &>/dev/null; then
+            return 1
+        fi
+
+        if [[ "$WSL2" == true ]]; then
+            DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        else
+            docker version --format '{{.Server.Os}}' &>/dev/null || return 1
+        fi
+
+        return 0
+    }
+
+    _detect_current_wsl_distro_name() {
+        if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+            printf '%s\n' "$WSL_DISTRO_NAME"
+            return 0
+        fi
+        if command -v powershell.exe &>/dev/null; then
+            powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null \
+                | tr -d '\r' | awk 'NF {print; exit}'
+            return 0
+        fi
+        printf '%s\n' ""
+    }
+
+    _docker_wsl_integration_postcheck() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+        local in_integrated=false default_covers=false
+
+        current_distro="$(_detect_current_wsl_distro_name)"
+        [[ -n "$current_distro" ]] || return 0
+
+        default_distro="$(powershell.exe -NoProfile -Command "wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | tr -d '\r' | awk 'NF {print; exit}')"
+        enable_default="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+        integrated_csv="$(powershell.exe -NoProfile -Command "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$cfg.IntegratedWslDistros) { \$cfg.IntegratedWslDistros -join ',' } }" 2>/dev/null | tr -d '\r' | tail -n1)"
+
+        integrated_norm=",${integrated_csv// /},"
+        [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+
+        if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
+            default_covers=true
+        fi
+
+        if [[ "$in_integrated" == true ]]; then
+            ok "WSL entegrasyonu '${current_distro}' için açık."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için kapalı olabilir."
+            fi
+            return 0
+        fi
+
+        if [[ "$default_covers" == true ]]; then
+            info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
+            warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
+            if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
+                warn "Docker socket WSL2 dağıtımında mount edilmemiş olabilir; Docker Desktop toggle'ı '${current_distro}' için explicit açılması gerekir."
+            fi
+            return 0
+        fi
+
+        warn "Docker Desktop WSL Integration listesinde '${current_distro}' kapalı görünüyor."
+        local should_apply=false
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            should_apply=true
+            info "NO_INTERACTION/AUTO_INSTALL etkin: '${current_distro}' için Docker Desktop WSL entegrasyonu otomatik etkinleştirilecek."
+        else
+            local reply
+            reply=$(prompt_yes_no_with_timeout_default_yes "'${current_distro}' için Docker Desktop WSL Integration ayarı otomatik açılsın mı? [E/h]: ")
+            reply="${reply^^}"
+            if [[ "$reply" == "E" || "$reply" == "EVET" || "$reply" == "Y" || "$reply" == "YES" || -z "$reply" ]]; then
+                should_apply=true
+            fi
+        fi
+
+        if [[ "$should_apply" != true ]]; then
+            warn "WSL Integration otomatik güncellemesi atlandı. Docker Desktop > Settings > Resources > WSL Integration bölümünden '${current_distro}' anahtarını açın."
+            return 1
+        fi
+
+        if ! powershell.exe -NoProfile -Command "\
+            \$ErrorActionPreference='Stop'; \
+            \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; \
+            if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; \
+            if (!(Test-Path \$p)) { throw 'Docker settings dosyası bulunamadı.' }; \
+            Copy-Item \$p \"\$p.bak\" -Force; \
+            \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \
+            if (\$null -eq \$cfg.IntegratedWslDistros) { \$cfg | Add-Member -NotePropertyName IntegratedWslDistros -NotePropertyValue @() -Force }; \
+            \$list=@(\$cfg.IntegratedWslDistros); \
+            if (\$list -notcontains '$current_distro') { \$list += '$current_distro' }; \
+            \$cfg.IntegratedWslDistros=\$list; \
+            \$cfg | ConvertTo-Json -Depth 100 | Set-Content \$p -Encoding UTF8; \
+            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' --quit -WindowStyle Hidden; \
+            Start-Sleep -Seconds 2; \
+            Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' -WindowStyle Hidden; \
+        " >/dev/null 2>&1; then
+            warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
+            return 1
+        fi
+
+        info "Docker Desktop yeniden başlatıldı; WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
+        local elapsed=0
+        while (( elapsed < 60 )); do
+            if _docker_ready_with_socket; then
+                ok "Docker daemon erişilebilir ve '${current_distro}' entegrasyonu güncellendi."
+                return 0
+            fi
+            sleep 3
+            ((elapsed += 3))
+        done
+
+        warn "Docker Desktop yeniden başlatma sonrası doğrulama zaman aşımına uğradı."
+        return 1
+    }
+
     if ! docker_cli_healthy; then
         return 1
     fi
 
-    if docker info &>/dev/null; then
-        return 0
+    if _docker_ready_with_socket; then
+        _docker_wsl_integration_postcheck
+        return $?
     fi
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
@@ -810,9 +930,10 @@ ensure_docker_daemon_running() {
         info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. 60sn)..."
         local elapsed=0
         while (( elapsed < 60 )); do
-            if docker info &>/dev/null; then
+            if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
-                return 0
+                _docker_wsl_integration_postcheck
+                return $?
             fi
             sleep 3
             ((elapsed += 3))
@@ -820,7 +941,12 @@ ensure_docker_daemon_running() {
         warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi."
     fi
 
-    docker info &>/dev/null
+    if _docker_ready_with_socket; then
+        _docker_wsl_integration_postcheck
+        return $?
+    fi
+
+    return 1
 }
 
 ensure_current_user_in_docker_group() {
@@ -949,7 +1075,7 @@ start_docker_services_or_fail() {
     rm -f "$stderr_file"
 
     if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
-        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
     fi
 
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
@@ -2774,7 +2900,7 @@ ensure_prerequisites() {
             info "Lütfen şu adımları uygulayın:"
             echo "  1. Windows'ta Docker Desktop'ı açın."
             echo "  2. Settings > Resources > WSL Integration menüsüne gidin."
-            echo "  3. 'Ubuntu' anahtarını aktif edip 'Apply & restart' butonuna tıklayın."
+            echo "  3. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             echo ""
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
@@ -2785,13 +2911,13 @@ ensure_prerequisites() {
 
             # Kullanıcıdan onay sonrası tekrar doğrula
             if ! command -v docker &>/dev/null; then
-                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. Docker Desktop > Settings > Resources > WSL Integration altında Ubuntu entegrasyonunu açıp yeniden deneyin."
+                fail "[ENTER] sonrası docker CLI hâlâ bulunamadı. $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             if ! docker_cli_healthy; then
                 fail "[ENTER] sonrası docker CLI hâlâ sağlıksız. Docker Desktop entegrasyonunu ve WSL erişimini doğrulayın."
             fi
             if ! docker info &>/dev/null; then
-                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). Docker Desktop'ı açıp entegrasyonu Apply & restart ile yenileyin."
+                fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             ok "WSL2 Docker Desktop entegrasyonu doğrulandı (docker CLI + docker info)."
         fi
@@ -5394,7 +5520,7 @@ prepare_docker_for_migrations() {
     if ! ensure_docker_daemon_running; then
         warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
         if [[ "$WSL2" == true ]]; then
-            info "WSL2 için öneri: Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+            info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
         fi
         info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
         MIGRATION_DOCKER_POLICY="disabled"
@@ -6000,7 +6126,7 @@ launch_docker_services() {
             else
                 warn "Docker motoruna erişilemediği için arka plan servis başlatma adımı atlandı."
                 if [[ "$WSL2" == true ]]; then
-                    info "Docker Desktop > Settings > Resources > WSL Integration bölümünden Ubuntu entegrasyonunu açıp Apply & restart yapın."
+                    info "$(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
                 fi
                 info "Entegrasyon tamamlandıktan sonra manuel çalıştırın: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d"
                 return
