@@ -120,7 +120,7 @@ EXPOSE 7860
 # Sağlık kontrolü — uygulama içi health endpoint'i kullanır.
 # /status endpoint'i DB/Redis gibi iç bağımlılıklarını 200/503 ile raporlamalıdır.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -fsS http://localhost:7860/status > /dev/null || exit 1
+  CMD sh -c 'curl -fsS "http://localhost:${WEB_PORT:-7860}/status" > /dev/null || exit 1'
 
 # Varsayılan başlatma (CLI)
 # Web için (ENTRYPOINT argümanı olarak): docker run ... --quick web --host 0.0.0.0 --port 7860
