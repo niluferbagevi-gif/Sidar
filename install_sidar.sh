@@ -2472,6 +2472,12 @@ refresh_install_sidar_version_from_repo() {
 }
 
 PYTHON_VERSION="3.11"
+if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
+    PYTHON_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version")"
+fi
+if [[ "$PYTHON_VERSION" != "3.11" ]]; then
+    fail ".python-version değeri yalnızca 3.11 olmalıdır. Güncel değer: ${PYTHON_VERSION}"
+fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
