@@ -3255,6 +3255,38 @@ ensure_prerequisites() {
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
+configure_wsl2_cuda_library_paths() {
+    [[ "${WSL2:-false}" == true ]] || return 0
+    [[ "${GPU_AVAILABLE:-false}" == true ]] || return 0
+
+    local -a preferred_cuda_paths=(
+        "/usr/lib/wsl/lib"
+        "/usr/local/cuda/lib64"
+        "/usr/local/nvidia/lib64"
+        "/usr/local/nvidia/lib"
+    )
+    local existing_ld_path="${LD_LIBRARY_PATH:-}"
+    local combined_ld_path="$existing_ld_path"
+    local path_entry=""
+
+    for path_entry in "${preferred_cuda_paths[@]}"; do
+        [[ -d "$path_entry" ]] || continue
+        if [[ ":$combined_ld_path:" != *":$path_entry:"* ]]; then
+            if [[ -n "$combined_ld_path" ]]; then
+                combined_ld_path="${path_entry}:${combined_ld_path}"
+            else
+                combined_ld_path="$path_entry"
+            fi
+        fi
+    done
+
+    if [[ -n "$combined_ld_path" ]]; then
+        export LD_LIBRARY_PATH="$combined_ld_path"
+        export OLLAMA_LLM_LIBRARY="cuda"
+        info "WSL2 CUDA/Tensor/Ollama için LD_LIBRARY_PATH ayarlandı: $LD_LIBRARY_PATH"
+    fi
+}
+
 detect_gpu() {
     step "GPU Tespiti"
     GPU_AVAILABLE=false
@@ -3307,6 +3339,7 @@ detect_gpu() {
 
         if [[ "$WSL2" == true ]]; then
             info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
+            configure_wsl2_cuda_library_paths
         fi
     else
         if command -v rocm-smi &>/dev/null || lspci 2>/dev/null | grep -qi "AMD/ATI"; then
