@@ -48,7 +48,12 @@ install_uv_cli() {
 
 create_uv_venv() {
     step "uv venv Ortamı"
+    local expected_python_version="3.11"
     VENV_DIR="$SCRIPT_DIR/.venv"
+    if [[ "${PYTHON_VERSION:-$expected_python_version}" != "$expected_python_version" ]]; then
+        fail "Python standardı ihlali: PYTHON_VERSION yalnızca ${expected_python_version} olmalıdır (mevcut: ${PYTHON_VERSION:-unset})."
+    fi
+    PYTHON_VERSION="$expected_python_version"
     info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
     uv python install "$PYTHON_VERSION"
 
@@ -70,7 +75,7 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    local -a SYNC_ARGS=(--frozen --all-extras)
+    local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -85,9 +90,9 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras. Dev araçları self-healing için standarttır."
-    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
+    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
+        fail "uv sync --frozen --all-extras --extra dev başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
