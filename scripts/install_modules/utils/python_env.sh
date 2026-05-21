@@ -5,6 +5,7 @@ SIDAR_INSTALL_UTIL_PYTHON_ENV_SH_LOADED=1
 # uv-only Python environment helpers for the phase-based Sidar installer.
 # Package resolution and environment synchronization intentionally go through
 # uv venv / uv sync; legacy environment and tool-install fallbacks are not used.
+SIDAR_REQUIRED_PYTHON_VERSION="3.11"
 
 install_uv_cli() {
     step "uv CLI Paket Yöneticisi"
@@ -49,14 +50,17 @@ install_uv_cli() {
 create_uv_venv() {
     step "uv venv Ortamı"
     VENV_DIR="$SCRIPT_DIR/.venv"
-    info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
-    uv python install "$PYTHON_VERSION"
+    if [[ "${PYTHON_VERSION:-}" != "$SIDAR_REQUIRED_PYTHON_VERSION" ]]; then
+        fail "Python standardı ihlali: kurulum yalnızca ${SIDAR_REQUIRED_PYTHON_VERSION} ile çalışır (algılanan: ${PYTHON_VERSION:-unset})."
+    fi
+    info "Python sürümü uv ile sabitleniyor (${SIDAR_REQUIRED_PYTHON_VERSION})..."
+    uv python install "$SIDAR_REQUIRED_PYTHON_VERSION"
 
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
     else
-        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+        info "Yeni uv venv oluşturuluyor (${SIDAR_REQUIRED_PYTHON_VERSION})..."
+        uv venv --python "$SIDAR_REQUIRED_PYTHON_VERSION" "$VENV_DIR"
         ok "uv venv oluşturuldu."
     fi
     # shellcheck disable=SC1091
