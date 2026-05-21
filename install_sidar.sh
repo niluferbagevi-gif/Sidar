@@ -2473,17 +2473,6 @@ refresh_install_sidar_version_from_repo() {
 }
 
 PYTHON_VERSION="3.11"
-if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
-    PYTHON_VERSION_FROM_FILE=$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version" | cut -d. -f1,2)
-    if [[ -n "$PYTHON_VERSION_FROM_FILE" ]]; then
-        PYTHON_VERSION="$PYTHON_VERSION_FROM_FILE"
-    fi
-elif [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-    PYPROJECT_PYTHON_VERSION=$(sed -nE 's/^[[:space:]]*requires-python[[:space:]]*=[[:space:]]*"[>=~^]*([0-9]+\.[0-9]+).*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1)
-    if [[ -n "$PYPROJECT_PYTHON_VERSION" ]]; then
-        PYTHON_VERSION="$PYPROJECT_PYTHON_VERSION"
-    fi
-fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
@@ -3419,6 +3408,9 @@ install_uv_cli() {
 create_uv_venv() {
     step "uv venv Ortamı"
     VENV_DIR="$SCRIPT_DIR/.venv"
+    info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
+    uv python install "$PYTHON_VERSION"
+
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
     else

@@ -49,6 +49,9 @@ install_uv_cli() {
 create_uv_venv() {
     step "uv venv Ortamı"
     VENV_DIR="$SCRIPT_DIR/.venv"
+    info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
+    uv python install "$PYTHON_VERSION"
+
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
     else
