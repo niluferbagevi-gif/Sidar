@@ -4985,6 +4985,7 @@ prompt_post_install_sidar_env_mode() {
     local example_file="$SCRIPT_DIR/.env.example"
     local env_choice=""
     local selected_env="development"
+    local previous_env=""
 
     step "Kurulum Sonrası Uygulama Ortamı Seçimi"
 
@@ -4998,6 +4999,7 @@ prompt_post_install_sidar_env_mode() {
             return
         fi
     fi
+    previous_env="$(read_env_value_from_file "SIDAR_ENV" "$env_file" | tr -d '"'\''[:space:]')"
 
     if [[ "$AUTO_ENV_TYPE" != "ask" ]]; then
         selected_env="$AUTO_ENV_TYPE"
@@ -5036,8 +5038,15 @@ prompt_post_install_sidar_env_mode() {
         ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
-        info "Development ortamı seçildi; veritabanı migrasyonu tekrar doğrulanıyor..."
-        run_migrations
+        if [[ "$previous_env" != "$selected_env" ]]; then
+            info "SIDAR_ENV değişti (${previous_env:-bilinmiyor} -> ${selected_env}); veritabanı migrasyonu tekrar doğrulanıyor..."
+            run_migrations
+        elif ! is_alembic_at_head; then
+            info "Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."
+            run_migrations
+        else
+            info "SIDAR_ENV değişmedi ve Alembic current=head; tekrar migrasyon atlandı."
+        fi
     fi
 
     ok "Sidar kullanıma hazır!"
@@ -5867,6 +5876,32 @@ PY
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi
+}
+
+is_alembic_at_head() {
+    local env_file="$SCRIPT_DIR/.env"
+    local alembic_ini="$SCRIPT_DIR/alembic.ini"
+    local py_bin=""
+    local db_url=""
+    local current_rev=""
+    local head_rev=""
+
+    [[ -f "$alembic_ini" ]] || return 1
+    if command -v python3 &>/dev/null; then
+        py_bin="python3"
+    elif command -v python &>/dev/null; then
+        py_bin="python"
+    else
+        return 1
+    fi
+
+    [[ -f "$env_file" ]] || return 1
+    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n')"
+    [[ -n "${db_url//[[:space:]]/}" ]] || return 1
+
+    current_rev="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current 2>/dev/null | awk '/^[0-9a-f]+/ {print $1}' | tail -n1)"
+    head_rev="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>/dev/null | awk '/^[0-9a-f]+/ {print $1}' | tail -n1)"
+    [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
 ensure_postgres_databases_exist() {
