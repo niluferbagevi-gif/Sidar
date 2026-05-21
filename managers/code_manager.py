@@ -10,8 +10,8 @@ import fnmatch
 import json
 import logging
 import os
-import re
 import shlex
+import re
 import shutil
 import stat
 import subprocess  # nosec B404
@@ -1739,13 +1739,20 @@ class CodeManager:
 
     def _resolve_lsp_command(self, language_id: str) -> list[str]:
         if language_id == "python":
-            binary = self.python_lsp_server
-            args = ["--stdio"]
+            server_command = self.python_lsp_server
+            default_binary = "pyright-langserver"
+            default_args = ["--stdio"]
         elif language_id == "typescript":
-            binary = self.typescript_lsp_server
-            args = ["--stdio"]
+            server_command = self.typescript_lsp_server
+            default_binary = "typescript-language-server"
+            default_args = ["--stdio"]
         else:
             raise ValueError(f"LSP desteklenmeyen dil: {language_id}")
+
+        tokens = shlex.split(server_command) if server_command else []
+        binary = tokens[0] if tokens else default_binary
+        configured_args = tokens[1:]
+        args = configured_args or default_args
 
         binary_path = self._resolve_lsp_executable(binary)
         if binary_path:

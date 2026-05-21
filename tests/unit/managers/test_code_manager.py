@@ -2408,6 +2408,28 @@ def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> N
     )
 
 
+def test_resolve_lsp_command_accepts_python_server_command_with_inline_stdio(manager, monkeypatch):
+    manager.python_lsp_server = "pyright-langserver --stdio"
+    monkeypatch.setattr(manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/pyright-langserver")
+
+    command = manager._resolve_lsp_command("python")
+
+    assert command == ["/venv/bin/pyright-langserver", "--stdio"]
+
+
+def test_resolve_lsp_command_accepts_typescript_server_command_with_extra_args(
+    manager, monkeypatch
+):
+    manager.typescript_lsp_server = "typescript-language-server --stdio --log-level 3"
+    monkeypatch.setattr(
+        manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/typescript-language-server"
+    )
+
+    command = manager._resolve_lsp_command("typescript")
+
+    assert command == ["/venv/bin/typescript-language-server", "--stdio", "--log-level", "3"]
+
+
 def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(manager, monkeypatch) -> None:
     manager.docker_client = SimpleNamespace(
         images=SimpleNamespace(get=lambda _image: pytest.fail("unsafe image must not be probed"))
