@@ -349,8 +349,7 @@ bootstrap_single_file_install_from_repo() {
         exec "$bootstrap_target_dir/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
     fi
 
-    warn "git bulunamadı; tek dosyalık fallback olarak uzaktan modül indirme akışı kullanılacak."
-    return 1
+    fail "Tek dosyalık bootstrap için git gereklidir. Lütfen git kurup tekrar deneyin veya betiği klonlanmış Sidar reposu içinden çalıştırın."
 }
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
@@ -359,18 +358,8 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         fail "SIDAR_BUNDLE_MODE=1 algılandı ancak gömülü modüller bulunamadı. Bundle dosyası bozuk olabilir; lütfen bundle artefaktını yeniden üretin."
     fi
     warn "Tek dosyalık çalıştırma algılandı."
-    if bootstrap_single_file_install_from_repo; then
-        fail "Repo bootstrap akışı beklenmedik şekilde geri döndü."
-    fi
-    warn "Repo bootstrap kullanılamadı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
-
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="$(resolve_remote_install_module_base_url)"
-
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
-    ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+    bootstrap_single_file_install_from_repo
+    fail "Repo bootstrap akışı beklenmedik şekilde geri döndü."
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
