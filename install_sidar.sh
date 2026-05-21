@@ -953,6 +953,17 @@ ensure_docker_daemon_running() {
         fi
 
         if [[ "$default_covers" == true ]]; then
+            if [[ "${WSL_INTEGRATION_HARDEN_EXPLICIT:-true}" == "true" \
+                  && "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" != "true" \
+                  && ! -f "$integration_autofix_sentinel" ]]; then
+                info "Default-distro toggle '${current_distro}' kapsıyor; sertleştirme için explicit toggle ekleniyor."
+                if apply_wsl_integration_autofix "$current_distro"; then
+                    ok "Postcheck hardening: '${current_distro}' explicit toggle eklendi (Docker Desktop yeniden başlatıldı)."
+                else
+                    warn "Postcheck hardening başarısız; öneri olarak Settings > Resources > WSL Integration üzerinden manuel açın."
+                fi
+                return 0
+            fi
             info "Docker Desktop default-distro toggle'u '${current_distro}' dağıtımını kapsıyor."
             warn "Öneri: WSL Integration listesinden '${current_distro}' için explicit toggle'ı da açın."
             if ! DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}' &>/dev/null; then
