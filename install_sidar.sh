@@ -6503,18 +6503,20 @@ print_summary() {
         echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
     else
         echo "       Çalışma modu: Tam Docker (web/agent dahil)."
-        echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
+    echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
     fi
     echo ""
     echo -e "  4️⃣  CLI ile başlat:"
-    echo "       python main.py"
+    echo "       uv run python main.py"
+    echo "       # veya: source .venv/bin/activate && python main.py"
     echo ""
     local web_url="http://localhost:7860"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "docker" && "$GPU_AVAILABLE" == true ]]; then
         web_url="http://localhost:${WEB_GPU_PORT:-7861} (GPU profili)"
     fi
     echo -e "  5️⃣  Web arayüzü ile başlat (${web_url}):"
-    echo "       python main.py --quick web"
+    echo "       uv run python main.py --quick web"
+    echo "       # veya: source .venv/bin/activate && python main.py --quick web"
     if [[ "$REACT_UI_STATUS" == "hazır" || "$REACT_UI_STATUS" == "hazır_cache" ]]; then
         if [[ "$REACT_UI_STATUS" == "hazır_cache" ]]; then
             echo "       React UI build: cache kullanıldı, yeniden derleme atlandı (web_ui_react/dist)"
