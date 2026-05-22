@@ -90,6 +90,7 @@ services:
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
     env_file:
       - .env
+    entrypoint: []
     command: ["uv", "run", "alembic", "upgrade", "head"]
 
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
