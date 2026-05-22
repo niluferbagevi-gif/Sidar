@@ -496,7 +496,15 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
+    local exit_code="${1:-0}"
+    local keep_temp_modules="${SIDAR_KEEP_TEMP_MODULES:-1}"
+
     if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if [[ "$exit_code" -ne 0 && "$keep_temp_modules" == "1" ]]; then
+            warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
+            warn "Geçici dizini manuel temizlemek için: rm -rf \"$INSTALL_HELPERS_TEMP_DIR\""
+            return 0
+        fi
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
     fi
@@ -520,7 +528,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
+trap 'exit_code=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed "$exit_code" || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
