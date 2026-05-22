@@ -4391,9 +4391,32 @@ create_directories() {
         chmod 755 "$SCRIPT_DIR/$dir" 2>/dev/null || true
     done
 
+    # Tam Docker modunda container kullanıcı UID/GID (10001) bind-mount dizinlerine
+    # yazabilmelidir; aksi halde /app/logs gibi yolarda Permission denied oluşur.
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+    if [[ "$runtime_mode" == "docker" ]]; then
+        local -a docker_bind_dirs=(logs data temp sessions)
+        local bind_dir=""
+        for bind_dir in "${docker_bind_dirs[@]}"; do
+            mkdir -p "$SCRIPT_DIR/$bind_dir"
+            chown 10001:10001 "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            chmod u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            if command -v setfacl &>/dev/null; then
+                setfacl -m u:10001:rwx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            fi
+        done
+    fi
+
     local log_file="$SCRIPT_DIR/logs/sidar_system.log"
     if [[ -f "$log_file" && ! -w "$log_file" ]]; then
-        chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
+        if [[ "${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}" == "docker" ]]; then
+            chown 10001:10001 "$log_file" 2>/dev/null || true
+            if command -v setfacl &>/dev/null; then
+                setfacl -m u:10001:rw "$log_file" 2>/dev/null || true
+            fi
+        else
+            chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
+        fi
         chmod u+rw "$log_file" 2>/dev/null || true
     fi
 
