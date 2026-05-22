@@ -1259,11 +1259,11 @@ ensure_docker_daemon_running() {
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
-    if command -v systemctl &>/dev/null; then
+    if [[ "$WSL2" != true ]] && command -v systemctl &>/dev/null; then
         sudo systemctl start docker >/dev/null 2>&1 || true
     fi
 
-    if ! docker info &>/dev/null && command -v service &>/dev/null; then
+    if [[ "$WSL2" != true ]] && ! docker info &>/dev/null && command -v service &>/dev/null; then
         sudo service docker start >/dev/null 2>&1 || true
     fi
 
