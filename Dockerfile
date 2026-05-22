@@ -38,8 +38,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Builder: derleme ve native wheel gereksinimleri
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     set -eux; \
     apt-get update; \
     if [ "$GPU_ENABLED" = "true" ]; then \
@@ -67,8 +67,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
       ffmpeg \
       cargo \
       pkg-config \
-      shellcheck; \
-    rm -rf /var/lib/apt/lists/*
+      shellcheck
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
@@ -131,8 +130,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Runtime: yalnız çalıştırma için gerekli paketler
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     set -eux; \
     apt-get update; \
     if [ "$GPU_ENABLED" = "true" ]; then \
@@ -154,8 +153,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
       python3-pyaudio \
       alsa-utils \
       v4l-utils \
-      ffmpeg; \
-    rm -rf /var/lib/apt/lists/*
+      ffmpeg
 
 COPY --from=builder /app /app
 
