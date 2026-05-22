@@ -328,7 +328,7 @@ bootstrap_clone_and_reexec() {
         fail "Bootstrap clone hedefi mevcut ama git deposu değil: $clone_target (devam edilemiyor)."
     else
         step "Sidar deposu bootstrap clone ile indiriliyor"
-        git clone "$clone_url" "$clone_target" || fail "Git clone başarısız: $clone_url"
+        git clone --depth=1 --branch "$preferred_ref" "$clone_url" "$clone_target" || fail "Git clone başarısız: $clone_url"
         git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
     fi
 
