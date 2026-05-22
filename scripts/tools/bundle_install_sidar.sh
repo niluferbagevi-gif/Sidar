@@ -98,6 +98,9 @@ BEGIN { in_block = 0 }
     in_block = 1
     next
 }
+in_block == 1 && !/^SIDAR_MODULE_HASHES_EOF$/ {
+    next
+}
 in_block == 1 && /^SIDAR_MODULE_HASHES_EOF$/ {
     print
     in_block = 0
