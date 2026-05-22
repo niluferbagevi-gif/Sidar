@@ -8,11 +8,13 @@
 ARG PYTHON_VERSION=3.11
 ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
+ARG UV_OPTIONAL_EXTRAS=""
 
 FROM ${BASE_IMAGE} AS builder
 ARG PYTHON_VERSION=3.11
 ARG GPU_ENABLED=false
 ARG MEMORY_ENCRYPTION_KEY=""
+ARG UV_OPTIONAL_EXTRAS=""
 
 LABEL maintainer="Sidar AI Project"
 LABEL version="5.2.0"
@@ -76,7 +78,14 @@ RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --no-install-project
+    set -eux; \
+    UV_SYNC_ARGS="--frozen --no-install-project"; \
+    if [ -n "${UV_OPTIONAL_EXTRAS}" ]; then \
+      for extra in $(echo "${UV_OPTIONAL_EXTRAS}" | tr ',' ' '); do \
+        UV_SYNC_ARGS="${UV_SYNC_ARGS} --extra ${extra}"; \
+      done; \
+    fi; \
+    uv sync ${UV_SYNC_ARGS}
 RUN uv run python -c "import shutil; assert shutil.which('pyright-langserver'), 'pyright-langserver missing'; assert shutil.which('pyright'), 'pyright missing'"
 
 ARG PRECACHE_RAG_MODEL=false
@@ -89,7 +98,14 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
 
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras
+    set -eux; \
+    UV_SYNC_ARGS="--frozen"; \
+    if [ -n "${UV_OPTIONAL_EXTRAS}" ]; then \
+      for extra in $(echo "${UV_OPTIONAL_EXTRAS}" | tr ',' ' '); do \
+        UV_SYNC_ARGS="${UV_SYNC_ARGS} --extra ${extra}"; \
+      done; \
+    fi; \
+    uv sync ${UV_SYNC_ARGS}
 
 FROM ${BASE_IMAGE} AS runtime
 ARG PYTHON_VERSION=3.11
