@@ -124,8 +124,14 @@ sidar_source_install_utils() {
         esac
         if [[ ! -f "$module_path" ]]; then
             local remote_hint=""
+            local remote_base_hint="${REMOTE_MODULE_BASE:-${SIDAR_INSTALL_MODULE_BASE_URL:-}}"
             if [[ -n "${REMOTE_MODULE_BASE:-}" ]]; then
                 remote_hint=" Beklenen uzak kaynak: ${REMOTE_MODULE_BASE}/utils/${module_rel}"
+            elif [[ -n "${SIDAR_INSTALL_MODULE_BASE_URL:-}" ]]; then
+                remote_hint=" Beklenen uzak kaynak: ${SIDAR_INSTALL_MODULE_BASE_URL}/utils/${module_rel}"
+            fi
+            if [[ -n "$remote_base_hint" ]]; then
+                remote_hint="${remote_hint} (REMOTE_MODULE_BASE veya SIDAR_INSTALL_MODULE_BASE_URL tabanı: ${remote_base_hint})"
             fi
             fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin.${remote_hint}"
         fi
