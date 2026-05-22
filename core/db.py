@@ -1047,12 +1047,26 @@ class Database:
         command.upgrade(alembic_cfg, "head")
 
     async def _init_schema_postgresql(self) -> None:
-        """Initialize PostgreSQL schema through Alembic when auto-migrate is enabled."""
+        """Initialize PostgreSQL schema through Alembic when auto-migrate is enabled.
+
+        In production, auto-migrate may be disabled by policy. We still run a one-time
+        bootstrap migration when this looks like a fresh database (no alembic_version table).
+        """
         assert self._pg_pool is not None
-        if not self.auto_migrate:
-            logger.info("SIDAR_AUTO_MIGRATE devre dışı; runtime Alembic upgrade atlandı.")
-            return
-        await asyncio.to_thread(self._run_alembic_upgrade_head)
+        should_run_migration = self.auto_migrate
+        if not should_run_migration:
+            has_alembic_version = await self._pg_pool.fetchval("SELECT to_regclass('public.alembic_version')")
+            if has_alembic_version:
+                logger.info("SIDAR_AUTO_MIGRATE devre dışı; runtime Alembic upgrade atlandı.")
+                return
+            logger.warning(
+                "SIDAR_AUTO_MIGRATE devre dışı ancak fresh DB tespit edildi (alembic_version yok). "
+                "İlk açılış bootstrap migrasyonu çalıştırılıyor."
+            )
+            should_run_migration = True
+
+        if should_run_migration:
+            await asyncio.to_thread(self._run_alembic_upgrade_head)
 
     async def ensure_default_prompt_registry(self) -> None:
         import importlib.util as _importlib_util
