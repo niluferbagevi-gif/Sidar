@@ -13,6 +13,15 @@ seed_rag_in_docker_after_startup() {
 
     local -a compose_cmd=()
     local compose_profiles="${COMPOSE_PROFILES:-}"
+    if [[ -z "${compose_profiles//[[:space:]]/}" && -f "$SCRIPT_DIR/.env" ]]; then
+        local env_profiles=""
+        env_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$SCRIPT_DIR/.env" | tr -d '\n')
+        if [[ -n "${env_profiles//[[:space:]]/}" ]]; then
+            export COMPOSE_PROFILES="$env_profiles"
+            compose_profiles="$env_profiles"
+            info "COMPOSE_PROFILES .env'den okundu ve export edildi: ${COMPOSE_PROFILES}"
+        fi
+    fi
     local seed_service="sidar-web"
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         compose_cmd=(docker compose)
@@ -43,6 +52,10 @@ seed_rag_in_docker_after_startup() {
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Detay log: ${seed_log_file}"
+        warn "Son hata satırları:"
+        tail -n 20 "$seed_log_file" 2>/dev/null | while IFS= read -r line; do
+            warn "  $line"
+        done
         warn "Manuel adımlar: ${compose_cmd[*]} up -d postgres redis && ${compose_cmd[*]} run --rm sidar-migrate && ${compose_cmd[*]} run --rm --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag --metadata-only"
     fi
 }
