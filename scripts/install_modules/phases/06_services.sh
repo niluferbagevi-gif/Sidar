@@ -55,11 +55,29 @@ seed_rag_in_docker_after_startup() {
     if (
         cd "$SCRIPT_DIR" && \
         "${compose_cmd[@]}" up -d postgres redis && \
-        wait_for_compose_services_health "${compose_cmd[@]}" -- postgres && \
-        "${compose_cmd[@]}" run --rm sidar-migrate && \
-        "${compose_cmd[@]}" run --rm --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag --metadata-only
+        wait_for_compose_services_health "${compose_cmd[@]}" -- postgres
     ) >"$seed_log_file" 2>&1; then
-        ok "Docker RAG/GraphRAG seed adımı tamamlandı."
+        local migrate_attempt=""
+        for migrate_attempt in 1 2 3; do
+            if "${compose_cmd[@]}" run --rm sidar-migrate >>"$seed_log_file" 2>&1; then
+                break
+            fi
+            if [[ "$migrate_attempt" -eq 3 ]]; then
+                warn "sidar-migrate 3 deneme sonrası tamamlanamadı. Detay: ${seed_log_file}"
+                tail -n 30 "$seed_log_file" 2>/dev/null | sed 's/^/    │ /'
+                return 1
+            fi
+            info "sidar-migrate denemesi ${migrate_attempt} başarısız; ${migrate_attempt}*5 sn bekleyip yeniden denenecek..."
+            sleep $(( migrate_attempt * 5 ))
+        done
+        if "${compose_cmd[@]}" run --rm --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag --metadata-only >>"$seed_log_file" 2>&1; then
+            ok "Docker RAG/GraphRAG seed adımı tamamlandı."
+        else
+            warn "Docker RAG/GraphRAG seed adımı başarısız. Detay log: ${seed_log_file}"
+            warn "Son 30 satır hata özeti:"
+            tail -n 30 "$seed_log_file" 2>/dev/null | sed 's/^/    │ /'
+            warn "Manuel adımlar: ${compose_cmd[*]} up -d postgres redis && ${compose_cmd[*]} run --rm sidar-migrate && ${compose_cmd[*]} run --rm --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag --metadata-only"
+        fi
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Detay log: ${seed_log_file}"
         warn "Son 30 satır hata özeti:"
