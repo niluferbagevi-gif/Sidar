@@ -19,7 +19,7 @@ seed_rag_in_docker_after_startup() {
     elif command -v docker-compose &>/dev/null; then
         compose_cmd=(docker-compose)
     else
-        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
+        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose up -d postgres redis && docker compose run --rm sidar-migrate && docker compose run --rm --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag --metadata-only"
         return 0
     fi
 
@@ -29,12 +29,21 @@ seed_rag_in_docker_after_startup() {
 
     info "RAG seed servisi aktif profillere göre seçildi: ${seed_service} (COMPOSE_PROFILES=${compose_profiles:-cpu})."
     info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
-    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
+    local log_dir="$SCRIPT_DIR/logs"
+    local seed_log_file="$log_dir/docker_seed_rag_$(date -u +%Y-%m-%dT%H%M%SZ).log"
+    mkdir -p "$log_dir"
+
+    if (
+        cd "$SCRIPT_DIR" && \
+        "${compose_cmd[@]}" up -d postgres redis && \
+        wait_for_compose_services_health "${compose_cmd[@]}" -- postgres && \
+        "${compose_cmd[@]}" run --rm sidar-migrate && \
+        "${compose_cmd[@]}" run --rm --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag --metadata-only
+    ) >"$seed_log_file" 2>&1; then
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Geçici container temizliği deneniyor..."
-        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Detay log: ${seed_log_file}"
+        warn "Manuel adımlar: ${compose_cmd[*]} up -d postgres redis && ${compose_cmd[*]} run --rm sidar-migrate && ${compose_cmd[*]} run --rm --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag --metadata-only"
     fi
 }
 
