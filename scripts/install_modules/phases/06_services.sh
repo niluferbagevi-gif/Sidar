@@ -62,10 +62,8 @@ seed_rag_in_docker_after_startup() {
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Detay log: ${seed_log_file}"
-        warn "Son hata satırları:"
-        tail -n 20 "$seed_log_file" 2>/dev/null | while IFS= read -r line; do
-            warn "  $line"
-        done
+        warn "Son 30 satır hata özeti:"
+        tail -n 30 "$seed_log_file" 2>/dev/null | sed 's/^/    │ /'
         warn "Manuel adımlar: ${compose_cmd[*]} up -d postgres redis && ${compose_cmd[*]} run --rm sidar-migrate && ${compose_cmd[*]} run --rm --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag --metadata-only"
     fi
 }
