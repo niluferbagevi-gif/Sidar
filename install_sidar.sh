@@ -203,7 +203,7 @@ bootstrap_clone_and_reexec() {
     local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
     local clone_name="${SIDAR_BOOTSTRAP_CLONE_DIRNAME:-Sidar}"
     local clone_target="${clone_parent%/}/${clone_name}"
-    local preferred_ref="${SIDAR_BOOTSTRAP_CLONE_REF:-}"
+    local preferred_ref="${SIDAR_BOOTSTRAP_CLONE_REF:-${SIDAR_REPO_BRANCH:-main}}"
     local home_repo_candidate="${HOME}/Sidar"
 
     warn "Yerel modüller eksik. Geçici /tmp modül indirme yerine bootstrap clone akışı başlatılıyor."
@@ -219,18 +219,14 @@ bootstrap_clone_and_reexec() {
     if [[ -d "$clone_target/.git" ]]; then
         info "Mevcut Sidar deposu bulundu, güncelleniyor: $clone_target"
         git -C "$clone_target" fetch --all --tags --prune || fail "Mevcut depo güncellenemedi: $clone_target"
-        if [[ -n "$preferred_ref" ]]; then
-            git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
-            git -C "$clone_target" pull --ff-only || fail "Depo fast-forward güncellenemedi: $clone_target"
-        fi
+        git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
+        git -C "$clone_target" pull --ff-only || fail "Depo fast-forward güncellenemedi: $clone_target"
     elif [[ -e "$clone_target" ]]; then
         fail "Bootstrap clone hedefi mevcut ama git deposu değil: $clone_target (devam edilemiyor)."
     else
         step "Sidar deposu bootstrap clone ile indiriliyor"
         git clone "$clone_url" "$clone_target" || fail "Git clone başarısız: $clone_url"
-        if [[ -n "$preferred_ref" ]]; then
-            git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
-        fi
+        git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
     fi
 
     local next_script="$clone_target/install_sidar.sh"
@@ -2209,6 +2205,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     OFFLINE_INSTALL=true|false     (equivalent to --offline/--air-gapped)
     SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
     SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
+    SIDAR_REPO_BRANCH=main|...    Repo branch/ref for bootstrap clone + sync (default: main)
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
@@ -2266,6 +2263,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)
     SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
     SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
+    SIDAR_REPO_BRANCH=main|...    Bootstrap clone + sync için repo branch/ref (varsayılan: main)
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
