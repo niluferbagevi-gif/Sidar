@@ -47,6 +47,24 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+verify_core_install_manifest() {
+    local manifest_path="${SCRIPT_DIR}/.sidar_manifest.txt"
+
+    cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
+e3da41327fdbd3b3125eaa82127800b78560ac50ae53116e95403727488360bc  core/memory.py
+1fb2f74bbca1546c225f6c7c6831b66f131806c668575acb4c852c03b32fccd2  core/multimodal.py
+SIDAR_INSTALL_MANIFEST_EOF
+
+    if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then
+        ok "Çekirdek kurulum manifest hash doğrulaması başarılı."
+        return 0
+    fi
+
+    fail "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi."
+}
+
+verify_core_install_manifest
 # Resume çağrılarında önceki çalışma dizinini koru (örn. one-shot fetch sonrası
 # 02_repo/03_runtime fazları atlandığında relative yolların sapmaması için).
 if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
