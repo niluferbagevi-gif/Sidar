@@ -320,6 +320,9 @@ derive_remote_module_base_from_repo() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
+        fail "SIDAR_BUNDLE_MODE=1 etkin; uzak clone/indirme akışları kapalı. Bundle modüllerini doğrulayın ve install_sidar.sh paketini yeniden üretin."
+    fi
     warn "Tek dosyalık çalıştırma algılandı; bootstrap clone akışı başlatılıyor."
 
     local_bootstrap_target="${HOME}/Sidar"

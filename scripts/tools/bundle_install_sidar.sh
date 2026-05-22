@@ -37,6 +37,7 @@ NR == 1 && /^#!/ { next }
 /^# BEGIN_BUNDLE_MODULES$/ {
     print "# BEGIN_BUNDLE_MODULES"
     print "# Bundled by scripts/tools/bundle_install_sidar.sh"
+    print "export SIDAR_BUNDLE_MODE=1"
 
     helper = module_dir "/install_helpers.sh"
     if (system("test -f \"" helper "\"") == 0) {
