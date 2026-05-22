@@ -87,7 +87,7 @@ install_python_deps() {
     UV_CMD=(uv)
 
     # INSTALL_DEV standardı: dev araçları kurulumun varsayılan parçasıdır.
-    # uv'de bu sözleşmeyi --extra dev + --all-extras ile zorunlu tutuyoruz.
+    # uv'de bu sözleşmeyi --all-extras ile zorunlu tutuyoruz.
     local -a SYNC_ARGS=(--frozen --all-extras)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
