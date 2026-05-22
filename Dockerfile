@@ -164,7 +164,7 @@ USER sidaruser
 
 EXPOSE 7860
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=240s --retries=3 \
   CMD sh -c 'curl -fsS "http://localhost:${WEB_PORT:-7860}/status" > /dev/null || exit 1'
 
 ENTRYPOINT ["/app/.venv/bin/python", "main.py"]
