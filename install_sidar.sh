@@ -1322,7 +1322,7 @@ ensure_docker_daemon_running() {
         fi
         local elapsed=0
         local sleep_step=3
-        local progress_mark=30
+        local progress_mark=10
         local no_signal_seconds=0
         local no_signal_limit=90
         while (( elapsed < desktop_timeout )); do
@@ -1347,7 +1347,7 @@ ensure_docker_daemon_running() {
             ((elapsed += sleep_step))
             if (( elapsed >= progress_mark )); then
                 info "Docker daemon hâlâ hazırlanıyor... (${elapsed}/${desktop_timeout}sn)"
-                progress_mark=$(( progress_mark + 30 ))
+                progress_mark=$(( progress_mark + 10 ))
             fi
             if (( sleep_step < 12 )); then
                 sleep_step=$(( sleep_step * 2 ))
