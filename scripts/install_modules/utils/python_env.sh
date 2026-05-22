@@ -51,7 +51,7 @@ create_uv_venv() {
     local expected_python_version="3.11"
     VENV_DIR="$SCRIPT_DIR/.venv"
     if [[ "${PYTHON_VERSION:-$expected_python_version}" != "$expected_python_version" ]]; then
-        fail "Python standardı ihlali: PYTHON_VERSION yalnızca ${expected_python_version} olmalıdır (mevcut: ${PYTHON_VERSION:-unset})."
+        warn "PYTHON_VERSION=${PYTHON_VERSION:-unset} algılandı; runtime için ${expected_python_version} zorunlu."
     fi
     PYTHON_VERSION="$expected_python_version"
     info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
