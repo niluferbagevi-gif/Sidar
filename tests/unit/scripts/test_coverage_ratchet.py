@@ -145,3 +145,28 @@ def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_
     coveragerc.write_text("[run]\nbranch = True\n", encoding="utf-8")
     write_fail_under(coveragerc, 9)
     assert "\n[report]\nfail_under = 9\n" in coveragerc.read_text(encoding="utf-8")
+
+
+def test_ensure_html_dark_mode_css_adds_missing_html_section(tmp_path: Path) -> None:
+    from scripts.coverage_ratchet import ensure_html_dark_mode_css
+
+    coveragerc = tmp_path / ".coveragerc"
+    coveragerc.write_text("[report]\nfail_under = 5\n", encoding="utf-8")
+
+    changed = ensure_html_dark_mode_css(coveragerc)
+
+    assert changed is True
+    content = coveragerc.read_text(encoding="utf-8")
+    assert "[html]" in content
+    assert "extra_css = assets/dark_mode.css" in content
+
+
+def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
+    coveragerc = tmp_path / ".coveragerc"
+    coverage_json = tmp_path / "coverage.json"
+    coveragerc.write_text("[report]\nfail_under = 5\n[html]\ndirectory = htmlcov\n", encoding="utf-8")
+    _write_coverage_json(coverage_json, 6.2)
+
+    ratchet_coverage_gate(coveragerc_path=coveragerc, coverage_json_path=coverage_json)
+
+    assert "extra_css = assets/dark_mode.css" in coveragerc.read_text(encoding="utf-8")

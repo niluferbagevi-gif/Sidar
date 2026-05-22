@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any
 
 
+DEFAULT_DARK_MODE_CSS = "assets/dark_mode.css"
+
+
 @dataclass(frozen=True)
 class RatchetResult:
     """Outcome of a coverage gate ratchet attempt."""
@@ -135,6 +138,22 @@ def write_fail_under(coveragerc_path: Path, new_gate: float) -> None:
     coveragerc_path.write_text("".join(output), encoding="utf-8")
 
 
+def ensure_html_dark_mode_css(coveragerc_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS) -> bool:
+    """Ensure ``[html] extra_css`` points to Sidar dark mode stylesheet."""
+
+    cfg = ConfigParser()
+    cfg.read(coveragerc_path, encoding="utf-8")
+    if not cfg.has_section("html"):
+        cfg.add_section("html")
+    current = cfg.get("html", "extra_css", fallback="").strip()
+    if current == css_path:
+        return False
+    cfg.set("html", "extra_css", css_path)
+    with coveragerc_path.open("w", encoding="utf-8") as handle:
+        cfg.write(handle)
+    return True
+
+
 def ratchet_coverage_gate(
     *,
     coveragerc_path: Path,
@@ -145,6 +164,7 @@ def ratchet_coverage_gate(
 ) -> RatchetResult:
     """Raise ``fail_under`` to the reached step if coverage improved enough."""
 
+    ensure_html_dark_mode_css(coveragerc_path)
     current_gate = read_fail_under(coveragerc_path)
     measured_coverage = read_total_coverage(coverage_json_path)
     target_gate = compute_next_gate(
