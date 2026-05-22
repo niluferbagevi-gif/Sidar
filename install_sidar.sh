@@ -1259,11 +1259,26 @@ ensure_docker_daemon_running() {
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
-    if [[ "$WSL2" != true ]] && command -v systemctl &>/dev/null; then
+    local allow_wsl_local_docker_start=false
+    if [[ "$WSL2" == true ]]; then
+        if [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+            allow_wsl_local_docker_start=true
+            info "WSL2_LOCAL_DOCKER_START=true: yerel Docker daemon başlatma denemeleri etkin."
+        elif command -v systemctl &>/dev/null \
+            && systemctl is-system-running &>/dev/null \
+            && systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -Fxq "docker.service"; then
+            allow_wsl_local_docker_start=true
+            info "WSL2 üzerinde systemd + docker.service tespit edildi; yerel daemon başlatma denemeleri etkin."
+        fi
+    fi
+
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] && command -v systemctl &>/dev/null; then
         sudo systemctl start docker >/dev/null 2>&1 || true
     fi
 
-    if [[ "$WSL2" != true ]] && ! docker info &>/dev/null && command -v service &>/dev/null; then
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] \
+        && ! docker info &>/dev/null \
+        && command -v service &>/dev/null; then
         sudo service docker start >/dev/null 2>&1 || true
     fi
 
