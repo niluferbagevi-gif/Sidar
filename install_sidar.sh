@@ -5232,6 +5232,13 @@ propagate_shared_secrets_to_env_variants() {
         fi
 
         for key in "${shared_keys[@]}"; do
+            if [[ "$name" == ".env.production" ]] && [[ "$key" == "DATABASE_URL" || "$key" == "SIDAR_CONTAINER_DATABASE_URL" ]]; then
+                # Production profile should derive DSN from POSTGRES_* parts at runtime.
+                # Avoid persistent explicit URL overrides that trigger doctor warnings.
+                sed_inplace "/^${key}=/d" "$target"
+                continue
+            fi
+
             val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
             [[ -z "${val//[[:space:]]/}" ]] && continue
 
