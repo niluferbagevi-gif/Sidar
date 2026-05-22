@@ -58,6 +58,8 @@ ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
 SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
+REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+SIDAR_REPO_BRANCH="${SIDAR_REPO_BRANCH:-main}"
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -255,12 +257,31 @@ download_remote_install_modules() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Yerel modül dizini bulunamadı; bootstrap kurtarma akışı çalıştırılıyor."
 
+    BOOTSTRAP_TARGET_DIR="${HOME}/Sidar"
+    if [[ -f "${BOOTSTRAP_TARGET_DIR}/scripts/install_modules/install_helpers.sh" ]]; then
+        info "Yerel Sidar deposu bulundu; kurulum betiği yeniden çağrılıyor: ${BOOTSTRAP_TARGET_DIR}/install_sidar.sh"
+        exec "${BOOTSTRAP_TARGET_DIR}/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if command -v git &>/dev/null && ( command -v curl &>/dev/null || command -v wget &>/dev/null ); then
+        info "Bootstrap clone başlatılıyor: ${REPO_URL} (${SIDAR_REPO_BRANCH}) -> ${BOOTSTRAP_TARGET_DIR}"
+        mkdir -p "${BOOTSTRAP_TARGET_DIR%/*}"
+        rm -rf "${BOOTSTRAP_TARGET_DIR}"
+        git clone --depth=1 --branch "${SIDAR_REPO_BRANCH}" "${REPO_URL}" "${BOOTSTRAP_TARGET_DIR}"
+        exec "${BOOTSTRAP_TARGET_DIR}/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if awk '/^# BEGIN_BUNDLE_MODULES/{flag=1;next}/^# END_BUNDLE_MODULES/{flag=0}flag' "$ORIGINAL_SCRIPT_PATH" | grep -q .; then
+        fail "Bundle modülleri bu kopyada yüklenemedi; lütfen tam depo kopyası ile yeniden çalıştırın."
+    fi
+
+    warn "Git/clone kullanılamıyor; son çare olarak uzak modül indirimi deneniyor."
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/${SIDAR_REPO_BRANCH}/scripts/install_modules}"
 
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
     ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
@@ -2481,7 +2502,6 @@ if [[ "$PYTHON_VERSION" != "3.11" ]]; then
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
-REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
