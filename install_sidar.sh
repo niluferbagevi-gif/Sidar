@@ -280,6 +280,44 @@ load_install_phase_modules() {
     done
 }
 
+verify_install_module_hashes_if_present() {
+    local hash_manifest="${SCRIPT_DIR}/MODULE_HASHES.txt"
+    local rel_path=""
+    local expected=""
+    local target=""
+    local actual=""
+    local failures=0
+
+    [[ -f "$hash_manifest" ]] || return 0
+    info "Kurulum modül hash manifesti bulundu, SHA256 doğrulaması yapılıyor: $hash_manifest"
+
+    while IFS=' ' read -r expected rel_path; do
+        [[ -n "${expected:-}" && -n "${rel_path:-}" ]] || continue
+        target="${SCRIPT_DIR}/${rel_path}"
+        if [[ ! -f "$target" ]]; then
+            warn "Hash doğrulama atlandı (dosya yok): ${rel_path}"
+            failures=$((failures + 1))
+            continue
+        fi
+        actual="$(compute_sha256 "$target")"
+        if [[ "$actual" != "$expected" ]]; then
+            warn "Hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
+            failures=$((failures + 1))
+        fi
+    done < <(awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}' "$hash_manifest")
+
+    if (( failures > 0 )); then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor."
+        else
+            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata). Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
+        fi
+    else
+        ok "Kurulum modül hash doğrulaması başarılı."
+    fi
+}
+
+verify_install_module_hashes_if_present
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 sidar_source_install_utils \

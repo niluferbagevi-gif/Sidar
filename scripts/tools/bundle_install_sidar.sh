@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SOURCE_SCRIPT="${ROOT_DIR}/install_sidar.sh"
 MODULE_DIR="${ROOT_DIR}/scripts/install_modules"
 OUTPUT_SCRIPT="${ROOT_DIR}/dist/install_sidar.sh"
+OUTPUT_HASHES="${ROOT_DIR}/dist/MODULE_HASHES.txt"
 
 mkdir -p "${ROOT_DIR}/dist"
 
@@ -67,3 +68,22 @@ in_block == 0 { print }
 
 chmod +x "$OUTPUT_SCRIPT"
 echo "Bundle oluşturuldu: $OUTPUT_SCRIPT"
+
+{
+    echo "# Sidar installer module hashes"
+    echo "# version: ${SIDAR_VERSION}"
+    echo "# bundled: ${BUILD_DATE}"
+    (
+        cd "$ROOT_DIR"
+        find scripts/install_modules -type f \( -name "*.sh" -o -name "*.ps1" \) | sort
+    ) | while IFS= read -r module_path; do
+        if command -v sha256sum >/dev/null 2>&1; then
+            sha="$(sha256sum "${ROOT_DIR}/${module_path}" | awk '{print $1}')"
+        else
+            sha="$(shasum -a 256 "${ROOT_DIR}/${module_path}" | awk '{print $1}')"
+        fi
+        printf '%s %s\n' "$sha" "$module_path"
+    done
+} > "$OUTPUT_HASHES"
+
+echo "Modül hash manifesti oluşturuldu: $OUTPUT_HASHES"
