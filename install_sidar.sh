@@ -5209,6 +5209,7 @@ propagate_shared_secrets_to_env_variants() {
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
+        ".env.production:.env.production.example"
         ".env.advanced:.env.advanced.example"  # Sürüm kontrollü şablondan üretilen advanced runtime env.
     )
 
@@ -5526,6 +5527,16 @@ setup_env_file() {
 
     ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"
     ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"
+    PRODUCTION_ENV_FILE="$SCRIPT_DIR/.env.production"
+    PRODUCTION_EXAMPLE_FILE="$SCRIPT_DIR/.env.production.example"
+
+    # .env.production eksikse example üzerinden oluştur. Secret değerleri
+    # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
+    # ile .env dosyasından senkronize edilir.
+    if [[ ! -f "$PRODUCTION_ENV_FILE" && -f "$PRODUCTION_EXAMPLE_FILE" ]]; then
+        cp "$PRODUCTION_EXAMPLE_FILE" "$PRODUCTION_ENV_FILE"
+        ok ".env.production dosyası .env.production.example'dan oluşturuldu."
+    fi
 
     # .env.advanced eksikse example üzerinden oluştur. Secret değerleri
     # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
