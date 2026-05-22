@@ -281,7 +281,9 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/${SIDAR_REPO_BRANCH}/scripts/install_modules}"
+    remote_module_owner_repo="${REPO_URL#https://github.com/}"
+    remote_module_owner_repo="${remote_module_owner_repo%.git}"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/${remote_module_owner_repo}/${SIDAR_REPO_BRANCH:-main}/scripts/install_modules}"
 
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
     ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
