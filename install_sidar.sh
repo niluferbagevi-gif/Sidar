@@ -205,6 +205,9 @@ INSTALL_REMOTE_MODULES=(
     "${INSTALL_PHASE_MODULES[@]}"
 )
 
+REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+SIDAR_REPO_BRANCH="${SIDAR_REPO_BRANCH:-main}"
+
 download_remote_install_module() {
     local module_rel="$1"
     local remote_module_base="$2"
@@ -255,7 +258,29 @@ download_remote_install_modules() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı; bootstrap clone + re-exec denenecek."
+
+    local_repo_dir="${HOME}/Sidar"
+    local_repo_installer="${local_repo_dir}/install_sidar.sh"
+
+    if [[ -x "$local_repo_installer" && -d "${local_repo_dir}/.git" ]]; then
+        info "Mevcut yerel repo bulundu; kurulum buradan yeniden başlatılıyor: $local_repo_installer"
+        exec "$local_repo_installer" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if command -v git &>/dev/null && (command -v curl &>/dev/null || command -v wget &>/dev/null); then
+        info "Repo klonlanıyor (${REPO_URL}, branch: ${SIDAR_REPO_BRANCH}) ve kurulum yeniden başlatılacak."
+        mkdir -p "$local_repo_dir"
+        rm -rf "$local_repo_dir/.git" "$local_repo_dir/scripts" "$local_repo_dir/install_sidar.sh"
+        if git clone --depth=1 --branch "$SIDAR_REPO_BRANCH" "$REPO_URL" "$local_repo_dir"; then
+            exec "$local_repo_installer" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+        fi
+        warn "Bootstrap clone başarısız oldu; tek dosya fallback moduna geçiliyor."
+    else
+        warn "git veya (curl|wget) eksik; tek dosya fallback moduna geçiliyor."
+    fi
+
+    warn "Tüm kurulum modülleri uzaktan indirilmeyi deneyecek (son çare fallback)."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
@@ -2481,7 +2506,6 @@ if [[ "$PYTHON_VERSION" != "3.11" ]]; then
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
-REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
