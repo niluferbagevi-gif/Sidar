@@ -375,7 +375,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
         fail "SIDAR_BUNDLE_MODE=1 algılandı ancak $INSTALL_HELPERS_MODULE bulunamadı. Bundle bütünlüğünü doğrulayın ve betiği yeniden üretin."
     fi
-    warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    info "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
 
     if [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
         info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
