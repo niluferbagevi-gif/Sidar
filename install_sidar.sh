@@ -211,28 +211,60 @@ download_remote_install_module() {
     local destination_root="$3"
     local remote_module_url="${remote_module_base}/${module_rel}"
     local destination_path="${destination_root}/${module_rel}"
+    local remote_checksum_url="${remote_module_url}.sha256"
+    local expected_checksum=""
+    local actual_checksum=""
     local tmp_module_path=""
+    local tmp_checksum_path=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    tmp_checksum_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
         fi
     else
-        rm -f "$tmp_module_path"
+        rm -f "$tmp_module_path" "$tmp_checksum_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$remote_checksum_url" -o "$tmp_checksum_path" || true
+    else
+        wget -qO "$tmp_checksum_path" "$remote_checksum_url" || true
+    fi
+
+    if [[ -s "$tmp_checksum_path" ]]; then
+        expected_checksum="$(awk '{print $1; exit}' "$tmp_checksum_path" | tr -d '[:space:]')"
+        actual_checksum="$(compute_sha256 "$tmp_module_path" | tr -d '[:space:]')"
+        if [[ -z "$expected_checksum" || "$expected_checksum" != "$actual_checksum" ]]; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+                warn "Checksum doğrulaması başarısız, ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor: $module_rel"
+            else
+                fail "Checksum doğrulaması başarısız: $module_rel (beklenen=$expected_checksum, bulunan=$actual_checksum)"
+            fi
+        fi
+    else
+        rm -f "$tmp_checksum_path"
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "Checksum dosyası bulunamadı, ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor: $remote_checksum_url"
+        else
+            rm -f "$tmp_module_path"
+            fail "Checksum dosyası bulunamadı: $remote_checksum_url"
+        fi
+    fi
+
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    rm -f "$tmp_module_path" "$tmp_checksum_path"
 }
 
 download_remote_install_modules() {
@@ -253,17 +285,81 @@ download_remote_install_modules() {
     done
 }
 
+resolve_remote_install_module_base_url() {
+    local explicit_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    local repo_url="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+    local repo_branch="${SIDAR_REPO_BRANCH:-main}"
+    local repo_slug=""
+
+    if [[ -n "$explicit_base" ]]; then
+        echo "$explicit_base"
+        return 0
+    fi
+
+    repo_url="${repo_url%.git}"
+    if [[ "$repo_url" =~ ^https?://github\.com/([^/]+/[^/]+)$ ]]; then
+        repo_slug="${BASH_REMATCH[1]}"
+    elif [[ "$repo_url" =~ ^git@github\.com:([^/]+/[^/]+)$ ]]; then
+        repo_slug="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ -n "$repo_slug" ]]; then
+        echo "https://raw.githubusercontent.com/${repo_slug}/${repo_branch}/scripts/install_modules"
+        return 0
+    fi
+
+    warn "SIDAR_REPO_URL GitHub biçiminde ayrıştırılamadı, varsayılan modül kaynağı kullanılacak: $repo_url"
+    echo "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+}
+
+bootstrap_single_file_install_from_repo() {
+    local existing_repo_dir=""
+    local bootstrap_repo_url="${SIDAR_REPO_URL:-${REPO_URL:-${SIDAR_REPO_URL_DEFAULT:-https://github.com/niluferbagevi-gif/Sidar.git}}}"
+    local bootstrap_target_dir="${TARGET_DIR:-$HOME/Sidar}"
+
+    if [[ -d "$HOME/Sidar/.git" ]]; then
+        existing_repo_dir="$HOME/Sidar"
+    elif [[ -d "$bootstrap_target_dir/.git" ]]; then
+        existing_repo_dir="$bootstrap_target_dir"
+    fi
+
+    if [[ -n "$existing_repo_dir" ]]; then
+        INSTALL_MODULE_DIR="${existing_repo_dir}/scripts/install_modules"
+        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+        if [[ -f "$INSTALL_HELPERS_MODULE" ]]; then
+            ok "Mevcut Sidar deposu bulundu; kurulum modülleri repo içinden kullanılacak: $INSTALL_MODULE_DIR"
+            return 0
+        fi
+        warn "Mevcut repo bulundu ancak kurulum modülleri eksik: $INSTALL_HELPERS_MODULE"
+    fi
+
+    if command -v git &>/dev/null; then
+        if [[ -d "$bootstrap_target_dir/.git" ]]; then
+            info "Mevcut Sidar deposu güncelleniyor: $bootstrap_target_dir"
+            (
+                cd "$bootstrap_target_dir"
+                git pull --rebase origin main
+            ) || fail "Tek dosyalık bootstrap için mevcut repo güncellenemedi: $bootstrap_target_dir"
+        else
+            info "Tek dosyalık bootstrap: önce repo klonlanıyor: $bootstrap_repo_url → $bootstrap_target_dir"
+            git clone --depth=1 "$bootstrap_repo_url" "$bootstrap_target_dir" || fail "Tek dosyalık bootstrap için repo klonlanamadı: $bootstrap_repo_url"
+        fi
+
+        info "Repo bootstrap tamamlandı; kurulum scripti repo üzerinden yeniden başlatılıyor."
+        exec "$bootstrap_target_dir/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    fail "Tek dosyalık bootstrap için git gereklidir. Lütfen git kurup tekrar deneyin veya betiği klonlanmış Sidar reposu içinden çalıştırın."
+}
+
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
-
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
-
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
-    ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+    if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
+        fail "SIDAR_BUNDLE_MODE=1 algılandı ancak gömülü modüller bulunamadı. Bundle dosyası bozuk olabilir; lütfen bundle artefaktını yeniden üretin."
+    fi
+    warn "Tek dosyalık çalıştırma algılandı."
+    bootstrap_single_file_install_from_repo
+    fail "Repo bootstrap akışı beklenmedik şekilde geri döndü."
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
@@ -402,7 +498,21 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
+    local keep_temp_modules_raw="${KEEP_TEMP_MODULES:-${SIDAR_KEEP_TEMP_MODULES:-0}}"
+    local keep_temp_modules=""
+    local exit_code="${INSTALL_EXIT_CODE:-0}"
+
+    keep_temp_modules="$(normalize_bool "$keep_temp_modules_raw")"
     if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if [[ "$keep_temp_modules" == "true" ]]; then
+            warn "Geçici modül dizini korunuyor (SIDAR_KEEP_TEMP_MODULES/--keep-temp-modules aktif): $INSTALL_HELPERS_TEMP_DIR"
+            return 0
+        fi
+        if [[ "$exit_code" -ne 0 ]]; then
+            warn "Kurulum hata ile sonlandı (exit=$exit_code); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
+            warn "Temizlemek için: rm -rf \"$INSTALL_HELPERS_TEMP_DIR\""
+            return 0
+        fi
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
     fi
@@ -426,7 +536,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
+trap 'INSTALL_EXIT_CODE=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
@@ -2182,7 +2292,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--keep-temp-modules] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -2202,6 +2312,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --download-models  Download Ollama models by default
   --build-ui  Rebuild the React Web UI even when cache exists
   --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
+  --keep-temp-modules  Keep one-shot temporary install modules directory for debugging
   --ci / --no-interaction  Run non-interactively without prompting the user
   --non-interactive / --headless / --yes / -y  Short aliases for --no-interaction
   --silent  Quiet CI/CD install: DEBIAN_FRONTEND=noninteractive + safe automatic defaults
@@ -2229,6 +2340,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     OFFLINE_INSTALL=true|false     (equivalent to --offline/--air-gapped)
     SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
     SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
+    SIDAR_REPO_BRANCH=main       Branch used for raw install module fallback URL derivation
+    SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary downloaded one-shot modules on exit (debug)
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
@@ -2239,7 +2352,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--keep-temp-modules] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -2259,6 +2372,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --download-models  Ollama modellerini varsayılan olarak indir
   --build-ui  React Web UI yeniden build et (cache olsa bile)
   --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
+  --keep-temp-modules  Tek dosyalık kurulum geçici modül dizinini debug için koru
   --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır
   --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar
   --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar
@@ -2286,6 +2400,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)
     SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
     SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
+    SIDAR_REPO_BRANCH=main       Raw install module fallback URL'i türetmek için branch adı
+    SIDAR_KEEP_TEMP_MODULES=1|0  Tek dosyalık indirilen geçici modülleri çıkışta korur (debug)
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
@@ -2335,6 +2451,7 @@ for arg in "$@"; do
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
         --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
         --strict-docker) STRICT_DOCKER=true ;;
+        --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
         --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
         --enable-audio) ENABLE_AUDIO=true ;;
         --help|-h)
@@ -2377,6 +2494,7 @@ resolve_env_type_choice() {
 
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
+KEEP_TEMP_MODULES="$(normalize_bool "${SIDAR_KEEP_TEMP_MODULES:-false}")"
 STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true

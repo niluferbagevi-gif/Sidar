@@ -454,11 +454,14 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
-**Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir.**
-Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirir; betik repo checkout
-yoksa `scripts/install_modules/` altındaki güncel yardımcı ve faz modüllerini
-GitHub üzerinden otomatik indirir. Böylece kurulum tek parça bir araç gibi
-hissedilirken kaynak kod modüler kalır:
+**Varsayılan çevrimiçi kurulum yöntemi bootstrap clone yaklaşımını kullanır.**
+Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirirse betik önce tam
+Sidar reposunu `~/Sidar` altına klonlar ve ardından klonlanan kopyadan devam eder.
+Bu sayede kurulum, yardımcı/faz modüllerini geçici dizine parçalı indirmek yerine
+her zaman repo içindeki ana dosyalar üzerinden bütünlüklü çalışır:
+Tek dosyalık çalıştırmada `install_sidar.sh` önce `~/Sidar` altına repoyu klonlar,
+sonra klonlanan kopyadan kendini re-exec eder; betiği zaten klonlanmış repo
+dizininden çalıştırırsanız bu ek bootstrap adımı atlanır.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
@@ -487,6 +490,10 @@ uv sync --all-extras
 Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik Release
 bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
 ile üretilir ve modül indirme ihtiyacı olmadan çalışır:
+
+Test/coverage kalite kapılarında üretilen HTML coverage raporu (`htmlcov/index.html`)
+varsayılan olarak karanlık mod temasında açılır (`.coveragerc` içindeki
+`extra_css = assets/dark_mode.css` ayarı ile).
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
