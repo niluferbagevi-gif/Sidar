@@ -43,7 +43,7 @@ EOS
     uv_stub.chmod(0o755)
 
     smoke_script = textwrap.dedent(
-        """
+        r"""
         set -euo pipefail
         source scripts/install_modules/utils/python_env.sh
 
