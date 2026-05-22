@@ -1,5 +1,34 @@
 #!/usr/bin/env bash
 
+
+seed_rag_in_docker_after_startup() {
+    local seed_mode="${AUTO_SEED_RAG_DOCKER_WARMUP:-true}"
+    seed_mode="$(normalize_bool "$seed_mode")"
+    [[ -z "$seed_mode" ]] && seed_mode="true"
+
+    if [[ "$seed_mode" != "true" ]]; then
+        info "AUTO_SEED_RAG_DOCKER_WARMUP=${AUTO_SEED_RAG_DOCKER_WARMUP:-false}; Docker RAG warmup seed atlandı."
+        return 0
+    fi
+
+    local -a compose_cmd=()
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        compose_cmd=(docker-compose)
+    else
+        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm sidar-web uv run python -m scripts.seed_rag"
+        return 0
+    fi
+
+    info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm sidar-web uv run python -m scripts.seed_rag); then
+        ok "Docker RAG/GraphRAG seed adımı tamamlandı."
+    else
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm sidar-web uv run python -m scripts.seed_rag"
+    fi
+}
+
 sidar_phase_local_migrations_and_models() {
     sidar_source_install_utils "ollama_models.sh"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
@@ -20,6 +49,7 @@ sidar_phase_local_migrations_and_models() {
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
+        seed_rag_in_docker_after_startup
     fi
 }
 
