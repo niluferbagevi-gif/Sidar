@@ -86,6 +86,8 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
+    # INSTALL_DEV standardı: dev araçları kurulumun varsayılan parçasıdır.
+    # uv'de bu sözleşmeyi --extra dev + --all-extras ile zorunlu tutuyoruz.
     local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
@@ -106,6 +108,11 @@ install_python_deps() {
         fail "uv sync --frozen --all-extras --extra dev başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
+    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras --extra dev' akışını temiz bir ortamda tekrar çalıştırın."
+    fi
+
+    ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
     ensure_env_file_secrets_after_uv_sync
     validate_runtime_env_loading
