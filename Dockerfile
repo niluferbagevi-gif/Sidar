@@ -112,7 +112,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --all-extras --extra dev
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
-RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
+RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db /app/data/rag /app/data/lora_adapters /app/data/continuous_learning && chown -R sidaruser:sidaruser /app
 USER sidaruser
 
 # Web arayüzü portu
