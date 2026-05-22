@@ -3684,6 +3684,11 @@ install_python_deps() {
         fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
+    if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras' akışını temiz bir ortamda tekrar çalıştırın."
+    fi
+
+    ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
     ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
     ensure_env_file_secrets_after_uv_sync
     validate_runtime_env_loading
