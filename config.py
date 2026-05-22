@@ -768,7 +768,7 @@ def check_hardware() -> HardwareInfo:
             info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
             _log_first_load_info(
-                "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
+                "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, Torch CUDA build %s)",
                 info.gpu_name,
                 info.gpu_count,
                 info.cuda_version,

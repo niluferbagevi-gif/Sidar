@@ -3597,7 +3597,7 @@ detect_gpu() {
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
         ok "Sürücü  : $DRIVER_VER"
-        ok "CUDA    : $CUDA_VERSION"
+        ok "CUDA Driver Cap : $CUDA_VERSION"
         [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
 
         if [[ "$WSL2" == true ]]; then
