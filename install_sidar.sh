@@ -1279,6 +1279,8 @@ ensure_docker_daemon_running() {
         else
             info "WSL2 üzerinde systemd + docker.service tespit edildi; yerel daemon başlatma denemeleri etkin."
         fi
+    elif [[ "$WSL2" == true ]]; then
+        info "WSL2: local docker servisi başlatma atlandı, Docker Desktop akışı kullanılacak."
     fi
 
     if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] && command -v systemctl &>/dev/null; then
