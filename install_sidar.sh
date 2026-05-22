@@ -2996,7 +2996,7 @@ sync_repo() {
 
     if [[ ! -d "$TARGET_DIR/.git" ]]; then
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone "$REPO_URL" "$TARGET_DIR"
+        git clone --depth=1 --branch "${REPO_BRANCH:-main}" "$REPO_URL" "$TARGET_DIR"
     else
         warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
         info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
