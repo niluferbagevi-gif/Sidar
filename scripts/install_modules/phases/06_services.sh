@@ -12,22 +12,29 @@ seed_rag_in_docker_after_startup() {
     fi
 
     local -a compose_cmd=()
+    local compose_profiles="${COMPOSE_PROFILES:-}"
+    local seed_service="sidar-web"
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         compose_cmd=(docker compose)
     elif command -v docker-compose &>/dev/null; then
         compose_cmd=(docker-compose)
     else
-        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm --no-deps sidar-web uv run python -m scripts.seed_rag"
+        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
         return 0
     fi
 
+    if [[ "$compose_profiles" == *"gpu"* ]]; then
+        seed_service="sidar-web-gpu"
+    fi
+
+    info "RAG seed servisi aktif profillere göre seçildi: ${seed_service} (COMPOSE_PROFILES=${compose_profiles:-cpu})."
     info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
-    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps sidar-web uv run python -m scripts.seed_rag); then
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Geçici container temizliği deneniyor..."
-        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s sidar-web >/dev/null 2>&1) || true
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps sidar-web uv run python -m scripts.seed_rag"
+        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
     fi
 }
 
