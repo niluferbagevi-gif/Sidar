@@ -265,6 +265,47 @@ sync_database_passwords_before_smoke_tests() {
         ok "Canlı PostgreSQL kullanıcı parolası smoke test öncesi eşitlendi."
     else
         warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı; smoke testler mevcut veritabanı durumu ile devam edecek."
+        sidar_phase06_report_production_postgres_password_alignment || true
+    fi
+}
+
+sidar_phase06_report_production_postgres_password_alignment() {
+    local sidar_env=""
+    sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$SCRIPT_DIR/.env" | tr -d '\n' | tr '[:upper:]' '[:lower:]')
+    sidar_env="${sidar_env:-development}"
+
+    case "$sidar_env" in
+        production|prod)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    local pg_user pg_password pg_db pg_container
+    pg_user=$(read_env_value_from_file "POSTGRES_USER" "$SCRIPT_DIR/.env" | tr -d '\n')
+    pg_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d '\n')
+    pg_db=$(read_env_value_from_file "POSTGRES_DB" "$SCRIPT_DIR/.env" | tr -d '\n')
+    pg_container=$(read_env_value_from_file "SIDAR_POSTGRES_CONTAINER" "$SCRIPT_DIR/.env" | tr -d '\n')
+
+    pg_user="${pg_user:-sidar}"
+    pg_db="${pg_db:-postgres}"
+    pg_container="${pg_container:-sidar_postgres}"
+
+    if [[ -z "${pg_password//[[:space:]]/}" ]]; then
+        warn "Production profili: POSTGRES_PASSWORD boş görünüyor; mevcut volume parola uyumu doğrulanamadı."
+        return 0
+    fi
+
+    if ! command -v docker &>/dev/null; then
+        warn "Production profili: docker CLI bulunamadı; mevcut volume parola uyumu doğrulanamadı."
+        return 0
+    fi
+
+    if env PGPASSWORD="$pg_password" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -c 'SELECT 1;' >/dev/null 2>&1; then
+        ok "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile uyumlu görünüyor."
+    else
+        warn "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
     fi
 }
 
