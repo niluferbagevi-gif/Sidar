@@ -30,6 +30,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker_setup/postgres/init.d/01_create_envs.sql:/docker-entrypoint-initdb.d/01_create_envs.sql:ro
+      - ./docker_setup/postgres/init.d/02_enable_vector.sql:/docker-entrypoint-initdb.d/02_enable_vector.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sidar} -d $${POSTGRES_DB:-sidar}"]
       interval: 5s
@@ -70,6 +71,27 @@ services:
               count: all
               capabilities: [gpu]
 
+
+
+  sidar-migrate:
+    profiles: ["cpu", "gpu"]
+    image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    build:
+      context: .
+      args:
+        BASE_IMAGE: python:3.11-slim
+        GPU_ENABLED: "false"
+    container_name: sidar_migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}
+    env_file:
+      - .env
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
     profiles: ["cpu"]
@@ -91,9 +113,14 @@ services:
           memory: 4G
 
     depends_on:
-      - redis
-      - postgres
-      - ollama
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      sidar-migrate:
+        condition: service_completed_successfully
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -152,9 +179,14 @@ services:
           memory: 8G
 
     depends_on:
-      - redis
-      - postgres
-      - ollama-gpu
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      ollama-gpu:
+        condition: service_started
+      sidar-migrate:
+        condition: service_completed_successfully
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -209,10 +241,16 @@ services:
           memory: 4G
 
     depends_on:
-      - redis
-      - postgres
-      - jaeger
-      - ollama
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      ollama:
+        condition: service_started
+      sidar-migrate:
+        condition: service_completed_successfully
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -271,10 +309,16 @@ services:
           memory: 8G
 
     depends_on:
-      - redis
-      - postgres
-      - jaeger
-      - ollama-gpu
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      ollama-gpu:
+        condition: service_started
+      sidar-migrate:
+        condition: service_completed_successfully
 
     environment:
       - ACCESS_LEVEL=sandbox
