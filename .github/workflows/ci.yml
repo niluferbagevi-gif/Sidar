@@ -144,6 +144,12 @@ jobs:
           tests/quality/test_llm_quality_gate.py
           tests/quality/test_shellcheck_quality_gate.py
 
+      - name: Run installer/runtime smoke verification tests
+        run: >-
+          uv run pytest -q --no-cov
+          tests/smoke/test_install_verification.py
+          tests/smoke/test_repo_phase_coverage_dark_mode_assets.py
+
       - name: Run ShellCheck for installer and install modules
         run: |
           shopt -s globstar nullglob
