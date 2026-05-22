@@ -205,6 +205,53 @@ INSTALL_REMOTE_MODULES=(
     "${INSTALL_PHASE_MODULES[@]}"
 )
 
+declare -A INSTALL_REMOTE_MODULE_HASHES=(
+    ["install_helpers.sh"]="55f8398ee73743e0b9c13cc4c3c9a37789059e1305ee4bd7af53b17bf187dd8b"
+    ["utils/install_remediation.sh"]="b2be9f204d0ed9b3a1332cfc64c3cb164d289bc7a4c529b6034fa50aaaf607fb"
+    ["utils/wsl_integration_autofix.sh"]="fb97a12d6564e0dae5983aba53f458bf3d96cf85217088cf247f5cf19d866bd9"
+    ["utils/wsl_gpu_preflight.sh"]="690f3ba3cae26147ca1ca2fab55041b70176a5f9e8a25984978d248559336af3"
+    ["utils/gpu_utils.sh"]="70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04"
+    ["utils/python_env.sh"]="1ac6d5a212ab0cc1b237fde025ee09b46ed9a9d551a398a078279af5eec8f758"
+    ["utils/db_credentials.sh"]="76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681"
+    ["utils/env_utils.sh"]="572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e"
+    ["utils/ollama_models.sh"]="4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2"
+    ["utils/wsl_integration_autofix.ps1"]="02446d6c5f3bb0fab7621e71983d320005a827ee0c6eed276804d6577a6e1fb8"
+    ["phases/01_context.sh"]="b57e486ed9a9524f35b1698638c8d89702a4907ce324414941c5884d1f8f951c"
+    ["phases/02_repo.sh"]="9d076a7fdfbb96289c87b11a044629ff31ed7b89e5a0f1c89932af5d108f8390"
+    ["phases/03_runtime.sh"]="2e6f7f9ae61dc7eba9210224cf36230016333db645950e4307b232a6478ffdaf"
+    ["phases/04_workspace.sh"]="c6949c2fa961fdea9740cdfd754b376c343448a746f9cb01501454e7ce156b51"
+    ["phases/05_frontend.sh"]="c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42"
+    ["phases/06_services.sh"]="2bbaf6c0201465f66775a81edf636968d3bed40bff4b47ab1ca2551a18580e69"
+    ["phases/07_finish.sh"]="12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3"
+)
+
+verify_remote_install_module_hash() {
+    local module_rel="$1"
+    local downloaded_file="$2"
+    local expected_hash="${INSTALL_REMOTE_MODULE_HASHES[$module_rel]:-}"
+    local actual_hash=""
+
+    if [[ -z "$expected_hash" ]]; then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "Fallback modül hash manifestinde kayıt yok: ${module_rel} (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile devam ediliyor)."
+            return 0
+        fi
+        fail "Fallback modül hash manifestinde kayıt yok: ${module_rel}. Defense-in-depth gereği doğrulamasız modül yüklenemez."
+    fi
+
+    actual_hash="$(compute_sha256 "$downloaded_file")"
+    if [[ "$actual_hash" == "$expected_hash" ]]; then
+        return 0
+    fi
+
+    if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+        warn "Fallback modül hash uyuşmazlığı: ${module_rel} (beklenen=${expected_hash}, mevcut=${actual_hash}); ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile devam ediliyor."
+        return 0
+    fi
+
+    fail "Fallback modül hash doğrulaması başarısız: ${module_rel} (beklenen=${expected_hash}, mevcut=${actual_hash})."
+}
+
 derive_remote_module_base_from_repo() {
     local repo_url="${1:-}"
     local repo_branch="${2:-main}"
@@ -239,6 +286,7 @@ download_remote_install_module() {
         return 1
     fi
 
+    verify_remote_install_module_hash "$module_rel" "$tmp_module_path"
     install -m 0644 "$tmp_module_path" "$destination_path"
     rm -f "$tmp_module_path"
 }
