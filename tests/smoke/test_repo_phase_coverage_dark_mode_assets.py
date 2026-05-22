@@ -1,14 +1,22 @@
 import os
 import subprocess
 import textwrap
+from pathlib import Path
 
 
 def test_repo_phase_copies_dark_mode_css_into_htmlcov_assets(tmp_path):
+    repo_root = Path(os.getcwd())
+    source_dark_css = repo_root / "assets" / "dark_mode.css"
+    assert source_dark_css.exists(), (
+        f"Smoke test precondition failed: missing source asset {source_dark_css}. "
+        "Expected repository asset assets/dark_mode.css to exist."
+    )
+
     script_dir = tmp_path / "sidar"
     assets_dir = script_dir / "assets"
     assets_dir.mkdir(parents=True)
     dark_css = assets_dir / "dark_mode.css"
-    dark_css.write_text("body { color: #e6edf3; }\n", encoding="utf-8")
+    dark_css.write_text(source_dark_css.read_text(encoding="utf-8"), encoding="utf-8")
 
     repo_phase_script = textwrap.dedent(
         """
