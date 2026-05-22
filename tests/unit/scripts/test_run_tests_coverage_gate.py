@@ -938,5 +938,15 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "uv pip" not in script
     assert "uv tool install" not in script
     assert "python -m venv" not in script
+
+
+def test_install_sidar_has_wsl2_local_docker_escape_hatch_and_skip_log() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "_should_attempt_wsl_local_docker_service()" in script
+    assert 'SIDAR_FORCE_LOCAL_DOCKER:-0' in script
+    assert 'WSL2_LOCAL_DOCKER_START:-false' in script
+    assert "systemctl list-unit-files --type=service" in script
+    assert "WSL2: local docker servisi başlatma atlandı, Docker Desktop akışı kullanılacak." in script
     assert "python3 -m venv" not in script
     assert "virtualenv" not in script
