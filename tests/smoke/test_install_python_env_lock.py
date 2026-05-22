@@ -12,7 +12,7 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
     uv_stub = fake_bin / "uv"
     uv_stub.write_text(
         textwrap.dedent(
-            """#!/usr/bin/env bash
+            r"""#!/usr/bin/env bash
             set -euo pipefail
             if [[ "$1" == "python" && "$2" == "install" ]]; then
               exit 0
@@ -43,7 +43,7 @@ EOS
     uv_stub.chmod(0o755)
 
     smoke_script = textwrap.dedent(
-        """
+        r"""
         set -euo pipefail
         source scripts/install_modules/utils/python_env.sh
 
