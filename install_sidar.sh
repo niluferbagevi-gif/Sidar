@@ -3733,7 +3733,9 @@ install_python_deps() {
     cd "$SCRIPT_DIR"
     UV_CMD=(uv)
 
-    local -a SYNC_ARGS=(--frozen --all-extras)
+    # Dev araçları (pytest/coverage/mypy/ruff) self-healing ve otonom kalite
+    # döngüleri için production dahil her profilde zorunludur.
+    local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -3748,7 +3750,7 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras. Dev araçları self-healing için standarttır."
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
