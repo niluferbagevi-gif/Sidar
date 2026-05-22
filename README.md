@@ -455,11 +455,7 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
 **Varsayılan çevrimiçi kurulum yöntemi bootstrap clone + re-exec akışıdır.**
-Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirirse betik önce `~/Sidar`
-altına repoyu klonlar, ardından klonlanan kopyadaki `install_sidar.sh` üzerinden
-kendini yeniden çalıştırır (re-exec). Kurulumu zaten klonlanmış repo dizininden
-başlatırsanız bu ek bootstrap adımı atlanır. Böylece kurulum tek parça bir araç gibi
-hissedilirken kaynak kod modüler kalır:
+Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirip çalıştırdığında betik önce `~/Sidar` altına depoyu (dar bant için `--depth=1 --branch <ref>` ile) klonlar ve ardından klonlanan kopyadaki `install_sidar.sh` üzerinden kendini yeniden başlatır (re-exec). Kurulum zaten klonlanmış repo dizininden başlatıldıysa bu bootstrap adımı atlanır; böylece tek komut ergonomisi korunurken modüler `scripts/install_modules` yapısı ile güncel modüller güvenli şekilde kullanılır.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
