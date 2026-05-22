@@ -3708,6 +3708,14 @@ create_uv_venv() {
 
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
+        local detected_python_version=""
+        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+        if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
+            warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
+            rm -rf "$VENV_DIR"
+            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+            ok "uv venv zorunlu Python $PYTHON_VERSION ile yeniden oluşturuldu."
+        fi
     else
         info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
         uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
