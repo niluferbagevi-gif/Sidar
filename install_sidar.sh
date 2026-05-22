@@ -210,29 +210,72 @@ download_remote_install_module() {
     local remote_module_base="$2"
     local destination_root="$3"
     local remote_module_url="${remote_module_base}/${module_rel}"
+    local remote_sha_url="${remote_module_url}.sha256"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_sha_path=""
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    tmp_sha_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_sha_path"
             return 1
+        fi
+        if ! curl -fsSL "$remote_sha_url" -o "$tmp_sha_path"; then
+            rm -f "$tmp_module_path" "$tmp_sha_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+                warn "SHA256 dosyası indirilemedi (${remote_sha_url}); ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile doğrulamasız devam ediliyor."
+                install -m 0644 "$tmp_module_path" "$destination_path"
+                rm -f "$tmp_module_path"
+                return 0
+            fi
+            fail "SHA256 dosyası indirilemedi (${remote_sha_url}). MITM riskine karşı kurulum durduruldu (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0)."
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_sha_path"
             return 1
         fi
+        if ! wget -qO "$tmp_sha_path" "$remote_sha_url"; then
+            rm -f "$tmp_module_path" "$tmp_sha_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+                warn "SHA256 dosyası indirilemedi (${remote_sha_url}); ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile doğrulamasız devam ediliyor."
+                install -m 0644 "$tmp_module_path" "$destination_path"
+                rm -f "$tmp_module_path"
+                return 0
+            fi
+            fail "SHA256 dosyası indirilemedi (${remote_sha_url}). MITM riskine karşı kurulum durduruldu (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0)."
+        fi
     else
-        rm -f "$tmp_module_path"
+        rm -f "$tmp_module_path" "$tmp_sha_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
+    expected_sha="$(awk '{print $1}' "$tmp_sha_path" | tr -d '[:space:]')"
+    if [[ -z "$expected_sha" ]]; then
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 içeriği boş/geçersiz: ${remote_sha_url}"
+    fi
+    if command -v sha256sum &>/dev/null; then
+        actual_sha="$(sha256sum "$tmp_module_path" | awk '{print $1}')"
+    elif command -v shasum &>/dev/null; then
+        actual_sha="$(shasum -a 256 "$tmp_module_path" | awk '{print $1}')"
+    else
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+    fi
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 doğrulaması başarısız (${module_rel}). Beklenen: ${expected_sha}, Gerçek: ${actual_sha}. MITM riskine karşı kurulum durduruldu."
+    fi
+
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    rm -f "$tmp_module_path" "$tmp_sha_path"
 }
 
 download_remote_install_modules() {
@@ -253,17 +296,71 @@ download_remote_install_modules() {
     done
 }
 
+derive_remote_module_base_from_repo() {
+    local repo_url="$1"
+    local repo_branch="$2"
+    local normalized_url="$repo_url"
+    local owner_repo=""
+
+    repo_branch="${repo_branch:-main}"
+    normalized_url="${normalized_url%.git}"
+    normalized_url="${normalized_url#git@github.com:}"
+    normalized_url="${normalized_url#ssh://git@github.com/}"
+    normalized_url="${normalized_url#https://github.com/}"
+    normalized_url="${normalized_url#http://github.com/}"
+
+    if [[ "$normalized_url" != */* ]]; then
+        normalized_url="niluferbagevi-gif/Sidar"
+    fi
+
+    owner_repo="${normalized_url%%\?*}"
+    owner_repo="${owner_repo%%#*}"
+    echo "https://raw.githubusercontent.com/${owner_repo}/${repo_branch}/scripts/install_modules"
+}
+
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
+        fail "SIDAR_BUNDLE_MODE=1 etkin; uzak clone/indirme akışları kapalı. Bundle modüllerini doğrulayın ve install_sidar.sh paketini yeniden üretin."
+    fi
+    warn "Tek dosyalık çalıştırma algılandı; bootstrap clone akışı başlatılıyor."
 
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    local_bootstrap_target="${HOME}/Sidar"
+    local_bootstrap_script="${local_bootstrap_target}/install_sidar.sh"
+    local_bootstrap_repo_url="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
+    local_bootstrap_repo_branch="${SIDAR_REPO_BRANCH:-main}"
+    local_bootstrap_remote_module_base=""
 
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
-    ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+    if [[ -d "${local_bootstrap_target}/.git" ]]; then
+        info "Bootstrap repo zaten mevcut: ${local_bootstrap_target}"
+    else
+        if ! command -v git &>/dev/null; then
+            fail "Tek dosyalık kurulum için git gereklidir ancak bulunamadı."
+        fi
+        info "Bootstrap clone başlatılıyor: ${local_bootstrap_repo_url} → ${local_bootstrap_target}"
+        if ! git clone --depth=1 --branch "${local_bootstrap_repo_branch}" "${local_bootstrap_repo_url}" "${local_bootstrap_target}"; then
+            warn "Bootstrap clone başarısız oldu; uzaktan modül fallback akışı deneniyor."
+            local_bootstrap_remote_module_base="$(derive_remote_module_base_from_repo "$local_bootstrap_repo_url" "$local_bootstrap_repo_branch")"
+            INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+            INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+            INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+            download_remote_install_modules "$local_bootstrap_remote_module_base" "$INSTALL_MODULE_DIR"
+            ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+        fi
+    fi
+
+    if [[ ! -f "${local_bootstrap_script}" ]]; then
+        if [[ -f "$INSTALL_HELPERS_MODULE" ]]; then
+            warn "Bootstrap script bulunamadı; uzaktan indirilen modüllerle devam edilecek."
+        else
+            fail "Bootstrap clone tamamlandı ancak kurulum scripti bulunamadı: ${local_bootstrap_script}"
+        fi
+    fi
+
+    if [[ -f "${local_bootstrap_script}" ]]; then
+        info "Kurulum repo içi script ile yeniden başlatılıyor: ${local_bootstrap_script}"
+        exec "${local_bootstrap_script}" "$@"
+    fi
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
@@ -402,7 +499,15 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
+    local exit_code="${1:-0}"
+    local keep_temp_modules="${SIDAR_KEEP_TEMP_MODULES:-1}"
+
     if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
+        if [[ "$exit_code" -ne 0 && "$keep_temp_modules" == "1" ]]; then
+            warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
+            warn "Geçici dizini manuel temizlemek için: rm -rf \"$INSTALL_HELPERS_TEMP_DIR\""
+            return 0
+        fi
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
     fi
@@ -426,7 +531,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
+trap 'exit_code=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed "$exit_code" || true' EXIT
 
 compute_sha256() {
     local file_path="$1"

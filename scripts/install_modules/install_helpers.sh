@@ -110,6 +110,7 @@ sidar_source_install_utils() {
     local module_rel=""
     local module_path=""
     local sentinel=""
+    local remote_hint=""
     for module_rel in "$@"; do
         [[ -n "$module_rel" ]] || continue
         sentinel="SIDAR_INSTALL_UTIL_$(printf '%s' "$module_rel" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9_]/_/g')_LOADED"
@@ -118,7 +119,8 @@ sidar_source_install_utils() {
         fi
         module_path="${INSTALL_MODULE_DIR}/utils/${module_rel}"
         if [[ ! -f "$module_path" ]]; then
-            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+            remote_hint="${REMOTE_MODULE_BASE:-${SIDAR_INSTALL_MODULE_BASE_URL:-N/A}}"
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik veya bundle/remote modül kaynağı tutarsız. Remote module base: ${remote_hint}"
         fi
         # shellcheck disable=SC1090
         source "$module_path"
