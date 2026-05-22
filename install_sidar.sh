@@ -5636,6 +5636,7 @@ setup_env_file() {
     fi
 
     collect_api_keys_interactive "$ENV_FILE"
+    report_env_api_key_status "$ENV_FILE"
     sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }
