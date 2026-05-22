@@ -42,6 +42,16 @@ seed_rag_in_docker_after_startup() {
     local seed_log_file="$log_dir/docker_seed_rag_$(date -u +%Y-%m-%dT%H%M%SZ).log"
     mkdir -p "$log_dir"
 
+    info "Sidar Docker imajı seed öncesi build ediliyor (ilk çalıştırmada uzun sürebilir)..."
+    if ! (
+        cd "$SCRIPT_DIR" && \
+        "${compose_cmd[@]}" build "$seed_service" sidar-migrate
+    ) >>"$seed_log_file" 2>&1; then
+        warn "Docker imaj build başarısız. Detay: ${seed_log_file}"
+        tail -n 30 "$seed_log_file" 2>/dev/null | sed 's/^/    │ /'
+        return 1
+    fi
+
     if (
         cd "$SCRIPT_DIR" && \
         "${compose_cmd[@]}" up -d postgres redis && \
