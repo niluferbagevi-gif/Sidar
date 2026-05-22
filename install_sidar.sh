@@ -255,15 +255,28 @@ download_remote_install_modules() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı; bootstrap clone akışı başlatılıyor."
 
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    local_bootstrap_target="${HOME}/Sidar"
+    local_bootstrap_script="${local_bootstrap_target}/install_sidar.sh"
+    local_bootstrap_repo_url="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
 
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
-    ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
+    if [[ -d "${local_bootstrap_target}/.git" ]]; then
+        info "Bootstrap repo zaten mevcut: ${local_bootstrap_target}"
+    else
+        if ! command -v git &>/dev/null; then
+            fail "Tek dosyalık kurulum için git gereklidir ancak bulunamadı."
+        fi
+        info "Bootstrap clone başlatılıyor: ${local_bootstrap_repo_url} → ${local_bootstrap_target}"
+        git clone --depth=1 "${local_bootstrap_repo_url}" "${local_bootstrap_target}"
+    fi
+
+    if [[ ! -f "${local_bootstrap_script}" ]]; then
+        fail "Bootstrap clone tamamlandı ancak kurulum scripti bulunamadı: ${local_bootstrap_script}"
+    fi
+
+    info "Kurulum repo içi script ile yeniden başlatılıyor: ${local_bootstrap_script}"
+    exec "${local_bootstrap_script}" "$@"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
