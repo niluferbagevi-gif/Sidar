@@ -3374,12 +3374,7 @@ ensure_prerequisites() {
             clear_stdin_buffer
             read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
 
-            local manual_retry_timeout="${DOCKER_DESKTOP_READY_TIMEOUT:-240}"
-            if ! [[ "$manual_retry_timeout" =~ ^[0-9]+$ ]] || (( manual_retry_timeout < 30 )); then
-                manual_retry_timeout=120
-            else
-                (( manual_retry_timeout > 120 )) && manual_retry_timeout=120
-            fi
+            local manual_retry_timeout=30
 
             if DOCKER_DESKTOP_READY_TIMEOUT="$manual_retry_timeout" ensure_docker_daemon_running; then
                 ok "Docker daemon manuel müdahale sonrası erişilebilir."
