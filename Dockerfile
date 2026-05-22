@@ -86,12 +86,12 @@ ENV UV_INDEX_STRATEGY=first-index \
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 # Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
 # çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.5.4 /uv /uvx /bin/
 RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --extra dev --no-install-project
+    uv sync --frozen --all-extras --no-install-project
 RUN uv run python -c "import shutil; assert shutil.which('pyright-langserver'), 'pyright-langserver missing'; assert shutil.which('pyright'), 'pyright missing'"
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
@@ -109,7 +109,7 @@ COPY . .
 
 # Proje paketini mevcut lock dosyasına göre ortama kur
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --extra dev
+    uv sync --frozen --all-extras
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
 RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db /app/data/rag /app/data/lora_adapters /app/data/continuous_learning && chown -R sidaruser:sidaruser /app
