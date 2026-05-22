@@ -205,34 +205,72 @@ INSTALL_REMOTE_MODULES=(
     "${INSTALL_PHASE_MODULES[@]}"
 )
 
+REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+SIDAR_REPO_BRANCH="${SIDAR_REPO_BRANCH:-main}"
+
 download_remote_install_module() {
     local module_rel="$1"
     local remote_module_base="$2"
     local destination_root="$3"
     local remote_module_url="${remote_module_base}/${module_rel}"
+    local remote_checksum_url="${remote_module_url}.sha256"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_checksum_path=""
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    tmp_checksum_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
+        fi
+        if ! curl -fsSL "$remote_checksum_url" -o "$tmp_checksum_path"; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+                fail "Checksum dosyası indirilemedi: ${remote_checksum_url}"
+            fi
+            warn "Checksum indirilemedi, doğrulama atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1): ${remote_checksum_url}"
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
         fi
+        if ! wget -qO "$tmp_checksum_path" "$remote_checksum_url"; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+                fail "Checksum dosyası indirilemedi: ${remote_checksum_url}"
+            fi
+            warn "Checksum indirilemedi, doğrulama atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1): ${remote_checksum_url}"
+        fi
     else
-        rm -f "$tmp_module_path"
+        rm -f "$tmp_module_path" "$tmp_checksum_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
+    if [[ -s "$tmp_checksum_path" ]]; then
+        expected_sha="$(awk '{print $1}' "$tmp_checksum_path" | tr '[:upper:]' '[:lower:]' | head -n1)"
+        if [[ ! "$expected_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            fail "Geçersiz checksum içeriği: ${remote_checksum_url}"
+        fi
+        actual_sha="$(compute_sha256 "$tmp_module_path")"
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            fail "Checksum doğrulaması başarısız (${module_rel}): beklenen=${expected_sha}, gelen=${actual_sha}"
+        fi
+    elif [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        rm -f "$tmp_module_path" "$tmp_checksum_path"
+        fail "Checksum içeriği boş: ${remote_checksum_url}"
+    fi
+
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    rm -f "$tmp_module_path" "$tmp_checksum_path"
 }
 
 download_remote_install_modules() {
@@ -255,12 +293,36 @@ download_remote_install_modules() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Tek dosyalık çalıştırma algılandı; bootstrap clone + re-exec denenecek."
+
+    local_repo_dir="${HOME}/Sidar"
+    local_repo_installer="${local_repo_dir}/install_sidar.sh"
+
+    if [[ -x "$local_repo_installer" && -d "${local_repo_dir}/.git" ]]; then
+        info "Mevcut yerel repo bulundu; kurulum buradan yeniden başlatılıyor: $local_repo_installer"
+        exec "$local_repo_installer" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if command -v git &>/dev/null && (command -v curl &>/dev/null || command -v wget &>/dev/null); then
+        info "Repo klonlanıyor (${REPO_URL}, branch: ${SIDAR_REPO_BRANCH}) ve kurulum yeniden başlatılacak."
+        mkdir -p "$local_repo_dir"
+        rm -rf "$local_repo_dir/.git" "$local_repo_dir/scripts" "$local_repo_dir/install_sidar.sh"
+        if git clone --depth=1 --branch "$SIDAR_REPO_BRANCH" "$REPO_URL" "$local_repo_dir"; then
+            exec "$local_repo_installer" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+        fi
+        warn "Bootstrap clone başarısız oldu; tek dosya fallback moduna geçiliyor."
+    else
+        warn "git veya (curl|wget) eksik; tek dosya fallback moduna geçiliyor."
+    fi
+
+    warn "Tüm kurulum modülleri uzaktan indirilmeyi deneyecek (son çare fallback)."
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    remote_module_owner_repo="${REPO_URL#https://github.com/}"
+    remote_module_owner_repo="${remote_module_owner_repo%.git}"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/${remote_module_owner_repo}/${SIDAR_REPO_BRANCH:-main}/scripts/install_modules}"
 
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
     ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
@@ -2481,7 +2543,6 @@ if [[ "$PYTHON_VERSION" != "3.11" ]]; then
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
-REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
