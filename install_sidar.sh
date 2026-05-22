@@ -4435,7 +4435,7 @@ print(secrets.token_urlsafe(${token_length}))
 PY
 )
     elif command -v openssl &>/dev/null; then
-        generated=$(openssl rand -base64 "$token_length" | tr -d '\n')
+        generated=$(openssl rand -base64 "$((token_length * 3))" | tr -dc 'A-Za-z0-9' | head -c "$token_length")
     fi
 
     echo "$generated"
