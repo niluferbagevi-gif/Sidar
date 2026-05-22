@@ -210,25 +210,22 @@ INSTALL_REMOTE_MODULES=(
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
 SIDAR_MODULE_HASHES_EOF
 
-declare -A INSTALL_REMOTE_MODULE_HASHES=(
-    ["install_helpers.sh"]="55f8398ee73743e0b9c13cc4c3c9a37789059e1305ee4bd7af53b17bf187dd8b"
-    ["utils/install_remediation.sh"]="b2be9f204d0ed9b3a1332cfc64c3cb164d289bc7a4c529b6034fa50aaaf607fb"
-    ["utils/wsl_integration_autofix.sh"]="fb97a12d6564e0dae5983aba53f458bf3d96cf85217088cf247f5cf19d866bd9"
-    ["utils/wsl_gpu_preflight.sh"]="690f3ba3cae26147ca1ca2fab55041b70176a5f9e8a25984978d248559336af3"
-    ["utils/gpu_utils.sh"]="70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04"
-    ["utils/python_env.sh"]="1ac6d5a212ab0cc1b237fde025ee09b46ed9a9d551a398a078279af5eec8f758"
-    ["utils/db_credentials.sh"]="76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681"
-    ["utils/env_utils.sh"]="572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e"
-    ["utils/ollama_models.sh"]="4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2"
-    ["utils/wsl_integration_autofix.ps1"]="02446d6c5f3bb0fab7621e71983d320005a827ee0c6eed276804d6577a6e1fb8"
-    ["phases/01_context.sh"]="b57e486ed9a9524f35b1698638c8d89702a4907ce324414941c5884d1f8f951c"
-    ["phases/02_repo.sh"]="9d076a7fdfbb96289c87b11a044629ff31ed7b89e5a0f1c89932af5d108f8390"
-    ["phases/03_runtime.sh"]="2e6f7f9ae61dc7eba9210224cf36230016333db645950e4307b232a6478ffdaf"
-    ["phases/04_workspace.sh"]="c6949c2fa961fdea9740cdfd754b376c343448a746f9cb01501454e7ce156b51"
-    ["phases/05_frontend.sh"]="c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42"
-    ["phases/06_services.sh"]="2bbaf6c0201465f66775a81edf636968d3bed40bff4b47ab1ca2551a18580e69"
-    ["phases/07_finish.sh"]="12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3"
-)
+declare -A INSTALL_REMOTE_MODULE_HASHES=()
+
+populate_remote_module_hashes_from_embedded_manifest() {
+    local expected_hash=""
+    local rel_path=""
+    local module_rel=""
+
+    [[ -n "${EMBEDDED_MODULE_HASHES_MANIFEST:-}" ]] || return 0
+    while IFS=' ' read -r expected_hash rel_path; do
+        [[ -n "${expected_hash:-}" && -n "${rel_path:-}" ]] || continue
+        module_rel="${rel_path#scripts/install_modules/}"
+        INSTALL_REMOTE_MODULE_HASHES["$module_rel"]="$expected_hash"
+    done < <(printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" | awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}')
+}
+
+populate_remote_module_hashes_from_embedded_manifest
 
 verify_remote_install_module_hash() {
     local module_rel="$1"
