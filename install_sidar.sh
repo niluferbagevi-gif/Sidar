@@ -1070,6 +1070,16 @@ ensure_docker_cli_available() {
     return 1
 }
 
+_should_attempt_wsl_local_docker_service() {
+    [[ "$WSL2" == true ]] || return 1
+    if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" || "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+        return 0
+    fi
+    command -v systemctl &>/dev/null || return 1
+    systemctl is-system-running &>/dev/null || return 1
+    systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -Fxq "docker.service"
+}
+
 ensure_docker_daemon_running() {
     _docker_ready_with_socket() {
         if ! docker info &>/dev/null; then
@@ -1259,11 +1269,27 @@ ensure_docker_daemon_running() {
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
-    if [[ "$WSL2" != true ]] && command -v systemctl &>/dev/null; then
+    local allow_wsl_local_docker_start=false
+    if _should_attempt_wsl_local_docker_service; then
+        allow_wsl_local_docker_start=true
+        if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" ]]; then
+            info "SIDAR_FORCE_LOCAL_DOCKER=1: yerel Docker daemon başlatma denemeleri zorla etkin."
+        elif [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+            info "WSL2_LOCAL_DOCKER_START=true: yerel Docker daemon başlatma denemeleri etkin."
+        else
+            info "WSL2 üzerinde systemd + docker.service tespit edildi; yerel daemon başlatma denemeleri etkin."
+        fi
+    elif [[ "$WSL2" == true ]]; then
+        info "WSL2: local docker servisi başlatma atlandı, Docker Desktop akışı kullanılacak."
+    fi
+
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] && command -v systemctl &>/dev/null; then
         sudo systemctl start docker >/dev/null 2>&1 || true
     fi
 
-    if [[ "$WSL2" != true ]] && ! docker info &>/dev/null && command -v service &>/dev/null; then
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] \
+        && ! docker info &>/dev/null \
+        && command -v service &>/dev/null; then
         sudo service docker start >/dev/null 2>&1 || true
     fi
 
@@ -3636,7 +3662,15 @@ setup_nvidia_docker() {
 
             # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
             info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
+            local allow_wsl_local_docker_restart=false
+            if _should_attempt_wsl_local_docker_service; then
+                allow_wsl_local_docker_restart=true
+            fi
+
+            if [[ "$WSL2" == true && "$allow_wsl_local_docker_restart" != true ]]; then
+                warn "WSL2 ortamında Docker Desktop entegrasyonu algılandı; local docker servisi yeniden başlatma atlanıyor."
+                info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
+            elif command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
                 if systemctl is-active --quiet docker; then
                     sudo systemctl restart docker
                     ok "Docker servisi systemd üzerinden yeniden başlatıldı."
