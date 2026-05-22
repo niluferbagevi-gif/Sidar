@@ -214,6 +214,10 @@ download_remote_install_module() {
     local remote_module_url="${remote_module_base}/${module_rel}"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_hash_path=""
+    local remote_hash_url="${remote_module_url}.sha256"
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
@@ -231,6 +235,39 @@ download_remote_install_module() {
     else
         rm -f "$tmp_module_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+    fi
+
+    if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        tmp_hash_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
+        if command -v curl &>/dev/null; then
+            if ! curl -fsSL "$remote_hash_url" -o "$tmp_hash_path"; then
+                rm -f "$tmp_module_path" "$tmp_hash_path"
+                fail "Checksum dosyası indirilemedi: $remote_hash_url"
+            fi
+        elif command -v wget &>/dev/null; then
+            if ! wget -qO "$tmp_hash_path" "$remote_hash_url"; then
+                rm -f "$tmp_module_path" "$tmp_hash_path"
+                fail "Checksum dosyası indirilemedi: $remote_hash_url"
+            fi
+        fi
+        expected_sha="$(tr -d '\r' < "$tmp_hash_path" | awk '{print $1}' | head -n1)"
+        if [[ -z "${expected_sha//[[:space:]]/}" ]]; then
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "Checksum içeriği geçersiz: $remote_hash_url"
+        fi
+        if command -v sha256sum &>/dev/null; then
+            actual_sha="$(sha256sum "$tmp_module_path" | awk '{print $1}')"
+        elif command -v shasum &>/dev/null; then
+            actual_sha="$(shasum -a 256 "$tmp_module_path" | awk '{print $1}')"
+        else
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+        fi
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "Checksum uyuşmazlığı: ${module_rel} (beklenen: ${expected_sha}, mevcut: ${actual_sha})"
+        fi
+        rm -f "$tmp_hash_path"
     fi
 
     install -m 0644 "$tmp_module_path" "$destination_path"
