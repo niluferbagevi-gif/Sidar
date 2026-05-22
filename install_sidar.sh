@@ -1474,6 +1474,28 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+seed_compose_image_build() {
+    local compose_profiles="$1"
+    shift
+    local -a compose_cmd=("$@")
+    local seed_service=""
+
+    if [[ "$compose_profiles" == *"gpu"* ]]; then
+        seed_service="sidar-gpu"
+    else
+        seed_service="sidar-ai"
+    fi
+
+    info "Docker image seed build çalıştırılıyor (servis=${seed_service}, parallel=1)."
+    if COMPOSE_PROFILES="$compose_profiles" DOCKER_BUILDKIT=1 "${compose_cmd[@]}" build --parallel=1 "$seed_service"; then
+        ok "Seed image build tamamlandı (${seed_service})."
+        return 0
+    fi
+
+    warn "Seed image build başarısız oldu (${seed_service}); docker compose up akışı denenecek."
+    return 1
+}
+
 wait_for_compose_services_health() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -7000,6 +7022,7 @@ launch_docker_services() {
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
+                seed_compose_image_build "$compose_profiles" "${docker_compose_cmd[@]}" || true
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
