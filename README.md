@@ -454,10 +454,11 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
-**Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir.**
-Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirir; betik repo checkout
-yoksa `scripts/install_modules/` altındaki güncel yardımcı ve faz modüllerini
-GitHub üzerinden otomatik indirir. Böylece kurulum tek parça bir araç gibi
+**Varsayılan çevrimiçi kurulum yöntemi bootstrap clone + re-exec akışıdır.**
+Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirirse betik önce `~/Sidar`
+altına repoyu klonlar, ardından klonlanan kopyadaki `install_sidar.sh` üzerinden
+kendini yeniden çalıştırır (re-exec). Kurulumu zaten klonlanmış repo dizininden
+başlatırsanız bu ek bootstrap adımı atlanır. Böylece kurulum tek parça bir araç gibi
 hissedilirken kaynak kod modüler kalır:
 
 ```bash
