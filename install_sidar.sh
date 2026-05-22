@@ -213,29 +213,64 @@ download_remote_install_module() {
     local remote_module_base="$2"
     local destination_root="$3"
     local remote_module_url="${remote_module_base}/${module_rel}"
+    local remote_checksum_url="${remote_module_url}.sha256"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_checksum_path=""
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    tmp_checksum_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
+        fi
+        if ! curl -fsSL "$remote_checksum_url" -o "$tmp_checksum_path"; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+                fail "Checksum dosyası indirilemedi: ${remote_checksum_url}"
+            fi
+            warn "Checksum indirilemedi, doğrulama atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1): ${remote_checksum_url}"
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
             return 1
         fi
+        if ! wget -qO "$tmp_checksum_path" "$remote_checksum_url"; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+                fail "Checksum dosyası indirilemedi: ${remote_checksum_url}"
+            fi
+            warn "Checksum indirilemedi, doğrulama atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1): ${remote_checksum_url}"
+        fi
     else
-        rm -f "$tmp_module_path"
+        rm -f "$tmp_module_path" "$tmp_checksum_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
+    if [[ -s "$tmp_checksum_path" ]]; then
+        expected_sha="$(awk '{print $1}' "$tmp_checksum_path" | tr '[:upper:]' '[:lower:]' | head -n1)"
+        if [[ ! "$expected_sha" =~ ^[0-9a-f]{64}$ ]]; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            fail "Geçersiz checksum içeriği: ${remote_checksum_url}"
+        fi
+        actual_sha="$(compute_sha256 "$tmp_module_path")"
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            rm -f "$tmp_module_path" "$tmp_checksum_path"
+            fail "Checksum doğrulaması başarısız (${module_rel}): beklenen=${expected_sha}, gelen=${actual_sha}"
+        fi
+    elif [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        rm -f "$tmp_module_path" "$tmp_checksum_path"
+        fail "Checksum içeriği boş: ${remote_checksum_url}"
+    fi
+
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    rm -f "$tmp_module_path" "$tmp_checksum_path"
 }
 
 download_remote_install_modules() {
