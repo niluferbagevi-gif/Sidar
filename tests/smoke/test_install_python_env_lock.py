@@ -17,6 +17,10 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
             if [[ "$1" == "python" && "$2" == "install" ]]; then
               exit 0
             fi
+            if [[ "$1" == "python" && "$2" == "find" ]]; then
+              echo "/usr/bin/python3.11"
+              exit 0
+            fi
             if [[ "$1" == "venv" ]]; then
               venv_dir="${@: -1}"
               mkdir -p "$venv_dir/bin"
