@@ -491,6 +491,10 @@ Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik 
 bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
 ile üretilir ve modül indirme ihtiyacı olmadan çalışır:
 
+Test/coverage kalite kapılarında üretilen HTML coverage raporu (`htmlcov/index.html`)
+varsayılan olarak karanlık mod temasında açılır (`.coveragerc` içindeki
+`extra_css = assets/dark_mode.css` ayarı ile).
+
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
 # veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
