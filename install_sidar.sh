@@ -1300,36 +1300,12 @@ ensure_docker_daemon_running() {
 
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
         info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. ${desktop_timeout}sn)..."
-        local startup_probe_timeout=45
-        local startup_probe_elapsed=0
-        local startup_probe_step=5
-        local docker_desktop_started=false
-        while (( startup_probe_elapsed < startup_probe_timeout )); do
-            if tasklist.exe //FI "IMAGENAME eq Docker Desktop.exe" 2>/dev/null | tr -d '\r' | grep -q "Docker Desktop.exe"; then
-                docker_desktop_started=true
-                break
-            fi
-            if pgrep -af 'docker.*desktop' >/dev/null 2>&1; then
-                docker_desktop_started=true
-                break
-            fi
-            sleep "$startup_probe_step"
-            ((startup_probe_elapsed += startup_probe_step))
-        done
-        if [[ "$docker_desktop_started" != "true" ]]; then
-            warn "Docker Desktop süreci ilk ${startup_probe_timeout}sn içinde başlatılamadı; erken çıkılıyor."
-            return 1
-        fi
         local elapsed=0
         local sleep_step=3
         local progress_mark=10
         local no_signal_seconds=0
         local no_signal_limit=90
         while (( elapsed < desktop_timeout )); do
-            if ! powershell.exe -NoProfile -Command "@(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue).Count" 2>/dev/null | tr -d '\r' | grep -Eq '^[1-9][0-9]*$'; then
-                warn "Docker Desktop süreci çalışmıyor görünüyor; erken çıkılıyor (bekleme: ${elapsed}/${desktop_timeout}sn)."
-                break
-            fi
             if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
                 return 0
