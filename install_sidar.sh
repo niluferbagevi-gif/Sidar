@@ -50,6 +50,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 verify_core_install_manifest() {
     local manifest_path="${SCRIPT_DIR}/.sidar_manifest.txt"
+    local required_files=(
+        "core/memory.py"
+        "core/multimodal.py"
+    )
+    local rel_path=""
+
+    for rel_path in "${required_files[@]}"; do
+        if [[ ! -f "${SCRIPT_DIR}/${rel_path}" ]]; then
+            info "Çekirdek dosya eksik (${rel_path}); bootstrap/repo senkronizasyonu tamamlandıktan sonra hash doğrulaması çalıştırılacak."
+            return 2
+        fi
+    done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
 e3da41327fdbd3b3125eaa82127800b78560ac50ae53116e95403727488360bc  core/memory.py
@@ -64,7 +76,6 @@ SIDAR_INSTALL_MANIFEST_EOF
     fail "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi."
 }
 
-verify_core_install_manifest
 # Resume çağrılarında önceki çalışma dizinini koru (örn. one-shot fetch sonrası
 # 02_repo/03_runtime fazları atlandığında relative yolların sapmaması için).
 if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
@@ -394,6 +405,13 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
+
+if ! verify_core_install_manifest; then
+    case "$?" in
+        2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
+        *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
+    esac
+fi
 
 # Eski/uzaktan indirilen yardımcı modüllerde fonksiyon henüz yoksa tek dosyalık
 # kurulum akışını korumak için güvenli fallback tanımla.
