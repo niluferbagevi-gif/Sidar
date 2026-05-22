@@ -1072,7 +1072,7 @@ ensure_docker_cli_available() {
 
 _should_attempt_wsl_local_docker_service() {
     [[ "$WSL2" == true ]] || return 1
-    if [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+    if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" || "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
         return 0
     fi
     command -v systemctl &>/dev/null || return 1
@@ -1272,7 +1272,9 @@ ensure_docker_daemon_running() {
     local allow_wsl_local_docker_start=false
     if _should_attempt_wsl_local_docker_service; then
         allow_wsl_local_docker_start=true
-        if [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+        if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" ]]; then
+            info "SIDAR_FORCE_LOCAL_DOCKER=1: yerel Docker daemon başlatma denemeleri zorla etkin."
+        elif [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
             info "WSL2_LOCAL_DOCKER_START=true: yerel Docker daemon başlatma denemeleri etkin."
         else
             info "WSL2 üzerinde systemd + docker.service tespit edildi; yerel daemon başlatma denemeleri etkin."
