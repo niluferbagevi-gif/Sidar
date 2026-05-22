@@ -123,7 +123,11 @@ sidar_source_install_utils() {
                 ;;
         esac
         if [[ ! -f "$module_path" ]]; then
-            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin."
+            local remote_hint=""
+            if [[ -n "${REMOTE_MODULE_BASE:-}" ]]; then
+                remote_hint=" Beklenen uzak kaynak: ${REMOTE_MODULE_BASE}/utils/${module_rel}"
+            fi
+            fail "Kurulum yardımcı modülü bulunamadı: ${module_path}. Repo modülleri eksik; lütfen depoyu güncelleyin.${remote_hint}"
         fi
         # shellcheck disable=SC1090
         source "$module_path"
