@@ -205,6 +205,11 @@ INSTALL_REMOTE_MODULES=(
     "${INSTALL_PHASE_MODULES[@]}"
 )
 
+# Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
+# Repo çalışma ağacında varsayılan olarak boş bırakılır.
+read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
+SIDAR_MODULE_HASHES_EOF
+
 declare -A INSTALL_REMOTE_MODULE_HASHES=(
     ["install_helpers.sh"]="55f8398ee73743e0b9c13cc4c3c9a37789059e1305ee4bd7af53b17bf187dd8b"
     ["utils/install_remediation.sh"]="b2be9f204d0ed9b3a1332cfc64c3cb164d289bc7a4c529b6034fa50aaaf607fb"
@@ -413,11 +418,18 @@ load_install_phase_modules() {
 
 verify_install_module_hashes_if_present() {
     local hash_manifest="${SCRIPT_DIR}/MODULE_HASHES.txt"
+    local embedded_manifest_file=""
     local rel_path=""
     local expected=""
     local target=""
     local actual=""
     local failures=0
+
+    if [[ ! -f "$hash_manifest" && -n "${EMBEDDED_MODULE_HASHES_MANIFEST:-}" ]]; then
+        embedded_manifest_file="$(mktemp "${TMPDIR:-/tmp}/sidar_module_hashes.XXXXXX")"
+        printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" > "$embedded_manifest_file"
+        hash_manifest="$embedded_manifest_file"
+    fi
 
     [[ -f "$hash_manifest" ]] || return 0
     info "Kurulum modül hash manifesti bulundu, SHA256 doğrulaması yapılıyor: $hash_manifest"
@@ -446,6 +458,8 @@ verify_install_module_hashes_if_present() {
     else
         ok "Kurulum modül hash doğrulaması başarılı."
     fi
+
+    [[ -n "$embedded_manifest_file" ]] && rm -f "$embedded_manifest_file"
 }
 
 verify_install_module_hashes_if_present

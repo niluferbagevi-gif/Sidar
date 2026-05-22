@@ -87,4 +87,27 @@ echo "Bundle oluşturuldu: $OUTPUT_SCRIPT"
     done
 } > "$OUTPUT_HASHES"
 
-echo "Modül hash manifesti oluşturuldu: $OUTPUT_HASHES"
+manifest_payload="$(cat "$OUTPUT_HASHES")"
+tmp_output_script="$(mktemp "${TMPDIR:-/tmp}/sidar_bundle_install.XXXXXX")"
+
+awk -v manifest="$manifest_payload" '
+BEGIN { in_block = 0 }
+/^read -r -d . EMBEDDED_MODULE_HASHES_MANIFEST <<\x27SIDAR_MODULE_HASHES_EOF\x27 \|\| true$/ {
+    print
+    print manifest
+    in_block = 1
+    next
+}
+in_block == 1 && /^SIDAR_MODULE_HASHES_EOF$/ {
+    print
+    in_block = 0
+    next
+}
+in_block == 0 { print }
+' "$OUTPUT_SCRIPT" > "$tmp_output_script"
+
+mv "$tmp_output_script" "$OUTPUT_SCRIPT"
+chmod +x "$OUTPUT_SCRIPT"
+
+echo "Modül hash manifesti embed edildi: $OUTPUT_SCRIPT"
+echo "Modül hash manifesti ayrıca yazıldı: $OUTPUT_HASHES"
