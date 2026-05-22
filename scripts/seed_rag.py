@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Protocol
@@ -297,6 +298,53 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore
     )
 
 
+def _wait_for_pgvector_readiness() -> None:
+    """Wait briefly for PostgreSQL+pgvector readiness to reduce startup race risk."""
+    with contextlib.redirect_stdout(sys.stderr):
+        from config import Config
+
+    vector_backend = str(getattr(Config, "RAG_VECTOR_BACKEND", "chroma") or "").strip().lower()
+    database_url = str(getattr(Config, "DATABASE_URL", "") or "").strip()
+    if vector_backend != "pgvector" or not database_url.startswith("postgresql"):
+        return
+
+    max_retries = max(1, int(os.getenv("SEED_RAG_PGVECTOR_MAX_RETRIES", "10") or "10"))
+    delay_seconds = max(0.1, float(os.getenv("SEED_RAG_PGVECTOR_RETRY_DELAY_SEC", "2.0") or "2.0"))
+
+    with contextlib.redirect_stdout(sys.stderr):
+        from sqlalchemy import create_engine, text
+
+    last_error: BaseException | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            engine = create_engine(database_url, future=True, pool_pre_ping=True)
+            with engine.connect() as conn:
+                ready = bool(
+                    conn.execute(
+                        text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")
+                    ).scalar()
+                )
+            engine.dispose()
+            if ready:
+                return
+        except Exception as exc:  # pragma: no cover - integration guard.
+            last_error = exc
+        if attempt < max_retries:
+            time.sleep(delay_seconds)
+
+    if last_error is not None:
+        print(
+            f"⚠️ pgvector readiness probe timed out after {max_retries} attempts "
+            f"(last_error={type(last_error).__name__}: {last_error}).",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"⚠️ pgvector extension not visible after {max_retries} attempts; proceeding with normal startup.",
+            file=sys.stderr,
+        )
+
+
 def _summary_only_payload(summary: dict[str, Any]) -> dict[str, int]:
     """Return compact seeding output for interactive Doctor auto-fix runs."""
     return {
@@ -418,6 +466,8 @@ def run(
     if dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
+        if not metadata_only:
+            _wait_for_pgvector_readiness()
         store = _build_store(resolved_rag_dir, initialize_vector=not metadata_only)
     entity_nodes_before, entity_edges_before = _entity_graph_counts(resolved_rag_dir)
     try:

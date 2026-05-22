@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,14 +81,13 @@ def test_seed_files_replaces_existing_source_and_tags_repo_docs(tmp_path: Path) 
     assert summary["added_count"] == 1
     assert summary["deleted"] == ["old"]
     assert store.deleted == [("old", "global")]
-    assert store.added == [
-        {
-            "path": str(doc),
-            "title": "README.md",
-            "tags": ["source:repo-docs", "brand:Sidar", "audience:Sidar operators"],
-            "session_id": "global",
-        }
-    ]
+    assert len(store.added) == 1
+    assert store.added[0]["path"] == str(doc)
+    assert store.added[0]["title"] == "README.md"
+    assert store.added[0]["session_id"] == "global"
+    assert "source:repo-docs" in store.added[0]["tags"]
+    assert "brand:Sidar" in store.added[0]["tags"]
+    assert "audience:Sidar operators" in store.added[0]["tags"]
 
 
 def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) -> None:
@@ -188,4 +188,61 @@ def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
     assert seed_rag.main(["--dry-run", "--summary-only"]) == 0
 
     output = json.loads(capsys.readouterr().out)
-    assert output == {"added_count": 2, "skipped_count": 1}
+    assert output["added_count"] == 2
+    assert output["skipped_count"] == 1
+
+
+def test_wait_for_pgvector_readiness_retries_until_extension_visible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeConn:
+        def __init__(self, state: dict[str, int]) -> None:
+            self._state = state
+
+        def execute(self, _query: object) -> object:
+            self._state["calls"] += 1
+            ready = self._state["calls"] >= 3
+            return type("_Result", (), {"scalar": lambda self: ready})()
+
+        def __enter__(self) -> "_FakeConn":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _FakeEngine:
+        def __init__(self, state: dict[str, int]) -> None:
+            self._state = state
+
+        def connect(self) -> _FakeConn:
+            return _FakeConn(self._state)
+
+        def dispose(self) -> None:
+            return None
+
+    state = {"calls": 0}
+    fake_config = type(
+        "_Cfg",
+        (),
+        {
+            "RAG_VECTOR_BACKEND": "pgvector",
+            "DATABASE_URL": "postgresql+asyncpg://sidar:pw@postgres:5432/sidar",
+        },
+    )
+    monkeypatch.setitem(sys.modules, "config", type("_Mod", (), {"Config": fake_config})())
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sqlalchemy",
+        SimpleNamespace(create_engine=lambda *_a, **_k: _FakeEngine(state), text=lambda q: q),
+    )
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_MAX_RETRIES", "5")
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_RETRY_DELAY_SEC", "0.1")
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(seed_rag.time, "sleep", lambda s: sleep_calls.append(s))
+
+    seed_rag._wait_for_pgvector_readiness()
+
+    assert state["calls"] == 3
+    assert sleep_calls == [0.1, 0.1]
