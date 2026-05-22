@@ -199,26 +199,38 @@ INSTALL_PHASE_MODULES=(
 )
 
 bootstrap_clone_and_reexec() {
-    local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
+    local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
     local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
     local clone_name="${SIDAR_BOOTSTRAP_CLONE_DIRNAME:-Sidar}"
     local clone_target="${clone_parent%/}/${clone_name}"
+    local preferred_ref="${SIDAR_BOOTSTRAP_CLONE_REF:-}"
+    local home_repo_candidate="${HOME}/Sidar"
 
     warn "Yerel modüller eksik. Geçici /tmp modül indirme yerine bootstrap clone akışı başlatılıyor."
 
     command -v git >/dev/null 2>&1 || fail "Bootstrap clone için git gerekli ancak sistemde bulunamadı."
     mkdir -p "$clone_parent"
 
+    if [[ -d "$home_repo_candidate/.git" && -f "$home_repo_candidate/scripts/install_modules/install_helpers.sh" ]]; then
+        info "Mevcut repo bulundu, bootstrap için kullanılacak: $home_repo_candidate"
+        clone_target="$home_repo_candidate"
+    fi
+
     if [[ -d "$clone_target/.git" ]]; then
         info "Mevcut Sidar deposu bulundu, güncelleniyor: $clone_target"
         git -C "$clone_target" fetch --all --tags --prune || fail "Mevcut depo güncellenemedi: $clone_target"
-        git -C "$clone_target" checkout -q main || fail "main dalına geçilemedi: $clone_target"
-        git -C "$clone_target" pull --ff-only || fail "Depo fast-forward güncellenemedi: $clone_target"
+        if [[ -n "$preferred_ref" ]]; then
+            git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
+            git -C "$clone_target" pull --ff-only || fail "Depo fast-forward güncellenemedi: $clone_target"
+        fi
     elif [[ -e "$clone_target" ]]; then
         fail "Bootstrap clone hedefi mevcut ama git deposu değil: $clone_target (devam edilemiyor)."
     else
         step "Sidar deposu bootstrap clone ile indiriliyor"
         git clone "$clone_url" "$clone_target" || fail "Git clone başarısız: $clone_url"
+        if [[ -n "$preferred_ref" ]]; then
+            git -C "$clone_target" checkout -q "$preferred_ref" || fail "Bootstrap ref'e geçilemedi: ${preferred_ref}"
+        fi
     fi
 
     local next_script="$clone_target/install_sidar.sh"
