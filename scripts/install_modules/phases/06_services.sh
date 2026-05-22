@@ -17,15 +17,17 @@ seed_rag_in_docker_after_startup() {
     elif command -v docker-compose &>/dev/null; then
         compose_cmd=(docker-compose)
     else
-        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm sidar-web uv run python -m scripts.seed_rag"
+        warn "Docker compose bulunamadı; RAG warmup seed atlandı. Manuel: docker compose run --rm --no-deps sidar-web uv run python -m scripts.seed_rag"
         return 0
     fi
 
     info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
-    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm sidar-web uv run python -m scripts.seed_rag); then
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps sidar-web uv run python -m scripts.seed_rag); then
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm sidar-web uv run python -m scripts.seed_rag"
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Geçici container temizliği deneniyor..."
+        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s sidar-web >/dev/null 2>&1) || true
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps sidar-web uv run python -m scripts.seed_rag"
     fi
 }
 
