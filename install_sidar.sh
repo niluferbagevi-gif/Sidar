@@ -198,6 +198,61 @@ INSTALL_PHASE_MODULES=(
     "phases/07_finish.sh"
 )
 
+INSTALL_REMOTE_MODULES=(
+    "install_helpers.sh"
+    "${INSTALL_UTILITY_MODULES[@]}"
+    "utils/wsl_integration_autofix.ps1"
+    "${INSTALL_PHASE_MODULES[@]}"
+)
+
+derive_remote_module_base_from_repo() {
+    local repo_url="${1:-}"
+    local repo_branch="${2:-main}"
+    local owner_repo=""
+
+    repo_url="${repo_url%.git}"
+    owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^https?://github.com/([^/]+/[^/]+)$#\1#p')"
+    if [[ -z "$owner_repo" ]]; then
+        owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^git@github.com:([^/]+/[^/]+)$#\1#p')"
+    fi
+    [[ -n "$owner_repo" ]] || return 1
+    printf 'https://raw.githubusercontent.com/%s/%s/scripts/install_modules' "$owner_repo" "$repo_branch"
+}
+
+download_remote_install_module() {
+    local module_rel="$1"
+    local remote_module_base="$2"
+    local destination_root="$3"
+    local remote_module_url="${remote_module_base}/${module_rel}"
+    local destination_path="${destination_root}/${module_rel}"
+    local tmp_module_path=""
+
+    mkdir -p "$(dirname "$destination_path")"
+    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$remote_module_url" -o "$tmp_module_path" || { rm -f "$tmp_module_path"; return 1; }
+    elif command -v wget &>/dev/null; then
+        wget -qO "$tmp_module_path" "$remote_module_url" || { rm -f "$tmp_module_path"; return 1; }
+    else
+        rm -f "$tmp_module_path"
+        return 1
+    fi
+
+    install -m 0644 "$tmp_module_path" "$destination_path"
+    rm -f "$tmp_module_path"
+}
+
+download_remote_install_modules() {
+    local remote_module_base="$1"
+    local destination_root="$2"
+    local module_rel=""
+
+    for module_rel in "${INSTALL_REMOTE_MODULES[@]}"; do
+        download_remote_install_module "$module_rel" "$remote_module_base" "$destination_root" || return 1
+    done
+}
+
 bootstrap_clone_and_reexec() {
     local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
     local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
@@ -242,7 +297,32 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         fail "SIDAR_BUNDLE_MODE=1 algılandı ancak $INSTALL_HELPERS_MODULE bulunamadı. Bundle bütünlüğünü doğrulayın ve betiği yeniden üretin."
     fi
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    bootstrap_clone_and_reexec
+
+    if [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
+        info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
+        cd "$HOME/Sidar" || fail "Mevcut repo dizinine geçilemedi: $HOME/Sidar"
+        exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if command -v git >/dev/null 2>&1; then
+        bootstrap_clone_and_reexec
+    fi
+
+    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
+        fail "Bootstrap clone için git yok, fallback indirme için curl/wget de yok. Kurulum devam edemiyor."
+    fi
+
+    warn "git bulunamadı; fallback olarak modüller geçici dizine indirilecek."
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    if [[ -z "$REMOTE_MODULE_BASE" ]]; then
+        REMOTE_MODULE_BASE="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+    fi
+    [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
+    ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
