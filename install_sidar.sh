@@ -416,6 +416,20 @@ on_install_error() {
 trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
+    local exit_code="${1:-0}"
+    local keep_temp_raw="${SIDAR_KEEP_TEMP_MODULES:-0}"
+    keep_temp_raw="$(echo "$keep_temp_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    if [[ "${KEEP_TEMP_MODULES:-false}" == "true" || "$keep_temp_raw" == "1" || "$keep_temp_raw" == "true" || "$keep_temp_raw" == "yes" ]]; then
+        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && info "Geçici modül dizini korunuyor (debug): $INSTALL_HELPERS_TEMP_DIR"
+        return 0
+    fi
+
+    if [[ "$exit_code" -ne 0 ]]; then
+        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
+        warn "İsterseniz sonraki çalıştırmada --keep-temp-modules veya SIDAR_KEEP_TEMP_MODULES=1 kullanabilirsiniz."
+        return 0
+    fi
+
     if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
         rm -rf "$INSTALL_HELPERS_TEMP_DIR"
         info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
@@ -440,7 +454,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
-trap 'relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed || true' EXIT
+trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
 
 compute_sha256() {
     local file_path="$1"
@@ -2230,6 +2244,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
   --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
   --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
+  --keep-temp-modules  Keep temporary installer module directory for debugging (if created)
 
   Non-interactive environment variables:
     SIDAR_LOCALE=en|tr or LANG=en_US.UTF-8  Select installer message language
@@ -2251,6 +2266,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
+    SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary installer module directory for debugging
 EOF
     else
         cat <<EOF
@@ -2288,6 +2304,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
   --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
   --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
+  --keep-temp-modules  Geçici kurulum modül dizinini debug için koru (oluştuysa)
 
   Etkileşimsiz çevre değişkenleri:
     SIDAR_LOCALE=en|tr veya LANG=en_US.UTF-8  Kurulum mesaj dilini seçer
@@ -2309,6 +2326,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
+    SIDAR_KEEP_TEMP_MODULES=1|0  Geçici kurulum modül dizinini debug için korur
 EOF
     fi
 }
@@ -2341,6 +2359,7 @@ for arg in "$@"; do
         --offline|--air-gapped) OFFLINE_MODE=true ;;
         --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
         --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
+        --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
