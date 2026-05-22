@@ -210,29 +210,72 @@ download_remote_install_module() {
     local remote_module_base="$2"
     local destination_root="$3"
     local remote_module_url="${remote_module_base}/${module_rel}"
+    local remote_sha_url="${remote_module_url}.sha256"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_sha_path=""
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    tmp_sha_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
 
     if command -v curl &>/dev/null; then
         if ! curl -fsSL "$remote_module_url" -o "$tmp_module_path"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_sha_path"
             return 1
+        fi
+        if ! curl -fsSL "$remote_sha_url" -o "$tmp_sha_path"; then
+            rm -f "$tmp_module_path" "$tmp_sha_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+                warn "SHA256 dosyası indirilemedi (${remote_sha_url}); ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile doğrulamasız devam ediliyor."
+                install -m 0644 "$tmp_module_path" "$destination_path"
+                rm -f "$tmp_module_path"
+                return 0
+            fi
+            fail "SHA256 dosyası indirilemedi (${remote_sha_url}). MITM riskine karşı kurulum durduruldu (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0)."
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -qO "$tmp_module_path" "$remote_module_url"; then
-            rm -f "$tmp_module_path"
+            rm -f "$tmp_module_path" "$tmp_sha_path"
             return 1
         fi
+        if ! wget -qO "$tmp_sha_path" "$remote_sha_url"; then
+            rm -f "$tmp_module_path" "$tmp_sha_path"
+            if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+                warn "SHA256 dosyası indirilemedi (${remote_sha_url}); ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile doğrulamasız devam ediliyor."
+                install -m 0644 "$tmp_module_path" "$destination_path"
+                rm -f "$tmp_module_path"
+                return 0
+            fi
+            fail "SHA256 dosyası indirilemedi (${remote_sha_url}). MITM riskine karşı kurulum durduruldu (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0)."
+        fi
     else
-        rm -f "$tmp_module_path"
+        rm -f "$tmp_module_path" "$tmp_sha_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
     fi
 
+    expected_sha="$(awk '{print $1}' "$tmp_sha_path" | tr -d '[:space:]')"
+    if [[ -z "$expected_sha" ]]; then
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 içeriği boş/geçersiz: ${remote_sha_url}"
+    fi
+    if command -v sha256sum &>/dev/null; then
+        actual_sha="$(sha256sum "$tmp_module_path" | awk '{print $1}')"
+    elif command -v shasum &>/dev/null; then
+        actual_sha="$(shasum -a 256 "$tmp_module_path" | awk '{print $1}')"
+    else
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+    fi
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$tmp_module_path" "$tmp_sha_path"
+        fail "SHA256 doğrulaması başarısız (${module_rel}). Beklenen: ${expected_sha}, Gerçek: ${actual_sha}. MITM riskine karşı kurulum durduruldu."
+    fi
+
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    rm -f "$tmp_module_path" "$tmp_sha_path"
 }
 
 download_remote_install_modules() {
