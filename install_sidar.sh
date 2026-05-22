@@ -4702,7 +4702,7 @@ collect_api_keys_interactive() {
 
         [[ -f "$advanced_env_file" && "$advanced_env_file" != "$env_file" ]] && targets+=("$advanced_env_file")
 
-        for optional_env_file in "$SCRIPT_DIR/.env.development" "$SCRIPT_DIR/.env.test"; do
+        for optional_env_file in "$SCRIPT_DIR/.env.development"; do
             [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]] && targets+=("$optional_env_file")
         done
 
@@ -4751,9 +4751,26 @@ collect_api_keys_interactive() {
         done
     }
 
+    _ensure_test_env_placeholders() {
+        local test_env_file="$SCRIPT_DIR/.env.test"
+        local key placeholder
+        [[ -f "$test_env_file" ]] || return 0
+
+        for key in "${KEY_ORDER[@]}"; do
+            placeholder="mock-${key,,}-placeholder"
+            if grep -q "^${key}=" "$test_env_file" 2>/dev/null; then
+                sed_inplace "s|^${key}=.*|${key}=${placeholder}|" "$test_env_file"
+            else
+                echo "${key}=${placeholder}" >> "$test_env_file"
+            fi
+        done
+        ok ".env.test için API anahtarları mock/placeholder değerlere sabitlendi."
+    }
+
     if [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: API anahtarı etkileşimli toplama adımı atlandı."
         _sync_existing_api_keys_to_env_targets
+        _ensure_test_env_placeholders
         return
     fi
 
@@ -4799,6 +4816,7 @@ collect_api_keys_interactive() {
 
     if _import_api_keys_from_file "$sidar_keys_file"; then
         info "Kalıcı anahtar dosyası tespit edildiği için etkileşimli API anahtarı soruları atlandı."
+        _ensure_test_env_placeholders
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -4820,6 +4838,7 @@ collect_api_keys_interactive() {
     if [[ ${#missing_keys[@]} -eq 0 ]]; then
         ok "Tüm API anahtarları zaten tanımlı, devam ediliyor."
         _sync_existing_api_keys_to_env_targets
+        _ensure_test_env_placeholders
         return
     fi
 
@@ -4882,6 +4901,7 @@ collect_api_keys_interactive() {
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
         _sync_existing_api_keys_to_env_targets
+        _ensure_test_env_placeholders
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -4915,6 +4935,7 @@ collect_api_keys_interactive() {
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
         _sync_existing_api_keys_to_env_targets
+        _ensure_test_env_placeholders
         _warn_if_missing_critical_provider_keys
         return
     fi
@@ -4946,6 +4967,7 @@ collect_api_keys_interactive() {
     done
     ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
     _sync_existing_api_keys_to_env_targets
+    _ensure_test_env_placeholders
     _warn_if_missing_critical_provider_keys
 }
 
