@@ -60,25 +60,37 @@ WORKDIR /app
 
 # Sistem bağımlılıkları
 # GPU base image'ında (nvidia/cuda) libcuda ve sürücü zaten mevcuttur.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    git \
-    build-essential \
-    curl \
-    wget \
-    zstd \
-    # docker.io: docker-out-of-docker erişimi için (sock mount edildiğinde)
-    docker.io \
-    portaudio19-dev \
-    python3-pyaudio \
-    alsa-utils \
-    v4l-utils \
-    ffmpeg \
-    cargo \
-    pkg-config \
-    shellcheck \
-    && rm -rf /var/lib/apt/lists/*
+# GPU build yolunda Python sürümünü PYTHON_VERSION ile hizala (varsayılan: 3.11).
+RUN set -eux; \
+    apt-get update; \
+    if [ "$GPU_ENABLED" = "true" ]; then \
+      apt-get install -y --no-install-recommends software-properties-common; \
+      add-apt-repository -y ppa:deadsnakes/ppa; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-venv \
+        python${PYTHON_VERSION}-distutils; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/local/bin/python3; \
+    fi; \
+    apt-get install -y --no-install-recommends \
+      python3-pip \
+      git \
+      build-essential \
+      curl \
+      wget \
+      zstd \
+      # docker.io: docker-out-of-docker erişimi için (sock mount edildiğinde)
+      docker.io \
+      portaudio19-dev \
+      python3-pyaudio \
+      alsa-utils \
+      v4l-utils \
+      ffmpeg \
+      cargo \
+      pkg-config \
+      shellcheck; \
+    rm -rf /var/lib/apt/lists/*
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
