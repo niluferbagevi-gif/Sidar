@@ -89,7 +89,7 @@ services:
 
 
   sidar-migrate:
-    profiles: ["cpu", "gpu"]
+    profiles: ["cpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
     build:
       context: .
@@ -105,6 +105,29 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
+    env_file:
+      - .env
+    entrypoint: []
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+
+  sidar-migrate-gpu:
+    profiles: ["gpu"]
+    image: ${SIDAR_GPU_DOCKER_IMAGE:-sidar-gpu:latest}
+    build:
+      context: .
+      args:
+        BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
+        GPU_ENABLED: "true"
+        UV_OPTIONAL_EXTRAS: ${SIDAR_GPU_UV_EXTRAS:-gpu}
+    container_name: sidar_migrate_gpu
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
+      - USE_GPU=true
     env_file:
       - .env
     entrypoint: []
@@ -206,7 +229,7 @@ services:
         condition: service_healthy
       ollama-gpu:
         condition: service_started
-      sidar-migrate:
+      sidar-migrate-gpu:
         condition: service_completed_successfully
 
     environment:
@@ -341,7 +364,7 @@ services:
         condition: service_started
       ollama-gpu:
         condition: service_healthy
-      sidar-migrate:
+      sidar-migrate-gpu:
         condition: service_completed_successfully
 
     environment:
