@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 ARG UV_VERSION=0.11.12
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 FROM mcr.microsoft.com/devcontainers/python:1-3.11-bookworm
@@ -46,7 +48,9 @@ RUN rm -f \
 # daemon to build this image, but once the workspace is running Sidar scripts and
 # contributors can execute Docker/Compose commands through the mounted host
 # socket without having to bootstrap the CLI manually inside the container.
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -66,5 +70,4 @@ RUN apt-get update \
         docker-ce-cli \
         docker-compose-plugin \
     && docker --version \
-    && docker compose version \
-    && rm -rf /var/lib/apt/lists/*
+    && docker compose version
