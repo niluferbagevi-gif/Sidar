@@ -4401,32 +4401,20 @@ create_directories() {
         chmod 755 "$SCRIPT_DIR/$dir" 2>/dev/null || true
     done
 
-    # Tam Docker modunda container kullanıcı UID/GID (10001) bind-mount dizinlerine
-    # yazabilmelidir; aksi halde /app/logs gibi yolarda Permission denied oluşur.
+    # Tam Docker modunda bind-mount dizinlerinde yazma izinleri host tarafında korunur.
+    # Container UID/GID eşlemesi .env içindeki SIDAR_CONTAINER_UID/GID ile yönetilir.
     local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
     if [[ "$runtime_mode" == "docker" ]]; then
         local -a docker_bind_dirs=(logs data temp sessions)
         local bind_dir=""
         for bind_dir in "${docker_bind_dirs[@]}"; do
             mkdir -p "$SCRIPT_DIR/$bind_dir"
-            chown 10001:10001 "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
             chmod u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
-            if command -v setfacl &>/dev/null; then
-                setfacl -m u:10001:rwx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
-            fi
         done
     fi
 
     local log_file="$SCRIPT_DIR/logs/sidar_system.log"
     if [[ -f "$log_file" && ! -w "$log_file" ]]; then
-        if [[ "${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}" == "docker" ]]; then
-            chown 10001:10001 "$log_file" 2>/dev/null || true
-            if command -v setfacl &>/dev/null; then
-                setfacl -m u:10001:rw "$log_file" 2>/dev/null || true
-            fi
-        else
-            chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
-        fi
         chmod u+rw "$log_file" 2>/dev/null || true
     fi
 
@@ -5540,6 +5528,17 @@ PYDB
     fi
 }
 
+ensure_container_uid_gid_env() {
+    local env_file="$1"
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+
+    if [[ "$runtime_mode" == "docker" ]]; then
+        grep -q '^SIDAR_CONTAINER_UID=' "$env_file" || echo "SIDAR_CONTAINER_UID=$(id -u)" >> "$env_file"
+        grep -q '^SIDAR_CONTAINER_GID=' "$env_file" || echo "SIDAR_CONTAINER_GID=$(id -g)" >> "$env_file"
+        ok ".env: SIDAR_CONTAINER_UID/GID host kullanıcı değerleriyle eşitlendi."
+    fi
+}
+
 sync_database_env_chain_after_setup() {
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
@@ -5593,6 +5592,7 @@ setup_env_file() {
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        ensure_container_uid_gid_env "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
@@ -5615,6 +5615,7 @@ setup_env_file() {
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
+    ensure_container_uid_gid_env "$ENV_FILE"
 
     sync_postgres_env_with_database_url "$ENV_FILE"
 
