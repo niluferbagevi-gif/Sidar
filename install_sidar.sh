@@ -1288,8 +1288,14 @@ ensure_docker_daemon_running() {
         fi
         local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
         if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel" ]]; then
-            desktop_timeout=$(( desktop_timeout * 2 ))
-            info "WSL integration autofix bu oturumda uygulandığı için Docker Desktop bekleme süresi uzatıldı (${desktop_timeout}sn)."
+            local autofix_timeout=$(( ${DOCKER_DESKTOP_READY_TIMEOUT:-240} + 120 ))
+            if ! [[ "$autofix_timeout" =~ ^[0-9]+$ ]] || (( autofix_timeout < 30 )); then
+                autofix_timeout=360
+            fi
+            if (( autofix_timeout > desktop_timeout )); then
+                desktop_timeout=$autofix_timeout
+            fi
+            info "WSL integration autofix bu oturumda uygulandığı için Docker Desktop bekleme süresi yeniden ayarlandı (${desktop_timeout}sn)."
         fi
 
         powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
@@ -1298,6 +1304,10 @@ ensure_docker_daemon_running() {
         local sleep_step=3
         local progress_mark=30
         while (( elapsed < desktop_timeout )); do
+            if ! powershell.exe -NoProfile -Command "@(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue).Count" 2>/dev/null | tr -d '\r' | grep -Eq '^[1-9][0-9]*$'; then
+                warn "Docker Desktop süreci çalışmıyor görünüyor; erken çıkılıyor (bekleme: ${elapsed}/${desktop_timeout}sn)."
+                break
+            fi
             if _docker_ready_with_socket; then
                 ok "Docker daemon erişilebilir duruma geldi."
                 return 0
@@ -3333,7 +3343,14 @@ ensure_prerequisites() {
             clear_stdin_buffer
             read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
 
-            if ensure_docker_daemon_running; then
+            local manual_retry_timeout="${DOCKER_DESKTOP_READY_TIMEOUT:-240}"
+            if ! [[ "$manual_retry_timeout" =~ ^[0-9]+$ ]] || (( manual_retry_timeout < 30 )); then
+                manual_retry_timeout=120
+            else
+                (( manual_retry_timeout > 120 )) && manual_retry_timeout=120
+            fi
+
+            if DOCKER_DESKTOP_READY_TIMEOUT="$manual_retry_timeout" ensure_docker_daemon_running; then
                 ok "Docker daemon manuel müdahale sonrası erişilebilir."
                 verify_wsl_integration_listed || true
             else
