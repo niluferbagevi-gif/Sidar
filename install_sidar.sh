@@ -58,6 +58,8 @@ ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
 SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
+REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
+SIDAR_REPO_BRANCH="${SIDAR_REPO_BRANCH:-main}"
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -212,6 +214,10 @@ download_remote_install_module() {
     local remote_module_url="${remote_module_base}/${module_rel}"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local tmp_hash_path=""
+    local remote_hash_url="${remote_module_url}.sha256"
+    local expected_sha=""
+    local actual_sha=""
 
     mkdir -p "$(dirname "$destination_path")"
     tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
@@ -229,6 +235,39 @@ download_remote_install_module() {
     else
         rm -f "$tmp_module_path"
         fail "Ne curl ne de wget bulundu; modül indirilemiyor."
+    fi
+
+    if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        tmp_hash_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_sha.XXXXXX")"
+        if command -v curl &>/dev/null; then
+            if ! curl -fsSL "$remote_hash_url" -o "$tmp_hash_path"; then
+                rm -f "$tmp_module_path" "$tmp_hash_path"
+                fail "Checksum dosyası indirilemedi: $remote_hash_url"
+            fi
+        elif command -v wget &>/dev/null; then
+            if ! wget -qO "$tmp_hash_path" "$remote_hash_url"; then
+                rm -f "$tmp_module_path" "$tmp_hash_path"
+                fail "Checksum dosyası indirilemedi: $remote_hash_url"
+            fi
+        fi
+        expected_sha="$(tr -d '\r' < "$tmp_hash_path" | awk '{print $1}' | head -n1)"
+        if [[ -z "${expected_sha//[[:space:]]/}" ]]; then
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "Checksum içeriği geçersiz: $remote_hash_url"
+        fi
+        if command -v sha256sum &>/dev/null; then
+            actual_sha="$(sha256sum "$tmp_module_path" | awk '{print $1}')"
+        elif command -v shasum &>/dev/null; then
+            actual_sha="$(shasum -a 256 "$tmp_module_path" | awk '{print $1}')"
+        else
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
+        fi
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            rm -f "$tmp_module_path" "$tmp_hash_path"
+            fail "Checksum uyuşmazlığı: ${module_rel} (beklenen: ${expected_sha}, mevcut: ${actual_sha})"
+        fi
+        rm -f "$tmp_hash_path"
     fi
 
     install -m 0644 "$tmp_module_path" "$destination_path"
@@ -255,12 +294,33 @@ download_remote_install_modules() {
 
 if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     warn "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
-    warn "Tek dosyalık çalıştırma algılandı; tüm kurulum modülleri uzaktan indirilmeyi deneyecek."
+    warn "Yerel modül dizini bulunamadı; bootstrap kurtarma akışı çalıştırılıyor."
 
+    BOOTSTRAP_TARGET_DIR="${HOME}/Sidar"
+    if [[ -f "${BOOTSTRAP_TARGET_DIR}/scripts/install_modules/install_helpers.sh" ]]; then
+        info "Yerel Sidar deposu bulundu; kurulum betiği yeniden çağrılıyor: ${BOOTSTRAP_TARGET_DIR}/install_sidar.sh"
+        exec "${BOOTSTRAP_TARGET_DIR}/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if command -v git &>/dev/null && ( command -v curl &>/dev/null || command -v wget &>/dev/null ); then
+        info "Bootstrap clone başlatılıyor: ${REPO_URL} (${SIDAR_REPO_BRANCH}) -> ${BOOTSTRAP_TARGET_DIR}"
+        mkdir -p "${BOOTSTRAP_TARGET_DIR%/*}"
+        rm -rf "${BOOTSTRAP_TARGET_DIR}"
+        git clone --depth=1 --branch "${SIDAR_REPO_BRANCH}" "${REPO_URL}" "${BOOTSTRAP_TARGET_DIR}"
+        exec "${BOOTSTRAP_TARGET_DIR}/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+    fi
+
+    if awk '/^# BEGIN_BUNDLE_MODULES/{flag=1;next}/^# END_BUNDLE_MODULES/{flag=0}flag' "$ORIGINAL_SCRIPT_PATH" | grep -q .; then
+        fail "Bundle modülleri bu kopyada yüklenemedi; lütfen tam depo kopyası ile yeniden çalıştırın."
+    fi
+
+    warn "Git/clone kullanılamıyor; son çare olarak uzak modül indirimi deneniyor."
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
     INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules}"
+    remote_module_owner_repo="${REPO_URL#https://github.com/}"
+    remote_module_owner_repo="${remote_module_owner_repo%.git}"
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-https://raw.githubusercontent.com/${remote_module_owner_repo}/${SIDAR_REPO_BRANCH:-main}/scripts/install_modules}"
 
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR"
     ok "Kurulum modülleri indirildi ve geçici dizine kaydedildi: $INSTALL_MODULE_DIR"
@@ -2481,7 +2541,6 @@ if [[ "$PYTHON_VERSION" != "3.11" ]]; then
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
-REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
