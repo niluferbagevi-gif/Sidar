@@ -82,6 +82,7 @@ services:
         BASE_IMAGE: python:3.11-slim
         GPU_ENABLED: "false"
     container_name: sidar_migrate
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: "no"
     depends_on:
       postgres:
@@ -103,6 +104,7 @@ services:
         BASE_IMAGE: python:3.11-slim
         GPU_ENABLED: "false"
     container_name: sidar_agent
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_CPU_LIMIT:-2.0}
     mem_limit: ${SIDAR_MEM_LIMIT:-4g}
@@ -163,6 +165,7 @@ services:
         GPU_ENABLED: "true"
         TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
     container_name: sidar_agent_gpu
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_GPU_CPU_LIMIT:-4.0}
     mem_limit: ${SIDAR_GPU_MEM_LIMIT:-8g}
@@ -227,6 +230,7 @@ services:
         BASE_IMAGE: python:3.11-slim
         GPU_ENABLED: "false"
     container_name: sidar_web
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_WEB_CPU_LIMIT:-2.0}
     mem_limit: ${SIDAR_WEB_MEM_LIMIT:-4g}
@@ -290,6 +294,7 @@ services:
         GPU_ENABLED: "true"
         TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
     container_name: sidar_web_gpu
+    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_WEB_GPU_CPU_LIMIT:-4.0}
     mem_limit: ${SIDAR_WEB_GPU_MEM_LIMIT:-8g}
