@@ -4,6 +4,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+
+function Resolve-DockerDesktopExe {
+    $cmd = Get-Command 'Docker Desktop.exe' -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) {
+        return $cmd.Source
+    }
+    return (Join-Path ${env:ProgramFiles} 'Docker\Docker\Docker Desktop.exe')
+}
+
+$dockerExe = Resolve-DockerDesktopExe
 
 $settingsPath = Join-Path $env:APPDATA 'Docker\settings-store.json'
 if (!(Test-Path $settingsPath)) {
@@ -16,7 +28,7 @@ if (!(Test-Path $settingsPath)) {
 Copy-Item $settingsPath "$settingsPath.bak" -Force
 
 if (Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue) {
-    Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -ArgumentList '--quit' -WindowStyle Hidden -ErrorAction SilentlyContinue
+    Start-Process $dockerExe -ArgumentList '--quit' -WindowStyle Hidden -ErrorAction SilentlyContinue
     $stopped = $false
     for ($i = 0; $i -lt 10; $i++) {
         Start-Sleep -Seconds 1
@@ -98,7 +110,7 @@ elseif ($verifyNested.PSObject.Properties.Name -notcontains $CurrentDistro) {
     throw "Doğrulama başarısız: integration.wslDistros map içinde '$CurrentDistro' bulunamadı."
 }
 
-Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -WindowStyle Hidden
+Start-Process $dockerExe -WindowStyle Hidden
 
 $registered = $false
 for ($i = 0; $i -lt 45; $i++) {
@@ -109,6 +121,6 @@ for ($i = 0; $i -lt 45; $i++) {
     }
 }
 if (-not $registered) {
-    Write-Error "docker-desktop backend distro Docker Desktop tarafından yeniden oluşturulamadı."
+    Write-Error "docker-desktop backend distro could not be recreated by Docker Desktop."
     exit 2
 }
