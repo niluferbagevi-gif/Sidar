@@ -318,7 +318,9 @@ ensure_docker_daemon_running() {
             info "WSL integration autofix bu oturumda uygulandığı için Docker Desktop bekleme süresi yeniden ayarlandı (${desktop_timeout}sn)."
         fi
 
-        powershell.exe -NoProfile -Command "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'" >/dev/null 2>&1 || true
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+            "\$dockerProc = Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue; if (-not \$dockerProc) { \$cmd = Get-Command 'Docker Desktop.exe' -ErrorAction SilentlyContinue; \$dockerExe = if (\$cmd -and \$cmd.Source) { \$cmd.Source } else { Join-Path \$env:ProgramFiles 'Docker\\Docker\\Docker Desktop.exe' }; Start-Process \$dockerExe }" \
+            >/dev/null 2>&1 || true
         info "Docker Desktop başlatıldı, WSL entegrasyonunun hazır olması bekleniyor (maks. ${desktop_timeout}sn)..."
         local startup_probe_timeout=45
         local startup_probe_elapsed=0
