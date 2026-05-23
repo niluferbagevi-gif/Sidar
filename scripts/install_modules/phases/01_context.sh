@@ -7,7 +7,9 @@ sidar_phase_initialize_context() {
     sidar_source_install_utils "wsl_gpu_preflight.sh"
     sidar_source_install_utils "wsl_integration_autofix.sh"
     run_wsl2_gpu_preflight
-    if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" ]]; then
+    if [[ "${SIDAR_SKIP_WSL_INTEGRATION_AUTOFIX:-false}" == "true" ]]; then
+        info "SIDAR_SKIP_WSL_INTEGRATION_AUTOFIX=true: Docker Desktop WSL Integration preflight/autofix atlandı."
+    elif [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" ]]; then
         info "Docker Desktop WSL Integration preflight tekrar çağrısı atlandı (oturum içinde otomatik düzeltme daha önce uygulandı)."
     else
         ( docker_desktop_wsl_integration_preflight ) || warn "Docker Desktop WSL Integration raporu alınamadı; kurulum non-critical bilgi fazında devam ediyor."
