@@ -10,13 +10,16 @@ apply_wsl_integration_autofix() {
     command -v powershell.exe &>/dev/null || return 1
     [[ -n "$current_distro" ]] || return 1
 
-    local script_dir script_path stderr_log
+    local script_dir script_path stderr_log windows_script_path
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     script_path="${script_dir}/wsl_integration_autofix.ps1"
     [[ -f "$script_path" ]] || return 1
 
     stderr_log="$(mktemp)"
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$script_path")" -CurrentDistro "$current_distro" 2>"$stderr_log"
+    windows_script_path="$(wslpath -w "$script_path")"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$OutputEncoding=[Text.Encoding]::UTF8; & '$windows_script_path' -CurrentDistro '$current_distro'" \
+        2>"$stderr_log"
     local ps_exit=$?
     if [[ "$ps_exit" -ne 0 ]]; then
         if [[ "$ps_exit" -eq 2 ]]; then
