@@ -32,8 +32,8 @@ apply_wsl_integration_autofix() {
         if [[ -s "$stderr_log" ]]; then
             warn "PowerShell stderr (son 20 satır):"
             while IFS= read -r _line; do
-                _line_escaped="${_line//\/\\}"
-                warn "${_line_escaped}"
+                _line_safe="${_line//\\/\\\\}"
+                warn "${_line_safe}"
             done < <(tail -n 20 "$stderr_log")
         fi
         rm -f "$stderr_log"
