@@ -1017,6 +1017,7 @@ ensure_docker_cli_available() {
     command -v powershell.exe &>/dev/null || return 0
 
     local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local wsl_distros="" backend_registered=false
     local in_integrated=false default_covers=false
     local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
     local docker_socket_ready=false
@@ -1031,8 +1032,20 @@ ensure_docker_cli_available() {
     [[ -n "$current_distro" ]] || return 0
 
     default_distro="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q | Select-Object -First 1" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}')"
+    wsl_distros="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r')"
+    if printf '%s\n' "$wsl_distros" | awk 'NF {print}' | grep -Eq '^docker-desktop(-data)?$'; then
+        backend_registered=true
+    fi
     enable_default="$(wsl_powershell_read "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; if (\$null -eq \$cfg.EnableIntegrationWithDefaultWslDistro) { '' } else { [string]\$cfg.EnableIntegrationWithDefaultWslDistro } }")"
     integrated_csv="$(wsl_powershell_read "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$found=\$false; \$keys=@('integratedWslDistros','IntegratedWslDistros','enabledWslIntegrations'); foreach (\$k in \$keys) { \$prop=\$cfg.PSObject.Properties | Where-Object { \$_.Name -ieq \$k } | Select-Object -First 1; if (\$null -ne \$prop -and \$null -ne \$cfg.(\$prop.Name)) { @(\$cfg.(\$prop.Name)) -join ','; \$found=\$true; break } }; if (-not \$found -and \$null -ne \$cfg.wsl) { \$nested=\$cfg.wsl.PSObject.Properties | Where-Object { \$_.Name -ieq 'integratedDistros' -or \$_.Name -ieq 'enabledWslIntegrations' } | Select-Object -First 1; if (\$null -ne \$nested -and \$null -ne \$cfg.wsl.(\$nested.Name)) { @(\$cfg.wsl.(\$nested.Name)) -join ',' } } }")"
+
+    if [[ "$backend_registered" != true ]]; then
+        fail "Docker Desktop backend distro (docker-desktop / docker-desktop-data) WSL2'de kayıtlı değil."
+        warn "WSL Integration toggle açmak yeterli olmayabilir; backend dağıtımı manuel silinmiş olabilir."
+        warn "Çözüm: Docker Desktop > Settings > Troubleshoot > Reset to factory defaults"
+        warn "veya Docker Desktop'ı yeniden kurun. Sonra bu betiği tekrar çalıştırın."
+        return 1
+    fi
 
     integrated_norm=",${integrated_csv// /},"
     [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
