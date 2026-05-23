@@ -174,21 +174,21 @@ sidar_t() {
     fi
 }
 
-ok()   { echo -e "${GREEN}✅  $*${NC}" >&2; }
-info() { echo -e "${BLUE}ℹ️   $*${NC}" >&2; }
+ok()   { printf '%s\n' "${GREEN}✅  $*${NC}" >&2; }
+info() { printf '%s\n' "${BLUE}ℹ️   $*${NC}" >&2; }
 debug() {
     [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
-    echo -e "${BLUE}🔍  $*${NC}" >&2
+    printf '%s\n' "${BLUE}🔍  $*${NC}" >&2
 }
-warn() { echo -e "${YELLOW}⚠️   $*${NC}" >&2; }
+warn() { printf '%s\n' "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
-    echo -e "${RED}❌  $*${NC}" >&2
+    printf '%s\n' "${RED}❌  $*${NC}" >&2
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
         sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-fail}" "$*" || true
     fi
     exit 1
 }
-step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}" >&2; }
+step() { printf '\n%s\n' "${BOLD}${BLUE}── $* ──${NC}" >&2; }
 
 sed_inplace() {
     local expression="${1:-}"

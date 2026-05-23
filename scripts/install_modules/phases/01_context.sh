@@ -16,13 +16,18 @@ sidar_phase_initialize_context() {
             if [[ -z "$current_distro" ]] && command -v wsl.exe &>/dev/null; then
                 current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
             fi
-            if [[ -n "$current_distro" ]] && declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
+            if docker info >/dev/null 2>&1 || [[ -S /var/run/docker.sock ]]; then
+                ok "Docker daemon zaten yanıt veriyor; preflight sonrası ikinci WSL Integration autofix denemesi atlandı."
+                export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
+            elif [[ -n "$current_distro" ]] && declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
                 info "Preflight sonrası otomatik WSL Integration düzeltmesi deneniyor: '${current_distro}'."
                 if ! apply_wsl_integration_autofix "$current_distro"; then
                     warn "Preflight sonrası WSL Integration otomatik düzeltmesi başarısız oldu; kullanıcı onayı istenmeden kurulum devam edecek."
                     warn "Manuel adım gerekli: Docker Desktop > Settings > Resources > WSL Integration > '${current_distro}' toggle'ını açın."
                     warn "Ardından install_sidar.sh komutunu yeniden çalıştırın."
                 fi
+            else
+                warn "WSL Integration autofix için geçerli distro tespit edilemedi; manuel kontrol önerilir."
             fi
         fi
     fi
