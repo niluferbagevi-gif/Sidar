@@ -218,6 +218,17 @@ docker_desktop_wsl_integration_preflight() {
         return 0
     fi
 
+    if command -v docker &>/dev/null; then
+        if docker info >/dev/null 2>&1; then
+            ok "Docker daemon erişilebilir; WSL Integration fiilen çalışıyor göründüğü için config-temelli autofix atlandı."
+            [[ "$_had_errexit" == true ]] && set -e
+            return 0
+        fi
+        info "Docker CLI bulundu ancak daemon şu an erişilebilir değil; WSL Integration doğrulaması config fallback ile sürdürülecek."
+    else
+        info "Docker CLI bulunamadı; WSL Integration doğrulaması config fallback ile sürdürülecek."
+    fi
+
     local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm="" docker_settings_json=""
     local in_integrated=false default_covers=false
     current_distro="${WSL_DISTRO_NAME:-}"
