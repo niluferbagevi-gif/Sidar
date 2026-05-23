@@ -17,6 +17,16 @@ function Resolve-DockerDesktopExe {
 
 $dockerExe = Resolve-DockerDesktopExe
 
+# Docker daemon zaten canlıysa disruptive restart/autofix'e girme.
+try {
+    & docker info 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Docker daemon yanıt veriyor; restart atlandı."
+        exit 0
+    }
+}
+catch {}
+
 $settingsPath = Join-Path $env:APPDATA 'Docker\settings-store.json'
 if (!(Test-Path $settingsPath)) {
     $settingsPath = Join-Path $env:APPDATA 'Docker\settings.json'
@@ -121,6 +131,15 @@ for ($i = 0; $i -lt 45; $i++) {
     }
 }
 if (-not $registered) {
-    Write-Error "docker-desktop backend distro could not be recreated by Docker Desktop."
+    Write-Warning "docker-desktop distro kaydı beklenen sürede görünmedi; UI/WSL liste güncellemesi gecikmiş olabilir."
+    try {
+        & docker info 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Docker daemon yanıt veriyor; backend distro görünürlüğü gecikmeli olsa da autofix başarılı kabul edildi."
+            exit 0
+        }
+    }
+    catch {}
+    Write-Error "docker-desktop görünmüyor ve Docker daemon da yanıt vermiyor."
     exit 2
 }
