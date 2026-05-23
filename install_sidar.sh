@@ -3079,6 +3079,9 @@ ensure_prerequisites() {
     fi
 
     if [[ "$WSL2" == true ]] && ! (command -v docker &>/dev/null && [[ "$docker_version_check_ok" == true ]]); then
+        if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
+            ok "Docker runtime doğrulandı (docker info başarılı); WSL Integration UI listesi gecikmeli/yanıltıcı olabilir."
+        else
 
         # Windows tarafında Docker Desktop'ın gerçekten kurulu olup olmadığını denetle
         local docker_desktop_installed=false
@@ -3116,6 +3119,7 @@ ensure_prerequisites() {
                 fail "[ENTER] sonrası docker daemon erişilemedi (docker info başarısız). $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
             fi
             ok "WSL2 Docker Desktop entegrasyonu doğrulandı (docker CLI + docker info)."
+        fi
         fi
     fi
 

@@ -236,12 +236,21 @@ docker_desktop_wsl_integration_preflight() {
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
     default_distro="$(
-        wsl.exe -l 2>/dev/null \
+        wsl.exe --status 2>/dev/null \
             | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
             | tr -d '\0\r' \
-            | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+            | awk -F': *' '/Default Distribution/ {print $2; exit}' \
             || true
     )"
+    if [[ -z "$default_distro" ]]; then
+        default_distro="$(
+            wsl.exe -l -v 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+                | tr -d '\0\r' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+                || true
+        )"
+    fi
     if [[ -z "$default_distro" ]]; then
         default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
     fi
@@ -254,9 +263,17 @@ docker_desktop_wsl_integration_preflight() {
                 // .integratedWslDistros
                 // .wsl.distros
                 // .integration.wslDistros
+                // .wslIntegration.distros
+                // .wslEngine.integratedDistros
+                // .enabledIntegrations
                 // []
             )
-            | (if type=="array" then map(tostring) else [(.|keys[])] end)
+            | (
+                if type=="array" then map(tostring)
+                elif type=="object" then [to_entries[] | select((.value|type) == "boolean" and .value == true) | .key]
+                else []
+                end
+            )
             | join(",")
         ' 2>/dev/null || true)"
     else
@@ -266,6 +283,9 @@ docker_desktop_wsl_integration_preflight() {
 
     integrated_norm=",${integrated_csv// /},"
     [[ "$integrated_norm" == *",$current_distro,"* ]] && in_integrated=true
+    if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
+        in_integrated=true
+    fi
     if [[ "${enable_default,,}" == "true" && -n "$default_distro" && "$default_distro" == "$current_distro" ]]; then
         default_covers=true
     fi
