@@ -2821,6 +2821,7 @@ install_system_dependencies() {
             info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
+            local ns_pref_file="/etc/apt/preferences.d/nodesource.pref"
             local ns_key_tmp=""
             local ns_ready=false
 
@@ -2833,6 +2834,12 @@ install_system_dependencies() {
                     sudo rm -f "$ns_repo_file"
                     echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/${node_target_series} nodistro main" | sudo tee "$ns_repo_file" >/dev/null
                     sudo chmod 0644 "$ns_repo_file"
+                    sudo tee "$ns_pref_file" >/dev/null <<'EOF'
+Package: nodejs
+Pin: origin deb.nodesource.com
+Pin-Priority: 1001
+EOF
+                    sudo chmod 0644 "$ns_pref_file"
                     ns_ready=true
                 else
                     warn "NodeSource GPG keyring oluşturulamadı."
@@ -3404,7 +3411,7 @@ install_python_deps() {
 
     # Dev araçları (pytest/coverage/mypy/ruff) self-healing ve otonom kalite
     # döngüleri için production dahil her profilde zorunludur.
-    local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
+    local -a SYNC_ARGS=(--frozen --all-extras)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -3419,7 +3426,7 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
