@@ -407,6 +407,8 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 > - Geriye dönük uyumluluk için `DOCKER_CLI_INSTALL=always`/`true` kullanımları `always` olarak yorumlanır; yeni dokümantasyonda kanonik değişken `DOCKER_CLI_INSTALL_MODE` kullanılmalıdır.
 
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
+>
+> **⚠️ Kritik uyarı:** `wsl --unregister docker-desktop` komutunu **ASLA** çalıştırmayın. Bu komut Docker Desktop'ın engine backend dağıtımını siler; genellikle yalnızca **Docker Desktop → Settings → Troubleshoot → Reset to factory defaults** veya Docker Desktop'ı tamamen yeniden kurma ile geri gelir.
 
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir.
 
