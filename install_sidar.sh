@@ -851,7 +851,7 @@ download_verified_script() {
     if [[ -z "$expected_sha" ]]; then
         if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
             rm -f "$script_file"
-            fail "${script_label} checksum değeri tanımlı değil. ${script_label^^}_SHA256 değişkenini ayarlayın veya ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+            fail "${script_label} checksum değeri tanımlı değil. UV kurulumunda UV_VERSION + UV_INSTALL_SHA256 değerlerini python_env.sh/install_sidar.sh içinde birlikte güncelleyin; hızlı geçiş için ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh kullanabilirsiniz."
         fi
         warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
     elif [[ "$actual_sha" != "$expected_sha" ]]; then
@@ -2833,6 +2833,12 @@ install_system_dependencies() {
                     sudo rm -f "$ns_repo_file"
                     echo "deb [signed-by=${ns_keyring}] https://deb.nodesource.com/${node_target_series} nodistro main" | sudo tee "$ns_repo_file" >/dev/null
                     sudo chmod 0644 "$ns_repo_file"
+                    cat <<EOF | sudo tee /etc/apt/preferences.d/nodesource >/dev/null
+Package: nodejs
+Pin: origin deb.nodesource.com
+Pin-Priority: 600
+EOF
+                    sudo chmod 0644 /etc/apt/preferences.d/nodesource
                     ns_ready=true
                 else
                     warn "NodeSource GPG keyring oluşturulamadı."
@@ -3343,9 +3349,11 @@ install_uv_cli() {
             [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
         else
             info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
+            local uv_version="${UV_VERSION:-0.5.11}"
+            export UV_VERSION="$uv_version"
             DOWNLOADED_SCRIPT_FILE=""
             download_verified_script \
-                "https://astral.sh/uv/install.sh" \
+                "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-installer.sh" \
                 "${UV_INSTALL_SHA256:-}" \
                 "uv_install"
             validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"

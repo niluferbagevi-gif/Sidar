@@ -21,9 +21,11 @@ install_uv_cli() {
             [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
         else
             info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
+            local uv_version="${UV_VERSION:-0.5.11}"
+            export UV_VERSION="$uv_version"
             DOWNLOADED_SCRIPT_FILE=""
             download_verified_script \
-                "https://astral.sh/uv/install.sh" \
+                "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-installer.sh" \
                 "${UV_INSTALL_SHA256:-}" \
                 "uv_install"
             validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
