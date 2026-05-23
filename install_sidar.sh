@@ -3543,6 +3543,13 @@ setup_react_frontend() {
         if [[ "$NODE_MAJOR" -lt "$node_target_major" ]]; then
             warn "Node.js sürümü düşük: $("$node_bin" -v). React build için Node.js ${node_target_major}+ önerilir."
             warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından hedef sürüme göre otomatik ayarlanır)"
+        elif [[ "$NODE_MAJOR" -gt "$node_target_major" ]]; then
+            warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif $("$node_bin" -v). React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
+            if command -v apt-cache &>/dev/null; then
+                if ! apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
+                    warn "Aktif nodejs paketi NodeSource görünmüyor; Ubuntu varsayılan apt deposu Node.js ${NODE_MAJOR}.x sürümünü öne alıyor olabilir."
+                fi
+            fi
         else
             ok "Node.js sürümü uygun: $("$node_bin" -v)"
         fi
