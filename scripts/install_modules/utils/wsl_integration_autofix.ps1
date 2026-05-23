@@ -99,3 +99,16 @@ elseif ($verifyNested.PSObject.Properties.Name -notcontains $CurrentDistro) {
 }
 
 Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' -WindowStyle Hidden
+
+$registered = $false
+for ($i = 0; $i -lt 45; $i++) {
+    Start-Sleep -Seconds 2
+    if ((wsl.exe -l -q 2>$null) -match 'docker-desktop') {
+        $registered = $true
+        break
+    }
+}
+if (-not $registered) {
+    Write-Error "docker-desktop backend distro Docker Desktop tarafından yeniden oluşturulamadı."
+    exit 2
+}

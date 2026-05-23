@@ -16,8 +16,15 @@ apply_wsl_integration_autofix() {
     [[ -f "$script_path" ]] || return 1
 
     stderr_log="$(mktemp)"
-    if ! powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$script_path")" -CurrentDistro "$current_distro" 2>"$stderr_log"; then
-        warn "PowerShell WSL Integration autofix komutu başarısız oldu."
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$script_path")" -CurrentDistro "$current_distro" 2>"$stderr_log"
+    local ps_exit=$?
+    if [[ "$ps_exit" -ne 0 ]]; then
+        if [[ "$ps_exit" -eq 2 ]]; then
+            warn "PowerShell autofix backend kaydını doğrulayamadı (exit=2). Docker Desktop reset/reinstall gerekli olabilir."
+            warn "Öneri: Docker Desktop > Settings > Troubleshoot > Reset to factory defaults"
+        else
+            warn "PowerShell WSL Integration autofix komutu başarısız oldu (exit=${ps_exit})."
+        fi
         if [[ -s "$stderr_log" ]]; then
             warn "PowerShell stderr (son 20 satır):"
             while IFS= read -r _line; do
