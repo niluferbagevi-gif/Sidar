@@ -226,11 +226,11 @@ docker_desktop_wsl_integration_preflight() {
             wsl.exe -l 2>/dev/null \
                 | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
                 | tr -d '\0\r' \
-                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
                 || true
         )"
         if [[ -z "$current_distro" ]]; then
-            current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+            current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
         fi
     fi
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
@@ -239,11 +239,11 @@ docker_desktop_wsl_integration_preflight() {
         wsl.exe -l 2>/dev/null \
             | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
             | tr -d '\0\r' \
-            | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+            | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
             || true
     )"
     if [[ -z "$default_distro" ]]; then
-        default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+        default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
     fi
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
     if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
@@ -262,6 +262,13 @@ docker_desktop_wsl_integration_preflight() {
     else
         enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$v=\$cfg.EnableIntegrationWithDefaultWslDistro; if (\$null -eq \$v) { \$v=\$cfg.enableIntegrationWithDefaultWslDistro }; if (\$null -eq \$v) { \$v=\$cfg.wslEngineEnabled }; if (\$null -eq \$v -and \$null -ne \$cfg.integration) { \$v=\$cfg.integration.wslEngineEnabled }; if (\$null -eq \$v) { '' } else { [string]\$v } }" || true)"
         integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$list=\$null; if (\$cfg.IntegratedWslDistros) { \$list=@(\$cfg.IntegratedWslDistros) } elseif (\$cfg.integratedWslDistros) { \$list=@(\$cfg.integratedWslDistros) } elseif (\$null -ne \$cfg.wsl -and \$null -ne \$cfg.wsl.distros) { if (\$cfg.wsl.distros -is [System.Array]) { \$list=@(\$cfg.wsl.distros) } else { \$list=@(\$cfg.wsl.distros.PSObject.Properties | Select-Object -ExpandProperty Name) } } elseif (\$null -ne \$cfg.integration -and \$null -ne \$cfg.integration.wslDistros) { if (\$cfg.integration.wslDistros -is [System.Array]) { \$list=@(\$cfg.integration.wslDistros) } else { \$list=@(\$cfg.integration.wslDistros.PSObject.Properties | Select-Object -ExpandProperty Name) } }; if (\$list) { \$list | ForEach-Object { [string]\$_ } | Where-Object { \$_ } | Select-Object -Unique | Join-String -Separator ',' } }" || true)"
+    fi
+
+    if [[ -z "$enable_default" && -z "$integrated_csv" ]]; then
+        warn "Docker settings.json okunamadı veya tanınmayan şemada; runtime durumuna güveniliyor."
+        export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
+        [[ "$_had_errexit" == true ]] && set -e
+        return 0
     fi
 
     integrated_norm=",${integrated_csv// /},"
@@ -284,6 +291,12 @@ docker_desktop_wsl_integration_preflight() {
     else
         export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=true
         warn "Docker Desktop WSL Integration: '${current_distro}' kapsanmıyor görünüyor. Docker Desktop > Settings > Resources > WSL Integration altında explicit toggle açılmalı."
+        if docker info >/dev/null 2>&1 || [[ -S /var/run/docker.sock ]]; then
+            ok "Docker daemon zaten yanıt veriyor; settings.json okunamasa da WSL Integration runtime düzeyinde çalışıyor. Preflight autofix atlandı."
+            export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
+            [[ "$_had_errexit" == true ]] && set -e
+            return 0
+        fi
         if declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
             info "Preflight aşamasında erken autofix denemesi başlatılıyor: '${current_distro}'."
             if apply_wsl_integration_autofix "$current_distro"; then
