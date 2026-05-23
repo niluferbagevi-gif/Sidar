@@ -17,8 +17,9 @@ apply_wsl_integration_autofix() {
 
     stderr_log="$(mktemp)"
     windows_script_path="$(wslpath -w "$script_path")"
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
-        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; \$OutputEncoding=[Text.Encoding]::UTF8; & '$windows_script_path' -CurrentDistro '$current_distro'" \
+    powershell.exe -NoProfile -ExecutionPolicy Bypass \
+        -File "$windows_script_path" \
+        -CurrentDistro "$current_distro" \
         2>"$stderr_log"
     local ps_exit=$?
     if [[ "$ps_exit" -ne 0 ]]; then
