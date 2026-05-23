@@ -1111,6 +1111,15 @@ ensure_docker_daemon_running() {
         [[ "$integrated_norm" == *",$distro_name,"* ]]
     }
 
+    _wsl_backend_docker_desktop_registered() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local wsl_distros
+        wsl_distros="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r')"
+        printf '%s\n' "$wsl_distros" | awk 'NF {print}' | grep -Fxq "docker-desktop"
+    }
+
     _wait_for_docker_socket_mount_after_autofix() {
         local mount_wait_timeout="${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}"
         if ! [[ "$mount_wait_timeout" =~ ^[0-9]+$ ]] || (( mount_wait_timeout < 10 )); then
@@ -1265,6 +1274,16 @@ ensure_docker_daemon_running() {
 
     if [[ "$WSL2" != true ]] && ! docker info &>/dev/null && command -v service &>/dev/null; then
         sudo service docker start >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$WSL2" == true ]] && command -v powershell.exe &>/dev/null; then
+        if ! _wsl_backend_docker_desktop_registered; then
+            fail "Docker Desktop backend distro ('docker-desktop') WSL2'de kayıtlı değil."
+            warn "Bu dağıtım manuel silinmiş olabilir ('wsl --unregister docker-desktop')."
+            warn "Çözüm: Docker Desktop > Settings > Troubleshoot > Reset to factory defaults"
+            warn "veya Docker Desktop'ı yeniden kurun. Sonra bu betiği tekrar çalıştırın."
+            return 1
+        fi
     fi
 
     if ! docker info &>/dev/null && command -v powershell.exe &>/dev/null; then
