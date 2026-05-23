@@ -222,11 +222,29 @@ docker_desktop_wsl_integration_preflight() {
     local in_integrated=false default_covers=false
     current_distro="${WSL_DISTRO_NAME:-}"
     if [[ -z "$current_distro" ]]; then
-        current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+        current_distro="$(
+            wsl.exe -l 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+                | tr -d '\0\r' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+                || true
+        )"
+        if [[ -z "$current_distro" ]]; then
+            current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+        fi
     fi
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
-    default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+    default_distro="$(
+        wsl.exe -l 2>/dev/null \
+            | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+            | tr -d '\0\r' \
+            | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*") { print $i; exit } }' \
+            || true
+    )"
+    if [[ -z "$default_distro" ]]; then
+        default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF {print; exit}' || true)"
+    fi
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
     if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
         enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
