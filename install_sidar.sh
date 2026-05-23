@@ -3009,12 +3009,23 @@ ensure_prerequisites() {
         if ensure_docker_daemon_running; then
             ok "Docker daemon çalışıyor."
             verify_wsl_integration_listed || true
-        else
-            warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
-            verify_wsl_integration_listed || true
-            if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
-                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu."
-            fi
+	        else
+	            warn "Docker daemon başlatılamadı. Docker Desktop/service durumunu kontrol edin."
+	            verify_wsl_integration_listed || true
+	            if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+	                local backend_missing=false
+	                if [[ "$WSL2" == true ]] && command -v powershell.exe &>/dev/null; then
+	                    local wsl_distros_snapshot
+	                    wsl_distros_snapshot="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r')"
+	                    if ! printf '%s\n' "$wsl_distros_snapshot" | awk 'NF {print}' | grep -Eq '^docker-desktop(-data)?$'; then
+	                        backend_missing=true
+	                    fi
+	                fi
+	                if [[ "$backend_missing" == true ]]; then
+	                    fail "Docker daemon erişilemedi: Docker Desktop backend distro'su (docker-desktop / docker-desktop-data) WSL2'de kayıtlı değil. Etkileşimsiz modda otomatik düzeltilemez; Docker Desktop > Settings > Troubleshoot > Reset to factory defaults veya Docker Desktop yeniden kurulum sonrası betiği tekrar çalıştırın."
+	                fi
+	                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu. Kök neden docker-desktop backend yokluğuysa Docker Desktop reset/reinstall gereklidir."
+	            fi
 
             info "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
             clear_stdin_buffer
