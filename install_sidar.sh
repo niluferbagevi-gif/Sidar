@@ -2845,7 +2845,19 @@ install_system_dependencies() {
             if [[ "$ns_ready" == true ]] && \
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y && \
                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
-                ok "Node.js NodeSource üzerinden kuruldu: $(node --version 2>/dev/null || echo 'sürüm alınamadı')"
+                node_bin="$(resolve_native_binary_path node || true)"
+                local installed_node_version=""
+                local installed_node_major=""
+                installed_node_version="$([[ -n "$node_bin" ]] && "$node_bin" --version 2>/dev/null || true)"
+                installed_node_major="$(echo "$installed_node_version" | grep -oE '[0-9]+' | head -n1 || true)"
+                if sudo apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
+                    ok "Node.js NodeSource üzerinden kuruldu: ${installed_node_version:-sürüm alınamadı}"
+                else
+                    warn "Node.js kurulumu tamamlandı ancak aktif paket kaynağı NodeSource görünmüyor: ${installed_node_version:-sürüm alınamadı}."
+                fi
+                if [[ -n "$installed_node_major" && "$installed_node_major" != "$node_target_major" ]]; then
+                    warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif ${installed_node_version}. React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
+                fi
             else
                 warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
                 node_bin="$(resolve_native_binary_path node || true)"

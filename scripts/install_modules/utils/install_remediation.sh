@@ -184,6 +184,20 @@ sidar_phase_remediation_strategy() {
     return 1
 }
 
+sidar_emit_remediation_guidance() {
+    local phase="$1"
+    local failed_cmd="$2"
+    local reason="$3"
+
+    if [[ "$phase" == "04_workspace" && "$failed_cmd $reason" == *"checksum değeri tanımlı değil"* ]]; then
+        warn "Auto-heal: workspace hatası uzak betik checksum metadata eksikliğine bağlı. Bu durum self-heal ile güvenli biçimde onarılamaz."
+        warn "Çözüm: ilgili *_SHA256 değişkenini tanımlayın (önerilen) veya yalnız bilinçli test amaçlı ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+        return 0
+    fi
+
+    return 1
+}
+
 sidar_resume_after_remediation() {
     local phase="$1"
     local next_attempt="${2:-1}"
@@ -241,6 +255,9 @@ sidar_handle_install_failure() {
     if sidar_phase_remediation_strategy "$phase" "$failed_cmd" "$reason"; then
         sidar_resume_after_remediation "$phase" $((attempt + 1))
     fi
+    sidar_emit_remediation_guidance "$phase" "$failed_cmd" "$reason" || true
+    warn "Auto-heal: ${phase} fazı için uygulanabilir bir self-heal stratejisi bulunamadı; kök neden manuel çözülmeli."
+    sidar_write_remediation_report "$phase" "no-remediation-strategy" "manual-fix-required;no-resume"
 
     return 1
 }
