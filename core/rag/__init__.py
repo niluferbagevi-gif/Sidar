@@ -746,6 +746,8 @@ class DocumentStore:
 
         self._vector_init_done = False
         self._bm25_init_done = False
+        self._fts5_disabled = False
+        self._rag_writable = True
         self._initialize_backends_once()
 
     def _initialize_backends_once(self) -> None:
@@ -939,6 +941,9 @@ class DocumentStore:
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
         import sqlite3
+        if getattr(self, "_fts5_disabled", False):
+            self._bm25_available = False
+            return
 
         try:
             db_path = self.store_dir / "bm25_fts.db"
@@ -974,6 +979,10 @@ class DocumentStore:
                 "bm25_fts_init_success",
                 "SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.",
             )
+        except (sqlite3.OperationalError, OSError) as exc:
+            self._fts5_disabled = True
+            logger.warning("FTS5 devre dışı bırakıldı (degrade-once): %s", exc)
+            self._bm25_available = False
         except Exception as exc:
             logger.error("FTS5 başlatma hatası: %s", exc)
             self._bm25_available = False
@@ -988,6 +997,16 @@ class DocumentStore:
 
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
+        def _pgvector_preflight_cause(exc: BaseException) -> str:
+            msg = f"{type(exc).__name__} {exc}".lower()
+            if any(token in msg for token in ("connection refused", "could not connect", "connect call failed", "server closed", "connection reset")):
+                return "connection_refused"
+            if any(token in msg for token in ("password authentication failed", "authentication failed", "invalid password", "28p01", "auth failed")):
+                return "auth_failed"
+            if any(token in msg for token in ("extension", "vector")):
+                return "extension_missing"
+            return "unknown"
+
         db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
         if not db_url.startswith("postgresql"):
             logger.warning(
@@ -1049,6 +1068,7 @@ class DocumentStore:
                 self._pg_embedding_model_name,
             )
         except Exception as exc:
+            logger.debug("pgvector preflight cause=%s", _pgvector_preflight_cause(exc))
             logger.warning(_pgvector_failure_action_message(exc))
             logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
             self._pgvector_available = False
@@ -1782,6 +1802,8 @@ class DocumentStore:
         }
         # Hassas yol kalıpları — proje kökü dışındaki kritik dosyalara erişimi engelle
         _BLOCKED_PARTS = {".env", ".git", "sessions", "__pycache__", "logs", "proc", "etc", "sys"}
+        if not getattr(self, "_rag_writable", True):
+            return False, "✗ RAG yazma devre dışı: önceki izin hatası nedeniyle dosya ekleme atlandı."
         try:
             file = Path(path).resolve()
             if not file.exists():
@@ -1816,6 +1838,13 @@ class DocumentStore:
                 True,
                 f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} ({len(content):,} karakter)",
             )
+        except PermissionError as exc:
+            self._rag_writable = False
+            logger.warning(
+                "RAG yazma devre dışı bırakıldı (degrade-once): ilk PermissionError sonrası kalan dosya eklemeleri atlanacak. detay=%s",
+                exc,
+            )
+            return False, f"[HATA] Dosya eklenemedi (izin): {exc}"
         except Exception as exc:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
             return False, f"[HATA] Dosya eklenemedi: {exc}"

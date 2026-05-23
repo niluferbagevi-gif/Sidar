@@ -669,10 +669,9 @@ try:
         )
     )
     _root_logger.addHandler(_file_handler)
-except (PermissionError, OSError) as exc:
+except (PermissionError, OSError):
     _root_logger.warning(
-        "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
-        exc,
+        "⚠️ Log dosyasına yazılamıyor. Container UID host UID ile uyuşmuyor olabilir. Çözüm: .env içine SIDAR_CONTAINER_UID=$(id -u) ekleyip `docker compose up -d` yeniden çalıştırın."
     )
 
 _configure_noisy_dependency_loggers()

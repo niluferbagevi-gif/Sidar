@@ -10,8 +10,8 @@ import fnmatch
 import json
 import logging
 import os
-import shlex
 import re
+import shlex
 import shutil
 import stat
 import subprocess  # nosec B404

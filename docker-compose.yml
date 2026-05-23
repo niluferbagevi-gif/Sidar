@@ -15,6 +15,11 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -49,6 +54,11 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/api/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   ollama-gpu:
     profiles: ["gpu"]
@@ -63,6 +73,11 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/api/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     deploy:
       resources:
         reservations:
@@ -247,13 +262,13 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       jaeger:
         condition: service_started
       ollama:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
 
@@ -316,13 +331,13 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       jaeger:
         condition: service_started
       ollama-gpu:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
 
