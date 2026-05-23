@@ -99,8 +99,8 @@ else
 fi
 
 # ── Renkler + i18n ────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 
 resolve_sidar_locale() {
     local raw_locale="${SIDAR_LOCALE:-${LANG:-${LC_ALL:-${LC_MESSAGES:-tr}}}}"
