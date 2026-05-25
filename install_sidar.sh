@@ -3554,8 +3554,26 @@ install_playwright_browsers() {
                 "$_pw_install_log" || true
             ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
         else
+            local _pw_install_output
+            _pw_install_output="$(cat "$_pw_install_log")"
             cat "$_pw_install_log" >&2
-            warn "Playwright kurulumu başarısız oldu. Manuel komut: uv run python -m playwright install --with-deps chromium"
+
+            if [[ "$_pw_install_output" == *"OS is not officially supported by Playwright"* ]] || \
+               [[ "$_pw_install_output" == *"Playwright does not support chromium on"* ]] || \
+               [[ "$_pw_install_output" == *"Cannot install dependencies for"* ]]; then
+                warn "Playwright --with-deps bu işletim sisteminde desteklenmiyor. Fallback: yalnızca Chromium binary kurulumu deneniyor..."
+                if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
+                    "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1; then
+                    grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                        "$_pw_install_log" || true
+                    ok "Playwright kurulumu fallback ile tamamlandı (chromium, deps yok)."
+                else
+                    cat "$_pw_install_log" >&2
+                    warn "Playwright fallback kurulumu da başarısız oldu. Manuel komut: uv run python -m playwright install chromium"
+                fi
+            else
+                warn "Playwright kurulumu başarısız oldu. Manuel komut: uv run python -m playwright install --with-deps chromium"
+            fi
         fi
 
         rm -f "$_pw_install_log"
