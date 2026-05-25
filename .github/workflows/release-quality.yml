@@ -51,6 +51,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web_ui_react/package-lock.json
+      - name: Build React dist assets
+        run: |
+          npm --prefix web_ui_react ci
+          npm --prefix web_ui_react run build
+          test -d web_ui_react/dist
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
