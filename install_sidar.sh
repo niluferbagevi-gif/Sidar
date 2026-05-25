@@ -21,6 +21,14 @@ set -Eeuo pipefail
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
+# Bilinen upstream installer hash pinlerini repo içinden yükle.
+# Ortam değişkeni verilmişse bu dosyadaki varsayılanların üzerinde önceliklidir.
+PINNED_INSTALLER_HASHES_FILE="${PINNED_INSTALLER_HASHES_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/security/pinned_installer_hashes.sh}"
+if [[ -f "$PINNED_INSTALLER_HASHES_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$PINNED_INSTALLER_HASHES_FILE"
+fi
+
 # Resume/auto-heal modunda GPU tespit fazı atlanabilir. Strict mode altında
 # sonraki servis/smoke/özet fazlarının unbound variable ile kırılmaması için
 # küresel GPU bayrağını en erken noktada güvenli CPU fallback'iyle tanımla.
