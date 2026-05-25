@@ -2818,7 +2818,58 @@ install_system_dependencies() {
             if [[ -z "$node_bin" ]] && command -v node &>/dev/null; then
                 warn "Sadece Windows Interop Node.js bulundu ($(command -v node)). Linux Node.js kurulacak."
             fi
-            info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
+            info "Node.js ${node_target_major}.x için izole kurulum (Volta/NVM) deneniyor..."
+            local install_home="${HOME:-$TARGET_DIR}"
+            local volta_home="${VOLTA_HOME:-$install_home/.volta}"
+            local nvm_dir="${NVM_DIR:-$install_home/.nvm}"
+            local isolated_node_ready=false
+
+            if [[ -x "${volta_home}/bin/volta" ]]; then
+                info "Volta bulundu, Node.js ${node_target_major}.x kurulumu güncelleniyor..."
+            else
+                info "Volta bulunamadı; kullanıcı dizinine kuruluyor (${volta_home})."
+                curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://get.volta.sh | bash || warn "Volta kurulumu başarısız oldu; NVM fallback denenecek."
+            fi
+
+            if [[ -x "${volta_home}/bin/volta" ]]; then
+                export VOLTA_HOME="$volta_home"
+                export PATH="${VOLTA_HOME}/bin:${PATH}"
+                if "${VOLTA_HOME}/bin/volta" install "node@${node_target_major}" >/dev/null 2>&1; then
+                    node_bin="$(resolve_native_binary_path node || true)"
+                    if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
+                        isolated_node_ready=true
+                        ok "Node.js Volta ile izole şekilde kuruldu: $("$node_bin" -v)"
+                    fi
+                fi
+            fi
+
+            if [[ "$isolated_node_ready" != true ]]; then
+                info "Volta ile Node.js kurulamadı; NVM fallback deneniyor..."
+                mkdir -p "$nvm_dir"
+                if [[ -s "${nvm_dir}/nvm.sh" ]]; then
+                    debug "NVM zaten kurulu görünüyor: ${nvm_dir}"
+                else
+                    curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || warn "NVM kurulumu başarısız oldu."
+                fi
+
+                if [[ -s "${nvm_dir}/nvm.sh" ]]; then
+                    # shellcheck disable=SC1090
+                    . "${nvm_dir}/nvm.sh"
+                    if nvm install "${node_target_major}" >/dev/null 2>&1 && nvm alias default "${node_target_major}" >/dev/null 2>&1; then
+                        node_bin="$(resolve_native_binary_path node || true)"
+                        if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
+                            isolated_node_ready=true
+                            ok "Node.js NVM ile izole şekilde kuruldu: $("$node_bin" -v)"
+                        fi
+                    fi
+                fi
+            fi
+
+            if [[ "$isolated_node_ready" == true ]]; then
+                info "Node.js izole kurulum tamamlandı; apt tabanlı NodeSource adımı atlanıyor."
+            else
+                warn "İzole Node.js kurulumu başarısız oldu; NodeSource apt fallback devreye alınıyor..."
+                info "Node.js ${node_target_major}.x (NodeSource nodistro) kuruluyor..."
             local ns_keyring="/etc/apt/keyrings/nodesource.gpg"
             local ns_repo_file="/etc/apt/sources.list.d/nodesource.list"
             local ns_pref_file="/etc/apt/preferences.d/nodesource.pref"
@@ -2881,6 +2932,7 @@ EOF
                 else
                     sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
                 fi
+            fi
             fi
         fi
 
