@@ -32,6 +32,7 @@ sys.stdout.buffer.write('Ubuntu\\r\\n'.encode('utf-16le'))
         info(){ :; }
         warn(){ :; }
         ok(){ :; }
+        read(){ :; }
 
         sidar_read_docker_settings_json(){
             cat <<'JSON'
