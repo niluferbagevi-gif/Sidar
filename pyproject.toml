@@ -294,6 +294,7 @@ py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "sidar_vers
 
 
 [tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml", "*.md", "*.sql", "*.css", "*.html", "*.js"]
 sidar_assets = [
   "alembic.ini",
   "web_ui_react/dist/**/*",
