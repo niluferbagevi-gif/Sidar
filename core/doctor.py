@@ -8,6 +8,7 @@ opaque installation phase.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import re
@@ -104,6 +105,35 @@ def check_uv() -> DoctorCheck:
         status,
         "uv and uv.lock are ready" if status == "pass" else "uv lock validation failed",
         {"path": uv_path, "version": version_out, "lock_check": lock_out},
+    )
+
+
+def check_prometheus_runtime() -> DoctorCheck:
+    """Verify Prometheus runtime dependency for /metrics integrations."""
+    prometheus_available = importlib.util.find_spec("prometheus_client") is not None
+    details = {
+        "required_by": [
+            "web/routes/metrics.py",
+            "core/judge.py",
+            "managers/system_health.py",
+        ],
+        "install_commands": [
+            "uv sync --all-extras",
+            "uv sync --extra telemetry",
+        ],
+    }
+    if prometheus_available:
+        return DoctorCheck(
+            "prometheus_runtime",
+            "pass",
+            "prometheus-client is installed; /metrics and telemetry exporters can run.",
+            details,
+        )
+    return DoctorCheck(
+        "prometheus_runtime",
+        "warn",
+        "prometheus-client is not installed; /metrics endpoints may degrade to limited output.",
+        details,
     )
 
 
@@ -1373,6 +1403,7 @@ def run_doctor_report(
 ) -> dict[str, Any]:
     checks = [
         check_uv(),
+        check_prometheus_runtime(),
         check_environment_profile(),
         check_gpu_memory_config(),
         check_database_env(),
