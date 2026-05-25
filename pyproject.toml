@@ -69,7 +69,6 @@ dependencies = [
   "langchain-text-splitters>=1.1.2,<2.0.0",
   "posthog<6.0.0",
   "sentence-transformers>=3.0.1,<6.0.0",
-  "litellm>=1.83.7",
 ]
 
 [project.urls]
