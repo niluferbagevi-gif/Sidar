@@ -25,6 +25,7 @@ recursive-include migrations *.py *.ini *.cfg
 recursive-include docs *
 
 # Frontend / dağıtım varlıkları
+recursive-include assets *
 recursive-include web_ui *
 recursive-include web_ui_react/dist *
 recursive-include launcher_gui *

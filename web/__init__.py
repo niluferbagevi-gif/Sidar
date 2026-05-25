@@ -1,0 +1,1 @@
+"""Sidar web package."""
