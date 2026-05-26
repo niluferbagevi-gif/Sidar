@@ -1110,6 +1110,96 @@ EOF
     fi
 }
 
+ensure_fresh_images_or_skip() {
+    [[ "${USE_LAST_IMAGES:-false}" == "true" ]] && {
+        info "--last aktif: image pull/build atlandı, mevcut yerel image'lar kullanılacak."
+        return 0
+    }
+
+    local -a compose_cmd=("$@")
+    info "Taze Docker image'ları için pull/build çalıştırılıyor (override: --last)..."
+    if ! "${compose_cmd[@]}" pull --ignore-buildable --quiet 2>/dev/null; then
+        if ! "${compose_cmd[@]}" pull --quiet; then
+            warn "compose pull başarısız; mevcut image'larla devam edilecek."
+        fi
+    fi
+
+    "${compose_cmd[@]}" build --pull --quiet sidar-ai sidar-web sidar-migrate 2>/dev/null || true
+    "${compose_cmd[@]}" build --pull --quiet sidar-gpu sidar-web-gpu 2>/dev/null || true
+}
+
+FROM_ZERO_CLEANUP_DONE=false
+
+from_zero_cleanup_or_skip() {
+    [[ "${FROM_ZERO_CLEANUP_DONE:-false}" == "true" ]] && return 0
+    [[ "${USE_LAST_IMAGES:-false}" == "true" ]] && {
+        info "--last aktif: 'sıfırdan kurulum' temizliği atlandı (container/volume/image korunuyor)."
+        FROM_ZERO_CLEANUP_DONE=true
+        return 0
+    }
+    [[ "${OFFLINE_MODE:-false}" == "true" ]] && {
+        info "Offline mod: image silme/pull mümkün değil; sıfırdan kurulum temizliği atlandı."
+        FROM_ZERO_CLEANUP_DONE=true
+        return 0
+    }
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; sıfırdan kurulum temizliği atlandı."
+        FROM_ZERO_CLEANUP_DONE=true
+        return 0
+    fi
+
+    local -a compose_cmd=("$@")
+    info "🧹 Sıfırdan kurulum: mevcut container/volume/image kalıntıları temizleniyor (geçersiz kılma: --last)..."
+
+    # 1) Container'ları durdur ve sil (named volume'leri burada SİLMEYİZ; aşağıda seçici silinecek).
+    "${compose_cmd[@]}" down --remove-orphans >/dev/null 2>&1 || true
+
+    # 2) Veri volume'lerini sil (postgres + redis). ollama_data --wipe-models verilmedikçe korunur.
+    local -a volumes_to_remove=(sidar_postgres_data sidar_redis_data)
+    if [[ "${WIPE_MODELS:-false}" == "true" ]]; then
+        volumes_to_remove+=(sidar_ollama_data)
+        info "--wipe-models aktif: ollama_data volume'ü de silinecek (modeller yeniden indirilecek)."
+    else
+        info "ollama_data volume'ü korunuyor (LLM modelleri yeniden indirilmeyecek). Sıfırlamak için: --wipe-models"
+    fi
+    local volume_name=""
+    for volume_name in "${volumes_to_remove[@]}"; do
+        if docker volume inspect "$volume_name" &>/dev/null; then
+            if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
+                ok "Volume silindi: $volume_name"
+            else
+                warn "Volume silinemedi (kullanımda olabilir): $volume_name"
+            fi
+        fi
+    done
+    POSTGRES_VOLUME_RESET_DONE=true  # alt akıştaki tekrar silmeyi engelle
+
+    # 3) Registry image'larını sil ki compose pull baytları gerçekten yeniden indirsin.
+    local -a images_to_remove=(
+        redis:alpine
+        pgvector/pgvector:pg16
+        jaegertracing/all-in-one:latest
+        prom/prometheus:latest
+        grafana/grafana:latest
+    )
+    if [[ "${WIPE_MODELS:-false}" == "true" ]]; then
+        images_to_remove+=(ollama/ollama:latest)
+    fi
+    local image_name=""
+    for image_name in "${images_to_remove[@]}"; do
+        if docker image inspect "$image_name" &>/dev/null; then
+            if docker image rm "$image_name" -f >/dev/null 2>&1; then
+                ok "Image silindi: $image_name"
+            else
+                warn "Image silinemedi (container kullanıyor olabilir): $image_name"
+            fi
+        fi
+    done
+
+    FROM_ZERO_CLEANUP_DONE=true
+    ok "Sıfırdan kurulum temizliği tamamlandı; pull/build adımı baytları yeniden indirecek."
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -1124,9 +1214,13 @@ start_docker_services_or_fail() {
     local stderr_file
     stderr_file=$(mktemp)
 
+    from_zero_cleanup_or_skip "${compose_cmd[@]}"
+
     if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
         fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
     fi
+
+    ensure_fresh_images_or_skip "${compose_cmd[@]}"
 
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
@@ -2046,6 +2140,8 @@ AUTO_RESET_POSTGRES_VOLUMES="ask"
 AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
 OFFLINE_MODE=false
+USE_LAST_IMAGES=false
+WIPE_MODELS=false
 # shellcheck disable=SC2034  # phase modules read this runtime override after sync.
 OFFLINE_PACKAGES_DIR=""
 DOCKER_CLI_INSTALL_MODE="${DOCKER_CLI_INSTALL:-auto}"
@@ -2075,7 +2171,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--last|--fresh] [--wipe-models|--keep-models] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -2107,6 +2203,10 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --vscode / --no-vscode  Select whether VS Code opens at the end of installation
   --with-browsers / --skip-browsers  Force/skip Playwright Chromium browser installation
   --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
+  --last / --use-cached-images  Skip docker compose pull/build and reuse existing containers/volumes/images as-is (no from-zero cleanup)
+  --fresh / --pull-latest  Pull/rebuild latest Docker images before docker compose up (default behavior)
+  --wipe-models  Also wipe ollama_data volume so LLM models are re-downloaded (default: ollama_data is preserved)
+  --keep-models  Preserve ollama_data even with future overrides (default behavior)
   --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
   --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
   --keep-temp-modules  Keep temporary installer module directory for debugging (if created)
@@ -2135,7 +2235,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--last|--fresh] [--wipe-models|--keep-models] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -2167,6 +2267,10 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle
   --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla
   --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
+  --last / --use-cached-images  docker compose pull/build adımlarını atla, mevcut container/volume/image'ları olduğu gibi kullan (sıfırdan kurulum temizliği yok)
+  --fresh / --pull-latest  docker compose up öncesi en güncel image'ları pull/build et (varsayılan davranış: sıfırdan temizlik + fresh pull)
+  --wipe-models  ollama_data volume'ünü de sil; LLM modelleri yeniden indirilir (varsayılan: ollama_data korunur)
+  --keep-models  ollama_data korunsun (varsayılan davranış)
   --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
   --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
   --keep-temp-modules  Geçici kurulum modül dizinini debug için koru (oluştuysa)
@@ -2222,6 +2326,10 @@ for arg in "$@"; do
         --with-browsers) PLAYWRIGHT_BROWSERS_MODE="always" ;;
         --skip-browsers) PLAYWRIGHT_BROWSERS_MODE="never" ;;
         --offline|--air-gapped) OFFLINE_MODE=true ;;
+        --last|--use-cached-images) USE_LAST_IMAGES=true ;;
+        --fresh|--pull-latest) USE_LAST_IMAGES=false ;;
+        --wipe-models) WIPE_MODELS=true ;;
+        --keep-models) WIPE_MODELS=false ;;
         --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
         --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
         --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
@@ -6806,6 +6914,8 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
+                from_zero_cleanup_or_skip "${docker_compose_cmd[@]}"
+                ensure_fresh_images_or_skip "${docker_compose_cmd[@]}"
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
@@ -6814,6 +6924,8 @@ launch_docker_services() {
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
+                from_zero_cleanup_or_skip "${docker_compose_cmd[@]}"
+                ensure_fresh_images_or_skip "${docker_compose_cmd[@]}"
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else

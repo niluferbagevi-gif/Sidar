@@ -5,6 +5,15 @@
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Installer Docker image policy:** `install_sidar.sh` artık varsayılan olarak Docker servisleri ayağa kalkmadan önce güncel image'ları çeker/yeniler (`compose pull` + ilgili servislerde `compose build --pull`).
+- **Cached image opt-out:** Eski cache davranışı korunmuştur; `--last` / `--use-cached-images` ile pull/build adımı atlanır. `--fresh` / `--pull-latest` aynı tazeleme davranışını açıkça seçmek için kullanılabilir.
+- **Compose image pinning:** `docker-compose.yml` external servis image'ları (`REDIS_IMAGE`, `PGVECTOR_IMAGE`, `OLLAMA_IMAGE`, `JAEGER_IMAGE`, `PROMETHEUS_IMAGE`, `GRAFANA_IMAGE`) ortam değişkenleriyle override edilebilir; `.env` üzerinden sabit sürüm veya digest pinleme desteklenir.
+
+---
+
 ## [v5.2.0] - 2026-03-26
 
 ### Düzeltmeler (Fixed)

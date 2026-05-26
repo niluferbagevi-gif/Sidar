@@ -405,6 +405,9 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 > - `--install-docker-cli`: Installer içinde `DOCKER_CLI_INSTALL_MODE=always` davranışını zorlar; Docker CLI eksikse APT kurulumu denenir.
 > - `DOCKER_CLI_INSTALL_MODE=auto|always|never`: Varsayılan `auto` (Linux hostta eksik CLI için tamamlamayı dener, WSL2'de entegrasyon öncelikli), `always` (WSL2 dahil APT kurulumunu zorlar), `never` (otomatik CLI kurulumu kapalı).
 > - Geriye dönük uyumluluk için `DOCKER_CLI_INSTALL=always`/`true` kullanımları `always` olarak yorumlanır; yeni dokümantasyonda kanonik değişken `DOCKER_CLI_INSTALL_MODE` kullanılmalıdır.
+> - `--fresh` / `--pull-latest`: Varsayılan davranışı açıkça seçer; `docker compose up` öncesi `compose pull` + build edilebilir Sidar servislerinde `compose build --pull` çalıştırır.
+> - `--last` / `--use-cached-images`: Pull/build adımını atlar ve mevcut yerel Docker image cache'ini kullanır (eski davranış).
+> - Deterministik dağıtım için `.env` içinde `OLLAMA_IMAGE`, `JAEGER_IMAGE`, `PROMETHEUS_IMAGE`, `GRAFANA_IMAGE` gibi image değişkenlerini sabit tag veya `@sha256:...` digest ile pinleyin.
 
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 >
