@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 
 
@@ -31,7 +32,7 @@ def build_auth_admin_router(
     policy_upsert_request_model: type[Any],
 ) -> APIRouter:
     """Build router for auth, admin prompt and access policy endpoints."""
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.post("/auth/register")
     async def register_user(payload: Any) -> Any:

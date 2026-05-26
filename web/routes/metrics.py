@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse, Response
 
 
@@ -19,7 +20,7 @@ def build_metrics_router(
     render_llm_metrics_prometheus: Callable[[dict[str, Any]], str],
     logger: Any,
 ) -> APIRouter:
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.get("/metrics")
     async def metrics(

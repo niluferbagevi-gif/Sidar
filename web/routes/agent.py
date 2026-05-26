@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 
 
@@ -32,7 +33,7 @@ def build_agent_router(
     plugin_marketplace_install_request_model: type[Any],
 ) -> APIRouter:
     """Build router for /api/agents and plugin marketplace endpoints."""
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.post("/api/agents/register")
     async def register_agent_plugin(

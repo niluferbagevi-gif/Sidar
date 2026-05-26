@@ -10,6 +10,7 @@ from typing import Any
 
 import anyio
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 
 
@@ -22,7 +23,7 @@ def build_rag_router(
     logger: Any,
 ) -> APIRouter:
     """Build router for RAG document management endpoints."""
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.get("/rag/docs")
     async def rag_list_docs() -> Any:

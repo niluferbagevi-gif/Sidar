@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -25,7 +26,7 @@ def build_hitl_router(
     get_hitl_store: Callable[[], Any],
     get_hitl_gate: Callable[[], Any],
 ) -> APIRouter:
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.get("/api/hitl/pending")
     async def hitl_pending(user: Any = Depends(get_request_user)) -> Any:

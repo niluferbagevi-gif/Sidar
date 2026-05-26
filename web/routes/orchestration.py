@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 
 
@@ -28,7 +29,7 @@ def build_orchestration_router(
     swarm_execute_request_model: type[Any],
     serialize_swarm_result: Callable[[Any], dict[str, Any]],
 ) -> APIRouter:
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.post("/api/swarm/execute")
     async def execute_swarm(

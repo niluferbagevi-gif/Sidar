@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
 
 _ALLOWED_GIT_COMMANDS: tuple[tuple[str, ...], ...] = (
@@ -71,7 +72,7 @@ def build_project_ops_router(
     cfg: Any,
     logger: Any,
 ) -> APIRouter:
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.get("/sessions")
     async def get_sessions(request: Request, user: Any = Depends(get_request_user)) -> Any:

@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any
-
 from fastapi import APIRouter
+
+from web.routes import LegacyExportRouter
 
 
 def build_health_router(
     health_response: Callable[[bool], Awaitable[Any]],
 ) -> APIRouter:
-    router = APIRouter()
+    router = LegacyExportRouter()
 
     @router.get(
         "/health",
