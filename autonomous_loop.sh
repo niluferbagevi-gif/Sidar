@@ -220,6 +220,13 @@ echo "[INFO] Mutasyon kalite kapısı: AUTONOMOUS_LOOP_MUTATION_ENABLED=${AUTONO
 echo "[INFO] Otonom test tekrarlarında RUN_STATIC_ANALYSIS=${AUTONOMOUS_TEST_STATIC_ANALYSIS}; hibrit modda mypy yalnız ön kontrol run_tests.sh kalite kapısında çalışır."
 echo "[INFO] Upload adımı: AUTONOMOUS_LOOP_SKIP_UPLOAD=${AUTONOMOUS_SKIP_UPLOAD}."
 echo "[INFO] Auto-heal adımı: AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED=${AUTONOMOUS_AUTO_HEAL_ENABLED}; HITL=${AUTONOMOUS_AUTO_HEAL_HITL_APPROVE}; log=${AUTONOMOUS_TEST_FAILURE_LOG}."
+
+# Artifact yolu arayan kontrol adımlarında (örn. rg --files artifacts/...) gereksiz uyarı
+# üretmemek için otonom döngünün kullandığı temel dizinleri baştan oluştur.
+mkdir -p "$(dirname "${AUTONOMOUS_TEST_FAILURE_LOG}")"
+mkdir -p "$(dirname "${AUTONOMOUS_AUTO_HEAL_RESULT_PATH}")"
+mkdir -p "$(dirname "${AUTONOMOUS_MUTATION_STATS_PATH}")"
+
 run_config_preflight
 config_preflight_exit=$?
 if [ "${config_preflight_exit}" -ne 0 ]; then
