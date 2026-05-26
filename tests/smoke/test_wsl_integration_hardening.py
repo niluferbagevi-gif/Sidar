@@ -20,7 +20,22 @@ sys.stdout.buffer.write('Ubuntu\\r\\n'.encode('utf-16le'))
     wsl_mock.chmod(0o755)
 
     ps_mock = mock_bin / "powershell.exe"
-    ps_mock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    ps_mock.write_text(
+        textwrap.dedent(
+            """#!/usr/bin/env bash
+set -euo pipefail
+cmd="${*: -1}"
+if [[ "$cmd" == *"EnableIntegrationWithDefaultWslDistro"* ]]; then
+  printf 'True\\r\\n'
+elif [[ "$cmd" == *"IntegratedWslDistros"* ]]; then
+  printf 'Ubuntu\\r\\n'
+else
+  printf '\\r\\n'
+fi
+"""
+        ),
+        encoding="utf-8",
+    )
     ps_mock.chmod(0o755)
 
     script = textwrap.dedent(
@@ -75,7 +90,22 @@ sys.stdout.buffer.write('Ubuntu\\r\\n'.encode('utf-16le'))
     wsl_mock.chmod(0o755)
 
     ps_mock = mock_bin / "powershell.exe"
-    ps_mock.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    ps_mock.write_text(
+        textwrap.dedent(
+            """#!/usr/bin/env bash
+set -euo pipefail
+cmd="${*: -1}"
+if [[ "$cmd" == *"EnableIntegrationWithDefaultWslDistro"* ]]; then
+  printf 'True\\r\\n'
+elif [[ "$cmd" == *"IntegratedWslDistros"* ]]; then
+  printf 'Ubuntu\\r\\n'
+else
+  printf '\\r\\n'
+fi
+"""
+        ),
+        encoding="utf-8",
+    )
     ps_mock.chmod(0o755)
 
     script = textwrap.dedent(

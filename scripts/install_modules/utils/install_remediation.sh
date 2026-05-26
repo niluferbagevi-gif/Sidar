@@ -54,6 +54,44 @@ sidar_is_non_retryable_failure_code() {
     esac
 }
 
+sidar_is_deterministic_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"assert"*|*"assertionerror"*|*"smoke test failed"*|*"pytest"*|*"unit test"*|*"test failed"*|*"deterministic"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidar_retry_budget_for_failure() {
+    local phase="${1:-}"
+    local failed_cmd="${2:-}"
+    local reason="${3:-}"
+    local default_budget="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
+    [[ "$default_budget" =~ ^[0-9]+$ ]] || default_budget=1
+
+    if sidar_is_deterministic_failure_signal "$failed_cmd" "$reason"; then
+        echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_DETERMINISTIC:-1}"
+        return 0
+    fi
+
+    case "$phase" in
+        02_repo|05_frontend|06_models|06_services)
+            echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
+            ;;
+        *)
+            echo "$default_budget"
+            ;;
+    esac
+}
+
 sidar_should_skip_phase_for_resume() {
     local phase="$1"
     local resume_from="${SIDAR_INSTALL_RESUME_FROM_PHASE:-}"
@@ -272,6 +310,7 @@ sidar_handle_install_failure() {
     fi
     sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
+    max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
 
     if sidar_is_non_retryable_failure_code "$exit_code"; then
@@ -279,9 +318,13 @@ sidar_handle_install_failure() {
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
         return 1
     fi
+    if sidar_is_deterministic_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında deterministik failure sinyali algılandı; retry bütçesi ${max_attempts} ile sınırlandı."
+    fi
 
     if (( attempt >= max_attempts )); then
         warn "Auto-heal: ${phase} fazı için retry limiti aşıldı (${attempt}/${max_attempts})."
+        sidar_write_remediation_report "$phase" "retry-budget-exhausted" "no-resume;max-attempts=${max_attempts}"
         return 1
     fi
 
