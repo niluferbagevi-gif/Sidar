@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter

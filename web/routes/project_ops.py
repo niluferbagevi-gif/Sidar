@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter

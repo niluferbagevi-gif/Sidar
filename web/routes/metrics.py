@@ -5,7 +5,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from web.routes import LegacyExportRouter
