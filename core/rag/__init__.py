@@ -40,7 +40,6 @@ from config import Config
 from core.db import postgres_failure_diagnosis
 from core.embeddings import (
     get_sentence_transformer_model,
-    sentence_transformer_device_from_config,
     sentence_transformer_local_files_only,
 )
 from core.utils.network_validation import is_local_only_host
