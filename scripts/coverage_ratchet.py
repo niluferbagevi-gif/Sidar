@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_DARK_MODE_CSS = "assets/dark_mode.css"
 
 

@@ -204,7 +204,7 @@ def test_wait_for_pgvector_readiness_retries_until_extension_visible(
             ready = self._state["calls"] >= 3
             return type("_Result", (), {"scalar": lambda self: ready})()
 
-        def __enter__(self) -> "_FakeConn":
+        def __enter__(self) -> _FakeConn:
             return self
 
         def __exit__(self, *_args: object) -> None:
