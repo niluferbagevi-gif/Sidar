@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import inspect
 import logging
+import os
 import random
 import re
 import secrets
@@ -412,7 +413,7 @@ class Database:
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
     """
 
-    def __init__(self, cfg: Config | None = None) -> None:
+    def __init__(self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None) -> None:
         self.cfg = cfg or Config()
         self.database_url = (
             getattr(self.cfg, "DATABASE_URL", "") or ""
@@ -431,6 +432,7 @@ class Database:
         self._sqlite_write_lock: asyncio.Lock | None = None
 
         self._pg_pool = None
+        self._pg_pool_factory = pg_pool_factory
         self.degraded_mode = False
         self.degraded_reason = ""
         self.primary_database_url = self.database_url
@@ -681,21 +683,46 @@ class Database:
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
             return
+        test_mode_short_circuit = bool(
+            getattr(self.cfg, "DB_TEST_MODE_SHORT_CIRCUIT", False) or os.getenv("PYTEST_CURRENT_TEST")
+        )
+        lowered_url = self.database_url.lower()
+        looks_like_local_postgres = any(
+            marker in lowered_url for marker in ("@localhost", "@127.0.0.1", ":5432/")
+        )
+        if test_mode_short_circuit and self._pg_pool_factory is None and looks_like_local_postgres:
+            await self._enter_degraded_mode(
+                "Test mode PostgreSQL short-circuit (localhost bağlantısı atlandı)",
+                RuntimeError("test mode postgres short-circuit"),
+            )
+            return
         try:
-            import asyncpg
+            if self._pg_pool_factory is None:
+                import asyncpg
+
+                pool_factory = asyncpg.create_pool
+            else:
+                pool_factory = self._pg_pool_factory
         except Exception as exc:  # pragma: no cover - paket opsiyonel
             await self._enter_degraded_mode("asyncpg bağımlılığı kullanılamıyor", exc)
             return
 
         dsn = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
         try:
-            self._pg_pool = await asyncpg.create_pool(
+            self._pg_pool = await pool_factory(
                 dsn=dsn,
                 min_size=1,
                 max_size=max(1, self.pool_size),
             )
         except Exception as exc:
-            pool_error_type = getattr(asyncpg, "PoolError", None)
+            pool_error_type = None
+            if self._pg_pool_factory is None:
+                try:
+                    import asyncpg as _asyncpg_mod
+
+                    pool_error_type = getattr(_asyncpg_mod, "PoolError", None)
+                except Exception:
+                    pool_error_type = None
             is_pool_error = bool(pool_error_type and isinstance(exc, pool_error_type))
             error_text = str(exc).lower()
             if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
