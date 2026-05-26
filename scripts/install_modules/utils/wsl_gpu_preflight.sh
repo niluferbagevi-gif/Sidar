@@ -198,60 +198,10 @@ sidar_read_docker_settings_json() {
         | sidar_windows_json_sanitize
 }
 
-docker_desktop_wsl_integration_preflight() {
-    step "Docker Desktop WSL Integration Durum Raporu"
-    export WSL_INTEGRATION_PREFLIGHT_REPORTED=true
-    export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
-    local _had_errexit=false
-    [[ $- == *e* ]] && _had_errexit=true
-    set +e
-
-    if [[ "${WSL2:-false}" != true ]]; then
-        info "WSL2 tespit edilmedi; Docker Desktop WSL Integration raporu atlandı."
-        [[ "$_had_errexit" == true ]] && set -e
-        return 0
-    fi
-
-    if ! command -v powershell.exe &>/dev/null; then
-        warn "powershell.exe bulunamadı; Docker Desktop WSL Integration durumu doğrulanamadı."
-        [[ "$_had_errexit" == true ]] && set -e
-        return 0
-    fi
-
-    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm="" docker_settings_json=""
-    local preflight_source_of_truth="${WSL_INTEGRATION_PREFLIGHT_SOURCE_OF_TRUTH:-runtime}"
-    local in_integrated=false default_covers=false
-    current_distro="${WSL_DISTRO_NAME:-}"
-    if [[ "$preflight_source_of_truth" == "mock" ]]; then
-        default_distro="${WSL_DEFAULT_DISTRO_NAME:-$current_distro}"
-        info "WSL preflight source-of-truth=mock etkin: distro tespiti WSL_* env değişkenlerinden zorlanıyor."
-    elif [[ -z "$current_distro" ]]; then
-        current_distro="$(
-            wsl.exe -l 2>/dev/null \
-                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
-                | tr -d '\0\r' \
-                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
-                || true
-        )"
-        if [[ -z "$current_distro" ]]; then
-            current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
-        fi
-    fi
-    [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
-
-    if [[ "$preflight_source_of_truth" != "mock" ]]; then
-        default_distro="$(
-            wsl.exe -l 2>/dev/null \
-                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
-                | tr -d '\0\r' \
-                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
-                || true
-        )"
-        if [[ -z "$default_distro" ]]; then
-            default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
-        fi
-    fi
+sidar_resolve_wsl_integration_fields() {
+    local docker_settings_json="" enable_default="" integrated_csv=""
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
+
     if [[ -n "$docker_settings_json" ]]; then
         if command -v jq &>/dev/null; then
             enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
@@ -309,16 +259,79 @@ print(",".join(names))
 PYJSON
 )"
             if [[ -n "$_parsed_json" ]]; then
-                enable_default="$(printf '%s
-' "$_parsed_json" | sed -n '1p')"
-                integrated_csv="$(printf '%s
-' "$_parsed_json" | sed -n '2p')"
+                enable_default="$(printf '%s\n' "$_parsed_json" | sed -n '1p')"
+                integrated_csv="$(printf '%s\n' "$_parsed_json" | sed -n '2p')"
             fi
         fi
     else
         enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$v=\$cfg.EnableIntegrationWithDefaultWslDistro; if (\$null -eq \$v) { \$v=\$cfg.enableIntegrationWithDefaultWslDistro }; if (\$null -eq \$v) { \$v=\$cfg.wslEngineEnabled }; if (\$null -eq \$v -and \$null -ne \$cfg.integration) { \$v=\$cfg.integration.wslEngineEnabled }; if (\$null -eq \$v) { '' } else { [string]\$v } }" || true)"
         integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$list=\$null; if (\$cfg.IntegratedWslDistros) { \$list=@(\$cfg.IntegratedWslDistros) } elseif (\$cfg.integratedWslDistros) { \$list=@(\$cfg.integratedWslDistros) } elseif (\$null -ne \$cfg.wsl -and \$null -ne \$cfg.wsl.distros) { if (\$cfg.wsl.distros -is [System.Array]) { \$list=@(\$cfg.wsl.distros) } else { \$list=@(\$cfg.wsl.distros.PSObject.Properties | Select-Object -ExpandProperty Name) } } elseif (\$null -ne \$cfg.integration -and \$null -ne \$cfg.integration.wslDistros) { if (\$cfg.integration.wslDistros -is [System.Array]) { \$list=@(\$cfg.integration.wslDistros) } else { \$list=@(\$cfg.integration.wslDistros.PSObject.Properties | Select-Object -ExpandProperty Name) } }; if (\$list) { \$list | ForEach-Object { [string]\$_ } | Where-Object { \$_ } | Select-Object -Unique | Join-String -Separator ',' } }" || true)"
     fi
+
+    printf 'enable_default=%s\n' "$enable_default"
+    printf 'integrated_csv=%s\n' "$integrated_csv"
+}
+
+docker_desktop_wsl_integration_preflight() {
+    step "Docker Desktop WSL Integration Durum Raporu"
+    export WSL_INTEGRATION_PREFLIGHT_REPORTED=true
+    export WSL_INTEGRATION_AUTOFIX_ELIGIBLE=false
+    local _had_errexit=false
+    [[ $- == *e* ]] && _had_errexit=true
+    set +e
+
+    if [[ "${WSL2:-false}" != true ]]; then
+        info "WSL2 tespit edilmedi; Docker Desktop WSL Integration raporu atlandı."
+        [[ "$_had_errexit" == true ]] && set -e
+        return 0
+    fi
+
+    if ! command -v powershell.exe &>/dev/null; then
+        warn "powershell.exe bulunamadı; Docker Desktop WSL Integration durumu doğrulanamadı."
+        [[ "$_had_errexit" == true ]] && set -e
+        return 0
+    fi
+
+    local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm=""
+    local preflight_source_of_truth="${WSL_INTEGRATION_PREFLIGHT_SOURCE_OF_TRUTH:-runtime}"
+    local in_integrated=false default_covers=false
+    current_distro="${WSL_DISTRO_NAME:-}"
+    if [[ "$preflight_source_of_truth" == "mock" ]]; then
+        default_distro="${WSL_DEFAULT_DISTRO_NAME:-$current_distro}"
+        info "WSL preflight source-of-truth=mock etkin: distro tespiti WSL_* env değişkenlerinden zorlanıyor."
+    elif [[ -z "$current_distro" ]]; then
+        current_distro="$(
+            wsl.exe -l 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+                | tr -d '\0\r' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
+                || true
+        )"
+        if [[ -z "$current_distro" ]]; then
+            current_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
+        fi
+    fi
+    [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
+
+    if [[ "$preflight_source_of_truth" != "mock" ]]; then
+        default_distro="$(
+            wsl.exe -l 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+                | tr -d '\0\r' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
+                || true
+        )"
+        if [[ -z "$default_distro" ]]; then
+            default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
+        fi
+    fi
+    local resolved_line
+    while IFS= read -r resolved_line; do
+        case "$resolved_line" in
+            enable_default=*) enable_default="${resolved_line#enable_default=}" ;;
+            integrated_csv=*) integrated_csv="${resolved_line#integrated_csv=}" ;;
+        esac
+    done < <(sidar_resolve_wsl_integration_fields)
 
     if [[ -z "$enable_default" && -z "$integrated_csv" ]]; then
         warn "Docker settings.json okunamadı veya tanınmayan şemada; runtime durumuna güveniliyor."
