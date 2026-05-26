@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -29,10 +30,17 @@ def build_hitl_router(
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
+    async def _resolve_pending_items() -> list[Any]:
+        pending_result = get_hitl_store().pending()
+        if inspect.isawaitable(pending_result):
+            pending_items = await pending_result
+        else:
+            pending_items = pending_result
+        return list(pending_items or [])
+
     @router.get("/api/hitl/pending")
     async def hitl_pending(user: Any = Depends(get_request_user)) -> Any:
-        store = get_hitl_store()
-        pending = await store.pending()
+        pending = await _resolve_pending_items()
         return JSONResponse({"pending": [r.to_dict() for r in pending], "count": len(pending)})
 
     @router.post("/api/hitl/request")
@@ -47,7 +55,6 @@ def build_hitl_router(
         import uuid
 
         from core.hitl import HITLRequest, notify
-        from core.hitl import get_hitl_store as _store
 
         now = time.time()
         req = HITLRequest(
@@ -59,7 +66,8 @@ def build_hitl_router(
             created_at=now,
             expires_at=now + gate.timeout,
         )
-        await _store().add(req)
+        store = get_hitl_store()
+        await await_if_needed(store.add(req))
         await notify(req)
         return JSONResponse({"request_id": req.request_id, "expires_at": req.expires_at})
 
@@ -82,21 +90,27 @@ def build_hitl_router(
     @router.websocket("/ws/hitl")
     async def websocket_hitl(websocket: WebSocket) -> Any:
         proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-        header_token = proto_header or ""
+        auth_header = websocket.headers.get("authorization", "").strip()
+        bearer_token = ""
+        if auth_header.lower().startswith("bearer "):
+            bearer_token = auth_header[7:].strip()
+        header_token = proto_header or bearer_token
         if header_token:
             await websocket.accept(subprotocol=header_token)
         else:
             await websocket.accept()
 
         agent = await resolve_agent_instance()
-        if header_token:
-            ws_user = await await_if_needed(resolve_user_from_token(agent, header_token))
-            if not ws_user:
-                await ws_close_policy_violation(websocket, "Invalid or expired token")
-                return
+        if not header_token:
+            await ws_close_policy_violation(websocket, "Authentication token missing")
+            return
+        ws_user = await await_if_needed(resolve_user_from_token(agent, header_token))
+        if not ws_user:
+            await ws_close_policy_violation(websocket, "Invalid or expired token")
+            return
         hitl_ws_clients.add(websocket)
         try:
-            pending = await get_hitl_store().pending()
+            pending = await _resolve_pending_items()
             await websocket.send_json(
                 {"type": "hitl_snapshot", "pending": [item.to_dict() for item in pending]}
             )
