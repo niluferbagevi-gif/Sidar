@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast, Protocol
+from typing import Any, Protocol, cast
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INCLUDE_PATTERNS = (
