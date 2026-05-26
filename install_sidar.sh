@@ -1128,6 +1128,13 @@ start_docker_services_or_fail() {
         fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
     fi
 
+    if [[ "${PULL_DOCKER_IMAGES:-true}" == "true" ]]; then
+        info "Docker imajları registry'den yenileniyor (docker compose pull)..."
+        "${compose_cmd[@]}" pull "${services[@]}" || warn "Bazı imajlar çekilemedi; yereldeki sürümlerle devam edilecek."
+    else
+        info "--last: imaj pull atlandı, yereldeki imajlar kullanılacak."
+    fi
+
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
         return 0
@@ -2042,6 +2049,7 @@ AUTO_INSTALL=false
 STRICT_DOCKER=false
 AUTO_RUNTIME_MODE="ask"
 AUTO_START_DOCKER_SERVICES="ask"
+PULL_DOCKER_IMAGES="${PULL_DOCKER_IMAGES:-${SIDAR_PULL_DOCKER_IMAGES:-true}}"
 AUTO_RESET_POSTGRES_VOLUMES="ask"
 AUTO_ENV_TYPE="ask"
 AUTO_OPEN_VSCODE="ask"
@@ -2109,6 +2117,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
   --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
   --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
+  --last, --no-pull  Use local Docker images and skip registry pull
+  --fresh, --pull  Pull Docker images from the registry before docker compose up (default)
   --keep-temp-modules  Keep temporary installer module directory for debugging (if created)
 
   Non-interactive environment variables:
@@ -2127,6 +2137,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    SIDAR_PULL_DOCKER_IMAGES=true|false  Pull/skip Docker images before docker compose up
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
     SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
@@ -2169,6 +2180,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
   --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
   --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
+  --last, --no-pull  Docker imajlarını yerelden kullan (registry'den çekme)
+  --fresh, --pull  Docker imajlarını docker compose up öncesi registry'den çek (varsayılan)
   --keep-temp-modules  Geçici kurulum modül dizinini debug için koru (oluştuysa)
 
   Etkileşimsiz çevre değişkenleri:
@@ -2187,6 +2200,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    SIDAR_PULL_DOCKER_IMAGES=true|false  Docker imajlarını compose up öncesi çek/atla
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
     SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
@@ -2224,6 +2238,8 @@ for arg in "$@"; do
         --offline|--air-gapped) OFFLINE_MODE=true ;;
         --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
         --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
+        --last|--no-pull) PULL_DOCKER_IMAGES="false" ;;
+        --fresh|--pull) PULL_DOCKER_IMAGES="true" ;;
         --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
         --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
         --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
@@ -2286,6 +2302,9 @@ OFFLINE_MODE_RAW="$(normalize_bool "${OFFLINE_INSTALL:-${AIR_GAPPED_INSTALL:-}}"
 if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
     OFFLINE_MODE=true
 fi
+
+PULL_DOCKER_IMAGES="$(normalize_bool "${PULL_DOCKER_IMAGES:-true}")"
+[[ -n "$PULL_DOCKER_IMAGES" ]] || PULL_DOCKER_IMAGES="true"
 
 case "${DOCKER_CLI_INSTALL_MODE}" in
     auto|always|never|true|false|yes|no|1|0) ;;
@@ -6806,6 +6825,12 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
+                if [[ "${PULL_DOCKER_IMAGES:-true}" == "true" ]]; then
+                    info "Docker imajları registry'den yenileniyor (docker compose pull)..."
+                    COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull "${infra_services[@]}" || warn "Bazı imajlar çekilemedi; yereldeki sürümlerle devam edilecek."
+                else
+                    info "--last: imaj pull atlandı, yereldeki imajlar kullanılacak."
+                fi
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
@@ -6814,6 +6839,12 @@ launch_docker_services() {
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
+                if [[ "${PULL_DOCKER_IMAGES:-true}" == "true" ]]; then
+                    info "Docker imajları registry'den yenileniyor (docker compose pull)..."
+                    COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" pull || warn "Bazı imajlar çekilemedi; yereldeki sürümlerle devam edilecek."
+                else
+                    info "--last: imaj pull atlandı, yereldeki imajlar kullanılacak."
+                fi
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
