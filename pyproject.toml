@@ -175,7 +175,7 @@ slack = [
   "slack-sdk~=3.33.0",
 ]
 browser = [
-  "playwright~=1.51.0",
+  "playwright>=1.51.0,<2.0",
   "selenium~=4.29.0",
 ]
 voice = [
