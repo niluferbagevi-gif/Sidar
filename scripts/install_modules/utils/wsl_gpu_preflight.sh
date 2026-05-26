@@ -219,9 +219,13 @@ docker_desktop_wsl_integration_preflight() {
     fi
 
     local current_distro="" default_distro="" enable_default="" integrated_csv="" integrated_norm="" docker_settings_json=""
+    local preflight_source_of_truth="${WSL_INTEGRATION_PREFLIGHT_SOURCE_OF_TRUTH:-runtime}"
     local in_integrated=false default_covers=false
     current_distro="${WSL_DISTRO_NAME:-}"
-    if [[ -z "$current_distro" ]]; then
+    if [[ "$preflight_source_of_truth" == "mock" ]]; then
+        default_distro="${WSL_DEFAULT_DISTRO_NAME:-$current_distro}"
+        info "WSL preflight source-of-truth=mock etkin: distro tespiti WSL_* env değişkenlerinden zorlanıyor."
+    elif [[ -z "$current_distro" ]]; then
         current_distro="$(
             wsl.exe -l 2>/dev/null \
                 | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
@@ -235,15 +239,17 @@ docker_desktop_wsl_integration_preflight() {
     fi
     [[ -n "$current_distro" ]] || current_distro="(bilinmiyor)"
 
-    default_distro="$(
-        wsl.exe -l 2>/dev/null \
-            | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
-            | tr -d '\0\r' \
-            | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
-            || true
-    )"
-    if [[ -z "$default_distro" ]]; then
-        default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
+    if [[ "$preflight_source_of_truth" != "mock" ]]; then
+        default_distro="$(
+            wsl.exe -l 2>/dev/null \
+                | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
+                | tr -d '\0\r' \
+                | awk '/\*/ { for (i=1;i<=NF;i++) if ($i!="*" && $i!~/^docker-desktop(-data)?$/) { print $i; exit } }' \
+                || true
+        )"
+        if [[ -z "$default_distro" ]]; then
+            default_distro="$(wsl.exe -l -q 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r' | awk 'NF && $0 !~ /^docker-desktop(-data)?$/ {print; exit}' || true)"
+        fi
     fi
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
     if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
