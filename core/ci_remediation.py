@@ -58,6 +58,15 @@ _RUFF_RULE_SELECTOR_PATTERN = re.compile(r"^[A-Z]+\d*$")
 _DEFAULT_RUFF_UNSAFE_FIX_SELECTORS = ("I", "UP")
 _RUFF_UNSAFE_FIX_ARG = "--unsafe-fixes"
 _CURRENT_DIR_TARGET = "."
+_CROSS_FILE_CONTEXT_IMPORT_LIMIT = 8
+_CROSS_FILE_CONTEXT_ROOTS = (
+    "config",
+    "core",
+    "agent",
+    "managers",
+    "web",
+    "main",
+)
 
 
 def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
@@ -277,6 +286,55 @@ def _extract_root_cause_line(*values: Any) -> str:
             if _ROOT_CAUSE_PATTERN.match(normalized):
                 return _trim_text(normalized, 220)
     return ""
+
+
+def _resolve_module_to_repo_path(module_name: str) -> str | None:
+    normalized = str(module_name or "").strip().replace("\\", ".")
+    if not normalized:
+        return None
+    candidate = normalized.replace(".", "/")
+    if candidate.startswith(tuple(f"{root}/" for root in _CROSS_FILE_CONTEXT_ROOTS)):
+        return f"{candidate}.py"
+    if candidate in _CROSS_FILE_CONTEXT_ROOTS:
+        return f"{candidate}.py"
+    return None
+
+
+def _collect_cross_file_context_paths(path: str) -> list[str]:
+    """AST yardımıyla hedef dosyanın içe aktardığı proje içi modülleri toplar."""
+    normalized = str(path or "").strip().lstrip("./")
+    if not normalized.endswith(".py"):
+        return []
+    try:
+        with open(normalized, encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError:
+        return []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    related: list[str] = []
+    seen: set[str] = set()
+    for node in ast.walk(tree):
+        module_name = ""
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                module_name = str(alias.name or "").strip()
+                candidate = _resolve_module_to_repo_path(module_name)
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    related.append(candidate)
+        elif isinstance(node, ast.ImportFrom):
+            module_name = str(node.module or "").strip()
+            if node.level and not module_name:
+                continue
+            candidate = _resolve_module_to_repo_path(module_name)
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                related.append(candidate)
+    return related[:_CROSS_FILE_CONTEXT_IMPORT_LIMIT]
 
 
 def _extract_failed_job_names(data: dict[str, Any]) -> list[str]:
@@ -576,6 +634,18 @@ def build_local_failure_context(
         int(getattr(Config, "SELF_HEAL_LOCAL_SCOPE_LIMIT", 200) or 200),
     )
     effective_targets = suspected_targets[:local_scope_limit]
+    if normalized_source == "mypy":
+        cross_file_targets: list[str] = []
+        seen_cross = set(effective_targets)
+        for target in list(effective_targets):
+            for related in _collect_cross_file_context_paths(target):
+                normalized_related = related.lstrip("./")
+                if normalized_related not in seen_cross:
+                    seen_cross.add(normalized_related)
+                    cross_file_targets.append(normalized_related)
+        remaining = max(0, local_scope_limit - len(effective_targets))
+        if remaining > 0 and cross_file_targets:
+            effective_targets.extend(cross_file_targets[:remaining])
     log_excerpt = _trim_text(text, 1200)
     if not root_cause_hint and failure_lines:
         root_cause_hint = _trim_text(failure_lines[0], 220)
