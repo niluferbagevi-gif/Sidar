@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
+
+from web.routes import LegacyExportRouter
 
 _ALLOWED_GIT_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("git",),

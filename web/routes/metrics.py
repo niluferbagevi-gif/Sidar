@@ -6,8 +6,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse, Response
+
+from web.routes import LegacyExportRouter
 
 
 def build_metrics_router(

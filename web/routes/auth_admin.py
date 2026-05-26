@@ -4,8 +4,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
+
+from web.routes import LegacyExportRouter
 
 
 def _parse_payload(model: type[Any], payload: Any) -> Any:

@@ -10,8 +10,9 @@ from typing import Any
 
 import anyio
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
+
+from web.routes import LegacyExportRouter
 
 
 def build_rag_router(

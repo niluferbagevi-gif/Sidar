@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from web.routes import LegacyExportRouter
 from fastapi.responses import JSONResponse
+
+from web.routes import LegacyExportRouter
 
 
 def _parse_payload(model: type[Any], payload: Any) -> Any:

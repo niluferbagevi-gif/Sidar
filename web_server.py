@@ -97,7 +97,6 @@ from web.routes.hitl import build_hitl_router
 from web.routes.metrics import build_metrics_router
 from web.routes.orchestration import build_orchestration_router
 from web.routes.project_ops import build_project_ops_router
-from web.routes import LegacyExportRouter
 from web.routes.rag import build_rag_router
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
