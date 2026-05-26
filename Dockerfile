@@ -2,7 +2,7 @@
 
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
-# Sürüm: 5.2.0  (GPU & CPU destekli çift mod)
+# Sürüm: 5.3.1  (GPU varsayılan, CPU fallback destekli)
 #
 #  CPU modu (varsayılan):
 #    docker build -t sidar:latest .
@@ -33,7 +33,7 @@ ARG PYTHON_VERSION=3.11
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
-LABEL version="5.3.0"
+LABEL version="5.3.1"
 LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 
 # Çevresel değişkenler
@@ -53,39 +53,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY} \
     ENABLE_TRACING=false \
     OTEL_EXPORTER_ENDPOINT=http://localhost:4317 \
-    REDIS_URL=redis://redis:6379/0
+    REDIS_URL=redis://redis:6379/0 \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PATH=/usr/local/nvidia/bin:${PATH}
 
 # Çalışma dizini
 WORKDIR /app
 
 # Sistem bağımlılıkları
 # GPU base image'ında (nvidia/cuda) libcuda ve sürücü zaten mevcuttur.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    python${PYTHON_VERSION} \
-    python${PYTHON_VERSION}-venv \
-    python${PYTHON_VERSION}-distutils \
-    python3-pip \
-    git \
-    build-essential \
-    curl \
-    wget \
-    zstd \
-    # docker.io: docker-out-of-docker erişimi için (sock mount edildiğinde)
-    docker.io \
-    portaudio19-dev \
-    python3-pyaudio \
-    alsa-utils \
-    v4l-utils \
-    ffmpeg \
-    cargo \
-    pkg-config \
-    shellcheck \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 2
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates git build-essential curl wget zstd \
+      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg cargo pkg-config shellcheck; \
+    if [ -f /etc/os-release ] && grep -qi 'ubuntu' /etc/os-release; then \
+      apt-get install -y --no-install-recommends software-properties-common; \
+      add-apt-repository ppa:deadsnakes/ppa; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-distutils python3-pip; \
+      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 2; \
+    else \
+      apt-get install -y --no-install-recommends python3 python3-venv python3-pip; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
