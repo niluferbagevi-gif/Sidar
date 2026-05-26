@@ -49,6 +49,14 @@ def build_rag_router(
                 {"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403
             )
 
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="Dosya bulunamadı.")
+        if target.stat().st_size > max_rag_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_rag_upload_bytes} bayt",
+            )
+
         agent = await resolve_agent_instance()
         session_id = agent.memory.active_session_id or "global"
         ok, msg = await asyncio.to_thread(
@@ -86,10 +94,10 @@ def build_rag_router(
             if len(data) > max_rag_upload_bytes:
                 raise HTTPException(
                     status_code=413,
-                    detail={
-                        "detail": "Dosya çok büyük. Maksimum izin verilen boyut: "
+                    detail=(
+                        "Dosya çok büyük. Maksimum izin verilen boyut: "
                         f"{max_rag_upload_bytes // (1024 * 1024)} MB"
-                    },
+                    ),
                 )
 
             temp_dir = Path(tempfile.mkdtemp())
@@ -135,7 +143,11 @@ def build_rag_router(
         session_id = agent.memory.active_session_id or "global"
         search_call = agent.docs.search
         if asyncio.iscoroutinefunction(search_call):
-            ok, result = await search_call(q.strip(), min(top_k, 10), mode, session_id)
+            maybe_result = search_call(q.strip(), min(top_k, 10), mode, session_id)
+            if inspect.isawaitable(maybe_result):
+                ok, result = await maybe_result
+            else:
+                ok, result = maybe_result
         else:
             maybe_result = await asyncio.to_thread(
                 search_call, q.strip(), min(top_k, 10), mode, session_id
