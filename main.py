@@ -58,6 +58,7 @@ logger = logging.getLogger(__name__)
 _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 _DOCTOR_APPLY_ALL_APPROVED: bool | None = None
 _LAUNCHER_DOCTOR_AUTO_FIX_YES = False
+BASE_DIR = str(Path(__file__).resolve().parent)
 
 try:
     import config as config_module
@@ -71,6 +72,8 @@ except (ImportError, AttributeError):
     CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()
+
+BASE_DIR = str(getattr(cfg, "BASE_DIR", BASE_DIR))
 
 
 def print_banner() -> None:
@@ -705,6 +708,14 @@ def _run_doctor_auto_fix(
     return ran_any
 
 
+def _invoke_doctor_auto_fix(check: Any, check_func: Any, apply_all_mode: bool) -> bool:
+    """Call _run_doctor_auto_fix with backward-compatible signature fallback."""
+    try:
+        return bool(_run_doctor_auto_fix(check, check_func, apply_all_mode=apply_all_mode))
+    except TypeError:
+        return bool(_run_doctor_auto_fix(check, check_func))
+
+
 def _doctor_auto_fix_lost_env_keys(
     source_details: dict[str, Any] | None, updated_check: Any
 ) -> list[str]:
@@ -730,10 +741,21 @@ def _doctor_auto_fix_lost_env_keys(
 
 
 def _revalidate_doctor_check_after_auto_fix(
-    check_name: str, check_func: Any, source_details: dict[str, Any] | None = None
+    check_name_or_func: Any,
+    check_func_or_details: Any | None = None,
+    source_details: dict[str, Any] | None = None,
 ) -> Any | None:
     """Run a Doctor check once after a successful auto-fix and print the result."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+    if callable(check_name_or_func):
+        check_name = str(getattr(check_name_or_func, "__name__", "doctor"))
+        check_func = check_name_or_func
+        if isinstance(check_func_or_details, dict):
+            source_details = check_func_or_details
+    else:
+        check_name = str(check_name_or_func or "doctor")
+        check_func = check_func_or_details
+
     _reload_environment_after_auto_fix(source_details, check_name=check_name)
     try:
         updated_check = check_func()
@@ -777,7 +799,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             check_database_env,
             check_gpu_memory_config,
             check_graphrag_entity_memory_ready,
-            check_rag_index_ready,
+            check_rag_readiness,
         )
     except Exception as exc:  # pragma: no cover - defensive launcher path
         logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
@@ -799,13 +821,13 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         nonlocal skip_database_dependents, skip_summary_printed
         if skip_database_dependents and check_name in {
             "database_connectivity",
-            "rag_index_ready",
+            "rag_readiness",
             "graphrag_entity_memory_ready",
         }:
             if not skip_summary_printed:
                 print(
                     f"{YELLOW}   • Doctor/database_env hâlâ fail; "
-                    "database_connectivity, rag_index_ready ve graphrag_entity_memory_ready kontrolleri atlandı. "
+                    "database_connectivity ve rag_readiness kontrolleri atlandı. "
                     f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
                 )
                 skip_summary_printed = True
@@ -814,7 +836,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         try:
             check = check_func()
             _print_doctor_check_summary(check)
-            _run_doctor_auto_fix(check, check_func, apply_all_mode=apply_all_mode)
+            _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
             if check_name == "database_env":
                 final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION or check
                 final_status = str(getattr(final_check, "status", "warn") or "warn")
@@ -829,13 +851,13 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
     _run_single_doctor_check("database_env", check_database_env)
     _run_single_doctor_check("database_connectivity", check_database_connectivity)
     if skip_database_dependents:
-        _run_single_doctor_check("rag_index_ready", check_rag_index_ready)
+        _run_single_doctor_check("rag_readiness", check_rag_readiness)
         _run_single_doctor_check("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready)
         _run_single_doctor_check("gpu_memory_config", check_gpu_memory_config)
         return
 
     parallel_checks = [
-        ("rag_index_ready", check_rag_index_ready),
+        ("rag_readiness", check_rag_readiness),
         ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
         ("gpu_memory_config", check_gpu_memory_config),
     ]
@@ -859,7 +881,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
             continue
         _print_doctor_check_summary(result)
-        _run_doctor_auto_fix(result, check_func, apply_all_mode=apply_all_mode)
+        _invoke_doctor_auto_fix(result, check_func, apply_all_mode)
 
 
 def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
@@ -970,6 +992,16 @@ def _launcher_child_env() -> dict[str, str]:
 def _format_cmd(cmd: list[str]) -> str:
     """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
     return " ".join(shlex.quote(part) for part in cmd)
+
+
+def _stream_pipe(pipe: Any, target: Any, mirror: Any | None = None) -> None:
+    """Backward-compatible helper to stream lines from a pipe."""
+    for line in iter(pipe.readline, ""):
+        target.write(line)
+        target.flush()
+        if mirror is not None:
+            mirror.write(line)
+            mirror.flush()
 
 
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:

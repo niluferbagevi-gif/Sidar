@@ -347,7 +347,10 @@ def main_cli(argv: list[str] | None = None) -> int:
         default=getattr(cfg_defaults, "LOG_LEVEL", "INFO"),
         help="Log seviyesi (DEBUG/INFO/WARNING)",
     )
-    args = parser.parse_args(argv)
+    if argv is None:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args(argv)
 
     _setup_logging(args.log)
 
@@ -415,9 +418,9 @@ def main_cli(argv: list[str] | None = None) -> int:
     return 0
 
 
-def main() -> None:
-    raise SystemExit(main_cli())
+def main() -> int:
+    return main_cli()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
