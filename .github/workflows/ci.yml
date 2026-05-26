@@ -85,6 +85,34 @@ jobs:
         run: |
           uv sync --all-extras
 
+
+      - name: Verify core install manifest integrity
+        if: github.event_name == 'pull_request'
+        run: |
+          sha256sum -c .sidar_manifest.txt
+
+          uv run python - <<'PY_CHECK'
+          from pathlib import Path
+
+          manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8").strip("\\n")
+          lines = Path('install_sidar.sh').read_text(encoding='utf-8').splitlines()
+
+          marker = "cat <<'SIDAR_INSTALL_MANIFEST_EOF' > \"$manifest_path\""
+          start_idx = next((i for i, line in enumerate(lines) if line.strip() == marker), None)
+          if start_idx is None:
+              raise SystemExit('install_sidar.sh içinde manifest heredoc başlangıcı bulunamadı.')
+
+          end_idx = next((i for i in range(start_idx + 1, len(lines)) if lines[i].strip() == 'SIDAR_INSTALL_MANIFEST_EOF'), None)
+          if end_idx is None:
+              raise SystemExit('install_sidar.sh içinde manifest heredoc bitişi bulunamadı.')
+
+          heredoc = "\\n".join(lines[start_idx + 1:end_idx]).strip("\\n")
+          if manifest != heredoc:
+              raise SystemExit(
+                  'Manifest uyumsuzluğu: .sidar_manifest.txt ile install_sidar.sh heredoc hash satırları birebir aynı değil.'
+              )
+          PY_CHECK
+
       - name: Run installer shell gates
         run: |
           make lint
