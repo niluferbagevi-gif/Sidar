@@ -475,7 +475,7 @@ run_static_analysis_gates() {
   local attempt=0
   local auto_heal_prompt_done=0
   while [ "${attempt}" -le "${AUTO_HEAL_MAX_ATTEMPTS}" ]; do
-    if uv run mypy . 2>&1 | tee "${AUTO_HEAL_LOG_PATH}"; then
+    if uv run mypy 2>&1 | tee "${AUTO_HEAL_LOG_PATH}"; then
       return 0
     fi
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
