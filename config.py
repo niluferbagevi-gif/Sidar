@@ -1140,7 +1140,7 @@ class Config:
     # Büyük dosya eşiği: bu karakter sayısını geçen dosyalar okunduğunda
     # RAG deposuna ekleme önerilir (varsayılan ≈ 400 satır / ~20 KB).
     RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
-    RAG_VECTOR_BACKEND: str = os.getenv("RAG_VECTOR_BACKEND", "chroma")  # chroma | pgvector
+    RAG_VECTOR_BACKEND: str = os.getenv("RAG_VECTOR_BACKEND", "chroma")  # chroma | pgvector | bm25
     PGVECTOR_TABLE: str = os.getenv("PGVECTOR_TABLE", "rag_embeddings")
     PGVECTOR_EMBEDDING_DIM: int = get_int_env("PGVECTOR_EMBEDDING_DIM", 384)
     PGVECTOR_EMBEDDING_MODEL: str = os.getenv("PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")

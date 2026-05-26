@@ -790,6 +790,29 @@ class DocumentStore:
                     "ready" if self._bm25_available else "fallback",
                 )
 
+            self._log_vector_backend_preference_hint()
+
+
+
+    def _log_vector_backend_preference_hint(self) -> None:
+        """Explain why BM25 is active when vector backends are also available."""
+        if self._vector_backend != "bm25":
+            return
+        if not self._chroma_available and not self._pgvector_available:
+            return
+
+        available_vector: list[str] = []
+        if self._chroma_available:
+            available_vector.append("chroma")
+        if self._pgvector_available:
+            available_vector.append("pgvector")
+
+        self._log_backend_init_status_once(
+            "vector_preference_bm25_hint",
+            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
+            ",".join(available_vector),
+        )
+
     @classmethod
     def _log_backend_init_status_once(cls, key: str, message: str, *args: Any) -> None:
         """Emit backend init messages as info once per process, then debug."""
