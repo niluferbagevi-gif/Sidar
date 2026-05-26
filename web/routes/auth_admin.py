@@ -31,7 +31,7 @@ def build_auth_admin_router(
     prompt_upsert_request_model: type[Any],
     prompt_activate_request_model: type[Any],
     policy_upsert_request_model: type[Any],
-) -> APIRouter:
+) -> LegacyExportRouter:
     """Build router for auth, admin prompt and access policy endpoints."""
     router = LegacyExportRouter()
 

@@ -32,7 +32,7 @@ def build_agent_router(
     uninstall_marketplace_plugin: Callable[[str], dict[str, Any]],
     agent_plugin_register_request_model: type[Any],
     plugin_marketplace_install_request_model: type[Any],
-) -> APIRouter:
+) -> LegacyExportRouter:
     """Build router for /api/agents and plugin marketplace endpoints."""
     router = LegacyExportRouter()
 

@@ -10,7 +10,7 @@ from web.routes import LegacyExportRouter
 
 def build_health_router(
     health_response: Callable[[bool], Awaitable[Any]],
-) -> APIRouter:
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.get(

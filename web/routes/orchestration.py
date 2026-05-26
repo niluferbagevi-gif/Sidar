@@ -29,7 +29,7 @@ def build_orchestration_router(
     cfg: Any,
     swarm_execute_request_model: type[Any],
     serialize_swarm_result: Callable[[Any], dict[str, Any]],
-) -> APIRouter:
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.post("/api/swarm/execute")

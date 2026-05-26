@@ -26,7 +26,7 @@ def build_hitl_router(
     hitl_ws_clients: set[WebSocket],
     get_hitl_store: Callable[[], Any],
     get_hitl_gate: Callable[[], Any],
-) -> APIRouter:
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.get("/api/hitl/pending")

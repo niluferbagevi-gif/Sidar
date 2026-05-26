@@ -22,7 +22,7 @@ def build_rag_router(
     max_rag_upload_bytes: int,
     server_root: Path,
     logger: Any,
-) -> APIRouter:
+) -> LegacyExportRouter:
     """Build router for RAG document management endpoints."""
     router = LegacyExportRouter()
 

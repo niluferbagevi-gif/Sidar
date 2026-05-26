@@ -20,7 +20,7 @@ def build_metrics_router(
     get_llm_metrics_collector: Callable[[], Any],
     render_llm_metrics_prometheus: Callable[[dict[str, Any]], str],
     logger: Any,
-) -> APIRouter:
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.get("/metrics")

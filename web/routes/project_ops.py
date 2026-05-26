@@ -72,7 +72,7 @@ def build_project_ops_router(
     server_root: Path,
     cfg: Any,
     logger: Any,
-) -> APIRouter:
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.get("/sessions")
