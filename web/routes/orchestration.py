@@ -27,16 +27,20 @@ def build_orchestration_router(
     swarm_orchestrator_cls: type[Any],
     swarm_task_cls: type[Any],
     cfg: Any,
-    swarm_execute_request_model: type[Any],
+    swarm_execute_request_model: type[Any] | None = None,
+    swarm_request_model: type[Any] | None = None,
     serialize_swarm_result: Callable[[Any], dict[str, Any]],
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
+    request_model = swarm_execute_request_model or swarm_request_model
+    if request_model is None:
+        raise ValueError("swarm_execute_request_model veya swarm_request_model sağlanmalıdır.")
 
     @router.post("/api/swarm/execute")
     async def execute_swarm(
         payload: Any, user: Any = Depends(get_request_user)
     ) -> Any:
-        data = _parse_payload(swarm_execute_request_model, payload)
+        data = _parse_payload(request_model, payload)
         agent = await resolve_agent_instance()
         orchestrator = swarm_orchestrator_cls(getattr(agent, "cfg", cfg))
         session_id = data.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
