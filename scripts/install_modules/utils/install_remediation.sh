@@ -115,7 +115,39 @@ sidar_write_remediation_report() {
     info "Auto-heal raporu yazıldı: $report"
 }
 
+sidar_fix_pep639_legacy_license_classifier() {
+    local pyproject_file="$SCRIPT_DIR/pyproject.toml"
+    local match_pattern='License classifiers have been superseded'
+    local legacy_classifier='License :: OSI Approved :: MIT License'
+    local signal_text="${1:-}"
+    local action_ref="${2:-}"
+
+    [[ -f "$pyproject_file" ]] || return 1
+
+    if [[ -z "$signal_text" && -n "${LOG_FILE:-}" && -f "$LOG_FILE" ]]; then
+        signal_text="$(tail -n 400 "$LOG_FILE" 2>/dev/null || true)"
+    fi
+
+    if [[ "$signal_text" != *"$match_pattern"* ]]; then
+        return 1
+    fi
+
+    if ! grep -Fq "$legacy_classifier" "$pyproject_file"; then
+        info "Auto-heal: PEP 639 deseni algılandı; legacy license classifier zaten kaldırılmış."
+        return 0
+    fi
+
+    cp "$pyproject_file" "artifacts/install/remediation/pyproject.toml.$(date +%Y%m%d_%H%M%S).bak"
+    sed -i "/${legacy_classifier//\//\\/}/d" "$pyproject_file"
+    warn "Auto-heal: PEP 639 uyumsuzluğu algılandı; legacy license classifier pyproject.toml dosyasından kaldırıldı."
+    if [[ -n "$action_ref" ]]; then
+        printf -v "$action_ref" '%s+pep639-license-classifier-removed' "${!action_ref}"
+    fi
+    return 0
+}
+
 sidar_remediate_uv_sync_failure() {
+    local failure_signal="${1:-}"
     local action="uv-sync-remediation"
     cd "$SCRIPT_DIR" || return 1
 
@@ -125,6 +157,8 @@ sidar_remediate_uv_sync_failure() {
     fi
 
     mkdir -p artifacts/install/remediation
+
+    sidar_fix_pep639_legacy_license_classifier "$failure_signal" action || true
 
     if [[ -d .venv && ! -f .venv/pyvenv.cfg ]]; then
         warn "Auto-heal: bozuk .venv tespit edildi; yedeklenip yeniden oluşturulacak."
@@ -171,7 +205,7 @@ sidar_phase_remediation_strategy() {
     case "$phase" in
         04_workspace)
             if [[ "$failed_cmd $reason" == *"uv sync"* || "$failed_cmd $reason" == *"uv.lock"* || "$failed_cmd $reason" == *"install_python_deps"* ]]; then
-                sidar_remediate_uv_sync_failure
+                sidar_remediate_uv_sync_failure "$failed_cmd $reason"
                 return $?
             fi
             ;;
