@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from pathlib import Path
 import hashlib
 import re
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_FILES = [Path("core/memory.py"), Path("core/multimodal.py")]
