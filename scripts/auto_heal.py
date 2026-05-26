@@ -202,6 +202,32 @@ def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> 
     ]
 
 
+
+
+def _extract_mypy_targets_from_log(log_text: str, *, limit: int = 200) -> list[str]:
+    """Fallback parser: derive candidate files from mypy's `path:line: error:` format."""
+
+    if not log_text.strip():
+        return []
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for raw_line in log_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(?P<path>[A-Za-z0-9_./\-]+\.py):\d+(?::\d+)?:\s+error\b", line)
+        if not match:
+            continue
+        candidate = match.group("path").lstrip("./").replace("\\", "/")
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        targets.append(candidate)
+        if len(targets) >= max(1, int(limit or 1)):
+            break
+    return targets
+
 def _extract_scope_error_lines(
     log_text: str,
     *,
@@ -348,6 +374,15 @@ async def _run(args: argparse.Namespace) -> int:
                 args,
             )
             return 0
+
+        fallback_targets = _extract_mypy_targets_from_log(log_text) if source_name.lower() == "mypy" else []
+        if fallback_targets:
+            context["suspected_targets"] = fallback_targets
+            suspected_targets = fallback_targets
+            context["failure_summary"] = (
+                f"{context.get('failure_summary', '')}\n"
+                f"fallback_targets_from_mypy_log={len(fallback_targets)}"
+            ).strip()
 
     diagnosis = str(context.get("root_cause_hint") or context.get("failure_summary") or "").strip()
 

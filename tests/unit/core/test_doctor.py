@@ -623,6 +623,7 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
     monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
     monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
     monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.3)
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
 
     check = doctor.check_gpu_memory_config()
 
@@ -631,6 +632,26 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
     assert check.details["access_level"] == "sandbox"
     assert check.details["total_gpu_memory_fraction"] == pytest.approx(0.9)
 
+
+
+
+def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.3)
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "python:3.11-slim")
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "warn"
+    assert "DOCKER_TEST_IMAGE currently points to python:3.11-slim" in check.message
+    assert "docker build -t sidar:latest ." in check.details["recommended_commands"]
+    assert "DOCKER_TEST_IMAGE=sidar:latest" in check.details["recommended_commands"][-1]
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
     versions = tmp_path / "migrations" / "versions"

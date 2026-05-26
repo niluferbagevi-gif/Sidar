@@ -1179,6 +1179,16 @@ def check_gpu_memory_config() -> DoctorCheck:
         )
     if access_level != "sandbox":
         warnings.append("CLI access level is not sandbox; verify this is intentional")
+    if docker_test_image == "python:3.11-slim":
+        warnings.append(
+            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; build and pin sidar:latest so isolated self-heal/pytest runs include uv and project dependencies"
+        )
+        details.setdefault("recommended_commands", []).extend(
+            [
+                "docker build -t sidar:latest .",
+                "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env",
+            ]
+        )
 
     status = "warn" if warnings else "pass"
     message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
