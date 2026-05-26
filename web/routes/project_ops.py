@@ -50,9 +50,14 @@ def _is_allowed_git_command(cmd: list[str]) -> bool:
     return tuple(str(part) for part in cmd) in _ALLOWED_GIT_COMMANDS
 
 
-def _git_run(cmd: list[str], cwd: str, logger: Any, stderr: int = subprocess.DEVNULL) -> str:
+def _git_run(cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = subprocess.DEVNULL) -> str:
+    active_logger = logger
+    if active_logger is None:
+        import logging
+
+        active_logger = logging.getLogger(__name__)
     if not _is_allowed_git_command(cmd):
-        logger.warning("Güvenli olmayan git komutu reddedildi: %s", cmd)
+        active_logger.warning("Güvenli olmayan git komutu reddedildi: %s", cmd)
         return ""
     try:
         return (
