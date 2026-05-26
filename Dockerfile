@@ -20,10 +20,10 @@
 # ═══════════════════════════════════════════════════════════════
 
 # ── Build-time argümanlar ──────────────────────────────────────
-# CPU-only: python:${PYTHON_VERSION}-slim (varsayılan: 3.11)
-# GPU:      nvidia/cuda:13.0.0-runtime-ubuntu22.04
+# GPU (varsayılan): nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+# CPU fallback:     python:${PYTHON_VERSION}-slim
 ARG PYTHON_VERSION=3.11
-ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
+ARG BASE_IMAGE=nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
 ARG GPU_ENABLED=false
 
 FROM ${BASE_IMAGE}
@@ -33,7 +33,7 @@ ARG PYTHON_VERSION=3.11
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
-LABEL version="5.2.0"
+LABEL version="5.3.0"
 LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 
 # Çevresel değişkenler
@@ -61,7 +61,12 @@ WORKDIR /app
 # Sistem bağımlılıkları
 # GPU base image'ında (nvidia/cuda) libcuda ve sürücü zaten mevcuttur.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-venv \
+    python${PYTHON_VERSION}-distutils \
     python3-pip \
     git \
     build-essential \
@@ -79,6 +84,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     shellcheck \
     && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 2
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
