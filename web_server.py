@@ -3693,6 +3693,7 @@ auth_admin_router = build_auth_admin_router(
         issue_auth_token=_issue_auth_token,
         serialize_prompt=_serialize_prompt,
         serialize_policy=_serialize_policy,
+        get_admin_stats=lambda agent: agent.memory.db.get_admin_stats(),
         register_request_model=_RegisterRequest,
         login_request_model=_LoginRequest,
         prompt_upsert_request_model=_PromptUpsertRequest,

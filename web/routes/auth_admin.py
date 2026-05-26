@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -17,6 +18,23 @@ def _parse_payload(model: type[Any], payload: Any) -> Any:
     return payload
 
 
+def _normalize_register_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    normalized = dict(payload)
+    alias_pairs = (
+        ("userName", "username"),
+        ("user_name", "username"),
+        ("passWord", "password"),
+        ("tenantId", "tenant_id"),
+        ("tenant", "tenant_id"),
+    )
+    for alias_key, canonical_key in alias_pairs:
+        if canonical_key not in normalized and alias_key in normalized:
+            normalized[canonical_key] = normalized[alias_key]
+    return normalized
+
+
 def build_auth_admin_router(
     *,
     resolve_agent_instance: Callable[[], Awaitable[Any]],
@@ -26,6 +44,7 @@ def build_auth_admin_router(
     issue_auth_token: Callable[[Any, Any], Awaitable[str]],
     serialize_prompt: Callable[[Any], dict[str, Any]],
     serialize_policy: Callable[[Any], dict[str, Any]],
+    get_admin_stats: Callable[[Any], Awaitable[dict[str, Any]] | dict[str, Any]] | None = None,
     register_request_model: type[Any],
     login_request_model: type[Any],
     prompt_upsert_request_model: type[Any],
@@ -37,7 +56,7 @@ def build_auth_admin_router(
 
     @router.post("/auth/register")
     async def register_user(payload: Any) -> Any:
-        data = _parse_payload(register_request_model, payload)
+        data = _parse_payload(register_request_model, _normalize_register_payload(payload))
         username = data.username.strip()
         password = data.password
         tenant_id = data.tenant_id.strip() or "default"
@@ -90,7 +109,12 @@ def build_auth_admin_router(
     @router.get("/admin/stats")
     async def admin_stats(_user: Any = Depends(require_admin_user)) -> Any:
         agent = await resolve_agent_instance()
-        stats = await agent.memory.db.get_admin_stats()
+        if get_admin_stats is not None:
+            stats = get_admin_stats(agent)
+            if inspect.isawaitable(stats):
+                stats = await stats
+        else:
+            stats = await agent.memory.db.get_admin_stats()
         return JSONResponse(stats)
 
     @router.get("/admin/prompts")
