@@ -11,7 +11,7 @@ SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/**/*.sh' \
 	'tests/shell/*.bats')
 
-.PHONY: lint lint-shell installer-shellcheck test-shell
+.PHONY: lint lint-shell installer-shellcheck test test-shell
 
 lint: installer-shellcheck lint-shell
 
@@ -23,3 +23,5 @@ lint-shell:
 
 test-shell:
 	$(BATS) tests/shell
+
+test: test-shell
