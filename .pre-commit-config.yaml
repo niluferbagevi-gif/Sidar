@@ -26,7 +26,7 @@ repos:
 
       - id: sync-core-install-manifest
         name: sync core install manifest
-        entry: uv run python scripts/tools/update_core_install_manifest.py
+        entry: scripts/sync_install_manifest.sh
         language: system
         pass_filenames: false
         files: ^(core/memory\.py|core/multimodal\.py)$
