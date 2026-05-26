@@ -402,7 +402,7 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[di
                 _message_entry(
                     f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
                     "check later dotenv overrides or unsupported dotenv syntax.",
-                    severity="warning",
+                    severity="critical",
                     key=key,
                 )
             )
@@ -498,7 +498,15 @@ def sync_env_chain(
         )
 
     if remove_explicit_urls:
+        removed_url_keys = {
+            key
+            for keys in changed_keys_by_file.values()
+            for key in keys
+            if key in DATABASE_URL_KEYS
+        }
         for key in DATABASE_URL_KEYS:
+            if key in removed_url_keys:
+                continue
             if os.environ.get(key, "").strip():
                 notes.append(
                     _message_entry(
