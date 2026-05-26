@@ -7,6 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 
+def _parse_payload(model: type[Any], payload: Any) -> Any:
+    if hasattr(model, "model_validate"):
+        return model.model_validate(payload)
+    if isinstance(payload, dict):
+        return model(**payload)
+    return payload
+
+
 def build_auth_admin_router(
     *,
     resolve_agent_instance: Callable[[], Awaitable[Any]],
@@ -27,7 +35,7 @@ def build_auth_admin_router(
 
     @router.post("/auth/register")
     async def register_user(payload: Any) -> Any:
-        data: Any = payload
+        data = _parse_payload(register_request_model, payload)
         username = data.username.strip()
         password = data.password
         tenant_id = data.tenant_id.strip() or "default"
@@ -52,7 +60,7 @@ def build_auth_admin_router(
 
     @router.post("/auth/login")
     async def login_user(payload: Any) -> Any:
-        data: Any = payload
+        data = _parse_payload(login_request_model, payload)
         username = data.username.strip()
         password = data.password
         agent = await resolve_agent_instance()
@@ -105,7 +113,7 @@ def build_auth_admin_router(
     async def admin_upsert_prompt(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(prompt_upsert_request_model, payload)
         role_name = (data.role_name or "").strip().lower()
         prompt_text = (data.prompt_text or "").strip()
         if not role_name or not prompt_text:
@@ -124,7 +132,7 @@ def build_auth_admin_router(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
         agent = await await_if_needed(resolve_agent_instance())
-        data: Any = payload
+        data = _parse_payload(prompt_activate_request_model, payload)
         active = await agent.memory.db.activate_prompt(data.prompt_id)
         if not active:
             raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
@@ -146,7 +154,7 @@ def build_auth_admin_router(
     async def admin_upsert_policy(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(policy_upsert_request_model, payload)
         agent = await resolve_agent_instance()
         await agent.memory.db.upsert_access_policy(
             user_id=data.user_id.strip(),

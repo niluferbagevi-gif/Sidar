@@ -18,7 +18,7 @@ import shlex
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
@@ -54,7 +54,6 @@ class DummyConfig:
 
 
 CONFIG_IMPORT_OK = True
-config_module: Any
 logger = logging.getLogger(__name__)
 _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 _DOCTOR_APPLY_ALL_APPROVED: bool | None = None
@@ -68,7 +67,7 @@ try:
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
 except (ImportError, AttributeError):
-    config_module = None
+    config_module = cast(Any, None)
     CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()

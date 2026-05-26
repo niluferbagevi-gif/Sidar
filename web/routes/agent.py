@@ -9,6 +9,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 
+def _parse_payload(model: type[Any], payload: Any) -> Any:
+    if hasattr(model, "model_validate"):
+        return model.model_validate(payload)
+    if isinstance(payload, dict):
+        return model(**payload)
+    return payload
+
+
 def build_agent_router(
     *,
     require_admin_user: Callable[..., Any],
@@ -30,7 +38,7 @@ def build_agent_router(
     async def register_agent_plugin(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(agent_plugin_register_request_model, payload)
         result = register_plugin_agent(
             role_name=data.role_name,
             source_code=data.source_code,
@@ -90,7 +98,7 @@ def build_agent_router(
         payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(plugin_marketplace_install_request_model, payload)
         return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.post("/api/plugin-marketplace/reload")
@@ -98,7 +106,7 @@ def build_agent_router(
         payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(plugin_marketplace_install_request_model, payload)
         return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.delete("/api/plugin-marketplace/install/{plugin_id}")

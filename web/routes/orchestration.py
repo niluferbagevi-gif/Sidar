@@ -8,6 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 
+def _parse_payload(model: type[Any], payload: Any) -> Any:
+    if hasattr(model, "model_validate"):
+        return model.model_validate(payload)
+    if isinstance(payload, dict):
+        return model(**payload)
+    return payload
+
+
 def build_orchestration_router(
     *,
     get_request_user: Callable[..., Any],
@@ -26,7 +34,7 @@ def build_orchestration_router(
     async def execute_swarm(
         payload: Any, user: Any = Depends(get_request_user)
     ) -> Any:
-        data: Any = payload
+        data = _parse_payload(swarm_execute_request_model, payload)
         agent = await resolve_agent_instance()
         orchestrator = swarm_orchestrator_cls(getattr(agent, "cfg", cfg))
         session_id = data.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
