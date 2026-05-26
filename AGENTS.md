@@ -36,6 +36,16 @@ Bu repo için tek doğruluk kaynağı olan operasyonel kabuller:
 
 ---
 
+
+### 1.2 Kurulum bayrakları (install_sidar.sh)
+
+- Varsayılan kurulum davranışı Docker servisleri için **taze image** akışıdır: `docker compose pull` ve build edilebilir Sidar servislerinde `docker compose build --pull` çalıştırılır.
+- `--last` / `--use-cached-images` bayrağı, pull/build adımını atlayarak mevcut yerel image cache'ini kullanır (eski davranış).
+- `--fresh` / `--pull-latest` bayrağı, varsayılan taze image davranışını açıkça seçmek için kullanılabilir.
+- Deterministik dağıtım için `docker-compose.yml` image değişkenleri (`REDIS_IMAGE`, `PGVECTOR_IMAGE`, `OLLAMA_IMAGE`, `JAEGER_IMAGE`, `PROMETHEUS_IMAGE`, `GRAFANA_IMAGE`) `.env` içinde sabit tag veya digest (`@sha256:...`) ile pinlenmelidir.
+
+---
+
 ## 2) Repo içi ajan mimarisi
 
 ### 2.1 Yerleşik ajan rolleri
