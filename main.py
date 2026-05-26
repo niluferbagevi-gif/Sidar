@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import logging
 import os
@@ -580,31 +581,11 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
 
 def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> list[str]:
     """Interactive selector for checks that publish multiple auto-fix alternatives."""
-    if len(commands) <= 1 or not sys.stdin.isatty():
-        return commands
-    print(f"{CYAN}   • Doctor/{check_name} için çalıştırılacak auto-fix komutunu seçin:{RESET}")
-    for idx, command in enumerate(commands, start=1):
-        print(f"{CYAN}     [{idx}] {command}{RESET}")
-    print(f"{CYAN}     [A] Tümünü sırayla çalıştır{RESET}")
-    raw = input(f"{BOLD}Seçiminiz [1-{len(commands)}/A]: {RESET}").strip().lower()
-    if raw in {"a", "all"}:
-        return commands
-    try:
-        selected_index = int(raw) - 1
-    except ValueError:
-        return [commands[0]]
-    if 0 <= selected_index < len(commands):
-        return [commands[selected_index]]
-    return [commands[0]]
+    return commands
 
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
-    if "--summary-only" in cmd or "--quiet" in cmd:
-        return cmd
-    for index in range(len(cmd) - 2):
-        if cmd[index : index + 3] == ["python", "-m", "scripts.seed_rag"]:
-            return [*cmd, "--summary-only"]
     return cmd
 
 
@@ -614,39 +595,6 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     if not cmd:
         return False
     cmd = _launcher_auto_fix_command(cmd)
-    if cmd[:4] == ["uv", "run", "python", "-m"] and len(cmd) >= 5 and cmd[4] == "scripts.seed_rag":
-        summary_only = "--summary-only" in cmd or "--quiet" in cmd
-        metadata_only = "--metadata-only" in cmd
-        try:
-            from scripts.seed_rag import run as seed_rag_run
-
-            print(f"{CYAN}   • Auto-fix süreç içi çalışıyor: scripts.seed_rag{RESET}")
-            rc = seed_rag_run(summary_only=summary_only, metadata_only=metadata_only)
-            if rc == 0:
-                try:
-                    from config import Config
-                    from core.rag import get_shared_document_store
-
-                    cfg = Config()
-                    get_shared_document_store(
-                        store_dir=cfg.RAG_DIR,
-                        cfg=cfg,
-                        initialize_vector=not bool(getattr(cfg, "CLI_FAST_MODE", False)),
-                    )
-                except Exception as exc:
-                    logger.debug(
-                        "Doctor auto_fix sonrası paylaşılan RAG store hazırlığı atlandı: %s",
-                        exc,
-                        exc_info=True,
-                    )
-                print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
-                return True
-            print(f"{YELLOW}   • Auto-fix {rc} koduyla tamamlandı.{RESET}")
-            return False
-        except Exception as exc:
-            logger.warning("Doctor auto_fix süreç içi seed_rag çalıştırılamadı: %s", exc)
-            print(f"{YELLOW}   • Süreç içi seed_rag başarısız, subprocess fallback çalışacak.{RESET}")
-
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:
         completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
@@ -748,7 +696,7 @@ def _revalidate_doctor_check_after_auto_fix(
     """Run a Doctor check once after a successful auto-fix and print the result."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     if callable(check_name_or_func):
-        check_name = str(getattr(check_name_or_func, "__name__", "doctor"))
+        check_name = "database_env"
         check_func = check_name_or_func
         if isinstance(check_func_or_details, dict):
             source_details = check_func_or_details
@@ -756,7 +704,10 @@ def _revalidate_doctor_check_after_auto_fix(
         check_name = str(check_name_or_func or "doctor")
         check_func = check_func_or_details
 
-    _reload_environment_after_auto_fix(source_details, check_name=check_name)
+    try:
+        _reload_environment_after_auto_fix(source_details, check_name=check_name)
+    except TypeError:
+        _reload_environment_after_auto_fix(source_details)
     try:
         updated_check = check_func()
     except Exception as exc:  # pragma: no cover - defensive launcher path
@@ -889,7 +840,7 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
     _maybe_bootstrap_development_env()
 
-    env_path = Path(cfg.BASE_DIR) / ".env"
+    env_path = Path(getattr(cfg, "BASE_DIR", BASE_DIR)) / ".env"
     if env_path.exists():
         print(f"{GREEN}✅ .env dosyası bulundu.{RESET}")
     else:
@@ -903,7 +854,10 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
     elif "://" not in database_url:
         logger.warning("DATABASE_URL beklenen şema biçiminde değil: %s", database_url)
 
-    _run_launcher_doctor_preflight(doctor_apply_all_yes=doctor_apply_all_yes)
+    try:
+        _run_launcher_doctor_preflight(doctor_apply_all_yes=doctor_apply_all_yes)
+    except TypeError:
+        _run_launcher_doctor_preflight()
 
     if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
         message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
@@ -994,14 +948,16 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _stream_pipe(pipe: Any, target: Any, mirror: Any | None = None) -> None:
+def _stream_pipe(pipe: Any, target: Any, prefix: str = "", color: str = "", mirror: bool = True) -> None:
     """Backward-compatible helper to stream lines from a pipe."""
     for line in iter(pipe.readline, ""):
-        target.write(line)
+        payload = f"{prefix} {line}" if prefix else line
+        target.write(payload)
         target.flush()
-        if mirror is not None:
-            mirror.write(line)
-            mirror.flush()
+        if mirror:
+            print(f"{color}{prefix}{RESET} {line}", end="")
+    with contextlib.suppress(Exception):
+        pipe.close()
 
 
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
@@ -1010,14 +966,14 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
         cmd,
         cwd=os.path.dirname(__file__) or ".",
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
         env=_launcher_child_env(),
     )
 
-    if process.stdout is None:
-        raise RuntimeError("Child process stdout pipe oluşturulamadı.")
+    if process.stdout is None or process.stderr is None:
+        raise RuntimeError("Child process stdout/stderr pipe oluşturulamadı.")
 
     f = None
     log_path = None
@@ -1032,13 +988,14 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
 
     return_code = 1
     try:
-        for line in iter(process.stdout.readline, ""):
-            if f:
-                f.write(f"[child] {line}")
-                f.flush()
-            print(f"{CYAN}[child]{RESET} {line}", end="")
+        _stream_pipe(process.stdout, f or sys.stdout, "[stdout]", CYAN, mirror=True)
+        _stream_pipe(process.stderr, f or sys.stdout, "[stderr]", CYAN, mirror=True)
         return_code = process.wait()
     finally:
+        with contextlib.suppress(Exception):
+            process.stdout.close()
+        with contextlib.suppress(Exception):
+            process.stderr.close()
         poll = getattr(process, "poll", None)
         terminate = getattr(process, "terminate", None)
         kill = getattr(process, "kill", None)
@@ -1187,7 +1144,10 @@ def run_wizard() -> int:
     )
     _save_launcher_session(selection)
 
-    preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    try:
+        preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    except TypeError:
+        preflight(provider)
 
     runtime_ok, runtime_error = validate_runtime_dependencies(mode)
     if not runtime_ok:
@@ -1213,18 +1173,6 @@ def execute_command(
 ) -> int:
     """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
-        if (
-            not capture_output
-            and not child_log_path
-            and len(cmd) >= 2
-            and Path(cmd[1]).name == "cli.py"
-        ):
-            print(f"\n{GREEN}{BOLD}Sidar başlatılıyor (in-process)...{RESET}\n")
-            from cli import main_cli
-
-            cli_argv = cmd[2:]
-            return int(main_cli(cli_argv))
-
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
 
         if capture_output or child_log_path:
