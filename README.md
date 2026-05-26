@@ -720,6 +720,11 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `DOCKER_TEST_IMAGE` açık verilmediyse `CodeManager`, Docker daemon erişimi olduğunda
 > `sidar:latest`, `sidar-gpu:latest` ve geriye dönük uyumluluk için `sidar-ai:latest`/`sidar-ai-gpu:latest` imajlarını otomatik test imajı adayı olarak dener.
 >
+>
+> Image vs Container (kısa açıklama):
+> - **Image** (`sidar:latest`): read-only şablondur; uv/pytest ve proje bağımlılıklarını bunun içine kurarsınız.
+> - **Container**: bu şablondan çalışan canlı süreçtir; çalışan bir container adı `sidar-*` olsa bile kullandığı image `python:3.11-slim` ise test bağımlılıkları eksik olabilir.
+
 > Hızlı sorun giderme (pytest başlangıç hataları):
 > - `ModuleNotFoundError: No module named "pydantic"` veya `pytest_benchmark` görürseniz,
 >   proje bağımlılıkları tam kurulmamış demektir. Repo kökünde şu komutu çalıştırın:

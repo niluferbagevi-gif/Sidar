@@ -1116,6 +1116,24 @@ def check_environment_profile() -> DoctorCheck:
     )
 
 
+def _docker_image_exists_local(image: str) -> bool:
+    """Best-effort local Docker image presence check for doctor hints."""
+    safe_image = str(image or "").strip()
+    if not safe_image:
+        return False
+    try:
+        result = subprocess.run(  # nosec B603
+            ["docker", "image", "inspect", safe_image],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=str(BASE_DIR),
+        )
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
 def check_gpu_memory_config() -> DoctorCheck:
     """Report effective local model and VRAM budget settings."""
     from config import Config
@@ -1180,16 +1198,26 @@ def check_gpu_memory_config() -> DoctorCheck:
         )
     if access_level != "sandbox":
         warnings.append("CLI access level is not sandbox; verify this is intentional")
+    sidar_image_exists = _docker_image_exists_local("sidar:latest")
     if docker_test_image == "python:3.11-slim":
         warnings.append(
-            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; build and pin sidar:latest so isolated self-heal/pytest runs include uv and project dependencies"
+            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this can start containers but those tests may miss uv/pytest and project extras unless the container is created from sidar:latest"
+        )
+        details["docker_image_container_note"] = (
+            "Docker image is the reusable template, container is a running instance. Having a running sidar-* container does not prove sidar:latest exists locally."
         )
         details.setdefault("recommended_commands", []).extend(
             [
+                "docker image ls | rg 'sidar|python'",
                 "docker build -t sidar:latest .",
-                "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env",
+                "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env.development",
             ]
         )
+    elif docker_test_image == "sidar:latest" and not sidar_image_exists:
+        warnings.append(
+            "DOCKER_TEST_IMAGE is sidar:latest but local Docker daemon cannot find that image; rebuild the project image before isolated test runs"
+        )
+        details.setdefault("recommended_commands", []).append("docker build -t sidar:latest .")
 
     status = "warn" if warnings else "pass"
     message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
