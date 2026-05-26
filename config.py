@@ -9,11 +9,12 @@ import logging
 import os
 import sys
 import warnings
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
