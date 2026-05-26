@@ -3025,6 +3025,17 @@ ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
     info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
+    info "Not: install_sidar.sh betiğini sudo ile çalıştırmayın; gerekli yerde sudo apt-get çağrılarını betik kendisi yapar."
+
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        fail "Bu betik root/sudo ile çalıştırılamaz. Lütfen normal kullanıcı ile çalıştırın: ./install_sidar.sh"
+    fi
+
+    local script_owner=""
+    script_owner="$(stat -c %U "$SCRIPT_DIR" 2>/dev/null || true)"
+    if [[ -n "$script_owner" && "$script_owner" != "${USER:-$(id -un)}" ]]; then
+        fail "Dizin sahipliği mevcut kullanıcıyla uyumsuz (owner=$script_owner, user=${USER:-$(id -un)}). Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} \"$SCRIPT_DIR\""
+    fi
 
     # Git
     if ! command -v git &>/dev/null; then
