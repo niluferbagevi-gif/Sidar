@@ -286,7 +286,7 @@ echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final covera
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
-rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage
+rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage sidar.egg-info build/
 
 open_artifact() {
   local target="$1"

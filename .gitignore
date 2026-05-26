@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.egg
 *.egg-info/
+sidar.egg-info/
 sidar_project.egg-info/
 dist/
 build/
