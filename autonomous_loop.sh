@@ -45,6 +45,10 @@ AUTONOMOUS_AUTO_HEAL_ENABLED="${AUTONOMOUS_LOOP_AUTO_HEAL_ENABLED:-1}"
 AUTONOMOUS_AUTO_HEAL_HITL_APPROVE="${AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE:-no}"
 AUTONOMOUS_TEST_FAILURE_LOG="${AUTONOMOUS_LOOP_TEST_FAILURE_LOG:-artifacts/autonomous_loop_test_failure.log}"
 AUTONOMOUS_AUTO_HEAL_RESULT_PATH="${AUTONOMOUS_LOOP_AUTO_HEAL_RESULT_PATH:-artifacts/autonomous_loop_auto_heal_result.json}"
+AUTONOMOUS_REPORTS_DIR="${AUTONOMOUS_LOOP_REPORTS_DIR:-reports}"
+AUTONOMOUS_RUN_LINTER_PHASES="${AUTONOMOUS_LOOP_RUN_LINTER_PHASES:-1}"
+AUTONOMOUS_MYPY_REPORT="${AUTONOMOUS_LOOP_MYPY_REPORT:-${AUTONOMOUS_REPORTS_DIR}/mypy_report.txt}"
+AUTONOMOUS_BANDIT_REPORT="${AUTONOMOUS_LOOP_BANDIT_REPORT:-${AUTONOMOUS_REPORTS_DIR}/bandit_report.json}"
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
@@ -640,6 +644,40 @@ run_auto_heal_for_test_failure() {
   "${cmd[@]}"
 }
 
+run_static_analysis_heal_phases() {
+  local mypy_exit=0
+  local bandit_exit=0
+
+  if ! is_truthy_flag "${AUTONOMOUS_RUN_LINTER_PHASES}"; then
+    echo "[LINTER] AUTONOMOUS_LOOP_RUN_LINTER_PHASES=${AUTONOMOUS_RUN_LINTER_PHASES}; mypy/bandit fazları atlandı."
+    return 0
+  fi
+
+  mkdir -p "${AUTONOMOUS_REPORTS_DIR}"
+
+  echo "[LINTER] Running Mypy Type Check..."
+  uv run mypy . > "${AUTONOMOUS_MYPY_REPORT}" 2>&1
+  mypy_exit=$?
+  if [ "${mypy_exit}" -ne 0 ]; then
+    echo "[LINTER] Mypy failed (exit=${mypy_exit}). Triggering Auto-Heal for type-check context..."
+    cp "${AUTONOMOUS_MYPY_REPORT}" "${AUTONOMOUS_TEST_FAILURE_LOG}"
+    run_auto_heal_for_test_failure mypy || true
+  else
+    echo "[LINTER] Mypy passed."
+  fi
+
+  echo "[SECURITY] Running Bandit Security Scan..."
+  uv run bandit -r . -f json -o "${AUTONOMOUS_BANDIT_REPORT}"
+  bandit_exit=$?
+  if [ "${bandit_exit}" -ne 0 ]; then
+    echo "[SECURITY] Bandit found warnings (exit=${bandit_exit}). Triggering Auto-Heal for security context..."
+    cp "${AUTONOMOUS_BANDIT_REPORT}" "${AUTONOMOUS_TEST_FAILURE_LOG}"
+    run_auto_heal_for_test_failure bandit || true
+  else
+    echo "[SECURITY] Bandit passed."
+  fi
+}
+
 run_preflight_quality_gate() {
   local test_exit
   local gate_exit
@@ -649,6 +687,8 @@ run_preflight_quality_gate() {
 
   echo ""
   echo "========== Ön Kontrol =========="
+  echo "[PREFLIGHT LINTER] Mypy/Bandit fazları çalıştırılıyor (AUTONOMOUS_LOOP_RUN_LINTER_PHASES=${AUTONOMOUS_RUN_LINTER_PHASES})."
+  run_static_analysis_heal_phases
   if [ -f "${AUTONOMOUS_COVERAGE_JSON}" ] && [ -f "${AUTONOMOUS_COVERAGE_XML}" ]; then
     echo "[PREFLIGHT 1/3] Mevcut coverage artefaktları bulundu: ${AUTONOMOUS_COVERAGE_JSON}, ${AUTONOMOUS_COVERAGE_XML}"
     current_percent="$(read_coverage_percent "${AUTONOMOUS_COVERAGE_JSON}" "${AUTONOMOUS_COVERAGE_TARGET_FILE}")"
@@ -742,6 +782,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
       echo "[HEAL] Testler tekrar çalıştırılıyor (statik analiz/mypy tekrarı yok)..."
       run_autonomous_quality_tests
       test_exit=$?
+      run_static_analysis_heal_phases
       check_autonomous_quality_gate "$test_exit"
       gate_exit=$?
       if [ "$gate_exit" -eq 0 ]; then
