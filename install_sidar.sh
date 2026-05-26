@@ -3025,6 +3025,17 @@ ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
     info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
+    info "Not: install_sidar.sh betiğini sudo ile çalıştırmayın; gerekli yerde sudo apt-get çağrılarını betik kendisi yapar."
+
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        fail "Bu betik root/sudo ile çalıştırılamaz. Lütfen normal kullanıcı ile çalıştırın: ./install_sidar.sh"
+    fi
+
+    local script_owner=""
+    script_owner="$(stat -c %U "$SCRIPT_DIR" 2>/dev/null || true)"
+    if [[ -n "$script_owner" && "$script_owner" != "${USER:-$(id -un)}" ]]; then
+        fail "Dizin sahipliği mevcut kullanıcıyla uyumsuz (owner=$script_owner, user=${USER:-$(id -un)}). Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} \"$SCRIPT_DIR\""
+    fi
 
     # Git
     if ! command -v git &>/dev/null; then
@@ -3438,9 +3449,31 @@ create_uv_venv() {
         info "Mevcut uv venv bulundu: $VENV_DIR"
         local detected_python_version=""
         detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+        if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
+            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
+        fi
         if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
             warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
-            rm -rf "$VENV_DIR"
+            if [[ -O "$VENV_DIR" ]]; then
+                if ! rm -rf "$VENV_DIR"; then
+                    fail ".venv silinemedi: $VENV_DIR. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
+                fi
+            else
+                local venv_backup_dir="$SCRIPT_DIR/.venv.broken-$(date +%Y%m%d-%H%M%S)"
+                warn ".venv mevcut kullanıcıya ait değil. Güvenli yol olarak yedek adla taşımayı deniyorum: $venv_backup_dir"
+                if mv "$VENV_DIR" "$venv_backup_dir" 2>/dev/null; then
+                    warn "Eski .venv taşındı: $venv_backup_dir"
+                elif [[ -t 0 ]] && command -v sudo &>/dev/null; then
+                    warn "Taşıma başarısız; etkileşimli modda sudo ile kaldırma onayı istenecek."
+                    if sudo rm -rf "$VENV_DIR"; then
+                        ok "Sudo ile eski .venv kaldırıldı."
+                    else
+                        fail ".venv kaldırılamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
+                    fi
+                else
+                    fail ".venv mevcut kullanıcıya ait değil ve taşınamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" (veya yalnızca .venv) ardından kurulumu tekrar çalıştırın."
+                fi
+            fi
             uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
             ok "uv venv zorunlu Python $PYTHON_VERSION ile yeniden oluşturuldu."
         fi

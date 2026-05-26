@@ -235,6 +235,41 @@ sidar_remediate_uv_sync_failure() {
     return 0
 }
 
+sidar_remediate_root_owned_venv() {
+    local action="venv-permission-remediation"
+    local venv_dir="$SCRIPT_DIR/.venv"
+    local venv_backup=""
+
+    [[ -d "$venv_dir" ]] || return 1
+
+    cd "$SCRIPT_DIR" || return 1
+    mkdir -p artifacts/install/remediation
+
+    venv_backup="artifacts/install/remediation/venv_permission_blocked_$(date +%Y%m%d_%H%M%S)"
+    warn "Auto-heal: izin/sahiplik sorunu tespit edildi; .venv güvenli yedek adına taşınacak: $venv_backup"
+    if mv "$venv_dir" "$venv_backup" 2>/dev/null; then
+        action="${action}+venv-backed-up"
+    else
+        warn "Auto-heal: .venv taşınamadı. Olası neden: üst dizinde yazma izni yok veya sahiplik root."
+        warn "Düzeltme: sudo chown -R \"$USER:$USER\" \"$SCRIPT_DIR\""
+        return 1
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        warn "Auto-heal: uv bulunamadı; yeni .venv oluşturulamadı."
+        return 1
+    fi
+
+    if ! uv venv --python "${PYTHON_VERSION}" "$venv_dir"; then
+        warn "Auto-heal: .venv yeniden oluşturulamadı."
+        return 1
+    fi
+    action="${action}+venv-recreated"
+
+    sidar_write_remediation_report "${SIDAR_CURRENT_INSTALL_PHASE:-04_workspace}" "venv-permission" "$action"
+    return 0
+}
+
 sidar_phase_remediation_strategy() {
     local phase="$1"
     local failed_cmd="$2"
@@ -242,6 +277,10 @@ sidar_phase_remediation_strategy() {
 
     case "$phase" in
         04_workspace)
+            if [[ "$failed_cmd" == *"rm -rf"* && "$reason" == *"Permission denied"* ]]; then
+                sidar_remediate_root_owned_venv
+                return $?
+            fi
             if [[ "$failed_cmd $reason" == *"uv sync"* || "$failed_cmd $reason" == *"uv.lock"* || "$failed_cmd $reason" == *"install_python_deps"* ]]; then
                 sidar_remediate_uv_sync_failure "$failed_cmd $reason"
                 return $?
