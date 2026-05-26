@@ -205,6 +205,7 @@ sed_inplace() {
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
+INSTALL_MODULES_DOWNLOADED=0
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -401,11 +402,14 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     fi
     [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
-    ok "Kurulum modülleri indirildi."
+    INSTALL_MODULES_DOWNLOADED=1
     ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
+if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
+    ok "Kurulum modülleri indirildi."
+fi
 
 if ! verify_core_install_manifest; then
     case "$?" in
@@ -2382,6 +2386,8 @@ if [[ "$PYTHON_VERSION" != "3.11" ]]; then
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
+# Repo kaynağını override etmek için (fork/organizasyon):
+#   SIDAR_REPO_URL=https://github.com/<org>/Sidar.git ./install_sidar.sh
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
@@ -6311,6 +6317,7 @@ sync_pytorch_cuda_wheels() {
     local -a pip_args=(
         install
         --reinstall
+        --reinstall-package torch
         --index-url "$index_url"
         torch
         torchvision
