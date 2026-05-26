@@ -510,7 +510,7 @@ def check_database_env() -> DoctorCheck:
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 
-    if explicit_database_url or explicit_container_url:
+    if (explicit_database_url or explicit_container_url) and failures:
         warnings.append(
             "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls for long-term safety"
         )
@@ -906,7 +906,7 @@ def check_rag_index_ready() -> DoctorCheck:
         auto_fix_steps = [details["database_env_auto_fix"]]
         if document_count == 0:
             auto_fix_steps.append("uv run python -m scripts.seed_rag")
-        details["auto_fix"] = auto_fix_steps
+        details["auto_fix"] = auto_fix_steps[0]
         details["auto_fix_steps"] = auto_fix_steps
         details["recommended_commands"] = [
             *auto_fix_steps,
@@ -1035,13 +1035,25 @@ def check_rag_readiness() -> DoctorCheck:
     }
     if details.get("blocked_by") == "database_env":
         sync_cmd = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+        seed_cmd = "uv run python -m scripts.seed_rag"
+        auto_fix_steps = [sync_cmd]
+        if int(details.get("document_count", 0)) == 0:
+            auto_fix_steps.append(seed_cmd)
         details["database_env_status"] = "fail"
         details["database_env_auto_fix"] = sync_cmd
         details["auto_fix"] = sync_cmd
-        message = (
-            "rag_index_ready=warn; graphrag_entity_memory_ready="
-            f"{graph_check.status}; blocked until database_env is fixed"
+        details["auto_fix_steps"] = auto_fix_steps
+        details["follow_up_commands"] = [seed_cmd]
+        details["recommended_commands"] = list(
+            dict.fromkeys([*auto_fix_steps, *details.get("recommended_commands", [])])
         )
+        if not details.get("index_exists", False):
+            message = "RAG index file is missing; blocked until database_env is fixed"
+        else:
+            message = (
+                "rag_index_ready=warn; graphrag_entity_memory_ready="
+                f"{graph_check.status}; blocked until database_env is fixed"
+            )
     elif details.get("document_count", 0) == 0:
         auto_fix_value = details.get("auto_fix")
         if isinstance(auto_fix_value, list) and auto_fix_value:
@@ -1260,8 +1272,8 @@ def check_gpu_memory_config() -> DoctorCheck:
             ]
         )
     elif docker_test_image == "sidar:latest" and not sidar_image_exists:
-        warnings.append(
-            "DOCKER_TEST_IMAGE is sidar:latest but local Docker daemon cannot find that image; rebuild the project image before isolated test runs"
+        details["docker_test_image_hint"] = (
+            "DOCKER_TEST_IMAGE is sidar:latest but local Docker daemon cannot find that image."
         )
         details.setdefault("recommended_commands", []).append("docker build -t sidar:latest .")
 
