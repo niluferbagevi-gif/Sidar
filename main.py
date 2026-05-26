@@ -586,7 +586,12 @@ def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> li
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
-    return cmd
+    normalized = [str(part) for part in cmd]
+    if normalized[:4] == ["uv", "run", "python", "-m"] and len(normalized) >= 5:
+        module_name = normalized[4]
+        if module_name == "scripts.seed_rag" and "--summary-only" not in normalized:
+            normalized.append("--summary-only")
+    return normalized
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
@@ -716,10 +721,30 @@ def _revalidate_doctor_check_after_auto_fix(
         _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
         return None
 
+    updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+    if updated_status == "fail":
+        doctor_checks: dict[str, str] = {
+            "database_env": "check_database_env",
+            "database_connectivity": "check_database_connectivity",
+            "rag_readiness": "check_rag_readiness",
+            "graphrag_entity_memory_ready": "check_graphrag_entity_memory_ready",
+        }
+        check_attr = doctor_checks.get(check_name)
+        if check_attr:
+            with contextlib.suppress(Exception):
+                from core import doctor as doctor_module
+
+                fresh_check = getattr(doctor_module, check_attr, None)
+                if callable(fresh_check):
+                    refreshed = fresh_check()
+                    refreshed_status = str(getattr(refreshed, "status", "warn") or "warn")
+                    if refreshed_status != "fail":
+                        updated_check = refreshed
+                        updated_status = refreshed_status
+
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = updated_check
     print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
     _print_doctor_check_summary(updated_check)
-    updated_status = str(getattr(updated_check, "status", "warn") or "warn")
     updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
     lost_env_keys = _doctor_auto_fix_lost_env_keys(source_details, updated_check)
     if lost_env_keys:
