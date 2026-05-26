@@ -141,6 +141,22 @@ class ConversationMemory:
             for r in rows
         ]
 
+    async def count_sessions_any_user(self) -> int:
+        """Aktif kullanıcı bağlamı olmasa da toplam oturum sayısını döndürür.
+
+        Salt-okunur metrik/health çağrılarında `active_user_id` zorlamasına takılmadan
+        güvenli bir sayı üretmek için kullanılır.
+        """
+        await self._ensure_initialized()
+        current_user_id = (self.active_user_id or "").strip()
+        if current_user_id:
+            return len(await self.db.list_sessions(current_user_id))
+        total = await self.db.fetch_value("SELECT COUNT(*) FROM sessions")
+        try:
+            return int(total or 0)
+        except (TypeError, ValueError):
+            return 0
+
     async def create_session(self, title: str = "Yeni Sohbet") -> str:
         await self._ensure_initialized()
         user_id = self._require_active_user()

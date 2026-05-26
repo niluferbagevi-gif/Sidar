@@ -36,18 +36,28 @@ def build_metrics_router(
         try:
             uptime_s = int(time.monotonic() - start_time)
             rag_docs = agent.docs.doc_count
+            sessions_total = None
+            if hasattr(agent.memory, "count_sessions_any_user"):
+                sessions_total_value = agent.memory.count_sessions_any_user()
+                sessions_total = (
+                    await sessions_total_value
+                    if inspect.isawaitable(sessions_total_value)
+                    else sessions_total_value
+                )
             if hasattr(agent.memory, "aget_all_sessions"):
                 sessions = await agent.memory.aget_all_sessions()
             else:
                 sessions = agent.memory.get_all_sessions()
                 if inspect.isawaitable(sessions):
                     sessions = await sessions
+            if sessions_total is None:
+                sessions_total = len(sessions)
             rl_total = sum(len(v) for v in local_rate_limits.values())
             llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
             payload = {
                 "version": agent.VERSION,
                 "uptime_seconds": uptime_s,
-                "sessions_total": len(sessions),
+                "sessions_total": int(sessions_total),
                 "active_session_turns": len(agent.memory),
                 "rag_documents": rag_docs,
                 "rate_limit_buckets": len(local_rate_limits),
@@ -70,7 +80,7 @@ def build_metrics_router(
 
                     reg = CollectorRegistry()
                     Gauge("sidar_uptime_seconds", "Sunucu çalışma süresi (s)", registry=reg).set(uptime_s)
-                    Gauge("sidar_sessions_total", "Toplam oturum sayısı", registry=reg).set(len(sessions))
+                    Gauge("sidar_sessions_total", "Toplam oturum sayısı", registry=reg).set(int(sessions_total))
                     Gauge("sidar_rag_documents_total", "RAG belge sayısı", registry=reg).set(rag_docs)
                     Gauge("sidar_active_turns", "Aktif oturum tur sayısı", registry=reg).set(
                         len(agent.memory)
