@@ -51,6 +51,16 @@ class SidarUUID(sa.TypeDecorator[str]):
 UUID_TYPE = SidarUUID()
 
 
+def _resolve_engine_name(bind: object) -> str:
+    engine = getattr(bind, "engine", None)
+    if engine is not None and getattr(engine, "name", None):
+        return str(getattr(engine, "name")).strip().lower()
+    dialect = getattr(bind, "dialect", None)
+    if dialect is not None and getattr(dialect, "name", None):
+        return str(getattr(dialect, "name")).strip().lower()
+    return ""
+
+
 def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
     if engine_name == "postgresql":
         from sqlalchemy.dialects.postgresql import UUID
@@ -61,7 +71,7 @@ def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
 
 def upgrade() -> None:
     bind = op.get_bind()
-    engine_name = str(bind.engine.name).strip().lower()
+    engine_name = _resolve_engine_name(bind)
     inspector = sa.inspect(bind)
     table_names = set(inspector.get_table_names())
     user_columns = {
@@ -116,7 +126,7 @@ def upgrade() -> None:
         }
 
     global_index_conflict = False
-    if bind.engine.name == "postgresql":
+    if engine_name == "postgresql":
         conflict_table = bind.execute(
             sa.text(
                 """

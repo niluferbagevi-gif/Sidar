@@ -18,10 +18,20 @@ branch_labels = None
 depends_on = None
 
 
+def _resolve_engine_name(bind: object) -> str:
+    engine = getattr(bind, "engine", None)
+    if engine is not None and getattr(engine, "name", None):
+        return str(getattr(engine, "name")).strip().lower()
+    dialect = getattr(bind, "dialect", None)
+    if dialect is not None and getattr(dialect, "name", None):
+        return str(getattr(dialect, "name")).strip().lower()
+    return ""
+
+
 def upgrade() -> None:
     # Veritabanı motorunu kontrol et. PostgreSQL değilse (örn: testlerdeki SQLite) sessizce atla.
     bind = op.get_bind()
-    if bind.engine.name != "postgresql":
+    if _resolve_engine_name(bind) != "postgresql":
         return
 
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
@@ -87,7 +97,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Downgrade işleminde de veritabanı motorunu kontrol et.
     bind = op.get_bind()
-    if bind.engine.name != "postgresql":
+    if _resolve_engine_name(bind) != "postgresql":
         return
 
     op.execute("DROP INDEX IF EXISTS idx_rag_embeddings_embedding_hnsw")
