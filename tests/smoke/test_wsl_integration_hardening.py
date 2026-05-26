@@ -56,4 +56,4 @@ JSON
     env = os.environ.copy()
     env["PATH"] = f"{mock_bin}:{env['PATH']}"
 
-    subprocess.run(["bash", "-lc", script], cwd=os.getcwd(), env=env, check=True)
+    subprocess.run(["bash", "-c", script], cwd=os.getcwd(), env=env, check=True)
