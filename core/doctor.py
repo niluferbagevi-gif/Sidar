@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import shutil
+import subprocess
 import os
 import re
-import shutil
-import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -79,6 +79,26 @@ def _run_command(cmd: list[str], *, timeout: int = 20) -> tuple[int, str]:
     except subprocess.TimeoutExpired as exc:
         output = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
         return 124, f"timeout after {timeout}s\n{output}".strip()
+
+
+def _docker_image_exists_locally(image: str) -> bool | None:
+    image_ref = str(image or "").strip()
+    if not image_ref:
+        return None
+    if shutil.which("docker") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", image_ref],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+            text=True,
+        )
+    except Exception:
+        return None
+    return result.returncode == 0
 
 
 def _status_from_bool(ok: bool, warn: bool = False) -> str:
@@ -1182,14 +1202,23 @@ def check_gpu_memory_config() -> DoctorCheck:
         warnings.append("CLI access level is not sandbox; verify this is intentional")
     if docker_test_image == "python:3.11-slim":
         warnings.append(
-            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; build and pin sidar:latest so isolated self-heal/pytest runs include uv and project dependencies"
+            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this image can start containers but typically misses Sidar dev tooling (uv/pytest extras). Build and pin sidar:latest for isolated self-heal/pytest runs"
         )
         details.setdefault("recommended_commands", []).extend(
             [
                 "docker build -t sidar:latest .",
                 "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env",
+                "docker image ls sidar:latest",
             ]
         )
+
+    sidar_image_present = _docker_image_exists_locally("sidar:latest")
+    details["sidar_latest_image_present"] = sidar_image_present
+    if sidar_image_present is False:
+        warnings.append(
+            "sidar:latest Docker image is not present locally; container names may include 'sidar' but isolated tests still fall back to generic images"
+        )
+        details.setdefault("recommended_commands", []).append("docker build -t sidar:latest .")
 
     status = "warn" if warnings else "pass"
     message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
