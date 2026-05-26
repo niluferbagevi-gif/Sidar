@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import re
 import subprocess  # nosec B404
 from collections.abc import Awaitable, Callable
@@ -239,9 +240,14 @@ def build_project_ops_router(
         effective_owner = owner.strip()
         if not effective_owner and "/" in active_repo:
             effective_owner = active_repo.split("/", 1)[0]
-        ok, repos = agent.github.list_repos(owner=effective_owner, limit=200)
+        maybe_result = agent.github.list_repos(owner=effective_owner, limit=200)
+        if inspect.isawaitable(maybe_result):
+            ok, repos = await maybe_result
+        else:
+            ok, repos = maybe_result
         if not ok:
             return JSONResponse({"success": False, "error": "Repo listesi alınamadı.", "repos": []}, status_code=400)
+        repos = list(repos or [])
         query = q.strip().lower()
         if query:
             repos = [r for r in repos if query in r.get("full_name", "").lower()]
