@@ -47,6 +47,7 @@ _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
 _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}
 _DOTENV_MANAGED_KEYS: set[str] = set()
 _DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
+_DOTENV_MISSING_FILE_NOTICES: list[str] = []
 _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 _FIRST_CONFIG_LOAD_LOGGED = False
 logger = logging.getLogger("Sidar.Config")
@@ -143,6 +144,8 @@ def _record_dotenv_event(
             "reason": reason,
         }
     )
+    if not loaded and reason == "missing" and resolved_path is not None:
+        _DOTENV_MISSING_FILE_NOTICES.append(f"{label}={resolved_path}")
 
 
 def get_dotenv_load_report() -> list[dict[str, Any]]:
@@ -295,11 +298,7 @@ def _dotenv_reload_baseline_environment() -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
     effective_env = dict(os.environ)
     for key in tuple(_DOTENV_MANAGED_KEYS):
-        original_value = _DOTENV_ORIGINAL_ENV_VALUES.get(key)
-        if original_value is None:
-            effective_env.pop(key, None)
-        else:
-            effective_env[key] = original_value
+        effective_env.pop(key, None)
     return effective_env
 
 
@@ -1426,10 +1425,18 @@ class Config:
                 "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri kullanılacak."
             )
 
-        if missing_files:
+        missing_notice_items = [
+            f"{event['label']}={event['path']}" for event in missing_files if event.get("path")
+        ]
+        if _DOTENV_MISSING_FILE_NOTICES:
+            for notice in _DOTENV_MISSING_FILE_NOTICES:
+                if notice not in missing_notice_items:
+                    missing_notice_items.append(notice)
+            _DOTENV_MISSING_FILE_NOTICES.clear()
+        if missing_notice_items:
             logger.info(
                 "Opsiyonel dotenv dosyaları bulunamadı: %s",
-                ", ".join(f"{event['label']}={event['path']}" for event in missing_files),
+                ", ".join(missing_notice_items),
             )
 
         if _DOTENV_KEY_SOURCES:
