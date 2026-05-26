@@ -20,9 +20,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
-from core.rag.readiness import build_readiness_report
 from urllib.parse import quote, unquote, urlparse
 
+from core.rag.readiness import build_readiness_report
 from sidar_assets.paths import migrations_path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
