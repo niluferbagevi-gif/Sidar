@@ -3720,6 +3720,8 @@ metrics_router = build_metrics_router(
         local_rate_limits=_local_rate_limits,
         get_llm_metrics_collector=get_llm_metrics_collector,
         render_llm_metrics_prometheus=render_llm_metrics_prometheus,
+        set_current_metrics_user_id=set_current_metrics_user_id,
+        reset_current_metrics_user_id=reset_current_metrics_user_id,
         logger=logger,
     )
 app.include_router(metrics_router)
