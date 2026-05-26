@@ -561,7 +561,7 @@ def _print_doctor_check_summary(check: Any) -> None:
 def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     """Return ordered Doctor auto-fix commands from legacy or multi-step metadata."""
     steps = details.get("auto_fix_steps")
-    if isinstance(steps, list) and status in {"warn", "fail"}:
+    if isinstance(steps, list):
         commands = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
         if commands:
             return commands
