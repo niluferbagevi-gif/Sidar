@@ -102,4 +102,7 @@ def build_orchestration_router(
             }
         )
 
+    router.legacy_exports = {
+        "execute_swarm": execute_swarm,
+    }
     return router

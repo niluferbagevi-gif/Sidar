@@ -23,7 +23,7 @@
 # GPU (varsayılan): nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
 # CPU fallback:     python:${PYTHON_VERSION}-slim
 ARG PYTHON_VERSION=3.11
-ARG BASE_IMAGE=nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
 
 FROM ${BASE_IMAGE}
@@ -66,7 +66,9 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates git build-essential curl wget zstd \
-      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg cargo pkg-config shellcheck; \
+      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg cargo pkg-config \
+      shellcheck \
+    ; \
     if [ -f /etc/os-release ] && grep -qi 'ubuntu' /etc/os-release; then \
       apt-get install -y --no-install-recommends software-properties-common; \
       add-apt-repository ppa:deadsnakes/ppa; \

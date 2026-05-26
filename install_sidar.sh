@@ -401,6 +401,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     fi
     [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
     download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
+    ok "Kurulum modülleri indirildi."
     ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 fi
 # shellcheck disable=SC1090
@@ -3543,6 +3544,14 @@ install_pyright_lsp_tool() {
         return
     fi
 
+    warn "Pyright LSP proje ortamında bulunamadı; fallback olarak uv tool install pyright deneniyor."
+    if uv tool install pyright >/dev/null 2>&1; then
+        if pyright-langserver --version >/dev/null 2>&1; then
+            ok "Pyright LSP uv tool fallback ile kuruldu: $(command -v pyright-langserver)"
+            return
+        fi
+    fi
+
     fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın ve dev bağımlılıklarının proje ortamında kurulu olduğunu doğrulayın."
 }
 
@@ -3636,7 +3645,7 @@ install_playwright_browsers() {
                                 fi
                                 if [[ -s "$_pw_os_override_file" ]]; then
                                     if grep -q '^VERSION_ID=' "$_pw_os_override_file"; then
-                                        sed -i 's/^VERSION_ID=.*/VERSION_ID="24.04"/' "$_pw_os_override_file"
+                                        sed_inplace 's/^VERSION_ID=.*/VERSION_ID="24.04"/' "$_pw_os_override_file"
                                     else
                                         echo 'VERSION_ID="24.04"' >> "$_pw_os_override_file"
                                     fi
@@ -6299,18 +6308,18 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local -a sync_args=(
-        --frozen
-        --all-extras
-        --index "$index_url"
-        --reinstall-package torch
-        --reinstall-package torchvision
-        --reinstall-package torchaudio
+    local -a pip_args=(
+        install
+        --reinstall
+        --index-url "$index_url"
+        torch
+        torchvision
+        torchaudio
     )
 
-    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv sync "${sync_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
+    info "PyTorch CUDA wheel seçimi uv pip ile uygulanıyor: ${cuda_tag} (${index_url})"
+    if ! uv pip "${pip_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv pip ile güncellenemedi (${cuda_tag})."
     fi
 }
 

@@ -49,14 +49,18 @@ _DOTENV_MANAGED_KEYS: set[str] = set()
 _DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
 _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 _FIRST_CONFIG_LOAD_LOGGED = False
+logger = logging.getLogger("Sidar.Config")
 
 
 def _log_first_load_info(message: str, *args: Any) -> None:
     """Log as INFO only on first config load cycle, DEBUG on later reloads."""
+    sidar_logger = logging.getLogger("sidar")
     if _FIRST_CONFIG_LOAD_LOGGED:
         logger.debug(message, *args)
+        sidar_logger.debug(message, *args)
     else:
         logger.info(message, *args)
+        sidar_logger.info(message, *args)
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -624,7 +628,12 @@ _NOISY_DEPENDENCY_LOGGERS = (
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-repair_log_file_permissions(_LOG_FILE_PATH)
+def _repair_log_file_permissions(path: Path) -> None:
+    """Backward-compatible wrapper for log permission repair helper."""
+    repair_log_file_permissions(path)
+
+
+_repair_log_file_permissions(_LOG_FILE_PATH)
 
 
 def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
@@ -677,8 +686,6 @@ except (PermissionError, OSError) as exc:
     )
 
 _configure_noisy_dependency_loggers()
-
-logger = logging.getLogger(__name__)
 
 _DEPENDENCY_AUTO = object()
 

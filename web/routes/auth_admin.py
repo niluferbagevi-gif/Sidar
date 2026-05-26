@@ -169,4 +169,10 @@ def build_auth_admin_router(
         )
         return JSONResponse({"success": True, "items": [serialize_policy(r) for r in records]})
 
+    router.legacy_exports = {
+        "register_user": register_user,
+        "admin_stats": admin_stats,
+        "admin_list_prompts": admin_list_prompts,
+        "admin_upsert_prompt": admin_upsert_prompt,
+    }
     return router

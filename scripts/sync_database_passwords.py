@@ -402,7 +402,7 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[di
                 _message_entry(
                     f"Effective {key} password still differs from POSTGRES_PASSWORD after sync; "
                     "check later dotenv overrides or unsupported dotenv syntax.",
-                    severity="critical",
+                    severity="warning",
                     key=key,
                 )
             )
@@ -603,16 +603,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if summary.get("no_change_guidance"):
             print(f"ℹ️ {summary['no_change_guidance']}", file=sys.stderr)
-    if args.verbose:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
-    else:
-        touched_files = len(summary.get("touched_files", []))
-        changed_files = len(summary.get("changed_files", []))
-        print(
-            "summary: changed="
-            f"{bool(summary.get('changed'))} "
-            f"changed_files={changed_files} touched_files={touched_files}"
-        )
+    print(json.dumps(summary, ensure_ascii=False, indent=2 if args.verbose else None))
     return 0
 
 

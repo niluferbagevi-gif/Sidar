@@ -22,11 +22,11 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 def main() -> int:
     env_values = _read_env_file(Path(".env"))
-    user = os.getenv("POSTGRES_USER") or env_values.get("POSTGRES_USER") or "sidar"
-    password = os.getenv("POSTGRES_PASSWORD") or env_values.get("POSTGRES_PASSWORD") or ""
-    host = os.getenv("POSTGRES_HOST") or env_values.get("POSTGRES_HOST") or "127.0.0.1"
-    port = int(os.getenv("POSTGRES_PORT") or env_values.get("POSTGRES_PORT") or "5432")
-    primary_db = os.getenv("POSTGRES_DB") or env_values.get("POSTGRES_DB") or "sidar"
+    user = env_values.get("POSTGRES_USER") or os.getenv("POSTGRES_USER") or "sidar"
+    password = env_values.get("POSTGRES_PASSWORD") or os.getenv("POSTGRES_PASSWORD") or ""
+    host = env_values.get("POSTGRES_HOST") or os.getenv("POSTGRES_HOST") or "127.0.0.1"
+    port = int(env_values.get("POSTGRES_PORT") or os.getenv("POSTGRES_PORT") or "5432")
+    primary_db = env_values.get("POSTGRES_DB") or os.getenv("POSTGRES_DB") or "sidar"
 
     db_names = [primary_db, "sidar", "sidar_development", "sidar_test"]
     db_names = list(dict.fromkeys([name for name in db_names if name]))

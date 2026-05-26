@@ -151,6 +151,8 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             print("  GPU             : ℹ CPU modu (USE_GPU=false)")
         elif gpu_info.lower() == "cuda bulunamadı":
             print("  GPU             : ✗ GPU bulunamadı (CPU modunda çalışıyor)")
+        elif gpu_info:
+            print(f"  GPU             : ✗ {gpu_info}")
         else:
             print(f"  GPU             : ℹ CPU modu ({gpu_info or 'GPU devre dışı'})")
     print(f"  GitHub          : {'Hazır' if agent.github.is_available() else 'Hazır değil'}")
@@ -304,6 +306,7 @@ def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> i
 
 
 def main_cli(argv: list[str] | None = None) -> int:
+    use_process_argv = argv is None
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) > 0 and argv[0] == "doctor":
         doctor_parser = argparse.ArgumentParser(description="Sidar Doctor sağlık raporu üret")
@@ -347,7 +350,10 @@ def main_cli(argv: list[str] | None = None) -> int:
         default=getattr(cfg_defaults, "LOG_LEVEL", "INFO"),
         help="Log seviyesi (DEBUG/INFO/WARNING)",
     )
-    args = parser.parse_args(argv)
+    if use_process_argv:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args(argv)
 
     _setup_logging(args.log)
 
@@ -370,7 +376,7 @@ def main_cli(argv: list[str] | None = None) -> int:
     skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {"1", "true", "yes"}
     if not skip_boot_checks and not cfg.validate_critical_settings():
         print("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
-        return 2
+        raise SystemExit("Kritik yapılandırma doğrulaması başarısız")
 
     agent = SidarAgent(cfg)
 
@@ -415,9 +421,12 @@ def main_cli(argv: list[str] | None = None) -> int:
     return 0
 
 
-def main() -> None:
-    raise SystemExit(main_cli())
+def main() -> int:
+    argv = list(sys.argv[1:])
+    if (len(argv) > 0 and argv[0] == "doctor") or "--doctor" in argv:
+        raise SystemExit(main_cli(argv))
+    return main_cli()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

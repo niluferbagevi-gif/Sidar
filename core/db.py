@@ -1055,7 +1055,19 @@ class Database:
         assert self._pg_pool is not None
         should_run_migration = self.auto_migrate
         if not should_run_migration:
-            has_alembic_version = await self._pg_pool.fetchval("SELECT to_regclass('public.alembic_version')")
+            if hasattr(self._pg_pool, "fetchval"):
+                has_alembic_version = await self._pg_pool.fetchval(
+                    "SELECT to_regclass('public.alembic_version')"
+                )
+            elif hasattr(self._pg_pool, "fetch_value"):
+                has_alembic_version = await self._pg_pool.fetch_value(
+                    "SELECT to_regclass('public.alembic_version')"
+                )
+            else:
+                async with self._pg_pool.acquire() as conn:
+                    has_alembic_version = await conn.fetchval(
+                        "SELECT to_regclass('public.alembic_version')"
+                    )
             if has_alembic_version:
                 logger.info("SIDAR_AUTO_MIGRATE devre dışı; runtime Alembic upgrade atlandı.")
                 return

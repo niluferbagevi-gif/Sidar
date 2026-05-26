@@ -476,6 +476,8 @@ ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya
 uzun coverage kampanyaları için repoyu klonlamak hâlâ en doğru çalışma şeklidir:
 
+Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir.
+
 ```bash
 git clone https://github.com/niluferbagevi-gif/Sidar.git
 cd Sidar

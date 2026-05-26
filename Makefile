@@ -11,9 +11,12 @@ SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/**/*.sh' \
 	'tests/shell/*.bats')
 
-.PHONY: lint lint-shell test-shell
+.PHONY: lint lint-shell installer-shellcheck test-shell
 
-lint: lint-shell
+lint: installer-shellcheck lint-shell
+
+installer-shellcheck:
+	$(SHELLCHECK) --severity=warning -x install_sidar.sh
 
 lint-shell:
 	$(SHELLCHECK) --severity=warning -x $(SHELLCHECK_FILES)

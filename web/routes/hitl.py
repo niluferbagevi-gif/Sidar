@@ -105,4 +105,8 @@ def build_hitl_router(
         finally:
             hitl_ws_clients.discard(websocket)
 
+    router.legacy_exports = {
+        "hitl_pending": hitl_pending,
+        "websocket_hitl": websocket_hitl,
+    }
     return router

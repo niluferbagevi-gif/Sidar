@@ -99,4 +99,8 @@ def build_metrics_router(
         collector = get_llm_metrics_collector()
         return JSONResponse(collector.snapshot())
 
+    router.legacy_exports = {
+        "metrics": metrics,
+        "llm_prometheus_metrics": llm_prometheus_metrics,
+    }
     return router

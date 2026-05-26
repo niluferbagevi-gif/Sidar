@@ -51,8 +51,17 @@ class SidarUUID(TypeDecorator[str]):
 UUID_TYPE = SidarUUID()
 
 
+def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
+    if engine_name == "postgresql":
+        from sqlalchemy.dialects.postgresql import UUID
+
+        return UUID(as_uuid=True)
+    return sa.String(length=36)
+
+
 def upgrade() -> None:
     bind = op.get_bind()
+    engine_name = str(bind.engine.name).strip().lower()
     inspector = sa.inspect(bind)
     table_names = set(inspector.get_table_names())
     user_columns = {
@@ -78,7 +87,7 @@ def upgrade() -> None:
             sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
             sa.Column(
                 "user_id",
-                UUID_TYPE,
+                _user_fk_type_for_backend(engine_name),
                 sa.ForeignKey("users.id", ondelete="CASCADE"),
                 nullable=False,
             ),

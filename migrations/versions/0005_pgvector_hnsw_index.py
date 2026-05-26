@@ -27,7 +27,7 @@ def upgrade() -> None:
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
     require_pgvector = vector_backend == "pgvector"
 
-    vector_available = bind.execute(
+    vector_available = op.execute(
         text(
             """
             SELECT EXISTS (
