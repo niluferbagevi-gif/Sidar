@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
+from core.rag.readiness import build_readiness_report
 from urllib.parse import quote, unquote, urlparse
 
 from sidar_assets.paths import migrations_path
@@ -795,6 +796,14 @@ def _rag_readiness_state() -> dict[str, Any]:
             details["database_env_auto_fix"] = database_check.details.get(
                 "auto_fix", "uv run python -m scripts.sync_database_passwords"
             )
+    details.update(
+        build_readiness_report(
+            rag_dir=rag_dir,
+            document_count=document_count,
+            index_exists=index_exists,
+            database_env_status=str(details.get("database_env_status", "pass")),
+        )
+    )
     if not graph_enabled:
         warnings.append("GraphRAG is disabled by ENABLE_GRAPH_RAG=false")
     if document_count == 0:
@@ -986,6 +995,17 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
 
 def check_rag_readiness() -> DoctorCheck:
     """Backward-compatible aggregate check; prefer split checks in launcher."""
+    state = _rag_readiness_state()
+    base_details = state.get("details", {}) if isinstance(state, dict) else {}
+    vector_backend = str(base_details.get("vector_backend", "") or "").lower()
+    db_url_raw = os.getenv("DATABASE_URL", "")
+    postgres_password = os.getenv("POSTGRES_PASSWORD", "")
+    mismatch_block = (
+        vector_backend == "pgvector"
+        and bool(db_url_raw)
+        and bool(postgres_password)
+        and postgres_password not in db_url_raw
+    )
     index_check = check_rag_index_ready()
     graph_check = check_graphrag_entity_memory_ready()
     status = "pass"
@@ -996,6 +1016,14 @@ def check_rag_readiness() -> DoctorCheck:
     details = {
         "rag_index_ready_status": index_check.status,
         "graphrag_entity_memory_ready_status": graph_check.status,
+        "document_count": int(base_details.get("document_count", index_check.details.get("document_count", 0))),
+        "index_exists": bool(base_details.get("index_exists", index_check.details.get("index_exists", False))),
+        "blocked_by": (
+            "database_env"
+            if mismatch_block
+            else base_details.get("blocked_by", index_check.details.get("blocked_by"))
+        ),
+        "auto_fix": index_check.details.get("auto_fix", ""),
         "recommended_commands": list(
             dict.fromkeys(
                 [
@@ -1005,7 +1033,25 @@ def check_rag_readiness() -> DoctorCheck:
             )
         ),
     }
-    message = f"rag_index_ready={index_check.status}; graphrag_entity_memory_ready={graph_check.status}"
+    if details.get("blocked_by") == "database_env":
+        sync_cmd = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+        details["database_env_status"] = "fail"
+        details["database_env_auto_fix"] = sync_cmd
+        details["auto_fix"] = sync_cmd
+        message = (
+            "rag_index_ready=warn; graphrag_entity_memory_ready="
+            f"{graph_check.status}; blocked until database_env is fixed"
+        )
+    elif details.get("document_count", 0) == 0:
+        auto_fix_value = details.get("auto_fix")
+        if isinstance(auto_fix_value, list) and auto_fix_value:
+            details["auto_fix"] = auto_fix_value[0]
+        if not details.get("index_exists", False):
+            message = "RAG index file is missing; no indexed documents yet; entity memory is empty"
+        else:
+            message = "RAG has no indexed documents; no indexed documents yet; entity memory is empty"
+    else:
+        message = f"rag_index_ready={index_check.status}; graphrag_entity_memory_ready={graph_check.status}"
     return DoctorCheck("rag_readiness", status, message, details)
 
 
