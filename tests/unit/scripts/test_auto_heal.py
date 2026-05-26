@@ -12,6 +12,7 @@ from scripts.auto_heal import (
     _build_attempt_diagnosis,
     _build_scope_queue,
     _configure_auto_heal_memory_backend,
+    _extract_mypy_targets_from_log,
     _extract_scope_error_lines,
     _initialize_agent_soft_dependency,
     _parse_approval_value,
@@ -220,6 +221,23 @@ def test_select_auto_heal_model_honors_requested_model() -> None:
 def test_build_scope_queue_returns_empty_when_scope_paths_are_blank() -> None:
     assert _build_scope_queue({"scope_paths": ["", "  "]}, batch_size=0) == []
 
+
+
+
+def test_extract_mypy_targets_from_log_parses_unique_python_files() -> None:
+    log_text = """core/doctor.py:1183: error: Incompatible return value type  [return-value]
+core/doctor.py:1183: error: Incompatible return value type  [return-value]
+manager.py: note: not an error
+agent/roles/coder_agent.py:42:7: error: Name "x" is not defined  [name-defined]
+"""
+
+    targets = _extract_mypy_targets_from_log(log_text)
+
+    assert targets == ["core/doctor.py", "agent/roles/coder_agent.py"]
+
+
+def test_extract_mypy_targets_from_log_returns_empty_for_non_mypy_text() -> None:
+    assert _extract_mypy_targets_from_log("[LINTER] no mypy lines here") == []
 
 def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
     assert _extract_scope_error_lines("   ", scope_paths=["pkg/a.py"], limit=1) == []
