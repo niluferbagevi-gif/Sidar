@@ -104,5 +104,6 @@ def build_metrics_router(
     router.legacy_exports = {
         "metrics": metrics,
         "llm_prometheus_metrics": llm_prometheus_metrics,
+        "llm_budget_metrics": llm_budget_metrics,
     }
     return router
