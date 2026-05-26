@@ -497,6 +497,21 @@ chmod +x install_sidar.sh
 > Kurulum sırasında bir hata alırsanız betik loglarını `logs/install_YYYYMMDD_HHMMSS.log` altında inceleyin.
 > En güncel log: `ls -1t logs/install_*.log | head -n 1`
 
+### Sorun giderme (sahiplik / Permission denied)
+
+WSL2 + Docker Desktop Integration kullanan ortamlarda en sık görülen kurulum problemi,
+daha önce `sudo` ile çalıştırılmış dosyalar nedeniyle repo sahipliğinin `root`'a kaymasıdır.
+Bu durumda `.venv` silme/yeniden oluşturma veya `uv sync` adımlarında `Permission denied`
+hataları görülebilir.
+
+Sahipliği geri alıp kurulumu tekrar çalıştırın:
+
+```bash
+chown -R "$USER:$USER" ~/Sidar
+cd ~/Sidar
+./install_sidar.sh
+```
+
 ---
 
 ## Kullanım
