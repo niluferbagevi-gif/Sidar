@@ -142,7 +142,7 @@ def build_project_ops_router(
         if not target.exists():
             return JSONResponse({"error": f"Dizin bulunamadı: {path}"}, status_code=404)
         if not target.is_dir():
-            return JSONResponse({"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=400)
+            return JSONResponse({"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=404)
         items = []
         for item in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
             if item.name.startswith(".") or item.name in ("__pycache__", "node_modules"):
@@ -168,7 +168,7 @@ def build_project_ops_router(
         if not target.exists():
             return JSONResponse({"error": f"Dosya bulunamadı: {path}"}, status_code=404)
         if target.is_dir():
-            return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=400)
+            return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=404)
         if target.suffix.lower() not in _SAFE_EXTENSIONS:
             return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
         size_bytes = target.stat().st_size
