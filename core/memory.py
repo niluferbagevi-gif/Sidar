@@ -151,11 +151,7 @@ class ConversationMemory:
         current_user_id = (self.active_user_id or "").strip()
         if current_user_id:
             return len(await self.db.list_sessions(current_user_id))
-        total = await self.db.fetch_value("SELECT COUNT(*) FROM sessions")
-        try:
-            return int(total or 0)
-        except (TypeError, ValueError):
-            return 0
+        return await self.db.count_sessions_total()
 
     async def create_session(self, title: str = "Yeni Sohbet") -> str:
         await self._ensure_initialized()

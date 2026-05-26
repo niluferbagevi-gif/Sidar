@@ -1533,6 +1533,24 @@ class Database:
             for r in rows
         ]
 
+
+    async def count_sessions_total(self) -> int:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                value = await conn.fetchval("SELECT COUNT(*) FROM sessions")
+            return int(value or 0)
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> int:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute("SELECT COUNT(*) FROM sessions")
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
+        return await self._run_sqlite_op(_run, write=False)
+
     async def load_session(
         self, session_id: str, user_id: str | None = None
     ) -> SessionRecord | None:
