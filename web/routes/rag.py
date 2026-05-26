@@ -144,4 +144,10 @@ def build_rag_router(
                 ok, result = maybe_result
         return JSONResponse({"success": ok, "result": result})
 
+    router.legacy_exports = {
+        "rag_add_file": rag_add_file,
+        "rag_add_url": rag_add_url,
+        "upload_rag_file": upload_rag_file,
+        "rag_search": rag_search,
+    }
     return router

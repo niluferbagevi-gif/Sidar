@@ -3655,15 +3655,13 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     return JSONResponse(health_data)
 
 
-app.include_router(
-    build_health_router(
-        lambda require_dependencies: _health_response(
-            require_dependencies=require_dependencies
-        )
+health_router = build_health_router(
+    lambda require_dependencies: _health_response(
+        require_dependencies=require_dependencies
     )
 )
-app.include_router(
-    build_agent_router(
+app.include_router(health_router)
+agent_router = build_agent_router(
         require_admin_user=_require_admin_user,
         register_plugin_agent=_register_plugin_agent,
         persist_and_import_plugin_file=_persist_and_import_plugin_file,
@@ -3676,22 +3674,18 @@ app.include_router(
         agent_plugin_register_request_model=_AgentPluginRegisterRequest,
         plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
     )
-)
+app.include_router(agent_router)
 
-app.include_router(
-    build_rag_router(
+rag_router = build_rag_router(
         resolve_agent_instance=_resolve_agent_instance,
         await_if_needed=_await_if_needed,
         max_rag_upload_bytes=Config.MAX_RAG_UPLOAD_BYTES,
         server_root=Path(__file__).parent.resolve(),
         logger=logger,
     )
-)
+app.include_router(rag_router)
 
-
-
-app.include_router(
-    build_auth_admin_router(
+auth_admin_router = build_auth_admin_router(
         resolve_agent_instance=_resolve_agent_instance,
         await_if_needed=_await_if_needed,
         get_request_user=_get_request_user,
@@ -3705,10 +3699,9 @@ app.include_router(
         prompt_activate_request_model=_PromptActivateRequest,
         policy_upsert_request_model=_PolicyUpsertRequest,
     )
-)
+app.include_router(auth_admin_router)
 
-app.include_router(
-    build_hitl_router(
+hitl_router = build_hitl_router(
         get_request_user=_get_request_user,
         resolve_agent_instance=_resolve_agent_instance,
         await_if_needed=_await_if_needed,
@@ -3718,10 +3711,9 @@ app.include_router(
         get_hitl_store=get_hitl_store,
         get_hitl_gate=get_hitl_gate,
     )
-)
+app.include_router(hitl_router)
 
-app.include_router(
-    build_metrics_router(
+metrics_router = build_metrics_router(
         require_metrics_access=_require_metrics_access,
         resolve_agent_instance=_resolve_agent_instance,
         start_time=_start_time,
@@ -3730,10 +3722,9 @@ app.include_router(
         render_llm_metrics_prometheus=render_llm_metrics_prometheus,
         logger=logger,
     )
-)
+app.include_router(metrics_router)
 
-app.include_router(
-    build_project_ops_router(
+project_ops_router = build_project_ops_router(
         get_request_user=_get_request_user,
         resolve_agent_instance=_resolve_agent_instance,
         max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
@@ -3741,10 +3732,9 @@ app.include_router(
         cfg=cfg,
         logger=logger,
     )
-)
+app.include_router(project_ops_router)
 
-app.include_router(
-    build_orchestration_router(
+orchestration_router = build_orchestration_router(
         get_request_user=_get_request_user,
         require_admin_user=_require_admin_user,
         resolve_agent_instance=_resolve_agent_instance,
@@ -3755,7 +3745,20 @@ app.include_router(
         swarm_execute_request_model=_SwarmExecuteRequest,
         serialize_swarm_result=_serialize_swarm_result,
     )
-)
+app.include_router(orchestration_router)
+
+for _router in (
+    health_router,
+    agent_router,
+    rag_router,
+    auth_admin_router,
+    hitl_router,
+    metrics_router,
+    project_ops_router,
+    orchestration_router,
+):
+    for _name, _obj in getattr(_router, "legacy_exports", {}).items():
+        globals()[_name] = _obj
 
 
 

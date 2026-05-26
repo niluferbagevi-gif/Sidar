@@ -115,4 +115,9 @@ def build_agent_router(
     ) -> Any:
         return JSONResponse(uninstall_marketplace_plugin(plugin_id))
 
+    router.legacy_exports = {
+        "register_agent_plugin": register_agent_plugin,
+        "register_agent_plugin_file": register_agent_plugin_file,
+        "plugin_marketplace_catalog": plugin_marketplace_catalog_endpoint,
+    }
     return router

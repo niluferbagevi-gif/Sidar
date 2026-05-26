@@ -28,4 +28,8 @@ def build_health_router(
     async def readiness_check() -> Any:
         return await health_response(True)
 
+    router.legacy_exports = {
+        "health_check": health_check,
+        "readiness_check": readiness_check,
+    }
     return router

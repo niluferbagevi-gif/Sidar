@@ -273,4 +273,14 @@ def build_project_ops_router(
             cfg.GITHUB_REPO = repo_name
         return JSONResponse({"success": ok, "message": msg})
 
+    router.legacy_exports = {
+        "_git_run": _git_run,
+        "get_sessions": get_sessions,
+        "list_project_files": list_project_files,
+        "file_content": file_content,
+        "git_info": git_info,
+        "set_branch": set_branch,
+        "github_repos": github_repos,
+        "github_pr_detail": github_pr_detail,
+    }
     return router
