@@ -896,6 +896,10 @@ class Config:
     SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = get_int_prefixed_env(
         "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
     )
+    SELF_HEAL_DEFAULT_DECISION: str = (
+        get_optional_prefixed_env("SIDAR_SELF_HEAL_DEFAULT_DECISION", "SELF_HEAL_DEFAULT_DECISION")
+        or "reject"
+    ).strip().lower()
     RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_optional_prefixed_env(
         "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES", "RUFF_AUTOFIX_UNSAFE_RULES"
     )

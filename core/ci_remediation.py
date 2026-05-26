@@ -45,6 +45,10 @@ _MYPY_STUB_INSTALL_HINT_PATTERN = re.compile(
     r"(?:uv\s+pip\s+install|python(?:3)?\s+-m\s+pip\s+install|pip\s+install)\s+(?P<pkg>types-[A-Za-z0-9_.-]+)",
     re.IGNORECASE,
 )
+_TIMEOUT_RUNTIME_PATTERN = re.compile(
+    r"\b(timeouterror|timed\s*out|time\s*out|deadline\s+exceeded|operation\s+timed\s+out)\b",
+    re.IGNORECASE,
+)
 _AUTO_INSTALL_PACKAGES: dict[str, str] = {
     "psycopg2": "psycopg2-binary",
 }
@@ -1025,7 +1029,12 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         hitl_reasons.append("syntax_error")
     if any(keyword in combined_text for keyword in ("modulenotfounderror", "importerror")):
         hitl_reasons.append("import_or_dependency_failure")
-    if "timeout" in combined_text:
+    timeout_detected = bool(_TIMEOUT_RUNTIME_PATTERN.search(combined_text))
+    if timeout_detected and "pytest-timeout" in combined_text:
+        timeout_detected = bool(
+            re.search(r"\b(timeouterror|timed\s*out|time\s*out|deadline\s+exceeded)\b", combined_text)
+        )
+    if timeout_detected:
         hitl_reasons.append("timeout_or_flaky_runtime")
     if any(keyword in combined_text for keyword in ("typeerror", "valueerror")):
         hitl_reasons.append("runtime_type_or_value_error")
