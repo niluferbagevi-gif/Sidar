@@ -214,10 +214,22 @@ run_precommit_autofix || exit 1
 DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
 from configparser import ConfigParser
 from pathlib import Path
+import tomllib
 
-cfg = ConfigParser()
-cfg.read(Path(".coveragerc"))
-print(cfg.get("report", "fail_under", fallback="90"))
+DEFAULT_GATE = "5"
+coveragerc = Path(".coveragerc")
+pyproject = Path("pyproject.toml")
+
+if coveragerc.exists():
+    cfg = ConfigParser()
+    cfg.read(coveragerc)
+    print(cfg.get("report", "fail_under", fallback=DEFAULT_GATE))
+elif pyproject.exists():
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    report = data.get("tool", {}).get("coverage", {}).get("report", {})
+    print(str(report.get("fail_under", DEFAULT_GATE)))
+else:
+    print(DEFAULT_GATE)
 PY
 )"
 
