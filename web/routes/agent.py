@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -28,15 +28,16 @@ def build_agent_router(
 
     @router.post("/api/agents/register")
     async def register_agent_plugin(
-        payload: agent_plugin_register_request_model, _user: Any = Depends(require_admin_user)
+        payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
+        data = cast(agent_plugin_register_request_model, payload)
         result = register_plugin_agent(
-            role_name=payload.role_name,
-            source_code=payload.source_code,
-            class_name=payload.class_name,
-            capabilities=payload.capabilities,
-            description=payload.description,
-            version=payload.version,
+            role_name=data.role_name,
+            source_code=data.source_code,
+            class_name=data.class_name,
+            capabilities=data.capabilities,
+            description=data.description,
+            version=data.version,
         )
         return JSONResponse({"success": True, "agent": result})
 
@@ -86,17 +87,19 @@ def build_agent_router(
 
     @router.post("/api/plugin-marketplace/install")
     async def install_plugin_marketplace_item(
-        payload: plugin_marketplace_install_request_model,
+        payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        return JSONResponse(install_marketplace_plugin(payload.plugin_id))
+        data = cast(plugin_marketplace_install_request_model, payload)
+        return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.post("/api/plugin-marketplace/reload")
     async def reload_plugin_marketplace_item(
-        payload: plugin_marketplace_install_request_model,
+        payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        return JSONResponse(install_marketplace_plugin(payload.plugin_id))
+        data = cast(plugin_marketplace_install_request_model, payload)
+        return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.delete("/api/plugin-marketplace/install/{plugin_id}")
     async def uninstall_plugin_marketplace_item(

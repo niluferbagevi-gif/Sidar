@@ -67,7 +67,7 @@ try:
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
 except (ImportError, AttributeError):
-    config_module = None
+    config_module: Any = None
     CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()
@@ -719,7 +719,7 @@ def _doctor_auto_fix_lost_env_keys(
         "database_url_set": "DATABASE_URL",
         "container_database_url_set": "SIDAR_CONTAINER_DATABASE_URL",
         "postgres_user_set": "POSTGRES_USER",
-        "postgres_password_set": "POSTGRES_PASSWORD",
+        "postgres_password_set": "POSTGRES_PASSWORD",  # nosec B105 - env değişkeni adı, parola değeri değil
         "postgres_db_set": "POSTGRES_DB",
     }
     lost_keys: list[str] = []
@@ -1122,11 +1122,12 @@ def run_wizard() -> int:
         if has_last and last_selection is not None and isinstance(last_selection.get("extra_args"), dict)
         else {}
     )
+    args = last_extra_args or {}
     if provider == "ollama" and mode == "cli":
         extra_args["model"] = ask_text(
             "\nKullanılacak Ollama modeli",
             _safe_text(
-                last_extra_args.get("model", getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b")),
+                args.get("model", getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b")),
                 "qwen2.5-coder:7b",
             ),
             default_badge=default_badge if has_last else None,
@@ -1134,12 +1135,12 @@ def run_wizard() -> int:
     elif mode == "web":
         extra_args["host"] = ask_text(
             "\nWeb Sunucu Host IP'si",
-            _safe_host(last_extra_args.get("host", getattr(cfg, "WEB_HOST", "127.0.0.1")), "127.0.0.1"),
+            _safe_host(args.get("host", getattr(cfg, "WEB_HOST", "127.0.0.1")), "127.0.0.1"),
             default_badge=default_badge if has_last else None,
         )
         extra_args["port"] = ask_text(
             "Web Sunucu Portu",
-            _safe_port(last_extra_args.get("port", getattr(cfg, "WEB_PORT", 7860)), "7860"),
+            _safe_port(args.get("port", getattr(cfg, "WEB_PORT", 7860)), "7860"),
             default_badge=default_badge if has_last else None,
         )
 

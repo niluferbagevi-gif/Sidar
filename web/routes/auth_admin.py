@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -26,10 +26,11 @@ def build_auth_admin_router(
     router = APIRouter()
 
     @router.post("/auth/register")
-    async def register_user(payload: register_request_model) -> Any:
-        username = payload.username.strip()
-        password = payload.password
-        tenant_id = payload.tenant_id.strip() or "default"
+    async def register_user(payload: Any) -> Any:
+        data = cast(register_request_model, payload)
+        username = data.username.strip()
+        password = data.password
+        tenant_id = data.tenant_id.strip() or "default"
         if len(username) < 3 or len(password) < 6:
             raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -50,9 +51,10 @@ def build_auth_admin_router(
         )
 
     @router.post("/auth/login")
-    async def login_user(payload: login_request_model) -> Any:
-        username = payload.username.strip()
-        password = payload.password
+    async def login_user(payload: Any) -> Any:
+        data = cast(login_request_model, payload)
+        username = data.username.strip()
+        password = data.password
         agent = await resolve_agent_instance()
         try:
             user = await agent.memory.db.authenticate_user(username=username, password=password)
@@ -101,16 +103,17 @@ def build_auth_admin_router(
 
     @router.post("/admin/prompts")
     async def admin_upsert_prompt(
-        payload: prompt_upsert_request_model, _user: Any = Depends(require_admin_user)
+        payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        role_name = (payload.role_name or "").strip().lower()
-        prompt_text = (payload.prompt_text or "").strip()
+        data = cast(prompt_upsert_request_model, payload)
+        role_name = (data.role_name or "").strip().lower()
+        prompt_text = (data.prompt_text or "").strip()
         if not role_name or not prompt_text:
             raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
 
         agent = await await_if_needed(resolve_agent_instance())
         record = await agent.memory.db.upsert_prompt(
-            role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate)
+            role_name=role_name, prompt_text=prompt_text, activate=bool(data.activate)
         )
         if role_name == "system" and bool(record.is_active):
             agent.system_prompt = record.prompt_text
@@ -118,10 +121,11 @@ def build_auth_admin_router(
 
     @router.post("/admin/prompts/activate")
     async def admin_activate_prompt(
-        payload: prompt_activate_request_model, _user: Any = Depends(require_admin_user)
+        payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
         agent = await await_if_needed(resolve_agent_instance())
-        active = await agent.memory.db.activate_prompt(payload.prompt_id)
+        data = cast(prompt_activate_request_model, payload)
+        active = await agent.memory.db.activate_prompt(data.prompt_id)
         if not active:
             raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
         if active.role_name == "system":
@@ -140,19 +144,20 @@ def build_auth_admin_router(
 
     @router.post("/admin/policies")
     async def admin_upsert_policy(
-        payload: policy_upsert_request_model, _user: Any = Depends(require_admin_user)
+        payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
+        data = cast(policy_upsert_request_model, payload)
         agent = await resolve_agent_instance()
         await agent.memory.db.upsert_access_policy(
-            user_id=payload.user_id.strip(),
-            tenant_id=payload.tenant_id.strip() or "default",
-            resource_type=payload.resource_type.strip().lower(),
-            resource_id=payload.resource_id.strip() or "*",
-            action=payload.action.strip().lower(),
-            effect=payload.effect.strip().lower(),
+            user_id=data.user_id.strip(),
+            tenant_id=data.tenant_id.strip() or "default",
+            resource_type=data.resource_type.strip().lower(),
+            resource_id=data.resource_id.strip() or "*",
+            action=data.action.strip().lower(),
+            effect=data.effect.strip().lower(),
         )
         records = await agent.memory.db.list_access_policies(
-            user_id=payload.user_id.strip(), tenant_id=payload.tenant_id.strip() or "default"
+            user_id=data.user_id.strip(), tenant_id=data.tenant_id.strip() or "default"
         )
         return JSONResponse({"success": True, "items": [serialize_policy(r) for r in records]})
 

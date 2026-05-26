@@ -474,7 +474,8 @@ def sync_env_chain(
                 sync_postgres_password_assignment=all_envs,
             )
         if remove_explicit_urls:
-            file_warnings, file_notes = [], []
+            file_warnings: list[str] = []
+            file_notes: list[str] = []
         else:
             file_warnings, file_notes = _file_skip_diagnostics(
                 spec=spec, assignments=assignments, skipped=summary["skipped"]

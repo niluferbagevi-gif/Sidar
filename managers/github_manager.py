@@ -174,7 +174,9 @@ class GitHubManager:
         if not self._ensure_client():
             return False
         try:
-            self._repo = self._call_with_retry(self._gh.get_repo, repo_name)
+            gh = self._gh
+            assert gh is not None
+            self._repo = self._call_with_retry(gh.get_repo, repo_name)
             self.repo_name = repo_name
             logger.info("Depo yüklendi: %s", repo_name)
             return True
@@ -207,13 +209,15 @@ class GitHubManager:
             return False, []
         try:
             repos: list[dict[str, str]] = []
+            gh = self._gh
+            assert gh is not None
             if owner:
-                account = self._call_with_retry(self._gh.get_user, owner)
+                account = self._call_with_retry(gh.get_user, owner)
                 account_type = str(getattr(account, "type", "")).lower()
                 repo_type = "all" if account_type == "organization" else "owner"
                 source = account.get_repos(type=repo_type)
             else:
-                source = self._call_with_retry(self._gh.get_user).get_repos(visibility="all")
+                source = self._call_with_retry(gh.get_user).get_repos(visibility="all")
 
             for i, repo in enumerate(source):
                 if i >= limit:

@@ -596,7 +596,7 @@ class CodeManager:
         available = False
         try:
             probe = subprocess.run(  # nosec B603
-                ["nvidia-smi"],
+                [shutil.which("nvidia-smi") or "nvidia-smi"],
                 capture_output=True,
                 text=True,
                 timeout=3,
@@ -607,13 +607,6 @@ class CodeManager:
         except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
             pass
 
-        if not available:
-            try:
-                import torch  # type: ignore
-
-                available = bool(torch.cuda.is_available())
-            except Exception:
-                available = False
 
         self._gpu_runtime_available_cached = available
         return available

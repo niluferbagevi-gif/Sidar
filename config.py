@@ -682,7 +682,7 @@ logger = logging.getLogger(__name__)
 _DEPENDENCY_AUTO = object()
 
 
-def _log_once_env(flag: str, fn, *args, fingerprint: str | None = None):
+def _log_once_env(flag: str, fn: Callable[..., Any], *args: Any, fingerprint: str | None = None) -> Any:
     current = os.environ.get(flag, "")
     token = fingerprint or "1"
     if current == token:
@@ -1061,6 +1061,7 @@ class Config:
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = get_database_url()
+    CONTAINER_DATABASE_URL: str | None = None
     SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
