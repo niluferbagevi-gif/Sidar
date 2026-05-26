@@ -106,7 +106,28 @@ def upgrade() -> None:
             if isinstance(index, dict)
         }
 
-    if "idx_access_policies_user_tenant" not in existing_indexes:
+    global_index_conflict = False
+    if bind.engine.name == "postgresql":
+        conflict_table = bind.execute(
+            sa.text(
+                """
+                SELECT tablename
+                FROM pg_indexes
+                WHERE schemaname = ANY (current_schemas(false))
+                  AND indexname = :index_name
+                LIMIT 1
+                """
+            ),
+            {"index_name": "idx_access_policies_user_tenant"},
+        ).scalar()
+        if conflict_table and str(conflict_table) != "access_policies":
+            global_index_conflict = True
+            raise RuntimeError(
+                "Index name conflict detected: idx_access_policies_user_tenant already exists "
+                f"on table '{conflict_table}'. Resolve the naming conflict before applying 0006_access_control_schema."
+            )
+
+    if not global_index_conflict and "idx_access_policies_user_tenant" not in existing_indexes:
         op.create_index(
             "idx_access_policies_user_tenant",
             "access_policies",

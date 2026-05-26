@@ -1498,8 +1498,8 @@ maybe_reset_postgres_volume_after_password_hardening() {
         should_reset="H"
         info "AUTO_INSTALL: RESET_DB=false olduğu için PostgreSQL volume sıfırlama atlandı."
     elif [[ "$NO_INTERACTION" != true ]]; then
-        should_reset=$(prompt_yes_no_with_timeout_default_yes \
-            "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [E/h] ")
+        should_reset=$(prompt_yes_no_with_timeout_default_no \
+            "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [e/H] ")
     fi
 
     local strict_postgres_reset_on_password_change="${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-0}}"
