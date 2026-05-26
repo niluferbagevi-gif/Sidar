@@ -13,7 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
