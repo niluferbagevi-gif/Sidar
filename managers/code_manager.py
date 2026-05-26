@@ -585,8 +585,8 @@ class CodeManager:
 
         logger.warning(
             "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
-            "Öneri: `docker build -t sidar:latest .` ve `.env` içine `DOCKER_TEST_IMAGE=sidar:latest` ekleyin "
-            "veya host ortamında `uv sync --frozen --all-extras` çalıştırın.",
+            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
+            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) Docker dışı fallback için `uv sync --frozen --all-extras` çalıştırın.",
             self.docker_test_image,
         )
 
