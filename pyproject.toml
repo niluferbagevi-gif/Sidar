@@ -488,6 +488,23 @@ line-ending = "lf"
 [tool.mypy]
 python_version = "3.11"
 strict = true
+explicit_package_bases = true
+namespace_packages = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR"
+files = [
+  "agent",
+  "core",
+  "managers",
+  "plugins",
+  "web",
+  "cli.py",
+  "main.py",
+  "web_server.py",
+  "config.py",
+  "sidar_version.py",
+  "github_upload.py",
+  "gui_launcher.py",
+]
 warn_unused_configs = true
 warn_return_any = true
 show_error_codes = true
@@ -502,6 +519,9 @@ exclude = [
   "^web_ui/",
   "^web_ui_react/",
   "^launcher_gui/",
+  "^\\.venv/",
+  "^sidar\\.egg-info/",
+  "^\\.mypy_cache/",
 ]
 
 [[tool.mypy.overrides]]
