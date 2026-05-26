@@ -252,19 +252,69 @@ docker_desktop_wsl_integration_preflight() {
         fi
     fi
     docker_settings_json="$(sidar_read_docker_settings_json || true)"
-    if command -v jq &>/dev/null && [[ -n "$docker_settings_json" ]]; then
-        enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
-        integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '
-            (
-                .IntegratedWslDistros
-                // .integratedWslDistros
-                // .wsl.distros
-                // .integration.wslDistros
-                // []
-            )
-            | (if type=="array" then map(tostring) else [(.|keys[])] end)
-            | join(",")
-        ' 2>/dev/null || true)"
+    if [[ -n "$docker_settings_json" ]]; then
+        if command -v jq &>/dev/null; then
+            enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
+            integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '
+                (
+                    .IntegratedWslDistros
+                    // .integratedWslDistros
+                    // .wsl.distros
+                    // .integration.wslDistros
+                    // []
+                )
+                | (if type=="array" then map(tostring) else [(.|keys[])] end)
+                | join(",")
+            ' 2>/dev/null || true)"
+        elif command -v python3 &>/dev/null; then
+            local _parsed_json
+            _parsed_json="$(DOCKER_SETTINGS_JSON="$docker_settings_json" python3 - <<'PYJSON' 2>/dev/null || true
+import json
+import os
+
+raw = os.environ.get("DOCKER_SETTINGS_JSON", "")
+if not raw:
+    raise SystemExit(0)
+
+try:
+    cfg = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+
+enable = cfg.get("EnableIntegrationWithDefaultWslDistro")
+if enable is None:
+    enable = cfg.get("enableIntegrationWithDefaultWslDistro")
+if enable is None:
+    enable = cfg.get("wslEngineEnabled")
+if enable is None and isinstance(cfg.get("integration"), dict):
+    enable = cfg["integration"].get("wslEngineEnabled")
+
+distros = cfg.get("IntegratedWslDistros")
+if distros is None:
+    distros = cfg.get("integratedWslDistros")
+if distros is None and isinstance(cfg.get("wsl"), dict):
+    distros = cfg["wsl"].get("distros")
+if distros is None and isinstance(cfg.get("integration"), dict):
+    distros = cfg["integration"].get("wslDistros")
+
+if isinstance(distros, dict):
+    names = [str(k) for k in distros.keys() if str(k)]
+elif isinstance(distros, list):
+    names = [str(v) for v in distros if str(v)]
+else:
+    names = []
+
+print("" if enable is None else str(enable))
+print(",".join(names))
+PYJSON
+)"
+            if [[ -n "$_parsed_json" ]]; then
+                enable_default="$(printf '%s
+' "$_parsed_json" | sed -n '1p')"
+                integrated_csv="$(printf '%s
+' "$_parsed_json" | sed -n '2p')"
+            fi
+        fi
     else
         enable_default="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$v=\$cfg.EnableIntegrationWithDefaultWslDistro; if (\$null -eq \$v) { \$v=\$cfg.enableIntegrationWithDefaultWslDistro }; if (\$null -eq \$v) { \$v=\$cfg.wslEngineEnabled }; if (\$null -eq \$v -and \$null -ne \$cfg.integration) { \$v=\$cfg.integration.wslEngineEnabled }; if (\$null -eq \$v) { '' } else { [string]\$v } }" || true)"
         integrated_csv="$(wsl_powershell_read "\$p=Join-Path \$env:APPDATA 'Docker\\settings-store.json'; if (!(Test-Path \$p)) { \$p=Join-Path \$env:APPDATA 'Docker\\settings.json' }; if (Test-Path \$p) { \$cfg=Get-Content \$p -Raw | ConvertFrom-Json; \$list=\$null; if (\$cfg.IntegratedWslDistros) { \$list=@(\$cfg.IntegratedWslDistros) } elseif (\$cfg.integratedWslDistros) { \$list=@(\$cfg.integratedWslDistros) } elseif (\$null -ne \$cfg.wsl -and \$null -ne \$cfg.wsl.distros) { if (\$cfg.wsl.distros -is [System.Array]) { \$list=@(\$cfg.wsl.distros) } else { \$list=@(\$cfg.wsl.distros.PSObject.Properties | Select-Object -ExpandProperty Name) } } elseif (\$null -ne \$cfg.integration -and \$null -ne \$cfg.integration.wslDistros) { if (\$cfg.integration.wslDistros -is [System.Array]) { \$list=@(\$cfg.integration.wslDistros) } else { \$list=@(\$cfg.integration.wslDistros.PSObject.Properties | Select-Object -ExpandProperty Name) } }; if (\$list) { \$list | ForEach-Object { [string]\$_ } | Where-Object { \$_ } | Select-Object -Unique | Join-String -Separator ',' } }" || true)"
