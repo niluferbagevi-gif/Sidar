@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -27,7 +27,7 @@ def build_auth_admin_router(
 
     @router.post("/auth/register")
     async def register_user(payload: Any) -> Any:
-        data = cast(register_request_model, payload)
+        data: Any = payload
         username = data.username.strip()
         password = data.password
         tenant_id = data.tenant_id.strip() or "default"
@@ -52,7 +52,7 @@ def build_auth_admin_router(
 
     @router.post("/auth/login")
     async def login_user(payload: Any) -> Any:
-        data = cast(login_request_model, payload)
+        data: Any = payload
         username = data.username.strip()
         password = data.password
         agent = await resolve_agent_instance()
@@ -105,7 +105,7 @@ def build_auth_admin_router(
     async def admin_upsert_prompt(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data = cast(prompt_upsert_request_model, payload)
+        data: Any = payload
         role_name = (data.role_name or "").strip().lower()
         prompt_text = (data.prompt_text or "").strip()
         if not role_name or not prompt_text:
@@ -124,7 +124,7 @@ def build_auth_admin_router(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
         agent = await await_if_needed(resolve_agent_instance())
-        data = cast(prompt_activate_request_model, payload)
+        data: Any = payload
         active = await agent.memory.db.activate_prompt(data.prompt_id)
         if not active:
             raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
@@ -146,7 +146,7 @@ def build_auth_admin_router(
     async def admin_upsert_policy(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data = cast(policy_upsert_request_model, payload)
+        data: Any = payload
         agent = await resolve_agent_instance()
         await agent.memory.db.upsert_access_policy(
             user_id=data.user_id.strip(),

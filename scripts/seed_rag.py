@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Protocol
+from typing import Any, cast, Protocol
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INCLUDE_PATTERNS = (
@@ -293,7 +293,7 @@ def _build_store(rag_dir: Path, *, initialize_vector: bool) -> SeedDocumentStore
         use_gpu=bool(getattr(cfg, "USE_GPU", False)),
         gpu_device=int(getattr(cfg, "GPU_DEVICE", 0) or 0),
         mixed_precision=bool(getattr(cfg, "GPU_MIXED_PRECISION", False)),
-        cfg=cfg,
+        cfg=cast(Any, cfg),
         initialize_vector=initialize_vector,
     )
 

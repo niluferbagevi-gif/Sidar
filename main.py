@@ -54,6 +54,7 @@ class DummyConfig:
 
 
 CONFIG_IMPORT_OK = True
+config_module: Any
 logger = logging.getLogger(__name__)
 _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 _DOCTOR_APPLY_ALL_APPROVED: bool | None = None
@@ -67,7 +68,7 @@ try:
     if hasattr(cfg, "initialize_directories"):
         cfg.initialize_directories()
 except (ImportError, AttributeError):
-    config_module: Any = None
+    config_module = None
     CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()

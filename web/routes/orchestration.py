@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -26,7 +26,7 @@ def build_orchestration_router(
     async def execute_swarm(
         payload: Any, user: Any = Depends(get_request_user)
     ) -> Any:
-        data = cast(swarm_execute_request_model, payload)
+        data: Any = payload
         agent = await resolve_agent_instance()
         orchestrator = swarm_orchestrator_cls(getattr(agent, "cfg", cfg))
         session_id = data.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -30,7 +30,7 @@ def build_agent_router(
     async def register_agent_plugin(
         payload: Any, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        data = cast(agent_plugin_register_request_model, payload)
+        data: Any = payload
         result = register_plugin_agent(
             role_name=data.role_name,
             source_code=data.source_code,
@@ -90,7 +90,7 @@ def build_agent_router(
         payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        data = cast(plugin_marketplace_install_request_model, payload)
+        data: Any = payload
         return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.post("/api/plugin-marketplace/reload")
@@ -98,7 +98,7 @@ def build_agent_router(
         payload: Any,
         _user: Any = Depends(require_admin_user),
     ) -> Any:
-        data = cast(plugin_marketplace_install_request_model, payload)
+        data: Any = payload
         return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.delete("/api/plugin-marketplace/install/{plugin_id}")

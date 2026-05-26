@@ -19,7 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
 
 from sidar_assets.paths import migrations_path
@@ -855,7 +855,7 @@ def _query_entity_graph_counts_from_store(rag_dir: Path) -> dict[str, Any]:
             PGVECTOR_EMBEDDING_MODEL=getattr(Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
         )
-        store = DocumentStore(rag_dir, cfg=cfg, initialize_vector=False)
+        store = DocumentStore(rag_dir, cfg=cast(Any, cfg), initialize_vector=False)
         graph = store._ensure_entity_graph()  # noqa: SLF001 - doctor verification probe.
         nodes = graph.get("nodes", {})
         edges = graph.get("edges", [])
@@ -1118,7 +1118,8 @@ def check_environment_profile() -> DoctorCheck:
 
 def check_gpu_memory_config() -> DoctorCheck:
     """Report effective local model and VRAM budget settings."""
-    from config import Config, normalize_gpu_memory_fractions
+    from config import Config
+    from core.config_gpu_detect import normalize_gpu_memory_fractions
 
     provider = str(getattr(Config, "AI_PROVIDER", "ollama") or "ollama").strip().lower()
     coding_model = str(getattr(Config, "CODING_MODEL", "") or "").strip()

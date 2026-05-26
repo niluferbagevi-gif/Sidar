@@ -2875,7 +2875,7 @@ def get_shared_document_store(
         store = _DOCUMENT_STORE_SINGLETONS.get(key)
         if store is None:
             store = DocumentStore(
-                store_dir,
+                Path(store_dir),
                 top_k=cfg.RAG_TOP_K,
                 chunk_size=cfg.RAG_CHUNK_SIZE,
                 chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
