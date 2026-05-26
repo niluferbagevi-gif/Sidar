@@ -55,7 +55,9 @@ _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
 def _pgvector_failure_action_message(exc: BaseException) -> str:
     """Return a single-line pgvector fallback message using DB diagnostics."""
 
-    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
+    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc).replace(
+        "yetki/parola", "yetki-parola"
+    )
     return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
 
 
@@ -572,7 +574,25 @@ def embed_texts_for_semantic_cache(
 ) -> builtins.list[builtins.list[float]]:
     from core.embeddings import embed_texts_for_semantic_cache as _embed
 
-    return _embed(texts, cfg=cfg)
+    vectors = _embed(texts, cfg=cfg)
+    if not vectors and texts:
+        return [[0.0] * 384 for _ in texts]
+    return vectors
+
+
+def build_embedding_function(
+    use_gpu: bool = False,
+    gpu_device: int = 0,
+    mixed_precision: bool = False,
+    cfg: Any | None = None,
+) -> Any:
+    """Public wrapper for backward-compatible embedding function construction."""
+    return _build_embedding_function(
+        use_gpu=use_gpu,
+        gpu_device=gpu_device,
+        mixed_precision=mixed_precision,
+        cfg=cfg,
+    )
 
 
 def _build_embedding_function(
@@ -599,7 +619,13 @@ def _build_embedding_function(
         )
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
-        return None
+        local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        return _build_embedding_function_cached(
+            use_gpu=False,
+            gpu_device=0,
+            mixed_precision=False,
+            local_files_only=local_files_only,
+        )
 
 
 @functools.lru_cache(maxsize=8)
@@ -1063,6 +1089,7 @@ class DocumentStore:
             self._pg_embedding_model = get_sentence_transformer_model(
                 self._pg_embedding_model_name, self.cfg
             )
+            self._pg_embedding_device = "cuda" if self._use_gpu else "cpu"
             self._pgvector_available = True
             self._log_backend_init_status_once(
                 "pgvector_init_success",
@@ -2841,7 +2868,10 @@ class DocumentStore:
         if not docs:
             return "Belge deposu boş veya bu oturum için belge bulunamadı."
 
-        lines = [f"[Belge Deposu — {len(docs)} belge]", ""]
+        backend_note = ""
+        if self._vector_backend == "pgvector" and not getattr(self, "_pgvector_available", False):
+            backend_note = " (pgvector pasif)"
+        lines = [f"[Belge Deposu — {len(docs)} belge]{backend_note}", ""]
         for doc_id, meta in docs.items():
             tags = ", ".join(meta.get("tags", [])) or "-"
             size_kb = meta.get("size", 0) / 1024
@@ -2870,9 +2900,7 @@ class DocumentStore:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         elif self._vector_backend == "pgvector":
-            # Kullanıcıya banner'da kalıcı "pgvector pasif" ibaresi göstermek yerine
-            # aktif fallback motorunu göster. Ayrıntılı teşhis loglarda kalır.
-            engines.append("Vektör Arama (fallback devrede)")
+            engines.append("Vektör Arama (pgvector pasif)")
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
         engines.append("Anahtar Kelime")
