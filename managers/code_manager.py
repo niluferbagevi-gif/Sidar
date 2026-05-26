@@ -1118,9 +1118,16 @@ class CodeManager:
                     "  done",
                     "fi",
                     "if ! command -v uv >/dev/null 2>&1; then",
-                    "  echo 'uv bulunamadı: sandbox imajında uv önceden kurulu olmalı. '"
-                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest '"
-                    "'olarak ayarlayın veya imaja /bin/uv ekleyin.' >&2",
+                    "  if command -v python >/dev/null 2>&1; then",
+                    "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || true",
+                    "    if [ -x /usr/local/bin/uv ]; then export PATH=/usr/local/bin:$PATH; fi",
+                    "  fi",
+                    "fi",
+                    "if ! command -v uv >/dev/null 2>&1; then",
+                    "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap başarısız oldu. '"
+                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak ayarlayın. '"
+                    "'Bootstrap logu: /tmp/sidar-uv-bootstrap.log' >&2",
+                    "  cat /tmp/sidar-uv-bootstrap.log >&2 || true",
                     "  exit 127",
                     "fi",
                 ]
