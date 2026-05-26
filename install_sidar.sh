@@ -2804,7 +2804,7 @@ install_system_dependencies() {
         fi
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential shellcheck software-properties-common zstd ca-certificates gnupg \
+            curl wget git build-essential shellcheck software-properties-common zstd ca-certificates gnupg jq \
             postgresql-client-common postgresql-client
 
         ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."
@@ -2952,12 +2952,12 @@ EOF
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
+        sudo dnf install -y curl wget git zstd jq nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
         info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
     elif command -v pacman &>/dev/null; then
         warn "Arch tabanlı sistem tespit edildi. Paketler pacman ile kuruluyor..."
         sudo pacman -Sy --noconfirm --needed \
-            curl wget git zstd nodejs npm portaudio alsa-utils v4l-utils ffmpeg
+            curl wget git zstd jq nodejs npm portaudio alsa-utils v4l-utils ffmpeg
         node_bin="$(resolve_native_binary_path node || true)"
         if [[ -n "$node_bin" ]]; then
             NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
@@ -2972,7 +2972,7 @@ EOF
         warn "OpenSUSE/SLES tabanlı sistem tespit edildi. Paketler zypper ile kuruluyor..."
         sudo zypper --non-interactive refresh
         sudo zypper --non-interactive install --no-recommends \
-            curl wget git zstd nodejs npm portaudio19-devel alsa-utils v4l-utils ffmpeg
+            curl wget git zstd jq nodejs npm portaudio19-devel alsa-utils v4l-utils ffmpeg
         node_bin="$(resolve_native_binary_path node || true)"
         if [[ -n "$node_bin" ]]; then
             NODE_MAJOR="$("$node_bin" -v | sed 's/^v//' | cut -d. -f1)"
@@ -2987,7 +2987,7 @@ EOF
         warn "macOS (Homebrew) ortamı tespit edildi. Paketler brew ile kuruluyor..."
         brew update
         brew install \
-            curl wget git zstd "${node_brew_formula}" ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
+            curl wget git zstd jq "${node_brew_formula}" ffmpeg portaudio || warn "Bazı Homebrew paketleri kurulamadı; eksikleri manuel tamamlayın."
         info "Host Redis kurulumu atlandı. Servisleri Docker Compose ile yönetmeniz önerilir."
 
         if brew list "${node_brew_formula}" &>/dev/null; then
