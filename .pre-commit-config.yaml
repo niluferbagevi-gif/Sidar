@@ -23,6 +23,13 @@ repos:
         pass_filenames: false
         types_or: [python, pyi]
 
+
+      - id: sync-core-install-manifest
+        name: sync core install manifest
+        entry: scripts/sync_install_manifest.sh
+        language: system
+        pass_filenames: false
+        files: ^(core/memory\.py|core/multimodal\.py)$
       - id: shellcheck
         name: shellcheck shell scripts
         entry: uv run shellcheck --severity=warning -x
