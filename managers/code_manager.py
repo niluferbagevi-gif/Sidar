@@ -233,6 +233,8 @@ class CodeManager:
             or getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-slim")
         )
         configured_test_image = str(getattr(self.cfg, "DOCKER_TEST_IMAGE", "") or "").strip()
+        if not configured_test_image:
+            configured_test_image = "sidar:latest"
         self._docker_test_image_explicit = bool(
             getattr(self.cfg, "DOCKER_TEST_IMAGE_EXPLICIT", False)
         ) or (bool(configured_test_image) and configured_test_image != self.docker_image)

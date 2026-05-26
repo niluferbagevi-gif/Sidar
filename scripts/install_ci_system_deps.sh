@@ -4,6 +4,11 @@ set -euo pipefail
 # Install OS-level packages required by Python deps in CI/local Linux hosts.
 # Keeping this in a script provides environment parity between developer machines
 # and GitHub Actions.
+#
+# Optional Docker-based test flow:
+#   - Build project image: docker build -t sidar:latest .
+#   - Set DOCKER_TEST_IMAGE=sidar:latest so CodeManager runs pytest/mypy in the
+#     project image where uv/pytest/mypy toolchain is available.
 
 PACKAGES=(portaudio19-dev shellcheck bats)
 
@@ -36,3 +41,9 @@ fi
 
 ${SUDO} apt-get update
 ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
+
+if command -v docker >/dev/null 2>&1; then
+  echo "Docker detected. Recommended CI/runtime setting: DOCKER_TEST_IMAGE=sidar:latest"
+else
+  echo "Docker CLI not found; skip Docker image guidance in this environment."
+fi
