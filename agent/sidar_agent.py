@@ -817,6 +817,8 @@ class SidarAgent:
                 "0",
             }:
                 human_approval = False
+            elif human_approval is None and default_hitl_decision in {"prompt", "ask", "interactive"}:
+                human_approval = None
             if human_approval is False:
                 remediation_loop["status"] = "rejected"
                 self._update_remediation_step(
