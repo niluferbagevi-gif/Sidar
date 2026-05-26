@@ -27,7 +27,8 @@ def upgrade() -> None:
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
     require_pgvector = vector_backend == "pgvector"
 
-    vector_available = op.execute(
+    # NOT: op.execute() bir Result döndürmez (None). SELECT için bağlı connection'ı kullan.
+    vector_available = bind.execute(
         text(
             """
             SELECT EXISTS (
