@@ -195,6 +195,14 @@ def _is_allowed_validation_command(command: str) -> bool:
         return False
     if not parts:
         return False
+    if _RUFF_UNSAFE_FIX_ARG in parts:
+        has_inline_select = any(token.startswith("--select=") for token in parts)
+        has_split_select = any(
+            token == "--select" and idx + 1 < len(parts) and bool(parts[idx + 1].strip())
+            for idx, token in enumerate(parts)
+        )
+        if not (has_inline_select or has_split_select):
+            return False
 
     def _is_allowed_pytest_arg(arg: str) -> bool:
         return (
@@ -1071,7 +1079,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         }
     )
     ruff_failure_detected = "ruff" in combined_text
-    unsafe_selectors = _configured_ruff_unsafe_selectors()
+    unsafe_selectors = list(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
     autofix_commands = [build_ruff_autofix_command()] if ruff_failure_detected else []
     unsafe_autofix_policy = {
         "unsafe_fixes_default": False,
