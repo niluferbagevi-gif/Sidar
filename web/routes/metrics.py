@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -9,6 +10,13 @@ from fastapi import Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from web.routes import LegacyExportRouter
+
+
+def _resolve_web_server_helper(name: str, default: Any) -> Any:
+    web_server_mod = sys.modules.get("web_server")
+    if web_server_mod is None:
+        return default
+    return getattr(web_server_mod, name, default)
 
 
 def build_metrics_router(
@@ -113,16 +121,13 @@ def build_metrics_router(
     async def llm_prometheus_metrics(
         _user: dict[str, Any] = Depends(require_metrics_access),
     ) -> Response:
-        snapshot = get_llm_metrics_collector().snapshot()
-        llm_part = render_llm_metrics_prometheus(snapshot)
-        delegation_part = ""
-        try:
-            from core.agent_metrics import get_agent_metrics_collector
-
-            delegation_part = get_agent_metrics_collector().render_prometheus()
-        except Exception as exc:
-            logger.debug("Delegation metrikleri render edilemedi: %s", exc)
-        return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
+        collector_factory = _resolve_web_server_helper("get_llm_metrics_collector", get_llm_metrics_collector)
+        renderer = _resolve_web_server_helper(
+            "render_llm_metrics_prometheus", render_llm_metrics_prometheus
+        )
+        snapshot = collector_factory().snapshot()
+        llm_part = renderer(snapshot)
+        return Response(content=llm_part, media_type="text/plain; version=0.0.4")
 
     @router.get("/metrics/llm")
     @router.get("/api/budget")
