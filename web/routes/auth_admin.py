@@ -67,13 +67,17 @@ def build_auth_admin_router(
 
         agent = await resolve_agent_instance()
         try:
-            user = await await_if_needed(
-                agent.memory.db.register_user(
-                    username=username, password=password, tenant_id=tenant_id
-                )
+            register_result = agent.memory.db.register_user(
+                username=username, password=password, tenant_id=tenant_id
             )
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
+        try:
+            user = await await_if_needed(register_result)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail="Kullanıcı kaydı işlenirken beklenmeyen bir hata oluştu"
+            ) from exc
 
         token = await issue_auth_token(agent, user)
         return JSONResponse(
