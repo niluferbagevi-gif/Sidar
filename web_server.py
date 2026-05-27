@@ -3686,7 +3686,7 @@ rag_router = build_rag_router(
 app.include_router(rag_router)
 
 auth_admin_router = build_auth_admin_router(
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         await_if_needed=_await_if_needed,
         get_request_user=_get_request_user,
         require_admin_user=_require_admin_user,

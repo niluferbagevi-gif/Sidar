@@ -159,7 +159,7 @@ def build_auth_admin_router(
         record = await agent.memory.db.upsert_prompt(
             role_name=role_name, prompt_text=prompt_text, activate=bool(data.activate)
         )
-        if role_name == "system" and bool(record.is_active):
+        if role_name == "system":
             agent.system_prompt = record.prompt_text
         return JSONResponse(serialize_prompt(record))
 
