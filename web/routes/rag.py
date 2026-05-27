@@ -19,12 +19,15 @@ def build_rag_router(
     *,
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     await_if_needed: Callable[[Any], Awaitable[Any]],
-    max_rag_upload_bytes: int,
+    max_rag_upload_bytes: int | Callable[[], int],
     server_root: Path,
     logger: Any,
 ) -> LegacyExportRouter:
     """Build router for RAG document management endpoints."""
     router = LegacyExportRouter()
+    get_max_rag_upload_bytes = (
+        max_rag_upload_bytes if callable(max_rag_upload_bytes) else (lambda: max_rag_upload_bytes)
+    )
 
     @router.get("/rag/docs")
     async def rag_list_docs() -> Any:
@@ -51,10 +54,11 @@ def build_rag_router(
 
         if not target.exists() or not target.is_file():
             raise HTTPException(status_code=404, detail="Dosya bulunamadı.")
-        if target.stat().st_size > max_rag_upload_bytes:
+        max_bytes = int(get_max_rag_upload_bytes())
+        if target.stat().st_size > max_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_rag_upload_bytes} bayt",
+                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes} bayt",
             )
 
         agent = await resolve_agent_instance()
@@ -90,13 +94,14 @@ def build_rag_router(
         session_id = agent.memory.active_session_id or "global"
         temp_dir = None
         try:
-            data = await file.read(max_rag_upload_bytes + 1)
-            if len(data) > max_rag_upload_bytes:
+            max_bytes = int(get_max_rag_upload_bytes())
+            data = await file.read(max_bytes + 1)
+            if len(data) > max_bytes:
                 raise HTTPException(
                     status_code=413,
                     detail=(
                         "Dosya çok büyük. Maksimum izin verilen boyut: "
-                        f"{max_rag_upload_bytes // (1024 * 1024)} MB"
+                        f"{max_bytes // (1024 * 1024)} MB"
                     ),
                 )
 
