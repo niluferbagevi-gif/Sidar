@@ -3731,7 +3731,7 @@ project_ops_router = build_project_ops_router(
         get_request_user=_get_request_user,
         resolve_agent_instance=_resolve_agent_instance,
         max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
-        server_root=Path(__file__).parent.resolve(),
+        server_root=lambda: Path(__file__).parent.resolve(),
         cfg=cfg,
         logger=logger,
     )

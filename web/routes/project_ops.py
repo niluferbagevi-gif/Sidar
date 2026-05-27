@@ -75,11 +75,12 @@ def build_project_ops_router(
     get_request_user: Callable[..., Any],
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     max_file_content_bytes: int,
-    server_root: Path,
+    server_root: Path | Callable[[], Path],
     cfg: Any,
     logger: Any,
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
+    resolve_server_root = server_root if callable(server_root) else (lambda: server_root)
 
     @router.get("/sessions")
     async def get_sessions(request: Request, user: Any = Depends(get_request_user)) -> Any:
@@ -134,20 +135,22 @@ def build_project_ops_router(
 
     @router.get("/files")
     async def list_project_files(path: str = "") -> Any:
-        target = (server_root / path).resolve()
+        root = resolve_server_root()
+        root = root.resolve()
+        target = (root / path).resolve()
         try:
-            target.relative_to(server_root)
+            target.relative_to(root)
         except ValueError:
             return JSONResponse({"error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403)
         if not target.exists():
             return JSONResponse({"error": f"Dizin bulunamadı: {path}"}, status_code=404)
         if not target.is_dir():
-            return JSONResponse({"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=404)
+            return JSONResponse({"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=400)
         items = []
         for item in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
             if item.name.startswith(".") or item.name in ("__pycache__", "node_modules"):
                 continue
-            rel = str(item.relative_to(server_root))
+            rel = str(item.relative_to(root))
             items.append(
                 {
                     "name": item.name,
@@ -156,19 +159,21 @@ def build_project_ops_router(
                     "size": item.stat().st_size if item.is_file() else 0,
                 }
             )
-        return JSONResponse({"path": str(target.relative_to(server_root)) if path else ".", "items": items})
+        return JSONResponse({"path": str(target.relative_to(root)) if path else ".", "items": items})
 
     @router.get("/file-content")
     async def file_content(path: str) -> Any:
-        target = (server_root / path).resolve()
+        root = resolve_server_root()
+        root = root.resolve()
+        target = (root / path).resolve()
         try:
-            target.relative_to(server_root)
+            target.relative_to(root)
         except ValueError:
             return JSONResponse({"error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403)
         if not target.exists():
             return JSONResponse({"error": f"Dosya bulunamadı: {path}"}, status_code=404)
         if target.is_dir():
-            return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=404)
+            return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=400)
         if target.suffix.lower() not in _SAFE_EXTENSIONS:
             return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
         size_bytes = target.stat().st_size
@@ -185,7 +190,7 @@ def build_project_ops_router(
 
     @router.get("/git-info")
     async def git_info() -> Any:
-        root = str(server_root)
+        root = str(resolve_server_root().resolve())
         branch = await asyncio.to_thread(_git_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root, logger) or "main"
         remote = await asyncio.to_thread(_git_run, ["git", "remote", "get-url", "origin"], root, logger) or ""
         default_branch_raw = await asyncio.to_thread(
@@ -204,7 +209,7 @@ def build_project_ops_router(
 
     @router.get("/git-branches")
     async def git_branches() -> Any:
-        root = str(server_root)
+        root = str(resolve_server_root().resolve())
         branches_raw = await asyncio.to_thread(
             _git_run, ["git", "branch", "--format=%(refname:short)"], root, logger
         )
@@ -220,7 +225,7 @@ def build_project_ops_router(
             return JSONResponse({"success": False, "error": "Dal adı boş."}, status_code=400)
         if not _BRANCH_RE.match(branch_name):
             return JSONResponse({"success": False, "error": "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir."}, status_code=400)
-        root = str(server_root)
+        root = str(resolve_server_root().resolve())
         try:
             await asyncio.to_thread(
                 subprocess.check_output,
