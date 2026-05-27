@@ -2100,14 +2100,12 @@ def _load_plugin_agent_class(
                     status_code=400, detail="Plugin BaseAgent doğrulanamadı"
                 ) from exc
         # Bazı ortamlarda BaseAgent aynı modülden yeniden yüklenmiş farklı kimliklerle gelebilir.
-        # Bu durumda yalnızca tam modül+sınıf adı eşleşmesine izin ver.
+        # Bu durumda MRO zincirinde agent.base_agent modülünden gelen bir taban sınıf görmek yeterlidir.
         plugin_baseagent = namespace.get("BaseAgent")
         for base in candidate_mro[1:]:
             if plugin_baseagent is not None and base is plugin_baseagent:
                 return True
-            if getattr(base, "__name__", "") == "BaseAgent" and getattr(
-                base, "__module__", ""
-            ) == "agent.base_agent":
+            if getattr(base, "__module__", "") == "agent.base_agent":
                 return True
         return False
 
