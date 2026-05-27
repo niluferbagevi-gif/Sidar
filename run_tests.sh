@@ -724,6 +724,7 @@ prepare_test_database() {
     return 1
   fi
 
+  # SQLAlchemy async engine için test URL'i asyncpg sürücüsü ile üretilir.
   export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
   export TEST_DATABASE_URL="${DATABASE_URL}"
   echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"
