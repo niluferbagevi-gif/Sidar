@@ -1533,6 +1533,49 @@ class Database:
             for r in rows
         ]
 
+    async def list_sessions_any_user(self) -> list[SessionRecord]:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, user_id, title, created_at, updated_at
+                    FROM sessions
+                    ORDER BY updated_at DESC
+                    """
+                )
+            return [
+                SessionRecord(
+                    id=str(r["id"]),
+                    user_id=str(r["user_id"]),
+                    title=str(r["title"]),
+                    created_at=str(r["created_at"]),
+                    updated_at=str(r["updated_at"]),
+                )
+                for r in rows
+            ]
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> list[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "SELECT id, user_id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
+            )
+            return cur.fetchall()
+
+        rows = await self._run_sqlite_op(_run, write=False)
+        return [
+            SessionRecord(
+                id=str(r["id"]),
+                user_id=str(r["user_id"]),
+                title=str(r["title"]),
+                created_at=str(r["created_at"]),
+                updated_at=str(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
     async def count_sessions_total(self) -> int:
         if self._backend == "postgresql":
             assert self._pg_pool is not None

@@ -141,6 +141,28 @@ class ConversationMemory:
             for r in rows
         ]
 
+    async def get_all_sessions_any_user(self) -> list[dict[str, Any]]:
+        """Aktif kullanıcı bağlamı olmasa da tüm oturumları listeler.
+
+        Metrik/health gibi auth-bypass izinli salt-okunur yollar için kullanılır.
+        """
+        await self._ensure_initialized()
+        current_user_id = (self.active_user_id or "").strip()
+        if current_user_id:
+            return await self.get_all_sessions()
+        rows = await self.db.list_sessions_any_user()
+        sessions: list[dict[str, Any]] = []
+        for row in rows:
+            sessions.append(
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "updated_at": row.updated_at,
+                    "message_count": len(await self.db.get_session_messages(row.id)),
+                }
+            )
+        return sessions
+
     async def count_sessions_any_user(self) -> int:
         """Aktif kullanıcı bağlamı olmasa da toplam oturum sayısını döndürür.
 
