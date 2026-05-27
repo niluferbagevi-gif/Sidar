@@ -93,8 +93,10 @@ def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
 
 
 def _configured_ruff_unsafe_selectors() -> list[str]:
+    if bool(getattr(Config, "RUFF_AUTOFIX_UNSAFE_RULES_DISABLE", False)):
+        return []
     configured_value = getattr(Config, "RUFF_AUTOFIX_UNSAFE_RULES", None)
-    if configured_value is None:
+    if configured_value is None or not str(configured_value).strip():
         return _normalize_ruff_rule_selectors(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
     return _normalize_ruff_rule_selectors(configured_value)
 

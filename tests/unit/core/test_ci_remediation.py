@@ -55,10 +55,24 @@ def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> 
     )
 
 
-def test_is_allowed_validation_command_respects_empty_ruff_unsafe_allowlist(
+def test_is_allowed_validation_command_uses_default_when_ruff_unsafe_allowlist_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", "")
+
+    assert (
+        ci._is_allowed_validation_command(
+            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+        )
+        is True
+    )
+
+
+def test_is_allowed_validation_command_supports_explicit_ruff_unsafe_allowlist_disable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", "")
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES_DISABLE", True, raising=False)
 
     assert (
         ci._is_allowed_validation_command(
