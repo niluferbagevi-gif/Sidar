@@ -3677,7 +3677,7 @@ agent_router = build_agent_router(
 app.include_router(agent_router)
 
 rag_router = build_rag_router(
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         await_if_needed=_await_if_needed,
         max_rag_upload_bytes=lambda: Config.MAX_RAG_UPLOAD_BYTES,
         server_root=Path(__file__).parent.resolve(),
@@ -3704,13 +3704,13 @@ app.include_router(auth_admin_router)
 
 hitl_router = build_hitl_router(
         get_request_user=_get_request_user,
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         await_if_needed=_await_if_needed,
-        resolve_user_from_token=_resolve_user_from_token,
-        ws_close_policy_violation=_ws_close_policy_violation,
+        resolve_user_from_token=lambda agent, token: _resolve_user_from_token(agent, token),
+        ws_close_policy_violation=lambda ws, reason: _ws_close_policy_violation(ws, reason),
         hitl_ws_clients=_hitl_ws_clients,
-        get_hitl_store=get_hitl_store,
-        get_hitl_gate=get_hitl_gate,
+        get_hitl_store=lambda: get_hitl_store(),
+        get_hitl_gate=lambda: get_hitl_gate(),
     )
 app.include_router(hitl_router)
 
@@ -3740,7 +3740,7 @@ app.include_router(project_ops_router)
 orchestration_router = build_orchestration_router(
         get_request_user=_get_request_user,
         require_admin_user=_require_admin_user,
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         await_if_needed=_await_if_needed,
         swarm_orchestrator_cls=SwarmOrchestrator,
         swarm_task_cls=SwarmTask,
