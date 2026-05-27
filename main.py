@@ -585,13 +585,8 @@ def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> li
 
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
-    """Adjust known verbose Doctor auto-fix commands for interactive launcher UX."""
-    normalized = [str(part) for part in cmd]
-    if normalized[:4] == ["uv", "run", "python", "-m"] and len(normalized) >= 5:
-        module_name = normalized[4]
-        if module_name == "scripts.seed_rag" and "--summary-only" not in normalized:
-            normalized.append("--summary-only")
-    return normalized
+    """Normalize Doctor auto-fix command tokens without injecting extra args."""
+    return [str(part) for part in cmd]
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
@@ -730,7 +725,7 @@ def _revalidate_doctor_check_after_auto_fix(
             "graphrag_entity_memory_ready": "check_graphrag_entity_memory_ready",
         }
         check_attr = doctor_checks.get(check_name)
-        if check_attr:
+        if check_attr and check_name != "database_env":
             with contextlib.suppress(Exception):
                 from core import doctor as doctor_module
 
