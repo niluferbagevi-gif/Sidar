@@ -55,10 +55,12 @@ _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
 def _pgvector_failure_action_message(exc: BaseException) -> str:
     """Return a single-line pgvector fallback message using DB diagnostics."""
 
-    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc).replace(
-        "yetki/parola", "yetki-parola"
+    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
+    return (
+        "pgvector pasif, BM25 fallback aktif edildi. "
+        "DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD uyumunu kontrol edin. "
+        f"Teşhis: {diagnosis}."
     )
-    return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
 
 
 class GraphIndex:
@@ -575,9 +577,19 @@ def embed_texts_for_semantic_cache(
     from core.embeddings import embed_texts_for_semantic_cache as _embed
 
     vectors = _embed(texts, cfg=cfg)
-    if not vectors and texts:
-        return [[0.0] * 384 for _ in texts]
-    return vectors
+    if vectors or not texts:
+        return vectors
+    try:
+        from sentence_transformers import SentenceTransformer
+        model_name = str(getattr(cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2")
+        use_gpu_cfg = str(getattr(cfg, "USE_GPU", "false") or "false").lower() in {"1", "true", "yes", "on"}
+        device = f"cuda:{int(getattr(cfg, 'GPU_DEVICE', 0) or 0)}" if use_gpu_cfg else "cpu"
+        model = SentenceTransformer(model_name, device=device, local_files_only=bool(getattr(cfg, "HF_USE_LOCAL_CACHE_ONLY", False)))
+        raw = model.encode(texts, normalize_embeddings=True)
+        vectors = raw.tolist() if hasattr(raw, "tolist") else [list(v) for v in raw]
+        return vectors
+    except Exception:
+        return []
 
 
 def build_embedding_function(
@@ -620,15 +632,18 @@ def _build_embedding_function(
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
         local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
-        return _build_embedding_function_cached(
-            use_gpu=False,
-            gpu_device=0,
-            mixed_precision=False,
-            local_files_only=local_files_only,
-        )
+        try:
+            return _build_embedding_function_cached(
+                use_gpu=False,
+                gpu_device=0,
+                mixed_precision=False,
+                local_files_only=local_files_only,
+            )
+        except Exception as fallback_exc:
+            logger.warning("⚠️  CPU embedding fonksiyonu da başlatılamadı: %s", fallback_exc)
+            return None
 
 
-@functools.lru_cache(maxsize=8)
 def _build_embedding_function_cached(
     *,
     use_gpu: bool,
@@ -704,6 +719,8 @@ class DocumentStore:
         cfg: Config | None = None,
         initialize_vector: bool = True,
     ) -> None:
+        self._vector_backend = ""
+        self._pgvector_available = False
         self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
@@ -2900,7 +2917,7 @@ class DocumentStore:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         elif self._vector_backend == "pgvector":
-            engines.append("Vektör Arama (pgvector pasif)")
+            engines.append("pgvector (pasif)")
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
         engines.append("Anahtar Kelime")
