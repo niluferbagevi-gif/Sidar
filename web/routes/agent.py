@@ -25,7 +25,7 @@ def build_agent_router(
     require_admin_user: Callable[..., Any],
     register_plugin_agent: Callable[..., Any],
     persist_and_import_plugin_file: Callable[[str, bytes, str], Any],
-    max_file_content_bytes: int,
+    max_file_content_bytes: int | Callable[[], int],
     read_plugin_marketplace_state: Callable[[], dict[str, Any]],
     serialize_marketplace_plugin: Callable[..., dict[str, Any]],
     plugin_marketplace_catalog: dict[str, Any],
@@ -36,6 +36,9 @@ def build_agent_router(
 ) -> LegacyExportRouter:
     """Build router for /api/agents and plugin marketplace endpoints."""
     router = LegacyExportRouter()
+    _resolve_mfcb = (
+        max_file_content_bytes if callable(max_file_content_bytes) else (lambda: max_file_content_bytes)
+    )
 
     def _resolve_web_server_helper(name: str, default: Any) -> Any:
         web_server_mod = sys.modules.get("web_server")
@@ -73,7 +76,7 @@ def build_agent_router(
         await file.close()
         if not data:
             raise HTTPException(status_code=400, detail="Yüklü dosya boş")
-        if len(data) > max_file_content_bytes:
+        if len(data) > int(_resolve_mfcb()):
             raise HTTPException(status_code=413, detail="Dosya çok büyük")
         try:
             source_code = data.decode("utf-8")

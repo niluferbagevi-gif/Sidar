@@ -3669,7 +3669,7 @@ agent_router = build_agent_router(
         require_admin_user=_require_admin_user,
         register_plugin_agent=_register_plugin_agent,
         persist_and_import_plugin_file=_persist_and_import_plugin_file,
-        max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
+        max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
         read_plugin_marketplace_state=_read_plugin_marketplace_state,
         serialize_marketplace_plugin=_serialize_marketplace_plugin,
         plugin_marketplace_catalog=PLUGIN_MARKETPLACE_CATALOG,
@@ -3734,7 +3734,7 @@ app.include_router(metrics_router)
 project_ops_router = build_project_ops_router(
         get_request_user=_get_request_user,
         resolve_agent_instance=lambda: _resolve_agent_instance(),
-        max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
+        max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
         server_root=lambda: Path(__file__).parent.resolve(),
         cfg=cfg,
         logger=logger,

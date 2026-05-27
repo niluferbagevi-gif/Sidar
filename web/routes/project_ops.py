@@ -97,13 +97,16 @@ def build_project_ops_router(
     *,
     get_request_user: Callable[..., Any],
     resolve_agent_instance: Callable[[], Awaitable[Any]],
-    max_file_content_bytes: int,
+    max_file_content_bytes: int | Callable[[], int],
     server_root: Path | Callable[[], Path],
     cfg: Any,
     logger: Any,
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
     resolve_server_root = server_root if callable(server_root) else (lambda: server_root)
+    _resolve_mfcb = (
+        max_file_content_bytes if callable(max_file_content_bytes) else (lambda: max_file_content_bytes)
+    )
 
     @router.get("/sessions")
     async def get_sessions(request: Request, user: Any = Depends(get_request_user)) -> Any:
@@ -200,9 +203,10 @@ def build_project_ops_router(
         if target.suffix.lower() not in _SAFE_EXTENSIONS:
             return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
         size_bytes = target.stat().st_size
-        if size_bytes > max_file_content_bytes:
+        max_bytes = int(_resolve_mfcb())
+        if size_bytes > max_bytes:
             return JSONResponse(
-                {"error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_file_content_bytes} bayt)"},
+                {"error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"},
                 status_code=413,
             )
         try:
