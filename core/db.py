@@ -143,7 +143,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "SQLite degraded mode aktif edildi."
         )
     return (
-        "PostgreSQL bağlantısı başarısız. .env içindeki DATABASE_URL/POSTGRES_* değerlerini "
+        "PostgreSQL bağlantısı başarısız. .env dosyanızdaki DATABASE_URL/POSTGRES_* değerlerini "
         f"ve veritabanı servis durumunu kontrol edin. Teşhis: {diagnosis}. "
         "SQLite degraded mode aktif edildi."
     )
