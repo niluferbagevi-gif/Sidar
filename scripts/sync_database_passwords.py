@@ -509,19 +509,6 @@ def sync_env_chain(
         )
 
     if remove_explicit_urls:
-        removed_url_keys = {
-            key
-            for keys in changed_keys_by_file.values()
-            for key in keys
-            if key in DATABASE_URL_KEYS
-        }
-        if removed_url_keys:
-            notes.append(
-                _message_entry(
-                    f"Removed explicit URL keys: {', '.join(sorted(removed_url_keys))}",
-                    severity="info",
-                )
-            )
         exported_keys = [
             key
             for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
