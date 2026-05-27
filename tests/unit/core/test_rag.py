@@ -999,6 +999,8 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
 async def test_build_embedding_function_gpu_success_and_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    rag._build_embedding_function_cached.cache_clear()
+
     class _Cuda:
         enabled = False
 

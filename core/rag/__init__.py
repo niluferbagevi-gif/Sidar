@@ -610,6 +610,15 @@ def _build_embedding_function(
 
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
     """
+    embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
+    if embedding_module is None:
+        embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
+    embedding_class = getattr(embedding_module, "SentenceTransformerEmbeddingFunction", None)
+    embedding_class_identity = (
+        f"{getattr(embedding_class, '__module__', '')}.{getattr(embedding_class, '__qualname__', '')}:{id(embedding_class)}"
+        if embedding_class is not None
+        else "missing"
+    )
     try:
         local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
         return _build_embedding_function_cached(
@@ -617,6 +626,7 @@ def _build_embedding_function(
             gpu_device=gpu_device,
             mixed_precision=mixed_precision,
             local_files_only=local_files_only,
+            embedding_class_identity=embedding_class_identity,
         )
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
@@ -627,6 +637,7 @@ def _build_embedding_function(
                 gpu_device=0,
                 mixed_precision=False,
                 local_files_only=local_files_only,
+                embedding_class_identity=embedding_class_identity,
             )
         except Exception as cpu_exc:
             logger.warning("⚠️  CPU embedding de başlatılamadı: %s", cpu_exc)
@@ -640,7 +651,9 @@ def _build_embedding_function_cached(
     gpu_device: int,
     mixed_precision: bool,
     local_files_only: bool,
+    embedding_class_identity: str,
 ) -> Any:
+    _ = embedding_class_identity
     embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
     if embedding_module is None:
         embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
