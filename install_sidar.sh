@@ -266,7 +266,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 cb62e274bae2ffc7f923ad50f1c0705127bad0cbaaeac2ad317e0f426a426beb  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
-aa7ab9e58b7302665c4cb8d551c76e8f596af69108b203078acb649d2179c3f9  scripts/install_modules/utils/python_env.sh
+1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
 c64aa4037e8a901cfd5d328feb3feb5d641656386bf0ca4ad4ca025fd2a1dbe3  scripts/install_modules/utils/wsl_integration_autofix.sh
@@ -542,7 +542,7 @@ verify_install_module_hashes_if_present() {
         if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
             warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor."
         else
-            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata). Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
+            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata). Düzeltme için scripts/sync_install_module_hashes.sh çalıştırın veya (risk kabulüyle) ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile devam edin. Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
         fi
     else
         ok "Kurulum modül hash doğrulaması başarılı."
