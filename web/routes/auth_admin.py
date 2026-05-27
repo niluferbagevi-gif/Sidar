@@ -73,7 +73,8 @@ def build_auth_admin_router(
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
         try:
-            user = await await_if_needed(register_result)
+            maybe = await_if_needed(register_result)
+            user = await maybe if inspect.isawaitable(maybe) else maybe
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="Kullanıcı kaydı işlenirken beklenmeyen bir hata oluştu"
@@ -94,9 +95,10 @@ def build_auth_admin_router(
         password = data.password
         agent = await resolve_agent_instance()
         try:
-            user = await await_if_needed(
+            maybe = await_if_needed(
                 agent.memory.db.authenticate_user(username=username, password=password)
             )
+            user = await maybe if inspect.isawaitable(maybe) else maybe
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
@@ -120,9 +122,8 @@ def build_auth_admin_router(
     async def admin_stats(_user: Any = Depends(require_admin_user)) -> Any:
         agent = await resolve_agent_instance()
         if get_admin_stats is not None:
-            stats = get_admin_stats(agent)
-            if inspect.isawaitable(stats):
-                stats = await stats
+            maybe = get_admin_stats(agent)
+            stats = await maybe if inspect.isawaitable(maybe) else maybe
         else:
             stats = await agent.memory.db.get_admin_stats()
         return JSONResponse(stats)
