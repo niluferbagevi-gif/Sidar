@@ -3760,6 +3760,11 @@ for _router in (
     project_ops_router,
     orchestration_router,
 ):
+    for _route in getattr(_router, "routes", ()):
+        _endpoint = getattr(_route, "endpoint", None)
+        _name = getattr(_endpoint, "__name__", "")
+        if _name:
+            globals().setdefault(_name, _endpoint)
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
 
