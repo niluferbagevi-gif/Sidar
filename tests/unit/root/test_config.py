@@ -281,10 +281,11 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
     assert all(call.get("override") in (False, None) for call in calls)
 
 
-def test_config_import_buffers_missing_environment_file_until_logger_status(monkeypatch, capsys):
+def test_config_import_buffers_missing_environment_file_until_logger_status(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
 
     reloaded = importlib.reload(config)
 
