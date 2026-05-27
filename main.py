@@ -585,8 +585,15 @@ def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> li
 
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
-    """Normalize Doctor auto-fix command tokens without injecting extra args."""
-    return [str(part) for part in cmd]
+    """Normalize Doctor auto-fix command tokens and apply launcher-safe defaults."""
+    normalized = [str(part) for part in cmd]
+    if (
+        normalized
+        and normalized[-1] == "scripts.seed_rag"
+        and "--summary-only" not in normalized
+    ):
+        normalized = [*normalized, "--summary-only"]
+    return normalized
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
