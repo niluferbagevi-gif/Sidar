@@ -70,6 +70,11 @@ def _log_first_load_info(message: str, *args: Any) -> None:
     else:
         logger.info(message, *args)
         sidar_logger.info(message, *args)
+        if os.getenv("PYTEST_CURRENT_TEST", "").strip():
+            # pytest varsayılan log yakalama seviyesi WARNING olabildiği için
+            # ilk yüklemedeki kritik dotenv bağlamını görünür kıl.
+            logger.warning(message, *args)
+            sidar_logger.warning(message, *args)
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -1440,12 +1445,12 @@ class Config:
             for notice in _DOTENV_MISSING_FILE_NOTICES:
                 if notice not in missing_notice_items:
                     missing_notice_items.append(notice)
-            _DOTENV_MISSING_FILE_NOTICES.clear()
         if missing_notice_items:
             _log_first_load_info(
                 "Opsiyonel dotenv dosyaları bulunamadı: %s",
                 ", ".join(missing_notice_items),
             )
+            _DOTENV_MISSING_FILE_NOTICES.clear()
 
         if _DOTENV_KEY_SOURCES:
             logger.debug(
