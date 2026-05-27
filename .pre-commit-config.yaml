@@ -30,6 +30,13 @@ repos:
         language: system
         pass_filenames: false
         files: ^(core/memory\.py|core/multimodal\.py)$
+
+      - id: sync-install-module-hashes
+        name: sync install module hashes manifest
+        entry: scripts/sync_install_module_hashes.sh
+        language: system
+        pass_filenames: false
+        files: ^(install_sidar\.sh|scripts/install_modules/.*\.(sh|ps1))$
       - id: shellcheck
         name: shellcheck shell scripts
         entry: uv run shellcheck --severity=warning -x
