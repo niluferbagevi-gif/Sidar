@@ -1774,14 +1774,14 @@ def _schedule_access_audit_log(
 
 
 class _RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
-    password: str = Field(..., min_length=6, max_length=128)
+    username: str = Field(..., max_length=64)
+    password: str = Field(..., max_length=128)
     tenant_id: str = Field(default="default", min_length=1, max_length=64)
 
 
 class _LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=64)
-    password: str = Field(..., min_length=1, max_length=128)
+    username: str = Field(..., max_length=64)
+    password: str = Field(..., max_length=128)
 
 
 class _PromptUpsertRequest(BaseModel):

@@ -4,13 +4,15 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
 
 
 def _parse_payload(model: type[Any], payload: Any) -> Any:
+    if not isinstance(payload, dict) and hasattr(payload, "__dict__"):
+        payload = dict(vars(payload))
     if hasattr(model, "model_validate"):
         return model.model_validate(payload)
     if isinstance(payload, dict):
@@ -55,7 +57,7 @@ def build_auth_admin_router(
     router = LegacyExportRouter()
 
     @router.post("/auth/register")
-    async def register_user(payload: Any) -> Any:
+    async def register_user(payload: dict[str, Any] = Body(...)) -> Any:
         data = _parse_payload(register_request_model, _normalize_register_payload(payload))
         username = data.username.strip()
         password = data.password
@@ -65,9 +67,13 @@ def build_auth_admin_router(
 
         agent = await resolve_agent_instance()
         try:
-            user = await agent.memory.db.register_user(
-                username=username, password=password, tenant_id=tenant_id
+            user = await_if_needed(
+                agent.memory.db.register_user(
+                    username=username, password=password, tenant_id=tenant_id
+                )
             )
+            if inspect.isawaitable(user):
+                user = await user
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
 
@@ -80,13 +86,17 @@ def build_auth_admin_router(
         )
 
     @router.post("/auth/login")
-    async def login_user(payload: Any) -> Any:
+    async def login_user(payload: dict[str, Any] = Body(...)) -> Any:
         data = _parse_payload(login_request_model, payload)
         username = data.username.strip()
         password = data.password
         agent = await resolve_agent_instance()
         try:
-            user = await agent.memory.db.authenticate_user(username=username, password=password)
+            user = await_if_needed(
+                agent.memory.db.authenticate_user(username=username, password=password)
+            )
+            if inspect.isawaitable(user):
+                user = await user
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
