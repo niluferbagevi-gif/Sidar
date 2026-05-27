@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import re
+import sys
 import subprocess  # nosec B404
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -68,6 +69,28 @@ def _git_run(cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = 
         )
     except Exception:
         return ""
+
+
+def _extract_repo_from_remote(remote: str) -> str:
+    value = (remote or "").strip().removesuffix(".git")
+    if not value:
+        return ""
+    if "github.com/" in value:
+        return value.split("github.com/", 1)[1].strip("/")
+    if "github.com:" in value:
+        return value.split("github.com:", 1)[1].strip("/")
+    if value.startswith("http://") or value.startswith("https://"):
+        return value.rstrip("/").rsplit("/", 1)[-1]
+    if ":" in value and "/" in value:
+        return value.split(":", 1)[1].strip("/")
+    return value.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _resolve_web_server_helper(name: str, default: Any) -> Any:
+    web_server_mod = sys.modules.get("web_server")
+    if web_server_mod is None:
+        return default
+    return getattr(web_server_mod, name, default)
 
 
 def build_project_ops_router(
@@ -191,30 +214,37 @@ def build_project_ops_router(
     @router.get("/git-info")
     async def git_info() -> Any:
         root = str(resolve_server_root().resolve())
-        branch = await asyncio.to_thread(_git_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root, logger) or "main"
-        remote = await asyncio.to_thread(_git_run, ["git", "remote", "get-url", "origin"], root, logger) or ""
+        git_run_helper = _resolve_web_server_helper("_git_run", _git_run)
+
+        def _git_run_bound(cmd: list[str], cwd: str) -> str:
+            return git_run_helper(cmd, cwd, logger)
+
+        branch = await asyncio.to_thread(_git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root) or "main"
+        remote = await asyncio.to_thread(_git_run_bound, ["git", "remote", "get-url", "origin"], root) or ""
         default_branch_raw = await asyncio.to_thread(
-            _git_run, ["git", "symbolic-ref", "--short", "HEAD@{upstream}"], root, logger
+            _git_run_bound, ["git", "symbolic-ref", "--short", "HEAD@{upstream}"], root
         ) or ""
         if not default_branch_raw:
             default_branch_raw = await asyncio.to_thread(
-                _git_run, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root, logger
+                _git_run_bound, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root
             ) or ""
         default_branch = default_branch_raw.replace("origin/", "").strip() or "main"
-        repo = ""
-        if remote:
-            repo = remote.removesuffix(".git")
-            repo = repo.split("github.com/")[-1].split("github.com:")[-1]
+        repo = _extract_repo_from_remote(remote)
         return JSONResponse({"branch": branch, "repo": repo or "Sidar", "default_branch": default_branch})
 
     @router.get("/git-branches")
     async def git_branches() -> Any:
         root = str(resolve_server_root().resolve())
+        git_run_helper = _resolve_web_server_helper("_git_run", _git_run)
+
+        def _git_run_bound(cmd: list[str], cwd: str) -> str:
+            return git_run_helper(cmd, cwd, logger)
+
         branches_raw = await asyncio.to_thread(
-            _git_run, ["git", "branch", "--format=%(refname:short)"], root, logger
+            _git_run_bound, ["git", "branch", "--format=%(refname:short)"], root
         )
         branches = [b.strip() for b in branches_raw.split("\n") if b.strip()]
-        current = await asyncio.to_thread(_git_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root, logger) or "main"
+        current = await asyncio.to_thread(_git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root) or "main"
         return JSONResponse({"branches": branches or ["main"], "current": current})
 
     @router.post("/set-branch")
