@@ -1,6 +1,7 @@
 """Smoke tests for application boot sanity."""
 
 import hashlib
+import importlib
 import inspect
 import os
 from types import SimpleNamespace
@@ -13,6 +14,19 @@ from redis.asyncio import Redis
 
 from agent.registry import AgentCatalog
 from tests.helpers import make_test_config
+
+
+def _load_runtime_config_module():
+    """Load the project's root config module with defensive shadowing checks."""
+    config_module = importlib.import_module("config")
+    module_file = str(getattr(config_module, "__file__", "") or "")
+    assert module_file.endswith(
+        "/config.py"
+    ), f"Beklenmeyen config modülü yüklendi (import shadowing): {module_file or '<unknown>'}"
+    assert hasattr(
+        config_module, "get_dotenv_key_source_report"
+    ), "config modülünde get_dotenv_key_source_report bulunamadı (muhtemel import shadowing)."
+    return config_module
 
 
 def _is_external_infra_checks_disabled() -> bool:
@@ -51,7 +65,7 @@ def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
 def _database_url_dotenv_diagnostics(database_url: str) -> str:
     """Build failure diagnostics for smoke DB checks without logging secrets."""
 
-    config_module = pytest.importorskip("config")
+    config_module = _load_runtime_config_module()
     key_sources = config_module.get_dotenv_key_source_report()
     load_events = config_module.get_dotenv_load_report()
     database_url_source = key_sources.get("DATABASE_URL") or {}
@@ -80,7 +94,7 @@ def _database_url_dotenv_diagnostics(database_url: str) -> str:
 
 def _runtime_config_value(name: str, fallback: str) -> str:
     """Dotenv yükleyen uygulama config değerini env fallback'iyle döndür."""
-    config_module = pytest.importorskip("config")
+    config_module = _load_runtime_config_module()
     value = str(getattr(config_module.Config, name, "") or "").strip()
     return value or os.getenv(name, fallback)
 
@@ -113,7 +127,7 @@ def test_boot_agent_catalog_can_instantiate_coder_agent() -> None:
 
 def test_environment_sanity_required_ai_provider_settings() -> None:
     """Aktif AI sağlayıcısı için zorunlu kimlik/endpoint ayarlarının yüklü olduğunu doğrular."""
-    config_module = pytest.importorskip("config")
+    config_module = _load_runtime_config_module()
     cfg = config_module.Config
 
     provider = str(getattr(cfg, "AI_PROVIDER", "") or "").strip().lower()
