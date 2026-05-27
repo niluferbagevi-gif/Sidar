@@ -2094,8 +2094,10 @@ def _load_plugin_agent_class(
             try:
                 if issubclass(candidate, base_cls):
                     return candidate is not base_cls
-            except TypeError:
-                continue
+            except TypeError as exc:
+                raise HTTPException(
+                    status_code=400, detail="Plugin BaseAgent doğrulanamadı"
+                ) from exc
         # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
         # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
         for base in inspect.getmro(candidate)[1:]:
