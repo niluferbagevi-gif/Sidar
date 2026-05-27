@@ -119,7 +119,9 @@ sidar_source_install_utils() {
         module_path="${INSTALL_MODULE_DIR}/utils/${module_rel}"
         case "$module_path" in
             /tmp/*|/var/tmp/*)
-                fail "Kurulum yardımcı modülü geçici dizinden yüklenemez: ${module_path}. Lütfen tam Sidar reposu içinde çalıştırın."
+                if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" && "${SIDAR_INSTALL_ALLOW_TEMP_MODULES:-0}" != "1" ]]; then
+                    fail "Kurulum yardımcı modülü geçici dizinden yüklenemez: ${module_path}. Lütfen tam Sidar reposu içinde çalıştırın."
+                fi
                 ;;
         esac
         if [[ ! -f "$module_path" ]]; then

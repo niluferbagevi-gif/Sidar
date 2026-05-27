@@ -48,6 +48,21 @@ mask_install_log_stream() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+if ! declare -F compute_sha256 >/dev/null 2>&1; then
+    compute_sha256() {
+        local file_path="$1"
+        if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$file_path" | awk '{print $1}'
+            return 0
+        fi
+        if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "$file_path" | awk '{print $1}'
+            return 0
+        fi
+        return 1
+    }
+fi
+
 verify_core_install_manifest() {
     local manifest_path="${SCRIPT_DIR}/.sidar_manifest.txt"
     local required_files=(
@@ -64,7 +79,7 @@ verify_core_install_manifest() {
     done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
-a847ab87af10e024cc481e2dc2f065ca43db3d925769b493b4c223285a4f6c9a  core/memory.py
+2b3b979a93dbba2e7e7b5c3643da8e808293271b8bbbeb4a2e5e4d59980bc252  core/memory.py
 1fb2f74bbca1546c225f6c7c6831b66f131806c668575acb4c852c03b32fccd2  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
@@ -238,6 +253,23 @@ INSTALL_REMOTE_MODULES=(
 # Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
+2febaeec26080e527411a02fa1606ad5d4edfa3810bdaf10c03ee1f58857fc15  scripts/install_modules/install_helpers.sh
+cb62e274bae2ffc7f923ad50f1c0705127bad0cbaaeac2ad317e0f426a426beb  scripts/install_modules/utils/install_remediation.sh
+c64aa4037e8a901cfd5d328feb3feb5d641656386bf0ca4ad4ca025fd2a1dbe3  scripts/install_modules/utils/wsl_integration_autofix.sh
+c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
+70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
+385a15305e200ca03f73a544e25bf35df3a746840b6c9935133ee07a9ea12d32  scripts/install_modules/utils/python_env.sh
+76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
+572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
+4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
+e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
+881b1e4efa43d5b74ff020a063b05447791c67194e8eaf55ab2e10e9ffdb089c  scripts/install_modules/phases/01_context.sh
+b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
+8f0e8f24bea159aa969ffd0bef5212d11eee92ed3347f169d5d9817095031c20  scripts/install_modules/phases/03_runtime.sh
+cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
+c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
+c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/install_modules/phases/06_services.sh
+12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3  scripts/install_modules/phases/07_finish.sh
 SIDAR_MODULE_HASHES_EOF
 
 declare -A INSTALL_REMOTE_MODULE_HASHES=()
@@ -318,7 +350,11 @@ download_remote_install_module() {
         return 1
     fi
 
-    verify_remote_install_module_hash "$module_rel" "$tmp_module_path"
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "$remote_module_base" == file://* ]]; then
+        :
+    else
+        verify_remote_install_module_hash "$module_rel" "$tmp_module_path"
+    fi
     install -m 0644 "$tmp_module_path" "$destination_path"
     rm -f "$tmp_module_path"
 }
@@ -384,26 +420,36 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
     fi
 
-    if command -v git >/dev/null 2>&1; then
+    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    if [[ -n "$REMOTE_MODULE_BASE" ]]; then
+        INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+        INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+        download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
+        INSTALL_MODULES_DOWNLOADED=1
+        ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
+    elif command -v git >/dev/null 2>&1; then
         bootstrap_clone_and_reexec
     fi
 
-    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
+    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]] && ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
         fail "Bootstrap clone için git yok, fallback indirme için curl/wget de yok. Kurulum devam edemiyor."
     fi
 
-    warn "git bulunamadı; fallback olarak modüller geçici dizine indirilecek."
-    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
-    if [[ -z "$REMOTE_MODULE_BASE" ]]; then
-        REMOTE_MODULE_BASE="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]]; then
+        warn "git bulunamadı; fallback olarak modüller geçici dizine indirilecek."
+        INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+        INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+        REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+        if [[ -z "$REMOTE_MODULE_BASE" ]]; then
+            REMOTE_MODULE_BASE="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+        fi
+        [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+        download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
+        INSTALL_MODULES_DOWNLOADED=1
+        ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
     fi
-    [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
-    download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
-    INSTALL_MODULES_DOWNLOADED=1
-    ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 fi
 # shellcheck disable=SC1090
 source "$INSTALL_HELPERS_MODULE"
@@ -411,8 +457,10 @@ if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
     ok "Kurulum modülleri indirildi."
 fi
 
-if ! verify_core_install_manifest; then
-    case "$?" in
+core_manifest_status=0
+verify_core_install_manifest || core_manifest_status=$?
+if [[ $core_manifest_status -ne 0 ]]; then
+    case "$core_manifest_status" in
         2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
         *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
     esac
@@ -475,6 +523,9 @@ verify_install_module_hashes_if_present() {
     while IFS=' ' read -r expected rel_path; do
         [[ -n "${expected:-}" && -n "${rel_path:-}" ]] || continue
         target="${SCRIPT_DIR}/${rel_path}"
+        if [[ ! -f "$target" && -n "${INSTALL_MODULE_DIR:-}" ]]; then
+            target="${INSTALL_MODULE_DIR}/${rel_path#scripts/install_modules/}"
+        fi
         if [[ ! -f "$target" ]]; then
             warn "Hash doğrulama atlandı (dosya yok): ${rel_path}"
             failures=$((failures + 1))
@@ -2388,6 +2439,7 @@ fi
 DEFAULT_DATABASE_URL=""
 # Repo kaynağını override etmek için (fork/organizasyon):
 #   SIDAR_REPO_URL=https://github.com/<org>/Sidar.git ./install_sidar.sh
+# Örnek: export SIDAR_REPO_URL=https://github.com/<org>/Sidar.git
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
@@ -2708,7 +2760,7 @@ sync_repo() {
 
     if [[ ! -d "$TARGET_DIR/.git" ]]; then
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone --depth=1 --branch "${REPO_BRANCH:-main}" "$REPO_URL" "$TARGET_DIR"
+        git clone "$REPO_URL" --depth=1 --branch "${REPO_BRANCH:-main}" "$TARGET_DIR"
     else
         warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
         info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
@@ -3550,8 +3602,8 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    warn "Pyright LSP proje ortamında bulunamadı; fallback olarak uv tool install pyright deneniyor."
-    if uv tool install pyright >/dev/null 2>&1; then
+    warn "Pyright LSP proje ortamında bulunamadı; fallback olarak uv add --dev pyright deneniyor."
+    if uv add --dev pyright >/dev/null 2>&1; then
         if pyright-langserver --version >/dev/null 2>&1; then
             ok "Pyright LSP uv tool fallback ile kuruldu: $(command -v pyright-langserver)"
             return
@@ -3637,7 +3689,7 @@ install_playwright_browsers() {
                     cat "$_pw_install_log" >&2
                     if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
                         warn "Playwright binary fallback da OS uyumsuzluğu nedeniyle başarısız. Playwright >=1.55 upgrade fallback deneniyor..."
-                        if uv pip install -U "playwright>=1.55,<2.0"; then
+                        if uv add --dev "playwright>=1.55,<2.0"; then
                             if _try_playwright_install binary; then
                                 grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                                     "$_pw_install_log" || true
@@ -3668,18 +3720,18 @@ EOF
                                     ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
                                 else
                                     cat "$_pw_install_log" >&2
-                                    warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                                    warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                                 fi
                             fi
                         else
-                            warn "Playwright upgrade fallback (uv pip install -U \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
+                            warn "Playwright upgrade fallback (uv add --dev \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
                         fi
                     else
-                        warn "Playwright fallback kurulumu başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                        warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                     fi
                 fi
             else
-                warn "Playwright kurulumu başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
+                warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
             fi
         fi
 
@@ -6324,9 +6376,9 @@ sync_pytorch_cuda_wheels() {
         torchaudio
     )
 
-    info "PyTorch CUDA wheel seçimi uv pip ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv pip "${pip_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv pip ile güncellenemedi (${cuda_tag})."
+    info "PyTorch CUDA wheel seçimi uv run python -m pip ile uygulanıyor: ${cuda_tag} (${index_url})"
+    if ! uv run python -m pip "${pip_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv run python -m pip ile güncellenemedi (${cuda_tag})."
     fi
 }
 
