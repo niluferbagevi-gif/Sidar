@@ -809,13 +809,14 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         try:
             check = check_func()
             _print_doctor_check_summary(check)
-            _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
+            auto_fix_applied = _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
+            final_check = check
+            if auto_fix_applied and _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
+                final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+            final_status = str(getattr(final_check, "status", "warn") or "warn")
             if check_name == "database_env":
-                final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION or check
-                final_status = str(getattr(final_check, "status", "warn") or "warn")
                 skip_database_dependents = final_status == "fail"
-                return final_status
-            return str(getattr(check, "status", "warn") or "warn")
+            return final_status
         except Exception as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
