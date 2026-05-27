@@ -83,7 +83,7 @@ def test_revalidate_doctor_check_flags_lost_env_key_regression(monkeypatch, caps
     assert "kalan uyarıları inceleyin" not in captured.out
 
 
-def test_run_doctor_auto_fix_command_adds_seed_rag_summary_only(monkeypatch, capsys):
+def test_run_doctor_auto_fix_command_keeps_seed_rag_command(monkeypatch, capsys):
     captured: dict[str, list[str]] = {}
 
     def fake_run(cmd, **_kwargs):
@@ -94,5 +94,5 @@ def test_run_doctor_auto_fix_command_adds_seed_rag_summary_only(monkeypatch, cap
 
     assert launcher._run_doctor_auto_fix_command("uv run python -m scripts.seed_rag") is True
 
-    assert captured["cmd"] == ["uv", "run", "python", "-m", "scripts.seed_rag", "--summary-only"]
-    assert "--summary-only" in capsys.readouterr().out
+    assert captured["cmd"] == ["uv", "run", "python", "-m", "scripts.seed_rag"]
+    assert "--summary-only" not in capsys.readouterr().out
