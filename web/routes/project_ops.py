@@ -7,7 +7,7 @@ import subprocess  # nosec B404
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
@@ -217,7 +217,7 @@ def build_project_ops_router(
         git_run_helper = _resolve_web_server_helper("_git_run", _git_run)
 
         def _git_run_bound(cmd: list[str], cwd: str) -> str:
-            return git_run_helper(cmd, cwd, logger)
+            return cast(str, git_run_helper(cmd, cwd, logger))
 
         branch = await asyncio.to_thread(_git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root) or "main"
         remote = await asyncio.to_thread(_git_run_bound, ["git", "remote", "get-url", "origin"], root) or ""
@@ -238,7 +238,7 @@ def build_project_ops_router(
         git_run_helper = _resolve_web_server_helper("_git_run", _git_run)
 
         def _git_run_bound(cmd: list[str], cwd: str) -> str:
-            return git_run_helper(cmd, cwd, logger)
+            return cast(str, git_run_helper(cmd, cwd, logger))
 
         branches_raw = await asyncio.to_thread(
             _git_run_bound, ["git", "branch", "--format=%(refname:short)"], root
