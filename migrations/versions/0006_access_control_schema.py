@@ -62,11 +62,9 @@ def _resolve_engine_name(bind: object) -> str:
 
 
 def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
-    if engine_name == "postgresql":
-        from sqlalchemy.dialects.postgresql import UUID
-
-        return UUID(as_uuid=True)
-    return sa.String(length=36)
+    _ = engine_name
+    # Backend-aware TypeDecorator: PostgreSQL'de native UUID, diğerlerinde string.
+    return SidarUUID()
 
 
 def upgrade() -> None:
