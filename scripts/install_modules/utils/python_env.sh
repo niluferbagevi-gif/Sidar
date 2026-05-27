@@ -134,7 +134,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya 'uv tool install pyright' komutunu manuel çalıştırın."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras --extra dev' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
 }
 
 select_pytorch_cuda_wheel_tag() {
