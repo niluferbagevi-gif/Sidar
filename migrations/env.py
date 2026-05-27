@@ -147,6 +147,12 @@ async def run_async_migrations() -> None:
         url = _configured_database_url(section)
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
+        except ModuleNotFoundError as exc:
+            if exc.name == "asyncpg":
+                raise ModuleNotFoundError(
+                    "asyncpg kurulu değil. Çözüm: uv sync --frozen --all-extras veya uv sync --extra postgres."
+                ) from exc
+            raise
         except _InvalidRequestError:
             if _create_engine is None:
                 raise

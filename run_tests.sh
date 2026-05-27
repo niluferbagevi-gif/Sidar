@@ -724,9 +724,16 @@ prepare_test_database() {
     return 1
   fi
 
+  # SQLAlchemy async engine için test URL'i asyncpg sürücüsü ile üretilir.
   export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
   export TEST_DATABASE_URL="${DATABASE_URL}"
   echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"
+
+  if ! uv run python -c "import asyncpg" >/dev/null 2>&1; then
+    echo "❌ asyncpg bulunamadı. Alembic migrasyonu için gerekli runtime bağımlılıkları eksik."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
 
   echo "📦 Alembic migrasyonları uygulanıyor (upgrade head)..."
   if ! uv run alembic upgrade head; then
@@ -755,6 +762,43 @@ cleanup_test_services() {
 
 trap cleanup_test_services EXIT
 
+ensure_runtime_dependencies() {
+  if uv run python - <<'PY' >/dev/null 2>&1
+import asyncpg  # noqa: F401
+import alembic  # noqa: F401
+import coverage  # noqa: F401
+import pytest_cov  # noqa: F401
+import pytest_asyncio  # noqa: F401
+PY
+  then
+    return 0
+  fi
+
+  echo "⚠️ Runtime bağımlılıkları eksik (asyncpg/alembic/coverage/pytest eklentileri)."
+  echo "ℹ️ Dev + postgres extras uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
+  if ! uv sync --frozen --all-extras; then
+    echo "❌ Runtime bağımlılıklarının otomatik kurulumu başarısız oldu."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+import asyncpg  # noqa: F401
+import alembic  # noqa: F401
+import coverage  # noqa: F401
+import pytest_cov  # noqa: F401
+import pytest_asyncio  # noqa: F401
+PY
+  then
+    echo "❌ Runtime bağımlılık doğrulaması başarısız: asyncpg/alembic/coverage/pytest eklentileri yüklenemedi."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  echo "✅ Runtime bağımlılıkları doğrulandı."
+  return 0
+}
+
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   local test_dotenv_file="${DOTENV_FILE:-.env.test}"
@@ -774,23 +818,6 @@ PY
     echo "❌ pyproject.toml test bağımlılıklarında pytest-cov/pytest-xdist doğrulaması başarısız."
     BACKEND_EXIT_CODE=1
     return
-  fi
-
-  if ! uv run python - <<'PY' >/dev/null 2>&1
-import coverage  # noqa: F401
-import pytest_cov  # noqa: F401
-import pytest_asyncio  # noqa: F401
-PY
-  then
-    echo "⚠️ Test ve coverage araçları (pytest-asyncio vb.) eksik. dev bağımlılıkları otomatik kuruluyor..."
-    echo "ℹ️ dev bağımlılıkları ve opsiyonel entegrasyonlar uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
-    uv sync --frozen --all-extras
-
-    if ! uv run python -c "import pytest_asyncio" >/dev/null 2>&1; then
-      echo "❌ Geliştirici bağımlılıklarının otomatik kurulumu başarısız oldu."
-      BACKEND_EXIT_CODE=1
-      return
-    fi
   fi
 
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
@@ -999,7 +1026,7 @@ PY_RATCHET_GATE
 #    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
-if ensure_uv_available && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
+if ensure_uv_available && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
   run_bats_shell_tests
   update_progressive_coverage_gate
