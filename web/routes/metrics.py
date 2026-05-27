@@ -16,7 +16,7 @@ def build_metrics_router(
     require_metrics_access: Callable[..., Any],
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     start_time: float,
-    local_rate_limits: dict[str, list[float]],
+    local_rate_limits: dict[str, list[float]] | Callable[[], dict[str, list[float]]],
     get_llm_metrics_collector: Callable[[], Any],
     render_llm_metrics_prometheus: Callable[[dict[str, Any]], str],
     set_current_metrics_user_id: Callable[[str], Any],
@@ -24,6 +24,9 @@ def build_metrics_router(
     logger: Any,
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
+    get_local_rate_limits = (
+        local_rate_limits if callable(local_rate_limits) else (lambda: local_rate_limits)
+    )
 
     @router.get("/metrics")
     async def metrics(
@@ -33,6 +36,12 @@ def build_metrics_router(
         user_id = str(getattr(_user, "id", "") or (_user.get("id") if isinstance(_user, dict) else "") or "metrics-admin")
         metrics_token = set_current_metrics_user_id(user_id)
         agent = await resolve_agent_instance()
+        previous_active_user_id = getattr(agent.memory, "active_user_id", None)
+        previous_active_username = getattr(agent.memory, "active_username", None)
+        if hasattr(agent.memory, "active_user_id"):
+            agent.memory.active_user_id = user_id
+        if hasattr(agent.memory, "active_username") and not getattr(agent.memory, "active_username", None):
+            agent.memory.active_username = user_id
         try:
             uptime_s = int(time.monotonic() - start_time)
             rag_docs = agent.docs.doc_count
@@ -52,7 +61,8 @@ def build_metrics_router(
                     sessions = await sessions
             if sessions_total is None:
                 sessions_total = len(sessions)
-            rl_total = sum(len(v) for v in local_rate_limits.values())
+            active_rate_limits = get_local_rate_limits()
+            rl_total = sum(len(v) for v in active_rate_limits.values())
             llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
             payload = {
                 "version": agent.VERSION,
@@ -60,7 +70,7 @@ def build_metrics_router(
                 "sessions_total": int(sessions_total),
                 "active_session_turns": len(agent.memory),
                 "rag_documents": rag_docs,
-                "rate_limit_buckets": len(local_rate_limits),
+                "rate_limit_buckets": len(active_rate_limits),
                 "rate_limit_requests_in_window": rl_total,
                 "provider": agent.cfg.AI_PROVIDER,
                 "gpu_enabled": agent.cfg.USE_GPU,
@@ -93,6 +103,10 @@ def build_metrics_router(
                     pass
             return JSONResponse(payload)
         finally:
+            if hasattr(agent.memory, "active_user_id"):
+                agent.memory.active_user_id = previous_active_user_id
+            if hasattr(agent.memory, "active_username"):
+                agent.memory.active_username = previous_active_username
             reset_current_metrics_user_id(metrics_token)
 
     @router.get("/metrics/llm/prometheus")

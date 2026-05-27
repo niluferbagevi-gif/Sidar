@@ -3716,10 +3716,10 @@ app.include_router(hitl_router)
 
 metrics_router = build_metrics_router(
         require_metrics_access=_require_metrics_access,
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         start_time=_start_time,
-        local_rate_limits=_local_rate_limits,
-        get_llm_metrics_collector=get_llm_metrics_collector,
+        local_rate_limits=lambda: _local_rate_limits,
+        get_llm_metrics_collector=lambda: get_llm_metrics_collector(),
         render_llm_metrics_prometheus=render_llm_metrics_prometheus,
         set_current_metrics_user_id=set_current_metrics_user_id,
         reset_current_metrics_user_id=reset_current_metrics_user_id,
@@ -3729,7 +3729,7 @@ app.include_router(metrics_router)
 
 project_ops_router = build_project_ops_router(
         get_request_user=_get_request_user,
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         max_file_content_bytes=MAX_FILE_CONTENT_BYTES,
         server_root=lambda: Path(__file__).parent.resolve(),
         cfg=cfg,
