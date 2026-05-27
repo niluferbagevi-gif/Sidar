@@ -57,7 +57,10 @@ def build_auth_admin_router(
 
     @router.post("/auth/register")
     async def register_user(payload: Any = Body(...)) -> Any:
-        data = _parse_payload(register_request_model, _normalize_register_payload(payload))
+        if not isinstance(payload, dict) and all(hasattr(payload, f) for f in ("username", "password", "tenant_id")):
+            data = payload
+        else:
+            data = _parse_payload(register_request_model, _normalize_register_payload(payload))
         username = data.username.strip()
         password = data.password
         tenant_id = str(getattr(data, "tenant_id", "default") or "default").strip() or "default"

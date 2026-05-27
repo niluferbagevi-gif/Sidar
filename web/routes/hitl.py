@@ -101,13 +101,11 @@ def build_hitl_router(
             await websocket.accept()
 
         agent = await resolve_agent_instance()
-        if not header_token:
-            await ws_close_policy_violation(websocket, "Authentication token missing")
-            return
-        ws_user = await await_if_needed(resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
+        if header_token:
+            ws_user = await await_if_needed(resolve_user_from_token(agent, header_token))
+            if not ws_user:
+                await ws_close_policy_violation(websocket, "Invalid or expired token")
+                return
         hitl_ws_clients.add(websocket)
         try:
             pending = await _resolve_pending_items()

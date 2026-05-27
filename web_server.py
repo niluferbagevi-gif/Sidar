@@ -3709,8 +3709,8 @@ hitl_router = build_hitl_router(
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
         hitl_ws_clients=_hitl_ws_clients,
-        get_hitl_store=get_hitl_store,
-        get_hitl_gate=get_hitl_gate,
+        get_hitl_store=lambda: get_hitl_store(),
+        get_hitl_gate=lambda: get_hitl_gate(),
     )
 app.include_router(hitl_router)
 
@@ -3764,7 +3764,7 @@ for _router in (
         _endpoint = getattr(_route, "endpoint", None)
         _name = getattr(_endpoint, "__name__", "")
         if _name:
-            globals().setdefault(_name, _endpoint)
+            globals()[_name] = _endpoint
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
 
