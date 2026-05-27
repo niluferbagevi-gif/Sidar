@@ -7592,12 +7592,12 @@ async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available
 
 @pytest.mark.asyncio
 async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(monkeypatch):
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], str | None]] = []
 
     async def _to_thread(fn, *args, **kwargs):
         cmd = args[0] if args else kwargs.get("cmd", [])
         cwd = args[1] if len(args) > 1 else kwargs.get("cwd")
-        calls.append(cmd)
+        calls.append((cmd, cwd))
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
             return "feature/x"
         if cmd[:3] == ["git", "remote", "get-url"]:
@@ -7628,7 +7628,9 @@ async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(
 
     assert info.status_code == 200
     assert b'"default_branch":"develop"' in info.body
-    assert ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"] in calls
+    expected_root = str(web_server.resolve_server_root().resolve())
+    assert (["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], expected_root) in calls
+    assert all(cwd == expected_root for _cmd, cwd in calls[:4])
     assert repos.status_code == 200
     assert b'"full_name":"acme/Sidar"' in repos.body
     assert b'"full_name":"acme/infra"' not in repos.body
