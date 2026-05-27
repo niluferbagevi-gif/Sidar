@@ -113,10 +113,13 @@ def build_agent_router(
             "PLUGIN_MARKETPLACE_CATALOG", plugin_marketplace_catalog
         )
         state = state_helper()
-        items = [
-            serialize_helper(plugin_id, installed_state=state.get(plugin_id, {}))
-            for plugin_id in sorted(catalog_dict)
-        ]
+        items: list[dict[str, Any]] = []
+        for plugin_id in sorted(catalog_dict):
+            raw_item = serialize_helper(plugin_id, installed_state=state.get(plugin_id, {}))
+            item = dict(raw_item or {})
+            item_id = item.get("id") or item.get("plugin_id") or plugin_id
+            item["id"] = str(item_id)
+            items.append(item)
         return JSONResponse({"items": items})
 
     @router.post("/api/plugin-marketplace/install")
