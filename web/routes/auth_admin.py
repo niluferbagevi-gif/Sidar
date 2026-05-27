@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -57,7 +57,7 @@ def build_auth_admin_router(
     router = LegacyExportRouter()
 
     @router.post("/auth/register")
-    async def register_user(payload: dict[str, Any] = Body(...)) -> Any:
+    async def register_user(payload: Annotated[dict[str, Any], Body()]) -> Any:
         data = _parse_payload(register_request_model, _normalize_register_payload(payload))
         username = data.username.strip()
         password = data.password
@@ -86,7 +86,7 @@ def build_auth_admin_router(
         )
 
     @router.post("/auth/login")
-    async def login_user(payload: dict[str, Any] = Body(...)) -> Any:
+    async def login_user(payload: Annotated[dict[str, Any], Body()]) -> Any:
         data = _parse_payload(login_request_model, payload)
         username = data.username.strip()
         password = data.password
