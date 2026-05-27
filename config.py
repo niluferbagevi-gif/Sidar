@@ -1434,7 +1434,7 @@ class Config:
                     missing_notice_items.append(notice)
             _DOTENV_MISSING_FILE_NOTICES.clear()
         if missing_notice_items:
-            logger.info(
+            _log_first_load_info(
                 "Opsiyonel dotenv dosyaları bulunamadı: %s",
                 ", ".join(missing_notice_items),
             )
