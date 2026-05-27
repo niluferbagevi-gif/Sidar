@@ -73,7 +73,7 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
             "auth",
         )
     ):
-        return "asyncpg auth reddi / yetki-parola hatası"
+        return "asyncpg auth reddi / yetki/parola hatası"
     if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):
         return "TCP timeout / bağlantı havuzu zaman aşımı"
     if "asyncpg" in combined:
@@ -109,7 +109,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "Doctor/database_env sonucunu ve dotenv reload zincirini kontrol edin. "
             "SQLite degraded mode aktif edildi."
         )
-    if diagnosis == "asyncpg auth reddi / yetki-parola hatası":
+    if diagnosis == "asyncpg auth reddi / yetki/parola hatası":
         return (
             "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
             ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
