@@ -154,9 +154,11 @@ def build_rag_router(
             else:
                 ok, result = maybe_result
         else:
-            maybe_result = await asyncio.to_thread(
-                search_call, q.strip(), min(top_k, 10), mode, session_id
-            )
+            thread_result = asyncio.to_thread(search_call, q.strip(), min(top_k, 10), mode, session_id)
+            if inspect.isawaitable(thread_result):
+                maybe_result = await thread_result
+            else:
+                maybe_result = thread_result
             if inspect.isawaitable(maybe_result):
                 ok, result = await maybe_result
             else:
