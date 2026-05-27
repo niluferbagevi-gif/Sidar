@@ -68,6 +68,8 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
             "password authentication failed",
             "authentication failed",
             "invalid password",
+            "invalidpassword",
+            "invalidpassworderror",
             "28p01",
             "permission denied",
             "auth",
@@ -124,7 +126,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
         )
     if diagnosis == "TCP bağlantısı kurulamadı veya koptu":
         return (
-            "PostgreSQL bağlantısı kurulamadı veya bağlantı koptu. Veritabanı servisinin "
+            "PostgreSQL (asyncpg) bağlantısı kurulamadı veya bağlantı koptu. Veritabanı servisinin "
             "çalıştığını, DATABASE_URL host/port bilgisini ve container ağını kontrol edin. "
             f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
         )
@@ -683,9 +685,7 @@ class Database:
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
             return
-        test_mode_short_circuit = bool(
-            getattr(self.cfg, "DB_TEST_MODE_SHORT_CIRCUIT", False) or os.getenv("PYTEST_CURRENT_TEST")
-        )
+        test_mode_short_circuit = bool(getattr(self.cfg, "DB_TEST_MODE_SHORT_CIRCUIT", False))
         lowered_url = self.database_url.lower()
         looks_like_local_postgres = any(
             marker in lowered_url for marker in ("@localhost", "@127.0.0.1", ":5432/")
