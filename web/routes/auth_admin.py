@@ -67,13 +67,11 @@ def build_auth_admin_router(
 
         agent = await resolve_agent_instance()
         try:
-            user = await_if_needed(
+            user = await await_if_needed(
                 agent.memory.db.register_user(
                     username=username, password=password, tenant_id=tenant_id
                 )
             )
-            if inspect.isawaitable(user):
-                user = await user
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
 
@@ -92,11 +90,9 @@ def build_auth_admin_router(
         password = data.password
         agent = await resolve_agent_instance()
         try:
-            user = await_if_needed(
+            user = await await_if_needed(
                 agent.memory.db.authenticate_user(username=username, password=password)
             )
-            if inspect.isawaitable(user):
-                user = await user
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
