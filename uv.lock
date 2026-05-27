@@ -6063,6 +6063,11 @@ voice = [
     { name = "speechrecognition" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "playwright" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = "~=0.20.0" },
@@ -6210,6 +6215,9 @@ requires-dist = [
     { name = "yt-dlp", marker = "extra == 'tools'", specifier = ">=2024.0.0" },
 ]
 provides-extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "all", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "playwright", specifier = ">=1.55,<2.0" }]
 
 [[package]]
 name = "simpleeval"

@@ -579,3 +579,8 @@ module = [
   "bleach.*",
 ]
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "playwright>=1.55,<2.0",
+]
