@@ -7594,7 +7594,9 @@ async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available
 async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(monkeypatch):
     calls: list[list[str]] = []
 
-    async def _to_thread(fn, cmd, cwd):
+    async def _to_thread(fn, *args, **kwargs):
+        cmd = args[0] if args else kwargs.get("cmd", [])
+        cwd = args[1] if len(args) > 1 else kwargs.get("cwd")
         calls.append(cmd)
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
             return "feature/x"
