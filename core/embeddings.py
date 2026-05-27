@@ -121,7 +121,10 @@ def embed_texts_for_semantic_cache(
     )
     try:
         model = get_sentence_transformer_model(model_name, cfg)
-        vectors = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        try:
+            vectors = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        except TypeError:
+            vectors = model.encode(texts, normalize_embeddings=True)
         raw = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
         return cast("list[list[float]]", raw)
     except Exception as exc:
@@ -138,7 +141,10 @@ def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
     cache_key = (model_name, device, local_files_only)
     model = _MODEL_CACHE.get(cache_key)
     if model is not None:
-        return model
+        if model.__class__ is not SentenceTransformer:
+            _MODEL_CACHE.pop(cache_key, None)
+        else:
+            return model
 
     with _scoped_hf_runtime_env():
         model = SentenceTransformer(

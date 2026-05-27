@@ -75,7 +75,7 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
             "auth",
         )
     ):
-        return "asyncpg auth reddi / yetki-parola hatası"
+        return "asyncpg auth reddi / yetki/parola hatası"
     if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):
         return "TCP timeout / bağlantı havuzu zaman aşımı"
     if "asyncpg" in combined:
