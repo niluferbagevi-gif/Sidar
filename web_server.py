@@ -3684,7 +3684,7 @@ rag_router = build_rag_router(
         resolve_agent_instance=lambda: _resolve_agent_instance(),
         await_if_needed=_await_if_needed,
         max_rag_upload_bytes=lambda: Config.MAX_RAG_UPLOAD_BYTES,
-        server_root=Path(__file__).parent.resolve(),
+        server_root=lambda: Path(__file__).parent.resolve(),
         logger=logger,
     )
 app.include_router(rag_router)

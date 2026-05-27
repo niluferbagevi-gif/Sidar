@@ -20,7 +20,7 @@ def build_rag_router(
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     await_if_needed: Callable[[Any], Awaitable[Any]],
     max_rag_upload_bytes: int | Callable[[], int],
-    server_root: Path,
+    server_root: Path | Callable[[], Path],
     logger: Any,
 ) -> LegacyExportRouter:
     """Build router for RAG document management endpoints."""
@@ -28,6 +28,7 @@ def build_rag_router(
     get_max_rag_upload_bytes = (
         max_rag_upload_bytes if callable(max_rag_upload_bytes) else (lambda: max_rag_upload_bytes)
     )
+    resolve_server_root = server_root if callable(server_root) else (lambda: server_root)
 
     @router.get("/rag/docs")
     async def rag_list_docs() -> Any:
@@ -44,9 +45,10 @@ def build_rag_router(
         if not path:
             return JSONResponse({"success": False, "error": "Dosya yolu boş."}, status_code=400)
 
-        target = (server_root / path).resolve()
+        root = resolve_server_root()
+        target = (root / path).resolve()
         try:
-            target.relative_to(server_root)
+            target.relative_to(root)
         except ValueError:
             return JSONResponse(
                 {"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403
