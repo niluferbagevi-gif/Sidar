@@ -293,6 +293,7 @@ def build_project_ops_router(
 
     router.legacy_exports = {
         "_git_run": _git_run,
+        "resolve_server_root": resolve_server_root,
         "get_sessions": get_sessions,
         "load_session": load_session,
         "new_session": new_session,

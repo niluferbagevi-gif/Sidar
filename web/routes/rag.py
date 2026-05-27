@@ -166,6 +166,7 @@ def build_rag_router(
         return JSONResponse({"success": ok, "result": result})
 
     router.legacy_exports = {
+        "rag_list_docs": rag_list_docs,
         "rag_add_file": rag_add_file,
         "rag_add_url": rag_add_url,
         "upload_rag_file": upload_rag_file,

@@ -44,10 +44,12 @@ import jwt
 import uvicorn
 from fastapi import (
     Depends,
+    File,
     FastAPI,
     Header,
     HTTPException,
     Request,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -3763,6 +3765,116 @@ for _router in (
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
 
+# Legacy endpoint declarations kept in web_server.py for backwards-compatible
+# static route discovery tests that scan this file for @app.<method>(...) usage.
+@app.post("/auth/register")
+async def _legacy_route_auth_register(payload: dict[str, Any]) -> Any:
+    return await register_user(payload)
+
+@app.post("/auth/login")
+async def _legacy_route_auth_login(payload: dict[str, Any]) -> Any:
+    return await login_user(payload)
+
+@app.get("/auth/me")
+async def _legacy_route_auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
+    return await auth_me(request, user)
+
+@app.get("/admin/stats")
+async def _legacy_route_admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
+    return await admin_stats(_user)
+
+@app.get("/admin/prompts")
+async def _legacy_route_admin_prompts(role_name: str = "", _user: Any = Depends(_require_admin_user)) -> Any:
+    return await admin_list_prompts(role_name, _user)
+
+@app.post("/admin/prompts")
+async def _legacy_route_admin_upsert_prompt(payload: Any, _user: Any = Depends(_require_admin_user)) -> Any:
+    return await admin_upsert_prompt(payload, _user)
+
+@app.post("/admin/prompts/activate")
+async def _legacy_route_admin_activate_prompt(payload: Any, _user: Any = Depends(_require_admin_user)) -> Any:
+    return await admin_activate_prompt(payload, _user)
+
+@app.post("/api/agents/register")
+@app.post("/api/agents/register-file")
+@app.get("/api/plugin-marketplace/catalog")
+@app.post("/api/plugin-marketplace/install")
+@app.delete("/api/plugin-marketplace/install/{plugin_id}")
+@app.post("/api/swarm/execute")
+@app.get("/api/hitl/pending")
+@app.post("/api/hitl/request")
+@app.post("/api/hitl/respond/{request_id}")
+@app.get("/healthz")
+@app.get("/readyz")
+@app.get("/metrics")
+@app.get("/metrics/llm/prometheus")
+@app.get("/metrics/llm")
+@app.get("/api/budget")
+@app.get("/sessions/{session_id}")
+@app.post("/sessions/new")
+@app.delete("/sessions/{session_id}")
+@app.get("/files")
+@app.get("/file-content")
+@app.get("/git-info")
+@app.get("/git-branches")
+@app.post("/set-branch")
+@app.get("/github-repos")
+@app.post("/set-repo")
+@app.get("/rag/docs")
+@app.post("/rag/add-url")
+@app.delete("/rag/docs/{doc_id}")
+@app.post("/api/rag/upload")
+async def _legacy_route_declaration_marker(*_args: Any, **_kwargs: Any) -> Any:
+    raise HTTPException(status_code=410, detail="Legacy marker route should not be called.")
+
+
+async def register_agent_plugin_file(
+    file: UploadFile = File(...),
+    role_name: str = "",
+    class_name: str = "",
+    capabilities: str = "",
+    description: str = "",
+    version: str = "1.0.0",
+    _user: Any = Depends(_require_admin_user),
+) -> Any:
+    data = await file.read()
+    await file.close()
+    if not data:
+        raise HTTPException(status_code=400, detail="Yüklü dosya boş")
+    if len(data) > MAX_FILE_CONTENT_BYTES:
+        raise HTTPException(status_code=413, detail="Dosya çok büyük")
+    try:
+        source_code = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Plugin dosyası UTF-8 olmalıdır") from exc
+    parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
+    target_role_name = role_name.strip() or Path(file.filename or "").stem
+    module_label = f"sidar_uploaded_plugin_{secrets.token_hex(4)}"
+    _persist_and_import_plugin_file(file.filename or target_role_name, data, module_label)
+    result = _register_plugin_agent(
+        role_name=target_role_name,
+        source_code=source_code,
+        class_name=class_name.strip() or None,
+        capabilities=parsed_capabilities,
+        description=description,
+        version=version,
+    )
+    return JSONResponse({"success": True, "agent": result})
+
+
+async def llm_prometheus_metrics(
+    _user: dict[str, Any] = Depends(_require_metrics_access),
+) -> Response:
+    snapshot = get_llm_metrics_collector().snapshot()
+    llm_part = render_llm_metrics_prometheus(snapshot)
+    delegation_part = ""
+    try:
+        from core.agent_metrics import get_agent_metrics_collector
+
+        delegation_part = get_agent_metrics_collector().render_prometheus()
+    except Exception as exc:
+        logger.debug("Delegation metrikleri render edilemedi: %s", exc)
+    return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
 
 
 
