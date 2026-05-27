@@ -410,7 +410,9 @@ def _reload_environment_after_auto_fix(
     config_reloaded = False
     if requires_full_reload:
         config_reloaded = _reload_config_environment(profile=profile, reason="Doctor auto-fix")
-    database_env_reloaded = _reload_database_env_from_loaded_dotenv_chain()
+    database_env_reloaded = False
+    if not config_reloaded:
+        database_env_reloaded = _reload_database_env_from_loaded_dotenv_chain()
     source_reloaded = _reload_doctor_env_source_definitions(details)
     if source_reloaded or database_env_reloaded:
         print(f"{GREEN}✅ Doctor env kaynakları yeniden uygulandı.{RESET}")
