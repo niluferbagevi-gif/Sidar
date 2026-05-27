@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import re
-import sys
 import subprocess  # nosec B404
+import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
