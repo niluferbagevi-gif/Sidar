@@ -620,7 +620,7 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
 def _run_doctor_auto_fix(
     check: Any, check_func: Any | None = None, *, apply_all_mode: bool = False
 ) -> bool:
-    """Run Doctor auto-fix command(s) without post-fix revalidation."""
+    """Run Doctor auto-fix command(s) and stop early when revalidation reaches pass."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
     details = getattr(check, "details", {}) or {}
@@ -648,6 +648,14 @@ def _run_doctor_auto_fix(
         if not _run_doctor_auto_fix_command(auto_fix):
             return ran_any
         ran_any = True
+        if callable(check_func):
+            updated_check = _revalidate_doctor_check_after_auto_fix(
+                check_name, check_func, getattr(check, "details", None)
+            )
+            if updated_check is not None:
+                updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+                if updated_status == "pass":
+                    break
     return ran_any
 
 
@@ -807,12 +815,6 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             if auto_fix_applied:
                 if _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
                     final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION
-                else:
-                    updated_check = _revalidate_doctor_check_after_auto_fix(
-                        check_name, check_func, getattr(check, "details", None)
-                    )
-                    if updated_check is not None:
-                        final_check = updated_check
             final_status = str(getattr(final_check, "status", "warn") or "warn")
             if check_name == "database_env":
                 skip_database_dependents = final_status == "fail"
