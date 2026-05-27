@@ -3709,17 +3709,17 @@ hitl_router = build_hitl_router(
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
         hitl_ws_clients=_hitl_ws_clients,
-        get_hitl_store=get_hitl_store,
-        get_hitl_gate=get_hitl_gate,
+        get_hitl_store=lambda: get_hitl_store(),
+        get_hitl_gate=lambda: get_hitl_gate(),
     )
 app.include_router(hitl_router)
 
 metrics_router = build_metrics_router(
         require_metrics_access=_require_metrics_access,
-        resolve_agent_instance=_resolve_agent_instance,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
         start_time=_start_time,
-        local_rate_limits=_local_rate_limits,
-        get_llm_metrics_collector=get_llm_metrics_collector,
+        local_rate_limits=lambda: _local_rate_limits,
+        get_llm_metrics_collector=lambda: get_llm_metrics_collector(),
         render_llm_metrics_prometheus=render_llm_metrics_prometheus,
         set_current_metrics_user_id=set_current_metrics_user_id,
         reset_current_metrics_user_id=reset_current_metrics_user_id,
@@ -3760,6 +3760,11 @@ for _router in (
     project_ops_router,
     orchestration_router,
 ):
+    for _route in getattr(_router, "routes", ()):
+        _endpoint = getattr(_route, "endpoint", None)
+        _name = getattr(_endpoint, "__name__", "")
+        if _name:
+            globals()[_name] = _endpoint
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
 

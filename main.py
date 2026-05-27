@@ -589,7 +589,7 @@ def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     normalized = [str(part) for part in cmd]
     if normalized[:4] == ["uv", "run", "python", "-m"] and len(normalized) >= 5:
         module_name = normalized[4]
-        if module_name == "scripts.seed_rag" and "--summary-only" not in normalized:
+        if module_name == "scripts.seed_rag" and "--summary-only" not in normalized and "--metadata-only" not in normalized:
             normalized.append("--summary-only")
     return normalized
 
@@ -599,7 +599,6 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     cmd = shlex.split(auto_fix)
     if not cmd:
         return False
-    cmd = _launcher_auto_fix_command(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:
         completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.

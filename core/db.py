@@ -73,7 +73,7 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
             "auth",
         )
     ):
-        return "asyncpg auth reddi / yetki-parola hatası"
+        return "asyncpg auth reddi / yetki/parola hatası"
     if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):
         return "TCP timeout / bağlantı havuzu zaman aşımı"
     if "asyncpg" in combined:
@@ -109,7 +109,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "Doctor/database_env sonucunu ve dotenv reload zincirini kontrol edin. "
             "SQLite degraded mode aktif edildi."
         )
-    if diagnosis == "asyncpg auth reddi / yetki-parola hatası":
+    if diagnosis == "asyncpg auth reddi / yetki/parola hatası":
         return (
             "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
             ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
@@ -1518,6 +1518,49 @@ class Database:
             cur = self._sqlite_conn.execute(
                 "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
                 (user_id,),
+            )
+            return cur.fetchall()
+
+        rows = await self._run_sqlite_op(_run, write=False)
+        return [
+            SessionRecord(
+                id=str(r["id"]),
+                user_id=str(r["user_id"]),
+                title=str(r["title"]),
+                created_at=str(r["created_at"]),
+                updated_at=str(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
+    async def list_sessions_any_user(self) -> list[SessionRecord]:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, user_id, title, created_at, updated_at
+                    FROM sessions
+                    ORDER BY updated_at DESC
+                    """
+                )
+            return [
+                SessionRecord(
+                    id=str(r["id"]),
+                    user_id=str(r["user_id"]),
+                    title=str(r["title"]),
+                    created_at=str(r["created_at"]),
+                    updated_at=str(r["updated_at"]),
+                )
+                for r in rows
+            ]
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> list[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "SELECT id, user_id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
             )
             return cur.fetchall()
 

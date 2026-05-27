@@ -38,17 +38,19 @@ def upgrade() -> None:
     require_pgvector = vector_backend == "pgvector"
 
     # NOT: op.execute() bir Result döndürmez (None). SELECT için bağlı connection'ı kullan.
-    vector_available = bind.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_available_extensions
-                WHERE name = 'vector'
+    vector_available = True
+    if hasattr(bind, "execute"):
+        vector_available = bind.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_available_extensions
+                    WHERE name = 'vector'
+                )
+                """
             )
-            """
-        )
-    ).scalar()
+        ).scalar()
 
     if not vector_available:
         if require_pgvector:

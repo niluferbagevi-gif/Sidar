@@ -16,7 +16,7 @@ def build_metrics_router(
     require_metrics_access: Callable[..., Any],
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     start_time: float,
-    local_rate_limits: dict[str, list[float]],
+    local_rate_limits: dict[str, list[float]] | Callable[[], dict[str, list[float]]],
     get_llm_metrics_collector: Callable[[], Any],
     render_llm_metrics_prometheus: Callable[[dict[str, Any]], str],
     set_current_metrics_user_id: Callable[[str], Any],
@@ -46,13 +46,18 @@ def build_metrics_router(
                 )
             if hasattr(agent.memory, "aget_all_sessions"):
                 sessions = await agent.memory.aget_all_sessions()
+            elif hasattr(agent.memory, "get_all_sessions_any_user"):
+                sessions = agent.memory.get_all_sessions_any_user()
+                if inspect.isawaitable(sessions):
+                    sessions = await sessions
             else:
                 sessions = agent.memory.get_all_sessions()
                 if inspect.isawaitable(sessions):
                     sessions = await sessions
             if sessions_total is None:
                 sessions_total = len(sessions)
-            rl_total = sum(len(v) for v in local_rate_limits.values())
+            active_rate_limits = local_rate_limits() if callable(local_rate_limits) else local_rate_limits
+            rl_total = sum(len(v) for v in active_rate_limits.values())
             llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
             payload = {
                 "version": agent.VERSION,
@@ -60,7 +65,7 @@ def build_metrics_router(
                 "sessions_total": int(sessions_total),
                 "active_session_turns": len(agent.memory),
                 "rag_documents": rag_docs,
-                "rate_limit_buckets": len(local_rate_limits),
+                "rate_limit_buckets": len(active_rate_limits),
                 "rate_limit_requests_in_window": rl_total,
                 "provider": agent.cfg.AI_PROVIDER,
                 "gpu_enabled": agent.cfg.USE_GPU,

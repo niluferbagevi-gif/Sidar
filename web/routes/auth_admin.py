@@ -4,7 +4,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
@@ -32,6 +32,7 @@ def _normalize_register_payload(payload: Any) -> Any:
     for alias_key, canonical_key in alias_pairs:
         if canonical_key not in normalized and alias_key in normalized:
             normalized[canonical_key] = normalized[alias_key]
+    normalized.setdefault("tenant_id", "default")
     return normalized
 
 
@@ -55,19 +56,24 @@ def build_auth_admin_router(
     router = LegacyExportRouter()
 
     @router.post("/auth/register")
-    async def register_user(payload: Any) -> Any:
-        data = _parse_payload(register_request_model, _normalize_register_payload(payload))
+    async def register_user(payload: Any = Body(...)) -> Any:
+        if not isinstance(payload, dict) and all(hasattr(payload, f) for f in ("username", "password", "tenant_id")):
+            data = payload
+        else:
+            data = _parse_payload(register_request_model, _normalize_register_payload(payload))
         username = data.username.strip()
         password = data.password
-        tenant_id = data.tenant_id.strip() or "default"
+        tenant_id = str(getattr(data, "tenant_id", "default") or "default").strip() or "default"
         if len(username) < 3 or len(password) < 6:
             raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
         agent = await resolve_agent_instance()
         try:
-            user = await agent.memory.db.register_user(
+            user = agent.memory.db.register_user(
                 username=username, password=password, tenant_id=tenant_id
             )
+            if inspect.isawaitable(user):
+                user = await user
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
 
@@ -80,13 +86,15 @@ def build_auth_admin_router(
         )
 
     @router.post("/auth/login")
-    async def login_user(payload: Any) -> Any:
+    async def login_user(payload: Any = Body(...)) -> Any:
         data = _parse_payload(login_request_model, payload)
         username = data.username.strip()
         password = data.password
         agent = await resolve_agent_instance()
         try:
-            user = await agent.memory.db.authenticate_user(username=username, password=password)
+            user = agent.memory.db.authenticate_user(username=username, password=password)
+            if inspect.isawaitable(user):
+                user = await user
         except Exception as exc:
             raise HTTPException(
                 status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
@@ -137,7 +145,7 @@ def build_auth_admin_router(
 
     @router.post("/admin/prompts")
     async def admin_upsert_prompt(
-        payload: Any, _user: Any = Depends(require_admin_user)
+        payload: Any = Body(...), _user: Any = Depends(require_admin_user)
     ) -> Any:
         data = _parse_payload(prompt_upsert_request_model, payload)
         role_name = (data.role_name or "").strip().lower()
@@ -155,7 +163,7 @@ def build_auth_admin_router(
 
     @router.post("/admin/prompts/activate")
     async def admin_activate_prompt(
-        payload: Any, _user: Any = Depends(require_admin_user)
+        payload: Any = Body(...), _user: Any = Depends(require_admin_user)
     ) -> Any:
         agent = await await_if_needed(resolve_agent_instance())
         data = _parse_payload(prompt_activate_request_model, payload)
@@ -178,7 +186,7 @@ def build_auth_admin_router(
 
     @router.post("/admin/policies")
     async def admin_upsert_policy(
-        payload: Any, _user: Any = Depends(require_admin_user)
+        payload: Any = Body(...), _user: Any = Depends(require_admin_user)
     ) -> Any:
         data = _parse_payload(policy_upsert_request_model, payload)
         agent = await resolve_agent_instance()

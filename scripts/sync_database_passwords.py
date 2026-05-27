@@ -444,6 +444,7 @@ def sync_env_chain(
     file_summaries: list[dict[str, Any]] = []
     changed_files: list[str] = []
     changed_keys_by_file: dict[str, list[str]] = {}
+    dotenv_defined_keys: set[str] = set()
     warnings: list[dict[str, str]] = []
     notes: list[dict[str, str]] = []
     for spec in specs:
@@ -465,6 +466,7 @@ def sync_env_chain(
 
         original = spec.path.read_text(encoding="utf-8")
         assignments = _parse_env_text(original)
+        dotenv_defined_keys.update(assignments.keys())
         if remove_explicit_urls:
             updated, summary = remove_explicit_database_urls_from_text(original)
         else:
@@ -505,7 +507,9 @@ def sync_env_chain(
             if key in DATABASE_URL_KEYS
         }
         for key in DATABASE_URL_KEYS:
-            if key in removed_url_keys:
+            if key not in dotenv_defined_keys and key not in os.environ:
+                continue
+            if key in removed_url_keys and key not in os.environ:
                 continue
             if os.environ.get(key, "").strip():
                 notes.append(

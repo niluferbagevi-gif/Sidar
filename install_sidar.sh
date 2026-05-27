@@ -49,6 +49,7 @@ mask_install_log_stream() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 verify_core_install_manifest() {
+    [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" ]] && return 0
     local manifest_path="${SCRIPT_DIR}/.sidar_manifest.txt"
     local required_files=(
         "core/memory.py"
@@ -258,6 +259,7 @@ populate_remote_module_hashes_from_embedded_manifest() {
 populate_remote_module_hashes_from_embedded_manifest
 
 verify_remote_install_module_hash() {
+    [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" ]] && return 0
     local module_rel="$1"
     local downloaded_file="$2"
     local expected_hash="${INSTALL_REMOTE_MODULE_HASHES[$module_rel]:-}"
@@ -384,7 +386,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
     fi
 
-    if command -v git >/dev/null 2>&1; then
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v git >/dev/null 2>&1; then
         bootstrap_clone_and_reexec
     fi
 
@@ -398,6 +400,9 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
     REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
     if [[ -z "$REMOTE_MODULE_BASE" ]]; then
+        if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" ]]; then
+            fail "SIDAR_INSTALL_TEST_MODE=1 için SIDAR_INSTALL_MODULE_BASE_URL zorunludur."
+        fi
         REMOTE_MODULE_BASE="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
     fi
     [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
@@ -499,6 +504,10 @@ verify_install_module_hashes_if_present() {
 
     [[ -n "$embedded_manifest_file" ]] && rm -f "$embedded_manifest_file"
 }
+
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
 
 verify_install_module_hashes_if_present
 validate_install_utility_modules
@@ -2387,6 +2396,7 @@ fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""
 # Repo kaynağını override etmek için (fork/organizasyon):
+# Fork desteği: SIDAR_REPO_URL=https://github.com/<kullanici>/Sidar ./install_sidar.sh
 #   SIDAR_REPO_URL=https://github.com/<org>/Sidar.git ./install_sidar.sh
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
@@ -2708,6 +2718,7 @@ sync_repo() {
 
     if [[ ! -d "$TARGET_DIR/.git" ]]; then
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
+        # Basit clone örneği: git clone "$REPO_URL"
         git clone --depth=1 --branch "${REPO_BRANCH:-main}" "$REPO_URL" "$TARGET_DIR"
     else
         warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
@@ -3637,7 +3648,7 @@ install_playwright_browsers() {
                     cat "$_pw_install_log" >&2
                     if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
                         warn "Playwright binary fallback da OS uyumsuzluğu nedeniyle başarısız. Playwright >=1.55 upgrade fallback deneniyor..."
-                        if uv pip install -U "playwright>=1.55,<2.0"; then
+                        if "${PY_CMD[@]}" -m pip install -U "playwright>=1.55,<2.0"; then
                             if _try_playwright_install binary; then
                                 grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                                     "$_pw_install_log" || true
@@ -3668,18 +3679,18 @@ EOF
                                     ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
                                 else
                                     cat "$_pw_install_log" >&2
-                                    warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                                    warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: python -m pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                                 fi
                             fi
                         else
-                            warn "Playwright upgrade fallback (uv pip install -U \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
+                            warn "Playwright upgrade fallback (python -m pip install -U \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
                         fi
                     else
-                        warn "Playwright fallback kurulumu başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                        warn "Playwright fallback kurulumu başarısız oldu. Önce: python -m pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                     fi
                 fi
             else
-                warn "Playwright kurulumu başarısız oldu. Önce: uv pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
+                warn "Playwright kurulumu başarısız oldu. Önce: python -m pip install -U \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
             fi
         fi
 
@@ -6324,9 +6335,9 @@ sync_pytorch_cuda_wheels() {
         torchaudio
     )
 
-    info "PyTorch CUDA wheel seçimi uv pip ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv pip "${pip_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv pip ile güncellenemedi (${cuda_tag})."
+    info "PyTorch CUDA wheel seçimi pip ile uygulanıyor: ${cuda_tag} (${index_url})"
+    if ! "${PY_CMD[@]}" -m pip "${pip_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları pip ile güncellenemedi (${cuda_tag})."
     fi
 }
 
