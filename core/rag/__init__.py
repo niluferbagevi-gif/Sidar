@@ -1094,7 +1094,7 @@ class DocumentStore:
             self._pg_embedding_model = get_sentence_transformer_model(
                 self._pg_embedding_model_name, self.cfg
             )
-            self._pg_embedding_device = "cuda" if self._use_gpu else "cpu"
+            self._pg_embedding_device = "cuda" if bool(getattr(self, "_use_gpu", False)) else "cpu"
             self._pgvector_available = True
             self._log_backend_init_status_once(
                 "pgvector_init_success",
@@ -1113,9 +1113,12 @@ class DocumentStore:
         if not self._pg_embedding_model or not texts:
             return []
         try:
-            vectors = self._pg_embedding_model.encode(
-                texts, normalize_embeddings=True, show_progress_bar=False
-            )
+            try:
+                vectors = self._pg_embedding_model.encode(
+                    texts, normalize_embeddings=True, show_progress_bar=False
+                )
+            except TypeError:
+                vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
             if hasattr(vectors, "tolist"):
                 raw_vectors = vectors.tolist()
                 return [list(map(float, row)) for row in raw_vectors]
