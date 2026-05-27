@@ -199,6 +199,8 @@ def test_main_reports_no_change_guidance_for_idempotent_chain(
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     env_file = tmp_path / ".env"
     password = "a" * 24
