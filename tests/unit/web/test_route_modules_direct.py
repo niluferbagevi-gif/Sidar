@@ -152,10 +152,17 @@ def test_hitl_router_pending_direct() -> None:
 
 
 def test_metrics_router_json_direct() -> None:
+    class _Memory:
+        def get_all_sessions(self):
+            return []
+
+        def __len__(self):
+            return 0
+
     agent = SimpleNamespace(
         VERSION="x",
         docs=SimpleNamespace(doc_count=0),
-        memory=[],
+        memory=_Memory(),
         cfg=SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False),
     )
     router = build_metrics_router(
@@ -165,6 +172,8 @@ def test_metrics_router_json_direct() -> None:
         local_rate_limits={},
         get_llm_metrics_collector=lambda: SimpleNamespace(snapshot=lambda: {"totals": {"calls": 0, "total_tokens": 0}}),
         render_llm_metrics_prometheus=lambda _: "",
+        set_current_metrics_user_id=lambda *_: None,
+        reset_current_metrics_user_id=lambda *_: None,
         logger=SimpleNamespace(debug=lambda *_: None),
     )
     app = FastAPI()
