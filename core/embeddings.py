@@ -45,9 +45,14 @@ def _hf_hub_cache_roots() -> list[Path]:
         if raw:
             roots.append(Path(raw).expanduser())
 
-    hf_home = Path(os.getenv("HF_HOME", "~/.cache/huggingface")).expanduser()
-    roots.append(hf_home / "hub")
-    roots.append(Path("~/.cache/huggingface/hub").expanduser())
+    hf_home_raw = os.getenv("HF_HOME", "").strip()
+    if hf_home_raw:
+        roots.append(Path(hf_home_raw).expanduser() / "hub")
+
+    if not (os.getenv("HF_HUB_CACHE", "").strip() or hf_home_raw):
+        hf_home = Path("~/.cache/huggingface").expanduser()
+        roots.append(hf_home / "hub")
+        roots.append(Path("~/.cache/huggingface/hub").expanduser())
 
     unique: list[Path] = []
     seen: set[str] = set()
