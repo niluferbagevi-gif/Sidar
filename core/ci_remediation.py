@@ -96,10 +96,7 @@ def _configured_ruff_unsafe_selectors() -> list[str]:
     configured_value = getattr(Config, "RUFF_AUTOFIX_UNSAFE_RULES", None)
     if configured_value is None:
         return _normalize_ruff_rule_selectors(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
-    configured = _normalize_ruff_rule_selectors(configured_value)
-    if configured:
-        return configured
-    return _normalize_ruff_rule_selectors(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
+    return _normalize_ruff_rule_selectors(configured_value)
 
 
 def build_ruff_autofix_command(
@@ -176,7 +173,9 @@ def _is_allowed_ruff_command(parts: list[str]) -> bool:
     if unsafe_requested:
         allowed_selectors = _configured_ruff_unsafe_selectors()
         if not selected_rules:
-            selected_rules = list(allowed_selectors)
+            return False
+        if not allowed_selectors:
+            return False
         if not all(
             _ruff_unsafe_selector_allowed(rule, allowed_selectors) for rule in selected_rules
         ):
