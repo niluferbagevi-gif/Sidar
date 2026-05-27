@@ -197,8 +197,12 @@ def build_auth_admin_router(
 
     router.legacy_exports = {
         "register_user": register_user,
+        "login_user": login_user,
         "admin_stats": admin_stats,
         "admin_list_prompts": admin_list_prompts,
         "admin_upsert_prompt": admin_upsert_prompt,
+        "admin_activate_prompt": admin_activate_prompt,
+        "admin_list_policies": admin_list_policies,
+        "admin_upsert_policy": admin_upsert_policy,
     }
     return router
