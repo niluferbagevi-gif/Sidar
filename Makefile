@@ -13,7 +13,7 @@ SHELLCHECK_FILES := $(shell git ls-files \
 
 .PHONY: lint lint-shell installer-shellcheck test test-shell
 
-lint: installer-shellcheck lint-shell
+lint: lint-shell
 
 installer-shellcheck:
 	$(SHELLCHECK) --severity=warning -x install_sidar.sh

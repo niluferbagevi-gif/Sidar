@@ -83,7 +83,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --all-extras
+          uv sync --frozen --all-extras
 
 
       - name: Verify core install manifest integrity
@@ -300,7 +300,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --all-extras
+          uv sync --frozen --all-extras
 
       - name: Run DB schema migration
         run: uv run alembic upgrade head
@@ -337,7 +337,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --all-extras
 
       - name: Run GPU inference benchmark quality gate
         run: bash scripts/ci/run_ttft_quality_gate.sh
