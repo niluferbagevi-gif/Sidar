@@ -97,7 +97,7 @@ def upgrade() -> None:
             sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
             sa.Column(
                 "user_id",
-                _user_fk_type_for_backend(engine_name),
+                UUID_TYPE,
                 sa.ForeignKey("users.id", ondelete="CASCADE"),
                 nullable=False,
             ),
