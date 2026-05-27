@@ -208,6 +208,7 @@ def build_auth_admin_router(
     router.legacy_exports = {
         "register_user": register_user,
         "login_user": login_user,
+        "auth_me": auth_me,
         "admin_stats": admin_stats,
         "admin_list_prompts": admin_list_prompts,
         "admin_active_prompt": admin_active_prompt,

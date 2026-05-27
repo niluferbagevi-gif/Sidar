@@ -3767,6 +3767,15 @@ for _router in (
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
 
+# Explicit legacy re-exports for static analyzers (ruff/mypy).
+register_user = auth_admin_router.legacy_exports["register_user"]
+login_user = auth_admin_router.legacy_exports["login_user"]
+auth_me = auth_admin_router.legacy_exports["auth_me"]
+admin_stats = auth_admin_router.legacy_exports["admin_stats"]
+admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
+admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
+admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
+
 # Legacy endpoint declarations kept in web_server.py for backwards-compatible
 # static route discovery tests that scan this file for @app.<method>(...) usage.
 @app.post("/auth/register")
