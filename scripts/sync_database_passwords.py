@@ -388,15 +388,26 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[di
     if not postgres_password:
         return []
 
-    warnings: list[dict[str, str]] = []
-    for key in DATABASE_URL_KEYS:
+    # DATABASE_URL is the primary/public key. Validate it first and only
+    # validate SIDAR_CONTAINER_DATABASE_URL when DATABASE_URL is absent/invalid.
+    ordered_keys = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+    candidates: list[tuple[str, str]] = []
+    for key in ordered_keys:
         raw_url = effective_env.get(key, "").strip()
         if not raw_url:
             continue
         parsed = urlsplit(raw_url)
         if not parsed.scheme.startswith("postgresql") or not parsed.username:
             continue
-        url_password = unquote(parsed.password or "")
+        candidates.append((key, unquote(parsed.password or "")))
+
+    if not candidates:
+        return []
+    if candidates[0][0] == "DATABASE_URL":
+        candidates = [candidates[0]]
+
+    warnings: list[dict[str, str]] = []
+    for key, url_password in candidates:
         if url_password != postgres_password:
             warnings.append(
                 _message_entry(
@@ -504,17 +515,20 @@ def sync_env_chain(
             for key in keys
             if key in DATABASE_URL_KEYS
         }
-        for key in DATABASE_URL_KEYS:
-            if key in removed_url_keys:
-                continue
-            if os.environ.get(key, "").strip():
-                notes.append(
-                    _message_entry(
-                        f"Parent process still exports {key}; restart the launcher or unset it so Sidar derives the URL from POSTGRES_* values.",
-                        severity="info",
-                        key=key,
-                    )
+        exported_keys = [
+            key
+            for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
+            if os.environ.get(key, "").strip()
+        ]
+        if exported_keys:
+            key = exported_keys[0]
+            notes.append(
+                _message_entry(
+                    f"Parent process still exports {key}; restart the launcher or unset it so Sidar derives the URL from POSTGRES_* values.",
+                    severity="info",
+                    key=key,
                 )
+            )
     else:
         effective_env_after_sync = _effective_env_from_specs(specs)
         warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
