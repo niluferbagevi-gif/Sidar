@@ -290,6 +290,8 @@ def build_project_ops_router(
         "_git_run": _git_run,
         "get_sessions": get_sessions,
         "load_session": load_session,
+        "new_session": new_session,
+        "delete_session": delete_session,
         "list_project_files": list_project_files,
         "file_content": file_content,
         "git_info": git_info,
@@ -298,5 +300,6 @@ def build_project_ops_router(
         "github_repos": github_repos,
         "github_prs": github_prs,
         "github_pr_detail": github_pr_detail,
+        "set_repo": set_repo,
     }
     return router
