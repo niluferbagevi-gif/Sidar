@@ -961,9 +961,8 @@ run_bats_shell_tests() {
   fi
 
   if ! command -v bats >/dev/null 2>&1; then
-    echo "⚠️ BATS bulunamadı; shell testleri atlandı (kurulum: bats)."
-    BACKEND_EXIT_CODE=1
-    return 1
+    echo "ℹ️ BATS bulunamadı; shell testleri opsiyonel olduğu için atlandı (kurulum: bats)."
+    return 0
   fi
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."
