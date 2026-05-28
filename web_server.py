@@ -3672,7 +3672,11 @@ agent_router = build_agent_router(
         persist_and_import_plugin_file=_persist_and_import_plugin_file,
         max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
         read_plugin_marketplace_state=lambda: _read_plugin_marketplace_state(),
-        serialize_marketplace_plugin=lambda plugin_id, *, installed_state=None: _serialize_marketplace_plugin(plugin_id, installed_state=installed_state),
+        serialize_marketplace_plugin=(
+            lambda plugin_id, *, installed_state=None: _serialize_marketplace_plugin(
+                plugin_id, installed_state=installed_state
+            )
+        ),
         plugin_marketplace_catalog=lambda: PLUGIN_MARKETPLACE_CATALOG,
         install_marketplace_plugin=_install_marketplace_plugin,
         uninstall_marketplace_plugin=_uninstall_marketplace_plugin,
