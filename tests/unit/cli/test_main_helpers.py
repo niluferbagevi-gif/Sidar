@@ -409,6 +409,54 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
     assert "password drift attempt 2" in output
 
 
+def test_launcher_doctor_preflight_ignores_stale_revalidation_cache(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    calls = {"database_env": 0, "connectivity": 0, "rag": 0, "gpu": 0}
+
+    main._LAST_DOCTOR_AUTO_FIX_REVALIDATION = SimpleNamespace(
+        name="database_env",
+        status="pass",
+        message="stale success from previous check",
+        details={},
+    )
+
+    def _database_check() -> SimpleNamespace:
+        calls["database_env"] += 1
+        return SimpleNamespace(
+            name="database_env",
+            status="fail",
+            message="password drift",
+            details={"auto_fix": "uv run python -m scripts.sync_database_passwords"},
+        )
+
+    def _connectivity_check() -> SimpleNamespace:
+        calls["connectivity"] += 1
+        return SimpleNamespace(name="database_connectivity", status="pass", message="ok", details={})
+
+    def _rag_check() -> SimpleNamespace:
+        calls["rag"] += 1
+        return SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={})
+
+    def _gpu_check() -> SimpleNamespace:
+        calls["gpu"] += 1
+        return SimpleNamespace(name="gpu_memory_config", status="pass", message="ok", details={})
+
+    monkeypatch.setattr(doctor, "check_database_env", _database_check)
+    monkeypatch.setattr(doctor, "check_database_connectivity", _connectivity_check)
+    monkeypatch.setattr(doctor, "check_rag_readiness", _rag_check)
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", _gpu_check)
+    monkeypatch.setattr(main, "_run_doctor_auto_fix", lambda *_args, **_kwargs: True)
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert calls == {"database_env": 1, "connectivity": 0, "rag": 0, "gpu": 1}
+    assert "stale success from previous check" not in output
+    assert "database_connectivity ve rag_readiness kontrolleri atlandı" in output
+
 
 def test_launcher_doctor_preflight_skips_database_dependents_after_failed_database_env(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

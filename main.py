@@ -765,6 +765,19 @@ def _revalidate_doctor_check_after_auto_fix(
     return updated_check
 
 
+def _clear_doctor_auto_fix_revalidation_cache() -> None:
+    """Reset the latest Doctor auto-fix revalidation result before a new check."""
+    global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+    _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
+
+
+def _doctor_final_check_after_auto_fix(initial_check: Any, auto_fix_applied: bool) -> Any:
+    """Return the cached post-auto-fix Doctor result without revalidating twice."""
+    if auto_fix_applied and _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
+        return _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+    return initial_check
+
+
 def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> None:
     try:
         from core.doctor import (
@@ -809,10 +822,9 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         try:
             check = check_func()
             _print_doctor_check_summary(check)
+            _clear_doctor_auto_fix_revalidation_cache()
             auto_fix_applied = _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
-            final_check = check
-            if auto_fix_applied and _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
-                final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+            final_check = _doctor_final_check_after_auto_fix(check, auto_fix_applied)
             final_status = str(getattr(final_check, "status", "warn") or "warn")
             if check_name == "database_env":
                 skip_database_dependents = final_status == "fail"
