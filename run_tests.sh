@@ -4,9 +4,13 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}" || exit 1
 
-# Codespaces overlay dosya sisteminde uv hardlink denemesi pahalı uyarılara neden olur;
-# UV_LINK_MODE=copy hem devcontainer hem de manuel script çalıştırmalarında deterministik kalır.
-if [ -z "${UV_LINK_MODE:-}" ] && { [ "${CODESPACES:-}" = "true" ] || [ "${GITHUB_CODESPACES:-}" = "true" ]; }; then
+# Codespaces/WSL overlay dosya sistemlerinde uv hardlink denemesi eksik paket-data dosyası
+# semptomlarına yol açabildiği için UV_LINK_MODE=copy ile deterministik kurulum tercih edilir.
+if [ -z "${UV_LINK_MODE:-}" ] && {
+  [ "${CODESPACES:-}" = "true" ] ||
+  [ "${GITHUB_CODESPACES:-}" = "true" ] ||
+  grep -qi microsoft /proc/version 2>/dev/null
+}; then
   export UV_LINK_MODE=copy
 fi
 
