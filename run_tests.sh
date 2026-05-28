@@ -803,6 +803,30 @@ run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
   local test_dotenv_file="${DOTENV_FILE:-.env.test}"
   echo "ℹ️ Test ortam değişken dosyası: DOTENV_FILE=${test_dotenv_file}"
+
+  # Coverage HTML şablonları bozuk/eksik kurulumlarda (örn. htmlfiles/index.html yok)
+  # pytest --cov-report=html çağrısı INTERNALERROR ile düşer. Savunmacı kontrol ile
+  # eksik durumda coverage[toml] yeniden kurularak test döngüsü kendini iyileştirir.
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+import importlib.resources
+import sys
+
+try:
+    htmlfiles = importlib.resources.files("coverage").joinpath("htmlfiles")
+    sys.exit(0 if htmlfiles.joinpath("index.html").is_file() else 1)
+except Exception:
+    sys.exit(1)
+PY
+  then
+    echo "⚠️ coverage/htmlfiles eksik — coverage[toml] yeniden kuruluyor..."
+    if ! uv pip install --force-reinstall --no-cache "coverage[toml]" >/dev/null; then
+      echo "❌ coverage[toml] yeniden kurulumu başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return
+    fi
+    echo "✅ coverage/htmlfiles doğrulaması için paket onarıldı."
+  fi
+
   if ! python - <<'PY' >/dev/null 2>&1
 import tomllib
 from pathlib import Path
