@@ -909,7 +909,7 @@ PY
     fi
   fi
 
-  if python -c "import xdist" >/dev/null 2>&1; then
+  if uv run python -c "import xdist" >/dev/null 2>&1; then
     base_pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
 

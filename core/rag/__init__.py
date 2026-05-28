@@ -1388,7 +1388,7 @@ class DocumentStore:
                 for entity in self._extract_json_entities(json.loads(stripped)):
                     add_entity(entity.label, entity.name, **entity.properties, extraction="json")
             except json.JSONDecodeError:
-                pass
+                logger.debug("Entity extraction: JSON decode başarısız, metin atlandı.")
 
         if "kampanya" in title.lower() or "campaign" in title.lower():
             add_entity("Campaign", title, extraction="title")

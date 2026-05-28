@@ -536,7 +536,7 @@ class SwarmOrchestrator:
                 name="sidar_swarm_autonomous_feedback",
             )
         except RuntimeError:
-            pass
+            logger.debug("Swarm: çalışan event loop yok; otonom feedback görevi oluşturulamadı.")
 
     @staticmethod
     def _goal_fingerprint(goal: str, *, max_chars: int = 180) -> str:
