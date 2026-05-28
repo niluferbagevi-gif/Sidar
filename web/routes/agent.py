@@ -117,10 +117,11 @@ def build_agent_router(
         )
         catalog = _resolve_web_server_attr("PLUGIN_MARKETPLACE_CATALOG", plugin_marketplace_catalog)
         state = state_reader()
-        items = [
-            serializer(plugin_id, installed_state=state.get(plugin_id, {}))
-            for plugin_id in sorted(catalog)
-        ]
+        items = []
+        for plugin_id in sorted(catalog):
+            item = dict(serializer(plugin_id, installed_state=state.get(plugin_id, {})))
+            item.setdefault("id", plugin_id)
+            items.append(item)
         return JSONResponse({"items": items})
 
     @router.post("/api/plugin-marketplace/install")

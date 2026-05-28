@@ -2261,6 +2261,7 @@ def _serialize_marketplace_plugin(
     entrypoint = Path(entry["entrypoint"])
     return {
         "plugin_id": str(entry["plugin_id"]),
+        "id": str(entry["plugin_id"]),
         "name": str(entry["name"]),
         "summary": str(entry["summary"]),
         "description": str(entry["description"]),
