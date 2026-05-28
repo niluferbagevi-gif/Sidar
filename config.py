@@ -166,6 +166,15 @@ def get_dotenv_key_source_report() -> dict[str, dict[str, Any]]:
     return deepcopy(_DOTENV_KEY_SOURCES)
 
 
+__all__ = [
+    "Config",
+    "get_config",
+    "reload_environment",
+    "get_dotenv_load_report",
+    "get_dotenv_key_source_report",
+]
+
+
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
     dotenv_path = Path(raw_path).expanduser()
@@ -1442,10 +1451,11 @@ class Config:
                     missing_notice_items.append(notice)
             _DOTENV_MISSING_FILE_NOTICES.clear()
         if missing_notice_items:
-            _log_first_load_info(
-                "Opsiyonel dotenv dosyaları bulunamadı: %s",
-                ", ".join(missing_notice_items),
+            missing_notice_message = (
+                f"Opsiyonel dotenv dosyaları bulunamadı: {', '.join(missing_notice_items)}"
             )
+            _log_first_load_info("%s", missing_notice_message)
+            print(missing_notice_message)
 
         if _DOTENV_KEY_SOURCES:
             logger.debug(
