@@ -612,25 +612,37 @@ def _build_embedding_function(
     """
     try:
         local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        factory_identity = _resolve_embedding_factory_identity()
         return _build_embedding_function_cached(
             use_gpu=use_gpu,
             gpu_device=gpu_device,
             mixed_precision=mixed_precision,
             local_files_only=local_files_only,
+            factory_identity=factory_identity,
         )
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
         local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        factory_identity = _resolve_embedding_factory_identity()
         try:
             return _build_embedding_function_cached(
                 use_gpu=False,
                 gpu_device=0,
                 mixed_precision=False,
                 local_files_only=local_files_only,
+                factory_identity=factory_identity,
             )
         except Exception as cpu_exc:
             logger.warning("⚠️  CPU embedding de başlatılamadı: %s", cpu_exc)
             return None
+
+
+def _resolve_embedding_factory_identity() -> tuple[str, int]:
+    embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
+    if embedding_module is None:
+        embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
+    factory = embedding_module.SentenceTransformerEmbeddingFunction
+    return (getattr(factory, "__module__", ""), id(factory))
 
 
 @functools.lru_cache(maxsize=8)
@@ -640,7 +652,9 @@ def _build_embedding_function_cached(
     gpu_device: int,
     mixed_precision: bool,
     local_files_only: bool,
+    factory_identity: tuple[str, int],
 ) -> Any:
+    del factory_identity
     embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
     if embedding_module is None:
         embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
