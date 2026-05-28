@@ -73,7 +73,9 @@ jobs:
           enable-cache: false
 
       - name: Install APT packages
-        run: sudo apt-get install -y portaudio19-dev
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y portaudio19-dev
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
