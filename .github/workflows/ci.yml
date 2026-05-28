@@ -70,7 +70,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.4.3
