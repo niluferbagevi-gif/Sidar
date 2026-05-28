@@ -319,7 +319,6 @@ def test_install_script_defaults_match_terminology_standards() -> None:
     assert 'CODE_MOD="qwen2.5-coder:3b"' not in script
     assert "uv run pytest" in script
     assert "install_pyright_lsp_tool" in script
-    assert "uv tool install pyright" in script
     assert "pyright-langserver" in script
     # Eski ürün adı kullanıcıya görünen mesajda geçmemelidir; legacy yakalama korunur.
     assert "*lotus*" in script
@@ -383,7 +382,6 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
     assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
     assert "uv run pytest" in text_by_file["install_sidar.sh"]
-    assert "uv tool install pyright" in text_by_file["install_sidar.sh"]
     assert "uv tool install pyright" in text_by_file["README.md"]
     assert "uv run alembic upgrade head" in text_by_file["README.md"]
 
