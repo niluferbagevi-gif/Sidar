@@ -620,7 +620,7 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
 def _run_doctor_auto_fix(
     check: Any, check_func: Any | None = None, *, apply_all_mode: bool = False
 ) -> bool:
-    """Run Doctor auto-fix command(s) without post-fix revalidation."""
+    """Run Doctor auto-fix command(s) and cache revalidation result for callers."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
     details = getattr(check, "details", {}) or {}
@@ -644,10 +644,20 @@ def _run_doctor_auto_fix(
             return False
 
     ran_any = False
+    check_name = str(getattr(check, "name", "doctor") or "doctor")
+    source_details = getattr(check, "details", None)
     for auto_fix in selected_auto_fix_commands:
         if not _run_doctor_auto_fix_command(auto_fix):
             return ran_any
         ran_any = True
+        if callable(check_func):
+            updated_check = _revalidate_doctor_check_after_auto_fix(
+                check_name, check_func, source_details
+            )
+            if updated_check is not None:
+                updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+                if updated_status == "pass":
+                    break
     return ran_any
 
 
