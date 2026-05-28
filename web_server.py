@@ -2105,9 +2105,7 @@ def _load_plugin_agent_class(
         for base in candidate_mro[1:]:
             if plugin_baseagent is not None and base is plugin_baseagent:
                 return True
-            if getattr(base, "__name__", "") == "BaseAgent" and getattr(
-                base, "__module__", ""
-            ) == "agent.base_agent":
+            if getattr(base, "__module__", "") == "agent.base_agent":
                 return True
         return False
 
