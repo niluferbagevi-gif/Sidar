@@ -796,6 +796,38 @@ PY
   fi
 
   echo "✅ Runtime bağımlılıkları doğrulandı."
+
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+from pathlib import Path
+import coverage
+
+html_index = Path(coverage.__file__).resolve().parent / "htmlfiles" / "index.html"
+raise SystemExit(0 if html_index.exists() else 1)
+PY
+  then
+    echo "⚠️ coverage htmlfiles/index.html eksik görünüyor. coverage + pytest-cov paketleri yeniden kuruluyor..."
+    if ! env UV_LINK_MODE=copy uv sync --reinstall-package coverage --reinstall-package pytest-cov --all-extras; then
+      echo "❌ coverage/pytest-cov yeniden kurulumu başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+
+    if ! uv run python - <<'PY' >/dev/null 2>&1
+from pathlib import Path
+import coverage
+
+html_index = Path(coverage.__file__).resolve().parent / "htmlfiles" / "index.html"
+raise SystemExit(0 if html_index.exists() else 1)
+PY
+    then
+      echo "❌ coverage htmlfiles/index.html doğrulaması başarısız; sanal ortam bozuk olabilir."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+
+    echo "✅ coverage htmlfiles/index.html doğrulandı (otomatik yeniden kurulum sonrası)."
+  fi
+
   return 0
 }
 
@@ -865,6 +897,27 @@ PY
   echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
   "${phase1_cmd[@]}"
   local phase1_exit=$?
+
+  if [ "${phase1_exit}" -ne 0 ]; then
+    local failure_report_path="reports/last_failures.txt"
+    mkdir -p "$(dirname "${failure_report_path}")"
+    echo "🧭 Aşama 1 başarısız. Hızlı fail özeti toplanıyor: ${failure_report_path}"
+
+    local unit_diag_workers="${UNIT_FAILURE_DIAG_WORKERS:-auto}"
+    local unit_diag_cmd=(
+      env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
+      --no-cov
+      -q
+      -rf
+      --tb=short
+      -n "${unit_diag_workers}"
+      --ignore=tests/performance
+      tests/unit
+    )
+    echo "➡️ Unit fail tanılama komutu: ${unit_diag_cmd[*]}"
+    "${unit_diag_cmd[@]}" | tee "${failure_report_path}" || true
+    echo "ℹ️ Unit fail özeti yazıldı: ${failure_report_path}"
+  fi
 
   # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
   local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"

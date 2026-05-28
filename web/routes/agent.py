@@ -103,10 +103,19 @@ def build_agent_router(
 
     @router.get("/api/plugin-marketplace/catalog")
     async def plugin_marketplace_catalog_endpoint(_user: Any = Depends(require_admin_user)) -> Any:
-        state = read_plugin_marketplace_state()
+        serialize_helper = _resolve_web_server_helper(
+            "_serialize_marketplace_plugin", serialize_marketplace_plugin
+        )
+        state_helper = _resolve_web_server_helper(
+            "_read_plugin_marketplace_state", read_plugin_marketplace_state
+        )
+        catalog_dict = _resolve_web_server_helper(
+            "PLUGIN_MARKETPLACE_CATALOG", plugin_marketplace_catalog
+        )
+        state = state_helper()
         items = [
-            serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {}))
-            for plugin_id in sorted(plugin_marketplace_catalog)
+            serialize_helper(plugin_id, installed_state=state.get(plugin_id, {}))
+            for plugin_id in sorted(catalog_dict)
         ]
         return JSONResponse({"items": items})
 

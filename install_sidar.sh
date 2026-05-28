@@ -3602,7 +3602,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    warn "Pyright LSP proje ortamında bulunamadı; proje bağımlılığı fallback'i olarak uv add --dev pyright deneniyor."
+    warn "Pyright LSP proje ortamında bulunamadı; gerekirse 'uv tool install pyright' veya 'uv add --dev pyright' ile manuel kurabilirsiniz. Proje bağımlılığı fallback'i olarak uv add --dev pyright deneniyor."
     if uv add --dev pyright >/dev/null 2>&1; then
         if pyright-langserver --version >/dev/null 2>&1; then
             ok "Pyright LSP uv add --dev fallback ile kuruldu: $(command -v pyright-langserver)"
