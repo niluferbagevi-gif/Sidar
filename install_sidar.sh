@@ -3615,23 +3615,15 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    warn "Pyright LSP proje ortamında bulunamadı; önce uv tool install pyright fallback'i deneniyor."
-    if uv tool install pyright >/dev/null 2>&1; then
-        if pyright-langserver --version >/dev/null 2>&1; then
-            ok "Pyright LSP uv tool fallback ile kuruldu: $(command -v pyright-langserver)"
+    warn "Pyright LSP proje ortamında bulunamadı; dev bağımlılıkları uv sync ile yenileniyor."
+    if uv sync --frozen --extra dev >/dev/null 2>&1; then
+        if uv run pyright-langserver --version >/dev/null 2>&1; then
+            ok "Pyright LSP dev bağımlılığı olarak doğrulandı: $(uv run python -c 'import shutil; print(shutil.which("pyright-langserver") or "uv-run")')"
             return
         fi
     fi
 
-    warn "uv tool install pyright ile kurulum doğrulanamadı; proje bağımlılığı fallback'i olarak uv add --dev pyright deneniyor."
-    if uv add --dev pyright >/dev/null 2>&1; then
-        if pyright-langserver --version >/dev/null 2>&1; then
-            ok "Pyright LSP uv add --dev fallback ile kuruldu: $(command -v pyright-langserver)"
-            return
-        fi
-    fi
-
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın; gerekirse fallback olarak 'uv tool install pyright' veya 'uv add --dev pyright' kullanın."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın; gerekirse dev bağımlılıklarını 'uv sync --frozen --extra dev' ile yenileyin."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
