@@ -794,7 +794,18 @@ cleanup_test_services() {
 
 trap cleanup_test_services EXIT
 
+_check_coverage_htmlfiles() {
+  uv run python - <<'PY' >/dev/null 2>&1
+import importlib.resources, pathlib, coverage as _cov
+pkg_dir = pathlib.Path(_cov.__file__).parent
+assert (pkg_dir / "htmlfiles" / "index.html").exists(), "htmlfiles missing"
+PY
+}
+
 ensure_runtime_dependencies() {
+  local imports_ok=0
+  local htmlfiles_ok=0
+
   if uv run python - <<'PY' >/dev/null 2>&1
 import asyncpg  # noqa: F401
 import alembic  # noqa: F401
@@ -803,10 +814,26 @@ import pytest_cov  # noqa: F401
 import pytest_asyncio  # noqa: F401
 PY
   then
+    imports_ok=1
+  fi
+
+  if _check_coverage_htmlfiles; then
+    htmlfiles_ok=1
+  fi
+
+  if [ "${imports_ok}" -eq 1 ] && [ "${htmlfiles_ok}" -eq 1 ]; then
     return 0
   fi
 
-  echo "⚠️ Runtime bağımlılıkları eksik (asyncpg/alembic/coverage/pytest eklentileri)."
+  if [ "${imports_ok}" -eq 0 ]; then
+    echo "⚠️ Runtime bağımlılıkları eksik (asyncpg/alembic/coverage/pytest eklentileri)."
+  fi
+  if [ "${htmlfiles_ok}" -eq 0 ]; then
+    echo "⚠️ coverage htmlfiles eksik — paket verisi bozuk olabilir (WSL2/UV_LINK_MODE=copy sorunu)."
+    echo "ℹ️ coverage paketi yeniden kuruluyor: uv pip install --reinstall coverage"
+    uv pip install --reinstall coverage >/dev/null 2>&1 || true
+  fi
+
   echo "ℹ️ Dev + postgres extras uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
   if ! uv sync --frozen --all-extras; then
     echo "❌ Runtime bağımlılıklarının otomatik kurulumu başarısız oldu."
@@ -825,6 +852,12 @@ PY
     echo "❌ Runtime bağımlılık doğrulaması başarısız: asyncpg/alembic/coverage/pytest eklentileri yüklenemedi."
     BACKEND_EXIT_CODE=1
     return 1
+  fi
+
+  if ! _check_coverage_htmlfiles; then
+    echo "❌ coverage htmlfiles hâlâ eksik — HTML raporu devre dışı bırakılıyor."
+    # HTML raporunu devre dışı bırakmak için global flag set et
+    COVERAGE_HTML_BROKEN=1
   fi
 
   echo "✅ Runtime bağımlılıkları doğrulandı."
@@ -878,6 +911,14 @@ PY
 
   if python -c "import xdist" >/dev/null 2>&1; then
     base_pytest_cmd+=(-n "${PYTEST_WORKERS}")
+  fi
+
+  # HTML raporu yalnızca coverage htmlfiles sağlıklıysa etkinleştir.
+  # Aksi hâlde pytest INTERNALERROR ile çöker (WSL2/UV_LINK_MODE=copy sorunu).
+  if [ "${COVERAGE_HTML_BROKEN:-0}" -eq 0 ] && _check_coverage_htmlfiles; then
+    base_pytest_cmd+=(--cov-report=html)
+  else
+    echo "⚠️ coverage htmlfiles eksik — HTML raporu bu çalıştırmada atlanıyor."
   fi
 
   # Coverage raporlarını XML/JSON olarak dışa aktararak otomatik araçların
