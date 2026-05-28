@@ -202,8 +202,6 @@ def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> 
     ]
 
 
-
-
 def _extract_mypy_targets_from_log(log_text: str, *, limit: int = 200) -> list[str]:
     """Fallback parser: derive candidate files from mypy's `path:line: error:` format."""
 
@@ -227,6 +225,7 @@ def _extract_mypy_targets_from_log(log_text: str, *, limit: int = 200) -> list[s
         if len(targets) >= max(1, int(limit or 1)):
             break
     return targets
+
 
 def _extract_scope_error_lines(
     log_text: str,
@@ -375,7 +374,9 @@ async def _run(args: argparse.Namespace) -> int:
             )
             return 0
 
-        fallback_targets = _extract_mypy_targets_from_log(log_text) if source_name.lower() == "mypy" else []
+        fallback_targets = (
+            _extract_mypy_targets_from_log(log_text) if source_name.lower() == "mypy" else []
+        )
         if fallback_targets:
             context["suspected_targets"] = fallback_targets
             suspected_targets = fallback_targets

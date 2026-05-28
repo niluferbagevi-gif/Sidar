@@ -70,7 +70,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Install APT dependencies
         run: sudo apt-get update -y && sudo apt-get install -y portaudio19-dev shellcheck bats

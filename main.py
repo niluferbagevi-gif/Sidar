@@ -253,7 +253,9 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     try:
         payload = json.loads(session_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        logger.debug("Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path)
+        logger.debug(
+            "Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path
+        )
         return None
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Launcher oturum cache'i okunamadı (%s): %s", session_path, exc)
@@ -803,6 +805,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         _DOCTOR_APPLY_ALL_APPROVED = apply_all_mode
     skip_database_dependents = False
     skip_summary_printed = False
+
     def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
         nonlocal skip_database_dependents, skip_summary_printed
         if skip_database_dependents and check_name in {
@@ -983,7 +986,9 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _stream_pipe(pipe: Any, target: Any, prefix: str = "", color: str = "", mirror: bool = True) -> None:
+def _stream_pipe(
+    pipe: Any, target: Any, prefix: str = "", color: str = "", mirror: bool = True
+) -> None:
     """Backward-compatible helper to stream lines from a pipe."""
     for line in iter(pipe.readline, ""):
         payload = f"{prefix} {line}" if prefix else line
@@ -1143,7 +1148,9 @@ def run_wizard() -> int:
     extra_args = {}
     last_extra_args = (
         last_selection.get("extra_args")
-        if has_last and last_selection is not None and isinstance(last_selection.get("extra_args"), dict)
+        if has_last
+        and last_selection is not None
+        and isinstance(last_selection.get("extra_args"), dict)
         else {}
     )
     args = last_extra_args or {}
@@ -1287,7 +1294,12 @@ def main() -> None:
     global _LAUNCHER_DOCTOR_AUTO_FIX_YES
     _LAUNCHER_DOCTOR_AUTO_FIX_YES = bool(args.yes)
 
-    use_last_env = os.getenv("SIDAR_LAUNCHER_USE_LAST", "").strip().lower() in {"1", "true", "yes", "on"}
+    use_last_env = os.getenv("SIDAR_LAUNCHER_USE_LAST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     use_last = bool(args.last or args.use_last or use_last_env)
     launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(use_last)]
     if sum(launch_modes) > 1:

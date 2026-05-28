@@ -37,7 +37,9 @@ def build_agent_router(
     """Build router for /api/agents and plugin marketplace endpoints."""
     router = LegacyExportRouter()
     _resolve_mfcb = (
-        max_file_content_bytes if callable(max_file_content_bytes) else (lambda: max_file_content_bytes)
+        max_file_content_bytes
+        if callable(max_file_content_bytes)
+        else (lambda: max_file_content_bytes)
     )
 
     def _resolve_web_server_helper(name: str, default: Any) -> Any:
@@ -47,9 +49,7 @@ def build_agent_router(
         return getattr(web_server_mod, name, default)
 
     @router.post("/api/agents/register")
-    async def register_agent_plugin(
-        payload: Any, _user: Any = Depends(require_admin_user)
-    ) -> Any:
+    async def register_agent_plugin(payload: Any, _user: Any = Depends(require_admin_user)) -> Any:
         data = _parse_payload(agent_plugin_register_request_model, payload)
         helper = _resolve_web_server_helper("_register_plugin_agent", register_plugin_agent)
         result = helper(
@@ -90,7 +90,9 @@ def build_agent_router(
             "_persist_and_import_plugin_file", persist_and_import_plugin_file
         )
         persist_helper(file.filename or target_role_name, data, module_label)
-        register_helper = _resolve_web_server_helper("_register_plugin_agent", register_plugin_agent)
+        register_helper = _resolve_web_server_helper(
+            "_register_plugin_agent", register_plugin_agent
+        )
         result = register_helper(
             role_name=target_role_name,
             source_code=source_code,

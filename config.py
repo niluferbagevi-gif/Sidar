@@ -498,8 +498,6 @@ def get_container_database_url() -> str:
     return build_postgres_dsn(host=container_host)
 
 
-
-
 def get_web_scrape_max_chars(default: int = 12000) -> int:
     """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
     if os.getenv("WEB_SCRAPE_MAX_CHARS") is not None:
@@ -674,11 +672,9 @@ try:
     )
     _file_handler.setFormatter(
         logging.Formatter(
-
-                "%(asctime)s %(levelname)-7s %(name)s [%(threadName)s]:%(lineno)d › %(message)s"
-                if _LOG_LEVEL_STR == "DEBUG"
-                else "%(asctime)s %(levelname)-7s %(name)s:%(lineno)d › %(message)s"
-
+            "%(asctime)s %(levelname)-7s %(name)s [%(threadName)s]:%(lineno)d › %(message)s"
+            if _LOG_LEVEL_STR == "DEBUG"
+            else "%(asctime)s %(levelname)-7s %(name)s:%(lineno)d › %(message)s"
         )
     )
     _root_logger.addHandler(_file_handler)
@@ -693,11 +689,15 @@ _configure_noisy_dependency_loggers()
 _DEPENDENCY_AUTO = object()
 
 
-def _log_once_env(flag: str, fn: Callable[..., Any], *args: Any, fingerprint: str | None = None) -> Any:
+def _log_once_env(
+    flag: str, fn: Callable[..., Any], *args: Any, fingerprint: str | None = None
+) -> Any:
     current = os.environ.get(flag, "")
     token = fingerprint or "1"
     if current == token:
-        logger.debug("Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s", flag)
+        logger.debug(
+            "Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s", flag
+        )
         return
     os.environ[flag] = token
     fn(*args)
@@ -907,9 +907,15 @@ class Config:
         "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
     )
     SELF_HEAL_DEFAULT_DECISION: str = (
-        get_optional_prefixed_env("SIDAR_SELF_HEAL_DEFAULT_DECISION", "SELF_HEAL_DEFAULT_DECISION")
-        or "prompt"
-    ).strip().lower()
+        (
+            get_optional_prefixed_env(
+                "SIDAR_SELF_HEAL_DEFAULT_DECISION", "SELF_HEAL_DEFAULT_DECISION"
+            )
+            or "prompt"
+        )
+        .strip()
+        .lower()
+    )
     RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_optional_prefixed_env(
         "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES", "RUFF_AUTOFIX_UNSAFE_RULES"
     )
@@ -1706,7 +1712,9 @@ class Config:
                 with httpx.Client(timeout=2) as client:
                     r = client.get(tags_url)
                 if r.status_code == 200:
-                    _log_once_env("SIDAR_OLLAMA_OK_LOGGED", logger.info, "✅ Ollama bağlantısı başarılı.")
+                    _log_once_env(
+                        "SIDAR_OLLAMA_OK_LOGGED", logger.info, "✅ Ollama bağlantısı başarılı."
+                    )
                 else:
                     logger.warning("⚠️  Ollama yanıt kodu: %d", r.status_code)
             except Exception:

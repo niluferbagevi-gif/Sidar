@@ -170,7 +170,9 @@ def test_metrics_router_json_direct() -> None:
         resolve_agent_instance=lambda: _async_value(agent),
         start_time=0.0,
         local_rate_limits={},
-        get_llm_metrics_collector=lambda: SimpleNamespace(snapshot=lambda: {"totals": {"calls": 0, "total_tokens": 0}}),
+        get_llm_metrics_collector=lambda: SimpleNamespace(
+            snapshot=lambda: {"totals": {"calls": 0, "total_tokens": 0}}
+        ),
         render_llm_metrics_prometheus=lambda _: "",
         set_current_metrics_user_id=lambda *_: None,
         reset_current_metrics_user_id=lambda *_: None,

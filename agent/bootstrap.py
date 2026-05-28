@@ -11,7 +11,9 @@ def log_sidar_agent_startup(version: str, cfg: Any) -> None:
     """Centralized SidarAgent startup logging."""
     memory_backend = str(getattr(cfg, "RAG_VECTOR_BACKEND", "unknown")).strip() or "unknown"
     runtime_mode = (
-        str(getattr(cfg, "APP_RUNTIME_MODE", None) or os.getenv("APP_RUNTIME_MODE", "unknown")).strip()
+        str(
+            getattr(cfg, "APP_RUNTIME_MODE", None) or os.getenv("APP_RUNTIME_MODE", "unknown")
+        ).strip()
         or "unknown"
     )
     logger.info(

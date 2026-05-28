@@ -403,7 +403,9 @@ class SupervisorAgent(BaseAgent):
         turn_count = 0
 
         if intent == "chat":
-            await self.events.publish("supervisor", "Sohbet niyeti algılandı; ajan delegasyonu atlanıyor.")
+            await self.events.publish(
+                "supervisor", "Sohbet niyeti algılandı; ajan delegasyonu atlanıyor."
+            )
             return "Merhaba! Size nasıl yardımcı olabilirim?"
 
         def _consume_turn() -> bool:

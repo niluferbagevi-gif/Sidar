@@ -41,14 +41,20 @@ def build_metrics_router(
         request: Request,
         _user: dict[str, Any] = Depends(require_metrics_access),
     ) -> Response:
-        user_id = str(getattr(_user, "id", "") or (_user.get("id") if isinstance(_user, dict) else "") or "metrics-admin")
+        user_id = str(
+            getattr(_user, "id", "")
+            or (_user.get("id") if isinstance(_user, dict) else "")
+            or "metrics-admin"
+        )
         metrics_token = set_current_metrics_user_id(user_id)
         agent = await resolve_agent_instance()
         previous_active_user_id = getattr(agent.memory, "active_user_id", None)
         previous_active_username = getattr(agent.memory, "active_username", None)
         if hasattr(agent.memory, "active_user_id"):
             agent.memory.active_user_id = user_id
-        if hasattr(agent.memory, "active_username") and not getattr(agent.memory, "active_username", None):
+        if hasattr(agent.memory, "active_username") and not getattr(
+            agent.memory, "active_username", None
+        ):
             agent.memory.active_username = user_id
         try:
             uptime_s = int(time.monotonic() - start_time)
@@ -97,15 +103,21 @@ def build_metrics_router(
                     from starlette.responses import Response as _PromeResp
 
                     reg = CollectorRegistry()
-                    Gauge("sidar_uptime_seconds", "Sunucu çalışma süresi (s)", registry=reg).set(uptime_s)
-                    Gauge("sidar_sessions_total", "Toplam oturum sayısı", registry=reg).set(int(sessions_total))
-                    Gauge("sidar_rag_documents_total", "RAG belge sayısı", registry=reg).set(rag_docs)
+                    Gauge("sidar_uptime_seconds", "Sunucu çalışma süresi (s)", registry=reg).set(
+                        uptime_s
+                    )
+                    Gauge("sidar_sessions_total", "Toplam oturum sayısı", registry=reg).set(
+                        int(sessions_total)
+                    )
+                    Gauge("sidar_rag_documents_total", "RAG belge sayısı", registry=reg).set(
+                        rag_docs
+                    )
                     Gauge("sidar_active_turns", "Aktif oturum tur sayısı", registry=reg).set(
                         len(agent.memory)
                     )
-                    Gauge("sidar_rate_limit_requests", "Rate limit penceredeki istek", registry=reg).set(
-                        rl_total
-                    )
+                    Gauge(
+                        "sidar_rate_limit_requests", "Rate limit penceredeki istek", registry=reg
+                    ).set(rl_total)
                     return _PromeResp(generate_latest(reg), media_type=CONTENT_TYPE_LATEST)
                 except ImportError:
                     pass
@@ -121,7 +133,9 @@ def build_metrics_router(
     async def llm_prometheus_metrics(
         _user: dict[str, Any] = Depends(require_metrics_access),
     ) -> Response:
-        collector_factory = _resolve_web_server_helper("get_llm_metrics_collector", get_llm_metrics_collector)
+        collector_factory = _resolve_web_server_helper(
+            "get_llm_metrics_collector", get_llm_metrics_collector
+        )
         renderer = _resolve_web_server_helper(
             "render_llm_metrics_prometheus", render_llm_metrics_prometheus
         )

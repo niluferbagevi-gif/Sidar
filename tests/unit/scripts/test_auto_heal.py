@@ -222,8 +222,6 @@ def test_build_scope_queue_returns_empty_when_scope_paths_are_blank() -> None:
     assert _build_scope_queue({"scope_paths": ["", "  "]}, batch_size=0) == []
 
 
-
-
 def test_extract_mypy_targets_from_log_parses_unique_python_files() -> None:
     log_text = """core/doctor.py:1183: error: Incompatible return value type  [return-value]
 core/doctor.py:1183: error: Incompatible return value type  [return-value]
@@ -238,6 +236,7 @@ agent/roles/coder_agent.py:42:7: error: Name "x" is not defined  [name-defined]
 
 def test_extract_mypy_targets_from_log_returns_empty_for_non_mypy_text() -> None:
     assert _extract_mypy_targets_from_log("[LINTER] no mypy lines here") == []
+
 
 def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
     assert _extract_scope_error_lines("   ", scope_paths=["pkg/a.py"], limit=1) == []

@@ -218,12 +218,8 @@ class CodeManager:
         self.docker_microvm_mode = (
             str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
         )
-        self.docker_mem_limit = str(
-            getattr(self.cfg, "DOCKER_MEM_LIMIT", "256m") or "256m"
-        ).strip()
-        self.docker_network_disabled = bool(
-            getattr(self.cfg, "DOCKER_NETWORK_DISABLED", True)
-        )
+        self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", "256m") or "256m").strip()
+        self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", True))
         self.docker_nano_cpus = int(
             getattr(self.cfg, "DOCKER_NANO_CPUS", 1_000_000_000) or 1_000_000_000
         )
@@ -561,7 +557,9 @@ class CodeManager:
                 self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
             return
 
-        prefer_gpu_image = bool(getattr(self.cfg, "USE_GPU", False)) and self._gpu_runtime_available()
+        prefer_gpu_image = (
+            bool(getattr(self.cfg, "USE_GPU", False)) and self._gpu_runtime_available()
+        )
         if bool(getattr(self.cfg, "USE_GPU", False)) and not prefer_gpu_image:
             logger.warning(
                 "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
@@ -608,7 +606,6 @@ class CodeManager:
                 available = True
         except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
             pass
-
 
         self._gpu_runtime_available_cached = available
         return available

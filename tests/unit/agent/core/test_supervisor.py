@@ -325,7 +325,9 @@ def test_run_task_chat_intent_skips_agent_delegation() -> None:
     sup = _build_supervisor(has_coverage=True)
     calls: list[tuple[str, str, str]] = []
 
-    async def fake_delegate(receiver: str, prompt: str, intent: str, parent_task_id: str | None = None):
+    async def fake_delegate(
+        receiver: str, prompt: str, intent: str, parent_task_id: str | None = None
+    ):
         calls.append((receiver, prompt, intent))
         return TaskResult(task_id="unexpected", status="completed", summary="unexpected")
 

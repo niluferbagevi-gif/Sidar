@@ -13,7 +13,11 @@ class _FakeSentenceTransformer:
 def test_clear_model_cache_resets_cached_models(monkeypatch) -> None:
     embeddings.clear_model_cache()
     _FakeSentenceTransformer.init_calls = 0
-    monkeypatch.setitem(__import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_FakeSentenceTransformer))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=_FakeSentenceTransformer),
+    )
     cfg = SimpleNamespace(USE_GPU=False, HF_USE_LOCAL_CACHE_ONLY=True, HF_HUB_OFFLINE=False)
 
     embeddings.get_sentence_transformer_model("model-a", cfg)
@@ -28,7 +32,11 @@ def test_clear_model_cache_resets_cached_models(monkeypatch) -> None:
 def test_model_cache_evicts_old_entries(monkeypatch) -> None:
     embeddings.clear_model_cache()
     _FakeSentenceTransformer.init_calls = 0
-    monkeypatch.setitem(__import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_FakeSentenceTransformer))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=_FakeSentenceTransformer),
+    )
     cfg = SimpleNamespace(USE_GPU=False, HF_USE_LOCAL_CACHE_ONLY=True, HF_HUB_OFFLINE=False)
 
     for idx in range(5):

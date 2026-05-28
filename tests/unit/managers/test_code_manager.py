@@ -2387,7 +2387,9 @@ def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(
 
 def test_docker_image_exists_returns_false_when_cli_inspect_times_out(manager, monkeypatch) -> None:
     manager.docker_client = None
-    monkeypatch.setattr(cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
+    )
 
     def raise_timeout(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd="docker image inspect sidar:latest", timeout=5)
@@ -2414,7 +2416,9 @@ def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> N
 
 def test_resolve_lsp_command_accepts_python_server_command_with_inline_stdio(manager, monkeypatch):
     manager.python_lsp_server = "pyright-langserver --stdio"
-    monkeypatch.setattr(manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/pyright-langserver")
+    monkeypatch.setattr(
+        manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/pyright-langserver"
+    )
 
     command = manager._resolve_lsp_command("python")
 
@@ -2434,7 +2438,9 @@ def test_resolve_lsp_command_accepts_typescript_server_command_with_extra_args(
     assert command == ["/venv/bin/typescript-language-server", "--stdio", "--log-level", "3"]
 
 
-def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(manager, monkeypatch) -> None:
+def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(
+    manager, monkeypatch
+) -> None:
     manager.docker_client = SimpleNamespace(
         images=SimpleNamespace(get=lambda _image: pytest.fail("unsafe image must not be probed"))
     )

@@ -2388,7 +2388,6 @@ def _register_plugin_agent(
     }
 
 
-
 # ─────────────────────────────────────────────
 #  HITL — Human-in-the-Loop Onay Geçidi
 # ─────────────────────────────────────────────
@@ -3661,102 +3660,100 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
 
 
 health_router = build_health_router(
-    lambda require_dependencies: _health_response(
-        require_dependencies=require_dependencies
-    )
+    lambda require_dependencies: _health_response(require_dependencies=require_dependencies)
 )
 app.include_router(health_router)
 agent_router = build_agent_router(
-        require_admin_user=_require_admin_user,
-        register_plugin_agent=_register_plugin_agent,
-        persist_and_import_plugin_file=_persist_and_import_plugin_file,
-        max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
-        read_plugin_marketplace_state=lambda: _read_plugin_marketplace_state(),
-        serialize_marketplace_plugin=(
-            lambda plugin_id, *, installed_state=None: _serialize_marketplace_plugin(
-                plugin_id, installed_state=installed_state
-            )
-        ),
-        plugin_marketplace_catalog=lambda: PLUGIN_MARKETPLACE_CATALOG,
-        install_marketplace_plugin=_install_marketplace_plugin,
-        uninstall_marketplace_plugin=_uninstall_marketplace_plugin,
-        agent_plugin_register_request_model=_AgentPluginRegisterRequest,
-        plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
-    )
+    require_admin_user=_require_admin_user,
+    register_plugin_agent=_register_plugin_agent,
+    persist_and_import_plugin_file=_persist_and_import_plugin_file,
+    max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
+    read_plugin_marketplace_state=lambda: _read_plugin_marketplace_state(),
+    serialize_marketplace_plugin=(
+        lambda plugin_id, *, installed_state=None: _serialize_marketplace_plugin(
+            plugin_id, installed_state=installed_state
+        )
+    ),
+    plugin_marketplace_catalog=lambda: PLUGIN_MARKETPLACE_CATALOG,
+    install_marketplace_plugin=_install_marketplace_plugin,
+    uninstall_marketplace_plugin=_uninstall_marketplace_plugin,
+    agent_plugin_register_request_model=_AgentPluginRegisterRequest,
+    plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
+)
 app.include_router(agent_router)
 
 rag_router = build_rag_router(
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        await_if_needed=_await_if_needed,
-        max_rag_upload_bytes=lambda: Config.MAX_RAG_UPLOAD_BYTES,
-        server_root=lambda: Path(__file__).parent.resolve(),
-        logger=logger,
-    )
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    await_if_needed=_await_if_needed,
+    max_rag_upload_bytes=lambda: Config.MAX_RAG_UPLOAD_BYTES,
+    server_root=lambda: Path(__file__).parent.resolve(),
+    logger=logger,
+)
 app.include_router(rag_router)
 
 auth_admin_router = build_auth_admin_router(
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        await_if_needed=_await_if_needed,
-        get_request_user=_get_request_user,
-        require_admin_user=_require_admin_user,
-        issue_auth_token=lambda agent, user: _issue_auth_token(agent, user),
-        serialize_prompt=_serialize_prompt,
-        serialize_policy=_serialize_policy,
-        get_admin_stats=lambda agent: agent.memory.db.get_admin_stats(),
-        register_request_model=_RegisterRequest,
-        login_request_model=_LoginRequest,
-        prompt_upsert_request_model=_PromptUpsertRequest,
-        prompt_activate_request_model=_PromptActivateRequest,
-        policy_upsert_request_model=_PolicyUpsertRequest,
-    )
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    await_if_needed=_await_if_needed,
+    get_request_user=_get_request_user,
+    require_admin_user=_require_admin_user,
+    issue_auth_token=lambda agent, user: _issue_auth_token(agent, user),
+    serialize_prompt=_serialize_prompt,
+    serialize_policy=_serialize_policy,
+    get_admin_stats=lambda agent: agent.memory.db.get_admin_stats(),
+    register_request_model=_RegisterRequest,
+    login_request_model=_LoginRequest,
+    prompt_upsert_request_model=_PromptUpsertRequest,
+    prompt_activate_request_model=_PromptActivateRequest,
+    policy_upsert_request_model=_PolicyUpsertRequest,
+)
 app.include_router(auth_admin_router)
 
 hitl_router = build_hitl_router(
-        get_request_user=_get_request_user,
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        await_if_needed=_await_if_needed,
-        resolve_user_from_token=lambda agent, token: _resolve_user_from_token(agent, token),
-        ws_close_policy_violation=lambda ws, reason: _ws_close_policy_violation(ws, reason),
-        hitl_ws_clients=_hitl_ws_clients,
-        get_hitl_store=lambda: get_hitl_store(),
-        get_hitl_gate=lambda: get_hitl_gate(),
-    )
+    get_request_user=_get_request_user,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    await_if_needed=_await_if_needed,
+    resolve_user_from_token=lambda agent, token: _resolve_user_from_token(agent, token),
+    ws_close_policy_violation=lambda ws, reason: _ws_close_policy_violation(ws, reason),
+    hitl_ws_clients=_hitl_ws_clients,
+    get_hitl_store=lambda: get_hitl_store(),
+    get_hitl_gate=lambda: get_hitl_gate(),
+)
 app.include_router(hitl_router)
 
 metrics_router = build_metrics_router(
-        require_metrics_access=_require_metrics_access,
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        start_time=_start_time,
-        local_rate_limits=lambda: _local_rate_limits,
-        get_llm_metrics_collector=lambda: get_llm_metrics_collector(),
-        render_llm_metrics_prometheus=render_llm_metrics_prometheus,
-        set_current_metrics_user_id=set_current_metrics_user_id,
-        reset_current_metrics_user_id=reset_current_metrics_user_id,
-        logger=logger,
-    )
+    require_metrics_access=_require_metrics_access,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    start_time=_start_time,
+    local_rate_limits=lambda: _local_rate_limits,
+    get_llm_metrics_collector=lambda: get_llm_metrics_collector(),
+    render_llm_metrics_prometheus=render_llm_metrics_prometheus,
+    set_current_metrics_user_id=set_current_metrics_user_id,
+    reset_current_metrics_user_id=reset_current_metrics_user_id,
+    logger=logger,
+)
 app.include_router(metrics_router)
 
 project_ops_router = build_project_ops_router(
-        get_request_user=_get_request_user,
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
-        server_root=lambda: Path(__file__).parent.resolve(),
-        cfg=cfg,
-        logger=logger,
-    )
+    get_request_user=_get_request_user,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
+    server_root=lambda: Path(__file__).parent.resolve(),
+    cfg=cfg,
+    logger=logger,
+)
 app.include_router(project_ops_router)
 
 orchestration_router = build_orchestration_router(
-        get_request_user=_get_request_user,
-        require_admin_user=_require_admin_user,
-        resolve_agent_instance=lambda: _resolve_agent_instance(),
-        await_if_needed=_await_if_needed,
-        swarm_orchestrator_cls=SwarmOrchestrator,
-        swarm_task_cls=SwarmTask,
-        cfg=cfg,
-        swarm_execute_request_model=_SwarmExecuteRequest,
-        serialize_swarm_result=_serialize_swarm_result,
-    )
+    get_request_user=_get_request_user,
+    require_admin_user=_require_admin_user,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    await_if_needed=_await_if_needed,
+    swarm_orchestrator_cls=SwarmOrchestrator,
+    swarm_task_cls=SwarmTask,
+    cfg=cfg,
+    swarm_execute_request_model=_SwarmExecuteRequest,
+    serialize_swarm_result=_serialize_swarm_result,
+)
 app.include_router(orchestration_router)
 
 for _router in (
@@ -3781,35 +3778,49 @@ admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
 admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
 admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
 
+
 # Legacy endpoint declarations kept in web_server.py for backwards-compatible
 # static route discovery tests that scan this file for @app.<method>(...) usage.
 @app.post("/auth/register")
 async def _legacy_route_auth_register(payload: dict[str, Any]) -> Any:
     return await register_user(payload)
 
+
 @app.post("/auth/login")
 async def _legacy_route_auth_login(payload: dict[str, Any]) -> Any:
     return await login_user(payload)
+
 
 @app.get("/auth/me")
 async def _legacy_route_auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
     return await auth_me(request, user)
 
+
 @app.get("/admin/stats")
 async def _legacy_route_admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
     return await admin_stats(_user)
 
+
 @app.get("/admin/prompts")
-async def _legacy_route_admin_prompts(role_name: str = "", _user: Any = Depends(_require_admin_user)) -> Any:
+async def _legacy_route_admin_prompts(
+    role_name: str = "", _user: Any = Depends(_require_admin_user)
+) -> Any:
     return await admin_list_prompts(role_name, _user)
 
+
 @app.post("/admin/prompts")
-async def _legacy_route_admin_upsert_prompt(payload: Any, _user: Any = Depends(_require_admin_user)) -> Any:
+async def _legacy_route_admin_upsert_prompt(
+    payload: Any, _user: Any = Depends(_require_admin_user)
+) -> Any:
     return await admin_upsert_prompt(payload, _user)
 
+
 @app.post("/admin/prompts/activate")
-async def _legacy_route_admin_activate_prompt(payload: Any, _user: Any = Depends(_require_admin_user)) -> Any:
+async def _legacy_route_admin_activate_prompt(
+    payload: Any, _user: Any = Depends(_require_admin_user)
+) -> Any:
     return await admin_activate_prompt(payload, _user)
+
 
 @app.post("/api/agents/register")
 @app.post("/api/agents/register-file")
@@ -3893,12 +3904,9 @@ async def llm_prometheus_metrics(
     return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
 
 
-
 # ─────────────────────────────────────────────
 #  ÇOKLU SOHBET (SESSIONS) ROTALARI
 # ─────────────────────────────────────────────
-
-
 
 
 # ─────────────────────────────────────────────

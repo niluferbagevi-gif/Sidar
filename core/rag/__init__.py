@@ -611,7 +611,9 @@ def _build_embedding_function(
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
     """
     try:
-        local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        local_files_only = bool(
+            sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2")
+        )
         return _build_embedding_function_cached(
             use_gpu=use_gpu,
             gpu_device=gpu_device,
@@ -620,7 +622,9 @@ def _build_embedding_function(
         )
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
-        local_files_only = bool(sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2"))
+        local_files_only = bool(
+            sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2")
+        )
         try:
             return _build_embedding_function_cached(
                 use_gpu=False,
@@ -672,7 +676,9 @@ def _build_embedding_function_cached(
 
             ef.__call__ = _fp16_call
         else:
-            logging.warning("⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı.")
+            logging.warning(
+                "⚠️  mixed_precision istendi ancak torch.autocast bulunamadı; FP16 devre dışı."
+            )
 
     logger.info(
         "ChromaDB embedding fonksiyonu başlatıldı: device=%s  mixed_precision=%s",
@@ -806,7 +812,9 @@ class DocumentStore:
                     "vector_disabled_notice",
                     "DocumentStore vektör başlatması devre dışı (initialize_vector=False).",
                 )
-                self._log_backend_init_status_once("vector_disabled_status", "RAG backend init (1/2): vector=disabled")
+                self._log_backend_init_status_once(
+                    "vector_disabled_status", "RAG backend init (1/2): vector=disabled"
+                )
 
             # BM25 (SQLite FTS5) Başlatma
             self._bm25_available = True
@@ -822,8 +830,6 @@ class DocumentStore:
                 )
 
             self._log_vector_backend_preference_hint()
-
-
 
     def _log_vector_backend_preference_hint(self) -> None:
         """Explain why BM25 is active when vector backends are also available."""
@@ -2877,7 +2883,9 @@ class DocumentStore:
             return "Belge deposu boş veya bu oturum için belge bulunamadı."
 
         backend_note = ""
-        if getattr(self, "_vector_backend", "bm25") == "pgvector" and not getattr(self, "_pgvector_available", False):
+        if getattr(self, "_vector_backend", "bm25") == "pgvector" and not getattr(
+            self, "_pgvector_available", False
+        ):
             backend_note = " (pgvector pasif)"
         lines = [f"[Belge Deposu — {len(docs)} belge]{backend_note}", ""]
         for doc_id, meta in docs.items():

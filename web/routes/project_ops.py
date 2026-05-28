@@ -52,7 +52,9 @@ def _is_allowed_git_command(cmd: list[str]) -> bool:
     return tuple(str(part) for part in cmd) in _ALLOWED_GIT_COMMANDS
 
 
-def _git_run(cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = subprocess.DEVNULL) -> str:
+def _git_run(
+    cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = subprocess.DEVNULL
+) -> str:
     active_logger = logger
     if active_logger is None:
         import logging
@@ -105,7 +107,9 @@ def build_project_ops_router(
     router = LegacyExportRouter()
     resolve_server_root = server_root if callable(server_root) else (lambda: server_root)
     _resolve_mfcb = (
-        max_file_content_bytes if callable(max_file_content_bytes) else (lambda: max_file_content_bytes)
+        max_file_content_bytes
+        if callable(max_file_content_bytes)
+        else (lambda: max_file_content_bytes)
     )
 
     @router.get("/sessions")
@@ -128,7 +132,9 @@ def build_project_ops_router(
         )
 
     @router.get("/sessions/{session_id}")
-    async def load_session(session_id: str, request: Request, user: Any = Depends(get_request_user)) -> Any:
+    async def load_session(
+        session_id: str, request: Request, user: Any = Depends(get_request_user)
+    ) -> Any:
         agent = await resolve_agent_instance()
         session = await agent.memory.db.load_session(session_id, user.id)
         if not session:
@@ -152,7 +158,9 @@ def build_project_ops_router(
         return JSONResponse({"success": True, "session_id": session.id})
 
     @router.delete("/sessions/{session_id}")
-    async def delete_session(session_id: str, request: Request, user: Any = Depends(get_request_user)) -> Any:
+    async def delete_session(
+        session_id: str, request: Request, user: Any = Depends(get_request_user)
+    ) -> Any:
         agent = await resolve_agent_instance()
         deleted = await agent.memory.db.delete_session(session_id, user.id)
         if deleted:
@@ -171,7 +179,9 @@ def build_project_ops_router(
         if not target.exists():
             return JSONResponse({"error": f"Dizin bulunamadı: {path}"}, status_code=404)
         if not target.is_dir():
-            return JSONResponse({"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"Belirtilen yol bir dizin değil: {path}"}, status_code=400
+            )
         items = []
         for item in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
             if item.name.startswith(".") or item.name in ("__pycache__", "node_modules"):
@@ -185,7 +195,9 @@ def build_project_ops_router(
                     "size": item.stat().st_size if item.is_file() else 0,
                 }
             )
-        return JSONResponse({"path": str(target.relative_to(root)) if path else ".", "items": items})
+        return JSONResponse(
+            {"path": str(target.relative_to(root)) if path else ".", "items": items}
+        )
 
     @router.get("/file-content")
     async def file_content(path: str) -> Any:
@@ -201,12 +213,16 @@ def build_project_ops_router(
         if target.is_dir():
             return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=400)
         if target.suffix.lower() not in _SAFE_EXTENSIONS:
-            return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
+            return JSONResponse(
+                {"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415
+            )
         size_bytes = target.stat().st_size
         max_bytes = int(_resolve_mfcb())
         if size_bytes > max_bytes:
             return JSONResponse(
-                {"error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"},
+                {
+                    "error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"
+                },
                 status_code=413,
             )
         try:
@@ -223,18 +239,36 @@ def build_project_ops_router(
         def _git_run_bound(cmd: list[str], cwd: str) -> str:
             return cast(str, git_run_helper(cmd, cwd, logger))
 
-        branch = await asyncio.to_thread(_git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root) or "main"
-        remote = await asyncio.to_thread(_git_run_bound, ["git", "remote", "get-url", "origin"], root) or ""
-        default_branch_raw = await asyncio.to_thread(
-            _git_run_bound, ["git", "symbolic-ref", "--short", "HEAD@{upstream}"], root
-        ) or ""
+        branch = (
+            await asyncio.to_thread(
+                _git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root
+            )
+            or "main"
+        )
+        remote = (
+            await asyncio.to_thread(_git_run_bound, ["git", "remote", "get-url", "origin"], root)
+            or ""
+        )
+        default_branch_raw = (
+            await asyncio.to_thread(
+                _git_run_bound, ["git", "symbolic-ref", "--short", "HEAD@{upstream}"], root
+            )
+            or ""
+        )
         if not default_branch_raw:
-            default_branch_raw = await asyncio.to_thread(
-                _git_run_bound, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root
-            ) or ""
+            default_branch_raw = (
+                await asyncio.to_thread(
+                    _git_run_bound,
+                    ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+                    root,
+                )
+                or ""
+            )
         default_branch = default_branch_raw.replace("origin/", "").strip() or "main"
         repo = _extract_repo_from_remote(remote)
-        return JSONResponse({"branch": branch, "repo": repo or "Sidar", "default_branch": default_branch})
+        return JSONResponse(
+            {"branch": branch, "repo": repo or "Sidar", "default_branch": default_branch}
+        )
 
     @router.get("/git-branches")
     async def git_branches() -> Any:
@@ -248,7 +282,12 @@ def build_project_ops_router(
             _git_run_bound, ["git", "branch", "--format=%(refname:short)"], root
         )
         branches = [b.strip() for b in branches_raw.split("\n") if b.strip()]
-        current = await asyncio.to_thread(_git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root) or "main"
+        current = (
+            await asyncio.to_thread(
+                _git_run_bound, ["git", "rev-parse", "--abbrev-ref", "HEAD"], root
+            )
+            or "main"
+        )
         return JSONResponse({"branches": branches or ["main"], "current": current})
 
     @router.post("/set-branch")
@@ -258,7 +297,13 @@ def build_project_ops_router(
         if not branch_name:
             return JSONResponse({"success": False, "error": "Dal adı boş."}, status_code=400)
         if not _BRANCH_RE.match(branch_name):
-            return JSONResponse({"success": False, "error": "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir."}, status_code=400)
+            return JSONResponse(
+                {
+                    "success": False,
+                    "error": "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir.",
+                },
+                status_code=400,
+            )
         root = str(resolve_server_root().resolve())
         try:
             await asyncio.to_thread(
@@ -285,19 +330,26 @@ def build_project_ops_router(
         else:
             ok, repos = maybe_result
         if not ok:
-            return JSONResponse({"success": False, "error": "Repo listesi alınamadı.", "repos": []}, status_code=400)
+            return JSONResponse(
+                {"success": False, "error": "Repo listesi alınamadı.", "repos": []}, status_code=400
+            )
         repos = list(repos or [])
         query = q.strip().lower()
         if query:
             repos = [r for r in repos if query in r.get("full_name", "").lower()]
         repos = sorted(repos, key=lambda r: r.get("full_name", "").lower())
-        return JSONResponse({"success": True, "owner": effective_owner, "repos": repos, "active_repo": active_repo})
+        return JSONResponse(
+            {"success": True, "owner": effective_owner, "repos": repos, "active_repo": active_repo}
+        )
 
     @router.get("/github-prs")
     async def github_prs(state: str = "open", limit: int = 10) -> Any:
         agent = await resolve_agent_instance()
         if not agent.github.is_available():
-            return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış.", "prs": []}, status_code=503)
+            return JSONResponse(
+                {"success": False, "error": "GitHub token ayarlanmamış.", "prs": []},
+                status_code=503,
+            )
         ok, prs, err = agent.github.get_pull_requests_detailed(state=state, limit=min(limit, 50))
         if not ok:
             return JSONResponse({"success": False, "error": err, "prs": []}, status_code=500)
@@ -307,7 +359,9 @@ def build_project_ops_router(
     async def github_pr_detail(number: int) -> Any:
         agent = await resolve_agent_instance()
         if not agent.github.is_available():
-            return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış."}, status_code=503)
+            return JSONResponse(
+                {"success": False, "error": "GitHub token ayarlanmamış."}, status_code=503
+            )
         ok, result = agent.github.get_pull_request(number)
         if not ok:
             return JSONResponse({"success": False, "error": result}, status_code=404)

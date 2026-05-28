@@ -44,7 +44,9 @@ def build_hitl_router(
         return JSONResponse({"pending": [r.to_dict() for r in pending], "count": len(pending)})
 
     @router.post("/api/hitl/request")
-    async def hitl_create_request(payload: dict[str, Any], user: Any = Depends(get_request_user)) -> Any:
+    async def hitl_create_request(
+        payload: dict[str, Any], user: Any = Depends(get_request_user)
+    ) -> Any:
         gate = get_hitl_gate()
         action = str(payload.get("action", "manual")).strip()
         description = str(payload.get("description", "Manuel onay isteği")).strip()

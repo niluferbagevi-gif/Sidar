@@ -1046,7 +1046,9 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
     timeout_detected = bool(_TIMEOUT_RUNTIME_PATTERN.search(combined_text))
     if timeout_detected and "pytest-timeout" in combined_text:
         timeout_detected = bool(
-            re.search(r"\b(timeouterror|timed\s*out|time\s*out|deadline\s+exceeded)\b", combined_text)
+            re.search(
+                r"\b(timeouterror|timed\s*out|time\s*out|deadline\s+exceeded)\b", combined_text
+            )
         )
     if timeout_detected:
         hitl_reasons.append("timeout_or_flaky_runtime")

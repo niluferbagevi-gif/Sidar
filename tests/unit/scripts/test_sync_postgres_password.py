@@ -42,9 +42,7 @@ def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    summary = sync_postgres_password.sync_postgres_password_with_docker_exec(
-        env_file=env_file
-    )
+    summary = sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
 
     assert summary["changed"] is True
     assert summary["method"] == "docker-exec"
@@ -79,9 +77,7 @@ def test_sync_postgres_password_reads_later_dotenv_override(monkeypatch, tmp_pat
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    summary = sync_postgres_password.sync_postgres_password_with_docker_exec(
-        env_file=env_file
-    )
+    summary = sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
 
     assert override_secret in calls["kwargs"]["input"]
     assert base_secret not in calls["kwargs"]["input"]
@@ -119,17 +115,13 @@ def test_sync_postgres_password_backward_compatible_wrapper_uses_docker_exec(
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    summary = sync_postgres_password.sync_postgres_password_with_docker_compose(
-        env_file=env_file
-    )
+    summary = sync_postgres_password.sync_postgres_password_with_docker_compose(env_file=env_file)
 
     assert summary["method"] == "docker-exec"
     assert calls["cmd"][1:3] == ["exec", "-i"]
 
 
-def test_sync_postgres_password_main_emits_redacted_summary(
-    monkeypatch, capsys, tmp_path: Path
-):
+def test_sync_postgres_password_main_emits_redacted_summary(monkeypatch, capsys, tmp_path: Path):
     secret = "super-secret-password-123456"
     env_file = tmp_path / ".env"
     _write_env(env_file, password=secret)

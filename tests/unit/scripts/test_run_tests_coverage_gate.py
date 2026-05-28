@@ -68,9 +68,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
         "local -a variants=(",
         install_script.index("propagate_shared_secrets_to_env_variants()"),
     )
-    variants_block = install_script[
-        variants_start : install_script.index(")", variants_start)
-    ]
+    variants_block = install_script[variants_start : install_script.index(")", variants_start)]
     development_variant = '".env.development:.env.development.example"'
     test_variant = '".env.test:.env.test.example"'
     advanced_variant = '".env.advanced:.env.advanced.example"'
@@ -100,7 +98,6 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "AUTONOMOUS_LOOP_MUTATION_ENABLED=true" in env_advanced
     assert "ENABLE_LORA_TRAINING=false" in env_advanced
     assert "DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime" in env_advanced
-
 
 
 def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
@@ -212,7 +209,7 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     import_pos = collect_block.index("_import_api_keys_from_file()")
     assert no_interaction_pos < import_pos
     assert (
-        '_sync_existing_api_keys_to_env_targets\n        return'
+        "_sync_existing_api_keys_to_env_targets\n        return"
         in collect_block[no_interaction_pos:import_pos]
     )
 
@@ -255,7 +252,10 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
     assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development
     assert "RAG_GPU_MEMORY_FRACTION=0.3" in env_development
-    assert "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars" in env_development
+    assert (
+        "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars"
+        in env_development
+    )
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
@@ -395,7 +395,10 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert "MISSING_PACKAGES=()" in installer
-    assert 'env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
+    assert (
+        'env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
+        in installer
+    )
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
@@ -412,12 +415,10 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "sudo apt-get install -y bats shellcheck" not in ci_workflow
     assert "Install shell test tools" not in ci_workflow
     assert "run: bash scripts/install_ci_system_deps.sh" in ci_workflow
-    assert ci_workflow.index(
-        "run: bash scripts/install_ci_system_deps.sh"
-    ) < ci_workflow.index("uv sync --frozen --all-extras")
-    assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index(
-        "make lint"
+    assert ci_workflow.index("run: bash scripts/install_ci_system_deps.sh") < ci_workflow.index(
+        "uv sync --frozen --all-extras"
     )
+    assert ci_workflow.index("uv sync --frozen --all-extras") < ci_workflow.index("make lint")
     assert "make lint" in ci_workflow
     assert "make test-shell" in ci_workflow
 
@@ -687,11 +688,15 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "sync_database_env_chain_after_setup()" in env_utils
     assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in env_utils
     assert "sync_database_env_chain_after_setup()" in install_script
-    assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
+    assert (
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
+    )
     assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in install_script
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[
-        env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index('return', env_utils.index('if [[ -f "$ENV_FILE" ]]'))
+        env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index(
+            "return", env_utils.index('if [[ -f "$ENV_FILE" ]]')
+        )
     ]
     assert existing_env_branch.index(
         "propagate_shared_secrets_to_env_variants"
@@ -889,12 +894,12 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
     assert "if ! declare -F clear_stdin_buffer" in script
 
     default_yes = script[
-        script.index("prompt_yes_no_with_timeout_default_yes()")
-        : script.index("prompt_yes_no_with_timeout_default_no()")
+        script.index("prompt_yes_no_with_timeout_default_yes()") : script.index(
+            "prompt_yes_no_with_timeout_default_no()"
+        )
     ]
     default_no = script[
-        script.index("prompt_yes_no_with_timeout_default_no()")
-        : script.index("on_install_error()")
+        script.index("prompt_yes_no_with_timeout_default_no()") : script.index("on_install_error()")
     ]
     assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_yes
     assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_no

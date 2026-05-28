@@ -13,9 +13,7 @@ END_MARKER = "SIDAR_MODULE_HASHES_EOF"
 
 
 def iter_modules() -> list[Path]:
-    files = sorted(
-        p for p in MODULES_DIR.rglob("*") if p.is_file() and p.suffix in {".sh", ".ps1"}
-    )
+    files = sorted(p for p in MODULES_DIR.rglob("*") if p.is_file() and p.suffix in {".sh", ".ps1"})
     return files
 
 

@@ -804,10 +804,16 @@ class SidarAgent:
             remediation["self_heal_execution"] = execution
             return execution
         if bool(remediation_loop.get("needs_human_approval")):
-            default_hitl_decision = str(
-                getattr(self.cfg, "SELF_HEAL_DEFAULT_DECISION", "prompt")
-            ).strip().lower()
-            if human_approval is None and default_hitl_decision in {"approve", "approved", "yes", "true", "1"}:
+            default_hitl_decision = (
+                str(getattr(self.cfg, "SELF_HEAL_DEFAULT_DECISION", "prompt")).strip().lower()
+            )
+            if human_approval is None and default_hitl_decision in {
+                "approve",
+                "approved",
+                "yes",
+                "true",
+                "1",
+            }:
                 human_approval = True
             elif human_approval is None and default_hitl_decision in {
                 "reject",
@@ -817,7 +823,11 @@ class SidarAgent:
                 "0",
             }:
                 human_approval = False
-            elif human_approval is None and default_hitl_decision in {"prompt", "ask", "interactive"}:
+            elif human_approval is None and default_hitl_decision in {
+                "prompt",
+                "ask",
+                "interactive",
+            }:
                 human_approval = None
             if human_approval is False:
                 remediation_loop["status"] = "rejected"

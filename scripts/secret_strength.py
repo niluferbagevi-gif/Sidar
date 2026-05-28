@@ -152,7 +152,10 @@ def is_weak_secret(
     if _has_sequence(stripped):
         return True
 
-    return estimated_entropy_bits(stripped) < min_entropy_bits or _shannon_bits(stripped) < min_shannon_bits
+    return (
+        estimated_entropy_bits(stripped) < min_entropy_bits
+        or _shannon_bits(stripped) < min_shannon_bits
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

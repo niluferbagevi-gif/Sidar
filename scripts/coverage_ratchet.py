@@ -137,7 +137,9 @@ def write_fail_under(coveragerc_path: Path, new_gate: float) -> None:
     coveragerc_path.write_text("".join(output), encoding="utf-8")
 
 
-def ensure_html_dark_mode_css(coveragerc_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS) -> bool:
+def ensure_html_dark_mode_css(
+    coveragerc_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS
+) -> bool:
     """Ensure ``[html] extra_css`` points to Sidar dark mode stylesheet."""
 
     cfg = ConfigParser()

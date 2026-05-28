@@ -75,10 +75,7 @@ def test_database_url_defaults_to_ipv4_loopback(monkeypatch):
     monkeypatch.setenv("POSTGRES_PORT", "5432")
     monkeypatch.setenv("POSTGRES_DB", "sidar")
 
-    assert (
-        config.get_database_url()
-        == "postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar"
-    )
+    assert config.get_database_url() == "postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar"
     assert (
         config.get_container_database_url()
         == "postgresql+asyncpg://sidar:secret@postgres:5432/sidar"
@@ -281,7 +278,9 @@ def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
     assert all(call.get("override") in (False, None) for call in calls)
 
 
-def test_config_import_buffers_missing_environment_file_until_logger_status(monkeypatch, capsys, tmp_path):
+def test_config_import_buffers_missing_environment_file_until_logger_status(
+    monkeypatch, capsys, tmp_path
+):
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -518,7 +517,9 @@ def test_validate_critical_settings_ollama_http_paths(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientOK))
 
     infos = []
-    monkeypatch.setattr(config.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+    monkeypatch.setattr(
+        config.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg)
+    )
     monkeypatch.delenv("SIDAR_OLLAMA_OK_LOGGED", raising=False)
 
     assert config.Config.validate_critical_settings() is True
@@ -533,8 +534,6 @@ def test_validate_critical_settings_ollama_http_paths(monkeypatch):
         __import__("sys").modules, "httpx", types.SimpleNamespace(Client=_ClientBad)
     )
     assert config.Config.validate_critical_settings() is True
-
-
 
 
 def test_log_once_env_sets_flag_and_logs_once(monkeypatch):

@@ -44,9 +44,23 @@ def normalize_gpu_memory_fractions(
     safe_total = float(target_total)
     floor = max(0.0, float(min_fraction))
     if total <= 0:
-        return {"llm": round(safe_total / 2, 4), "rag": round(safe_total / 2, 4), "gpu": round(safe_total, 4), "total": round(safe_total, 4), "original_total": round(total, 4), "normalized": True}
+        return {
+            "llm": round(safe_total / 2, 4),
+            "rag": round(safe_total / 2, 4),
+            "gpu": round(safe_total, 4),
+            "total": round(safe_total, 4),
+            "original_total": round(total, 4),
+            "normalized": True,
+        }
     if total <= 1.0:
-        return {"llm": round(llm, 4), "rag": round(rag, 4), "gpu": round(total, 4), "total": round(total, 4), "original_total": round(total, 4), "normalized": False}
+        return {
+            "llm": round(llm, 4),
+            "rag": round(rag, 4),
+            "gpu": round(total, 4),
+            "total": round(total, 4),
+            "original_total": round(total, 4),
+            "normalized": False,
+        }
     scale = safe_total / total
     normalized_llm = max(floor, llm * scale)
     normalized_rag = max(floor, rag * scale)
@@ -55,13 +69,23 @@ def normalize_gpu_memory_fractions(
         second_scale = safe_total / normalized_total
         normalized_llm *= second_scale
         normalized_rag *= second_scale
-    return {"llm": round(normalized_llm, 4), "rag": round(normalized_rag, 4), "gpu": round(safe_total, 4), "total": round(normalized_llm + normalized_rag, 4), "original_total": round(total, 4), "normalized": True}
+    return {
+        "llm": round(normalized_llm, 4),
+        "rag": round(normalized_rag, 4),
+        "gpu": round(safe_total, 4),
+        "total": round(normalized_llm + normalized_rag, 4),
+        "original_total": round(total, 4),
+        "normalized": True,
+    }
 
 
-def detect_gpu(*, get_bool_env: Any, get_int_env: Any, get_float_env: Any, logger: Any) -> HardwareInfo:
+def detect_gpu(
+    *, get_bool_env: Any, get_int_env: Any, get_float_env: Any, logger: Any
+) -> HardwareInfo:
     info = HardwareInfo(has_cuda=False, gpu_name="N/A")
     try:
         import multiprocessing
+
         info.cpu_count = multiprocessing.cpu_count()
     except Exception:
         info.cpu_count = 1
@@ -74,12 +98,18 @@ def detect_gpu(*, get_bool_env: Any, get_int_env: Any, get_float_env: Any, logge
         return info
     try:
         import torch
+
         if torch.cuda.is_available():
             info.has_cuda = True
             info.gpu_count = torch.cuda.device_count()
             info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
-            logger.info("🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)", info.gpu_name, info.gpu_count, info.cuda_version)
+            logger.info(
+                "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
+                info.gpu_name,
+                info.gpu_count,
+                info.cuda_version,
+            )
         else:
             info.gpu_name = "CUDA Bulunamadı"
     except ImportError:

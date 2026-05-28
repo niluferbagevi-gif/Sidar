@@ -434,7 +434,9 @@ def test_launcher_doctor_preflight_ignores_stale_revalidation_cache(
 
     def _connectivity_check() -> SimpleNamespace:
         calls["connectivity"] += 1
-        return SimpleNamespace(name="database_connectivity", status="pass", message="ok", details={})
+        return SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        )
 
     def _rag_check() -> SimpleNamespace:
         calls["rag"] += 1
@@ -476,7 +478,9 @@ def test_launcher_doctor_preflight_skips_database_dependents_after_failed_databa
 
     def _connectivity_check() -> SimpleNamespace:
         calls["connectivity"] += 1
-        return SimpleNamespace(name="database_connectivity", status="pass", message="ok", details={})
+        return SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        )
 
     def _rag_check() -> SimpleNamespace:
         calls["rag"] += 1
@@ -503,7 +507,9 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8")
+    env_file.write_text(
+        "DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8"
+    )
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:old@localhost:5432/sidar")
     monkeypatch.setattr(main, "_reload_config_environment", lambda **_kwargs: False)
 
@@ -528,6 +534,7 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     assert updated is not None
     assert updated.status == "pass"
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:new@localhost:5432/sidar"
+
 
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

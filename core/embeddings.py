@@ -80,7 +80,11 @@ def hf_model_cache_exists(model_name: str) -> bool:
     if Path(normalized).expanduser().exists():
         return True
     cache_dir_names = _hf_model_cache_dir_names(normalized)
-    return any((root / cache_dir).exists() for root in _hf_hub_cache_roots() for cache_dir in cache_dir_names)
+    return any(
+        (root / cache_dir).exists()
+        for root in _hf_hub_cache_roots()
+        for cache_dir in cache_dir_names
+    )
 
 
 def sentence_transformer_local_files_only(cfg: Any, model_name: str) -> bool:

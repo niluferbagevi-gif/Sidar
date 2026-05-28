@@ -41,4 +41,3 @@ def apply_runtime_env_overrides(
     config_cls.DATABASE_URL = get_database_url()
     config_cls.CONTAINER_DATABASE_URL = get_container_database_url()
     config_cls.RAG_DIR = base_dir / os.getenv("RAG_DIR", "data/rag")
-

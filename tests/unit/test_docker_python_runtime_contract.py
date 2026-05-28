@@ -26,6 +26,7 @@ def test_main_dockerfile_installs_shellcheck_os_package():
     assert dockerfile.index("pkg-config") < dockerfile.index("shellcheck")
     assert dockerfile.index("shellcheck") < dockerfile.index("rm -rf /var/lib/apt/lists/*")
 
+
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
     dockerfile = _read("Dockerfile")
 

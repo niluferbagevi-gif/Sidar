@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 
-def canonical_project_image_alias(
-    image: str, *, legacy_prefixes: dict[str, str]
-) -> str | None:
+def canonical_project_image_alias(image: str, *, legacy_prefixes: dict[str, str]) -> str | None:
     """Convert legacy Sidar image names to canonical repository tags."""
     candidate = image.strip()
     if not candidate:

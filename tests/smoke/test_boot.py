@@ -256,9 +256,7 @@ async def test_boot_postgresql_connection_select_1() -> None:
     try:
         conn = await asyncpg.connect(dsn=database_url, timeout=3)
     except Exception as exc:
-        pytest.fail(
-            f"PostgreSQL smoke bağlantısı başarısız: {exc!r}. {diagnostics}", pytrace=False
-        )
+        pytest.fail(f"PostgreSQL smoke bağlantısı başarısız: {exc!r}. {diagnostics}", pytrace=False)
     try:
         result = await conn.fetchval("SELECT 1")
     finally:

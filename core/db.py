@@ -414,7 +414,9 @@ class Database:
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
     """
 
-    def __init__(self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None
+    ) -> None:
         self.cfg = cfg or Config()
         self.database_url = (
             getattr(self.cfg, "DATABASE_URL", "") or ""

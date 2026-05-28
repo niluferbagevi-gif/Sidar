@@ -91,9 +91,7 @@ def _docker_exec_command(
     postgres_user = env.get("POSTGRES_USER", "sidar").strip() or "sidar"
     admin_user = env.get("POSTGRES_ADMIN_USER", "").strip() or postgres_user
     admin_db = (
-        env.get("POSTGRES_ADMIN_DB", "").strip()
-        or env.get("POSTGRES_DB", "").strip()
-        or "postgres"
+        env.get("POSTGRES_ADMIN_DB", "").strip() or env.get("POSTGRES_DB", "").strip() or "postgres"
     )
     container = _postgres_container_name(env, explicit_container=postgres_container)
     return [

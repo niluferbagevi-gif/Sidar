@@ -38,9 +38,7 @@ def build_orchestration_router(
     serializer = serialize_swarm_result or (lambda item: dict(getattr(item, "__dict__", {})))
 
     @router.post("/api/swarm/execute")
-    async def execute_swarm(
-        payload: Any, user: Any = Depends(get_request_user)
-    ) -> Any:
+    async def execute_swarm(payload: Any, user: Any = Depends(get_request_user)) -> Any:
         data = _parse_payload(request_model, payload)
         agent = await resolve_agent_instance()
         orchestrator = swarm_orchestrator_cls(getattr(agent, "cfg", cfg))
@@ -90,13 +88,13 @@ def build_orchestration_router(
         return JSONResponse({"result": True})
 
     @router.post("/set-level")
-    async def set_level_endpoint(
-        request: Request, _user: Any = Depends(require_admin_user)
-    ) -> Any:
+    async def set_level_endpoint(request: Request, _user: Any = Depends(require_admin_user)) -> Any:
         body = await request.json()
         new_level = body.get("level", "").strip()
         if not new_level:
-            return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
+            return JSONResponse(
+                {"success": False, "error": "Seviye belirtilmedi."}, status_code=400
+            )
         agent = await await_if_needed(resolve_agent_instance())
         result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
         if asyncio.iscoroutine(result_msg):

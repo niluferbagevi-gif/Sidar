@@ -142,7 +142,6 @@ def _is_postgres_url(parsed: Any) -> bool:
     return bool(parsed and str(parsed.scheme).startswith("postgresql"))
 
 
-
 def _postgres_dsn_from_components(*, host: str | None = None) -> str:
     user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     password = os.getenv("POSTGRES_PASSWORD", "sidar")
@@ -177,6 +176,7 @@ def _resolved_database_urls() -> tuple[str, str, bool, bool]:
         else ""
     )
     return database_url, container_url, bool(explicit_database_url), bool(explicit_container_url)
+
 
 def _normalize_postgres_dsn(database_url: str) -> str:
     return str(database_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -477,7 +477,9 @@ def check_database_env() -> DoctorCheck:
     failures: list[str] = []
     warnings: list[str] = []
     if not database_url:
-        warnings.append("DATABASE_URL could not be resolved; database readiness cannot be fully verified")
+        warnings.append(
+            "DATABASE_URL could not be resolved; database readiness cannot be fully verified"
+        )
     else:
         sync_failures, sync_warnings = _validate_postgres_env_sync(
             label="DATABASE_URL",
@@ -871,7 +873,9 @@ def _query_entity_graph_counts_from_store(rag_dir: Path) -> dict[str, Any]:
             AI_PROVIDER=getattr(Config, "AI_PROVIDER", "ollama"),
             PGVECTOR_TABLE=getattr(Config, "PGVECTOR_TABLE", "rag_embeddings"),
             PGVECTOR_EMBEDDING_DIM=getattr(Config, "PGVECTOR_EMBEDDING_DIM", 384),
-            PGVECTOR_EMBEDDING_MODEL=getattr(Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+            PGVECTOR_EMBEDDING_MODEL=getattr(
+                Config, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
+            ),
             DATABASE_URL=getattr(Config, "DATABASE_URL", ""),
         )
         store = DocumentStore(rag_dir, cfg=cast(Any, cfg), initialize_vector=False)
@@ -947,7 +951,9 @@ def check_rag_index_ready() -> DoctorCheck:
         if entity_memory_empty:
             details["graphrag_entity_memory_warning"] = True
         details["auto_fix"] = ""
-        details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
+        details["recommended_commands"] = [
+            "uv run python -m core.doctor artifacts/install/doctor.json"
+        ]
         status = "pass"
         message = "RAG index readiness looks healthy"
     return DoctorCheck("rag_index_ready", status, message, details)
@@ -981,7 +987,9 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
 
     if not graph_enabled:
         details["auto_fix"] = ""
-        details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
+        details["recommended_commands"] = [
+            "uv run python -m core.doctor artifacts/install/doctor.json"
+        ]
         return DoctorCheck(
             "graphrag_entity_memory_ready", "warn", "GraphRAG is disabled by configuration", details
         )
@@ -1026,8 +1034,12 @@ def check_rag_readiness() -> DoctorCheck:
     details = {
         "rag_index_ready_status": index_check.status,
         "graphrag_entity_memory_ready_status": graph_check.status,
-        "document_count": int(base_details.get("document_count", index_check.details.get("document_count", 0))),
-        "index_exists": bool(base_details.get("index_exists", index_check.details.get("index_exists", False))),
+        "document_count": int(
+            base_details.get("document_count", index_check.details.get("document_count", 0))
+        ),
+        "index_exists": bool(
+            base_details.get("index_exists", index_check.details.get("index_exists", False))
+        ),
         "blocked_by": (
             "database_env"
             if mismatch_block
@@ -1071,7 +1083,9 @@ def check_rag_readiness() -> DoctorCheck:
         if not details.get("index_exists", False):
             message = "RAG index file is missing; no indexed documents yet; entity memory is empty"
         else:
-            message = "RAG has no indexed documents; no indexed documents yet; entity memory is empty"
+            message = (
+                "RAG has no indexed documents; no indexed documents yet; entity memory is empty"
+            )
     else:
         message = f"rag_index_ready={index_check.status}; graphrag_entity_memory_ready={graph_check.status}"
     return DoctorCheck("rag_readiness", status, message, details)
@@ -1254,12 +1268,9 @@ def check_gpu_memory_config() -> DoctorCheck:
         warnings.append(
             "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
         )
-    if (
-        not use_gpu
-        and (
-            (docker_image and "gpu" in docker_image.lower())
-            or (docker_test_image and "gpu" in docker_test_image.lower())
-        )
+    if not use_gpu and (
+        (docker_image and "gpu" in docker_image.lower())
+        or (docker_test_image and "gpu" in docker_test_image.lower())
     ):
         warnings.append(
             "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container Toolkit, CUDA visibility, and USE_GPU settings"

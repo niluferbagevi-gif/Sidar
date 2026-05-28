@@ -443,6 +443,7 @@ def run(
     summary_only: bool = False,
 ) -> int:
     """In-process callable entrypoint for launcher/doctor integrations."""
+
     def _entity_graph_counts(path: Path) -> tuple[int, int]:
         entity_graph_path = path / "entity_graph.json"
         if not entity_graph_path.exists():

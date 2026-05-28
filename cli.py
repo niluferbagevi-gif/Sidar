@@ -124,7 +124,11 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     Çözüm: Tüm döngü tek bir async fonksiyon içine alındı.
     asyncio.Lock() tüm oturum boyunca aynı loop'ta yaşar.
     """
-    banner_already_shown = os.getenv("SIDAR_BANNER_SHOWN", "").strip().lower() in {"1", "true", "yes"}
+    banner_already_shown = os.getenv("SIDAR_BANNER_SHOWN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not banner_already_shown:
         print(_make_banner(agent.VERSION))
 
@@ -373,7 +377,11 @@ def main_cli(argv: list[str] | None = None) -> int:
         cfg.CODING_MODEL = args.model
     if args.command:
         cfg.CLI_FAST_MODE = True
-    skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {"1", "true", "yes"}
+    skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not skip_boot_checks and not cfg.validate_critical_settings():
         print("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
         raise SystemExit("Kritik yapılandırma doğrulaması başarısız")
