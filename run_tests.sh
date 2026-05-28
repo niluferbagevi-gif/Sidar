@@ -32,6 +32,34 @@ read_preferred_python_version() {
   printf '3.11'
 }
 
+assert_venv_writable() {
+  if [ ! -d "${PROJECT_VENV_DIR}" ]; then
+    return 0
+  fi
+
+  local owner
+  owner="$(stat -c %U "${PROJECT_VENV_DIR}" 2>/dev/null || true)"
+  if [ -n "${owner}" ] && [ "${owner}" != "${USER:-$(id -un)}" ]; then
+    echo "❌ .venv sahipliği mevcut kullanıcıyla uyuşmuyor (owner=${owner}, user=${USER:-$(id -un)})."
+    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} "${PROJECT_VENV_DIR}""
+    return 1
+  fi
+
+  if [ ! -w "${PROJECT_VENV_DIR}" ]; then
+    echo "❌ .venv dizini yazılabilir değil: ${PROJECT_VENV_DIR}"
+    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} "${PROJECT_VENV_DIR}""
+    return 1
+  fi
+
+  return 0
+}
+
+
+if ! assert_venv_writable; then
+  exit 1
+fi
+
+
 ensure_project_venv() {
   export UV_PROJECT_ENVIRONMENT="${PROJECT_VENV_ENV}"
 
