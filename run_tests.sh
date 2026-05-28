@@ -796,6 +796,38 @@ PY
   fi
 
   echo "✅ Runtime bağımlılıkları doğrulandı."
+
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+from pathlib import Path
+import coverage
+
+html_index = Path(coverage.__file__).resolve().parent / "htmlfiles" / "index.html"
+raise SystemExit(0 if html_index.exists() else 1)
+PY
+  then
+    echo "⚠️ coverage htmlfiles/index.html eksik görünüyor. coverage + pytest-cov paketleri yeniden kuruluyor..."
+    if ! env UV_LINK_MODE=copy uv sync --reinstall-package coverage --reinstall-package pytest-cov --all-extras; then
+      echo "❌ coverage/pytest-cov yeniden kurulumu başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+
+    if ! uv run python - <<'PY' >/dev/null 2>&1
+from pathlib import Path
+import coverage
+
+html_index = Path(coverage.__file__).resolve().parent / "htmlfiles" / "index.html"
+raise SystemExit(0 if html_index.exists() else 1)
+PY
+    then
+      echo "❌ coverage htmlfiles/index.html doğrulaması başarısız; sanal ortam bozuk olabilir."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+
+    echo "✅ coverage htmlfiles/index.html doğrulandı (otomatik yeniden kurulum sonrası)."
+  fi
+
   return 0
 }
 
