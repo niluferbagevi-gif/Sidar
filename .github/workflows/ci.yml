@@ -85,9 +85,16 @@ jobs:
         run: |
           uv sync --frozen --all-extras
 
+      - name: Diagnose environment (always)
+        if: always()
+        run: |
+          echo "=== uv ===" && uv --version || echo "uv not found"
+          echo "=== venv ===" && ls .venv/bin/python3 2>/dev/null || echo "venv missing"
+          echo "=== portaudio ===" && dpkg -l portaudio19-dev 2>/dev/null || echo "portaudio not installed"
+          echo "=== shellcheck ===" && shellcheck --version 2>/dev/null || echo "shellcheck not found"
 
       - name: Verify core install manifest integrity
-        if: github.event_name == 'pull_request'
+        if: success() && github.event_name == 'pull_request'
         run: |
           sha256sum -c .sidar_manifest.txt
 
@@ -115,7 +122,7 @@ jobs:
 
 
       - name: Verify installer module hash manifest integrity
-        if: github.event_name == 'pull_request'
+        if: success() && github.event_name == 'pull_request'
         run: |
           cp install_sidar.sh /tmp/install_sidar.sh.before
           uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh
