@@ -46,12 +46,6 @@ def build_agent_router(
             return default
         return getattr(web_server_mod, name, default)
 
-    def _resolve_web_server_attr(name: str, default: Any) -> Any:
-        web_server_mod = sys.modules.get("web_server")
-        if web_server_mod is None:
-            return default
-        return getattr(web_server_mod, name, default)
-
     @router.post("/api/agents/register")
     async def register_agent_plugin(
         payload: Any, _user: Any = Depends(require_admin_user)
@@ -115,7 +109,7 @@ def build_agent_router(
         serializer = _resolve_web_server_helper(
             "_serialize_marketplace_plugin", serialize_marketplace_plugin
         )
-        catalog = _resolve_web_server_attr("PLUGIN_MARKETPLACE_CATALOG", plugin_marketplace_catalog)
+        catalog = plugin_marketplace_catalog
         state = state_reader()
         items = []
         for plugin_id in sorted(catalog):
