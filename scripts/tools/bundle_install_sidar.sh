@@ -87,8 +87,6 @@ echo "Bundle oluşturuldu: $OUTPUT_SCRIPT"
     done
 } > "$OUTPUT_HASHES"
 
-uv run python scripts/tools/update_install_module_hash_manifest.py --target dist/install_sidar.sh
 chmod +x "$OUTPUT_SCRIPT"
 
-echo "Modül hash manifesti embed edildi: $OUTPUT_SCRIPT"
 echo "Modül hash manifesti ayrıca yazıldı: $OUTPUT_HASHES"
