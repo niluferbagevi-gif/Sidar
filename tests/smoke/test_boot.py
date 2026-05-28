@@ -11,6 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 
+import config as app_config
 from agent.registry import AgentCatalog
 from tests.helpers import make_test_config
 
@@ -51,9 +52,8 @@ def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
 def _database_url_dotenv_diagnostics(database_url: str) -> str:
     """Build failure diagnostics for smoke DB checks without logging secrets."""
 
-    config_module = pytest.importorskip("config")
-    key_sources = config_module.get_dotenv_key_source_report()
-    load_events = config_module.get_dotenv_load_report()
+    key_sources = app_config.get_dotenv_key_source_report()
+    load_events = app_config.get_dotenv_load_report()
     database_url_source = key_sources.get("DATABASE_URL") or {}
     postgres_password_source = key_sources.get("POSTGRES_PASSWORD") or {}
     source_label = database_url_source.get("label") or "process-env/fallback"
@@ -80,8 +80,7 @@ def _database_url_dotenv_diagnostics(database_url: str) -> str:
 
 def _runtime_config_value(name: str, fallback: str) -> str:
     """Dotenv yükleyen uygulama config değerini env fallback'iyle döndür."""
-    config_module = pytest.importorskip("config")
-    value = str(getattr(config_module.Config, name, "") or "").strip()
+    value = str(getattr(app_config.Config, name, "") or "").strip()
     return value or os.getenv(name, fallback)
 
 
@@ -113,8 +112,7 @@ def test_boot_agent_catalog_can_instantiate_coder_agent() -> None:
 
 def test_environment_sanity_required_ai_provider_settings() -> None:
     """Aktif AI sağlayıcısı için zorunlu kimlik/endpoint ayarlarının yüklü olduğunu doğrular."""
-    config_module = pytest.importorskip("config")
-    cfg = config_module.Config
+    cfg = app_config.Config
 
     provider = str(getattr(cfg, "AI_PROVIDER", "") or "").strip().lower()
     requirements: dict[str, tuple[str, ...]] = {

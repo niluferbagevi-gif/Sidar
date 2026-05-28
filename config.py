@@ -158,6 +158,10 @@ def get_dotenv_key_source_report() -> dict[str, dict[str, Any]]:
     return deepcopy(_DOTENV_KEY_SOURCES)
 
 
+# Açık referans: test izolasyon/reload araçlarında dotenv tanılama API'lerini sabit tutar.
+_dotenv_api_exports = (get_dotenv_load_report, get_dotenv_key_source_report)
+
+
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
     dotenv_path = Path(raw_path).expanduser()
