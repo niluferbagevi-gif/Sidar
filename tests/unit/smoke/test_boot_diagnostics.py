@@ -2,10 +2,20 @@
 
 from pathlib import Path
 
+import pytest
+
 import config
 from tests.smoke import test_boot
 
 
+@pytest.fixture(autouse=True)
+def _reset_dotenv_managed_state() -> None:
+    config._reset_dotenv_managed_environment()
+    yield
+    config._reset_dotenv_managed_environment()
+
+
+@pytest.mark.xdist_group("env-globals")
 def test_database_url_dotenv_diagnostics_reports_source_without_password(
     monkeypatch, tmp_path: Path
 ) -> None:

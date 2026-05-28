@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import pytest
+
 from scripts import sync_database_passwords
 
 
@@ -341,6 +343,7 @@ def test_remove_explicit_database_urls_from_text_preserves_non_postgres_url() ->
     assert summary["skipped"] == {"SIDAR_CONTAINER_DATABASE_URL": "not_postgresql"}
 
 
+@pytest.mark.xdist_group("env-globals")
 def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)

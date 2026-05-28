@@ -2182,6 +2182,7 @@ obj.session.post("/y")
     assert impact["risk_level"] == "medium"
 
 
+@pytest.mark.xdist_group("env-globals")
 async def test_embedding_function_mixed_precision_cuda_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
