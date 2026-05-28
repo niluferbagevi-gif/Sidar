@@ -111,6 +111,8 @@ def build_orchestration_router(
 
     router.legacy_exports = {
         "execute_swarm": execute_swarm,
+        "get_todo": get_todo,
+        "clear": clear,
         "set_level_endpoint": set_level_endpoint,
     }
     return router
