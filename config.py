@@ -41,7 +41,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 # TEMEL DİZİN VE .ENV YÜKLEMESİ  (diğer her şeyden ÖNCE)
 # ═══════════════════════════════════════════════════════════════
-BASE_DIR = resolve_base_dir(__file__)
+BASE_DIR = getattr(sys.modules.get(__name__), "BASE_DIR", None) or resolve_base_dir(__file__)
 
 _DOTENV_LOAD_EVENTS: list[dict[str, Any]] = []
 _DOTENV_KEY_SOURCES: dict[str, dict[str, Any]] = {}

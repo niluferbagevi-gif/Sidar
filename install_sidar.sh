@@ -3623,13 +3623,7 @@ install_pyright_lsp_tool() {
         fi
     fi
 
-    warn "uv sync ile Pyright kurulamadı; uv tool install pyright deneniyor."
-    if uv tool install pyright >/dev/null 2>&1; then
-        ok "Pyright uv tool install ile kuruldu."
-        return
-    fi
-
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın; gerekirse dev bağımlılıklarını 'uv sync --frozen --extra dev' ile yenileyin veya 'uv tool install pyright' fallback komutunu manuel çalıştırın."
+    fail "Pyright LSP bulunamadı. 'uv sync --frozen --all-extras' veya 'uv sync --frozen --extra dev' çalıştırarak dev bağımlılıklarını yükleyin."
 }
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────

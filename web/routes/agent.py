@@ -28,7 +28,7 @@ def build_agent_router(
     max_file_content_bytes: int | Callable[[], int],
     read_plugin_marketplace_state: Callable[[], dict[str, Any]],
     serialize_marketplace_plugin: Callable[..., dict[str, Any]],
-    plugin_marketplace_catalog: dict[str, Any],
+    plugin_marketplace_catalog: dict[str, Any] | Callable[[], dict[str, Any]],
     install_marketplace_plugin: Callable[[str], dict[str, Any]],
     uninstall_marketplace_plugin: Callable[[str], dict[str, Any]],
     agent_plugin_register_request_model: type[Any],
@@ -103,17 +103,11 @@ def build_agent_router(
 
     @router.get("/api/plugin-marketplace/catalog")
     async def plugin_marketplace_catalog_endpoint(_user: Any = Depends(require_admin_user)) -> Any:
-        state_reader = _resolve_web_server_helper(
-            "_read_plugin_marketplace_state", read_plugin_marketplace_state
-        )
-        serializer = _resolve_web_server_helper(
-            "_serialize_marketplace_plugin", serialize_marketplace_plugin
-        )
-        catalog = plugin_marketplace_catalog
-        state = state_reader()
+        state = read_plugin_marketplace_state()
+        catalog = plugin_marketplace_catalog() if callable(plugin_marketplace_catalog) else plugin_marketplace_catalog
         items = []
         for plugin_id in sorted(catalog):
-            item = dict(serializer(plugin_id, installed_state=state.get(plugin_id, {})))
+            item = dict(serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {})))
             item.setdefault("id", plugin_id)
             items.append(item)
         return JSONResponse({"items": items})
