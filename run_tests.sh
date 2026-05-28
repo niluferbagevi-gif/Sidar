@@ -822,7 +822,7 @@ PY
 
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
   # her çağrıda kesin yüklenmesi garanti edilir.
-  # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
+  # Faz testlerinde yalnız terminal coverage çıktısı alınır; XML/HTML/JSON final birleşik gate aşamasında üretilir.
   # Faz bazlı pytest-cov raporları .coveragerc fail_under değerini kullanarak
   # erken başarısız olmasın diye burada 0 ile nötrlenir; asıl kalite kapısı
   # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
