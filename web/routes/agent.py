@@ -46,6 +46,12 @@ def build_agent_router(
             return default
         return getattr(web_server_mod, name, default)
 
+    def _resolve_web_server_attr(name: str, default: Any) -> Any:
+        web_server_mod = sys.modules.get("web_server")
+        if web_server_mod is None:
+            return default
+        return getattr(web_server_mod, name, default)
+
     @router.post("/api/agents/register")
     async def register_agent_plugin(
         payload: Any, _user: Any = Depends(require_admin_user)
@@ -103,10 +109,17 @@ def build_agent_router(
 
     @router.get("/api/plugin-marketplace/catalog")
     async def plugin_marketplace_catalog_endpoint(_user: Any = Depends(require_admin_user)) -> Any:
-        state = read_plugin_marketplace_state()
+        state_reader = _resolve_web_server_helper(
+            "_read_plugin_marketplace_state", read_plugin_marketplace_state
+        )
+        serializer = _resolve_web_server_helper(
+            "_serialize_marketplace_plugin", serialize_marketplace_plugin
+        )
+        catalog = _resolve_web_server_attr("PLUGIN_MARKETPLACE_CATALOG", plugin_marketplace_catalog)
+        state = state_reader()
         items = [
-            serialize_marketplace_plugin(plugin_id, installed_state=state.get(plugin_id, {}))
-            for plugin_id in sorted(plugin_marketplace_catalog)
+            serializer(plugin_id, installed_state=state.get(plugin_id, {}))
+            for plugin_id in sorted(catalog)
         ]
         return JSONResponse({"items": items})
 
