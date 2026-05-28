@@ -24,7 +24,6 @@ if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     echo "❌ Bu betik root/sudo ile çalıştırılamaz. Normal kullanıcı ile çalıştırın: ./install_sidar.sh" >&2
     if [[ -n "${SUDO_USER:-}" ]]; then
         echo "ℹ️ Tespit edilen normal kullanıcı: ${SUDO_USER}. Dizin sahipliği bozulduysa düzeltme:" >&2
-        local guard_script_dir
         guard_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         echo "   sudo chown -R ${SUDO_USER}:${SUDO_USER} "${guard_script_dir}/.venv"" >&2
     fi
@@ -269,7 +268,7 @@ read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || tru
 2febaeec26080e527411a02fa1606ad5d4edfa3810bdaf10c03ee1f58857fc15  scripts/install_modules/install_helpers.sh
 881b1e4efa43d5b74ff020a063b05447791c67194e8eaf55ab2e10e9ffdb089c  scripts/install_modules/phases/01_context.sh
 b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
-8f0e8f24bea159aa969ffd0bef5212d11eee92ed3347f169d5d9817095031c20  scripts/install_modules/phases/03_runtime.sh
+15008ab60f3ab49e94625aba8363a519e5c5fa7c41be766c56c444c8c801566a  scripts/install_modules/phases/03_runtime.sh
 cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/install_modules/phases/06_services.sh
@@ -277,7 +276,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
-cb62e274bae2ffc7f923ad50f1c0705127bad0cbaaeac2ad317e0f426a426beb  scripts/install_modules/utils/install_remediation.sh
+c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -701,6 +700,7 @@ relocate_log_file_if_needed() {
     fi
 }
 
+# shellcheck disable=SC2154
 trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
 
 compute_sha256() {
@@ -3531,7 +3531,8 @@ create_uv_venv() {
                     fail ".venv silinemedi: $VENV_DIR. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
                 fi
             else
-                local venv_backup_dir="$SCRIPT_DIR/.venv.broken-$(date +%Y%m%d-%H%M%S)"
+                local venv_backup_dir
+                venv_backup_dir="$SCRIPT_DIR/.venv.broken-$(date +%Y%m%d-%H%M%S)"
                 warn ".venv mevcut kullanıcıya ait değil. Güvenli yol olarak yedek adla taşımayı deniyorum: $venv_backup_dir"
                 if mv "$VENV_DIR" "$venv_backup_dir" 2>/dev/null; then
                     warn "Eski .venv taşındı: $venv_backup_dir"

@@ -240,8 +240,7 @@ ensure_docker_daemon_running() {
         fi
 
         info "Docker Desktop yeniden başlatıldı; WSL Integration ayarının uygulanması bekleniyor..."
-        local attempt
-        for attempt in $(seq 1 20); do
+        for _attempt in $(seq 1 20); do
             sleep 3
             if _wsl_integration_distro_listed "$current_distro"; then
                 ok "Docker Desktop WSL Integration: '${current_distro}' artık aktif."

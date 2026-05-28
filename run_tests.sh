@@ -41,13 +41,13 @@ assert_venv_writable() {
   owner="$(stat -c %U "${PROJECT_VENV_DIR}" 2>/dev/null || true)"
   if [ -n "${owner}" ] && [ "${owner}" != "${USER:-$(id -un)}" ]; then
     echo "❌ .venv sahipliği mevcut kullanıcıyla uyuşmuyor (owner=${owner}, user=${USER:-$(id -un)})."
-    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} "${PROJECT_VENV_DIR}""
+    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} \"${PROJECT_VENV_DIR}\""
     return 1
   fi
 
   if [ ! -w "${PROJECT_VENV_DIR}" ]; then
     echo "❌ .venv dizini yazılabilir değil: ${PROJECT_VENV_DIR}"
-    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} "${PROJECT_VENV_DIR}""
+    echo "   Düzeltme: sudo chown -R ${USER:-$(id -un)}:${USER:-$(id -un)} \"${PROJECT_VENV_DIR}\""
     return 1
   fi
 
