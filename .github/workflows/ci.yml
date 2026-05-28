@@ -72,11 +72,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
-        with:
-          packages: portaudio19-dev
-          version: ci-portaudio-v1
+      - name: Install APT dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y portaudio19-dev shellcheck bats
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
