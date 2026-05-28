@@ -18,6 +18,19 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+# Güvenlik/operasyon guard: root ile çalıştırılan kurulum .venv sahipliğini bozup
+# sonraki uv run çağrılarında Permission denied zinciri üretebilir.
+if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    echo "❌ Bu betik root/sudo ile çalıştırılamaz. Normal kullanıcı ile çalıştırın: ./install_sidar.sh" >&2
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        echo "ℹ️ Tespit edilen normal kullanıcı: ${SUDO_USER}. Dizin sahipliği bozulduysa düzeltme:" >&2
+        local guard_script_dir
+        guard_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        echo "   sudo chown -R ${SUDO_USER}:${SUDO_USER} "${guard_script_dir}/.venv"" >&2
+    fi
+    exit 1
+fi
+
 # Uzak script indirmelerinde checksum yoksa güvenlik gereği varsayılan olarak reddet
 export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 
