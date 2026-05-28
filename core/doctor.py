@@ -785,16 +785,26 @@ def _rag_readiness_state() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
     if vector_backend == "pgvector":
-        database_check = check_database_env()
-        details["database_env_status"] = database_check.status
-        if database_check.status == "fail":
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
+        parsed_database_password = ""
+        if database_url:
+            parsed_database_password = unquote(str(urlparse(database_url).password or ""))
+        password_matches_database_url = bool(postgres_password) and (
+            postgres_password in database_url or parsed_database_password == postgres_password
+        )
+        database_env_ok = bool(database_url) and password_matches_database_url
+        details["database_env_status"] = "pass" if database_env_ok else "fail"
+        if not database_env_ok:
             blockers.append(
                 "pgvector backend is configured but database environment parity failed; semantic RAG is blocked until database_env is fixed"
             )
             details["blocked_by"] = "database_env"
-            details["database_env_message"] = database_check.message
-            details["database_env_auto_fix"] = database_check.details.get(
-                "auto_fix", "uv run python -m scripts.sync_database_passwords"
+            details["database_env_message"] = (
+                "DATABASE_URL and POSTGRES_PASSWORD must both be set and share the same password"
+            )
+            details["database_env_auto_fix"] = (
+                "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
             )
     details.update(
         build_readiness_report(

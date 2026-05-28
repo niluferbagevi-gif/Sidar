@@ -521,6 +521,35 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     assert "uv run python -m scripts.seed_rag" in check.details["follow_up_commands"]
 
 
+def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
+    (rag_dir / "entity_graph.json").write_text(
+        '{"nodes": {"brand:x": {"label": "Brand"}}, "edges": []}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://sidar:" + "b" * 24 + "@localhost:5432/sidar",
+    )
+
+    def _unexpected_database_check():
+        raise AssertionError("_rag_readiness_state must not call check_database_env")
+
+    monkeypatch.setattr(doctor, "check_database_env", _unexpected_database_check)
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "fail"
+    assert state["details"]["blocked_by"] == "database_env"
+    assert state["details"]["database_env_auto_fix"] == (
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    )
+
 def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
     monkeypatch, tmp_path
 ):
