@@ -898,6 +898,27 @@ PY
   "${phase1_cmd[@]}"
   local phase1_exit=$?
 
+  if [ "${phase1_exit}" -ne 0 ]; then
+    local failure_report_path="reports/last_failures.txt"
+    mkdir -p "$(dirname "${failure_report_path}")"
+    echo "🧭 Aşama 1 başarısız. Hızlı fail özeti toplanıyor: ${failure_report_path}"
+
+    local unit_diag_workers="${UNIT_FAILURE_DIAG_WORKERS:-auto}"
+    local unit_diag_cmd=(
+      env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
+      --no-cov
+      -q
+      -rf
+      --tb=short
+      -n "${unit_diag_workers}"
+      --ignore=tests/performance
+      tests/unit
+    )
+    echo "➡️ Unit fail tanılama komutu: ${unit_diag_cmd[*]}"
+    "${unit_diag_cmd[@]}" | tee "${failure_report_path}" || true
+    echo "ℹ️ Unit fail özeti yazıldı: ${failure_report_path}"
+  fi
+
   # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
   local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
   local phase2_cmd=("${base_pytest_cmd[@]}")
