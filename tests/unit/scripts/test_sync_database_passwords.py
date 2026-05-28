@@ -375,7 +375,7 @@ def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path)
     assert summary["changed_keys"] == ["DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"]
 
 
-def test_remove_explicit_urls_reports_parent_shell_exports_as_info(monkeypatch, tmp_path) -> None:
+def test_remove_explicit_urls_suppresses_parent_shell_export_note(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -391,13 +391,4 @@ def test_remove_explicit_urls_reports_parent_shell_exports_as_info(monkeypatch, 
     summary = sync_database_passwords.sync_env_chain(env_file, remove_explicit_urls=True)
 
     assert summary["warnings"] == []
-    assert summary["notes"] == [
-        {
-            "severity": "info",
-            "message": (
-                "Parent process still exports DATABASE_URL; restart the launcher or unset it "
-                "so Sidar derives the URL from POSTGRES_* values."
-            ),
-            "key": "DATABASE_URL",
-        }
-    ]
+    assert summary["notes"] == []

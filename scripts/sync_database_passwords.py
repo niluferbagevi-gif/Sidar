@@ -508,22 +508,7 @@ def sync_env_chain(
             }
         )
 
-    if remove_explicit_urls:
-        exported_keys = [
-            key
-            for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
-            if os.environ.get(key, "").strip()
-        ]
-        if exported_keys:
-            key = exported_keys[0]
-            notes.append(
-                _message_entry(
-                    f"Parent process still exports {key}; restart the launcher or unset it so Sidar derives the URL from POSTGRES_* values.",
-                    severity="info",
-                    key=key,
-                )
-            )
-    else:
+    if not remove_explicit_urls:
         effective_env_after_sync = _effective_env_from_specs(specs)
         warnings.extend(_effective_url_validation_warnings(effective_env_after_sync))
 
