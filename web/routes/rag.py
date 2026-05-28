@@ -171,6 +171,7 @@ def build_rag_router(
         "rag_list_docs": rag_list_docs,
         "rag_add_file": rag_add_file,
         "rag_add_url": rag_add_url,
+        "rag_delete_doc": rag_delete_doc,
         "upload_rag_file": upload_rag_file,
         "rag_search": rag_search,
     }

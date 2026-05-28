@@ -61,6 +61,29 @@ def test_agent_router_catalog_endpoint_direct() -> None:
     assert res.json()["items"][0]["id"] == "p1"
 
 
+def test_agent_router_catalog_endpoint_normalizes_missing_id() -> None:
+    router = build_agent_router(
+        require_admin_user=_admin_user,
+        register_plugin_agent=lambda **_: {"ok": True},
+        persist_and_import_plugin_file=lambda *_: None,
+        max_file_content_bytes=1024,
+        read_plugin_marketplace_state=lambda: {},
+        serialize_marketplace_plugin=lambda plugin_id, installed_state=None: {"plugin_id": plugin_id},
+        plugin_marketplace_catalog={"p2": {}},
+        install_marketplace_plugin=lambda plugin_id: {"success": True, "plugin_id": plugin_id},
+        uninstall_marketplace_plugin=lambda plugin_id: {"success": True, "plugin_id": plugin_id},
+        agent_plugin_register_request_model=_AgentRegisterReq,
+        plugin_marketplace_install_request_model=_PluginInstallReq,
+    )
+    app = FastAPI()
+    app.include_router(router)
+    res = TestClient(app).get("/api/plugin-marketplace/catalog")
+    assert res.status_code == 200
+    item = res.json()["items"][0]
+    assert item["plugin_id"] == "p2"
+    assert item["id"] == "p2"
+
+
 @dataclass
 class _RegisterReq:
     username: str

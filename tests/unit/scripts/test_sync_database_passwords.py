@@ -345,6 +345,8 @@ def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path)
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     env_file = tmp_path / ".env"
     env_file.write_text(

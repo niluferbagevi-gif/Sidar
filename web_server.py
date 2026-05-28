@@ -2090,23 +2090,22 @@ def _load_plugin_agent_class(
     def _is_baseagent_derived(candidate: Any) -> bool:
         if not inspect.isclass(candidate):
             return False
+        candidate_mro = inspect.getmro(candidate)
         for base_cls in _baseagent_candidates():
             try:
-                if issubclass(candidate, base_cls):
+                if base_cls in candidate_mro:
                     return candidate is not base_cls
             except TypeError as exc:
                 raise HTTPException(
                     status_code=400, detail="Plugin BaseAgent doğrulanamadı"
                 ) from exc
-        # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
-        # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
-        for base in inspect.getmro(candidate)[1:]:
-            base_name = getattr(base, "__name__", "")
-            base_qualname = getattr(base, "__qualname__", "")
-            base_module = getattr(base, "__module__", "")
-            if base_name == "BaseAgent" or base_qualname.endswith("BaseAgent"):
+        # Bazı ortamlarda BaseAgent aynı modülden yeniden yüklenmiş farklı kimliklerle gelebilir.
+        # Bu durumda MRO zincirinde agent.base_agent modülünden gelen bir taban sınıf görmek yeterlidir.
+        plugin_baseagent = namespace.get("BaseAgent")
+        for base in candidate_mro[1:]:
+            if plugin_baseagent is not None and base is plugin_baseagent:
                 return True
-            if base_module == "agent.base_agent":
+            if getattr(base, "__module__", "") == "agent.base_agent":
                 return True
         return False
 

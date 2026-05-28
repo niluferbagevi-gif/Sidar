@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
+import inspect
 import json
 import logging
 import os
@@ -619,7 +620,7 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
 def _run_doctor_auto_fix(
     check: Any, check_func: Any | None = None, *, apply_all_mode: bool = False
 ) -> bool:
-    """Run Doctor auto-fix command(s), optionally revalidating after each successful step."""
+    """Run Doctor auto-fix command(s) and stop early when revalidation reaches pass."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
     details = getattr(check, "details", {}) or {}
@@ -647,23 +648,23 @@ def _run_doctor_auto_fix(
         if not _run_doctor_auto_fix_command(auto_fix):
             return ran_any
         ran_any = True
-        if check_func is None:
-            continue
-
-        updated_check = _revalidate_doctor_check_after_auto_fix(check_name, check_func, details)
-        updated_status = str(getattr(updated_check, "status", "warn") or "warn")
-        if updated_status == "pass":
-            return True
-
+        if callable(check_func):
+            updated_check = _revalidate_doctor_check_after_auto_fix(
+                check_name, check_func, getattr(check, "details", None)
+            )
+            if updated_check is not None:
+                updated_status = str(getattr(updated_check, "status", "warn") or "warn")
+                if updated_status == "pass":
+                    break
     return ran_any
 
 
 def _invoke_doctor_auto_fix(check: Any, check_func: Any, apply_all_mode: bool) -> bool:
-    """Call _run_doctor_auto_fix with backward-compatible signature fallback."""
-    try:
+    """Call _run_doctor_auto_fix with signature-aware compatibility for test doubles."""
+    params = inspect.signature(_run_doctor_auto_fix).parameters
+    if "apply_all_mode" in params:
         return bool(_run_doctor_auto_fix(check, check_func, apply_all_mode=apply_all_mode))
-    except TypeError:
-        return bool(_run_doctor_auto_fix(check, check_func))
+    return bool(_run_doctor_auto_fix(check, check_func))
 
 
 def _doctor_auto_fix_lost_env_keys(
@@ -811,8 +812,9 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             _print_doctor_check_summary(check)
             auto_fix_applied = _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
             final_check = check
-            if auto_fix_applied and _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
-                final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION
+            if auto_fix_applied:
+                if _LAST_DOCTOR_AUTO_FIX_REVALIDATION is not None:
+                    final_check = _LAST_DOCTOR_AUTO_FIX_REVALIDATION
             final_status = str(getattr(final_check, "status", "warn") or "warn")
             if check_name == "database_env":
                 skip_database_dependents = final_status == "fail"
