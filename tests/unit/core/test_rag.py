@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import types
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,15 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 import core.rag as rag
+
+
+@pytest.fixture(autouse=True)
+def _clear_embedding_function_cache() -> Iterator[None]:
+    """Keep monkeypatched embedding factories isolated between RAG tests."""
+
+    rag._build_embedding_function_cached.cache_clear()
+    yield
+    rag._build_embedding_function_cached.cache_clear()
 
 
 def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
@@ -1062,6 +1072,7 @@ async def test_build_embedding_function_gpu_success_and_fallback(
         "chromadb.utils.embedding_functions",
         SimpleNamespace(SentenceTransformerEmbeddingFunction=_BrokenEF),
     )
+    rag._build_embedding_function_cached.cache_clear()
     assert rag._build_embedding_function(use_gpu=True) is None
 
 
