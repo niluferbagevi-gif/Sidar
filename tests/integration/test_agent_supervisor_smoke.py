@@ -66,6 +66,8 @@ def test_judge_runtime_env_uses_prefixed_values_after_config_import(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_judge_ci_and_federation_smoke(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "true")
+    monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "1")
     monkeypatch.setenv("JUDGE_ENABLED", "true")
     monkeypatch.setenv("JUDGE_SAMPLE_RATE", "1")
 
