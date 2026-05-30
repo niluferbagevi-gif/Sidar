@@ -136,22 +136,57 @@ class LLMJudge:
     """
 
     def __init__(self) -> None:
-        from config import Config
+        from config import Config, get_bool_prefixed_env, get_float_prefixed_env, get_prefixed_env
 
         self.config = Config()
-        self.enabled = bool(getattr(self.config, "JUDGE_ENABLED", False))
-        self.model = str(getattr(self.config, "JUDGE_MODEL", "") or "").strip() or None
-        self.provider = (
-            str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama").strip().lower()
+        self.enabled = get_bool_prefixed_env(
+            "SIDAR_JUDGE_ENABLED",
+            "JUDGE_ENABLED",
+            bool(getattr(self.config, "JUDGE_ENABLED", False)),
         )
+        self.model = (
+            get_prefixed_env(
+                "SIDAR_JUDGE_MODEL", "JUDGE_MODEL", str(getattr(self.config, "JUDGE_MODEL", ""))
+            ).strip()
+            or None
+        )
+        self.provider = get_prefixed_env(
+            "SIDAR_JUDGE_PROVIDER",
+            "JUDGE_PROVIDER",
+            str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama"),
+        ).strip().lower()
         self.sample_rate = max(
-            0.0, min(1.0, float(getattr(self.config, "JUDGE_SAMPLE_RATE", 0.2) or 0.2))
+            0.0,
+            min(
+                1.0,
+                get_float_prefixed_env(
+                    "SIDAR_JUDGE_SAMPLE_RATE",
+                    "JUDGE_SAMPLE_RATE",
+                    float(getattr(self.config, "JUDGE_SAMPLE_RATE", 0.2)),
+                ),
+            ),
         )
-        self.auto_feedback_enabled = bool(getattr(self.config, "JUDGE_AUTO_FEEDBACK_ENABLED", True))
+        self.auto_feedback_enabled = get_bool_prefixed_env(
+            "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED",
+            "JUDGE_AUTO_FEEDBACK_ENABLED",
+            bool(getattr(self.config, "JUDGE_AUTO_FEEDBACK_ENABLED", True)),
+        )
         self.auto_feedback_threshold = max(
             0.0,
-            min(10.0, float(getattr(self.config, "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0) or 8.0)),
+            min(
+                10.0,
+                get_float_prefixed_env(
+                    "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD",
+                    "JUDGE_AUTO_FEEDBACK_THRESHOLD",
+                    float(getattr(self.config, "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0)),
+                ),
+            ),
         )
+        self.response_model = get_prefixed_env(
+            "SIDAR_JUDGE_RESPONSE_MODEL",
+            "JUDGE_RESPONSE_MODEL",
+            str(getattr(self.config, "JUDGE_RESPONSE_MODEL", "")),
+        ).strip()
 
     def _should_evaluate(self) -> bool:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
@@ -162,7 +197,7 @@ class LLMJudge:
         return self._should_evaluate()
 
     def _response_eval_model(self) -> str:
-        override = str(getattr(self.config, "JUDGE_RESPONSE_MODEL", "") or "").strip()
+        override = self.response_model
         if override:
             return override
         if self.model:

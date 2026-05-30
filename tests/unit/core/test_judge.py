@@ -30,6 +30,9 @@ def _install_config_module(monkeypatch):
     DummyConfig.JUDGE_RESPONSE_MODEL = ""
     fake = types.ModuleType("config")
     fake.Config = DummyConfig
+    fake.get_bool_prefixed_env = lambda _prefix, _legacy, default=False: default
+    fake.get_float_prefixed_env = lambda _prefix, _legacy, default=0.0: default
+    fake.get_prefixed_env = lambda _prefix, _legacy, default="": default
     monkeypatch.setitem(sys.modules, "config", fake)
 
 

@@ -41,6 +41,29 @@ async def test_agent_catalog_and_auto_handle_heal_flow(tmp_path) -> None:
     assert {"coder", "researcher", "reviewer", "qa", "coverage", "poyraz"}.issubset(roles)
 
 
+def test_judge_runtime_env_uses_prefixed_values_after_config_import(monkeypatch) -> None:
+    monkeypatch.setenv("JUDGE_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "1")
+    monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "false")
+    monkeypatch.setenv("SIDAR_JUDGE_MODEL", " runtime-judge ")
+    monkeypatch.setenv("SIDAR_JUDGE_PROVIDER", " OpenAI ")
+    monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "-1")
+    monkeypatch.setenv("SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED", "false")
+    monkeypatch.setenv("SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD", "12")
+    monkeypatch.setenv("SIDAR_JUDGE_RESPONSE_MODEL", " response-judge ")
+
+    judge = LLMJudge()
+
+    assert judge.enabled is False
+    assert judge.model == "runtime-judge"
+    assert judge.provider == "openai"
+    assert judge.sample_rate == 0.0
+    assert judge.auto_feedback_enabled is False
+    assert judge.auto_feedback_threshold == 10.0
+    assert judge._response_eval_model() == "response-judge"
+    assert judge.should_evaluate() is False
+
+
 @pytest.mark.asyncio
 async def test_judge_ci_and_federation_smoke(monkeypatch) -> None:
     monkeypatch.setenv("JUDGE_ENABLED", "true")
