@@ -3666,8 +3666,10 @@ health_router = build_health_router(
 app.include_router(health_router)
 agent_router = build_agent_router(
     require_admin_user=_require_admin_user,
-    register_plugin_agent=_register_plugin_agent,
-    persist_and_import_plugin_file=_persist_and_import_plugin_file,
+    register_plugin_agent=lambda **kwargs: _register_plugin_agent(**kwargs),
+    persist_and_import_plugin_file=lambda filename, data, module_label: (
+        _persist_and_import_plugin_file(filename, data, module_label)
+    ),
     max_file_content_bytes=lambda: MAX_FILE_CONTENT_BYTES,
     read_plugin_marketplace_state=lambda: _read_plugin_marketplace_state(),
     serialize_marketplace_plugin=(
@@ -3676,8 +3678,8 @@ agent_router = build_agent_router(
         )
     ),
     plugin_marketplace_catalog=lambda: PLUGIN_MARKETPLACE_CATALOG,
-    install_marketplace_plugin=_install_marketplace_plugin,
-    uninstall_marketplace_plugin=_uninstall_marketplace_plugin,
+    install_marketplace_plugin=lambda plugin_id: _install_marketplace_plugin(plugin_id),
+    uninstall_marketplace_plugin=lambda plugin_id: _uninstall_marketplace_plugin(plugin_id),
     agent_plugin_register_request_model=_AgentPluginRegisterRequest,
     plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
 )

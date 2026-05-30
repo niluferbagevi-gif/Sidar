@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -318,7 +319,17 @@ def test_agent_parse_payload_supports_modern_and_passthrough_models() -> None:
     assert _parse_payload(_AgentRegisterReq, marker) is marker
 
 
-def test_agent_router_json_posts_and_file_upload_direct() -> None:
+def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _unexpected_web_server_helper(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("Agent router must use its injected dependencies")
+
+    web_server_mod = ModuleType("web_server")
+    web_server_mod._register_plugin_agent = _unexpected_web_server_helper
+    web_server_mod._persist_and_import_plugin_file = _unexpected_web_server_helper
+    web_server_mod._install_marketplace_plugin = _unexpected_web_server_helper
+    web_server_mod._uninstall_marketplace_plugin = _unexpected_web_server_helper
+    monkeypatch.setitem(sys.modules, "web_server", web_server_mod)
+
     registered: list[dict[str, Any]] = []
     persisted: list[tuple[str, bytes, str]] = []
     installed: list[str] = []
@@ -412,8 +423,6 @@ def test_agent_router_file_upload_validation_direct() -> None:
 def test_metrics_router_prometheus_llm_and_context_restore_direct(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sys
-
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
 
     prometheus_mod = ModuleType("prometheus_client")
@@ -491,8 +500,6 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
 def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sys
-
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
     monkeypatch.setitem(sys.modules, "prometheus_client", None)
 

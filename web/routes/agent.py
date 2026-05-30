@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -42,20 +41,13 @@ def build_agent_router(
         else (lambda: max_file_content_bytes)
     )
 
-    def _resolve_web_server_helper(name: str, default: Any) -> Any:
-        web_server_mod = sys.modules.get("web_server")
-        if web_server_mod is None:
-            return default
-        return getattr(web_server_mod, name, default)
-
     @router.post("/api/agents/register")
     async def register_agent_plugin(
         payload: Annotated[dict[str, Any], Body()],
         _user: Any = Depends(require_admin_user),
     ) -> Any:
         data = _parse_payload(agent_plugin_register_request_model, payload)
-        helper = _resolve_web_server_helper("_register_plugin_agent", register_plugin_agent)
-        result = helper(
+        result = register_plugin_agent(
             role_name=data.role_name,
             source_code=data.source_code,
             class_name=data.class_name,
@@ -89,14 +81,8 @@ def build_agent_router(
         parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
         target_role_name = role_name.strip() or Path(file.filename or "").stem
         module_label = f"sidar_uploaded_plugin_{secrets.token_hex(4)}"
-        persist_helper = _resolve_web_server_helper(
-            "_persist_and_import_plugin_file", persist_and_import_plugin_file
-        )
-        persist_helper(file.filename or target_role_name, data, module_label)
-        register_helper = _resolve_web_server_helper(
-            "_register_plugin_agent", register_plugin_agent
-        )
-        result = register_helper(
+        persist_and_import_plugin_file(file.filename or target_role_name, data, module_label)
+        result = register_plugin_agent(
             role_name=target_role_name,
             source_code=source_code,
             class_name=class_name.strip() or None,
@@ -129,10 +115,7 @@ def build_agent_router(
         _user: Any = Depends(require_admin_user),
     ) -> Any:
         data = _parse_payload(plugin_marketplace_install_request_model, payload)
-        install_helper = _resolve_web_server_helper(
-            "_install_marketplace_plugin", install_marketplace_plugin
-        )
-        return JSONResponse(install_helper(data.plugin_id))
+        return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.post("/api/plugin-marketplace/reload")
     async def reload_plugin_marketplace_item(
@@ -140,19 +123,13 @@ def build_agent_router(
         _user: Any = Depends(require_admin_user),
     ) -> Any:
         data = _parse_payload(plugin_marketplace_install_request_model, payload)
-        install_helper = _resolve_web_server_helper(
-            "_install_marketplace_plugin", install_marketplace_plugin
-        )
-        return JSONResponse(install_helper(data.plugin_id))
+        return JSONResponse(install_marketplace_plugin(data.plugin_id))
 
     @router.delete("/api/plugin-marketplace/install/{plugin_id}")
     async def uninstall_plugin_marketplace_item(
         plugin_id: str, _user: Any = Depends(require_admin_user)
     ) -> Any:
-        uninstall_helper = _resolve_web_server_helper(
-            "_uninstall_marketplace_plugin", uninstall_marketplace_plugin
-        )
-        return JSONResponse(uninstall_helper(plugin_id))
+        return JSONResponse(uninstall_marketplace_plugin(plugin_id))
 
     router.legacy_exports = {
         "register_agent_plugin": register_agent_plugin,
