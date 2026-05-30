@@ -147,7 +147,10 @@ def build_auth_admin_router(
         return JSONResponse(serialize_prompt(active))
 
     @router.post("/admin/prompts")
-    async def admin_upsert_prompt(payload: Any, _user: Any = Depends(require_admin_user)) -> Any:
+    async def admin_upsert_prompt(
+        payload: Annotated[dict[str, Any], Body()],
+        _user: Any = Depends(require_admin_user),
+    ) -> Any:
         data = _parse_payload(prompt_upsert_request_model, payload)
         role_name = (data.role_name or "").strip().lower()
         prompt_text = (data.prompt_text or "").strip()
@@ -163,7 +166,10 @@ def build_auth_admin_router(
         return JSONResponse(serialize_prompt(record))
 
     @router.post("/admin/prompts/activate")
-    async def admin_activate_prompt(payload: Any, _user: Any = Depends(require_admin_user)) -> Any:
+    async def admin_activate_prompt(
+        payload: Annotated[dict[str, Any], Body()],
+        _user: Any = Depends(require_admin_user),
+    ) -> Any:
         agent = await await_if_needed(resolve_agent_instance())
         data = _parse_payload(prompt_activate_request_model, payload)
         active = await agent.memory.db.activate_prompt(data.prompt_id)
@@ -184,7 +190,10 @@ def build_auth_admin_router(
         return JSONResponse({"items": [serialize_policy(r) for r in records]})
 
     @router.post("/admin/policies")
-    async def admin_upsert_policy(payload: Any, _user: Any = Depends(require_admin_user)) -> Any:
+    async def admin_upsert_policy(
+        payload: Annotated[dict[str, Any], Body()],
+        _user: Any = Depends(require_admin_user),
+    ) -> Any:
         data = _parse_payload(policy_upsert_request_model, payload)
         agent = await resolve_agent_instance()
         await agent.memory.db.upsert_access_policy(

@@ -37,12 +37,13 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import anyio
 import jwt
 import uvicorn
 from fastapi import (
+    Body,
     Depends,
     FastAPI,
     File,
@@ -3810,14 +3811,16 @@ async def _legacy_route_admin_prompts(
 
 @app.post("/admin/prompts")
 async def _legacy_route_admin_upsert_prompt(
-    payload: Any, _user: Any = Depends(_require_admin_user)
+    payload: Annotated[dict[str, Any], Body()],
+    _user: Any = Depends(_require_admin_user),
 ) -> Any:
     return await admin_upsert_prompt(payload, _user)
 
 
 @app.post("/admin/prompts/activate")
 async def _legacy_route_admin_activate_prompt(
-    payload: Any, _user: Any = Depends(_require_admin_user)
+    payload: Annotated[dict[str, Any], Body()],
+    _user: Any = Depends(_require_admin_user),
 ) -> Any:
     return await admin_activate_prompt(payload, _user)
 

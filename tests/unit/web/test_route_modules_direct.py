@@ -130,6 +130,71 @@ def test_auth_admin_router_register_direct() -> None:
     assert res.json()["access_token"] == "tkn"
 
 
+def test_auth_admin_router_json_posts_read_request_body_direct() -> None:
+    prompt = SimpleNamespace(id="p1", role_name="system", prompt_text="hello", is_active=1)
+    policy = SimpleNamespace(id="a1", user_id="u1", tenant_id="default")
+
+    async def _upsert_prompt(**_: Any) -> Any:
+        return prompt
+
+    async def _activate_prompt(_: str) -> Any:
+        return prompt
+
+    async def _upsert_access_policy(**_: Any) -> None:
+        return None
+
+    async def _list_access_policies(**_: Any) -> list[Any]:
+        return [policy]
+
+    db = SimpleNamespace(
+        upsert_prompt=_upsert_prompt,
+        activate_prompt=_activate_prompt,
+        upsert_access_policy=_upsert_access_policy,
+        list_access_policies=_list_access_policies,
+    )
+    agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="")
+    router = build_auth_admin_router(
+        resolve_agent_instance=lambda: _async_value(agent),
+        await_if_needed=lambda value: value,
+        get_request_user=_admin_user,
+        require_admin_user=_admin_user,
+        issue_auth_token=lambda *_: _async_value("tkn"),
+        serialize_prompt=lambda item: {"id": item.id, "prompt_text": item.prompt_text},
+        serialize_policy=lambda item: {"id": item.id, "user_id": item.user_id},
+        register_request_model=_RegisterReq,
+        login_request_model=_LoginReq,
+        prompt_upsert_request_model=_PromptReq,
+        prompt_activate_request_model=_PromptActivateReq,
+        policy_upsert_request_model=_PolicyReq,
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    upsert_prompt = client.post(
+        "/admin/prompts", json={"role_name": "system", "prompt_text": "hello"}
+    )
+    activate_prompt = client.post("/admin/prompts/activate", json={"prompt_id": "p1"})
+    upsert_policy = client.post(
+        "/admin/policies",
+        json={
+            "user_id": "u1",
+            "tenant_id": "default",
+            "resource_type": "project",
+            "resource_id": "*",
+            "action": "read",
+            "effect": "allow",
+        },
+    )
+
+    assert upsert_prompt.status_code == 200
+    assert upsert_prompt.json() == {"id": "p1", "prompt_text": "hello"}
+    assert activate_prompt.status_code == 200
+    assert activate_prompt.json() == {"id": "p1", "prompt_text": "hello"}
+    assert upsert_policy.status_code == 200
+    assert upsert_policy.json() == {"success": True, "items": [{"id": "a1", "user_id": "u1"}]}
+
+
 def test_hitl_router_pending_direct() -> None:
     store = SimpleNamespace(pending=lambda: _async_value([]))
     router = build_hitl_router(
