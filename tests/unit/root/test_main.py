@@ -7308,6 +7308,18 @@ def test_load_plugin_agent_class_prefers_canonical_baseagent_when_global_is_stal
     assert issubclass(cls, original_baseagent)
 
 
+def test_load_plugin_agent_class_rejects_object_baseagent_stub(monkeypatch):
+    fake_base_module = types.ModuleType("agent.base_agent")
+    fake_base_module.BaseAgent = object  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "agent.base_agent", fake_base_module)
+    monkeypatch.setattr(web_server, "BaseAgent", object)
+
+    with pytest.raises(HTTPException, match="BaseAgent"):
+        web_server._load_plugin_agent_class(
+            "class PluginAgent: pass\n", "PluginAgent", "object_baseagent_stub"
+        )
+
+
 def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
     class _PluginAgent:
         __name__ = "PluginAgent"

@@ -2079,11 +2079,23 @@ def _load_plugin_agent_class(
         # Resolve the canonical class on every call so stale monkeypatches or reloads of
         # the web_server module cannot override an available agent.base_agent module.
         base_agent_module = sys.modules.get("agent.base_agent")
-        if base_agent_module is not None:
-            canonical_base = getattr(base_agent_module, "BaseAgent", None)
-            if canonical_base is not None:
-                return [canonical_base]
-        return [BaseAgent]
+        canonical_base = (
+            getattr(base_agent_module, "BaseAgent", None)
+            if base_agent_module is not None
+            else None
+        )
+        candidates: list[Any] = []
+        seen: set[int] = set()
+        for base in (canonical_base, BaseAgent):
+            if (
+                base is not None
+                and base is not object
+                and inspect.isclass(base)
+                and id(base) not in seen
+            ):
+                seen.add(id(base))
+                candidates.append(base)
+        return candidates
 
     def _is_baseagent_derived(candidate: Any) -> bool:
         if not inspect.isclass(candidate):
@@ -2099,6 +2111,8 @@ def _load_plugin_agent_class(
         # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
         # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
         for base in inspect.getmro(candidate)[1:]:
+            if base is object:
+                continue
             base_name = getattr(base, "__name__", "")
             base_qualname = getattr(base, "__qualname__", "")
             base_module = getattr(base, "__module__", "")
