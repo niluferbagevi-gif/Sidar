@@ -2076,17 +2076,14 @@ def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
     def _baseagent_candidates() -> list[Any]:
-        candidates: list[Any] = [BaseAgent]
-        seen: set[int] = {id(BaseAgent)}
-        for module_name in ("agent.base_agent",):
-            mod = sys.modules.get(module_name)
-            if mod is None:
-                continue
-            base = getattr(mod, "BaseAgent", None)
-            if base is not None and id(base) not in seen:
-                seen.add(id(base))
-                candidates.append(base)
-        return candidates
+        # Resolve the canonical class on every call so stale monkeypatches or reloads of
+        # the web_server module cannot override an available agent.base_agent module.
+        base_agent_module = sys.modules.get("agent.base_agent")
+        if base_agent_module is not None:
+            canonical_base = getattr(base_agent_module, "BaseAgent", None)
+            if canonical_base is not None:
+                return [canonical_base]
+        return [BaseAgent]
 
     def _is_baseagent_derived(candidate: Any) -> bool:
         if not inspect.isclass(candidate):

@@ -7283,12 +7283,29 @@ async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapsho
 
 
 def test_load_plugin_agent_class_handles_typeerror_from_issubclass(monkeypatch):
-    monkeypatch.setattr(web_server, "BaseAgent", 123)
+    fake_base_module = types.ModuleType("agent.base_agent")
+    fake_base_module.BaseAgent = 123  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "agent.base_agent", fake_base_module)
+
     source = "class PluginAgent: pass"
     with pytest.raises(HTTPException) as exc:
         web_server._load_plugin_agent_class(source, "PluginAgent", "typeerr_mod")
     assert exc.value.status_code == 400
     assert "BaseAgent" in exc.value.detail
+
+
+def test_load_plugin_agent_class_prefers_canonical_baseagent_when_global_is_stale(monkeypatch):
+    original_baseagent = web_server.BaseAgent
+    monkeypatch.setattr(web_server, "BaseAgent", 123)
+    source = (
+        "from agent.base_agent import BaseAgent\n"
+        "class PluginAgent(BaseAgent):\n"
+        "    ROLE_NAME = 'plugin'\n"
+    )
+
+    cls = web_server._load_plugin_agent_class(source, "PluginAgent", "canonical_baseagent_mod")
+
+    assert issubclass(cls, original_baseagent)
 
 
 def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
