@@ -306,26 +306,35 @@ def _dotenv_reload_baseline_environment() -> dict[str, str]:
     return effective_env
 
 
+def _skip_default_dotenv_layers(env: dict[str, str] | None = None) -> bool:
+    """Return whether repository-local dotenv layers should be skipped."""
+
+    values = os.environ if env is None else env
+    return values.get("SIDAR_SKIP_DEFAULT_DOTENV", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+_SKIP_DEFAULT_DOTENV = _skip_default_dotenv_layers()
 
-# 2. Önce her zaman temel .env dosyasını yükle (varsa)
+# 2-4. Varsayılan yerel dotenv katmanları opt-out edilmediyse yüklenir.
+#      DOTENV_FILE ve SIDAR_KEYS_FILE aşağıda her durumda korunur.
 base_env_path = BASE_DIR / ".env"
-_load_dotenv_if_exists(str(base_env_path), override=False, label="base")
-
-# 3. İleri seviye yerel ayarlar yüklenir; mevcut proses/.env değerlerini ezmez.
-#    Bu dosya üretim secret deposu değildir; kullanıcıya özel secret dosyası en sonda yüklenir.
 advanced_env_path = BASE_DIR / ".env.advanced"
-_load_dotenv_if_exists(str(advanced_env_path), override=False, label="advanced")
-# .env veya .env.advanced SIDAR_ENV değerini değiştirdiyse ortam dosyası seçimini güncelle.
-sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+if not _SKIP_DEFAULT_DOTENV:
+    _load_dotenv_if_exists(str(base_env_path), override=False, label="base")
+    _load_dotenv_if_exists(str(advanced_env_path), override=False, label="advanced")
+    # .env veya .env.advanced SIDAR_ENV değerini değiştirdiyse ortam dosyası seçimini güncelle.
+    sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
-# 4. Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz.
-#    Import aşamasında stdout'a erken uyarı basmayın; tüm dotenv durumu
-#    Config._log_dotenv_load_status() içinde tek logger kanalından raporlanır.
-if sidar_env:
-    specific_env_path = BASE_DIR / f".env.{sidar_env}"
-    _load_dotenv_if_exists(str(specific_env_path), override=True, label=f"environment:{sidar_env}")
+    # Ortama özgü dosyayı (örn: .env.production) temel/advanced ayarların üstüne yaz.
+    # Import aşamasında stdout'a erken uyarı basmayın; tüm dotenv durumu
+    # Config._log_dotenv_load_status() içinde tek logger kanalından raporlanır.
+    if sidar_env:
+        specific_env_path = BASE_DIR / f".env.{sidar_env}"
+        _load_dotenv_if_exists(
+            str(specific_env_path), override=True, label=f"environment:{sidar_env}"
+        )
 
 # 5. DOTENV_FILE ile açıkça belirtilen dosyayı yüksek öncelikle yükle.
 #    Repo-göreli yolların yanında mutlak yollar ve ~ kısaltması desteklenir.
@@ -345,7 +354,7 @@ class LLMClientSettings(BaseSettings):
     """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
 
     model_config = SettingsConfigDict(
-        env_file=str(ENV_PATH) if ENV_PATH.exists() else None,
+        env_file=str(ENV_PATH) if ENV_PATH.exists() and not _SKIP_DEFAULT_DOTENV else None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -703,7 +712,7 @@ def _log_once_env(
     fn(*args)
 
 
-if ENV_PATH.exists():
+if ENV_PATH.exists() and not _SKIP_DEFAULT_DOTENV:
     _log_once_env(
         "SIDAR_ENV_LOGGED",
         logger.info,
@@ -964,6 +973,7 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
+    SIDAR_SKIP_DEFAULT_DOTENV: bool = _skip_default_dotenv_layers()
     SIDAR_KEYS_FILE: str = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env")
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
     API_KEY: str = os.getenv("API_KEY", "")
@@ -1911,20 +1921,21 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
 
     base_path = BASE_DIR / ".env"
     advanced_path = BASE_DIR / ".env.advanced"
-    _load_dotenv_into_effective_env(effective_env, str(base_path), override=False, label="base")
-    _load_dotenv_into_effective_env(
-        effective_env, str(advanced_path), override=False, label="advanced"
-    )
-
-    selected_env = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-    if selected_env:
-        effective_env["SIDAR_ENV"] = selected_env
+    if not _skip_default_dotenv_layers(effective_env):
+        _load_dotenv_into_effective_env(effective_env, str(base_path), override=False, label="base")
         _load_dotenv_into_effective_env(
-            effective_env,
-            str(BASE_DIR / f".env.{selected_env}"),
-            override=True,
-            label=f"environment:{selected_env}",
+            effective_env, str(advanced_path), override=False, label="advanced"
         )
+
+        selected_env = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
+        if selected_env:
+            effective_env["SIDAR_ENV"] = selected_env
+            _load_dotenv_into_effective_env(
+                effective_env,
+                str(BASE_DIR / f".env.{selected_env}"),
+                override=True,
+                label=f"environment:{selected_env}",
+            )
 
     explicit_dotenv = effective_env.get("DOTENV_FILE", "").strip()
     _load_dotenv_into_effective_env(

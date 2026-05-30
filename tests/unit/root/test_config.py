@@ -1608,6 +1608,41 @@ def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monke
     ]
 
 
+def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers(
+    monkeypatch, tmp_path
+):
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=from-base\n", encoding="utf-8")
+    (tmp_path / ".env.advanced").write_text("OPENAI_API_KEY=from-advanced\n", encoding="utf-8")
+    (tmp_path / ".env.development").write_text(
+        "OPENAI_API_KEY=from-development\n", encoding="utf-8"
+    )
+    explicit_env = tmp_path / "runtime.env"
+    explicit_env.write_text(
+        "OPENAI_API_KEY=from-explicit\nJWT_SECRET_KEY=jwt-explicit\n", encoding="utf-8"
+    )
+    keys_env = tmp_path / "keys.env"
+    keys_env.write_text("OPENAI_API_KEY=from-secret\n", encoding="utf-8")
+
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", str(explicit_env))
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_env))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+    monkeypatch.setattr(config.Config, "SIDAR_SKIP_DEFAULT_DOTENV", False)
+
+    reloaded = config.reload_environment()
+
+    assert reloaded.SIDAR_SKIP_DEFAULT_DOTENV is True
+    assert reloaded.OPENAI_API_KEY == "from-secret"
+    assert reloaded.JWT_SECRET_KEY == "jwt-explicit"
+    loaded_labels = [event["label"] for event in config.get_dotenv_load_report() if event["loaded"]]
+    assert loaded_labels == ["explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"]
+
+
 def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, caplog):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)

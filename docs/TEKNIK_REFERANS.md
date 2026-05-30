@@ -422,7 +422,9 @@ Operasyonel olarak bu mekanizma, vektör veritabanının şişmesini engelleyen 
 
 Böylece `SIDAR_ENV=production` gibi bir değer ile profil bazlı override uygulanır;
 son adımda yüklenen `~/.sidar_keys.env` ise repo dışında tutulan servis anahtarlarını
-çalışma zamanına taşır.
+çalışma zamanına taşır. İzole subprocess, test veya multi-tenant bootstrap akışlarında
+`SIDAR_SKIP_DEFAULT_DOTENV=1` verilirse 2-4 numaralı repo-yerel katmanlar atlanır;
+`DOTENV_FILE` ve `SIDAR_KEYS_FILE` katmanları yüklenmeye devam eder.
 
 **API anahtarı saklama politikası:** Gerçek sağlayıcı anahtarları için kalıcı kaynak
 yalnız `.env` ve repo dışındaki `~/.sidar_keys.env` olmalıdır. `.env.advanced` ve

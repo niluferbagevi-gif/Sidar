@@ -810,7 +810,9 @@ Temel kurulum şablonu bilinçli olarak kısa tutulur (`.env.example`, 40-50 sat
 Gelişmiş/operasyonel anahtarlar `.env.advanced.example` şablonundadır; override hiyerarşisi dosyanın
 başında açıklanır. Runtime yükleme zinciri özetle `config.py` varsayılanları → `.env`
 (`override=False`) → `.env.advanced` (`override=False`) → `.env.${SIDAR_ENV}` →
-`DOTENV_FILE` → `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` şeklindedir.
+`DOTENV_FILE` → `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` şeklindedir. İzole süreçlerde
+`SIDAR_SKIP_DEFAULT_DOTENV=1`, repo içindeki `.env`, `.env.advanced` ve `.env.${SIDAR_ENV}`
+katmanlarını atlar; açık `DOTENV_FILE` ve `SIDAR_KEYS_FILE` katmanları yüklenmeye devam eder.
 
 **API anahtarı politikası:** OpenAI/Gemini/Anthropic/GitHub/Slack/Jira/Teams gibi gerçek
 servis anahtarları için kalıcı kaynak olarak yalnız `.env` ve repo dışındaki

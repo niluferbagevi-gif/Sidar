@@ -175,6 +175,7 @@ def test_agents_and_integrations_read_authorized_keys_from_config_dotenv_chain(
         {
             "DOTENV_FILE": str(env_file),
             "SIDAR_KEYS_FILE": str(keys_file),
+            "SIDAR_SKIP_DEFAULT_DOTENV": "1",
             "PYTHONPATH": str(PROJECT_ROOT),
         }
     )
@@ -194,7 +195,7 @@ def test_agents_and_integrations_read_authorized_keys_from_config_dotenv_chain(
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     assert payload == {
         "jira_project": "SID",
-        "loaded_labels": ["advanced", "explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"],
+        "loaded_labels": ["explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"],
         "poyraz_meta": "meta-env-token",
         "researcher_tavily": "keys-tavily-token",
         "slack_channel": "#ops-from-env",

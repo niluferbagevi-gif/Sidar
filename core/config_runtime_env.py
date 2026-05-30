@@ -37,6 +37,9 @@ def apply_runtime_env_overrides(
     )
     config_cls.API_KEY = os.getenv("API_KEY", str(config_cls.API_KEY or ""))
     config_cls.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", str(config_cls.JWT_SECRET_KEY or ""))
+    config_cls.SIDAR_SKIP_DEFAULT_DOTENV = os.getenv(
+        "SIDAR_SKIP_DEFAULT_DOTENV", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
     config_cls.SIDAR_KEYS_FILE = os.getenv("SIDAR_KEYS_FILE", str(config_cls.SIDAR_KEYS_FILE or ""))
     config_cls.DATABASE_URL = get_database_url()
     config_cls.CONTAINER_DATABASE_URL = get_container_database_url()
