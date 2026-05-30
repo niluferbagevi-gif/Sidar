@@ -4,9 +4,9 @@ import secrets
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Depends, File, HTTPException, UploadFile
+from fastapi import Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
@@ -49,7 +49,10 @@ def build_agent_router(
         return getattr(web_server_mod, name, default)
 
     @router.post("/api/agents/register")
-    async def register_agent_plugin(payload: Any, _user: Any = Depends(require_admin_user)) -> Any:
+    async def register_agent_plugin(
+        payload: Annotated[dict[str, Any], Body()],
+        _user: Any = Depends(require_admin_user),
+    ) -> Any:
         data = _parse_payload(agent_plugin_register_request_model, payload)
         helper = _resolve_web_server_helper("_register_plugin_agent", register_plugin_agent)
         result = helper(
@@ -122,7 +125,7 @@ def build_agent_router(
 
     @router.post("/api/plugin-marketplace/install")
     async def install_plugin_marketplace_item(
-        payload: Any,
+        payload: Annotated[dict[str, Any], Body()],
         _user: Any = Depends(require_admin_user),
     ) -> Any:
         data = _parse_payload(plugin_marketplace_install_request_model, payload)
@@ -133,7 +136,7 @@ def build_agent_router(
 
     @router.post("/api/plugin-marketplace/reload")
     async def reload_plugin_marketplace_item(
-        payload: Any,
+        payload: Annotated[dict[str, Any], Body()],
         _user: Any = Depends(require_admin_user),
     ) -> Any:
         data = _parse_payload(plugin_marketplace_install_request_model, payload)
