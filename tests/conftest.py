@@ -186,6 +186,27 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
+_MISSING_SYS_MODULE = object()
+_SENSITIVE_SYS_MODULES = (
+    "agent.base_agent",
+    "chromadb.utils.embedding_functions",
+    "torch",
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_polluted_sys_modules() -> Generator[None, None, None]:
+    """Restore process-global modules that tests commonly replace with stubs."""
+
+    snapshot = {name: sys.modules.get(name, _MISSING_SYS_MODULE) for name in _SENSITIVE_SYS_MODULES}
+    yield
+    for name, original in snapshot.items():
+        if original is _MISSING_SYS_MODULE:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original  # type: ignore[assignment]
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
     """Her testten sonra process-global AgentEventBus runtime state'ini kapatır.
