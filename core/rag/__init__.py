@@ -614,11 +614,14 @@ def _build_embedding_function(
         local_files_only = bool(
             sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2")
         )
+        embedding_function_factory = _resolve_sentence_transformer_embedding_function()
         return _build_embedding_function_cached(
             use_gpu=use_gpu,
             gpu_device=gpu_device,
             mixed_precision=mixed_precision,
             local_files_only=local_files_only,
+            embedding_function_factory=embedding_function_factory,
+            embedding_function_factory_id=id(embedding_function_factory),
         )
     except Exception as exc:
         logger.warning("⚠️  GPU embedding başlatılamadı, CPU'ya dönülüyor: %s", exc)
@@ -626,15 +629,25 @@ def _build_embedding_function(
             sentence_transformer_local_files_only(cfg or Config, "all-MiniLM-L6-v2")
         )
         try:
+            embedding_function_factory = _resolve_sentence_transformer_embedding_function()
             return _build_embedding_function_cached(
                 use_gpu=False,
                 gpu_device=0,
                 mixed_precision=False,
                 local_files_only=local_files_only,
+                embedding_function_factory=embedding_function_factory,
+                embedding_function_factory_id=id(embedding_function_factory),
             )
         except Exception as cpu_exc:
             logger.warning("⚠️  CPU embedding de başlatılamadı: %s", cpu_exc)
             return None
+
+
+def _resolve_sentence_transformer_embedding_function() -> Any:
+    embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
+    if embedding_module is None:
+        embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
+    return embedding_module.SentenceTransformerEmbeddingFunction
 
 
 @functools.lru_cache(maxsize=8)
@@ -644,11 +657,12 @@ def _build_embedding_function_cached(
     gpu_device: int,
     mixed_precision: bool,
     local_files_only: bool,
+    embedding_function_factory: Any,
+    embedding_function_factory_id: int,
 ) -> Any:
-    embedding_module = sys.modules.get("chromadb.utils.embedding_functions")
-    if embedding_module is None:
-        embedding_module = importlib.import_module("chromadb.utils.embedding_functions")
-    SentenceTransformerEmbeddingFunction = embedding_module.SentenceTransformerEmbeddingFunction
+    # Keep the resolved factory and its explicit identity in the cache key so a
+    # runtime module/factory swap cannot return an instance built by stale code.
+    del embedding_function_factory_id
 
     device = "cpu"
     torch: Any | None = None
@@ -659,7 +673,7 @@ def _build_embedding_function_cached(
         device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
 
     model_name = "all-MiniLM-L6-v2"
-    ef = SentenceTransformerEmbeddingFunction(
+    ef = embedding_function_factory(
         model_name=model_name,
         device=device,
         local_files_only=local_files_only,

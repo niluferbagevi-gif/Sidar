@@ -1063,6 +1063,9 @@ async def test_build_embedding_function_gpu_success_and_fallback(
     with _Torch.autocast(device_type="cuda", dtype="fp16"):
         pass
 
+    cached_cpu_ef = rag._build_embedding_function(use_gpu=False)
+    assert isinstance(cached_cpu_ef, _EF)
+
     class _BrokenEF:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise RuntimeError("factory unavailable")
@@ -1072,7 +1075,6 @@ async def test_build_embedding_function_gpu_success_and_fallback(
         "chromadb.utils.embedding_functions",
         SimpleNamespace(SentenceTransformerEmbeddingFunction=_BrokenEF),
     )
-    rag._build_embedding_function_cached.cache_clear()
     assert rag._build_embedding_function(use_gpu=True) is None
 
 
