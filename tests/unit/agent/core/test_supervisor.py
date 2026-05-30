@@ -1,30 +1,34 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
 import types
+from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
-_ORIGINAL_MODULES = {
-    name: sys.modules.get(name)
-    for name in (
-        "agent.base_agent",
-        "agent.roles.coder_agent",
-        "agent.roles.researcher_agent",
-        "agent.roles.reviewer_agent",
-        "agent.roles.poyraz_agent",
-        "agent.roles.qa_agent",
-        "agent.core.event_stream",
-        "agent.roles._missing_stub_for_coverage",
-    )
-}
+_ISOLATED_MODULE_NAMES = (
+    "agent.core.supervisor",
+    "agent.base_agent",
+    "agent.roles",
+    "agent.roles.coder_agent",
+    "agent.roles.coverage_agent",
+    "agent.roles.researcher_agent",
+    "agent.roles.reviewer_agent",
+    "agent.roles.poyraz_agent",
+    "agent.roles.qa_agent",
+    "agent.core.event_stream",
+    "agent.roles._missing_stub_for_coverage",
+)
+_MISSING = object()
 
 
 # supervisor modülünü güvenli import edebilmek için ağır bağımlılıkları stub'la
 class _StubBaseAgent:
-    def __init__(self, cfg=None, role_name="stub") -> None:
+    def __init__(self, cfg: Any = None, role_name: str = "stub") -> None:
         self.cfg = cfg
         self.role_name = role_name
 
@@ -40,7 +44,7 @@ def _register_stub_module(module_name: str, class_name: str) -> None:
     mod = types.ModuleType(module_name)
 
     class _StubRole:
-        def __init__(self, cfg=None) -> None:
+        def __init__(self, cfg: Any = None) -> None:
             self.cfg = cfg
 
         async def run_task(self, goal: str) -> str:
@@ -50,50 +54,76 @@ def _register_stub_module(module_name: str, class_name: str) -> None:
     sys.modules[module_name] = mod
 
 
-base_agent_mod = types.ModuleType("agent.base_agent")
-base_agent_mod.BaseAgent = _StubBaseAgent
-sys.modules["agent.base_agent"] = base_agent_mod
-
-_register_stub_module("agent.roles.coder_agent", "CoderAgent")
-_register_stub_module("agent.roles.researcher_agent", "ResearcherAgent")
-_register_stub_module("agent.roles.reviewer_agent", "ReviewerAgent")
-_register_stub_module("agent.roles.poyraz_agent", "PoyrazAgent")
-_register_stub_module("agent.roles.qa_agent", "QAAgent")
-
-event_stream_mod = types.ModuleType("agent.core.event_stream")
-
-
 class _StubEventBus:
     async def publish(self, source: str, message: str) -> None:
         return None
 
 
-def get_agent_event_bus():
+def get_agent_event_bus() -> _StubEventBus:
     return _StubEventBus()
 
 
-event_stream_mod.get_agent_event_bus = get_agent_event_bus
-sys.modules["agent.core.event_stream"] = event_stream_mod
-
-import agent.core.supervisor as supervisor_mod
 from agent.core.contracts import DelegationRequest, TaskResult
-from agent.core.supervisor import SupervisorAgent
 
-# Stub'lar sadece supervisor import'u için gerekli.
-# Import tamamlandıktan sonra global sys.modules kirlenmesini hemen geri al.
-for name, original in _ORIGINAL_MODULES.items():
-    if original is None:
-        sys.modules.pop(name, None)
-    else:
-        sys.modules[name] = original
+supervisor_mod: Any = None
+SupervisorAgent: Any = None
 
 
-def teardown_module(_module) -> None:
-    for name, original in _ORIGINAL_MODULES.items():
-        if original is None:
+def _restore_modules(original_modules: dict[str, object]) -> None:
+    for name, original in original_modules.items():
+        if original is _MISSING:
             sys.modules.pop(name, None)
         else:
-            sys.modules[name] = original
+            sys.modules[name] = original  # type: ignore[assignment]
+
+
+def _restore_package_attribute(package: object, name: str, original: object) -> None:
+    if original is _MISSING:
+        vars(package).pop(name, None)
+    else:
+        setattr(package, name, original)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_supervisor_import() -> Iterator[None]:
+    global SupervisorAgent, supervisor_mod
+
+    original_modules = {name: sys.modules.get(name, _MISSING) for name in _ISOLATED_MODULE_NAMES}
+    agent_pkg = importlib.import_module("agent")
+    core_pkg = importlib.import_module("agent.core")
+    original_agent_roles = getattr(agent_pkg, "roles", _MISSING)
+    original_core_supervisor = getattr(core_pkg, "supervisor", _MISSING)
+    original_supervisor_mod = supervisor_mod
+    original_supervisor_agent = SupervisorAgent
+
+    try:
+        for name in _ISOLATED_MODULE_NAMES:
+            sys.modules.pop(name, None)
+
+        base_agent_mod = types.ModuleType("agent.base_agent")
+        base_agent_mod.BaseAgent = _StubBaseAgent  # type: ignore[attr-defined]
+        sys.modules["agent.base_agent"] = base_agent_mod
+
+        _register_stub_module("agent.roles.coder_agent", "CoderAgent")
+        _register_stub_module("agent.roles.coverage_agent", "CoverageAgent")
+        _register_stub_module("agent.roles.researcher_agent", "ResearcherAgent")
+        _register_stub_module("agent.roles.reviewer_agent", "ReviewerAgent")
+        _register_stub_module("agent.roles.poyraz_agent", "PoyrazAgent")
+        _register_stub_module("agent.roles.qa_agent", "QAAgent")
+
+        event_stream_mod = types.ModuleType("agent.core.event_stream")
+        event_stream_mod.get_agent_event_bus = get_agent_event_bus  # type: ignore[attr-defined]
+        sys.modules["agent.core.event_stream"] = event_stream_mod
+
+        supervisor_mod = importlib.import_module("agent.core.supervisor")
+        SupervisorAgent = supervisor_mod.SupervisorAgent
+        yield
+    finally:
+        supervisor_mod = original_supervisor_mod
+        SupervisorAgent = original_supervisor_agent
+        _restore_modules(original_modules)
+        _restore_package_attribute(agent_pkg, "roles", original_agent_roles)
+        _restore_package_attribute(core_pkg, "supervisor", original_core_supervisor)
 
 
 def test_register_stub_module_creates_runnable_role() -> None:
