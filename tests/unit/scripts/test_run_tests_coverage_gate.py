@@ -21,6 +21,13 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     assert "final coverage report --fail-under" in script
 
 
+def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
+    script = _script()
+
+    assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
+    assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
+
+
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
     script = _script()
 

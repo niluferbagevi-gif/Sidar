@@ -276,12 +276,14 @@ fi
 if [ "${TEST_PROFILE}" = "ci" ]; then
   AUTO_OPEN_ARTIFACTS=0
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
+  PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
 else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
+  PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
@@ -942,7 +944,9 @@ PY
   fi
 
   if python -c "import xdist" >/dev/null 2>&1; then
-    base_pytest_cmd+=(-n "${PYTEST_WORKERS}")
+    # `xdist_group` ile işaretlenen process-global state testlerini aynı worker'da
+    # seri çalıştırırken işaretsiz testlerde paralelliği korur.
+    base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")
   fi
 
   # Coverage raporlarını XML/JSON olarak dışa aktararak otomatik araçların
