@@ -388,7 +388,62 @@ resolve_docker_compose_cmd() {
   return 1
 }
 
+load_test_database_password_env() {
+  local test_dotenv_file="${DOTENV_FILE:-.env.test}"
+  local password_file=""
+  password_file="$(mktemp)" || {
+    echo "❌ Test PostgreSQL parolası için güvenli geçici dosya oluşturulamadı."
+    return 1
+  }
+  chmod 600 "${password_file}"
 
+  if ! DOTENV_FILE="${test_dotenv_file}" uv run python - "${password_file}" <<'PY_TEST_DB_PASSWORD'
+from pathlib import Path
+import sys
+
+from scripts.sync_database_passwords import _effective_postgres_password, discover_env_chain
+
+password = _effective_postgres_password(discover_env_chain())
+if not password:
+    raise SystemExit("POSTGRES_PASSWORD dotenv zincirinde çözülemedi")
+Path(sys.argv[1]).write_text(password, encoding="utf-8")
+PY_TEST_DB_PASSWORD
+  then
+    rm -f "${password_file}"
+    echo "❌ Test PostgreSQL parolası dotenv zincirinden çözülemedi."
+    return 1
+  fi
+
+  POSTGRES_PASSWORD="$(cat "${password_file}")"
+  rm -f "${password_file}"
+  if [ -z "${POSTGRES_PASSWORD}" ]; then
+    echo "❌ Test PostgreSQL parolası boş olamaz."
+    return 1
+  fi
+  export POSTGRES_PASSWORD
+  echo "✅ Test PostgreSQL parolası dotenv zincirinden güvenli biçimde çözüldü (değer loglanmadı)."
+}
+
+sync_postgres_login_role() {
+  local admin_db_user="$1"
+  local role_name="$2"
+  local role_password="$3"
+
+  if [ -z "${role_name}" ] || [ -z "${role_password}" ]; then
+    echo "❌ PostgreSQL rol adı ve parolası boş olamaz."
+    return 1
+  fi
+
+  "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
+    -U "${admin_db_user}" -d postgres \
+    -v ON_ERROR_STOP=1 \
+    -v role_name="${role_name}" \
+    -v role_password="${role_password}" <<'SQL_SYNC_POSTGRES_ROLE'
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'role_name', :'role_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role_name') \gexec
+SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'role_name', :'role_password') \gexec
+SQL_SYNC_POSTGRES_ROLE
+}
 
 resolve_ollama_base_url() {
   local raw_url="${OLLAMA_URL:-http://localhost:11434}"
@@ -708,12 +763,22 @@ prepare_test_database() {
     return 0
   fi
 
+  if [ "${test_db_user}" = "${POSTGRES_USER:-sidar}" ] && [ "${test_db_password}" != "${POSTGRES_PASSWORD}" ]; then
+    echo "❌ TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER tanımlanmalıdır."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
   echo "🗄️ İzole test veritabanı hazırlanıyor: ${test_db_name}"
+  echo "🔐 PostgreSQL ana rol parolası doğrulanıyor: ${POSTGRES_USER:-sidar}"
+  if ! sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" "${POSTGRES_PASSWORD}"; then
+    echo "❌ PostgreSQL ana rol parolası güncellenemedi: ${POSTGRES_USER:-sidar}"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
   echo "🔐 Test rolü doğrulanıyor: ${test_db_user}"
-  if ! "${DOCKER_COMPOSE_CMD[@]}" exec -T postgres psql \
-    -U "${admin_db_user}" -d postgres \
-    -v ON_ERROR_STOP=1 \
-    -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${test_db_user}') THEN CREATE ROLE ${test_db_user} LOGIN PASSWORD '${test_db_password}'; ELSE ALTER ROLE ${test_db_user} WITH LOGIN PASSWORD '${test_db_password}'; END IF; END \$\$;"; then
+  if ! sync_postgres_login_role "${admin_db_user}" "${test_db_user}" "${test_db_password}"; then
     echo "❌ Test rolü oluşturma/güncelleme başarısız oldu: ${test_db_user}"
     BACKEND_EXIT_CODE=1
     return 1
@@ -759,7 +824,7 @@ prepare_test_database() {
   # SQLAlchemy async engine için test URL'i asyncpg sürücüsü ile üretilir.
   export DATABASE_URL="postgresql+asyncpg://${test_db_user}:${test_db_password}@${test_db_host}:${test_db_port}/${test_db_name}"
   export TEST_DATABASE_URL="${DATABASE_URL}"
-  echo "ℹ️ DATABASE_URL test için ayarlandı: ${DATABASE_URL}"
+  echo "ℹ️ DATABASE_URL izole test veritabanı için ayarlandı (kimlik bilgileri loglanmadı): ${test_db_host}:${test_db_port}/${test_db_name}"
 
   if ! uv run python -c "import asyncpg" >/dev/null 2>&1; then
     echo "❌ asyncpg bulunamadı. Alembic migrasyonu için gerekli runtime bağımlılıkları eksik."
@@ -1057,7 +1122,7 @@ PY_RATCHET_GATE
 #    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
-if ensure_uv_available && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && ensure_test_services && prepare_test_database; then
+if ensure_uv_available && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
   run_bats_shell_tests
   update_progressive_coverage_gate

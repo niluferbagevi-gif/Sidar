@@ -40,6 +40,24 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage json -o coverage.json" in gate_function
 
 
+def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
+    script = _script()
+
+    assert "load_test_database_password_env()" in script
+    assert 'DOTENV_FILE="${test_dotenv_file}" uv run python - "${password_file}"' in script
+    assert "_effective_postgres_password(discover_env_chain())" in script
+    assert 'export POSTGRES_PASSWORD' in script
+    assert 'sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" "${POSTGRES_PASSWORD}"' in script
+    assert 'sync_postgres_login_role "${admin_db_user}" "${test_db_user}" "${test_db_password}"' in script
+    assert "CREATE ROLE %I LOGIN PASSWORD %L" in script
+    assert "ALTER ROLE %I WITH LOGIN PASSWORD %L" in script
+    assert 'TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER' in script
+    assert 'DATABASE_URL test için ayarlandı: ${DATABASE_URL}' not in script
+    assert script.index("load_test_database_password_env && ensure_test_services") < script.index(
+        "&& prepare_test_database; then"
+    )
+
+
 def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creation() -> None:
     script = _script()
 
