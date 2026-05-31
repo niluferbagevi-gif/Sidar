@@ -1101,8 +1101,9 @@ class Database:
             )
             should_run_migration = True
 
-        if should_run_migration:
-            await asyncio.to_thread(self._run_alembic_upgrade_head)
+        # Reaching this point always means migration is required: auto-migrate was
+        # enabled initially or the disabled-policy fresh DB bootstrap promoted it.
+        await asyncio.to_thread(self._run_alembic_upgrade_head)
 
     async def ensure_default_prompt_registry(self) -> None:
         import importlib.util as _importlib_util

@@ -119,3 +119,14 @@ def test_detect_gpu_uses_cpu_count_fallback(monkeypatch: pytest.MonkeyPatch) -> 
         sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
     )
     assert _detect(_Logger()).cpu_count == 1
+
+
+def test_detect_gpu_skips_wsl_log_outside_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
+    logger = _Logger()
+    monkeypatch.setattr(config_gpu_detect, "is_wsl2", lambda: False)
+    monkeypatch.setitem(
+        sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+    )
+
+    assert _detect(logger).gpu_name == "CUDA Bulunamadı"
+    assert not any("WSL2 ortamı" in message for message in logger.info_messages)

@@ -903,7 +903,7 @@ async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
             "from src.isolated import compute\n\n"
             "def test_isolated_candidate():\n"
             "    result = compute()\n"
-            "    assert result == 'ok'\n"
+            "    assert compute() == 'ok'\n"
         )
 
     reviewer_calls = []
@@ -973,7 +973,7 @@ async def test_autonomous_coverage_batch_excludes_configured_targets(
             "from src.domain import compute\n\n"
             "def test_domain_generated():\n"
             "    result = compute()\n"
-            "    assert result == 'ok'\n"
+            "    assert compute() == 'ok'\n"
         )
 
     monkeypatch.setattr(agent, "_tool_analyze_coverage_report", fake_analyze)
@@ -1104,7 +1104,7 @@ async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
             "from src.explode import compute\n\n"
             "def test_exception_candidate():\n"
             "    result = compute()\n"
-            "    assert result == 'ok'\n"
+            "    assert compute() == 'ok'\n"
             "```"
         )
 
@@ -1869,7 +1869,7 @@ async def test_candidate_rejection_accepts_annotated_target_result_assertion():
         "from src.service import compute\n\n"
         "def test_annotated_target_result():\n"
         "    result: str = compute()\n"
-        "    assert result == 'ok'\n"
+        "    assert compute() == 'ok'\n"
     )
 
     assert (
@@ -2006,3 +2006,32 @@ async def test_coverage_exclude_target_ignores_blank_target_and_rules() -> None:
     assert CoverageAgent._is_excluded_coverage_target("   ", ["main.py"]) is False
     assert CoverageAgent._is_excluded_coverage_target("src/domain.py", ["  ", None]) is False
     assert CoverageAgent._is_excluded_coverage_target("src/main.py", ["main.py"]) is True
+
+
+async def test_remaining_ast_quality_gate_branch_paths():
+    """Close small false-path branches in generated-test AST classification."""
+    import ast
+
+    unrelated_import = ast.parse("from unittest.mock import sentinel")
+    assert CoverageAgent._uses_direct_mock_creation(unrelated_import) is False
+
+    unrelated_call = ast.parse("assert len(module)").body[0]
+    assert CoverageAgent._is_import_only_assertion(
+        unrelated_call, module_aliases={"module"}, target_module="pkg.mod"
+    ) is False
+
+    context_manager_candidate = (
+        "from contextlib import nullcontext\n"
+        "from src.service import compute\n\n"
+        "def test_context_managed_target_call():\n"
+        "    with nullcontext():\n"
+        "        result = compute()\n"
+        "    assert compute() == 'ok'\n"
+    )
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            context_manager_candidate,
+            finding={"target_path": "src/service.py", "summary": "branch gap"},
+        )
+        == ""
+    )

@@ -1616,3 +1616,138 @@ def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key
     env_file.write_text("# comment\ninvalid-line\nexport VALID=value\n", encoding="utf-8")
 
     assert doctor._read_env_file_assignments(env_file) == {"VALID": "value"}
+
+
+def test_redact_exception_text_without_database_password_keeps_safe_text() -> None:
+    assert doctor._redact_exception_text(
+        RuntimeError("connection refused"), database_url="postgresql://localhost/sidar"
+    ) == "connection refused"
+
+
+def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "fail"
+    assert state["details"]["blocked_by"] == "database_env"
+
+
+def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None:
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    index_path = rag_dir / "index.json"
+    index_path.write_text('{"existing": true}', encoding="utf-8")
+
+    assert doctor._ensure_rag_index_placeholder(rag_dir) == index_path
+    assert index_path.read_text(encoding="utf-8") == '{"existing": true}'
+
+
+def test_rag_index_ready_healthy_without_entity_warning(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {"rag_dir": str(tmp_path), "index_exists": True},
+            "blockers": [],
+            "warnings": [],
+            "document_count": 1,
+            "entity_memory_empty": False,
+        },
+    )
+
+    check = doctor.check_rag_index_ready()
+
+    assert check.status == "pass"
+    assert "graphrag_entity_memory_warning" not in check.details
+
+
+def test_graphrag_ready_handles_failed_store_probe(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {
+                "rag_dir": str(tmp_path),
+                "graph_rag_enabled": True,
+                "entity_node_count": 1,
+            },
+            "warnings": [],
+            "entity_memory_empty": False,
+        },
+    )
+    monkeypatch.setattr(doctor, "_query_entity_graph_counts_from_store", lambda _rag_dir: {"ok": False})
+
+    check = doctor.check_graphrag_entity_memory_ready()
+
+    assert check.status == "pass"
+    assert check.details["entity_store_probe"] == {"ok": False}
+
+
+def test_rag_readiness_aggregate_reports_warn_and_keeps_scalar_auto_fix(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {"details": {"document_count": 0, "index_exists": True}},
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_index_ready",
+        lambda: DoctorCheck(
+            "rag_index_ready", "warn", "empty", {"auto_fix": "seed", "recommended_commands": []}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: DoctorCheck("graph", "pass", "ok", {"recommended_commands": []}),
+    )
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "warn"
+    assert check.details["auto_fix"] == "seed"
+
+
+def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(monkeypatch) -> None:
+    from config import Config
+
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "USE_GPU", False)
+    monkeypatch.setattr(Config, "DOCKER_IMAGE", "")
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "custom:test")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.3)
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda _image: False)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "pass"
+    assert "docker_test_image_hint" not in check.details
+
+
+def test_rag_readiness_aggregate_reports_pass_when_split_checks_pass(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {"details": {"document_count": 1, "index_exists": True}},
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_index_ready",
+        lambda: DoctorCheck("rag_index_ready", "pass", "ok", {"recommended_commands": []}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: DoctorCheck("graph", "pass", "ok", {"recommended_commands": []}),
+    )
+
+    check = doctor.check_rag_readiness()
+
+    assert check.status == "pass"
+    assert check.message == "rag_index_ready=pass; graphrag_entity_memory_ready=pass"

@@ -3567,3 +3567,21 @@ async def test_document_store_listing_marks_unavailable_pgvector_backend(tmp_pat
     }
 
     assert "[Belge Deposu — 1 belge] (pgvector pasif)" in store.list_documents(session_id="s1")
+
+
+@pytest.mark.parametrize(("chroma_available", "pgvector_available"), [(True, False), (False, True)])
+async def test_bm25_vector_preference_hint_supports_each_vector_backend_individually(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    chroma_available: bool,
+    pgvector_available: bool,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._vector_backend = "bm25"
+    store._chroma_available = chroma_available
+    store._pgvector_available = pgvector_available
+    monkeypatch.setattr(rag.DocumentStore, "_backend_info_logged", {})
+
+    store._log_vector_backend_preference_hint()
+
+    assert rag.DocumentStore._backend_info_logged["vector_preference_bm25_hint"] is True

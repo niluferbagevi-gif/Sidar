@@ -2524,3 +2524,32 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     assert "yetki/parola hatası" in core_db._postgres_user_action_message(
         "password authentication failed"
     )
+
+
+def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(monkeypatch) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(status="fail", details="unexpected", message="fallback"),
+    )
+
+    assert core_db._doctor_database_env_failure_reason() == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_injected_factory_failure_skips_asyncpg_reimport(tmp_path) -> None:
+    async def _raise_pool(**_kwargs):
+        raise RuntimeError("pool unavailable")
+
+    db = Database(
+        DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path)),
+        pg_pool_factory=_raise_pool,
+    )
+
+    await db._connect_postgresql()
+
+    assert db.degraded_mode is True
+    assert "havuzu kullanılamıyor" in db.degraded_reason
+    await db.close()
