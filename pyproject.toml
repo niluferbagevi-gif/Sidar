@@ -38,7 +38,8 @@ dependencies = [
   "psutil~=6.0.0",
   # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi>=0.136.1,<0.140.0",
-  "starlette>=1.0.1,<2.0.0",
+  # Starlette 1.2+ TestClient requires the separate httpx2 package.
+  "starlette>=1.0.1,<1.2.0",
   "python-multipart~=0.0.9",
   "uvicorn[standard]~=0.30.6",
   "anyio>=4.0.0",
