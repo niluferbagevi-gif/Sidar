@@ -644,19 +644,32 @@ run_security_analysis_gates() {
   local pip_audit_max_retries="${PIP_AUDIT_MAX_RETRIES:-2}"
   local pip_audit_attempt=1
   local pip_audit_wait_seconds="${PIP_AUDIT_RETRY_WAIT_SECONDS:-5}"
+  local pip_audit_exit_code=0
+  local pip_audit_report="artifacts/security/pip-audit.json"
 
+  mkdir -p "$(dirname "${pip_audit_report}")"
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
-    if uv run --with pip-audit pip-audit --timeout "${pip_audit_timeout}"; then
+    uv run --with pip-audit pip-audit \
+      --timeout "${pip_audit_timeout}" \
+      --format=json \
+      --output="${pip_audit_report}"
+    pip_audit_exit_code=$?
+    if [ "${pip_audit_exit_code}" -eq 0 ]; then
       return 0
     fi
+    if [ "${pip_audit_exit_code}" -eq 1 ]; then
+      echo "❌ pip-audit bilinen güvenlik açıkları buldu. Rapor: ${pip_audit_report}"
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
-      echo "⚠️ pip-audit başarısız oldu (deneme ${pip_audit_attempt}/${pip_audit_max_retries}). ${pip_audit_wait_seconds}s sonra yeniden denenecek..."
+      echo "⚠️ pip-audit geçici bir hata nedeniyle tamamlanamadı (çıkış kodu ${pip_audit_exit_code}, deneme ${pip_audit_attempt}/${pip_audit_max_retries}). ${pip_audit_wait_seconds}s sonra yeniden denenecek..."
       sleep "${pip_audit_wait_seconds}"
     fi
     pip_audit_attempt=$((pip_audit_attempt + 1))
   done
 
-  echo "❌ pip-audit güvenlik taraması ${pip_audit_max_retries} denemede başarısız."
+  echo "❌ pip-audit güvenlik taraması ${pip_audit_max_retries} denemede tamamlanamadı. Rapor yolu: ${pip_audit_report}"
   BACKEND_EXIT_CODE=1
   return 1
 }

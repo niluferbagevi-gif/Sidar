@@ -1099,3 +1099,64 @@ def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
     assert "mypy_mode=true" in prompt
     assert "mypy_error_total=1" in prompt
     assert "[MYPY_SAMPLE_LINES]" in prompt
+
+
+def test_ruff_selector_and_command_defensive_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert ci._normalize_ruff_rule_selectors(None) == []
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", None)
+    assert ci._configured_ruff_unsafe_selectors() == ["I", "UP"]
+    assert ci.build_ruff_autofix_command(target="../unsafe") == "uv run ruff check --fix ."
+    assert ci._is_allowed_ruff_command(["uv", "run", "ruff", "check"]) is True
+    assert ci._is_allowed_ruff_command(["uv", "run", "ruff", "check", "--select"]) is False
+    assert ci._is_allowed_ruff_command(["uv", "run", "ruff", "check", "--bad-option"]) is False
+    assert ci._is_allowed_ruff_command(["uv", "run", "ruff", "check", "unsafe-target"]) is False
+    assert (
+        ci._is_allowed_ruff_command(
+            ["uv", "run", "ruff", "check", "--unsafe-fixes", "--select=I", "core/"]
+        )
+        is True
+    )
+
+
+def test_cross_file_context_helpers_cover_empty_root_and_invalid_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    assert ci._resolve_module_to_repo_path("") is None
+    assert ci._resolve_module_to_repo_path("core") == "core.py"
+    assert ci._collect_cross_file_context_paths("README.md") == []
+    assert ci._collect_cross_file_context_paths("missing.py") == []
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "broken.py").write_text("if :", encoding="utf-8")
+    assert ci._collect_cross_file_context_paths("broken.py") == []
+
+    (tmp_path / "imports.py").write_text(
+        "import core.db\nimport core.db\nfrom . import sibling\nfrom managers import github_manager\n",
+        encoding="utf-8",
+    )
+    assert ci._collect_cross_file_context_paths("imports.py") == ["core/db.py", "managers.py"]
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected_reason"),
+    [
+        ("TypeError: invalid runtime value", "runtime_type_or_value_error"),
+        ("request timed out", "timeout_or_flaky_runtime"),
+    ],
+)
+def test_build_remediation_loop_classifies_additional_hitl_signals(
+    summary: str,
+    expected_reason: str,
+) -> None:
+    result = ci.build_remediation_loop(
+        {
+            "suspected_targets": ["core/sample.py"],
+            "failed_jobs": ["tests"],
+            "failure_summary": summary,
+            "log_excerpt": "",
+        },
+        "",
+    )
+
+    assert expected_reason in result["hitl_reasons"]

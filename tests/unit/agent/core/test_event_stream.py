@@ -2029,3 +2029,58 @@ async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_unde
 
     bus._dlq_persist_lock = _DrainingLock()
     await bus._flush_dead_letter_persist_queue()
+
+
+def test_cancel_background_task_routes_cross_loop_cancel_safely() -> None:
+    bus = AgentEventBus()
+
+    class _Loop:
+        def __init__(self, *, closed: bool) -> None:
+            self.closed = closed
+            self.threadsafe_calls = 0
+
+        def is_closed(self) -> bool:
+            return self.closed
+
+        def call_soon_threadsafe(self, callback) -> None:
+            self.threadsafe_calls += 1
+            callback()
+
+    class _Task:
+        def __init__(self, loop: _Loop) -> None:
+            self.loop = loop
+            self.cancel_calls = 0
+
+        def done(self) -> bool:
+            return False
+
+        def get_loop(self) -> _Loop:
+            return self.loop
+
+        def cancel(self) -> None:
+            self.cancel_calls += 1
+
+    open_loop = _Loop(closed=False)
+    open_task = _Task(open_loop)
+    asyncio.run(bus._cancel_background_task(open_task))
+    assert open_loop.threadsafe_calls == 1
+    assert open_task.cancel_calls == 1
+
+    closed_loop = _Loop(closed=True)
+    closed_task = _Task(closed_loop)
+    asyncio.run(bus._cancel_background_task(closed_task))
+    assert closed_loop.threadsafe_calls == 0
+    assert closed_task.cancel_calls == 1
+
+
+def test_reset_runtime_state_flushes_pending_dlq_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_pending.append({"reason": "pending"})
+    flushed: list[bool] = []
+
+    async def _flush() -> None:
+        flushed.append(True)
+
+    monkeypatch.setattr(bus, "_flush_dead_letter_persist_queue", _flush)
+    asyncio.run(bus.reset_runtime_state())
+    assert flushed == [True]

@@ -1961,3 +1961,22 @@ async def test_target_behavior_handles_non_name_assignments_and_pytest_raises():
         )
         == ""
     )
+
+
+async def test_polish_exclude_and_mock_quality_helper_branches():
+    import ast
+
+    assert CoverageAgent._is_excluded_coverage_target("", ["main.py"]) is False
+    assert CoverageAgent._is_excluded_coverage_target("src/domain.py", ["", "src"]) is True
+    assert CoverageAgent._is_excluded_coverage_target("src/domain.py", ["domain.py"]) is True
+
+    assert CoverageAgent._has_mock_call_verification(ast.parse("mock.assert_called_once()")) is True
+    assert CoverageAgent._uses_mocking(ast.parse("value = Mock()")) is True
+    assert CoverageAgent._uses_direct_mock_creation(ast.parse("value = Mock()")) is True
+    assert CoverageAgent._uses_direct_mock_creation(ast.parse("value = mock.Mock()")) is True
+    assert (
+        CoverageAgent._candidate_rejection_reason(
+            "def test_mock_without_verification(mocker):\n    assert mocker\n"
+        )
+        == "generated_candidate_mock_without_call_assertion"
+    )

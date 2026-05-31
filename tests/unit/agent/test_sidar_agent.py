@@ -4,6 +4,7 @@ import importlib
 import os
 import types
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock, call, create_autospec, patch
 
@@ -3272,3 +3273,46 @@ async def test_summarize_memory_logs_info_on_success(
 
     await agent._summarize_memory()
     info_mock.assert_called()
+
+
+async def test_nightly_distributed_lock_configuration_and_failure_paths(
+    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = sidar_agent_factory()
+    agent._nightly_distributed_lock = None
+    _override_cfg(agent, ENABLE_DISTRIBUTED_AGENT_LOCKS=True, REDIS_URL="")
+    assert agent._get_nightly_distributed_lock() is None
+
+    created: dict[str, Any] = {}
+    fake_lock = SimpleNamespace()
+
+    def _from_url(url: str, **kwargs: Any) -> Any:
+        created.update(url=url, **kwargs)
+        return fake_lock
+
+    monkeypatch.setattr(sidar_agent.RedisDistributedLock, "from_url", _from_url)
+    _override_cfg(
+        agent,
+        REDIS_URL="redis://cache:6379/0",
+        DISTRIBUTED_AGENT_LOCK_TIMEOUT_MS=10,
+        REDIS_MAX_CONNECTIONS=4,
+    )
+    assert agent._get_nightly_distributed_lock() is fake_lock
+    assert created == {
+        "url": "redis://cache:6379/0",
+        "max_connections": 4,
+        "timeout_seconds": 0.05,
+    }
+
+    async def _raise_acquire(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("redis unavailable")
+
+    fake_lock.acquire = _raise_acquire
+    _override_cfg(agent, DISTRIBUTED_AGENT_LOCK_REQUIRED=False)
+    assert await agent._acquire_nightly_distributed_lease() == (None, None)
+
+    async def _raise_release(_lease: Any) -> None:
+        raise RuntimeError("release unavailable")
+
+    fake_lock.release = _raise_release
+    await agent._release_nightly_distributed_lease(SimpleNamespace())
