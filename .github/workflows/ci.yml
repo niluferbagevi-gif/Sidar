@@ -258,6 +258,7 @@ jobs:
             coverage.xml
             artifacts/benchmark/benchmark.json
             artifacts/benchmark/history.json
+            .benchmarks/
           if-no-files-found: warn
           retention-days: 14
 

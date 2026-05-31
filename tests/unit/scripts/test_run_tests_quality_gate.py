@@ -1097,6 +1097,20 @@ def test_ci_uploads_bats_junit_report_artifact() -> None:
     assert "if-no-files-found: warn" in ci_workflow
 
 
+def test_ci_uploads_benchmark_reports_and_reviewable_baseline_candidates() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    artifact_block = ci_workflow[
+        ci_workflow.index("- name: Upload Coverage XML + Benchmark JSON artifacts") :
+        ci_workflow.index("- name: Upload Frontend Coverage Report")
+    ]
+
+    assert "name: backend-quality-trend-artifacts" in artifact_block
+    assert "artifacts/benchmark/benchmark.json" in artifact_block
+    assert "artifacts/benchmark/history.json" in artifact_block
+    assert ".benchmarks/" in artifact_block
+    assert "if-no-files-found: warn" in artifact_block
+
+
 def test_pip_audit_skips_only_local_editable_package_in_local_and_ci_gates() -> None:
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

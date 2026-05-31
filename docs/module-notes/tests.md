@@ -83,7 +83,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
-  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin.
+  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
+  incelemeyi kolaylaştırmak için `coverage.xml`, trend JSON dosyaları ve üretilen `.benchmarks/`
+  baseline adaylarını birlikte `backend-quality-trend-artifacts` artifact'i olarak yükler.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
