@@ -130,3 +130,10 @@ SIDAR_FORCE_UV_SYNC=1 bash .devcontainer/setup-codespaces.sh sync
 uv run python --version
 bash -n .devcontainer/setup-codespaces.sh
 ```
+
+## install_sidar.sh WSL entegrasyon raporu
+
+`install_sidar.sh` WSL2 + Docker daemon erişimini doğrularken timeout veya strict fail-fast
+senaryosu oluşursa `artifacts/docker_wsl_integration_report.md` dosyasını üretir.
+Bu rapor; docker.sock, Docker CLI, WSL distro ve PowerShell köprüsü gibi sinyalleri
+özetler ve doğrudan uygulanabilir adımları listeler.

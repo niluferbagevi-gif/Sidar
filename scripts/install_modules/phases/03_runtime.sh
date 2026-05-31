@@ -71,6 +71,38 @@ verify_wsl_integration_listed() {
     return 1
 }
 
+
+write_docker_wsl_integration_report() {
+    local reason="$1"
+    local report_path="${SCRIPT_DIR}/artifacts/docker_wsl_integration_report.md"
+    mkdir -p "$(dirname "$report_path")"
+
+    {
+        echo "# Docker WSL Integration Failure Report"
+        echo
+        echo "- Timestamp (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "- Reason: ${reason}"
+        echo "- WSL2: ${WSL2:-false}"
+        echo "- Distro: ${WSL_DISTRO_NAME:-unknown}"
+        echo "- Docker CLI: $(command -v docker >/dev/null 2>&1 && echo present || echo missing)"
+        echo "- Docker socket: $([[ -S /var/run/docker.sock ]] && echo present || echo missing)"
+        echo "- PowerShell bridge: $(command -v powershell.exe >/dev/null 2>&1 && echo present || echo missing)"
+        echo
+        echo "## Recommended next steps"
+        echo "1. Open Docker Desktop > Settings > Resources > WSL Integration and enable your distro explicitly."
+        echo "2. Verify docker-desktop and docker-desktop-data distros are registered (wsl.exe -l -q)."
+        echo "3. Restart Docker Desktop and run 'wsl --shutdown' from Windows Terminal."
+        echo
+        echo "## Missing/failed modules in this stage"
+        echo "- Docker daemon availability check"
+        echo "- WSL Integration runtime verification"
+        echo
+        echo "Troubleshooting guide: docs/development/devcontainer-troubleshooting.md"
+    } > "$report_path"
+
+    warn "Docker/WSL integration failure report written: ${report_path}"
+}
+
 ensure_docker_daemon_running() {
     _docker_ready_with_socket() {
         if ! docker info &>/dev/null; then
@@ -376,11 +408,13 @@ ensure_docker_daemon_running() {
             fi
         done
         warn "Docker Desktop belirtilen süre içinde hazır hale gelmedi (${desktop_timeout}sn)."
+        write_docker_wsl_integration_report "docker desktop timeout (${desktop_timeout}s)" || true
     fi
 
     if _docker_ready_with_socket; then return 0; fi
 
     if [[ "$STRICT_DOCKER" == "true" ]]; then
+        write_docker_wsl_integration_report "strict docker mode active and daemon unreachable" || true
         fail "Docker daemon erişilemedi. --strict-docker / SIDAR_REQUIRE_DOCKER=1 etkin olduğu için kurulum fail-fast durduruldu."
     fi
 
