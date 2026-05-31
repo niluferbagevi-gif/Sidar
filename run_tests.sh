@@ -303,6 +303,8 @@ AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"
 AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
+AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"
+DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 
 BACKEND_EXIT_CODE=0
@@ -1023,6 +1025,43 @@ PY
   fi
 }
 
+prepare_docker_test_image() {
+  if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then
+    echo "ℹ️ Docker test imajı otomatik build edilmedi (AUTO_BUILD_DOCKER_TEST_IMAGE=${AUTO_BUILD_DOCKER_TEST_IMAGE})."
+    return 0
+  fi
+
+  local test_image="${DOCKER_TEST_IMAGE:-sidar:latest}"
+  local build_context="${DOCKER_TEST_IMAGE_BUILD_CONTEXT}"
+  if [[ ! "${test_image}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$ ]]; then
+    echo "❌ Geçersiz DOCKER_TEST_IMAGE değeri: ${test_image}"
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "❌ AUTO_BUILD_DOCKER_TEST_IMAGE=1 ancak Docker CLI bulunamadı."
+    return 1
+  fi
+  if docker image inspect "${test_image}" >/dev/null 2>&1; then
+    echo "✅ Docker test imajı hazır: ${test_image}"
+    return 0
+  fi
+  if [ ! -f "${build_context}/Dockerfile" ]; then
+    echo "❌ Docker test imajı build edilemedi: ${build_context}/Dockerfile bulunamadı."
+    return 1
+  fi
+
+  echo "🐳 Docker test imajı bulunamadı; build başlatılıyor: docker build -t ${test_image} ${build_context}"
+  if docker build -t "${test_image}" "${build_context}"; then
+    export DOCKER_TEST_IMAGE="${test_image}"
+    echo "✅ Docker test imajı hazırlandı: ${test_image}"
+    return 0
+  fi
+
+  echo "❌ Docker test imajı build edilemedi: ${test_image}"
+  return 1
+}
+
+
 run_bats_shell_tests() {
   if [ "${RUN_BATS_TESTS}" != "1" ]; then
     echo "ℹ️ BATS shell testleri atlandı (RUN_BATS_TESTS=${RUN_BATS_TESTS})."
@@ -1127,7 +1166,7 @@ PY_RATCHET_GATE
 #    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
-if ensure_uv_available && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
+if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
   run_pytest_coverage_report
   run_bats_shell_tests
   update_progressive_coverage_gate

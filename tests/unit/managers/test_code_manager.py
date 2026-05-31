@@ -2374,6 +2374,7 @@ def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(
     assert manager.docker_test_image == manager.docker_image
     assert "DOCKER_TEST_IMAGE otomatik bulunamadı" in caplog.text
     assert "docker build -t sidar:latest ." in caplog.text
+    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in caplog.text
 
 
 def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(manager) -> None:

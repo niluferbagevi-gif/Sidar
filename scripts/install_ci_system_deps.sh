@@ -9,6 +9,8 @@ set -euo pipefail
 #   - Build project image: docker build -t sidar:latest .
 #   - Set DOCKER_TEST_IMAGE=sidar:latest so CodeManager runs pytest/mypy in the
 #     project image where uv/pytest/mypy toolchain is available.
+#   - Or opt into quality-gate image preparation with:
+#     AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh
 
 PACKAGES=(portaudio19-dev shellcheck bats)
 
@@ -44,6 +46,7 @@ ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recom
 
 if command -v docker >/dev/null 2>&1; then
   echo "Docker detected. Recommended CI/runtime setting: DOCKER_TEST_IMAGE=sidar:latest"
+  echo "Optional quality-gate preparation: AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
 else
   echo "Docker CLI not found; skip Docker image guidance in this environment."
 fi

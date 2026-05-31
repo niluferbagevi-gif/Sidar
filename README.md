@@ -736,6 +736,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `DOCKER_TEST_IMAGE=sidar:latest` kullanmaktır; çıplak `python:3.11-slim` imajı `uv` içermez.
 > `DOCKER_TEST_IMAGE` açık verilmediyse `CodeManager`, Docker daemon erişimi olduğunda
 > `sidar:latest`, `sidar-gpu:latest` ve geriye dönük uyumluluk için `sidar-ai:latest`/`sidar-ai-gpu:latest` imajlarını otomatik test imajı adayı olarak dener.
+> `run_tests.sh` bilinçli olarak kendiliğinden pahalı Docker build başlatmaz. Yerel veya CI
+> ortamında eksik proje imajını kalite kapısından önce otomatik hazırlamak için
+> `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` kullanın.
+> Farklı context gerekiyorsa `DOCKER_TEST_IMAGE_BUILD_CONTEXT` değerini açıkça verin.
 >
 >
 > Image vs Container (kısa açıklama):

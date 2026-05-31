@@ -430,6 +430,7 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
+    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh" in installer
     assert "MISSING_PACKAGES=()" in installer
     assert (
         'env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
@@ -1003,6 +1004,20 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "python -m venv" not in script
     assert "python3 -m venv" not in script
     assert "virtualenv" not in script
+
+
+def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() -> None:
+    script = _script()
+    preflight = script[
+        script.index("prepare_docker_test_image()") : script.index("run_bats_shell_tests()")
+    ]
+
+    assert 'AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"' in script
+    assert 'if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then' in preflight
+    assert 'local test_image="${DOCKER_TEST_IMAGE:-sidar:latest}"' in preflight
+    assert 'docker image inspect "${test_image}"' in preflight
+    assert 'docker build -t "${test_image}" "${build_context}"' in preflight
+    assert "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
 
 
 def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:

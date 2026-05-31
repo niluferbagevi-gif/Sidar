@@ -34,6 +34,18 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Yeni test eklerken önce modül klasörü belirlenmeli, sonra mevcut dosyaya genişletme
   mümkünse yeni dosya açılmamalıdır.
 
+## Docker sandbox test imajı hazırlığı
+
+- `CodeManager`, açık bir `DOCKER_TEST_IMAGE` verilmemişse yerel Docker daemon'da önce
+  `sidar:latest` ve uyumlu proje tag'lerini arar. İmaj yoksa kalıcı çözüm proje imajını
+  `docker build -t sidar:latest .` ile hazırlamaktır.
+- `run_tests.sh`, pahalı ve ağ/disk tüketebilen Docker build işlemini varsayılan olarak başlatmaz.
+  Yerel veya CI ortamında bilinçli otomatik hazırlık için
+  `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` kullanın.
+  Farklı build context gerekiyorsa `DOCKER_TEST_IMAGE_BUILD_CONTEXT` değerini açıkça verin.
+- `python:3.11-slim`, genel sandbox fallback imajıdır; proje test imajının yerine geçirilmemelidir.
+  Proje test akışları `uv`, pytest ve extras bağımlılıklarını içeren `sidar:latest` imajını kullanmalıdır.
+
 ## Shell testleri ve bağımlılık güvenlik taraması
 
 - `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
