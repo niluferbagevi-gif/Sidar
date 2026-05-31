@@ -19,10 +19,23 @@ import sys
 import tempfile
 import threading
 import time
-from pathlib import Path, PosixPath, PureWindowsPath
+from pathlib import Path, PureWindowsPath
 from typing import Any, cast
-from urllib.parse import quote, unquote, urlparse
 
+from managers.code.lsp import (
+    LSPProtocolError,
+    decode_lsp_stream,
+    encode_lsp_message,
+    file_uri_to_path,
+    path_to_file_uri,
+)
+from managers.code.platform import candidate_lsp_executable_paths
+from managers.code.pytest_parser import (
+    command_invokes_pytest,
+    command_requires_uv_tooling,
+    extract_pytest_args,
+)
+from managers.code.runner import build_sanitized_shell_args
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 try:
@@ -35,29 +48,17 @@ from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
 _OS_NAME = os.name
-
-
-class _LSPProtocolError(RuntimeError):
-    """Dil sunucusu oturum protokolü bozulduğunda yükseltilir."""
+_LSPProtocolError = LSPProtocolError
 
 
 def _path_to_file_uri(path: Path) -> str:
-    resolved = path.resolve()
-    return f"file://{quote(str(resolved).replace(os.sep, '/'))}"
+    """Backwards-compatible facade for LSP URI encoding."""
+    return path_to_file_uri(path, path_separator=os.sep)
 
 
 def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
-    parsed = urlparse(uri)
-    if parsed.scheme != "file":
-        raise ValueError(f"Desteklenmeyen URI şeması: {uri}")
-    raw_path = unquote(parsed.path)
-    if _OS_NAME == "nt":
-        normalized_path = raw_path[1:] if raw_path.startswith("/") else raw_path
-        drive_path = re.match(r"^[A-Za-z]:[\\/]", normalized_path)
-        if drive_path:
-            return PureWindowsPath(normalized_path)
-        return PureWindowsPath(normalized_path)
-    return PosixPath(raw_path)
+    """Backwards-compatible facade for platform-sensitive LSP URI decoding."""
+    return file_uri_to_path(uri, os_name=_OS_NAME)
 
 
 def _to_int(value: object, default: int) -> int:
@@ -82,27 +83,12 @@ _LEGACY_PROJECT_IMAGE_PREFIXES = {"sidar-ai": "sidar", "sidar-ai-gpu": "sidar-gp
 
 
 def _build_sanitized_shell_args(command: str, *, allow_shell_features: bool) -> list[str]:
-    """Return a shell-independent argv list after validating user-supplied command text."""
-
-    if "\x00" in command:
-        raise ValueError("Komut NUL baytı içeremez.")
-
-    if allow_shell_features:
-        interpreter = shutil.which("bash") or shutil.which("sh")
-        if not interpreter:
-            raise ValueError("Shell özellikleri için bash/sh yorumlayıcısı bulunamadı.")
-        # Shell yorumlaması gerekiyorsa bile Python subprocess shell=True kullanılmaz;
-        # yorumlayıcı sabit argv listesiyle çağrılır ve komut metni önce policy filtresinden geçer.
-        return [interpreter, "-lc", command]
-
-    args = shlex.split(command)
-    if not args:
-        raise ValueError("Komut bağımsız değişkenlere ayrıştırılamadı.")
-    if any(
-        "\x00" in arg for arg in args
-    ):  # pragma: no cover - command-level guard rejects NUL first
-        raise ValueError("Komut argümanları NUL baytı içeremez.")
-    return args
+    """Backwards-compatible facade for sanitized shell argument construction."""
+    return build_sanitized_shell_args(
+        command,
+        allow_shell_features=allow_shell_features,
+        find_executable=shutil.which,
+    )
 
 
 def _canonical_project_image_alias(image: str) -> str | None:
@@ -163,33 +149,13 @@ def _sanitize_docker_image(value: object) -> str:
 
 
 def _encode_lsp_message(payload: dict[str, Any]) -> bytes:
-    body = json.dumps(payload).encode("utf-8")
-    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-    return header + body
+    """Backwards-compatible facade for LSP message framing."""
+    return encode_lsp_message(payload)
 
 
 def _decode_lsp_stream(raw: bytes) -> list[dict[str, Any]]:
-    messages: list[dict[str, Any]] = []
-    cursor = 0
-    while cursor < len(raw):
-        header_end = raw.find(b"\r\n\r\n", cursor)
-        if header_end == -1:
-            break
-        header_blob = raw[cursor:header_end].decode("ascii", errors="replace")
-        headers = {}
-        for line in header_blob.split("\r\n"):
-            if ":" not in line:
-                continue
-            key, value = line.split(":", 1)
-            headers[key.strip().lower()] = value.strip()
-        content_length = int(headers.get("content-length", "0") or 0)
-        cursor = header_end + 4
-        body = raw[cursor : cursor + content_length]
-        if len(body) < content_length:
-            raise _LSPProtocolError("Eksik LSP mesaj gövdesi alındı.")
-        cursor += content_length
-        messages.append(json.loads(body.decode("utf-8")))
-    return messages
+    """Backwards-compatible facade for LSP stream decoding."""
+    return decode_lsp_stream(raw)
 
 
 class CodeManager:
@@ -1003,22 +969,8 @@ class CodeManager:
 
     @staticmethod
     def _extract_pytest_args(command: str) -> list[str]:
-        """Normalize edilmiş pytest komutundan yalnızca pytest argümanlarını çıkar."""
-        parts = shlex.split(command)
-        if not parts:
-            return ["-q"]
-        lowered = [part.lower() for part in parts]
-        if len(lowered) >= 3 and lowered[0] == "uv" and lowered[1] == "run":
-            try:
-                pytest_index = lowered.index("pytest", 2)
-            except ValueError:
-                return ["-q"]
-            return parts[pytest_index + 1 :] or ["-q"]
-        if len(lowered) >= 3 and lowered[0] == "python" and lowered[1] == "-m":
-            return parts[3:] or ["-q"]
-        if lowered[0] == "pytest":
-            return parts[1:] or ["-q"]
-        return ["-q"]
+        """Backwards-compatible facade for the extracted pytest parser."""
+        return extract_pytest_args(command)
 
     def _build_pytest_preflight_command(self, command: str) -> str:
         """Sandbox içinde pytest yoksa proje/image venv veya uv üzerinden bootstrap et."""
@@ -1052,22 +1004,8 @@ class CodeManager:
 
     @staticmethod
     def _command_requires_uv_tooling(command: str) -> bool:
-        """Komutun sandbox içinde uv tabanlı proje araçlarına ihtiyaç duyup duymadığını belirle."""
-        try:
-            parts = shlex.split(command)
-        except ValueError:
-            parts = command.split()
-        lowered = [part.lower() for part in parts]
-        return any(
-            part == "uv"
-            or part.endswith("/uv")
-            or part == "pytest"
-            or part.endswith("/pytest")
-            or (part == "python" and lowered[index + 1 : index + 3] == ["-m", "pytest"])
-            or part.endswith("run_tests.sh")
-            or part.endswith("autonomous_loop.sh")
-            for index, part in enumerate(lowered)
-        )
+        """Backwards-compatible facade for sandbox tooling classification."""
+        return command_requires_uv_tooling(command)
 
     def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
         """Test/uv komutlarında proje test imajını, diğerlerinde normal sandbox imajını seç."""
@@ -1079,20 +1017,8 @@ class CodeManager:
 
     @staticmethod
     def _command_invokes_pytest(command: str) -> bool:
-        """Komutun doğrudan pytest çalıştırıp çalıştırmadığını güvenli biçimde belirle."""
-        try:
-            parts = shlex.split(command)
-        except ValueError:
-            parts = command.split()
-        lowered = [part.lower() for part in parts]
-        if not lowered:
-            return False
-        return (
-            lowered[0] == "pytest"
-            or lowered[0].endswith("/pytest")
-            or lowered[:3] == ["python", "-m", "pytest"]
-            or lowered[:3] == ["uv", "run", "pytest"]
-        )
+        """Backwards-compatible facade for direct pytest invocation detection."""
+        return command_invokes_pytest(command)
 
     def _build_shell_preflight_command(self, command: str) -> str:
         """Sandbox shell komutları için PATH ve uv/pytest pre-flight koruması ekle."""
@@ -1699,38 +1625,15 @@ class CodeManager:
         return None
 
     def _candidate_lsp_executable_paths(self, binary: str) -> list[Path]:
-        """PATH dışında kalan proje/uv sanal ortamı LSP binary adaylarını döndür."""
-        suffixes = [""]
-        if os.name == "nt" and not binary.lower().endswith(
-            (".exe", ".cmd", ".bat")
-        ):  # pragma: no cover - Windows-only executable suffixes
-            suffixes = [".cmd", ".exe", ".bat", ""]
-
-        candidate_dirs: list[Path] = []
-        for env_path in (
-            getattr(self.cfg, "PYTHON_VIRTUAL_ENV", ""),
-            getattr(self.cfg, "PYTHON_CONDA_PREFIX", ""),
-        ):
-            if env_path:
-                candidate_dirs.append(Path(env_path) / ("Scripts" if os.name == "nt" else "bin"))
-
-        candidate_dirs.extend(
-            [
-                self.base_dir / ".venv" / ("Scripts" if os.name == "nt" else "bin"),
-                Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin"),
-                Path.home() / ".local" / "bin",
-            ]
+        """Backwards-compatible facade for platform-specific LSP candidates."""
+        return candidate_lsp_executable_paths(
+            binary,
+            base_dir=self.base_dir,
+            python_virtual_env=str(getattr(self.cfg, "PYTHON_VIRTUAL_ENV", "") or ""),
+            python_conda_prefix=str(getattr(self.cfg, "PYTHON_CONDA_PREFIX", "") or ""),
+            os_name=os.name,
+            sys_prefix=sys.prefix,
         )
-
-        candidates: list[Path] = []
-        seen: set[Path] = set()
-        for candidate_dir in candidate_dirs:
-            for suffix in suffixes:
-                candidate = candidate_dir / f"{binary}{suffix}"
-                if candidate not in seen:
-                    candidates.append(candidate)
-                    seen.add(candidate)
-        return candidates
 
     def _resolve_lsp_executable(self, binary: str) -> str | None:
         """LSP binary'sini PATH, aktif venv ve proje .venv içinde deterministik çöz."""

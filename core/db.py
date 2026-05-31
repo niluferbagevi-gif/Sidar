@@ -8,7 +8,6 @@ import importlib
 import inspect
 import logging
 import random
-import re
 import secrets
 import sqlite3
 import uuid
@@ -22,10 +21,20 @@ from typing import Any, TypeVar, cast
 import jwt
 
 from config import Config
+from core.db_components.dialect import (
+    ASYNCPG_COMMAND_TAG_COUNT_RE as _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE,
+)
+from core.db_components.dialect import (
+    parse_asyncpg_affected_rows as _parse_asyncpg_affected_rows_impl,
+)
+from core.db_components.dialect import (
+    quote_sql_identifier as _quote_sql_identifier_impl,
+)
+from core.db_components.migrations import run_alembic_upgrade_head
 from sidar_assets.paths import alembic_ini_path, migrations_path
 
 logger = logging.getLogger(__name__)
-_ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"(\d+)\s*$")
+_ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
 _T = TypeVar("_T")
 
 
@@ -356,12 +365,8 @@ def _expires_in(days: int = 7) -> str:
 
 
 def _quote_sql_identifier(identifier: str) -> str:
-    value = (identifier or "").strip()
-    if not value:
-        raise ValueError("SQL identifier cannot be empty")
-    if not value.replace("_", "").isalnum() or not (value[0].isalpha() or value[0] == "_"):
-        raise ValueError(f"Invalid SQL identifier: {identifier!r}")
-    return f'"{value}"'
+    """Backwards-compatible facade for the extracted dialect helper."""
+    return _quote_sql_identifier_impl(identifier)
 
 
 def _json_dumps(payload: Any) -> str:
@@ -388,15 +393,8 @@ def _new_entity_id() -> str:
 
 
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
-    """asyncpg command tag çıktısından etkilenen satır sayısını güvenle döndürür."""
-    text = str(command_tag or "").strip()
-    match = _ASYNCPG_COMMAND_TAG_COUNT_RE.search(text)
-    if not match:
-        return 0
-    try:
-        return int(match.group(1))
-    except (TypeError, ValueError):
-        return 0
+    """Backwards-compatible facade for the extracted asyncpg tag parser."""
+    return _parse_asyncpg_affected_rows_impl(command_tag, pattern=_ASYNCPG_COMMAND_TAG_COUNT_RE)
 
 
 def _sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
@@ -1065,14 +1063,12 @@ class Database:
         await self._run_sqlite_op(_run)
 
     def _run_alembic_upgrade_head(self) -> None:
-        """Run Alembic to the latest revision for the configured PostgreSQL DSN."""
-        from alembic import command
-        from alembic.config import Config as AlembicConfig
-
-        alembic_cfg = AlembicConfig(str(alembic_ini_path()))
-        alembic_cfg.set_main_option("script_location", str(migrations_path()))
-        alembic_cfg.set_main_option("sqlalchemy.url", self.database_url)
-        command.upgrade(alembic_cfg, "head")
+        """Run the extracted Alembic migration helper for this database facade."""
+        run_alembic_upgrade_head(
+            database_url=self.database_url,
+            alembic_ini=alembic_ini_path(),
+            migrations_dir=migrations_path(),
+        )
 
     async def _init_schema_postgresql(self) -> None:
         """Initialize PostgreSQL schema through Alembic when auto-migrate is enabled.
