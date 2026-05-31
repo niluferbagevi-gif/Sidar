@@ -130,3 +130,73 @@ async def test_rag_search_accepts_query_at_maximum_length(tmp_path: Path) -> Non
     response = await rag_search(q="x" * rag_route._MAX_RAG_SEARCH_QUERY_CHARS)
 
     assert _json_body(response) == {"success": True, "result": []}
+
+
+@pytest.mark.asyncio
+async def test_rag_document_management_routes_cover_success_and_validation(tmp_path: Path) -> None:
+    added_files: list[tuple[Any, ...]] = []
+    docs = SimpleNamespace(
+        get_index_info=lambda **kwargs: {"session_id": kwargs["session_id"]},
+        add_document_from_file=lambda *args: added_files.append(args) or (True, "✓ indexed"),
+        add_document_from_url=lambda url, **kwargs: _async_result((True, f"✓ {url}")),
+        delete_document=lambda doc_id, session_id: f"✓ deleted {doc_id} from {session_id}",
+    )
+    exports = _build_rag_exports(tmp_path, docs)
+    source = tmp_path / "source.txt"
+    source.write_text("hello", encoding="utf-8")
+
+    assert _json_body(await exports["rag_list_docs"]()) == {
+        "success": True,
+        "docs": {"session_id": "session-1"},
+        "count": 1,
+    }
+    outside = await exports["rag_add_file"](_JsonRequest({"path": "../outside.txt"}))
+    assert outside.status_code == 403
+    added = await exports["rag_add_file"](_JsonRequest({"path": "source.txt", "title": "Doc"}))
+    assert _json_body(added) == {"success": True, "message": "✓ indexed"}
+    assert added_files[-1][1:] == ("Doc", None, "session-1")
+
+    blank_url = await exports["rag_add_url"](_JsonRequest({"url": " "}))
+    assert blank_url.status_code == 400
+    url = await exports["rag_add_url"](
+        _JsonRequest({"url": "https://example.test", "title": "Site"})
+    )
+    assert _json_body(url) == {"success": True, "message": "✓ https://example.test"}
+    deleted = await exports["rag_delete_doc"]("doc-1")
+    assert _json_body(deleted) == {"success": True, "message": "✓ deleted doc-1 from session-1"}
+
+
+async def _async_result(value: Any) -> Any:
+    return value
+
+
+def test_rag_upload_endpoint_handles_success_rejection_and_size_limit(tmp_path: Path) -> None:
+    docs = SimpleNamespace(
+        add_document_from_file=lambda _path, original_name, _metadata, _session_id: (
+            (False, "rejected") if original_name == "reject.txt" else (True, "✓ uploaded")
+        )
+    )
+    agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="session-1"), docs=docs)
+    router = rag_route.build_rag_router(
+        resolve_agent_instance=lambda: _async_result(agent),
+        await_if_needed=lambda value: value,
+        max_rag_upload_bytes=lambda: 4,
+        server_root=lambda: tmp_path,
+        logger=SimpleNamespace(debug=lambda *_args: None),
+    )
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    assert client.post("/api/rag/upload", files={"file": ("ok.txt", b"1234")}).json() == {
+        "success": True,
+        "message": "✓ uploaded",
+    }
+    rejected = client.post("/api/rag/upload", files={"file": ("reject.txt", b"1234")})
+    assert rejected.status_code == 400
+    assert rejected.json() == {"success": False, "error": "rejected"}
+    oversized = client.post("/api/rag/upload", files={"file": ("large.txt", b"12345")})
+    assert oversized.status_code == 413
