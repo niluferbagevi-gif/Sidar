@@ -741,6 +741,12 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` kullanın.
 > Farklı context gerekiyorsa `DOCKER_TEST_IMAGE_BUILD_CONTEXT` değerini açıkça verin.
 >
+> BATS shell testleri CI profilinde zorunludur (`RUN_BATS_TESTS=1`); eksik `bats` paketi CI
+> kalite kapısını bilinçli olarak başarısız yapar. Lokal profil sistem paketi bulunmayan
+> geliştirici makineleri için bu fazı varsayılan olarak atlar (`RUN_BATS_TESTS=0`). Yerelde shell
+> kalite kapısını da çalıştırmak için önce `bash scripts/install_ci_system_deps.sh`, ardından
+> `RUN_BATS_TESTS=1 bash run_tests.sh` kullanın. Parolasız `sudo` olan ortamlarda tek adımlı
+> opt-in alternatif `AUTO_INSTALL_CI_SYSTEM_DEPS=1 RUN_BATS_TESTS=1 bash run_tests.sh` komutudur.
 >
 > Image vs Container (kısa açıklama):
 > - **Image** (`sidar:latest`): read-only şablondur; uv/pytest ve proje bağımlılıklarını bunun içine kurarsınız.

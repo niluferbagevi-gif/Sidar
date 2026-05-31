@@ -292,7 +292,7 @@ else
   PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
-  RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
+  RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -326,7 +326,7 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
-echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS})"
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
 rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage "${BATS_REPORT_DIR}" sidar.egg-info build/
