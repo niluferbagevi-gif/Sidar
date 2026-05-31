@@ -49,13 +49,13 @@ tek seferlik/geçici dosya adlarını referans almaz.
 ## Shell testleri ve bağımlılık güvenlik taraması
 
 - `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
-  `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. `RUN_BATS_TESTS=1`
-  varsayılanında `run_tests.sh`, BATS eksikse shell testlerini sessizce atlamaz; eksik altyapıyı
-  hata olarak raporlar. Bilinçli yerel atlama yalnız `RUN_BATS_TESTS=0` ile yapılmalıdır.
-  Script, root olmayan kullanıcılarda interaktif parola istemez; `sudo -n` kullanılamıyorsa net bir
-  hatayla durur. Parolasız `sudo` kullanılabilen yerel ortamlarda
-  `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh` eksik bağımlılıklar için aynı ortak kurulum
-  scriptini opt-in biçimde çalıştırır; otomatik kurulum başarısız olursa fail-closed kalite kapısı korunur.
+  `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. CI profilinde
+  `RUN_BATS_TESTS=1` varsayılanı korunur: BATS eksikse shell testleri sessizce atlanmaz ve eksik
+  altyapı hata olarak raporlanır. Yerel profilde BATS varsayılan olarak opsiyoneldir; CI paritesi
+  gerektiğinde `RUN_BATS_TESTS=1 bash run_tests.sh` ile açıkça etkinleştirilmelidir. Script, root
+  olmayan kullanıcılarda interaktif parola istemez; `sudo -n` kullanılamıyorsa net bir hatayla durur.
+  Eksik yerel bağımlılıklar için `run_tests.sh` başlangıç uyarısında ortak kurulum scriptini ve
+  parolasız sudo ortamlarına uygun opt-in otomatik kurulum komutunu gösterir.
 - BATS shell testleri `run_tests.sh` içinde `--report-formatter junit` ile çalışır ve varsayılan olarak
   `artifacts/bats/report.xml` üretir. Rapor dizini güvenli temizleme için yalnız `artifacts/` altında
   kalmak koşuluyla `BATS_REPORT_DIR` ile değiştirilebilir. Yeni shell

@@ -292,7 +292,7 @@ else
   PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
-  RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
+  RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -319,6 +319,31 @@ FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
 DOCKER_TEST_SERVICES_STARTED=0
 DOCKER_COMPOSE_CMD=()
+BACKEND_FAILURE_REASONS=()
+
+record_backend_failure() {
+  local reason="$1"
+  local existing
+  for existing in "${BACKEND_FAILURE_REASONS[@]}"; do
+    if [ "${existing}" = "${reason}" ]; then
+      return 0
+    fi
+  done
+  BACKEND_FAILURE_REASONS+=("${reason}")
+}
+
+format_backend_failure_reasons() {
+  if [ "${#BACKEND_FAILURE_REASONS[@]}" -eq 0 ]; then
+    printf 'belirlenemedi'
+    return 0
+  fi
+
+  local reason
+  printf '%s' "${BACKEND_FAILURE_REASONS[0]}"
+  for reason in "${BACKEND_FAILURE_REASONS[@]:1}"; do
+    printf ', %s' "${reason}"
+  done
+}
 
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
@@ -326,7 +351,11 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
-echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS})"
+if [ "${TEST_PROFILE}" = "local" ] && [ "${RUN_BATS_TESTS}" != "1" ] && ! command -v bats >/dev/null 2>&1; then
+  echo "⚠️ Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak. CI paritesi için: bash scripts/install_ci_system_deps.sh"
+  echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
+fi
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
 rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage "${BATS_REPORT_DIR}" sidar.egg-info build/
@@ -1000,6 +1029,7 @@ PY
   local phase2_exit=$?
 
   if [ "${phase1_exit}" -ne 0 ] || [ "${phase2_exit}" -ne 0 ]; then
+    record_backend_failure "pytest_failed"
     BACKEND_EXIT_CODE=1
   else
     BACKEND_EXIT_CODE=0
@@ -1014,10 +1044,12 @@ PY
         echo "✅ coverage combine başarılı; final rapor üretimi bir sonraki adımda yapılacak."
       else
         echo "❌ coverage combine başarısız oldu. Paralel testlerde coverage verisi toparlanamadı."
+        record_backend_failure "coverage_combine_failed"
         BACKEND_EXIT_CODE=1
       fi
     else
       echo "⚠️ Uyarı: Testler başarılı görünüyor ancak .coverage dosyası üretilemedi. xdist worker'ları crash olmuş olabilir."
+      record_backend_failure "coverage_data_missing"
       BACKEND_EXIT_CODE=1
     fi
   fi
@@ -1097,6 +1129,7 @@ run_bats_shell_tests() {
   if ! command -v bats >/dev/null 2>&1; then
     echo "❌ RUN_BATS_TESTS=1 ancak BATS bulunamadı. Debian/Ubuntu için: bash scripts/install_ci_system_deps.sh"
     echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
+    record_backend_failure "bats_missing"
     BACKEND_EXIT_CODE=1
     return 1
   fi
@@ -1109,6 +1142,7 @@ run_bats_shell_tests() {
   fi
 
   echo "❌ BATS shell testleri başarısız."
+  record_backend_failure "bats_failed"
   BACKEND_EXIT_CODE=1
   return 1
 }
@@ -1121,6 +1155,7 @@ enforce_combined_coverage_gate() {
 
   if [ ! -f ".coverage" ]; then
     echo "⚠️ Final coverage quality gate çalıştırılamadı: .coverage bulunamadı."
+    record_backend_failure "coverage_data_missing"
     BACKEND_EXIT_CODE=1
     return 0
   fi
@@ -1128,16 +1163,19 @@ enforce_combined_coverage_gate() {
   echo "📊 Final birleşik coverage raporları yenileniyor..."
   if ! uv run python -m coverage html -d htmlcov; then
     echo "❌ Coverage HTML raporu üretilemedi."
+    record_backend_failure "coverage_html_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
   if ! uv run python -m coverage xml -o coverage.xml; then
     echo "❌ Coverage XML raporu üretilemedi."
+    record_backend_failure "coverage_xml_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
   if ! uv run python -m coverage json -o coverage.json; then
     echo "❌ Coverage JSON raporu üretilemedi."
+    record_backend_failure "coverage_json_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
@@ -1147,6 +1185,7 @@ enforce_combined_coverage_gate() {
     echo "✅ Final coverage quality gate geçti (eşik: ${COVERAGE_FAIL_UNDER})."
   else
     echo "❌ Final coverage quality gate başarısız oldu (eşik: ${COVERAGE_FAIL_UNDER})."
+    record_backend_failure "coverage_gate_failed"
     BACKEND_EXIT_CODE=1
   fi
 }
@@ -1158,7 +1197,7 @@ update_progressive_coverage_gate() {
   fi
 
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
-    echo "ℹ️ Pytest/coverage kalite kapısı geçmediği için coverage ratchet atlandı."
+    echo "ℹ️ Backend kalite akışı başarısız olduğu için coverage ratchet atlandı (nedenler: $(format_backend_failure_reasons))."
     return 0
   fi
 
@@ -1332,6 +1371,9 @@ echo "======================================================"
 if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
   echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
+  if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
+    echo "   Backend Hata Nedenleri: $(format_backend_failure_reasons)"
+  fi
   echo "   Frontend Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE}"
   exit 1

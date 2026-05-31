@@ -1039,6 +1039,28 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
 
 
+def test_run_tests_defaults_bats_to_required_in_ci_and_optional_locally() -> None:
+    script = _script()
+    profile_block = script[script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index('PERFORMANCE_TEST_DIR=')]
+
+    assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"') == 1
+    assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"') == 1
+    assert "Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak" in script
+    assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in script
+
+
+def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:
+    script = _script()
+    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend kalite akışı")]
+
+    assert 'record_backend_failure "bats_missing"' in script
+    assert 'record_backend_failure "bats_failed"' in script
+    assert "Backend kalite akışı başarısız olduğu için coverage ratchet atlandı" in ratchet_block
+    assert "$(format_backend_failure_reasons)" in ratchet_block
+    assert 'Backend Hata Nedenleri: $(format_backend_failure_reasons)' in script
+    assert "Pytest/coverage kalite kapısı geçmediği için coverage ratchet atlandı" not in ratchet_block
+
+
 def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
     script = _script()
     bats_block = script[
