@@ -329,6 +329,16 @@ def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> N
     assert (provider, model) == ("ollama", "llama3")
 
 
+def test_configure_budget_tracker_resets_to_in_memory_when_shared_targets_cleared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(router, "_budget_tracker", router._SqliteDailyBudgetTracker(":memory:"))
+
+    router._configure_budget_tracker(_make_config())
+
+    assert isinstance(router._budget_tracker, router._DailyBudgetTracker)
+
+
 def test_router_uses_redis_shared_budget_tracker_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
