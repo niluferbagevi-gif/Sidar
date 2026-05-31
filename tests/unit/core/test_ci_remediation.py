@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -1099,3 +1100,141 @@ def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
     assert "mypy_mode=true" in prompt
     assert "mypy_error_total=1" in prompt
     assert "[MYPY_SAMPLE_LINES]" in prompt
+
+
+def test_normalize_ruff_rule_selectors_none_is_empty() -> None:
+    assert ci._normalize_ruff_rule_selectors(None) == []
+
+
+def test_configured_ruff_unsafe_selectors_normalizes_explicit_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", " i, up034 ")
+
+    assert ci._configured_ruff_unsafe_selectors() == ["I", "UP034"]
+
+
+def test_build_ruff_autofix_command_replaces_unsafe_target() -> None:
+    assert ci.build_ruff_autofix_command(target="../outside") == "uv run ruff check --fix ."
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (["uv", "run", "ruff", "check"], True),
+        (["uv", "run", "ruff", "check", "--select"], False),
+        (["uv", "run", "ruff", "check", "--select=I", "."], True),
+        (["uv", "run", "ruff", "check", "--unknown"], False),
+        (["uv", "run", "ruff", "check", "outside"], False),
+        (["uv", "run", "ruff", "check", "--unsafe-fixes", "."], False),
+    ],
+)
+def test_is_allowed_ruff_command_edge_cases(parts: list[str], expected: bool) -> None:
+    assert ci._is_allowed_ruff_command(parts) is expected
+
+
+@pytest.mark.parametrize(
+    ("module_name", "expected"),
+    [
+        ("", None),
+        ("core", "core.py"),
+        ("core.ci_remediation", "core/ci_remediation.py"),
+        ("third_party.package", None),
+    ],
+)
+def test_resolve_module_to_repo_path(module_name: str, expected: str | None) -> None:
+    assert ci._resolve_module_to_repo_path(module_name) == expected
+
+
+def test_collect_cross_file_context_paths_handles_non_python_missing_and_syntax_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "core").mkdir()
+    (tmp_path / "core" / "broken.py").write_text("def broken(:\n", encoding="utf-8")
+
+    assert ci._collect_cross_file_context_paths("docs/readme.md") == []
+    assert ci._collect_cross_file_context_paths("core/missing.py") == []
+    assert ci._collect_cross_file_context_paths("core/broken.py") == []
+
+
+def test_collect_cross_file_context_paths_discovers_imports_and_skips_empty_relative_import(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "core").mkdir()
+    (tmp_path / "core" / "sample.py").write_text(
+        "import core.alpha\nimport core.alpha\nfrom core import beta\nfrom . import sibling\n",
+        encoding="utf-8",
+    )
+
+    assert ci._collect_cross_file_context_paths("core/sample.py") == ["core/alpha.py", "core.py"]
+
+
+def test_build_local_failure_context_adds_mypy_path_outside_target_pattern() -> None:
+    context = ci.build_local_failure_context(
+        "pkg/service.py:7: error: Incompatible types in assignment [assignment]",
+        source="mypy",
+    )
+
+    assert context["suspected_targets"] == ["pkg/service.py"]
+
+
+@pytest.mark.parametrize(
+    ("diagnosis", "expected_reason"),
+    [
+        ("pytest-timeout operation timed out", "timeout_or_flaky_runtime"),
+        ("TypeError: invalid runtime value", "runtime_type_or_value_error"),
+    ],
+)
+def test_build_remediation_loop_classifies_additional_hitl_signals(
+    diagnosis: str,
+    expected_reason: str,
+) -> None:
+    context = {"suspected_targets": [], "failed_jobs": [], "failure_summary": "", "log_excerpt": ""}
+
+    result = ci.build_remediation_loop(context, diagnosis)
+
+    assert expected_reason in result["hitl_reasons"]
+
+
+def test_build_remediation_loop_uses_high_risk_fallback_when_specific_timeout_probe_misses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci, "_TIMEOUT_RUNTIME_PATTERN", SimpleNamespace(search=lambda _text: None))
+    context = {"suspected_targets": [], "failed_jobs": [], "failure_summary": "", "log_excerpt": ""}
+
+    result = ci.build_remediation_loop(context, "timeout marker")
+
+    assert "high_risk_failure_signal" in result["hitl_reasons"]
+
+
+def test_normalize_ruff_rule_selectors_deduplicates_values() -> None:
+    assert ci._normalize_ruff_rule_selectors("I, i, UP") == ["I", "UP"]
+
+
+def test_build_ruff_autofix_command_ignores_invalid_unsafe_selectors() -> None:
+    assert ci.build_ruff_autofix_command(unsafe_fixes=True, unsafe_selectors="bad;rm") == (
+        "uv run ruff check --fix ."
+    )
+
+
+def test_build_local_failure_context_uses_root_cause_hint_as_actionable_signal() -> None:
+    context = ci.build_local_failure_context("mypy error summary", source="mypy")
+
+    assert context["conclusion"] == "failure"
+    assert context["root_cause_hint"] == "mypy error summary"
+
+
+def test_build_local_failure_context_deduplicates_cross_file_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci, "_collect_cross_file_context_paths", lambda _path: ["core/shared.py"])
+    context = ci.build_local_failure_context(
+        "core/a.py:1: error: first [assignment]\ncore/b.py:2: error: second [assignment]",
+        source="mypy",
+    )
+
+    assert context["suspected_targets"] == ["core/a.py", "core/b.py", "core/shared.py"]
