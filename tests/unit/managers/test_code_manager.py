@@ -2470,7 +2470,9 @@ def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) 
         cm._build_sanitized_shell_args("echo ok", allow_shell_features=True)
 
 
-def test_autodetect_project_test_image_keeps_existing_explicit_legacy_image(manager, monkeypatch) -> None:
+def test_autodetect_project_test_image_keeps_existing_explicit_legacy_image(
+    manager, monkeypatch
+) -> None:
     manager.docker_available = True
     manager.docker_test_image = "sidar-ai:latest"
     manager._docker_test_image_explicit = True
@@ -2545,9 +2547,34 @@ def test_autodetect_project_test_image_warns_when_gpu_requested_without_runtime(
 def test_gpu_runtime_probe_handles_unsuccessful_command_and_gpu_warning_skips_when_available(
     manager, monkeypatch, caplog
 ) -> None:
-    monkeypatch.setattr(cm.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(
+        cm.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1)
+    )
     assert manager._gpu_runtime_available() is False
 
     manager._gpu_runtime_available_cached = True
     manager._warn_gpu_image_runtime_mismatch("sidar-gpu:latest")
     assert "GPU image selected but CUDA runtime unavailable" not in caplog.text
+
+
+def test_pytest_argument_and_invocation_fallbacks_cover_malformed_commands(
+    manager, monkeypatch
+) -> None:
+    assert manager._extract_pytest_args("") == ["-q"]
+    assert manager._extract_pytest_args("uv run python -V") == ["-q"]
+    assert manager._extract_pytest_args("unknown command") == ["-q"]
+    assert manager._command_invokes_pytest('"unterminated pytest') is False
+    assert manager._command_invokes_pytest("") is False
+
+    monkeypatch.setattr(manager, "_extract_pytest_args", lambda _command: [])
+    assert "pytest -q" in manager._build_pytest_preflight_command("pytest")
+
+
+def test_resolve_lsp_executable_accepts_existing_explicit_path(
+    manager, tmp_path, monkeypatch
+) -> None:
+    executable = tmp_path / "custom-pyright"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
+
+    assert manager._resolve_lsp_executable(str(executable)) == str(executable)

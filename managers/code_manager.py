@@ -98,7 +98,9 @@ def _build_sanitized_shell_args(command: str, *, allow_shell_features: bool) -> 
     args = shlex.split(command)
     if not args:
         raise ValueError("Komut bağımsız değişkenlere ayrıştırılamadı.")
-    if any("\x00" in arg for arg in args):
+    if any(
+        "\x00" in arg for arg in args
+    ):  # pragma: no cover - command-level guard rejects NUL first
         raise ValueError("Komut argümanları NUL baytı içeremez.")
     return args
 
@@ -1699,7 +1701,9 @@ class CodeManager:
     def _candidate_lsp_executable_paths(self, binary: str) -> list[Path]:
         """PATH dışında kalan proje/uv sanal ortamı LSP binary adaylarını döndür."""
         suffixes = [""]
-        if os.name == "nt" and not binary.lower().endswith((".exe", ".cmd", ".bat")):
+        if os.name == "nt" and not binary.lower().endswith(
+            (".exe", ".cmd", ".bat")
+        ):  # pragma: no cover - Windows-only executable suffixes
             suffixes = [".cmd", ".exe", ".bat", ""]
 
         candidate_dirs: list[Path] = []

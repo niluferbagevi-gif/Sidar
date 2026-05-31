@@ -1521,3 +1521,98 @@ def test_check_pgvector_ready_fails_when_extension_missing(monkeypatch):
     assert (
         check.details["auto_fix"] == "docker compose pull postgres && docker compose up -d postgres"
     )
+
+
+def test_prometheus_runtime_warns_when_optional_dependency_is_missing(monkeypatch) -> None:
+    monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda _name: None)
+
+    check = doctor.check_prometheus_runtime()
+
+    assert check.status == "warn"
+    assert "not installed" in check.message
+
+
+def test_dotenv_helpers_tolerate_unreadable_file_and_config_import_failure(
+    monkeypatch, tmp_path
+) -> None:
+    import builtins
+
+    unreadable = tmp_path / "missing.env"
+    assert doctor._parse_env_file_values(unreadable) == {}
+
+    original_import = builtins.__import__
+
+    def _import(name, *args, **kwargs):
+        if name == "config":
+            raise ImportError("config unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+    assert doctor._dotenv_source_report(("DATABASE_URL",)) == {
+        "sources": {},
+        "definitions": {"DATABASE_URL": []},
+    }
+
+
+def test_database_connectivity_skips_non_postgres_and_warns_when_asyncpg_is_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///sidar.db")
+    assert doctor.check_database_connectivity().status == "pass"
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:secret@localhost/sidar")
+
+    def _raise_missing_asyncpg(coro):
+        coro.close()
+        raise ModuleNotFoundError("asyncpg")
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _raise_missing_asyncpg)
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert "asyncpg is unavailable" in check.message
+
+
+@pytest.mark.asyncio
+async def test_run_coro_sync_reraises_background_probe_failure() -> None:
+    async def _failure() -> None:
+        raise RuntimeError("probe failed")
+
+    with pytest.raises(RuntimeError, match="probe failed"):
+        doctor._run_coro_sync(_failure())
+
+
+def test_rag_readiness_warns_when_graph_disabled_and_resolves_relative_path(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("ENABLE_GRAPH_RAG", "false")
+
+    state = doctor._rag_readiness_state()
+    assert "GraphRAG is disabled by ENABLE_GRAPH_RAG=false" in state["warnings"]
+
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {"rag_dir": "relative-rag"},
+            "blockers": [],
+            "warnings": [],
+            "document_count": 0,
+            "entity_memory_empty": False,
+        },
+    )
+    check = doctor.check_rag_index_ready()
+
+    assert check.details["index_path"] == str(tmp_path / "relative-rag" / "index.json")
+
+
+def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key(tmp_path) -> None:
+    missing = tmp_path / "missing.env"
+    assert doctor._read_env_file_assignments(missing) == {}
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("# comment\ninvalid-line\nexport VALID=value\n", encoding="utf-8")
+
+    assert doctor._read_env_file_assignments(env_file) == {"VALID": "value"}

@@ -1104,7 +1104,7 @@ def _read_env_file_assignments(path: Path) -> dict[str, str]:
         key = key.strip()
         if key.startswith("export "):
             key = key.removeprefix("export ").strip()
-        if not key:
+        if not key:  # pragma: no cover - stripping a non-empty assignment key cannot empty it
             continue
         values[key] = value.strip().strip('"').strip("'")
     return values
@@ -1564,4 +1564,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main())  # pragma: no cover - module CLI entry point

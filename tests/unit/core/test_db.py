@@ -2350,7 +2350,9 @@ async def test_init_schema_postgresql_skips_alembic_when_auto_migrate_disabled(t
 
 
 @pytest.mark.asyncio
-async def test_count_sessions_total_sqlite_and_postgresql_paths(sqlite_db: Database, tmp_path: Path) -> None:
+async def test_count_sessions_total_sqlite_and_postgresql_paths(
+    sqlite_db: Database, tmp_path: Path
+) -> None:
     user = await sqlite_db.create_user("count-sessions-user", password="pw")
     await sqlite_db.create_session(user.id, "first")
     await sqlite_db.create_session(user.id, "second")
@@ -2364,3 +2366,161 @@ async def test_count_sessions_total_sqlite_and_postgresql_paths(sqlite_db: Datab
     postgres_db._pg_pool = fake_pg
 
     assert await postgres_db.count_sessions_total() == 3
+
+
+def test_postgres_failure_diagnosis_uses_doctor_details_and_auth_message(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_db,
+        "_doctor_database_env_failure_reason",
+        lambda: "custom database parity failure",
+    )
+
+    assert core_db.postgres_failure_diagnosis("unexpected") == (
+        "Doctor/database_env: custom database parity failure"
+    )
+    assert "yetki/parola hatası" in core_db._postgres_user_action_message(
+        "password authentication failed"
+    )
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_path) -> None:
+    short_circuit_cfg = DummyCfg(
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db", BASE_DIR=str(tmp_path)
+    )
+    short_circuit_cfg.DB_TEST_MODE_SHORT_CIRCUIT = True
+    short_circuit_db = Database(short_circuit_cfg)
+
+    await short_circuit_db._connect_postgresql()
+
+    assert short_circuit_db.degraded_mode is True
+    assert short_circuit_db._backend == "sqlite"
+    await short_circuit_db.close()
+
+    pool = FakePgAdapter()
+    calls = []
+
+    async def _factory(**kwargs):
+        calls.append(kwargs)
+        return pool
+
+    injected_db = Database(
+        DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path)),
+        pg_pool_factory=_factory,
+    )
+    await injected_db._connect_postgresql()
+
+    assert injected_db._pg_pool is pool
+    assert calls == [{"dsn": "postgresql://u:p@db.example/db", "min_size": 1, "max_size": 2}]
+    await injected_db.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_pool_error_detection_tolerates_asyncpg_reimport_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path))
+    db = Database(cfg)
+    import builtins
+
+    original_import = builtins.__import__
+    asyncpg_imports = 0
+
+    async def _raise_pool(**_kwargs):
+        raise RuntimeError("pool unavailable")
+
+    asyncpg_stub = types.SimpleNamespace(create_pool=_raise_pool)
+
+    def _import(name, *args, **kwargs):
+        nonlocal asyncpg_imports
+        if name == "asyncpg":
+            asyncpg_imports += 1
+            if asyncpg_imports == 1:
+                return asyncpg_stub
+            raise ImportError("asyncpg disappeared")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _import)
+
+    await db._connect_postgresql()
+
+    assert db.degraded_mode is True
+    assert "havuzu kullanılamıyor" in db.degraded_reason
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_initialize_postgresql_schema_supports_pool_capabilities_and_fresh_bootstrap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    upgrades = []
+
+    class _FetchvalPool:
+        async def fetchval(self, _query):
+            return "0007"
+
+    class _FetchValuePool:
+        async def fetch_value(self, _query):
+            return "0007"
+
+    class _FreshPool:
+        async def fetchval(self, _query):
+            return None
+
+    for pool in (_FetchvalPool(), _FetchValuePool()):
+        db = Database(
+            DummyCfg(
+                DATABASE_URL="postgresql://u:p@db.example/db",
+                BASE_DIR=str(tmp_path),
+                SIDAR_AUTO_MIGRATE=False,
+            )
+        )
+        db._pg_pool = pool
+        monkeypatch.setattr(db, "_run_alembic_upgrade_head", lambda: upgrades.append("upgrade"))
+        await db._init_schema_postgresql()
+
+    fresh_db = Database(
+        DummyCfg(
+            DATABASE_URL="postgresql://u:p@db.example/db",
+            BASE_DIR=str(tmp_path),
+            SIDAR_AUTO_MIGRATE=False,
+        )
+    )
+    fresh_db._pg_pool = _FreshPool()
+    monkeypatch.setattr(fresh_db, "_run_alembic_upgrade_head", lambda: upgrades.append("upgrade"))
+
+    await fresh_db._init_schema_postgresql()
+
+    assert upgrades == ["upgrade"]
+
+
+def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatch) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(
+            status="fail", details={"failure_reason": "database_url was lost"}, message="fallback"
+        ),
+    )
+    assert core_db._doctor_database_env_failure_reason() == "database_url was lost"
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(status="fail", details={}, message="message fallback"),
+    )
+    assert core_db._doctor_database_env_failure_reason() == "message fallback"
+
+    monkeypatch.setattr(core_db, "_doctor_database_env_failure_reason", lambda: "")
+    assert core_db.postgres_failure_diagnosis("vector extension missing") == (
+        "pgvector hazırlığı / extension-migrasyon tamamlanamadı"
+    )
+    assert core_db.postgres_failure_diagnosis("unexpected") == (
+        "PostgreSQL bağlantı nedeni sınıflandırılamadı"
+    )
+    assert "PostgreSQL bağlantısı başarısız." in core_db._postgres_user_action_message("unexpected")
+    assert "yetki/parola hatası" in core_db._postgres_user_action_message(
+        "password authentication failed"
+    )

@@ -110,7 +110,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "Doctor/database_env sonucunu ve dotenv reload zincirini kontrol edin. "
             "SQLite degraded mode aktif edildi."
         )
-    if diagnosis == "asyncpg auth reddi / yetki-parola hatası":
+    if diagnosis == "asyncpg auth reddi / yetki/parola hatası":
         return (
             "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
             ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
