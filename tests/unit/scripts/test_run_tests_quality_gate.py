@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from packaging.requirements import Requirement
+from packaging.version import Version
 
 RUN_TESTS = Path("run_tests.sh")
 
@@ -513,8 +514,9 @@ def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> No
     assert "0.129.2" not in dependency_specifiers["fastapi"]
     assert "1.0.1" in dependency_specifiers["starlette"]
     assert "0.50.0" not in dependency_specifiers["starlette"]
-    assert locked_packages["fastapi"] == "0.136.1"
-    assert locked_packages["starlette"] == "1.0.1"
+    assert Version(locked_packages["fastapi"]) in dependency_specifiers["fastapi"]
+    assert Version(locked_packages["starlette"]) in dependency_specifiers["starlette"]
+    assert Version("1.2.0") not in dependency_specifiers["starlette"]
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
