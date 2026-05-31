@@ -64,3 +64,9 @@ def test_code_helper_modules_are_usable_without_code_manager(tmp_path: Path) -> 
 
     candidates = candidate_lsp_executable_paths("pyright", base_dir=tmp_path, home_dir=tmp_path)
     assert tmp_path / ".venv" / "bin" / "pyright" in candidates
+
+    windows_candidates = candidate_lsp_executable_paths(
+        "ruff", base_dir=tmp_path, home_dir=tmp_path, os_name="nt"
+    )
+    assert [path.suffix for path in windows_candidates[:4]] == [".cmd", ".exe", ".bat", ""]
+    assert tmp_path / ".venv" / "Scripts" / "ruff.cmd" in windows_candidates

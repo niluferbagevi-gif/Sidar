@@ -332,6 +332,21 @@ async def test_embed_texts_for_semantic_cache_empty() -> None:
     assert rag.embed_texts_for_semantic_cache([]) == []
 
 
+async def test_public_build_embedding_function_delegates_to_internal_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(rag, "_build_embedding_function", lambda **kwargs: kwargs)
+
+    assert rag.build_embedding_function(
+        use_gpu=True, gpu_device=2, mixed_precision=True, cfg="cfg"
+    ) == {
+        "use_gpu": True,
+        "gpu_device": 2,
+        "mixed_precision": True,
+        "cfg": "cfg",
+    }
+
+
 async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -2915,6 +2930,27 @@ async def test_rag_final_remaining_branches(
     store.pg_engine = SimpleNamespace(begin=lambda: contextlib.nullcontext(_Conn()))
     monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
     assert store._fetch_pgvector("q", 2, "s1") == []
+
+
+async def test_document_store_reinitialization_logs_ready_bm25_vector_backends(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._backend_init_lock = threading.Lock()
+    store._vector_initialization_enabled = True
+    store._vector_init_done = True
+    store._bm25_init_done = True
+    store._vector_backend = "bm25"
+    store._chroma_available = True
+    store._pgvector_available = True
+    store._init_chroma = lambda: (_ for _ in ()).throw(AssertionError("already initialized"))
+    store._init_pgvector = lambda: (_ for _ in ()).throw(AssertionError("already initialized"))
+    store._init_fts = lambda: (_ for _ in ()).throw(AssertionError("already initialized"))
+    monkeypatch.setattr(rag.DocumentStore, "_backend_info_logged", {})
+
+    store._initialize_backends_once()
+
+    assert rag.DocumentStore._backend_info_logged["vector_preference_bm25_hint"] is True
 
 
 async def test_document_store_init_with_vector_initialization_disabled(

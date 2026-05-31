@@ -938,6 +938,19 @@ async def test_coverage_exclude_target_supports_paths_directories_and_globs() ->
     assert CoverageAgent._is_excluded_coverage_target("src/domain.py", excludes) is False
 
 
+@pytest.mark.parametrize(
+    ("target_path", "exclude_file", "expected"),
+    [
+        ("src/tests/unit/test_service.py", "tests", True),
+        ("src/services/test_service.py", "tests", False),
+    ],
+)
+async def test_coverage_exclude_target_matches_single_segment_directory_anywhere(
+    target_path: str, exclude_file: str, expected: bool
+) -> None:
+    assert CoverageAgent._is_excluded_coverage_target(target_path, [exclude_file]) is expected
+
+
 @pytest.mark.asyncio
 async def test_autonomous_coverage_batch_excludes_configured_targets(
     tmp_path, fake_coverage_code_manager, monkeypatch
@@ -1263,6 +1276,16 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
 
     assert (
         CoverageAgent._candidate_rejection_reason(
+            "def test_mocker_fixture_without_call_verification(mocker):\n"
+            "    fixture = mocker\n"
+            "    value = 'x'.upper()\n"
+            "    assert value == 'X'"
+        )
+        == "generated_candidate_mock_without_call_assertion"
+    )
+
+    assert (
+        CoverageAgent._candidate_rejection_reason(
             "def test_exception_path_without_raises():\n"
             "    value = 'x'.upper()\n"
             "    assert value == 'X'",
@@ -1504,6 +1527,22 @@ async def test_has_runtime_behavior_signal_attribute_and_subscript():
 
     subscript_tree = ast.parse("data[0]")
     assert CoverageAgent._has_runtime_behavior_signal(subscript_tree) is True
+
+
+async def test_mock_detection_helpers_return_false_without_mock_signals():
+    import ast
+
+    tree = ast.parse("value = 'x'.upper()")
+    assert CoverageAgent._has_mock_call_verification(tree) is False
+    assert CoverageAgent._uses_mocking(tree) is False
+
+
+async def test_uses_mocking_name_and_direct_mock_creation_name_signals():
+    import ast
+
+    tree = ast.parse("value = Mock()")
+    assert CoverageAgent._uses_mocking(tree) is True
+    assert CoverageAgent._uses_direct_mock_creation(tree) is True
 
 
 async def test_has_mock_call_verification_returns_true_for_assert_called():

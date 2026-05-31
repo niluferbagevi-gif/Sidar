@@ -1219,6 +1219,46 @@ async def test_attempt_autonomous_self_heal_disabled_skipped_and_awaiting_hitl(
     assert remediation["remediation_loop"]["steps"][0]["status"] == "rejected"
 
 
+@pytest.mark.parametrize(
+    ("default_decision", "expected_status"),
+    [("approve", "applied"), ("reject", "rejected")],
+)
+async def test_attempt_autonomous_self_heal_uses_configured_default_hitl_decision(
+    sidar_agent_factory,
+    default_decision: str,
+    expected_status: str,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        ENABLE_AUTONOMOUS_SELF_HEAL=True,
+        SELF_HEAL_DEFAULT_DECISION=default_decision,
+    )
+    agent._build_self_heal_plan = AsyncMock(return_value={"operations": [{"path": "a.py"}]})
+    agent._execute_self_heal_plan = AsyncMock(
+        return_value={"status": "applied", "summary": "ok", "operations_applied": ["a.py"]}
+    )
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "needs_human_approval": True,
+            "steps": [{"name": "handoff", "status": "planned", "detail": ""}],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == expected_status
+    if default_decision == "approve":
+        assert remediation["remediation_loop"]["needs_human_approval"] is False
+        agent._execute_self_heal_plan.assert_awaited_once()
+    else:
+        agent._build_self_heal_plan.assert_not_awaited()
+        agent._execute_self_heal_plan.assert_not_awaited()
+
+
 async def test_attempt_autonomous_self_heal_continues_after_human_approval(
     sidar_agent_factory,
 ) -> None:
@@ -3305,6 +3345,23 @@ async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(sidar_a
     _override_cfg(agent, ENABLE_DISTRIBUTED_AGENT_LOCKS=True, REDIS_URL="")
 
     assert agent._get_nightly_distributed_lock() is None
+
+
+async def test_required_distributed_lock_without_backend_returns_unconfigured_skip(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        DISTRIBUTED_AGENT_LOCK_REQUIRED=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=False,
+        REDIS_URL="",
+    )
+
+    lease, skip_reason = await agent._acquire_nightly_distributed_lease()
+
+    assert lease is None
+    assert skip_reason == {"status": "skipped", "reason": "distributed_lock_unconfigured"}
 
 
 async def test_optional_distributed_lock_failures_allow_nightly_maintenance_fallback(
