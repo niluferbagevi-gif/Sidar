@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
 
+_MAX_RAG_SEARCH_QUERY_CHARS = 2000
+
 
 def build_rag_router(
     *,
@@ -144,20 +146,32 @@ def build_rag_router(
 
     @router.get("/rag/search")
     async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3) -> Any:
-        if not q.strip():
+        normalized_query = q.strip()
+        if not normalized_query:
             return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
+        if len(normalized_query) > _MAX_RAG_SEARCH_QUERY_CHARS:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "error": (
+                        "Sorgu çok uzun. Maksimum izin verilen karakter sayısı: "
+                        f"{_MAX_RAG_SEARCH_QUERY_CHARS}"
+                    ),
+                },
+                status_code=400,
+            )
         agent = await resolve_agent_instance()
         session_id = agent.memory.active_session_id or "global"
         search_call = agent.docs.search
         if asyncio.iscoroutinefunction(search_call):
-            maybe_result = search_call(q.strip(), min(top_k, 10), mode, session_id)
+            maybe_result = search_call(normalized_query, min(top_k, 10), mode, session_id)
             if inspect.isawaitable(maybe_result):
                 ok, result = await maybe_result
             else:
                 ok, result = maybe_result
         else:
             thread_result = asyncio.to_thread(
-                search_call, q.strip(), min(top_k, 10), mode, session_id
+                search_call, normalized_query, min(top_k, 10), mode, session_id
             )
             if inspect.isawaitable(thread_result):
                 maybe_result = await thread_result
