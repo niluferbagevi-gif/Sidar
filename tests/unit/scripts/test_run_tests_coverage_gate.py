@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 RUN_TESTS = Path("run_tests.sh")
 
@@ -53,13 +55,22 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     assert "load_test_database_password_env()" in script
     assert 'DOTENV_FILE="${test_dotenv_file}" uv run python - "${password_file}"' in script
     assert "_effective_postgres_password(discover_env_chain())" in script
-    assert 'export POSTGRES_PASSWORD' in script
-    assert 'sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" "${POSTGRES_PASSWORD}"' in script
-    assert 'sync_postgres_login_role "${admin_db_user}" "${test_db_user}" "${test_db_password}"' in script
+    assert "export POSTGRES_PASSWORD" in script
+    assert (
+        'sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" "${POSTGRES_PASSWORD}"'
+        in script
+    )
+    assert (
+        'sync_postgres_login_role "${admin_db_user}" "${test_db_user}" "${test_db_password}"'
+        in script
+    )
     assert "CREATE ROLE %I LOGIN PASSWORD %L" in script
     assert "ALTER ROLE %I WITH LOGIN PASSWORD %L" in script
-    assert 'TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER' in script
-    assert 'DATABASE_URL test için ayarlandı: ${DATABASE_URL}' not in script
+    assert (
+        "TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER"
+        in script
+    )
+    assert "DATABASE_URL test için ayarlandı: ${DATABASE_URL}" not in script
     assert script.index("load_test_database_password_env && ensure_test_services") < script.index(
         "&& prepare_test_database; then"
     )
@@ -464,6 +475,28 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config
     assert "scripts/.*\\.(sh|bash)" in config
+
+
+def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> None:
+    with Path("pyproject.toml").open("rb") as pyproject_file:
+        dependencies = tomllib.load(pyproject_file)["project"]["dependencies"]
+    with Path("uv.lock").open("rb") as lock_file:
+        locked_packages = {
+            package["name"]: package["version"] for package in tomllib.load(lock_file)["package"]
+        }
+
+    dependency_specifiers = {
+        requirement.name: requirement.specifier
+        for dependency in dependencies
+        if (requirement := Requirement(dependency)).name in {"fastapi", "starlette"}
+    }
+
+    assert "0.136.1" in dependency_specifiers["fastapi"]
+    assert "0.129.2" not in dependency_specifiers["fastapi"]
+    assert "1.0.1" in dependency_specifiers["starlette"]
+    assert "0.50.0" not in dependency_specifiers["starlette"]
+    assert locked_packages["fastapi"] == "0.136.1"
+    assert locked_packages["starlette"] == "1.0.1"
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
