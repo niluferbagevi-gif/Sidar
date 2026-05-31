@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import sys
@@ -192,19 +193,39 @@ _SENSITIVE_SYS_MODULES = (
     "chromadb.utils.embedding_functions",
     "torch",
 )
+_SENSITIVE_SYS_MODULE_ATTRIBUTES = {
+    "agent.base_agent": ("BaseAgent",),
+}
 
 
 @pytest.fixture(autouse=True)
 def _restore_polluted_sys_modules() -> Generator[None, None, None]:
-    """Restore process-global modules that tests commonly replace with stubs."""
+    """Restore process-global modules and reload-sensitive class identities."""
 
     snapshot = {name: sys.modules.get(name, _MISSING_SYS_MODULE) for name in _SENSITIVE_SYS_MODULES}
+    attribute_snapshot = {
+        name: {
+            attribute: getattr(module, attribute, _MISSING_SYS_MODULE) for attribute in attributes
+        }
+        for name, attributes in _SENSITIVE_SYS_MODULE_ATTRIBUTES.items()
+        if (module := snapshot.get(name, _MISSING_SYS_MODULE)) is not _MISSING_SYS_MODULE
+    }
     yield
     for name, original in snapshot.items():
         if original is _MISSING_SYS_MODULE:
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = original  # type: ignore[assignment]
+    for name, attributes in attribute_snapshot.items():
+        module = sys.modules.get(name)
+        if module is None:
+            continue
+        for attribute, original in attributes.items():
+            if original is _MISSING_SYS_MODULE:
+                with contextlib.suppress(AttributeError):
+                    delattr(module, attribute)
+            else:
+                setattr(module, attribute, original)
 
 
 @pytest_asyncio.fixture(autouse=True)
