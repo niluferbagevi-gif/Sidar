@@ -2468,3 +2468,39 @@ def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) 
     monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
     with pytest.raises(ValueError, match="yorumlayıcısı"):
         cm._build_sanitized_shell_args("echo ok", allow_shell_features=True)
+
+
+def test_gpu_runtime_and_image_selection_polish_branches(manager, monkeypatch, caplog) -> None:
+    manager.docker_available = True
+    manager.cfg.USE_GPU = True
+    manager._docker_test_image_explicit = False
+    monkeypatch.setattr(manager, "_gpu_runtime_available", lambda: False)
+    cpu_candidate = next(
+        image for image in cm._PROJECT_TEST_IMAGE_CANDIDATES if not cm._is_gpu_project_image(image)
+    )
+    monkeypatch.setattr(manager, "_docker_image_exists", lambda image: image == cpu_candidate)
+    manager._autodetect_project_test_image()
+    assert manager.docker_test_image == cpu_candidate
+    assert "CPU test imajı" in caplog.text
+
+
+def test_gpu_runtime_available_caches_success_and_handles_oserror(manager, monkeypatch) -> None:
+    monkeypatch.setattr(
+        cm.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0)
+    )
+    assert manager._gpu_runtime_available() is True
+    monkeypatch.setattr(
+        cm.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError())
+    )
+    assert manager._gpu_runtime_available() is True
+
+    del manager._gpu_runtime_available_cached
+    assert manager._gpu_runtime_available() is False
+
+
+def test_gpu_image_runtime_mismatch_warns_only_without_runtime(
+    manager, monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr(manager, "_gpu_runtime_available", lambda: False)
+    manager._warn_gpu_image_runtime_mismatch("sidar-gpu:latest")
+    assert "CUDA runtime unavailable" in caplog.text

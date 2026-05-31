@@ -4179,3 +4179,16 @@ async def test_llm_client_chat_stream_awaits_inner_coroutine_response(
     stream = await client.chat([{"role": "user", "content": "hi"}], stream=True)
     chunks = [chunk async for chunk in stream]
     assert chunks == ["x1", "x2"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_chat_omits_non_positive_num_ctx(respx_mock_router) -> None:
+    client = llm_client.OllamaClient(
+        _make_config(CODING_MODEL="m1", OLLAMA_CODING_NUM_CTX=0, OLLAMA_URL="http://ollama/api")
+    )
+    route = respx_mock_router.post("http://ollama/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    assert await client.chat([{"role": "user", "content": "x"}], json_mode=False) == "ok"
+    assert "num_ctx" not in route.calls[0].request.read().decode()
