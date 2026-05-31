@@ -1039,6 +1039,17 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
 
 
+def test_run_tests_requires_bats_by_default_only_in_ci_profile() -> None:
+    script = _script()
+    profile_block = script[
+        script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index('PERFORMANCE_TEST_DIR=')
+    ]
+    ci_block, local_block = profile_block.split("else", maxsplit=1)
+
+    assert 'RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"' in ci_block
+    assert 'RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"' in local_block
+
+
 def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
     script = _script()
     bats_block = script[
