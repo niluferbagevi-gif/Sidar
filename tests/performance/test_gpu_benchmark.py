@@ -162,6 +162,15 @@ def _apply_keep_alive(payload: dict[str, object]) -> dict[str, object]:
     return payload
 
 
+def _record_runtime_options(benchmark) -> None:
+    """Attach workload-shaping Ollama options so trend history compares like-for-like runs."""
+    benchmark.extra_info["ollama_model"] = _MODEL
+    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
+    benchmark.extra_info["ollama_num_batch"] = _NUM_BATCH
+    benchmark.extra_info["ollama_num_predict"] = _NUM_PREDICT
+    benchmark.extra_info["ollama_num_ctx"] = _NUM_CTX
+
+
 def _ollama_options() -> dict[str, int | float]:
     """GPU throughput dalgalanmasını azaltmak için tek noktadan Ollama opsiyonları."""
     return {
@@ -318,7 +327,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     ), f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
     stddev_s: float = benchmark.stats["stddev"]
     iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
-    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
+    _record_runtime_options(benchmark)
     benchmark.extra_info["latency_stddev_ms"] = round(stddev_s * 1000, 3)
     benchmark.extra_info["latency_iqr_ms"] = round(iqr_s * 1000, 3)
     if mean_s > 0:
@@ -347,7 +356,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
     num_parallel = _ollama_num_parallel()
     benchmark.extra_info["ollama_num_parallel"] = num_parallel
-    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
+    _record_runtime_options(benchmark)
     benchmark.extra_info["benchmark_concurrency"] = _CONCURRENCY
     if _CONCURRENCY > 0:
         benchmark.extra_info["parallel_saturation_percent"] = round(
@@ -510,7 +519,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
         loop.run_until_complete(_prepare_client(client, http))
 
         runtime_profile = loop.run_until_complete(_model_runtime_profile(http))
-        benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
+        _record_runtime_options(benchmark)
         benchmark.extra_info["quantization_level"] = runtime_profile["quantization_level"]
         benchmark.extra_info["architecture"] = runtime_profile["architecture"]
 
@@ -600,8 +609,26 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     assert result > 0.0, "TTFT sıfır döndü; streaming yanıt alınamadı."
     assert result <= _TTFT_BUDGET_S, f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
     mean_ttft: float = benchmark.stats["mean"]
-    benchmark.extra_info["ollama_keep_alive"] = _OLLAMA_KEEP_ALIVE or "disabled"
+    _record_runtime_options(benchmark)
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
     assert (
         mean_ttft <= _TTFT_BUDGET_S
     ), f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
+
+
+def test_runtime_options_metadata_records_workload_shape() -> None:
+    """Trend geçmişinin tuning değişikliklerini ayrı profil olarak izleyebilmesini doğrula."""
+
+    class _BenchmarkStub:
+        extra_info: dict[str, object] = {}
+
+    benchmark = _BenchmarkStub()
+    _record_runtime_options(benchmark)
+
+    assert benchmark.extra_info == {
+        "ollama_model": _MODEL,
+        "ollama_keep_alive": _OLLAMA_KEEP_ALIVE or "disabled",
+        "ollama_num_batch": _NUM_BATCH,
+        "ollama_num_predict": _NUM_PREDICT,
+        "ollama_num_ctx": _NUM_CTX,
+    }

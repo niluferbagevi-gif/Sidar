@@ -84,6 +84,12 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `GPU_BENCH_NUM_PREDICT=128`
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
   yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.
+- Nightly GPU trend geçmişi yalnız eşdeğer çalışma profillerini karşılaştırır. Profil anahtarı; model,
+  quantization, mimari, driver, `GPU_BENCH_NUM_BATCH`, `GPU_BENCH_NUM_CTX`,
+  `GPU_BENCH_NUM_PREDICT` ve `OLLAMA_KEEP_ALIVE` değerlerini içerir. Bu ayarlardan biri
+  değişirse önce yeni profil baseline'ı oluşturulur; eski profil yanlış pozitif alarm üretmez.
+- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT/VRAM artışı ve token/sn düşüşü
+  regresyondur. TTFT/VRAM düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
 - Örnek başlatma komutları:
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`

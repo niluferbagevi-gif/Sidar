@@ -53,10 +53,33 @@ def _current_metrics(benchmarks: list[dict[str, Any]]) -> dict[str, float]:
 
 def _profile_key(benchmarks: list[dict[str, Any]], fallback: str) -> str:
     tps = _find_benchmark(benchmarks, "test_gpu_tokens_per_second")
-    extra = {} if tps is None else (tps.get("extra_info", {}) or {})
-    quantization = str(extra.get("quantization_level", "unknown")).strip() or "unknown"
-    architecture = str(extra.get("architecture", "unknown")).strip() or "unknown"
-    return f"{quantization}|{architecture}|{fallback}"
+    ttft = _find_benchmark(benchmarks, "test_gpu_time_to_first_token")
+    tps_extra = {} if tps is None else (tps.get("extra_info", {}) or {})
+    ttft_extra = {} if ttft is None else (ttft.get("extra_info", {}) or {})
+
+    def _profile_value(key: str, default: str = "unknown") -> str:
+        value = tps_extra.get(key, ttft_extra.get(key, default))
+        return str(value).strip() or default
+
+    return "|".join(
+        [
+            _profile_value("quantization_level"),
+            _profile_value("architecture"),
+            _profile_value("ollama_model"),
+            f"batch={_profile_value('ollama_num_batch')}",
+            f"ctx={_profile_value('ollama_num_ctx')}",
+            f"predict={_profile_value('ollama_num_predict')}",
+            f"keep_alive={_profile_value('ollama_keep_alive')}",
+            fallback,
+        ]
+    )
+
+
+def _is_regression(metric_name: str, pct_delta: float, threshold_percent: float) -> bool:
+    """Return whether a metric moved in its harmful direction beyond the trend budget."""
+    if metric_name == "tps":
+        return pct_delta < -threshold_percent
+    return pct_delta > threshold_percent
 
 
 def main() -> int:
@@ -104,10 +127,11 @@ def main() -> int:
                 f"[gpu-trend] profile={profile} metric={metric_name} current={current:.3f} "
                 f"median{window}={med:.3f} delta={pct_delta:+.2f}%"
             )
-            if abs(pct_delta) > threshold_percent:
+            if _is_regression(metric_name, pct_delta, threshold_percent):
                 print(
                     f"[ALARM] {metric_name} geçmiş {window} koşu medyanına göre "
-                    f"{pct_delta:+.2f}% sapma gösterdi (eşik ±{threshold_percent:.2f}%)."
+                    f"zararlı yönde {pct_delta:+.2f}% sapma gösterdi "
+                    f"(eşik {threshold_percent:.2f}%)."
                 )
                 failed = True
     else:
