@@ -52,6 +52,7 @@ SIDAR_TOOL_JSON_SCHEMA: dict[str, Any] = {
 }
 
 DEFAULT_COST_PER_TOKEN_USD = 2e-6
+OLLAMA_NUM_BATCH_MAX = 4096
 MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
     "gpt-4o": 5e-6,
     "gpt-4o-mini": 2e-6,
@@ -545,6 +546,9 @@ class OllamaClient(BaseLLMClient):
         ollama_coding_num_ctx = int(_setting(self.config, "OLLAMA_CODING_NUM_CTX", 8192))
         if ollama_coding_num_ctx > 0:
             options["num_ctx"] = ollama_coding_num_ctx
+        ollama_num_batch = min(OLLAMA_NUM_BATCH_MAX, int(_setting(self.config, "OLLAMA_NUM_BATCH", 0)))
+        if ollama_num_batch > 0:
+            options["num_batch"] = ollama_num_batch
         if bool(_setting(self.config, "USE_GPU", False)):
             options["num_gpu"] = -1
 
