@@ -2468,3 +2468,86 @@ def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) 
     monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
     with pytest.raises(ValueError, match="yorumlayıcısı"):
         cm._build_sanitized_shell_args("echo ok", allow_shell_features=True)
+
+
+def test_autodetect_project_test_image_keeps_existing_explicit_legacy_image(manager, monkeypatch) -> None:
+    manager.docker_available = True
+    manager.docker_test_image = "sidar-ai:latest"
+    manager._docker_test_image_explicit = True
+    warned: list[str] = []
+    monkeypatch.setattr(manager, "_docker_image_exists", lambda image: image == "sidar-ai:latest")
+    monkeypatch.setattr(manager, "_warn_gpu_image_runtime_mismatch", warned.append)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai:latest"
+    assert warned == ["sidar-ai:latest"]
+
+
+def test_gpu_runtime_probe_caches_success_and_warns_for_gpu_image_without_runtime(
+    manager, monkeypatch, caplog
+) -> None:
+    calls: list[list[str]] = []
+
+    def _run(command, **_kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cm.subprocess, "run", _run)
+    monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/nvidia-smi")
+
+    assert manager._gpu_runtime_available() is True
+    assert manager._gpu_runtime_available() is True
+    assert calls == [["/usr/bin/nvidia-smi"]]
+
+    manager._gpu_runtime_available_cached = False
+    manager._warn_gpu_image_runtime_mismatch("sidar-gpu:latest")
+    assert "GPU image selected but CUDA runtime unavailable" in caplog.text
+
+
+def test_gpu_runtime_probe_handles_missing_binary(manager, monkeypatch) -> None:
+    monkeypatch.setattr(
+        cm.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("nvidia-smi")),
+    )
+
+    assert manager._gpu_runtime_available() is False
+
+
+def test_autodetect_project_test_image_keeps_missing_explicit_legacy_image_without_alias(
+    manager, monkeypatch
+) -> None:
+    manager.docker_available = True
+    manager.docker_test_image = "sidar-ai:latest"
+    manager._docker_test_image_explicit = True
+    monkeypatch.setattr(manager, "_docker_image_exists", lambda _image: False)
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar-ai:latest"
+
+
+def test_autodetect_project_test_image_warns_when_gpu_requested_without_runtime(
+    manager, monkeypatch, caplog
+) -> None:
+    manager.docker_available = True
+    manager._docker_test_image_explicit = False
+    manager.cfg.USE_GPU = True
+    monkeypatch.setattr(manager, "_gpu_runtime_available", lambda: False)
+    monkeypatch.setattr(manager, "_docker_image_exists", lambda _image: False)
+
+    manager._autodetect_project_test_image()
+
+    assert "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi" in caplog.text
+
+
+def test_gpu_runtime_probe_handles_unsuccessful_command_and_gpu_warning_skips_when_available(
+    manager, monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr(cm.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1))
+    assert manager._gpu_runtime_available() is False
+
+    manager._gpu_runtime_available_cached = True
+    manager._warn_gpu_image_runtime_mismatch("sidar-gpu:latest")
+    assert "GPU image selected but CUDA runtime unavailable" not in caplog.text

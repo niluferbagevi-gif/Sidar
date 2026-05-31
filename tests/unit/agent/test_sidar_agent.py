@@ -3272,3 +3272,36 @@ async def test_summarize_memory_logs_info_on_success(
 
     await agent._summarize_memory()
     info_mock.assert_called()
+
+
+async def test_get_nightly_distributed_lock_lazy_initializes_redis_manager(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=True,
+        REDIS_URL="redis://localhost:6379/0",
+        REDIS_MAX_CONNECTIONS=7,
+        DISTRIBUTED_AGENT_LOCK_TIMEOUT_MS=125,
+    )
+    created: list[tuple[str, int, float]] = []
+    lock = object()
+
+    def _from_url(url: str, *, max_connections: int, timeout_seconds: float):
+        created.append((url, max_connections, timeout_seconds))
+        return lock
+
+    monkeypatch.setattr(sidar_agent.RedisDistributedLock, "from_url", _from_url)
+
+    assert agent._get_nightly_distributed_lock() is lock
+    assert agent._get_nightly_distributed_lock() is lock
+    assert created == [("redis://localhost:6379/0", 7, 0.125)]
+
+
+async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(sidar_agent_factory) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_DISTRIBUTED_AGENT_LOCKS=True, REDIS_URL="")
+
+    assert agent._get_nightly_distributed_lock() is None

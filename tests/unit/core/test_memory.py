@@ -36,6 +36,9 @@ class FakeDB:
     async def get_session_messages(self, session_id):
         return list(self.messages.get(session_id, []))
 
+    async def count_sessions_total(self):
+        return len(self.sessions)
+
     async def create_session(self, user_id, title):
         self._seq += 1
         sid = f"s{self._seq}"
@@ -523,5 +526,19 @@ def test_set_active_user_skips_ensure_user_id_when_not_callable(mem):
         await mem.set_active_user("u-no-ensure")
         assert mem.active_user_id == "u-no-ensure"
         assert mem.active_session_id is not None
+
+    asyncio.run(scenario())
+
+
+def test_count_sessions_any_user_uses_active_user_or_global_total(mem) -> None:
+    async def scenario() -> None:
+        await mem.initialize()
+        await mem.db.create_session("u1", "first")
+        await mem.db.create_session("u2", "second")
+
+        assert await mem.count_sessions_any_user() == 2
+
+        mem.active_user_id = "u1"
+        assert await mem.count_sessions_any_user() == 1
 
     asyncio.run(scenario())
