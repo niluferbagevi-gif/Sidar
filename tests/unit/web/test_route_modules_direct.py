@@ -14,7 +14,7 @@ from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.hitl import build_hitl_router
 from web.routes.metrics import build_metrics_router
-from web.routes.orchestration import build_orchestration_router
+from web.routes.orchestration import _parse_payload, build_orchestration_router
 from web.routes.project_ops import build_project_ops_router
 from web.routes.rag import build_rag_router
 
@@ -252,6 +252,31 @@ def test_metrics_router_json_direct() -> None:
     assert res.json()["version"] == "x"
 
 
+def test_orchestration_parse_payload_supports_constructor_and_passthrough() -> None:
+    class _Payload:
+        def __init__(self, **kwargs):
+            self.value = kwargs["value"]
+
+    payload = _parse_payload(_Payload, {"value": "ok"})
+
+    assert payload.value == "ok"
+    marker = object()
+    assert _parse_payload(_Payload, marker) is marker
+
+
+def test_orchestration_router_requires_request_model() -> None:
+    with pytest.raises(ValueError, match="swarm_execute_request_model"):
+        build_orchestration_router(
+            require_admin_user=_admin_user,
+            get_request_user=_admin_user,
+            resolve_agent_instance=lambda: _async_value(None),
+            await_if_needed=lambda x: _async_value(x),
+            cfg=SimpleNamespace(),
+            swarm_orchestrator_cls=SimpleNamespace,
+            swarm_task_cls=SimpleNamespace,
+        )
+
+
 def test_orchestration_router_clear_direct() -> None:
     agent = SimpleNamespace(memory=SimpleNamespace(clear=lambda: None))
     router = build_orchestration_router(
@@ -383,8 +408,12 @@ def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.Monk
     assert client.get("/api/plugin-marketplace/catalog").json() == {
         "items": [{"enabled": True, "id": "p1"}]
     }
-    assert client.post("/api/plugin-marketplace/install", json={"plugin_id": "p1"}).status_code == 200
-    assert client.post("/api/plugin-marketplace/reload", json={"plugin_id": "p1"}).status_code == 200
+    assert (
+        client.post("/api/plugin-marketplace/install", json={"plugin_id": "p1"}).status_code == 200
+    )
+    assert (
+        client.post("/api/plugin-marketplace/reload", json={"plugin_id": "p1"}).status_code == 200
+    )
     assert installed == ["p1", "p1"]
     assert client.delete("/api/plugin-marketplace/install/p1").json() == {"removed": "p1"}
 

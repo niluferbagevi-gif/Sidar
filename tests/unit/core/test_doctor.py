@@ -147,6 +147,76 @@ def test_status_and_secret_helpers_cover_pass_warn_fail():
     assert doctor._is_weak_secret("x" * 24) is False
 
 
+def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
+    assert doctor.check_prometheus_runtime().status == "pass"
+
+    assert doctor._redact_url("postgresql://sidar@localhost/sidar") == (
+        "postgresql://sidar@localhost/sidar"
+    )
+    redacted = doctor._redact_exception_text(
+        RuntimeError("password secret-value in postgresql://sidar:secret-value@localhost/sidar"),
+        database_url="postgresql://sidar:secret-value@localhost/sidar",
+    )
+    assert "secret-value" not in redacted
+
+    monkeypatch.setenv("FEATURE_FLAG", "off")
+    assert doctor._get_bool_env("FEATURE_FLAG", True) is False
+    invalid_json = tmp_path / "invalid.json"
+    invalid_json.write_text("[", encoding="utf-8")
+    assert doctor._load_json_object(invalid_json) == {}
+
+
+@pytest.mark.parametrize(
+    ("error", "category"),
+    [
+        (RuntimeError("role sidar does not exist"), "missing_role_or_database"),
+        (TimeoutError("timed out"), "timeout"),
+        (ConnectionRefusedError("connection refused"), "connection"),
+        (RuntimeError("unexpected failure"), "unknown"),
+    ],
+)
+def test_postgres_connectivity_failure_guidance_classifies_errors(error, category):
+    message, details = doctor._postgres_connectivity_failure_guidance(error)
+
+    assert message
+    assert details["failure_category"] == category
+
+
+def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env.test"
+    env_file.write_text(
+        "\n# comment\nexport DATABASE_URL='postgresql://sidar:test@localhost/sidar'\n"
+        "INVALID KEY=value\nEMPTY_KEY = ignored\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:test@localhost/sidar")
+
+    values = doctor._parse_env_file_values(env_file)
+    assignments = doctor._read_env_file_assignments(env_file)
+
+    assert values == {
+        "DATABASE_URL": "postgresql://sidar:test@localhost/sidar",
+        "EMPTY_KEY": "ignored",
+    }
+    assert assignments["DATABASE_URL"] == "postgresql://sidar:test@localhost/sidar"
+
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "get_dotenv_load_report",
+        lambda: [
+            {"loaded": False, "path": str(env_file)},
+            {"loaded": True, "path": str(env_file), "label": "profile", "override": True},
+        ],
+    )
+    report = doctor._dotenv_source_report(("DATABASE_URL", "POSTGRES_DB"))
+
+    assert report["sources"]["DATABASE_URL"]["label"] == "profile"
+    assert report["definitions"]["POSTGRES_DB"] == []
+
+
 def test_uv_check_reports_missing_and_lock_failure(monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     missing = doctor.check_uv()
@@ -466,6 +536,63 @@ def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch
     assert "pgvector extension is not installed" in check.message
 
 
+def test_pgvector_ready_warns_when_database_url_is_missing(monkeypatch):
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: ("", "", False, False))
+
+    check = doctor.check_pgvector_ready()
+
+    assert check.status == "warn"
+    assert check.message == "DATABASE_URL could not be resolved"
+
+
+def test_pgvector_ready_warns_for_non_postgres_url(monkeypatch):
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(
+        doctor, "_resolved_database_urls", lambda: ("sqlite:///sidar.db", "", True, False)
+    )
+
+    check = doctor.check_pgvector_ready()
+
+    assert check.status == "warn"
+    assert "DATABASE_URL is not PostgreSQL" in check.message
+
+
+def test_pgvector_ready_reports_probe_errors_without_leaking_credentials(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+
+    def _raise_probe_error(awaitable):
+        awaitable.close()
+        raise RuntimeError(f"cannot connect to {database_url}")
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _raise_probe_error)
+
+    check = doctor.check_pgvector_ready()
+
+    assert check.status == "warn"
+    assert check.details["error_type"] == "RuntimeError"
+    assert "secret-value" not in check.details["error"]
+
+
+def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+
+    def _successful_probe(awaitable):
+        awaitable.close()
+        return {"pgvector_extension_installed": True}
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _successful_probe)
+
+    check = doctor.check_pgvector_ready()
+
+    assert check.status == "pass"
+    assert check.message == "pgvector extension is installed"
+
+
 def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
@@ -591,6 +718,132 @@ def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
     assert "index file is missing" in check.message
 
 
+def test_rag_index_ready_passes_with_documents_and_marks_empty_entity_memory(monkeypatch, tmp_path):
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {"rag_dir": str(rag_dir)},
+            "blockers": [],
+            "warnings": [],
+            "document_count": 1,
+            "entity_memory_empty": True,
+        },
+    )
+
+    check = doctor.check_rag_index_ready()
+
+    assert check.status == "pass"
+    assert check.message == "RAG index readiness looks healthy"
+    assert check.details["graphrag_entity_memory_warning"] is True
+    assert check.details["auto_fix"] == ""
+
+
+def test_graphrag_entity_memory_ready_reports_disabled_graph_and_store_mismatch(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {
+                "graph_rag_enabled": False,
+                "rag_dir": "relative-rag",
+                "entity_node_count": 1,
+            },
+            "warnings": [],
+            "entity_memory_empty": False,
+        },
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_query_entity_graph_counts_from_store",
+        lambda rag_dir: {"ok": True, "entity_node_count": 2, "entity_edge_count": 1},
+    )
+
+    check = doctor.check_graphrag_entity_memory_ready()
+
+    assert check.status == "warn"
+    assert check.message == "GraphRAG is disabled by configuration"
+    assert check.details["entity_count_mismatch"] is True
+    assert check.details["entity_node_count_store"] == 2
+
+
+def test_graphrag_entity_memory_ready_warns_when_store_probe_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {
+            "details": {
+                "graph_rag_enabled": True,
+                "rag_dir": str(tmp_path),
+                "entity_node_count": 1,
+            },
+            "warnings": [],
+            "entity_memory_empty": False,
+        },
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_query_entity_graph_counts_from_store",
+        lambda rag_dir: {"ok": True, "entity_node_count": 0, "entity_edge_count": 0},
+    )
+
+    check = doctor.check_graphrag_entity_memory_ready()
+
+    assert check.status == "warn"
+    assert "empty after store probe" in check.message
+    assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag --metadata-only"
+
+
+def test_rag_readiness_aggregate_reports_fail_and_healthy_states(monkeypatch):
+    monkeypatch.setattr(
+        doctor,
+        "_rag_readiness_state",
+        lambda: {"details": {"document_count": 1, "index_exists": True}},
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_index_ready",
+        lambda: DoctorCheck("rag_index_ready", "fail", "bad", {"recommended_commands": []}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: DoctorCheck(
+            "graphrag_entity_memory_ready", "pass", "ok", {"recommended_commands": []}
+        ),
+    )
+
+    failed = doctor.check_rag_readiness()
+
+    assert failed.status == "fail"
+    assert failed.message == "rag_index_ready=fail; graphrag_entity_memory_ready=pass"
+
+
+def test_environment_profile_passes_without_explicit_profile(monkeypatch):
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+
+    check = doctor.check_environment_profile()
+
+    assert check.status == "pass"
+    assert "profile is not set" in check.message
+
+
+def test_environment_profile_warns_without_profile_or_template(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
+    monkeypatch.setenv("SIDAR_ENV", "staging")
+
+    check = doctor.check_environment_profile()
+
+    assert check.status == "warn"
+    assert "no .env.staging or .env.staging.example" in check.message
+
+
 def test_environment_profile_warns_when_development_file_is_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
@@ -660,6 +913,42 @@ def test_docker_image_exists_local_uses_resolved_binary(monkeypatch):
     assert doctor._docker_image_exists_local("sidar:latest") is True
     assert captured["command"] == ["/usr/bin/docker", "image", "inspect", "sidar:latest"]
     assert captured["kwargs"]["cwd"] == str(doctor.BASE_DIR)
+
+
+def test_docker_image_exists_local_handles_empty_image_and_runtime_error(monkeypatch):
+    assert doctor._docker_image_exists_local("") is False
+
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(
+        doctor.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("boom"))
+    )
+
+    assert doctor._docker_image_exists_local("sidar:latest") is False
+
+
+def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "other-model")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "full")
+    monkeypatch.setattr(Config, "USE_GPU", False)
+    monkeypatch.setattr(Config, "DOCKER_IMAGE", "sidar-gpu:latest")
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.36)
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "warn"
+    assert "VRAM fractions are very high" in check.message
+    assert "differs from the Sidar standard" in check.message
+    assert "runtime is CPU mode" in check.message
+    assert "access level is not sandbox" in check.message
+    assert "local Docker daemon cannot find" in check.details["docker_test_image_hint"]
+    assert "docker build -t sidar:latest ." in check.details["recommended_commands"]
 
 
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
