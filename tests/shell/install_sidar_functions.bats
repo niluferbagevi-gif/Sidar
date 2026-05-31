@@ -31,6 +31,92 @@ run_installer_function() {
   [ "$status" -eq 0 ]
 }
 
+@test "Playwright Ubuntu override helpers detect Ubuntu 25+ and normalize the synthetic os-release" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/ubuntu26" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/ubuntu24" <<EOF
+ID=ubuntu
+VERSION_ID="24.04"
+EOF
+    cat > "$tmpdir/debian26" <<EOF
+ID=debian
+VERSION_ID="26"
+EOF
+
+    is_playwright_ubuntu_override_recommended "$tmpdir/ubuntu26"
+    ! is_playwright_ubuntu_override_recommended "$tmpdir/ubuntu24"
+    ! is_playwright_ubuntu_override_recommended "$tmpdir/debian26"
+    prepare_playwright_ubuntu_override_file "$tmpdir/ubuntu26" "$tmpdir/override"
+    grep -q "^ID=ubuntu$" "$tmpdir/override"
+    grep -q "^VERSION_ID=\\\"24.04\\\"$" "$tmpdir/override"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_playwright_browsers starts with the OS override on Ubuntu 25+" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "\${OS_RELEASE_PATH:-}" >> "$tmpdir/python.log"
+EOF
+    chmod +x "$tmpdir/bin/python"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
+    sed -n "2p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
+  [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
+  [[ "$output" != *"--with-deps"* ]]
+}
+
+@test "install_playwright_browsers preserves the standard with-deps path on Ubuntu 24.04" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="24.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "\${OS_RELEASE_PATH:-}" >> "$tmpdir/python.log"
+EOF
+    chmod +x "$tmpdir/bin/python"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    sed -n "2p" "$tmpdir/python.log" | grep -q "^-m playwright install --with-deps chromium||$tmpdir/os-release$"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"yalnızca Chromium (--with-deps) kuruluyor"* ]]
+  [[ "$output" == *"Playwright kurulumu tamamlandı (chromium, --with-deps)"* ]]
+  [[ "$output" != *"proaktif OS override"* ]]
+}
+
 @test "resolve_runtime_mode_choice normalizes local/docker aliases and falls back to ask" {
   run_installer_function '
     [[ "$(resolve_runtime_mode_choice 1)" == "local" ]]

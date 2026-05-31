@@ -3647,6 +3647,51 @@ should_install_playwright_browsers() {
     esac
 }
 
+is_playwright_ubuntu_override_recommended() {
+    local os_release_file="${1:-/etc/os-release}"
+    local distro_id=""
+    local distro_like=""
+    local version_id=""
+    local key value
+
+    [[ -r "$os_release_file" ]] || return 1
+    while IFS='=' read -r key value; do
+        value="${value%\"}"
+        value="${value#\"}"
+        case "$key" in
+            ID) distro_id="$value" ;;
+            ID_LIKE) distro_like="$value" ;;
+            VERSION_ID) version_id="$value" ;;
+        esac
+    done < "$os_release_file"
+
+    [[ " ${distro_id,,} ${distro_like,,} " == *"ubuntu"* ]] || return 1
+    local ubuntu_major="${version_id%%.*}"
+    [[ "$ubuntu_major" =~ ^[0-9]+$ ]] || return 1
+    (( ubuntu_major >= 25 ))
+}
+
+prepare_playwright_ubuntu_override_file() {
+    local source_os_release="${1:-/etc/os-release}"
+    local target_os_release="$2"
+
+    if [[ -r "$source_os_release" ]]; then
+        cp "$source_os_release" "$target_os_release"
+    fi
+    if [[ -s "$target_os_release" ]]; then
+        if grep -q '^VERSION_ID=' "$target_os_release"; then
+            sed_inplace 's/^VERSION_ID=.*/VERSION_ID="24.04"/' "$target_os_release"
+        else
+            echo 'VERSION_ID="24.04"' >> "$target_os_release"
+        fi
+    else
+        cat >"$target_os_release" <<'EOF'
+ID=ubuntu
+VERSION_ID="24.04"
+EOF
+    fi
+}
+
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
@@ -3661,6 +3706,8 @@ install_playwright_browsers() {
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
         local _pw_install_log; _pw_install_log=$(mktemp)
         local _pw_os_override_file=""
+        local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
+        local _pw_install_completed=false
 
         _is_playwright_os_mismatch_error() {
             local _output="${1:-}"
@@ -3681,76 +3728,88 @@ install_playwright_browsers() {
             fi
         }
 
-        info "Playwright headless optimizasyonu: yalnızca Chromium (--with-deps) kuruluyor (timeout=${pw_timeout_ms}ms)..."
-        if _try_playwright_install with-deps; then
-            grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                "$_pw_install_log" || true
-            ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
-        else
-            local _pw_install_output
-            _pw_install_output="$(cat "$_pw_install_log")"
-            cat "$_pw_install_log" >&2
+        _try_playwright_ubuntu_override_install() {
+            if [[ -n "$_pw_os_override_file" ]]; then
+                rm -f "$_pw_os_override_file"
+            fi
+            _pw_os_override_file="$(mktemp)"
+            prepare_playwright_ubuntu_override_file "$_pw_os_release_path" "$_pw_os_override_file"
+            env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" OS_RELEASE_PATH="$_pw_os_override_file" \
+                "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
+        }
 
-            if _is_playwright_os_mismatch_error "$_pw_install_output"; then
-                warn "Playwright --with-deps bu işletim sisteminde desteklenmiyor. Fallback: yalnızca Chromium binary kurulumu deneniyor..."
-                if _try_playwright_install binary; then
-                    grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                        "$_pw_install_log" || true
-                    ok "Playwright kurulumu fallback ile tamamlandı (chromium, deps yok)."
-                else
-                    local _pw_binary_output
-                    _pw_binary_output="$(cat "$_pw_install_log")"
-                    cat "$_pw_install_log" >&2
-                    if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
-                        warn "Playwright binary fallback da OS uyumsuzluğu nedeniyle başarısız. Playwright >=1.55 upgrade fallback deneniyor..."
-                        if uv add --dev "playwright>=1.55,<2.0"; then
-                            if _try_playwright_install binary; then
-                                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                                    "$_pw_install_log" || true
-                                ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
-                            else
-                                cat "$_pw_install_log" >&2
-                                warn "Playwright upgrade fallback sonrası kurulum yine başarısız. Son çare: OS override fallback deneniyor..."
-                                _pw_os_override_file="$(mktemp)"
-                                if [[ -r /etc/os-release ]]; then
-                                    cp /etc/os-release "$_pw_os_override_file"
-                                fi
-                                if [[ -s "$_pw_os_override_file" ]]; then
-                                    if grep -q '^VERSION_ID=' "$_pw_os_override_file"; then
-                                        sed_inplace 's/^VERSION_ID=.*/VERSION_ID="24.04"/' "$_pw_os_override_file"
-                                    else
-                                        echo 'VERSION_ID="24.04"' >> "$_pw_os_override_file"
-                                    fi
-                                else
-                                    cat >"$_pw_os_override_file" <<'EOF'
-ID=ubuntu
-VERSION_ID="24.04"
-EOF
-                                fi
-                                if env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" OS_RELEASE_PATH="$_pw_os_override_file" \
-                                    "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1; then
+        if is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
+            local _pw_ubuntu_version
+            _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
+            info "Ubuntu ${_pw_ubuntu_version} Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
+            if _try_playwright_ubuntu_override_install; then
+                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                    "$_pw_install_log" || true
+                ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium)."
+                _pw_install_completed=true
+            else
+                cat "$_pw_install_log" >&2
+                warn "Playwright proaktif OS override kurulumu başarısız oldu. Standart fallback zinciri deneniyor..."
+            fi
+        fi
+
+        if [[ "$_pw_install_completed" != true ]]; then
+            info "Playwright headless optimizasyonu: yalnızca Chromium (--with-deps) kuruluyor (timeout=${pw_timeout_ms}ms)..."
+            if _try_playwright_install with-deps; then
+                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                    "$_pw_install_log" || true
+                ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
+            else
+                local _pw_install_output
+                _pw_install_output="$(cat "$_pw_install_log")"
+                cat "$_pw_install_log" >&2
+
+                if _is_playwright_os_mismatch_error "$_pw_install_output"; then
+                    warn "Playwright --with-deps bu işletim sisteminde desteklenmiyor. Fallback: yalnızca Chromium binary kurulumu deneniyor..."
+                    if _try_playwright_install binary; then
+                        grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                            "$_pw_install_log" || true
+                        ok "Playwright kurulumu fallback ile tamamlandı (chromium, deps yok)."
+                    else
+                        local _pw_binary_output
+                        _pw_binary_output="$(cat "$_pw_install_log")"
+                        cat "$_pw_install_log" >&2
+                        if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
+                            warn "Playwright binary fallback da OS uyumsuzluğu nedeniyle başarısız. Playwright >=1.55 upgrade fallback deneniyor..."
+                            if uv add --dev "playwright>=1.55,<2.0"; then
+                                if _try_playwright_install binary; then
                                     grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                                         "$_pw_install_log" || true
-                                    ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
+                                    ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
                                 else
                                     cat "$_pw_install_log" >&2
-                                    warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                                    warn "Playwright upgrade fallback sonrası kurulum yine başarısız. Son çare: OS override fallback deneniyor..."
+                                    if _try_playwright_ubuntu_override_install; then
+                                        grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                                            "$_pw_install_log" || true
+                                        ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
+                                    else
+                                        cat "$_pw_install_log" >&2
+                                        warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                                    fi
                                 fi
+                            else
+                                warn "Playwright upgrade fallback (uv add --dev \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
                             fi
                         else
-                            warn "Playwright upgrade fallback (uv add --dev \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
+                            warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                         fi
-                    else
-                        warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
                     fi
+                else
+                    warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
                 fi
-            else
-                warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
             fi
         fi
 
         rm -f "$_pw_install_log"
-        [[ -n "$_pw_os_override_file" ]] && rm -f "$_pw_os_override_file"
+        if [[ -n "$_pw_os_override_file" ]]; then
+            rm -f "$_pw_os_override_file"
+        fi
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
