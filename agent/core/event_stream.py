@@ -528,7 +528,7 @@ class AgentEventBus:
         task_loop = get_loop() if callable(get_loop) else None
         try:
             current_loop = asyncio.get_running_loop()
-        except RuntimeError:
+        except RuntimeError:  # pragma: no cover - coroutine execution always has a running loop
             current_loop = None
 
         if callable(cancel):

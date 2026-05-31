@@ -46,3 +46,10 @@ def test_sidar_uuid_bind_and_result_values_are_portable() -> None:
 
 def test_pgvector_metadata_type_has_expected_column_spec() -> None:
     assert PGVector384().get_col_spec() == "vector(384)"
+
+
+def test_sidar_uuid_none_values_remain_none_for_all_dialects() -> None:
+    uuid_type = SidarUUID()
+
+    assert uuid_type.process_bind_param(None, sqlite.dialect()) is None
+    assert uuid_type.process_result_value(None, sqlite.dialect()) is None

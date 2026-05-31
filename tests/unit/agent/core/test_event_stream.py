@@ -2029,3 +2029,52 @@ async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_unde
 
     bus._dlq_persist_lock = _DrainingLock()
     await bus._flush_dead_letter_persist_queue()
+
+
+def test_cancel_background_task_handles_foreign_open_and_closed_loops() -> None:
+    bus = AgentEventBus()
+
+    class _ForeignTask:
+        def __init__(self, loop) -> None:
+            self.loop = loop
+            self.cancel_called = False
+
+        def done(self) -> bool:
+            return False
+
+        def get_loop(self):
+            return self.loop
+
+        def cancel(self) -> None:
+            self.cancel_called = True
+
+    open_loop = asyncio.new_event_loop()
+    scheduled = []
+    open_loop.call_soon_threadsafe = lambda callback: scheduled.append(callback)  # type: ignore[method-assign]
+    open_task = _ForeignTask(open_loop)
+    asyncio.run(bus._cancel_background_task(open_task))  # type: ignore[arg-type]
+    assert scheduled == [open_task.cancel]
+    assert open_task.cancel_called is False
+    scheduled[0]()
+    assert open_task.cancel_called is True
+    open_loop.close()
+
+    closed_loop = asyncio.new_event_loop()
+    closed_loop.close()
+    closed_task = _ForeignTask(closed_loop)
+    asyncio.run(bus._cancel_background_task(closed_task))  # type: ignore[arg-type]
+    assert closed_task.cancel_called is True
+
+
+def test_reset_runtime_state_swallows_pending_dlq_flush_failure() -> None:
+    bus = AgentEventBus()
+    bus._dlq_persist_pending = [{"event": "pending"}]
+
+    async def _raise_flush_error() -> None:
+        raise RuntimeError("disk unavailable")
+
+    bus._flush_dead_letter_persist_queue = _raise_flush_error  # type: ignore[method-assign]
+
+    asyncio.run(bus.reset_runtime_state())
+
+    assert bus._dlq_persist_pending == [{"event": "pending"}]

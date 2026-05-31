@@ -953,3 +953,18 @@ async def test_poyraz_agent_error_flows(
 
     with pytest.raises(RuntimeError, match="corrupted video stream"):
         await agent._tool_ingest_video_insights("https://video.example/broken.mp4|||analiz")
+
+
+def test_search_docs_falls_back_when_graph_response_is_not_a_tuple(poyraz_module, fake_cfg):
+    class ScalarGraphDocStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def search(self, query, _filters, mode, session):
+            _ = (query, session)
+            if mode == "graph":
+                return "graph response without status tuple"
+            return True, "bm25 fallback"
+
+    agent = _agent(poyraz_module, fake_cfg, docstore=ScalarGraphDocStore)
+    assert asyncio.run(agent._tool_search_docs("k")) == "bm25 fallback"

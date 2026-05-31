@@ -1961,3 +1961,9 @@ async def test_target_behavior_handles_non_name_assignments_and_pytest_raises():
         )
         == ""
     )
+
+
+async def test_coverage_exclude_target_ignores_blank_target_and_rules() -> None:
+    assert CoverageAgent._is_excluded_coverage_target("   ", ["main.py"]) is False
+    assert CoverageAgent._is_excluded_coverage_target("src/domain.py", ["  ", None]) is False
+    assert CoverageAgent._is_excluded_coverage_target("src/main.py", ["main.py"]) is True

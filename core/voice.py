@@ -29,7 +29,7 @@ class _BaseTTSAdapter:
         return True
 
     async def synthesize(self, text: str, *, voice: str = "") -> dict[str, Any]:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover - abstract adapter contract
 
 
 class _MockTTSAdapter(_BaseTTSAdapter):

@@ -3305,3 +3305,35 @@ async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(sidar_a
     _override_cfg(agent, ENABLE_DISTRIBUTED_AGENT_LOCKS=True, REDIS_URL="")
 
     assert agent._get_nightly_distributed_lock() is None
+
+
+async def test_optional_distributed_lock_failures_allow_nightly_maintenance_fallback(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, DISTRIBUTED_AGENT_LOCK_REQUIRED=False)
+
+    agent._nightly_distributed_lock = None
+    lease, skip_reason = await agent._acquire_nightly_distributed_lease()
+    assert lease is None
+    assert skip_reason is None
+
+    agent._nightly_distributed_lock = types.SimpleNamespace(
+        acquire=AsyncMock(side_effect=RuntimeError("redis-down"))
+    )
+    lease, skip_reason = await agent._acquire_nightly_distributed_lease()
+    assert lease is None
+    assert skip_reason is None
+
+
+async def test_release_nightly_distributed_lease_swallows_backend_failure(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    lease = sidar_agent.DistributedLockLease(key="key", token="token", ttl_ms=60_000)
+    lock = types.SimpleNamespace(release=AsyncMock(side_effect=RuntimeError("redis-down")))
+    agent._nightly_distributed_lock = lock
+
+    await agent._release_nightly_distributed_lease(lease)
+
+    lock.release.assert_awaited_once_with(lease)
