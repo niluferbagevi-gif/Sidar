@@ -296,7 +296,7 @@ async def _first_token_seconds(prompt: str, http: httpx.AsyncClient) -> float:
     return 0.0
 
 
-@pytest.mark.benchmark
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
 def test_gpu_single_inference_latency(benchmark) -> None:
@@ -351,7 +351,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
         assert cv < 0.30, f"Inference varyansı çok yüksek: CV={cv:.2%}"
 
 
-@pytest.mark.benchmark
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
 def test_gpu_concurrent_throughput(benchmark) -> None:
@@ -418,7 +418,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
     assert all(isinstance(r, str) and r.strip() for r in results), "Bazı yanıtlar boş döndü."
 
 
-@pytest.mark.benchmark
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
 def test_gpu_vram_peak_under_load(benchmark) -> None:
@@ -506,7 +506,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
     benchmark.extra_info["vram_peak_mean_mib"] = round(sum(observed_peaks) / len(observed_peaks), 3)
 
 
-@pytest.mark.benchmark
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
 def test_gpu_tokens_per_second(benchmark) -> None:
@@ -578,7 +578,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     ), f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
 
 
-@pytest.mark.benchmark
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
 def test_gpu_time_to_first_token(benchmark) -> None:
