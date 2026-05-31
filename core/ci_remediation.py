@@ -200,7 +200,9 @@ def _is_allowed_validation_command(command: str) -> bool:
     if _RUFF_UNSAFE_FIX_ARG in parts:
         has_inline_select = any(token.startswith("--select=") for token in parts)
         has_split_select = any(
-            token == "--select" and idx + 1 < len(parts) and bool(parts[idx + 1].strip())
+            token == "--select"  # CLI flag name, not a credential.  # nosec B105
+            and idx + 1 < len(parts)
+            and bool(parts[idx + 1].strip())
             for idx, token in enumerate(parts)
         )
         if not (has_inline_select or has_split_select):
@@ -643,7 +645,7 @@ def build_local_failure_context(
         f"{normalized_source} yerel kalite kapısında hata bulundu "
         f"({len(failure_lines)} kayıt, {len(suspected_targets)} dosya)."
         if has_actionable_failure
-        else (f"{normalized_source} yerel kalite kapısı temiz görünüyor " f"(0 kayıt, 0 dosya).")
+        else (f"{normalized_source} yerel kalite kapısı temiz görünüyor (0 kayıt, 0 dosya).")
     )
     local_scope_limit = max(
         1,

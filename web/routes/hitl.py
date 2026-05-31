@@ -93,7 +93,7 @@ def build_hitl_router(
     async def websocket_hitl(websocket: WebSocket) -> Any:
         proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
         auth_header = websocket.headers.get("authorization", "").strip()
-        bearer_token = ""
+        bearer_token = ""  # Empty sentinel; populated from Authorization header.  # nosec B105
         if auth_header.lower().startswith("bearer "):
             bearer_token = auth_header[7:].strip()
         header_token = proto_header or bearer_token

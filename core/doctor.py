@@ -789,7 +789,7 @@ def _rag_readiness_state() -> dict[str, Any]:
     if vector_backend == "pgvector":
         database_url = os.getenv("DATABASE_URL", "").strip()
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
-        parsed_database_password = ""
+        parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
         if database_url:
             parsed_database_password = unquote(str(urlparse(database_url).password or ""))
         password_matches_database_url = bool(postgres_password) and (
@@ -1203,9 +1203,12 @@ def _docker_image_exists_local(image: str) -> bool:
     safe_image = str(image or "").strip()
     if not safe_image:
         return False
+    docker_bin = shutil.which("docker")
+    if not docker_bin:
+        return False
     try:
-        result = subprocess.run(  # nosec B603
-            ["docker", "image", "inspect", safe_image],
+        result = subprocess.run(  # Executable path and argument list are controlled.  # nosec B603
+            [docker_bin, "image", "inspect", safe_image],
             capture_output=True,
             text=True,
             timeout=5,

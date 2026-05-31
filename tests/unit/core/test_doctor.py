@@ -640,6 +640,28 @@ def test_environment_profile_warns_when_development_database_is_not_isolated(mon
     assert "--force" in check.details["recommended_commands"][0]
 
 
+def test_docker_image_exists_local_returns_false_without_docker(monkeypatch):
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+
+    assert doctor._docker_image_exists_local("sidar:latest") is False
+
+
+def test_docker_image_exists_local_uses_resolved_binary(monkeypatch):
+    captured = {}
+
+    def _run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(doctor.subprocess, "run", _run)
+
+    assert doctor._docker_image_exists_local("sidar:latest") is True
+    assert captured["command"] == ["/usr/bin/docker", "image", "inspect", "sidar:latest"]
+    assert captured["kwargs"]["cwd"] == str(doctor.BASE_DIR)
+
+
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
     from config import Config
 
