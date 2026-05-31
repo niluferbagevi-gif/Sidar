@@ -67,13 +67,18 @@ tek seferlik/geçici dosya adlarını referans almaz.
 ## Performance benchmark baseline yönetimi
 
 - `tests/performance` altında bulunan benchmark testleri için düzenli baseline kaydı alın.
-- Önerilen komut:
-  - `pytest tests/performance/ --benchmark-save=baseline_master`
-- Yeni performans değişikliklerinde karşılaştırma için:
-  - `pytest tests/performance/ --benchmark-compare=baseline_master`
-- İsimlendirme önerisi:
-  - Ana dal için `baseline_master`
-  - Sürüm/sprint için `baseline_<release_tag>` (ör. `baseline_v5_2_0`)
+- Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
+  `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
+  bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır.
+- Yeni baseline üretmek için önerilen komut:
+  - `uv run pytest tests/performance/ --benchmark-save=baseline`
+- Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
+  `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
+  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin.
+- Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
+  GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
+- Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
+  kullanın (ör. `baseline_v5_2_0`).
 
 ### StdDev odaklı izleme (VRAM + çoklu kullanıcı iş yükü)
 
@@ -150,6 +155,6 @@ tek seferlik/geçici dosya adlarını referans almaz.
 ### Eşiği sıkılaştırma örnekleri
 
 - TTFT eşiğini 100ms'e çekmek için:
-  - `GPU_BENCH_TTFT_BUDGET=0.1 pytest tests/performance/test_gpu_benchmark.py -k test_gpu_time_to_first_token`
+  - `GPU_BENCH_TTFT_BUDGET=0.1 uv run pytest tests/performance/test_gpu_benchmark.py -k test_gpu_time_to_first_token`
 - Token/sn taban çizgisini yükseltmek için:
-  - `GPU_BENCH_MIN_TOKENS_PER_SEC=10 pytest tests/performance/test_gpu_benchmark.py -k test_gpu_tokens_per_second`
+  - `GPU_BENCH_MIN_TOKENS_PER_SEC=10 uv run pytest tests/performance/test_gpu_benchmark.py -k test_gpu_tokens_per_second`

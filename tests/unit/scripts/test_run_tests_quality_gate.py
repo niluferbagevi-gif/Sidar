@@ -93,6 +93,20 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
+def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+
+    assert "uv run pytest tests/performance/ --benchmark-save=baseline" in notes
+    assert "commit_info.dirty" in notes
+    assert "version-sort" in notes
+    assert "commit_info.dirty" in readme
+    assert "version-sort" in readme
+    assert "takipli *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer" in env_advanced
+    assert "mevcut 0004_baseline.json" not in env_advanced
+
+
 def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> (
     None
 ):

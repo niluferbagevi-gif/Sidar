@@ -770,7 +770,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
 > ilk koşu `--benchmark-save=baseline` ile baseline üretir ve `--benchmark-compare` eklemeden
 > tamamlanır; baseline yokluğunu fail etmek isteyen sıkı CI hatları
-> `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Gecikme hassas akışlar için
+> `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Yeni `*_baseline.json` artifact'ini commit etmeden
+> önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
+> kalite kapısı takipli `*_baseline.json` kayıtları içinden version-sort ile en güncel eşleşmeyi kullanır.
+> Gecikme hassas akışlar için
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`
 > komutlarından biriyle regresyon takibi yapın.
