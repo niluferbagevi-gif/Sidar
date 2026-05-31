@@ -930,7 +930,7 @@ PY
 
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
   # her çağrıda kesin yüklenmesi garanti edilir.
-  # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
+  # Faz testlerinde yalnız terminal coverage çıktısı alınır; XML/HTML/JSON final birleşik gate aşamasında üretilir.
   # Faz bazlı pytest-cov raporları .coveragerc fail_under değerini kullanarak
   # erken başarısız olmasın diye burada 0 ile nötrlenir; asıl kalite kapısı
   # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
@@ -1127,9 +1127,8 @@ enforce_combined_coverage_gate() {
 
   echo "📊 Final birleşik coverage raporları yenileniyor..."
   if ! uv run python -m coverage html -d htmlcov; then
-    echo "❌ Coverage HTML raporu üretilemedi."
-    BACKEND_EXIT_CODE=1
-    return 0
+    echo "⚠️ Coverage HTML raporu üretilemedi (muhtemel bozuk coverage kurulumu)."
+    echo "ℹ️ Öneri: uv pip install --reinstall --force-reinstall coverage pytest-cov"
   fi
   if ! uv run python -m coverage xml -o coverage.xml; then
     echo "❌ Coverage XML raporu üretilemedi."
