@@ -11,7 +11,6 @@ import jwt
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from starlette.requests import Request
 
@@ -24,6 +23,13 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
 import web_server
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
+
+
+def _test_client(*args, **kwargs):
+    """Import TestClient lazily so unrelated tests remain collectable without its extras."""
+    from fastapi.testclient import TestClient
+
+    return TestClient(*args, **kwargs)
 
 
 class _DummyWebSocket:
@@ -896,7 +902,7 @@ def test_register_exception_handlers_http_and_unhandled():
     async def _boom_exception():
         raise RuntimeError("unexpected")
 
-    client = TestClient(app, raise_server_exceptions=False)
+    client = _test_client(app, raise_server_exceptions=False)
 
     http_res = client.get("/boom-http")
     assert http_res.status_code == 418
@@ -10494,7 +10500,7 @@ def test_register_exception_handlers_http_string_detail_branch():
     async def _boom_string():
         raise HTTPException(status_code=400, detail="bad-input")
 
-    client = TestClient(app, raise_server_exceptions=False)
+    client = _test_client(app, raise_server_exceptions=False)
     response = client.get("/boom-string")
     assert response.status_code == 400
     assert response.json() == {"success": False, "error": "bad-input"}
