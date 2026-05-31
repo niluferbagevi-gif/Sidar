@@ -1068,11 +1068,6 @@ try_auto_install_ci_system_deps() {
     return 1
   fi
 
-  if [ "${EUID}" -ne 0 ] && ! sudo -n true >/dev/null 2>&1; then
-    echo "⚠️ AUTO_INSTALL_CI_SYSTEM_DEPS=1 ancak parolasız sudo kullanılamıyor; otomatik kurulum atlandı."
-    return 1
-  fi
-
   echo "📦 Eksik CI sistem bağımlılıkları otomatik kuruluyor..."
   if bash scripts/install_ci_system_deps.sh; then
     return 0

@@ -52,9 +52,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. `RUN_BATS_TESTS=1`
   varsayılanında `run_tests.sh`, BATS eksikse shell testlerini sessizce atlamaz; eksik altyapıyı
   hata olarak raporlar. Bilinçli yerel atlama yalnız `RUN_BATS_TESTS=0` ile yapılmalıdır.
-  Parolasız `sudo` kullanılabilen yerel ortamlarda `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh`
-  eksik bağımlılıklar için aynı ortak kurulum scriptini opt-in biçimde çalıştırır; otomatik kurulum
-  başarısız olursa fail-closed kalite kapısı korunur.
+  Script, root olmayan kullanıcılarda interaktif parola istemez; `sudo -n` kullanılamıyorsa net bir
+  hatayla durur. Parolasız `sudo` kullanılabilen yerel ortamlarda
+  `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh` eksik bağımlılıklar için aynı ortak kurulum
+  scriptini opt-in biçimde çalıştırır; otomatik kurulum başarısız olursa fail-closed kalite kapısı korunur.
 - `pip-audit` çağrıları `--skip-editable` kullanır. Böylece PyPI üzerinde yayınlanmayan yerel
   editable `sidar` paketi tarama dışında kalır; kurulu üçüncü taraf bağımlılıkların CVE taraması
   çalışmaya devam eder.

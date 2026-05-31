@@ -31,18 +31,21 @@ if [[ "${#MISSING_PACKAGES[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-SUDO=""
+SUDO=()
 if [[ "${EUID}" -ne 0 ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    SUDO="sudo"
-  else
+  if ! command -v sudo >/dev/null 2>&1; then
     echo "Root privileges are required (run as root or install sudo)." >&2
     exit 1
   fi
+  if ! sudo -n true >/dev/null 2>&1; then
+    echo "Passwordless sudo is required for non-interactive installation. Run as root or configure sudo -n access." >&2
+    exit 1
+  fi
+  SUDO=(sudo -n)
 fi
 
-${SUDO} apt-get update
-${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
+"${SUDO[@]}" apt-get update
+"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
 
 if command -v docker >/dev/null 2>&1; then
   echo "Docker detected. Recommended CI/runtime setting: DOCKER_TEST_IMAGE=sidar:latest"

@@ -446,8 +446,11 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh" in installer
     assert "MISSING_PACKAGES=()" in installer
+    assert 'SUDO=(sudo -n)' in installer
+    assert 'if ! sudo -n true >/dev/null 2>&1; then' in installer
+    assert "Passwordless sudo is required for non-interactive installation." in installer
     assert (
-        'env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
+        '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
         in installer
     )
 
@@ -1058,7 +1061,7 @@ def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> N
 
     assert 'AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"' in script
     assert 'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" != "1" ]; then' in auto_install_block
-    assert 'if [ "${EUID}" -ne 0 ] && ! sudo -n true' in auto_install_block
+    assert "sudo -n true" not in auto_install_block
     assert "bash scripts/install_ci_system_deps.sh" in auto_install_block
     assert "try_auto_install_ci_system_deps || true" in bats_block
     assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in bats_block
