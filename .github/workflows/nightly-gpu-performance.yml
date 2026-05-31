@@ -17,6 +17,7 @@ jobs:
 
     env:
       RUN_GPU_STRESS: "1"
+      RUN_GPU_BENCHMARKS: "full"
       PYTHONUNBUFFERED: "1"
       GPU_TREND_WINDOW: "7"
       GPU_TREND_THRESHOLD_PERCENT: "20"

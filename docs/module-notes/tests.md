@@ -81,6 +81,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
+- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Repo içinde incelenmiş bir
+  `*_baseline.json` kaydı olsa bile genel GitHub-hosted CI hattında koşulsuz
+  `BENCHMARK_COMPARE_REQUIRED=1` kullanmayın: farklı CPU/OS profilleri anlamlı olmayan karşılaştırma
+  ve fail-closed uyarı üretebilir. Bu zorunluluğu yalnız aynı sabit runner profilinde en az bir baseline
+  kaydedildikten sonra açın. Yerel ilk kurulum/bootstrap akışlarında değer `0` kalmalıdır.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
   kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
@@ -125,7 +130,12 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `GPU_BENCH_CONCURRENCY` kadar (genellikle `4`) olmasını bekler:
   - `test_gpu_concurrent_throughput`
   - `test_gpu_vram_peak_under_load`
-- Varyans stabilitesi için önerilen benchmark varsayılanları:
+- Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
+  `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
+  `GPU_BENCH_CONCURRENT_ROUNDS=3` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
+  kullanır ve stabil baseline için sırasıyla `5` ve `20` tur çalıştırır.
+- Varyans stabilitesi için full profil önerileri:
+  - `RUN_GPU_BENCHMARKS=full`
   - `GPU_BENCH_WARMUP_ROUNDS=5`
   - `GPU_BENCH_NUM_PREDICT=128`
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;

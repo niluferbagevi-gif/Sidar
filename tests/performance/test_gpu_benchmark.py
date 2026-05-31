@@ -56,6 +56,21 @@ _NUM_BATCH: int = _gpu_smoke._env_int("GPU_BENCH_NUM_BATCH", 512, min_value=1, m
 _NUM_PREDICT: int = _gpu_smoke._env_int("GPU_BENCH_NUM_PREDICT", 128, min_value=8, max_value=1024)
 _NUM_CTX: int = _gpu_smoke._env_int("GPU_BENCH_NUM_CTX", 2048, min_value=256, max_value=32768)
 _TPS_BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_TPS_ROUNDS", 20, min_value=20, max_value=50)
+_GPU_BENCHMARK_PROFILE: str = os.getenv("RUN_GPU_BENCHMARKS", "smoke").strip().lower()
+if _GPU_BENCHMARK_PROFILE not in {"smoke", "full"}:
+    _GPU_BENCHMARK_PROFILE = "smoke"
+_CONCURRENT_WARMUP_ROUNDS: int = _gpu_smoke._env_int(
+    "GPU_BENCH_CONCURRENT_WARMUP_ROUNDS",
+    1 if _GPU_BENCHMARK_PROFILE == "smoke" else _WARMUP_ROUNDS,
+    min_value=1,
+    max_value=8,
+)
+_CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
+    "GPU_BENCH_CONCURRENT_ROUNDS",
+    3 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
+    min_value=1,
+    max_value=50,
+)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -347,8 +362,9 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
+      RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
+      GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 5)
+      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 3, full: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()
@@ -358,6 +374,9 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
     benchmark.extra_info["ollama_num_parallel"] = num_parallel
     _record_runtime_options(benchmark)
     benchmark.extra_info["benchmark_concurrency"] = _CONCURRENCY
+    benchmark.extra_info["gpu_benchmark_profile"] = _GPU_BENCHMARK_PROFILE
+    benchmark.extra_info["concurrent_warmup_rounds"] = _CONCURRENT_WARMUP_ROUNDS
+    benchmark.extra_info["concurrent_benchmark_rounds"] = _CONCURRENT_BENCH_ROUNDS
     if _CONCURRENCY > 0:
         benchmark.extra_info["parallel_saturation_percent"] = round(
             (num_parallel / _CONCURRENCY) * 100, 3
@@ -387,8 +406,8 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
         results: list[str] = benchmark.pedantic(
             _run,
-            warmup_rounds=_WARMUP_ROUNDS,
-            rounds=_BENCH_ROUNDS,
+            warmup_rounds=_CONCURRENT_WARMUP_ROUNDS,
+            rounds=_CONCURRENT_BENCH_ROUNDS,
             iterations=1,
         )
     finally:

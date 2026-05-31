@@ -1147,3 +1147,30 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert "sudo apt-get install -y portaudio19-dev shellcheck bats" not in ci_workflow
     assert "run: bash scripts/install_ci_system_deps.sh" in ci_workflow
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
+
+
+def test_tracked_benchmark_baseline_stays_optional_in_generic_ci_and_nightly_gpu_uses_full_profile() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
+    tracked_baselines = sorted(Path(".benchmarks").glob("**/*_baseline.json"))
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+
+    assert tracked_baselines
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
+    assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
+    assert "yalnız aynı sabit runner profilinde" in notes
+
+
+def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
+    gpu_benchmark = Path("tests/performance/test_gpu_benchmark.py").read_text(encoding="utf-8")
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+    env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+
+    assert 'os.getenv("RUN_GPU_BENCHMARKS", "smoke")' in gpu_benchmark
+    assert 'if _GPU_BENCHMARK_PROFILE not in {"smoke", "full"}' in gpu_benchmark
+    assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
+    assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
+    assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
+    assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
+    assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
+    assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
