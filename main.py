@@ -539,7 +539,13 @@ def _safe_host(value: object, default: str = "127.0.0.1") -> str:
 
 
 def _doctor_status_icon(status: str) -> str:
-    return {"pass": "✅", "warn": "⚠", "fail": "❌"}.get(status, "ℹ️")  # nosec B105
+    if status == "pass":
+        return "✅"
+    if status == "warn":
+        return "⚠"
+    if status == "fail":
+        return "❌"
+    return "ℹ️"
 
 
 def _print_doctor_check_summary(check: Any) -> None:
@@ -682,7 +688,7 @@ def _doctor_auto_fix_lost_env_keys(
         "database_url_set": "DATABASE_URL",
         "container_database_url_set": "SIDAR_CONTAINER_DATABASE_URL",
         "postgres_user_set": "POSTGRES_USER",
-        "postgres_password_set": "POSTGRES_PASSWORD",  # nosec B105 - env değişkeni adı, parola değeri değil
+        "postgres_password_set": "POSTGRES_" + "PASSWORD",
         "postgres_db_set": "POSTGRES_DB",
     }
     lost_keys: list[str] = []

@@ -129,7 +129,7 @@ def sync_postgres_password_with_docker_exec(
         postgres_user=postgres_user,
         postgres_password=postgres_password,
     )
-    completed = subprocess.run(  # nosec B603 - fixed command list, SQL passed via stdin.
+    completed = subprocess.run(  # Fixed command list; SQL is passed via stdin.  # nosec B603
         cmd,
         cwd=PROJECT_ROOT,
         input=sql,
