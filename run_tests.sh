@@ -304,6 +304,7 @@ AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"
 AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"
 AUTO_HEAL_LOG_PATH="${AUTO_HEAL_LOG_PATH:-artifacts/mypy_errors.log}"
 AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"
+AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"
 DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 
@@ -1062,6 +1063,26 @@ prepare_docker_test_image() {
 }
 
 
+try_auto_install_ci_system_deps() {
+  if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" != "1" ]; then
+    return 1
+  fi
+
+  if [ "${EUID}" -ne 0 ] && ! sudo -n true >/dev/null 2>&1; then
+    echo "⚠️ AUTO_INSTALL_CI_SYSTEM_DEPS=1 ancak parolasız sudo kullanılamıyor; otomatik kurulum atlandı."
+    return 1
+  fi
+
+  echo "📦 Eksik CI sistem bağımlılıkları otomatik kuruluyor..."
+  if bash scripts/install_ci_system_deps.sh; then
+    return 0
+  fi
+
+  echo "⚠️ CI sistem bağımlılıkları otomatik kurulamadı."
+  return 1
+}
+
+
 run_bats_shell_tests() {
   if [ "${RUN_BATS_TESTS}" != "1" ]; then
     echo "ℹ️ BATS shell testleri atlandı (RUN_BATS_TESTS=${RUN_BATS_TESTS})."
@@ -1069,7 +1090,12 @@ run_bats_shell_tests() {
   fi
 
   if ! command -v bats >/dev/null 2>&1; then
+    try_auto_install_ci_system_deps || true
+  fi
+
+  if ! command -v bats >/dev/null 2>&1; then
     echo "❌ RUN_BATS_TESTS=1 ancak BATS bulunamadı. Debian/Ubuntu için: bash scripts/install_ci_system_deps.sh"
+    echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
     BACKEND_EXIT_CODE=1
     return 1
   fi

@@ -1047,6 +1047,23 @@ def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
     assert "shell testleri opsiyonel olduğu için atlandı" not in bats_block
 
 
+def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> None:
+    script = _script()
+    auto_install_block = script[
+        script.index("try_auto_install_ci_system_deps()") : script.index("run_bats_shell_tests()")
+    ]
+    bats_block = script[
+        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
+    ]
+
+    assert 'AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"' in script
+    assert 'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" != "1" ]; then' in auto_install_block
+    assert 'if [ "${EUID}" -ne 0 ] && ! sudo -n true' in auto_install_block
+    assert "bash scripts/install_ci_system_deps.sh" in auto_install_block
+    assert "try_auto_install_ci_system_deps || true" in bats_block
+    assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in bats_block
+
+
 def test_pip_audit_skips_only_local_editable_package_in_local_and_ci_gates() -> None:
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
