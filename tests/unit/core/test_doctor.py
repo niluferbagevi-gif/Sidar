@@ -1521,3 +1521,58 @@ def test_check_pgvector_ready_fails_when_extension_missing(monkeypatch):
     assert (
         check.details["auto_fix"] == "docker compose pull postgres && docker compose up -d postgres"
     )
+
+
+def test_parse_env_file_values_missing_file_and_dotenv_source_import_fallback(
+    monkeypatch, tmp_path
+):
+    assert doctor._parse_env_file_values(tmp_path / "missing.env") == {}
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _missing_config(name, *args, **kwargs):
+        if name == "config":
+            raise ImportError("config unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _missing_config)
+    assert doctor._dotenv_source_report(("DATABASE_URL",)) == {
+        "sources": {},
+        "definitions": {"DATABASE_URL": []},
+    }
+
+
+def test_read_env_file_assignments_missing_file_and_empty_export_key(tmp_path):
+    assert doctor._read_env_file_assignments(tmp_path / "missing.env") == {}
+    env_file = tmp_path / ".env"
+    env_file.write_text("=ignored\nexport VALID=value\n", encoding="utf-8")
+    assert doctor._read_env_file_assignments(env_file) == {"VALID": "value"}
+
+
+def test_database_connectivity_skips_non_postgres_and_warns_without_asyncpg(monkeypatch):
+    monkeypatch.setattr(
+        doctor,
+        "_resolved_database_urls",
+        lambda: ("sqlite:///data/sidar.db", "", True, False),
+    )
+    sqlite_check = doctor.check_database_connectivity()
+    assert sqlite_check.status == "pass"
+    assert "non-PostgreSQL" in sqlite_check.message
+
+    monkeypatch.setattr(
+        doctor,
+        "_resolved_database_urls",
+        lambda: ("postgresql://sidar:secret@localhost/sidar", "", True, False),
+    )
+
+    def _raise_missing_asyncpg(coro):
+        coro.close()
+        raise ModuleNotFoundError("No module named asyncpg")
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _raise_missing_asyncpg)
+    pg_check = doctor.check_database_connectivity()
+    assert pg_check.status == "warn"
+    assert "asyncpg is unavailable" in pg_check.message
+    assert "secret" not in pg_check.details["error"]

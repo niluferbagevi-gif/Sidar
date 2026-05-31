@@ -2347,3 +2347,19 @@ async def test_init_schema_postgresql_skips_alembic_when_auto_migrate_disabled(t
     await db._init_schema_postgresql()
 
     assert ran == []
+
+
+@pytest.mark.asyncio
+async def test_count_sessions_total_sqlite_and_postgresql_paths(sqlite_db: Database) -> None:
+    assert await sqlite_db.count_sessions_total() == 0
+    user = await sqlite_db.create_user("user-count", password="pw")
+    await sqlite_db.create_session(user.id, "Counted")
+    assert await sqlite_db.count_sessions_total() == 1
+
+    db = Database(DummyCfg(DATABASE_URL="postgresql://u:p@localhost/db", BASE_DIR="."))
+    db._backend = "postgresql"
+    pool = FakePgAdapter()
+    pool.conn.fetchval.return_value = 7
+    db._pg_pool = pool
+    assert await db.count_sessions_total() == 7
+    pool.conn.fetchval.assert_awaited_once_with("SELECT COUNT(*) FROM sessions")

@@ -703,3 +703,85 @@ def test_rag_router_search_supports_defensive_sync_async_shapes_direct(
     monkeypatch.setattr(rag_routes.asyncio, "to_thread", lambda *_args, **_kwargs: (True, []))
     response = __import__("asyncio").run(rag_search(q="query"))
     assert response.body == b'{"success":true,"result":[]}'
+
+
+def test_hitl_router_sync_pending_and_bearer_websocket_direct() -> None:
+    captured_tokens: list[str] = []
+    clients: set[Any] = set()
+    item = SimpleNamespace(to_dict=lambda: {"request_id": "r1"})
+    store = SimpleNamespace(pending=lambda: [item])
+
+    def _resolve_user(_agent: Any, token: str) -> dict[str, str]:
+        captured_tokens.append(token)
+        return {"id": "u1"}
+
+    router = build_hitl_router(
+        get_request_user=_admin_user,
+        resolve_agent_instance=lambda: _async_value(SimpleNamespace()),
+        await_if_needed=lambda value: _async_value(value),
+        resolve_user_from_token=_resolve_user,
+        ws_close_policy_violation=lambda *_: _async_value(None),
+        hitl_ws_clients=clients,
+        get_hitl_store=lambda: store,
+        get_hitl_gate=lambda: SimpleNamespace(timeout=10),
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    assert client.get("/api/hitl/pending").json() == {
+        "pending": [{"request_id": "r1"}],
+        "count": 1,
+    }
+    with client.websocket_connect(
+        "/ws/hitl", headers={"Authorization": "Bearer bearer-token"}
+    ) as websocket:
+        assert websocket.receive_json() == {
+            "type": "hitl_snapshot",
+            "pending": [{"request_id": "r1"}],
+        }
+    assert captured_tokens == ["bearer-token"]
+    assert clients == set()
+
+
+def test_metrics_router_helper_fallback_and_empty_username_assignment_direct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from web.routes import metrics as metrics_routes
+
+    monkeypatch.setitem(sys.modules, "web_server", ModuleType("web_server"))
+    assert metrics_routes._resolve_web_server_helper("missing", "fallback") == "fallback"
+
+    class _Memory:
+        active_user_id = "previous-user"
+        active_username = ""
+
+        def get_all_sessions(self) -> list[str]:
+            return []
+
+        def __len__(self) -> int:
+            return 0
+
+    memory = _Memory()
+    agent = SimpleNamespace(
+        VERSION="fallback",
+        docs=SimpleNamespace(doc_count=0),
+        memory=memory,
+        cfg=SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False),
+    )
+    router = build_metrics_router(
+        require_metrics_access=lambda: {"id": "metrics-user"},
+        resolve_agent_instance=lambda: _async_value(agent),
+        start_time=0.0,
+        local_rate_limits={},
+        get_llm_metrics_collector=lambda: SimpleNamespace(snapshot=lambda: {"totals": {}}),
+        render_llm_metrics_prometheus=lambda _snapshot: "",
+        set_current_metrics_user_id=lambda _user_id: "token",
+        reset_current_metrics_user_id=lambda _token: None,
+        logger=SimpleNamespace(debug=lambda *_: None),
+    )
+    app = FastAPI()
+    app.include_router(router)
+
+    assert TestClient(app).get("/metrics").status_code == 200
+    assert memory.active_username == ""
