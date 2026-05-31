@@ -561,3 +561,145 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     response = TestClient(app).get("/metrics", headers={"Accept": "text/plain"})
     assert response.status_code == 200
     assert response.json()["version"] == "fallback"
+
+
+def test_project_ops_helpers_cover_rejected_commands_and_remote_shapes(monkeypatch) -> None:
+    from web.routes import project_ops
+
+    assert project_ops._is_allowed_git_command([]) is False
+    assert project_ops._is_allowed_git_command(["git", "bad\x00command"]) is False
+    assert project_ops._extract_repo_from_remote("") == ""
+    assert project_ops._extract_repo_from_remote("https://example.com/org/repo.git") == "repo"
+    assert project_ops._extract_repo_from_remote("git@example.com:org/repo.git") == "org/repo"
+    assert project_ops._resolve_web_server_helper("missing", "fallback") == "fallback"
+
+    web_server_mod = ModuleType("web_server")
+    web_server_mod.demo_helper = "resolved"
+    monkeypatch.setitem(sys.modules, "web_server", web_server_mod)
+    assert project_ops._resolve_web_server_helper("demo_helper", "fallback") == "resolved"
+
+
+def test_rag_router_add_file_missing_and_oversized_direct(tmp_path: Path) -> None:
+    docs = SimpleNamespace()
+    agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
+    router = build_rag_router(
+        resolve_agent_instance=lambda: _async_value(agent),
+        await_if_needed=lambda x: x,
+        max_rag_upload_bytes=3,
+        server_root=tmp_path,
+        logger=SimpleNamespace(debug=lambda *_: None),
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    missing = client.post("/rag/add-file", json={"path": "missing.txt"})
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Dosya bulunamadı."
+
+    (tmp_path / "large.txt").write_text("large", encoding="utf-8")
+    oversized = client.post("/rag/add-file", json={"path": "large.txt"})
+    assert oversized.status_code == 413
+    assert "Maksimum izin verilen boyut: 3 bayt" in oversized.json()["detail"]
+
+
+def test_auth_admin_payload_normalizers_cover_passthrough_and_aliases() -> None:
+    from web.routes import auth_admin
+
+    marker = object()
+    assert auth_admin._parse_payload(_RegisterReq, marker) is marker
+    assert auth_admin._normalize_register_payload(marker) is marker
+    assert auth_admin._normalize_register_payload({"userName": "ada", "passWord": "secret"}) == {
+        "userName": "ada",
+        "passWord": "secret",
+        "username": "ada",
+        "password": "secret",
+    }
+
+
+def test_auth_admin_router_register_conflict_and_stats_fallback_direct() -> None:
+    async def _stats() -> dict[str, bool]:
+        return {"fallback": True}
+
+    db = SimpleNamespace(
+        register_user=lambda **_: (_ for _ in ()).throw(RuntimeError("duplicate")),
+        get_admin_stats=_stats,
+    )
+    agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="")
+    router = build_auth_admin_router(
+        resolve_agent_instance=lambda: _async_value(agent),
+        await_if_needed=lambda x: x,
+        get_request_user=_admin_user,
+        require_admin_user=_admin_user,
+        issue_auth_token=lambda *_: _async_value("tkn"),
+        serialize_prompt=lambda p: {},
+        serialize_policy=lambda p: {},
+        register_request_model=_RegisterReq,
+        login_request_model=_LoginReq,
+        prompt_upsert_request_model=_PromptReq,
+        prompt_activate_request_model=_PromptActivateReq,
+        policy_upsert_request_model=_PolicyReq,
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    conflict = client.post("/auth/register", json={"username": "alice", "password": "123456"})
+    assert conflict.status_code == 409
+    assert "duplicate" in conflict.json()["detail"]
+    assert client.get("/admin/stats").json() == {"fallback": True}
+
+
+def test_project_ops_helpers_cover_github_and_plain_remote_shapes() -> None:
+    from web.routes import project_ops
+
+    assert project_ops._extract_repo_from_remote("https://github.com/org/repo.git") == "org/repo"
+    assert project_ops._extract_repo_from_remote("local/repo.git") == "repo"
+
+
+def test_project_ops_github_repos_awaits_async_listing_direct(tmp_path: Path) -> None:
+    async def _list_repos(**_: Any) -> tuple[bool, list[dict[str, str]]]:
+        return True, [{"full_name": "org/repo"}]
+
+    agent = SimpleNamespace(github=SimpleNamespace(repo_name="", list_repos=_list_repos))
+    router = build_project_ops_router(
+        get_request_user=_admin_user,
+        resolve_agent_instance=lambda: _async_value(agent),
+        max_file_content_bytes=1024,
+        server_root=tmp_path,
+        cfg=SimpleNamespace(GITHUB_REPO=""),
+        logger=SimpleNamespace(warning=lambda *_: None),
+    )
+    app = FastAPI()
+    app.include_router(router)
+
+    response = TestClient(app).get("/github-repos")
+    assert response.status_code == 200
+    assert response.json()["repos"] == [{"full_name": "org/repo"}]
+
+
+def test_rag_router_search_supports_defensive_sync_async_shapes_direct(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from web.routes import rag as rag_routes
+
+    docs = SimpleNamespace(search=lambda *_: (True, ["result"]))
+    agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
+    router = build_rag_router(
+        resolve_agent_instance=lambda: _async_value(agent),
+        await_if_needed=lambda x: x,
+        max_rag_upload_bytes=1024,
+        server_root=Path("."),
+        logger=SimpleNamespace(debug=lambda *_: None),
+    )
+    rag_search = router.legacy_exports["rag_search"]
+
+    monkeypatch.setattr(rag_routes.asyncio, "iscoroutinefunction", lambda _call: True)
+    monkeypatch.setattr(rag_routes.inspect, "isawaitable", lambda _value: False)
+    response = __import__("asyncio").run(rag_search(q="query"))
+    assert response.body == b'{"success":true,"result":["result"]}'
+
+    monkeypatch.setattr(rag_routes.asyncio, "iscoroutinefunction", lambda _call: False)
+    monkeypatch.setattr(rag_routes.asyncio, "to_thread", lambda *_args, **_kwargs: (True, []))
+    response = __import__("asyncio").run(rag_search(q="query"))
+    assert response.body == b'{"success":true,"result":[]}'

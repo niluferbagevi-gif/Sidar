@@ -481,3 +481,71 @@ def test_repo_mock_error_branches_for_coverage():
 
     with pytest.raises(RuntimeError, match="missing"):
         repo.get_contents("does-not-exist")
+
+
+def test_init_client_success_and_lazy_repo_guards(monkeypatch):
+    class FakeGithub:
+        def __init__(self, *, auth):
+            self.auth = auth
+
+        @staticmethod
+        def get_user():
+            return SimpleNamespace(login="sidar-user")
+
+    fake_github_module = SimpleNamespace(
+        Auth=SimpleNamespace(Token=lambda token: f"auth:{token}"),
+        Github=FakeGithub,
+    )
+    monkeypatch.setitem(sys.modules, "github", fake_github_module)
+    manager = GitHubManager(token="token")
+
+    manager._init_client()
+
+    assert manager._available is True
+    assert manager._gh is not None
+    assert manager._gh.auth == "auth:token"
+    manager._repo = SimpleNamespace()
+    assert manager._ensure_repo() is True
+    manager._repo = None
+    manager.repo_name = ""
+    assert manager._ensure_repo() is False
+    manager.repo_name = "org/repo"
+    monkeypatch.setattr(manager, "_load_repo", lambda repo_name: repo_name == "org/repo")
+    assert manager._ensure_repo() is True
+
+
+def test_init_client_handles_missing_dependency_and_client_errors(monkeypatch):
+    real_import = __import__
+
+    def missing_github(name, *args, **kwargs):
+        if name == "github":
+            raise ImportError("missing PyGithub")
+        return real_import(name, *args, **kwargs)
+
+    manager = GitHubManager(token="token")
+    monkeypatch.setattr("builtins.__import__", missing_github)
+    manager._init_client()
+    assert manager._available is False
+
+    monkeypatch.setattr("builtins.__import__", real_import)
+    monkeypatch.setitem(
+        sys.modules,
+        "github",
+        SimpleNamespace(
+            Auth=SimpleNamespace(Token=lambda token: token),
+            Github=lambda **_kwargs: None,
+        ),
+    )
+    manager._init_client()
+    assert manager._available is False
+
+
+def test_init_client_handles_token_removed_after_construction(caplog):
+    manager = GitHubManager(token="token", require_token=False)
+    manager.token = ""
+    manager._init_client()
+    assert manager._available is False
+
+    manager.require_token = True
+    with pytest.raises(ValueError, match="GITHUB_TOKEN"):
+        manager._init_client()
