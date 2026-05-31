@@ -1183,6 +1183,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_allows_local_opt_out() ->
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-0}"' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
+    assert 'if [ "${RUN_FRONTEND_E2E}" = "0" ]; then' in script
+    assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
+    assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "npm run test:e2e" in script
     assert "npx playwright install --with-deps chromium" in ci
