@@ -182,6 +182,16 @@ def _normalize_postgres_dsn(database_url: str) -> str:
     return str(database_url or "").replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
+def _parse_url(database_url: str) -> tuple[Any, str]:
+    """Parse a URL without allowing malformed DSNs to abort Doctor reporting."""
+    if not database_url:
+        return None, ""
+    try:
+        return urlparse(database_url), ""
+    except ValueError as exc:
+        return None, str(exc)
+
+
 def _redact_url(database_url: str) -> str:
     text = str(database_url or "").strip()
     if not text or "://" not in text:
@@ -199,7 +209,7 @@ def _redact_url(database_url: str) -> str:
 def _redact_exception_text(exc: BaseException, *, database_url: str = "") -> str:
     text = str(exc)
     candidates = {database_url, _normalize_postgres_dsn(database_url), _redact_url(database_url)}
-    parsed = urlparse(database_url) if database_url else None
+    parsed, _ = _parse_url(database_url)
     password = unquote(str(getattr(parsed, "password", "") or "")) if parsed else ""
     if password:
         candidates.add(password)
@@ -267,6 +277,27 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                     "Create the missing role/database or reset the development PostgreSQL volume.",
                 ],
                 "auto_fix": "uv run python -m scripts.create_missing_databases",
+                "recommended_commands": common_commands,
+            },
+        )
+    if any(
+        marker in text
+        for marker in (
+            "ssl",
+            "tls",
+            "certificate verify failed",
+            "handshake",
+        )
+    ):
+        return (
+            "PostgreSQL TLS/SSL handshake failed; verify certificate trust, SSL mode and proxy/network interception settings.",
+            {
+                "failure_category": "tls",
+                "root_cause_hints": [
+                    "PostgreSQL certificate is untrusted or expired",
+                    "DATABASE_URL SSL mode does not match the server configuration",
+                    "A proxy or network appliance interrupted the TLS handshake",
+                ],
                 "recommended_commands": common_commands,
             },
         )
@@ -466,8 +497,8 @@ def check_database_env() -> DoctorCheck:
     postgres_user = os.getenv("POSTGRES_USER", "").strip()
     postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
     postgres_db = os.getenv("POSTGRES_DB", "").strip()
-    parsed = urlparse(database_url) if database_url else None
-    container_parsed = urlparse(container_url) if container_url else None
+    parsed, database_url_parse_error = _parse_url(database_url)
+    container_parsed, container_url_parse_error = _parse_url(container_url)
     source_report = _dotenv_source_report(
         ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL", "POSTGRES_PASSWORD")
     )
@@ -476,6 +507,10 @@ def check_database_env() -> DoctorCheck:
 
     failures: list[str] = []
     warnings: list[str] = []
+    if database_url_parse_error:
+        failures.append(f"DATABASE_URL is malformed: {database_url_parse_error}")
+    if container_url_parse_error:
+        failures.append(f"SIDAR_CONTAINER_DATABASE_URL is malformed: {container_url_parse_error}")
     if not database_url:
         warnings.append(
             "DATABASE_URL could not be resolved; database readiness cannot be fully verified"
@@ -617,7 +652,7 @@ async def _probe_postgres_connectivity(
 
 def check_database_connectivity() -> DoctorCheck:
     database_url, _, explicit_database_url, _ = _resolved_database_urls()
-    parsed = urlparse(database_url) if database_url else None
+    parsed, parse_error = _parse_url(database_url)
     details: dict[str, Any] = {
         "database_url_set": bool(database_url),
         "database_url_explicit": explicit_database_url,
@@ -634,6 +669,15 @@ def check_database_connectivity() -> DoctorCheck:
             "database_connectivity",
             "warn",
             "DATABASE_URL could not be resolved; PostgreSQL connectivity smoke was skipped",
+            details,
+        )
+    if parse_error:
+        details["error"] = parse_error
+        details["failure_category"] = "invalid_dsn"
+        return DoctorCheck(
+            "database_connectivity",
+            "warn",
+            "DATABASE_URL is malformed; PostgreSQL connectivity smoke was skipped",
             details,
         )
     if not _is_postgres_url(parsed):
@@ -698,7 +742,7 @@ def check_pgvector_ready() -> DoctorCheck:
         )
 
     database_url, _, explicit_database_url, _ = _resolved_database_urls()
-    parsed = urlparse(database_url) if database_url else None
+    parsed, parse_error = _parse_url(database_url)
     details.update(
         {
             "database_url_set": bool(database_url),
@@ -716,6 +760,10 @@ def check_pgvector_ready() -> DoctorCheck:
     )
     if not database_url:
         return DoctorCheck("pgvector_ready", "warn", "DATABASE_URL could not be resolved", details)
+    if parse_error:
+        details["error"] = parse_error
+        details["failure_category"] = "invalid_dsn"
+        return DoctorCheck("pgvector_ready", "warn", "DATABASE_URL is malformed", details)
     if not _is_postgres_url(parsed):
         return DoctorCheck(
             "pgvector_ready",
@@ -790,8 +838,9 @@ def _rag_readiness_state() -> dict[str, Any]:
         database_url = os.getenv("DATABASE_URL", "").strip()
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
         parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
-        if database_url:
-            parsed_database_password = unquote(str(urlparse(database_url).password or ""))
+        parsed_database_url, _ = _parse_url(database_url)
+        if parsed_database_url:
+            parsed_database_password = unquote(str(parsed_database_url.password or ""))
         password_matches_database_url = bool(postgres_password) and (
             postgres_password in database_url or parsed_database_password == postgres_password
         )

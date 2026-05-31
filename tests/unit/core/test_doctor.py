@@ -171,6 +171,7 @@ def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
     ("error", "category"),
     [
         (RuntimeError("role sidar does not exist"), "missing_role_or_database"),
+        (RuntimeError("SSL handshake failed: certificate verify failed"), "tls"),
         (TimeoutError("timed out"), "timeout"),
         (ConnectionRefusedError("connection refused"), "connection"),
         (RuntimeError("unexpected failure"), "unknown"),
@@ -475,6 +476,43 @@ def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
     assert check.details["failure_category"] == "connection"
     assert check.details["error_type"] == "ConnectionRefusedError"
     assert "docker compose ps postgres" in check.details["recommended_commands"]
+
+
+def test_database_connectivity_warns_when_postgres_times_out(monkeypatch):
+    async def _connect(dsn):
+        raise TimeoutError("connection timed out")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=_connect))
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert check.details["failure_category"] == "timeout"
+    assert "timed out" in check.message
+
+
+def test_database_checks_fail_fast_for_malformed_dsn(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:secret@[invalid/sidar")
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:secret@[invalid/sidar")
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+
+    env_check = doctor.check_database_env()
+    connectivity_check = doctor.check_database_connectivity()
+    pgvector_check = doctor.check_pgvector_ready()
+    rag_state = doctor._rag_readiness_state()
+
+    assert env_check.status == "fail"
+    assert "DATABASE_URL is malformed" in env_check.message
+    assert "SIDAR_CONTAINER_DATABASE_URL is malformed" in env_check.message
+    assert connectivity_check.status == "warn"
+    assert connectivity_check.details["failure_category"] == "invalid_dsn"
+    assert "DATABASE_URL is malformed" in connectivity_check.message
+    assert pgvector_check.status == "warn"
+    assert pgvector_check.details["failure_category"] == "invalid_dsn"
+    assert rag_state["details"]["database_env_status"] == "fail"
+    assert rag_state["details"]["blocked_by"] == "database_env"
 
 
 def test_database_connectivity_auth_failure_reports_volume_remediation_and_redacts(
