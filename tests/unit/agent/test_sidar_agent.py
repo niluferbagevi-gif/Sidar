@@ -3309,21 +3309,29 @@ async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(sidar_a
 
 async def test_optional_distributed_lock_failures_allow_nightly_maintenance_fallback(
     sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agent = sidar_agent_factory()
-    _override_cfg(agent, DISTRIBUTED_AGENT_LOCK_REQUIRED=False)
+    _override_cfg(
+        agent,
+        DISTRIBUTED_AGENT_LOCK_REQUIRED=False,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=False,
+        REDIS_URL="",
+    )
 
     agent._nightly_distributed_lock = None
     lease, skip_reason = await agent._acquire_nightly_distributed_lease()
     assert lease is None
     assert skip_reason is None
 
-    agent._nightly_distributed_lock = types.SimpleNamespace(
+    broken_lock = types.SimpleNamespace(
         acquire=AsyncMock(side_effect=RuntimeError("redis-down"))
     )
+    monkeypatch.setattr(agent, "_get_nightly_distributed_lock", lambda: broken_lock)
     lease, skip_reason = await agent._acquire_nightly_distributed_lease()
     assert lease is None
     assert skip_reason is None
+    broken_lock.acquire.assert_awaited_once()
 
 
 async def test_release_nightly_distributed_lease_swallows_backend_failure(
