@@ -54,7 +54,8 @@ export default defineConfig({
     exclude: ["e2e/**", "dist/**", "node_modules/**"],
     coverage: {
       provider: "v8",
-      reporter: ["text", "html", "lcov"],
+      reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"],
+      skipFull: false,
       include: ["src/**/*.{js,jsx}"],
       exclude: [
         "src/test/setup.js",

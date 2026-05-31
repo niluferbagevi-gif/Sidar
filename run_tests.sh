@@ -286,6 +286,7 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
+  RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"
 else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
@@ -293,6 +294,7 @@ else
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
+  RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-0}"
 fi
 
 PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
@@ -351,14 +353,14 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
-echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS})"
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 if [ "${TEST_PROFILE}" = "local" ] && [ "${RUN_BATS_TESTS}" != "1" ] && ! command -v bats >/dev/null 2>&1; then
   echo "⚠️ Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak. CI paritesi için: bash scripts/install_ci_system_deps.sh"
   echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
 fi
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
-rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage "${BATS_REPORT_DIR}" sidar.egg-info build/
+rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}" sidar.egg-info build/
 
 open_artifact() {
   local target="$1"
@@ -1345,6 +1347,15 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
       else
         npm run test:coverage
         FRONTEND_EXIT_CODE=$?
+        if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
+          if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
+            echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor..."
+            npm run test:e2e
+            FRONTEND_EXIT_CODE=$?
+          else
+            echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+          fi
+        fi
       fi
 
       if [ -f "coverage/base.css" ]; then

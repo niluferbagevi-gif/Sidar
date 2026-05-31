@@ -1102,7 +1102,7 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
     assert "BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir" in script
     assert (
         'rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log '
-        'web_ui_react/coverage "${BATS_REPORT_DIR}"'
+        'web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}"'
         in script
     )
     assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
@@ -1174,3 +1174,29 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
+
+
+def test_run_tests_executes_playwright_smoke_in_ci_and_allows_local_opt_out() -> None:
+    script = _script()
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
+    assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-0}"' in script
+    assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
+    assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
+    assert "npm run test:e2e" in script
+    assert "npx playwright install --with-deps chromium" in ci
+    assert "name: Upload Playwright frontend smoke report" in ci
+    assert "web_ui_react/playwright-report/" in ci
+    assert "web_ui_react/test-results/" in ci
+    playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
+    assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
+    assert 'outputDir: "test-results"' in playwright
+
+
+def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
+    vite = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+
+    assert 'include: ["src/**/*.{js,jsx}"]' in vite
+    assert 'reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"]' in vite
+    assert "skipFull: false" in vite

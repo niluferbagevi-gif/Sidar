@@ -1908,7 +1908,7 @@ def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(mon
 
 def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", False)
-    caplog.set_level("DEBUG", logger="sidar")
+    caplog.set_level("DEBUG", logger="Sidar.Config")
 
     config._log_first_load_info("first-load-message")
     monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", True)
@@ -1920,3 +1920,5 @@ def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     second_record = next(r for r in caplog.records if "reload-message" in r.message)
     assert first_record.levelname == "INFO"
     assert second_record.levelname == "DEBUG"
+    assert [r.name for r in caplog.records if "first-load-message" in r.message] == ["Sidar.Config"]
+    assert [r.name for r in caplog.records if "reload-message" in r.message] == ["Sidar.Config"]

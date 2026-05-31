@@ -55,13 +55,10 @@ logger = logging.getLogger("Sidar.Config")
 
 def _log_first_load_info(message: str, *args: Any) -> None:
     """Log as INFO only on first config load cycle, DEBUG on later reloads."""
-    sidar_logger = logging.getLogger("sidar")
     if _FIRST_CONFIG_LOAD_LOGGED:
         logger.debug(message, *args)
-        sidar_logger.debug(message, *args)
     else:
         logger.info(message, *args)
-        sidar_logger.info(message, *args)
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:

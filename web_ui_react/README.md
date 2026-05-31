@@ -56,3 +56,12 @@ src/
 - `jsdom`: Tarayıcı DOM API'lerini emüle ederek `App`, `ChatPanel` ve `AgentManagerPanel` gibi bileşenlerin davranışını doğrular.
 - `Playwright`: `e2e/chat-websocket.spec.js` içinde token kaydetme, gerçek WebSocket handshake, presence güncellemesi ve stream yanıtını browser seviyesinde doğrular.
 - Legacy `web_ui/` tarafındaki sesli durum yardımcıları `voice_live_utils.js` içine ayrıştırılmıştır; böylece fallback arayüzü için de saf JS birim testleri yazılabilir.
+
+### CI tarayıcı smoke kapısı ve coverage görünürlüğü
+
+- `run_tests.sh`, CI profilinde `RUN_FRONTEND_E2E=1` varsayılanıyla Playwright WebSocket smoke
+  senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `0` değeridir;
+  tarayıcı doğrulaması için `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu
+  `web_ui_react/playwright-report/` altında artefakt olarak saklar.
+- Vitest coverage kapsamı `src/**/*.{js,jsx}` olarak açıkça tanımlıdır. Terminal raporu tam kapsanan
+  dosyaları da listeler (`skipFull: false`); böylece `%100` özetinin hangi dosyalardan oluştuğu görünürdür.
