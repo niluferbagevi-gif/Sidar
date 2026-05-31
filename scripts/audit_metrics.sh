@@ -6,9 +6,14 @@ format="${2:-markdown}"  # markdown | json
 
 exts=(py js css html md)
 
+tracked=false
+if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  tracked=true
+fi
+
 list_files() {
   local ext="$1"
-  if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [[ "$tracked" == "true" ]]; then
     git -C "$root" ls-files "*.${ext}"
   else
     find "$root" -type f -name "*.${ext}" -not -path "*/.git/*"
@@ -24,20 +29,22 @@ count_files() {
 
 count_lines() {
   local ext="$1"
-  python - "$root" "$ext" <<'PY'
+  python - "$root" "$ext" "$tracked" <<'PY'
 from pathlib import Path
 import subprocess
 import sys
 
 root = Path(sys.argv[1])
 ext = sys.argv[2]
-try:
+tracked = sys.argv[3] == "true"
+if tracked:
     files = subprocess.check_output(
-        ['git', '-C', str(root), 'ls-files', f'*.{ext}'],
+        ["git", "-C", str(root), "ls-files", f"*.{ext}"],
+        stderr=subprocess.DEVNULL,
         text=True,
     ).splitlines()
-except subprocess.CalledProcessError:
-    files = [str(p.relative_to(root)) for p in root.rglob(f'*.{ext}') if '.git' not in p.parts]
+else:
+    files = [str(p.relative_to(root)) for p in root.rglob(f"*.{ext}") if ".git" not in p.parts]
 
 total = 0
 for rel in files:
@@ -49,7 +56,7 @@ PY
 }
 
 if [[ "$format" == "json" ]]; then
-  printf '{"root":"%s","generated_at":%s,"tracked":true,"metrics":{' "$root" "$(date +%s)"
+  printf '{"root":"%s","generated_at":%s,"tracked":%s,"metrics":{' "$root" "$(date +%s)" "$tracked"
   first=1
   total_files=0
   total_lines=0

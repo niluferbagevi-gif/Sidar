@@ -1067,6 +1067,34 @@ def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> N
     assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in bats_block
 
 
+def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> None:
+    script = _script()
+    bats_block = script[
+        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
+    ]
+
+    assert 'BATS_REPORT_DIR="${BATS_REPORT_DIR:-artifacts/bats}"' in script
+    assert 'if [[ "${BATS_REPORT_DIR}" != artifacts/* || "${BATS_REPORT_DIR}" == *".."* ]]; then' in script
+    assert "BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir" in script
+    assert (
+        'rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log '
+        'web_ui_react/coverage "${BATS_REPORT_DIR}"'
+        in script
+    )
+    assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
+    assert 'bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell' in bats_block
+    assert '${BATS_REPORT_DIR}/report.xml' in bats_block
+
+
+def test_ci_uploads_bats_junit_report_artifact() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "name: Upload BATS JUnit Report" in ci_workflow
+    assert "name: bats-junit-report" in ci_workflow
+    assert "path: artifacts/bats/report.xml" in ci_workflow
+    assert "if-no-files-found: warn" in ci_workflow
+
+
 def test_pip_audit_skips_only_local_editable_package_in_local_and_ci_gates() -> None:
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

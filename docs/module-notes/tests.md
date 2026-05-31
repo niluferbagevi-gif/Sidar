@@ -56,6 +56,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   hatayla durur. Parolasız `sudo` kullanılabilen yerel ortamlarda
   `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh` eksik bağımlılıklar için aynı ortak kurulum
   scriptini opt-in biçimde çalıştırır; otomatik kurulum başarısız olursa fail-closed kalite kapısı korunur.
+- BATS shell testleri `run_tests.sh` içinde `--report-formatter junit` ile çalışır ve varsayılan olarak
+  `artifacts/bats/report.xml` üretir. Rapor dizini güvenli temizleme için yalnız `artifacts/` altında
+  kalmak koşuluyla `BATS_REPORT_DIR` ile değiştirilebilir. Yeni shell
+  davranışları için deterministik black-box BATS testleri eklenmelidir; `kcov` tabanlı satır kapsamı
+  zorunlu kapıya alınmadan önce Debian/Ubuntu ve CI runner paritesi ayrıca doğrulanmalıdır.
 - `pip-audit` çağrıları `--skip-editable` kullanır. Böylece PyPI üzerinde yayınlanmayan yerel
   editable `sidar` paketi tarama dışında kalır; kurulu üçüncü taraf bağımlılıkların CVE taraması
   çalışmaya devam eder.

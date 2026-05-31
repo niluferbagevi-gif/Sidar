@@ -4,6 +4,12 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}" || exit 1
 
+BATS_REPORT_DIR="${BATS_REPORT_DIR:-artifacts/bats}"
+if [[ "${BATS_REPORT_DIR}" != artifacts/* || "${BATS_REPORT_DIR}" == *".."* ]]; then
+  echo "❌ BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir: ${BATS_REPORT_DIR}"
+  exit 1
+fi
+
 # Codespaces/WSL overlay dosya sistemlerinde uv hardlink denemesi eksik paket-data dosyası
 # semptomlarına yol açabildiği için UV_LINK_MODE=copy ile deterministik kurulum tercih edilir.
 if [ -z "${UV_LINK_MODE:-}" ] && {
@@ -323,7 +329,7 @@ echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final covera
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS})"
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
-rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage sidar.egg-info build/
+rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage "${BATS_REPORT_DIR}" sidar.egg-info build/
 
 open_artifact() {
   local target="$1"
@@ -1096,8 +1102,9 @@ run_bats_shell_tests() {
   fi
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."
-  if bats tests/shell; then
-    echo "✅ BATS shell testleri geçti."
+  mkdir -p "${BATS_REPORT_DIR}"
+  if bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell; then
+    echo "✅ BATS shell testleri geçti. JUnit raporu: ${BATS_REPORT_DIR}/report.xml"
     return 0
   fi
 
