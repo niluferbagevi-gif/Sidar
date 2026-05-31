@@ -34,6 +34,24 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Yeni test eklerken önce modül klasörü belirlenmeli, sonra mevcut dosyaya genişletme
   mümkünse yeni dosya açılmamalıdır.
 
+## Shell testleri ve bağımlılık güvenlik taraması
+
+- `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
+  `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. `RUN_BATS_TESTS=1`
+  varsayılanında `run_tests.sh`, BATS eksikse shell testlerini sessizce atlamaz; eksik altyapıyı
+  hata olarak raporlar. Bilinçli yerel atlama yalnız `RUN_BATS_TESTS=0` ile yapılmalıdır.
+- `pip-audit` çağrıları `--skip-editable` kullanır. Böylece PyPI üzerinde yayınlanmayan yerel
+  editable `sidar` paketi tarama dışında kalır; kurulu üçüncü taraf bağımlılıkların CVE taraması
+  çalışmaya devam eder.
+
+## Coverage ratchet eşik davranışı
+
+- Güncel gate `.coveragerc` içindeki `[report] fail_under` değeridir. Ratchet yalnız başarılı
+  birleşik coverage koşusundan sonra ve ölçüm bir sonraki basamağa gerçekten ulaştığında yükselir.
+- Örneğin gate `%99` ise bir sonraki koşu doğrudan `%100` olmak zorunda değildir: `%99.x` ölçüm
+  gate'i geçer ancak ratchet `%99` seviyesinde kalır. Gate yalnız ölçüm `%100` seviyesine ulaştığında
+  `%100` olur.
+
 ## Performance benchmark baseline yönetimi
 
 - `tests/performance` altında bulunan benchmark testleri için düzenli baseline kaydı alın.

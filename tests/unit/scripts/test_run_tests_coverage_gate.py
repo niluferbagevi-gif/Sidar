@@ -1003,3 +1003,32 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "python -m venv" not in script
     assert "python3 -m venv" not in script
     assert "virtualenv" not in script
+
+
+def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
+    script = _script()
+    bats_block = script[
+        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
+    ]
+
+    assert 'if [ "${RUN_BATS_TESTS}" != "1" ]; then' in bats_block
+    assert "RUN_BATS_TESTS=1 ancak BATS bulunamadı" in bats_block
+    assert "bash scripts/install_ci_system_deps.sh" in bats_block
+    assert "BACKEND_EXIT_CODE=1" in bats_block
+    assert "shell testleri opsiyonel olduğu için atlandı" not in bats_block
+
+
+def test_pip_audit_skips_only_local_editable_package_in_local_and_ci_gates() -> None:
+    script = _script()
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert 'pip-audit --skip-editable --timeout "${pip_audit_timeout}"' in script
+    assert "pip-audit --skip-editable --timeout 30" in ci_workflow
+
+
+def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "sudo apt-get install -y portaudio19-dev shellcheck bats" not in ci_workflow
+    assert "run: bash scripts/install_ci_system_deps.sh" in ci_workflow
+    assert 'echo "=== bats ===" && bats --version' in ci_workflow

@@ -646,7 +646,7 @@ run_security_analysis_gates() {
   local pip_audit_wait_seconds="${PIP_AUDIT_RETRY_WAIT_SECONDS:-5}"
 
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
-    if uv run --with pip-audit pip-audit --timeout "${pip_audit_timeout}"; then
+    if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}"; then
       return 0
     fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
@@ -1030,8 +1030,9 @@ run_bats_shell_tests() {
   fi
 
   if ! command -v bats >/dev/null 2>&1; then
-    echo "ℹ️ BATS bulunamadı; shell testleri opsiyonel olduğu için atlandı (kurulum: bats)."
-    return 0
+    echo "❌ RUN_BATS_TESTS=1 ancak BATS bulunamadı. Debian/Ubuntu için: bash scripts/install_ci_system_deps.sh"
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."

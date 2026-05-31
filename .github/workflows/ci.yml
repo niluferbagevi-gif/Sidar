@@ -74,9 +74,6 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Install APT dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y portaudio19-dev shellcheck bats
-
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
 
@@ -91,6 +88,7 @@ jobs:
           echo "=== venv ===" && ls .venv/bin/python3 2>/dev/null || echo "venv missing"
           echo "=== portaudio ===" && dpkg -l portaudio19-dev 2>/dev/null || echo "portaudio not installed"
           echo "=== shellcheck ===" && shellcheck --version 2>/dev/null || echo "shellcheck not found"
+          echo "=== bats ===" && bats --version 2>/dev/null || echo "bats not found"
 
       - name: Verify core install manifest integrity
         if: success() && github.event_name == 'pull_request'
@@ -167,7 +165,7 @@ jobs:
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run bandit -c pyproject.toml -q -r .
-          uv run --with pip-audit pip-audit --timeout 30
+          uv run --with pip-audit pip-audit --skip-editable --timeout 30
 
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh

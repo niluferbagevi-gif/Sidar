@@ -180,3 +180,8 @@ def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
     ratchet_coverage_gate(coveragerc_path=coveragerc, coverage_json_path=coverage_json)
 
     assert "extra_css = assets/dark_mode.css" in coveragerc.read_text(encoding="utf-8")
+
+
+def test_ninety_nine_gate_does_not_require_hundred_until_measurement_reaches_it() -> None:
+    assert compute_next_gate(99.58, 99, step=1, min_gate=5, max_gate=100) == 99
+    assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=100) == 100
