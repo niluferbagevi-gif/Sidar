@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from tenacity import Future, RetryError
@@ -48,12 +49,23 @@ def test_init_token_cleanup_without_client_init(monkeypatch):
 
 def test_init_client_no_token_optional(caplog):
     m = GitHubManager(token="", repo_name="", require_token=False)
+    m._init_client()
+
     assert m.is_available() is False
+    assert "GitHub token ayarlanmamış" in caplog.text
 
 
 def test_init_client_requires_token():
     with pytest.raises(ValueError):
         GitHubManager(token="", repo_name="x/y", require_token=True)
+
+
+def test_init_client_rechecks_missing_token_for_deferred_repo_configuration() -> None:
+    m = GitHubManager(token="", repo_name="", require_token=False)
+    m.repo_name = "octo/demo"
+
+    with pytest.raises(ValueError, match="GITHUB_TOKEN bulunamadı"):
+        m._init_client()
 
 
 def test_load_repo_and_set_repo_paths(manager):
@@ -279,27 +291,20 @@ def test_create_or_update_file_create_without_branch(manager):
     assert last["path"] == "new.txt"
 
 
-def test_init_client_raises_when_github_constructor_returns_none(monkeypatch):
-    """Line 142: Github(...) None dönerse RuntimeError fırlatılmalı."""
-    import importlib
-
-    try:
-        github_module = importlib.import_module("github")
-    except ImportError:
-        pytest.skip("PyGithub kurulu değil")
-
-    monkeypatch.setattr(github_module, "Github", lambda **_kw: None, raising=True)
-    monkeypatch.setattr(
-        github_module,
-        "Auth",
-        SimpleNamespace(Token=lambda token: SimpleNamespace(token=token)),
-        raising=True,
+def test_init_client_handles_github_constructor_returning_none(monkeypatch, caplog):
+    """Github(...) None dönerse bağlantı kurulmamış durumda kalmalı."""
+    github_module = SimpleNamespace(
+        Auth=SimpleNamespace(Token=lambda token: SimpleNamespace(token=token)),
+        Github=lambda **_kwargs: None,
     )
+    monkeypatch.setitem(sys.modules, "github", github_module)
 
     m = GitHubManager(token="tk", repo_name="", require_token=False)
-    # _init_client RuntimeError'ı yakalayıp _available=False bırakmalı.
-    assert m.is_available() is True
+    m._init_client()
+
+    assert m._available is False
     assert m._gh is None
+    assert "GitHub istemcisi başlatılamadı" in caplog.text
 
 
 def test_branch_and_pr_operations(manager):
@@ -433,10 +438,14 @@ def test_methods_when_repo_or_connection_missing(monkeypatch):
     assert m.search_code("q")[0] is False
 
 
-def test_init_client_import_error_and_generic_error(monkeypatch):
+def test_init_client_import_error_and_generic_error(monkeypatch, caplog):
     # ImportError branch: inject a non-module sentinel into sys.modules.
     monkeypatch.setitem(sys.modules, "github", None)
-    GitHubManager(token="tok")
+    missing_package = GitHubManager(token="tok")
+    missing_package._init_client()
+    assert missing_package._gh is None
+    assert missing_package._available is False
+    assert "'PyGithub' paketi kurulu değil" in caplog.text
 
     class _FakeAuth:
         @staticmethod
@@ -448,7 +457,11 @@ def test_init_client_import_error_and_generic_error(monkeypatch):
             raise RuntimeError("connect boom")
 
     monkeypatch.setitem(sys.modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_BadGithub))
-    GitHubManager(token="tok")
+    broken_connection = GitHubManager(token="tok")
+    broken_connection._init_client()
+    assert broken_connection._gh is None
+    assert broken_connection._available is False
+    assert "GitHub bağlantı hatası: connect boom" in caplog.text
 
 
 def test_init_client_success_with_repo_load(monkeypatch):
@@ -469,8 +482,35 @@ def test_init_client_success_with_repo_load(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "github", SimpleNamespace(Auth=_FakeAuth, Github=_FakeGithub))
     m = GitHubManager(token=" tok ", repo_name="octo/demo")
+    m._init_client()
+
     assert m.is_available() is True
-    assert m.repo_name == "octo/demo"
+    assert m._available is True
+    assert m._gh is not None
+    assert cast(Any, m._gh).auth == "AUTH:tok"
+    assert m._repo is not None
+    assert m._repo.full_name == "octo/demo"
+
+
+def test_ensure_repo_reuses_loaded_repo_and_lazy_loads_configured_name(monkeypatch) -> None:
+    m = GitHubManager(token="tok")
+    loaded_repo = SimpleNamespace(full_name="octo/existing")
+    m._repo = cast(Any, loaded_repo)
+    assert m._ensure_repo() is True
+
+    m._repo = None
+    assert m._ensure_repo() is False
+
+    loaded_names: list[str] = []
+    m.repo_name = "octo/demo"
+
+    def _load_repo(repo_name: str) -> bool:
+        loaded_names.append(repo_name)
+        return True
+
+    monkeypatch.setattr(m, "_load_repo", _load_repo)
+    assert m._ensure_repo() is True
+    assert loaded_names == ["octo/demo"]
 
 
 def test_repo_mock_error_branches_for_coverage():
