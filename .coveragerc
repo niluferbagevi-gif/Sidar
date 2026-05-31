@@ -1,5 +1,0 @@
-[html]
-extra_css = assets/dark_mode.css
-
-[report]
-fail_under = 99
