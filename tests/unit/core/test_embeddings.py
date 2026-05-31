@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 from core import embeddings
@@ -43,3 +45,57 @@ def test_model_cache_evicts_old_entries(monkeypatch) -> None:
         embeddings.get_sentence_transformer_model(f"model-{idx}", cfg)
 
     assert len(embeddings._MODEL_CACHE) == 4
+
+
+_HF_CACHE_ENV_KEYS = (
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "HF_HOME",
+)
+
+
+def _clear_hf_cache_env(monkeypatch) -> None:
+    for key in _HF_CACHE_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_hf_hub_cache_roots_adds_hf_home_hub(monkeypatch, tmp_path) -> None:
+    _clear_hf_cache_env(monkeypatch)
+    hf_home = tmp_path / "hf-home"
+    monkeypatch.setenv("HF_HOME", str(hf_home))
+
+    assert embeddings._hf_hub_cache_roots() == [hf_home / "hub"]
+
+
+def test_hf_hub_cache_roots_defaults_to_unique_standard_hub(monkeypatch) -> None:
+    _clear_hf_cache_env(monkeypatch)
+
+    assert embeddings._hf_hub_cache_roots() == [Path("~/.cache/huggingface/hub").expanduser()]
+
+
+def test_hf_model_cache_exists_rejects_empty_name() -> None:
+    assert embeddings.hf_model_cache_exists("") is False
+    assert embeddings.hf_model_cache_exists("   ") is False
+
+
+def test_hf_model_cache_exists_accepts_local_path(tmp_path) -> None:
+    model_path = tmp_path / "local-model"
+    model_path.mkdir()
+
+    assert embeddings.hf_model_cache_exists(str(model_path)) is True
+
+
+def test_scoped_hf_runtime_env_restores_unset_and_existing_values(monkeypatch) -> None:
+    monkeypatch.delenv("HF_HUB_DISABLE_PROGRESS_BARS", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_NO_ADVISORY_WARNINGS", raising=False)
+    monkeypatch.setenv("TRANSFORMERS_VERBOSITY", "warning")
+
+    with embeddings._scoped_hf_runtime_env():
+        assert os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+        assert os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] == "1"
+        assert os.environ["TRANSFORMERS_VERBOSITY"] == "error"
+
+    assert "HF_HUB_DISABLE_PROGRESS_BARS" not in os.environ
+    assert "TRANSFORMERS_NO_ADVISORY_WARNINGS" not in os.environ
+    assert os.environ["TRANSFORMERS_VERBOSITY"] == "warning"
