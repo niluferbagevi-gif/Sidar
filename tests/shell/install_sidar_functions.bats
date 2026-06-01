@@ -697,6 +697,7 @@ EOF
     sed -i "s#__CREATE__#$psql_create#g" "$tmpdir/psql"
     chmod +x "$tmpdir/psql"
     PATH="$tmpdir:$PATH"
+    hash -r
 
     ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
 
@@ -708,4 +709,23 @@ EOF
     fi
   '
   [ "$status" -eq 0 ]
+}
+
+@test "ensure_postgres_databases_exist fails closed on psql password authentication errors" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/psql" <<"EOF"
+#!/usr/bin/env bash
+printf "%s\n" "psql: error: password authentication failed for user sidar" >&2
+exit 2
+EOF
+    chmod +x "$tmpdir/psql"
+    PATH="$tmpdir:$PATH"
+    hash -r
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "wrong-password" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PostgreSQL auth başarısız"* ]]
 }

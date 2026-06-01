@@ -6309,8 +6309,13 @@ ensure_postgres_databases_exist() {
     local -a required_dbs=("$primary_db" "sidar" "sidar_development" "sidar_test")
     local db_name=""
     local unique_dbs=""
+    local psql_bin=""
 
-    if ! command -v psql &>/dev/null; then
+    # PATH kurulum sırasında değişebilir; eski Bash command hash kayıtlarının
+    # sistemdeki veya PATH üzerinden sağlanan güncel psql ikilisini gölgelemesini önle.
+    hash -r
+    psql_bin="$(command -v psql || true)"
+    if [[ -z "$psql_bin" ]]; then
         warn "psql bulunamadı; veritabanı varlık kontrolü atlandı."
         return 0
     fi
@@ -6320,7 +6325,7 @@ ensure_postgres_databases_exist() {
         [[ -n "$db_name" ]] || continue
         local psql_err_file
         psql_err_file="$(mktemp)"
-        if ! PGPASSWORD="$db_password" psql -w \
+        if ! PGPASSWORD="$db_password" "$psql_bin" -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
             -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
@@ -6328,7 +6333,7 @@ ensure_postgres_databases_exist() {
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
             info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
-            if ! PGPASSWORD="$db_password" psql -w \
+            if ! PGPASSWORD="$db_password" "$psql_bin" -w \
                 -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
                 -v ON_ERROR_STOP=1 \
                 -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
