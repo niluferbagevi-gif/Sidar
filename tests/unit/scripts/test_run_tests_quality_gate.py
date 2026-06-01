@@ -1337,6 +1337,14 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert ".toBeVisible({ timeout: 15_000 })" in websocket_spec
 
 
+def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
+    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
+
+    assert 'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";' in websocket_hook
+    assert 'useLayoutEffect(() => {\n    manualCloseRef.current = false;\n    connect();' in websocket_hook
+    assert "flushSync" not in websocket_hook
+
+
 def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
