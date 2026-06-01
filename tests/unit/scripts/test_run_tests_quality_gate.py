@@ -654,6 +654,15 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
     assert "install_modules" in result.stdout
 
 
+def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -> None:
+    raw_script = Path("scripts/install_modules/utils/wsl_integration_autofix.ps1").read_bytes()
+
+    assert raw_script.startswith(b"\xef\xbb\xbf")
+    script = raw_script.decode("utf-8-sig")
+    assert '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()' in script
+    assert 'Write-Error "docker-desktop görünmüyor ve Docker daemon da yanıt vermiyor."' in script
+
+
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     main_body = script[

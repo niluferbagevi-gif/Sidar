@@ -77,6 +77,12 @@ anahtarı açık olmalıdır. Entegrasyon kapalıysa `install_sidar.sh`, etkile�
 kullanıcıyı yönlendirip doğrulama ister; `NO_INTERACTION=true` veya `AUTO_INSTALL=true`
 ile çalışan CI/otomasyon modlarında ise beklemeye girmeden fail-fast davranır.
 
+Windows tarafında `powershell.exe -File` ile çağrılan
+`scripts/install_modules/utils/wsl_integration_autofix.ps1`, Windows PowerShell 5.1'in
+BOM'suz UTF-8 kaynak dosyalarını ANSI code page ile yorumlamasını engellemek için UTF-8 BOM ile
+saklanmalıdır. Bu dosya yeniden kaydedilirken BOM kaldırılmamalıdır; aksi halde kullanıcıya görünen
+Türkçe autofix hata mesajlarında mojibake oluşur.
+
 Docker CLI WSL içinde yoksa veya host sistemde kurulması gerekiyorsa kurulum
 komutuna `--install-docker-cli` bayrağı eklenebilir:
 
