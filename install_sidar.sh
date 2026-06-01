@@ -6305,7 +6305,7 @@ is_alembic_at_head() {
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
-ensure_postgres_databases_exist() {
+ensure_postgres_databases_exist() (
     local db_host="$1"
     local db_port="$2"
     local db_user="$3"
@@ -6325,16 +6325,18 @@ ensure_postgres_databases_exist() {
         return 0
     fi
 
+    local psql_err_file
+    psql_err_file="$(mktemp)"
+    trap 'rm -f "$psql_err_file"' EXIT
+
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        local psql_err_file
-        psql_err_file="$(mktemp)"
+        : >"$psql_err_file"
         if ! PGPASSWORD="$db_password" "$psql_bin" -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
             -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                rm -f "$psql_err_file"
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
             info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
@@ -6343,17 +6345,14 @@ ensure_postgres_databases_exist() {
                 -v ON_ERROR_STOP=1 \
                 -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
                 if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                    rm -f "$psql_err_file"
                     fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
                 fi
-                rm -f "$psql_err_file"
                 return 1
             fi
             ok "Veritabanı hazır: ${db_name}"
         fi
-        rm -f "$psql_err_file"
     done <<<"$unique_dbs"
-}
+)
 
 
 seed_rag_metadata_after_migrations() {
