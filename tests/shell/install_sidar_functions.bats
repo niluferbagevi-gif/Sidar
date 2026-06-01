@@ -806,7 +806,7 @@ EOF
     cat > "$tmpdir/psql" <<"EOF"
 #!/usr/bin/env bash
 printf "%s\n" "$*" >> "__CALLS__"
-if [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
+if [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = '\''sidar'\''"* ]]; then
   echo "1"
   exit 0
 fi
