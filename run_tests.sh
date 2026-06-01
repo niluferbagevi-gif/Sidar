@@ -296,6 +296,7 @@ else
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
 fi
+RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
   # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
@@ -1374,25 +1375,54 @@ else
   fi
 fi
 
+frontend_playwright_chromium_cache_ready() {
+  node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' >/dev/null 2>&1
+const fs = require("node:fs");
+const { chromium } = require("@playwright/test");
+process.exit(fs.existsSync(chromium.executablePath()) ? 0 : 1);
+NODE_PLAYWRIGHT_CACHE_CHECK
+}
+
+install_local_frontend_playwright_chromium_cache() {
+  if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
+    return 1
+  fi
+  if ! command -v npx >/dev/null 2>&1; then
+    echo "⚠️ Node Playwright Chromium cache'i otomatik kurulamadı: npx bulunamadı."
+    return 1
+  fi
+
+  echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
+  (
+    unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+    npx --no-install playwright install chromium
+  )
+}
+
 resolve_local_frontend_e2e_mode() {
   if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
     return 0
   fi
 
-  if node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' >/dev/null 2>&1
-const fs = require("node:fs");
-const { chromium } = require("@playwright/test");
-process.exit(fs.existsSync(chromium.executablePath()) ? 0 : 1);
-NODE_PLAYWRIGHT_CACHE_CHECK
-  then
+  if frontend_playwright_chromium_cache_ready; then
     RUN_FRONTEND_E2E=1
     echo "✅ Node Playwright Chromium cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
-  else
-    RUN_FRONTEND_E2E=0
-    echo "ℹ️ Frontend Playwright smoke testleri atlandı: Node Playwright Chromium cache'i bulunamadı (RUN_FRONTEND_E2E=auto)."
-    echo "   Yerelde etkinleştirmek için: cd web_ui_react && npx playwright install chromium"
-    echo "   Ardından: RUN_FRONTEND_E2E=1 bash run_tests.sh"
+    return 0
   fi
+
+  if install_local_frontend_playwright_chromium_cache && frontend_playwright_chromium_cache_ready; then
+    RUN_FRONTEND_E2E=1
+    echo "✅ Node Playwright Chromium cache'i otomatik kuruldu; yerel frontend smoke testleri etkinleştirildi."
+    return 0
+  fi
+
+  RUN_FRONTEND_E2E=0
+  echo "⚠️ Frontend Playwright smoke testleri atlandı: Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=auto)."
+  if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
+    echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
+  fi
+  echo "   Manuel kurulum için: cd web_ui_react && npx playwright install chromium"
+  echo "   Ardından: RUN_FRONTEND_E2E=1 bash run_tests.sh"
 }
 
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)

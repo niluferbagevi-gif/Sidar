@@ -1216,13 +1216,19 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
 
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
+    assert 'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
+    assert "frontend_playwright_chromium_cache_ready()" in script
+    assert "install_local_frontend_playwright_chromium_cache()" in script
     assert "resolve_local_frontend_e2e_mode()" in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then' in script
+    assert 'if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then' in script
     assert 'const { chromium } = require("@playwright/test");' in script
     assert 'fs.existsSync(chromium.executablePath())' in script
+    assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
+    assert "npx --no-install playwright install chromium" in script
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script

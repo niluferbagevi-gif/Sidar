@@ -62,7 +62,10 @@ src/
 - `run_tests.sh`, CI profilinde `RUN_FRONTEND_E2E=1` varsayılanıyla Playwright WebSocket smoke
   senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `auto` değeridir:
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
-  hazır değilse browser indirmeden açıklayıcı yönlendirmeyle atlanır. Tarayıcıyı hazırlamak için
+  hazır değilse `run_tests.sh`, frontend bağımlılıkları kurulduktan sonra
+  `npx --no-install playwright install chromium` ile cache'i bir kez hazırlamayı dener ve başarılıysa
+  smoke kapısını aynı çalıştırmada etkinleştirir. Bu yerel otomatik indirmeyi kapatmak için
+  `RUN_FRONTEND_E2E_AUTO_INSTALL=0 bash run_tests.sh`, manuel hazırlık için
   `cd web_ui_react && npx playwright install chromium`, açıkça zorlamak için
   `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu
   `web_ui_react/playwright-report/` altında artefakt olarak saklar.
