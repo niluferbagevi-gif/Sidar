@@ -1297,6 +1297,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'process.env.SIDAR_E2E_BACKEND_PORT || "17860"' in playwright
     assert "timeout: 45_000" in playwright
     assert "expect: { timeout: 15_000 }" in playwright
+    assert "fullyParallel: false" in playwright
+    assert "workers: 1" in playwright
     assert "storageState: undefined" in playwright
     assert "url: e2eBaseURL" in playwright
     assert "port: 5173" not in playwright
@@ -1309,7 +1311,13 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'sidarBackendUrl.replace(/^http/, "ws")' in vite
     assert "localhost:7860" not in vite
     assert 'process.env.SIDAR_E2E_BACKEND_PORT || "17860"' in websocket_spec
+    assert 'test.describe.configure({ mode: "serial" })' not in websocket_spec
+    assert "test.beforeEach(async ({ page }) =>" in websocket_spec
+    assert "test.afterEach(async () =>" in websocket_spec
     assert "startMockSidarBackend({ port: e2eBackendPort })" in websocket_spec
+    assert "await page.context().clearCookies()" in websocket_spec
+    assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
+    assert ".toBeVisible({ timeout: 15_000 })" in websocket_spec
 
 
 def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:
