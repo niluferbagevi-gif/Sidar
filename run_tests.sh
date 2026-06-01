@@ -312,12 +312,17 @@ BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
 BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
 if [ "${TEST_PROFILE}" = "ci" ]; then
+  BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
 else
-  # WSL2/laptop GPU P-state ve model keep-alive jitter'ı için yerelde daha toleranslı;
-  # CI profili sabit runner regresyon kapısını yukarıda %10 olarak korur.
+  # WSL2/laptop GPU P-state, Docker servisleri ve host yükü jitter üretebilir.
+  # Yerelde baseline farkını raporla ancak açık opt-in yoksa hard-fail üretme.
+  BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
 fi
+BENCHMARK_DISABLE_GC="${BENCHMARK_DISABLE_GC:-1}"
+BENCHMARK_WARMUP="${BENCHMARK_WARMUP:-on}"
+BENCHMARK_WARMUP_ITERATIONS="${BENCHMARK_WARMUP_ITERATIONS:-100000}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
@@ -1331,13 +1336,23 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
     --benchmark-save="${BENCHMARK_BASELINE_NAME}"
     --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
+    --benchmark-warmup="${BENCHMARK_WARMUP}"
+    --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
   )
+  if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
+    benchmark_cmd+=(--benchmark-disable-gc)
+  fi
 
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
     if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
-      echo "📈 Benchmark karşılaştırması etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
-      benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+      if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
+        echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
+        benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+      else
+        echo "⚠️ Benchmark karşılaştırması rapor modunda (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
+        echo "ℹ️ Yerelde regresyon hard-fail kapısı için BENCHMARK_ENFORCE_COMPARE=1 kullanın."
+      fi
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."

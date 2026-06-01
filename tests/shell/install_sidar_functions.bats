@@ -242,6 +242,87 @@ EOF
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
 }
 
+@test "install_playwright_browsers treats unsupported install-deps output with exit zero as a fallback signal" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install chromium") exit 0 ;;
+  "-m playwright install-deps chromium")
+    echo "BEWARE: your OS is not officially supported by Playwright." >&2
+    echo "Cannot install dependencies for ubuntu26.04-x64 with Playwright 1.60.0!" >&2
+    exit 0
+    ;;
+esac
+exit 1
+EOF
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/sudo"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Cannot install dependencies for ubuntu26.04-x64"* ]]
+  [[ "$output" == *"sabit Chromium apt bağımlılık listesi deneniyor"* ]]
+  [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
+}
+
+@test "install_playwright_browsers verifies critical libraries after a silent install-deps success" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install chromium") exit 0 ;;
+  "-m playwright install-deps chromium") exit 0 ;;
+esac
+exit 1
+EOF
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/sudo"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"kritik libnss3/libnspr4 bağımlılıkları doğrulanamadı"* ]]
+  [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
+}
+
 @test "install_playwright_browsers keeps the Ubuntu override warning visible when the proactive attempt fails" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

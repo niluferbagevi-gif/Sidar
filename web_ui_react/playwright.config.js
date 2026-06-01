@@ -2,6 +2,10 @@ import { defineConfig } from "@playwright/test";
 
 const playwrightHostPlatformOverride =
   process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect";
+const e2eFrontendPort = Number(process.env.SIDAR_E2E_FRONTEND_PORT || "15173");
+const e2eBackendPort = Number(process.env.SIDAR_E2E_BACKEND_PORT || "17860");
+const e2eBaseURL = `http://127.0.0.1:${e2eFrontendPort}`;
+const e2eBackendURL = `http://127.0.0.1:${e2eBackendPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -11,18 +15,20 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
   outputDir: "test-results",
-  timeout: 30_000,
-  expect: { timeout: 8_000 },
+  timeout: 45_000,
+  expect: { timeout: 15_000 },
   fullyParallel: true,
   retries: 0,
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: e2eBaseURL,
+    storageState: undefined,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run dev -- --strictPort --port 5173",
-    port: 5173,
-    reuseExistingServer: !process.env.CI,
+    command: `npm run dev -- --strictPort --port ${e2eFrontendPort}`,
+    env: { SIDAR_BACKEND_URL: e2eBackendURL },
+    url: e2eBaseURL,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

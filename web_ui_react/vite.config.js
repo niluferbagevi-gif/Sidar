@@ -2,6 +2,9 @@ import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const sidarBackendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860";
+const sidarWebSocketUrl = sidarBackendUrl.replace(/^http/, "ws");
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -12,11 +15,11 @@ export default defineConfig({
   server: {
     // Geliştirme sırasında FastAPI backend'e proxy — CORS sorununu önler
     proxy: {
-      "/api": { target: "http://localhost:7860", changeOrigin: true },
-      "/ws": { target: "ws://localhost:7860", ws: true },
-      "/admin": { target: "http://localhost:7860", changeOrigin: true },
-      "/sessions": { target: "http://localhost:7860", changeOrigin: true },
-      "/metrics": { target: "http://localhost:7860", changeOrigin: true },
+      "/api": { target: sidarBackendUrl, changeOrigin: true },
+      "/ws": { target: sidarWebSocketUrl, ws: true },
+      "/admin": { target: sidarBackendUrl, changeOrigin: true },
+      "/sessions": { target: sidarBackendUrl, changeOrigin: true },
+      "/metrics": { target: sidarBackendUrl, changeOrigin: true },
     },
   },
   build: {

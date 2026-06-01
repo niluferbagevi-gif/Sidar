@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { startMockSidarBackend } from "./support/mockSidarBackend.js";
 
+const e2eBackendPort = Number(process.env.SIDAR_E2E_BACKEND_PORT || "17860");
+
 test.describe("ChatPanel websocket e2e", () => {
   test.describe.configure({ mode: "serial" });
 
   let backend;
 
   test.beforeAll(async () => {
-    backend = await startMockSidarBackend({ port: 7860 });
+    backend = await startMockSidarBackend({ port: e2eBackendPort });
   });
 
   test.afterAll(async () => {
