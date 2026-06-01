@@ -449,7 +449,8 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "MISSING_PACKAGES=()" in installer
     assert 'SUDO=(sudo -n)' in installer
     assert 'if ! sudo -n true >/dev/null 2>&1; then' in installer
-    assert "Passwordless sudo is required for non-interactive installation." in installer
+    assert "Passwordless or cached sudo is required for non-interactive installation." in installer
+    assert "Run 'sudo -v' first" in installer
     assert (
         '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
         in installer
@@ -1047,6 +1048,39 @@ def test_run_tests_defaults_bats_to_required_in_ci_and_optional_locally() -> Non
     assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"') == 1
     assert "Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak" in script
     assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in script
+
+
+def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninteractive_runs() -> None:
+    script = _script()
+    prompt_block = script[
+        script.index("install_local_bats_dependencies()") : script.index("# 0) Önceki test artefaktlarını temizle")
+    ]
+
+    assert "configure_local_bats_shell_tests()" in prompt_block
+    assert '[ "${TEST_PROFILE}" != "local" ]' in prompt_block
+    assert '[ "${RUN_BATS_TESTS}" = "1" ]' in prompt_block
+    assert 'command -v bats >/dev/null 2>&1' in prompt_block
+    assert '[ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]' in prompt_block
+    assert '[ "${SIDAR_PROMPT_LOCAL_BATS_INSTALL:-1}" != "1" ]' in prompt_block
+    assert '[ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]' in prompt_block
+    assert 'IFS= read -r -n 1 local_reply < /dev/tty || true' in prompt_block
+    assert 'y|Y|e|E) install_local_bats_dependencies || true ;;' in prompt_block
+    assert 'RUN_BATS_TESTS=1' in prompt_block
+    assert "Etkileşimli terminal bulunamadı; BATS kurulum prompt'u gösterilmedi" in prompt_block
+    assert prompt_block.index("configure_local_bats_shell_tests") < prompt_block.index("ℹ️ Test profili:")
+
+
+def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_skip() -> None:
+    script = _script()
+    prompt_block = script[
+        script.index("configure_local_bats_shell_tests()") : script.index("# 0) Önceki test artefaktlarını temizle")
+    ]
+
+    assert 'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then' in prompt_block
+    assert "install_local_bats_dependencies || true" in prompt_block
+    assert prompt_block.index('if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then') < prompt_block.index(
+        'if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then'
+    )
 
 
 def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:

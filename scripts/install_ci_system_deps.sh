@@ -38,7 +38,7 @@ if [[ "${EUID}" -ne 0 ]]; then
     exit 1
   fi
   if ! sudo -n true >/dev/null 2>&1; then
-    echo "Passwordless sudo is required for non-interactive installation. Run as root or configure sudo -n access." >&2
+    echo "Passwordless or cached sudo is required for non-interactive installation. Run 'sudo -v' first, run as root, or configure sudo -n access." >&2
     exit 1
   fi
   SUDO=(sudo -n)

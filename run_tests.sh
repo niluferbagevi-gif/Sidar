@@ -356,12 +356,54 @@ if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   COVERAGE_FAIL_UNDER="90"
 fi
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
-echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
-if [ "${TEST_PROFILE}" = "local" ] && [ "${RUN_BATS_TESTS}" != "1" ] && ! command -v bats >/dev/null 2>&1; then
+install_local_bats_dependencies() {
+  echo "📦 BATS ve yerel kalite kapısı sistem bağımlılıkları kuruluyor..."
+  if ! bash scripts/install_ci_system_deps.sh; then
+    echo "⚠️ BATS sistem bağımlılıkları kurulamadı; shell testleri bu çalıştırmada atlanacak."
+    return 1
+  fi
+  if ! command -v bats >/dev/null 2>&1; then
+    echo "⚠️ Sistem bağımlılığı kurulumundan sonra BATS hâlâ PATH üzerinde bulunamadı; shell testleri bu çalıştırmada atlanacak."
+    return 1
+  fi
+
+  RUN_BATS_TESTS=1
+  echo "✅ BATS hazır; yerel shell testleri bu çalıştırmada etkinleştirildi."
+}
+
+configure_local_bats_shell_tests() {
+  if [ "${TEST_PROFILE}" != "local" ] || [ "${RUN_BATS_TESTS}" = "1" ] || command -v bats >/dev/null 2>&1; then
+    return 0
+  fi
+
   echo "⚠️ Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak. CI paritesi için: bash scripts/install_ci_system_deps.sh"
-  echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
-fi
+  echo "   Etkileşimsiz opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
+
+  if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then
+    install_local_bats_dependencies || true
+    return 0
+  fi
+  if [ "${SIDAR_PROMPT_LOCAL_BATS_INSTALL:-1}" != "1" ]; then
+    return 0
+  fi
+  if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then
+    echo "ℹ️ Etkileşimli terminal bulunamadı; BATS kurulum prompt'u gösterilmedi."
+    return 0
+  fi
+
+  local local_reply=""
+  printf "❓ BATS ve gerekli sistem bağımlılıkları şimdi kurulsun mu? [y/N] " > /dev/tty
+  IFS= read -r -n 1 local_reply < /dev/tty || true
+  printf '\n' > /dev/tty
+  case "${local_reply}" in
+    y|Y|e|E) install_local_bats_dependencies || true ;;
+    *) echo "ℹ️ BATS kurulumu kullanıcı tarafından atlandı." ;;
+  esac
+}
+
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
+configure_local_bats_shell_tests
+echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
 rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}" sidar.egg-info build/
