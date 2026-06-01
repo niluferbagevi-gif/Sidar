@@ -82,11 +82,15 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
-  `--benchmark-compare-fail=mean:10%` kalite kapısı da eklenir; ortalama sürede `%10` üzerindeki
-  regresyonlar otomatik fail üretir. Başlangıç eşiği `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde
-  değiştirilebilir.
+  profil-duyarlı `--benchmark-compare-fail` kalite kapısı da eklenir. Sabit runner kullanan CI
+  profilinde varsayılan `mean:10%`, WSL2/laptop P-state ve model keep-alive jitter'ı görülebilen yerel
+  profilde varsayılan `mean:15%` değeridir. Her iki değer de `BENCHMARK_COMPARE_FAIL` ile kontrollü
+  biçimde override edilebilir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
+- GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
+  artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
+  jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.
 - `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Repo içinde incelenmiş bir
   `*_baseline.json` kaydı olsa bile genel GitHub-hosted CI hattında koşulsuz
   `BENCHMARK_COMPARE_REQUIRED=1` kullanmayın: farklı CPU/OS profilleri anlamlı olmayan karşılaştırma
@@ -139,10 +143,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
   `GPU_BENCH_CONCURRENT_ROUNDS=3` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
-  kullanır ve stabil baseline için sırasıyla `5` ve `20` tur çalıştırır.
+  kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`
-  - `GPU_BENCH_WARMUP_ROUNDS=5`
+  - `GPU_BENCH_WARMUP_ROUNDS=8`
   - `GPU_BENCH_NUM_PREDICT=128`
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
   yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.

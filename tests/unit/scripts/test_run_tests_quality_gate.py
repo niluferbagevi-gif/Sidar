@@ -82,7 +82,9 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
+    assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
@@ -137,7 +139,8 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
-        assert "BENCHMARK_COMPARE_FAIL=mean:10%" in content
+        assert "BENCHMARK_COMPARE_FAIL=" in content
+        assert "yerelde mean:15%, CI profilinde mean:10%" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
 
     assert "Override hiyerarşisi" in env_advanced
@@ -571,6 +574,12 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "Standart çevrimiçi kullanıcı akışında ana yöntem" in modularization_note
     assert "Kurumsal, offline veya interneti kısıtlı" in readme
     assert "monolitik Release bundle" in modularization_note
+
+
+def test_install_sidar_root_guard_allows_explicit_test_mode_only() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert '"${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1"' in script
 
 
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
