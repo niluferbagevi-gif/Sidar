@@ -808,7 +808,7 @@ EOF
 printf "%s\n" "$*" >> "__CALLS__"
 [[ "${PGPASSWORD:-}" == "super-secret" ]] || exit 9
 [[ "$*" == *"-w -h 127.0.0.1 -p 5432 -U sidar -d postgres"* ]] || exit 8
-if [[ "$*" == *"-tAc SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database WHERE datname = '\''sidar'\''"* ]]; then
   echo "1"
   exit 0
 fi
