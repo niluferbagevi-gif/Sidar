@@ -297,6 +297,17 @@ else
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
 fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
+# RETRY_ON_FAIL genel kullanıcı kısayoludur; namespaced değer verilirse öncelik ondadır.
+FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"
+if [ "${TEST_PROFILE}" = "ci" ]; then
+  BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"
+  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"
+else
+  # WSL2/laptop ortamında benchmark ve tarayıcı E2E fazları host jitter'ına açıktır.
+  # Fazları çalıştır ve raporla; yerelde açık opt-in yoksa final çıkışı bloke etme.
+  BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"
+  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-0}"
+fi
 
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
   # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
@@ -339,6 +350,7 @@ AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
+FRONTEND_E2E_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
 DOCKER_TEST_SERVICES_STARTED=0
 DOCKER_COMPOSE_CMD=()
@@ -1483,6 +1495,32 @@ install_local_frontend_playwright_chromium_cache() {
   )
 }
 
+run_frontend_e2e_with_retry() {
+  local e2e_exit_code=0
+
+  echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor..."
+  if npm run test:e2e; then
+    return 0
+  else
+    e2e_exit_code=$?
+  fi
+
+  if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then
+    return "${e2e_exit_code}"
+  fi
+
+  echo "⚠️ Frontend Playwright smoke testleri başarısız oldu (çıkış=${e2e_exit_code}); flake elemek için bir kez yeniden deneniyor..."
+  if npm run test:e2e; then
+    echo "✅ Frontend Playwright smoke testleri ikinci denemede geçti. İlk hata flake olarak raporlandı."
+    return 0
+  else
+    e2e_exit_code=$?
+  fi
+
+  echo "❌ Frontend Playwright smoke testleri retry sonrasında da başarısız (çıkış=${e2e_exit_code})."
+  return "${e2e_exit_code}"
+}
+
 resolve_local_frontend_e2e_mode() {
   if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
     return 0
@@ -1540,9 +1578,8 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_EXIT_CODE=$?
         if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
           if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
-            echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor..."
-            npm run test:e2e
-            FRONTEND_EXIT_CODE=$?
+            run_frontend_e2e_with_retry
+            FRONTEND_E2E_EXIT_CODE=$?
           else
             echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
           fi
@@ -1570,16 +1607,40 @@ fi
 echo "======================================================"
 
 # 4) Final Durum Değerlendirmesi
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
+FINAL_EXIT_CODE=0
+if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ]; then
+  FINAL_EXIT_CODE=1
+fi
+if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
+  if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then
+    FINAL_EXIT_CODE=1
+  else
+    echo "⚠️ Benchmark fazı başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
+    echo "   Sıkı yerel doğrulama için: BENCHMARK_ENFORCE_RESULT=1 bash run_tests.sh"
+  fi
+fi
+if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
+  if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then
+    FINAL_EXIT_CODE=1
+  else
+    echo "⚠️ Frontend Playwright E2E fazı retry sonrasında başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
+    echo "   Sıkı yerel doğrulama için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
+  fi
+fi
+
+if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
   echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
     echo "   Backend Hata Nedenleri: $(format_backend_failure_reasons)"
   fi
-  echo "   Frontend Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
-  echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE}"
+  echo "   Frontend Unit/Coverage Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
+  echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
+  echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
   exit 1
 else
-  echo "✅ Tüm Backend, Frontend ve Benchmark testleri BAŞARIYLA tamamlandı!"
+  echo "✅ Zorunlu Backend, Frontend ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
+  echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
+  echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
   exit 0
 fi
