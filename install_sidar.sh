@@ -3777,7 +3777,7 @@ PY_PLAYWRIGHT_VERSION
 
         _try_playwright_last_resort_override() {
             if _try_playwright_ubuntu_override_install; then
-                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true
                 ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
             else
@@ -3791,7 +3791,7 @@ PY_PLAYWRIGHT_VERSION
             _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
             info "Ubuntu ${_pw_ubuntu_version} Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
             if _try_playwright_ubuntu_override_install; then
-                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true
                 ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium)."
                 _pw_install_completed=true

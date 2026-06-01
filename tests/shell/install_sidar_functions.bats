@@ -91,7 +91,10 @@ case "\$*" in
   "-c import playwright") exit 0 ;;
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install chromium")
-    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then exit 0; fi
+    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then
+      echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
+      exit 0
+    fi
     echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
     exit 1
     ;;
@@ -117,6 +120,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
   [[ "$output" == *"OS override fallback ile tamamlandı"* ]]
+  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
 }
 
 @test "install_playwright_browsers upgrades outdated Playwright with the repo spec" {
@@ -174,6 +178,10 @@ EOF
     cat > "$tmpdir/bin/python" <<EOF
 #!/usr/bin/env bash
 printf "%s|%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "\${OS_RELEASE_PATH:-}" >> "$tmpdir/python.log"
+if [[ "\$*" == "-m playwright install chromium" ]]; then
+  echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
+  echo "Chromium override browser downloaded"
+fi
 EOF
     chmod +x "$tmpdir/bin/python"
     export PATH="$tmpdir/bin:$PATH"
@@ -188,8 +196,44 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
+  [[ "$output" == *"Chromium override browser downloaded"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
+  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
   [[ "$output" != *"--with-deps"* ]]
+}
+
+@test "install_playwright_browsers keeps the Ubuntu override warning visible when the proactive attempt fails" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install chromium")
+    echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
+    exit 1
+    ;;
+  "-m playwright install --with-deps chromium") exit 0 ;;
+esac
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/python"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"BEWARE: your OS is not officially supported"* ]]
+  [[ "$output" == *"proaktif OS override kurulumu başarısız oldu"* ]]
+  [[ "$output" == *"Playwright kurulumu tamamlandı (chromium, --with-deps)"* ]]
 }
 
 @test "install_playwright_browsers preserves the standard with-deps path on Ubuntu 24.04" {
