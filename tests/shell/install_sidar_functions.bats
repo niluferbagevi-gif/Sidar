@@ -440,7 +440,7 @@ ENV
     OFFLINE_MODE=false
 
     sidar_phase_initialize_context
-    [[ "${events[*]}" == "banner repo_context detect_environment source:wsl_gpu_preflight.sh wsl_preflight" ]]
+    [[ "${events[*]}" == "banner repo_context detect_environment source:wsl_gpu_preflight.sh source:wsl_integration_autofix.sh wsl_preflight" ]]
   '
   [ "$status" -eq 0 ]
 }
