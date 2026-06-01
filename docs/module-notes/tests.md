@@ -112,7 +112,8 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `*_baseline.json` kaydı olsa bile genel GitHub-hosted CI hattında koşulsuz
   `BENCHMARK_COMPARE_REQUIRED=1` kullanmayın: farklı CPU/OS profilleri anlamlı olmayan karşılaştırma
   ve fail-closed uyarı üretebilir. Bu zorunluluğu yalnız aynı sabit runner profilinde en az bir baseline
-  kaydedildikten sonra açın. Yerel ilk kurulum/bootstrap akışlarında değer `0` kalmalıdır.
+  kaydedildikten sonra açın. Yerel ilk kurulum/bootstrap akışlarında değer `0` kalmalıdır; repoda
+  commitlenmiş baseline olmaması temiz clone kurulumunu bloke etmemelidir.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
   kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı

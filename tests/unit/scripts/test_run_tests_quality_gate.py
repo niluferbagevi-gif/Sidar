@@ -1219,16 +1219,15 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_tracked_benchmark_baseline_stays_optional_in_generic_ci_and_nightly_gpu_uses_full_profile() -> None:
+def test_benchmark_baseline_promotion_stays_optional_in_generic_ci_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
-    tracked_baselines = sorted(Path(".benchmarks").glob("**/*_baseline.json"))
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
-    assert tracked_baselines
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert "yalnız aynı sabit runner profilinde" in notes
+    assert "commitlenmiş baseline olmaması temiz clone kurulumunu bloke etmemelidir" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
