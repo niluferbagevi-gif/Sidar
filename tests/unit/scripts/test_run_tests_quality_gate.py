@@ -82,7 +82,10 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
-    assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
+    assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
+    assert 'BENCHMARK_COMPARE_FAIL_DEFAULT="mean:10%"' in script
+    assert 'BENCHMARK_COMPARE_FAIL_DEFAULT="mean:15%"' in script
+    assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-${BENCHMARK_COMPARE_FAIL_DEFAULT}}"' in script
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
@@ -137,7 +140,8 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
-        assert "BENCHMARK_COMPARE_FAIL=mean:10%" in content
+        assert "BENCHMARK_COMPARE_FAIL=" in content
+        assert "BENCHMARK_COMPARE_FAIL=mean:10%" not in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
 
     assert "Override hiyerarşisi" in env_advanced
@@ -590,6 +594,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
         "utils/db_credentials.sh",
         "utils/env_utils.sh",
         "utils/ollama_models.sh",
+        "utils/playwright_platform.sh",
         "phases/01_context.sh",
         "phases/02_repo.sh",
         "phases/03_runtime.sh",
@@ -650,6 +655,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "utils/db_credentials.sh",
         "utils/env_utils.sh",
         "utils/ollama_models.sh",
+        "utils/playwright_platform.sh",
     )
     for module in expected_modules:
         assert module in script
@@ -1246,6 +1252,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "printf '%s\\n%s\\n' \"${executable_path}\" \"${lock_fingerprint}\" > \"${FRONTEND_PLAYWRIGHT_SENTINEL}\" || true" in script
     assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
+    assert 'source "${PLAYWRIGHT_PLATFORM_HELPERS}"' in script
+    assert 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64"' in script
+    assert 'OS_RELEASE_PATH="${os_override_file}"' in script
     assert "npx --no-install playwright install chromium" in script
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
@@ -1259,8 +1268,12 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
+    package = Path("web_ui_react/package.json").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
     assert 'outputDir: "test-results"' in playwright
+    assert "process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE" in playwright
+    assert 'metadata: { playwrightHostPlatformOverride }' in playwright
+    assert '"playwright:install": "playwright install chromium"' in package
 
 
 def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(tmp_path: Path) -> None:
@@ -1354,6 +1367,60 @@ resolve_local_frontend_e2e_mode
     assert "Chromium sentinel cache'i hazır" in result.stdout
     assert "Chromium cache'i hazırlanamadı" in result.stdout
 
+
+
+def test_local_frontend_playwright_auto_install_uses_ubuntu_override_and_cleans_temp_file(tmp_path: Path) -> None:
+    script = _script()
+    helper_script = tmp_path / "frontend_playwright_helpers.sh"
+    helper_script.write_text(
+        script[
+            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 3) Frontend React testleri")
+        ],
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    os_release = tmp_path / "os-release"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    npx_log = tmp_path / "npx.log"
+    npx = bin_dir / "npx"
+    npx.write_text(
+        '''#!/usr/bin/env bash
+printf '%s|%s|%s\n' "$*" "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "${OS_RELEASE_PATH:-}" >> "${MOCK_NPX_LOG}"
+grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
+''',
+        encoding="utf-8",
+    )
+    npx.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            r'''set -Eeuo pipefail
+source "$1"
+install_local_frontend_playwright_chromium_cache
+[[ -z "$(find "${TMPDIR}" -mindepth 1 -print -quit)" ]]
+grep -Eq '^--no-install playwright install chromium\|ubuntu24\.04-x64\|.+$' "${MOCK_NPX_LOG}"''',
+            "bash",
+            str(helper_script),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "MOCK_NPX_LOG": str(npx_log),
+            "OS_RELEASE_PATH": str(os_release),
+            "PATH": f"{bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PLAYWRIGHT_PLATFORM_HELPERS": str(Path("scripts/install_modules/utils/playwright_platform.sh").resolve()),
+            "RUN_FRONTEND_E2E_AUTO_INSTALL": "1",
+            "TMPDIR": str(tmp_dir),
+        },
+        text=True,
+    )
+
+    assert "ubuntu24.04 OS override" in result.stdout
 
 def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
     vite = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")

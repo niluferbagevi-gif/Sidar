@@ -63,13 +63,15 @@ src/
   senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `auto` değeridir:
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
   hazır değilse `run_tests.sh`, frontend bağımlılıkları kurulduktan sonra
-  `npx --no-install playwright install chromium` ile cache'i bir kez hazırlamayı dener ve başarılıysa
-  doğrulanan executable yolunu ve `package-lock.json` parmak izini git dışında tutulan
+  `npx --no-install playwright install chromium` ile cache'i bir kez hazırlamayı dener. Ubuntu 25+
+  sistemlerde Python installer ile ortak platform helper'ı otomatik olarak
+  `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` ve geçici `OS_RELEASE_PATH` fallback'ini uygular.
+  Kurulum başarılıysa doğrulanan executable yolunu ve `package-lock.json` parmak izini git dışında tutulan
   `.playwright-installed` sentinel dosyasına yazar. Sonraki çalıştırmalar sentinel içindeki executable hâlâ
   mevcutsa ve bağımlılık kilidi değişmemişse Node cache çözümlemesini atlar ve smoke kapısını doğrudan
   etkinleştirir; stale sentinel otomatik silinir. Bu yerel otomatik indirmeyi kapatmak için
   `RUN_FRONTEND_E2E_AUTO_INSTALL=0 bash run_tests.sh`, manuel hazırlık için
-  `cd web_ui_react && npx playwright install chromium`, açıkça zorlamak için
+  `cd web_ui_react && npm run playwright:install`, açıkça zorlamak için
   `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu
   `web_ui_react/playwright-report/` altında artefakt olarak saklar.
 - Vitest coverage kapsamı `src/**/*.{js,jsx}` olarak açıkça tanımlıdır. Terminal raporu tam kapsanan

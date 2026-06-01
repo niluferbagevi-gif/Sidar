@@ -311,7 +311,14 @@ BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
 BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
-BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
+if [ "${IS_CI_ENV}" -eq 1 ]; then
+  BENCHMARK_COMPARE_FAIL_DEFAULT="mean:10%"
+else
+  # Yerel WSL2/GPU koşumlarında scheduler ve model sıcaklığı jitter'ını tolere et;
+  # CI regresyon kapısı yukarıdaki dalda sıkı %10 eşiğini korur.
+  BENCHMARK_COMPARE_FAIL_DEFAULT="mean:15%"
+fi
+BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-${BENCHMARK_COMPARE_FAIL_DEFAULT}}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
@@ -1385,6 +1392,11 @@ fi
 
 FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"
 FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"
+PLAYWRIGHT_PLATFORM_HELPERS="${PLAYWRIGHT_PLATFORM_HELPERS:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_platform.sh}"
+if [[ -f "${PLAYWRIGHT_PLATFORM_HELPERS}" ]]; then
+  # shellcheck disable=SC1090
+  source "${PLAYWRIGHT_PLATFORM_HELPERS}"
+fi
 
 frontend_playwright_package_lock_fingerprint() {
   [[ -f "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" ]] || return 1
@@ -1446,7 +1458,20 @@ install_local_frontend_playwright_chromium_cache() {
   echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
   (
     unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-    npx --no-install playwright install chromium
+    local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
+    local os_override_file=""
+    if declare -F is_playwright_ubuntu_override_recommended >/dev/null 2>&1 \
+      && declare -F prepare_playwright_ubuntu_override_file >/dev/null 2>&1 \
+      && is_playwright_ubuntu_override_recommended "${os_release_path}"; then
+      os_override_file="$(mktemp)"
+      trap 'rm -f "${os_override_file}"' EXIT
+      prepare_playwright_ubuntu_override_file "${os_release_path}" "${os_override_file}"
+      echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium ubuntu24.04 OS override ile kuruluyor..."
+      env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" OS_RELEASE_PATH="${os_override_file}" \
+        npx --no-install playwright install chromium
+    else
+      npx --no-install playwright install chromium
+    fi
   )
 }
 
