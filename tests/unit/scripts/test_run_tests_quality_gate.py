@@ -1293,6 +1293,56 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'outputDir: "test-results"' in playwright
     assert 'process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect"' in playwright
     assert "metadata: { playwrightHostPlatformOverride }" in playwright
+    assert "SIDAR_E2E_FRONTEND_PORT" not in playwright
+    assert "SIDAR_E2E_BACKEND_PORT" not in playwright
+    assert "timeout: 45_000" in playwright
+    assert "expect: { timeout: 15_000 }" in playwright
+    assert "fullyParallel: true" in playwright
+    assert "workers: 1" not in playwright
+    assert "storageState: undefined" in playwright
+    assert "webServer:" not in playwright
+
+    vite = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+    websocket_spec = Path("web_ui_react/e2e/chat-websocket.spec.js").read_text(encoding="utf-8")
+    mock_backend = Path("web_ui_react/e2e/support/mockSidarBackend.js").read_text(encoding="utf-8")
+    vite_server = Path("web_ui_react/e2e/support/testViteServer.js").read_text(encoding="utf-8")
+    assert 'backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860"' in vite
+    assert 'backendUrl.replace(/^http/, "ws")' in vite
+    assert '"/ws": { target: webSocketUrl, ws: true }' in vite
+    assert "localhost:7860" not in vite
+    assert "optimizeDeps:" in vite
+    assert '"index.html"' in vite
+    assert '"src/main.jsx"' in vite
+    assert '"src/App.jsx"' in vite
+    assert '"src/components/*.jsx"' in vite
+    assert '"!src/**/*.test.{js,jsx}"' in vite
+    assert '"!e2e/**"' in vite
+    assert 'test.describe.configure({ mode: "serial" })' not in websocket_spec
+    assert "test.beforeEach(async ({ page }) =>" in websocket_spec
+    assert "test.afterEach(async () =>" in websocket_spec
+    assert "backend = await startMockSidarBackend()" in websocket_spec
+    assert "frontend = await startTestViteServer({ backendUrl: backend.url })" in websocket_spec
+    assert "await page.goto(frontend.url)" in websocket_spec
+    assert "port = 0" in mock_backend
+    assert 'server.listen(port, "0.0.0.0"' in mock_backend
+    assert "port: address.port" in mock_backend
+    assert 'url: `http://127.0.0.1:${address.port}`' in mock_backend
+    assert "port: 15_173" in vite_server
+    assert "strictPort: false" in vite_server
+    assert 'host: "0.0.0.0"' in vite_server
+    assert "proxy: createSidarProxyConfig(backendUrl)" in vite_server
+    assert "process.env.SIDAR_BACKEND_URL" not in vite_server
+    assert "await page.context().clearCookies()" in websocket_spec
+    assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
+    assert ".toBeVisible({ timeout: 15_000 })" in websocket_spec
+
+
+def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
+    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
+
+    assert 'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";' in websocket_hook
+    assert 'useLayoutEffect(() => {\n    manualCloseRef.current = false;\n    connect();' in websocket_hook
+    assert "flushSync" not in websocket_hook
 
 
 def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:

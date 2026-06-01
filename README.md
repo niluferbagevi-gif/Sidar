@@ -561,7 +561,15 @@ npm install
 npm run dev
 ```
 
-Geliştirme sunucusu varsayılan olarak **http://localhost:5173** adresinde açılır. Production için:
+Geliştirme sunucusu varsayılan olarak **http://localhost:5173** adresinde açılır. Vite proxy hedefi
+varsayılan olarak IPv4 üzerinden `http://127.0.0.1:7860` adresindeki Sidar backend'idir; farklı bir
+backend için `SIDAR_BACKEND_URL=http://127.0.0.1:<port> npm run dev` kullanabilirsiniz. Frontend
+Playwright E2E akışı gerçek backend ile çakışmamak için her testte işletim sisteminden dinamik mock
+backend portu alır. Test Vite sunucusu izole `15173` portundan başlar ve port doluysa sonraki boş portu
+seçer; mock servis tüm arayüzlerde dinlerken Vite proxy bağlantısı IPv4 `127.0.0.1` üzerinden kurulur.
+WSL2 cold-start süresini azaltmak için Vite dependency optimizer ana HTML/giriş dosyası ve panel
+kaynaklarını önceden tarar; Node-only Playwright E2E helper dosyaları browser optimizer kapsamı dışında
+tutulur. Production için:
 
 ```bash
 npm run build

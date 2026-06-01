@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
@@ -219,7 +219,9 @@ export function useWebSocket(
     wsRef.current.send(JSON.stringify(payload));
   }, [displayName, onError, roomId]);
 
-  useEffect(() => {
+  // İlk bağlantı durumunu paint öncesinde hesapla; token eksikse StatusBar ilk
+  // görünür render'da doğrudan "Token gerekli" etiketini gösterebilsin.
+  useLayoutEffect(() => {
     manualCloseRef.current = false;
     connect();
     return () => {
