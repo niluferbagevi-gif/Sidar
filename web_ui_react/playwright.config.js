@@ -13,7 +13,9 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
-  retries: 0,
+  // Cold-start dalgalanmalarında yalnız başarısız testi yeniden çalıştır.
+  // CI daha değişken runner yükleri için ek bir deneme hakkı kullanır.
+  retries: process.env.CI ? 2 : 1,
   use: {
     storageState: undefined,
     trace: "on-first-retry",

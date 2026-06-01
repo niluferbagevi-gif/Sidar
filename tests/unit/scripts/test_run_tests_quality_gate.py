@@ -1309,6 +1309,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "timeout: 45_000" in playwright
     assert "expect: { timeout: 15_000 }" in playwright
     assert "fullyParallel: true" in playwright
+    assert "retries: process.env.CI ? 2 : 1" in playwright
+    assert "retries: 0" not in playwright
     assert "workers: 1" not in playwright
     assert "storageState: undefined" in playwright
     assert "webServer:" not in playwright

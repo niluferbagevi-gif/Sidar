@@ -70,9 +70,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 ## Frontend Playwright E2E flake yönetimi
 
-- `run_tests.sh`, etkin Playwright E2E fazı ilk denemede başarısız olduğunda varsayılan olarak bir kez retry
-  yapar. Canonical ayar `FRONTEND_E2E_RETRY_ON_FAIL=1`, kısa uyumluluk alias'ı `RETRY_ON_FAIL=1` değeridir;
-  namespaced ayar verilirse önceliklidir.
+- Playwright runner yalnız başarısız testleri yerelde bir, CI'da iki kez yeniden dener. Bu test-seviyesi retry,
+  cold-start kaynaklı tekil flake'leri tüm paketi baştan çalıştırmadan absorbe eder.
+- `run_tests.sh`, etkin Playwright E2E fazı Playwright retry'ları sonrasında başarısız olduğunda varsayılan olarak
+  bir kez stage retry yapar. Canonical ayar `FRONTEND_E2E_RETRY_ON_FAIL=1`, kısa uyumluluk alias'ı
+  `RETRY_ON_FAIL=1` değeridir; namespaced ayar verilirse önceliklidir.
 - CI profilinde retry sonrası E2E başarısızlığı `FRONTEND_E2E_ENFORCE_RESULT=1` varsayılanıyla hard-fail kalır.
   WSL2/laptop cold-start ve host jitter'ına açık yerel profilde varsayılan `0`, sonucu görünür bir flake-soft-fail
   uyarısı olarak raporlar. Sabit yerel runner üzerinde CI paritesi için değeri açıkça `1` yapın.

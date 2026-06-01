@@ -569,8 +569,9 @@ backend portu alır. Test Vite sunucusu izole `15173` portundan başlar ve port 
 seçer; mock servis tüm arayüzlerde dinlerken Vite proxy bağlantısı IPv4 `127.0.0.1` üzerinden kurulur.
 WSL2 cold-start süresini azaltmak için Vite dependency optimizer ana HTML/giriş dosyası ve panel
 kaynaklarını önceden tarar; Node-only Playwright E2E helper dosyaları browser optimizer kapsamı dışında
-tutulur. `run_tests.sh`, Playwright E2E ilk denemesi başarısız olursa varsayılan olarak bir kez retry
-yapar (`FRONTEND_E2E_RETRY_ON_FAIL=1`; kısa alias: `RETRY_ON_FAIL=1`). CI profilinde retry sonrası hata
+tutulur. Playwright runner başarısız testleri yerelde bir, CI'da iki kez yeniden dener; bunun ardından
+`run_tests.sh`, E2E aşamasının tamamı başarısız olursa varsayılan olarak bir kez stage retry yapar
+(`FRONTEND_E2E_RETRY_ON_FAIL=1`; kısa alias: `RETRY_ON_FAIL=1`). CI profilinde retry sonrası hata
 hard-fail kalır; WSL2/laptop jitter'ına açık yerel profilde E2E sonucu raporlanır ancak varsayılan olarak
 final çıkışı bloke etmez. Sıkı yerel doğrulama `FRONTEND_E2E_ENFORCE_RESULT=1` ile açılabilir. Production için:
 
