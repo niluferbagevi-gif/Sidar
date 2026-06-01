@@ -1225,13 +1225,23 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
+    assert 'FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"' in script
+    assert 'FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"' in script
+    assert "frontend_playwright_package_lock_fingerprint()" in script
+    assert "sha256sum" in script
+    assert "shasum -a 256" in script
+    assert "cksum" in script
+    assert "frontend_playwright_sentinel_cache_ready()" in script
     assert "frontend_playwright_chromium_cache_ready()" in script
     assert "install_local_frontend_playwright_chromium_cache()" in script
     assert "resolve_local_frontend_e2e_mode()" in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then' in script
     assert 'const { chromium } = require("@playwright/test");' in script
-    assert 'fs.existsSync(chromium.executablePath())' in script
+    assert "const executablePath = chromium.executablePath();" in script
+    assert "if (!fs.existsSync(executablePath)) process.exit(1);" in script
+    assert "printf '%s\\n%s\\n' \"${executable_path}\" \"${lock_fingerprint}\" > \"${FRONTEND_PLAYWRIGHT_SENTINEL}\" || true" in script
+    assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
     assert "npx --no-install playwright install chromium" in script
     assert "RUN_FRONTEND_E2E=1" in script
@@ -1248,6 +1258,98 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
     assert 'outputDir: "test-results"' in playwright
+
+
+def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(tmp_path: Path) -> None:
+    script = _script()
+    helper_script = tmp_path / "frontend_playwright_helpers.sh"
+    helper_script.write_text(
+        script[
+            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 3) Frontend React testleri")
+        ],
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    browser = tmp_path / "chromium"
+    sentinel = tmp_path / ".playwright-installed"
+    node_log = tmp_path / "node.log"
+    npx_log = tmp_path / "npx.log"
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("lock-v1\n", encoding="utf-8")
+    node = bin_dir / "node"
+    node.write_text(
+        """#!/usr/bin/env bash
+printf 'node\\n' >> "${MOCK_NODE_LOG}"
+if [[ -f "${MOCK_BROWSER}" ]]; then
+  printf '%s' "${MOCK_BROWSER}"
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    npx = bin_dir / "npx"
+    npx.write_text(
+        """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "${MOCK_NPX_LOG}"
+touch "${MOCK_BROWSER}"
+""",
+        encoding="utf-8",
+    )
+    node.chmod(0o755)
+    npx.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            '''set -Eeuo pipefail
+source "$1"
+RUN_FRONTEND_E2E=auto
+resolve_local_frontend_e2e_mode
+[[ "${RUN_FRONTEND_E2E}" == 1 ]]
+[[ "$(head -n 1 "${FRONTEND_PLAYWRIGHT_SENTINEL}")" == "${MOCK_BROWSER}" ]]
+[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 2 ]]
+grep -qx -- '--no-install playwright install chromium' "${MOCK_NPX_LOG}"
+RUN_FRONTEND_E2E=auto
+resolve_local_frontend_e2e_mode
+[[ "${RUN_FRONTEND_E2E}" == 1 ]]
+[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 2 ]]
+[[ "$(wc -l < "${MOCK_NPX_LOG}")" -eq 1 ]]
+printf 'lock-v2\\n' > "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}"
+RUN_FRONTEND_E2E=auto
+RUN_FRONTEND_E2E_AUTO_INSTALL=0
+resolve_local_frontend_e2e_mode
+[[ "${RUN_FRONTEND_E2E}" == 1 ]]
+[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 3 ]]
+rm -f "${MOCK_BROWSER}"
+RUN_FRONTEND_E2E=auto
+resolve_local_frontend_e2e_mode
+[[ "${RUN_FRONTEND_E2E}" == 0 ]]
+[[ ! -e "${FRONTEND_PLAYWRIGHT_SENTINEL}" ]]
+[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 4 ]]''',
+            "bash",
+            str(helper_script),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "FRONTEND_PLAYWRIGHT_SENTINEL": str(sentinel),
+            "FRONTEND_PLAYWRIGHT_PACKAGE_LOCK": str(package_lock),
+            "MOCK_BROWSER": str(browser),
+            "MOCK_NODE_LOG": str(node_log),
+            "MOCK_NPX_LOG": str(npx_log),
+            "PATH": f"{bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+            "RUN_FRONTEND_E2E_AUTO_INSTALL": "1",
+        },
+        text=True,
+    )
+
+    assert "Chromium cache'i otomatik kuruldu" in result.stdout
+    assert "Chromium sentinel cache'i hazır" in result.stdout
+    assert "Chromium cache'i hazırlanamadı" in result.stdout
 
 
 def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:

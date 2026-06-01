@@ -64,7 +64,10 @@ src/
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
   hazır değilse `run_tests.sh`, frontend bağımlılıkları kurulduktan sonra
   `npx --no-install playwright install chromium` ile cache'i bir kez hazırlamayı dener ve başarılıysa
-  smoke kapısını aynı çalıştırmada etkinleştirir. Bu yerel otomatik indirmeyi kapatmak için
+  doğrulanan executable yolunu ve `package-lock.json` parmak izini git dışında tutulan
+  `.playwright-installed` sentinel dosyasına yazar. Sonraki çalıştırmalar sentinel içindeki executable hâlâ
+  mevcutsa ve bağımlılık kilidi değişmemişse Node cache çözümlemesini atlar ve smoke kapısını doğrudan
+  etkinleştirir; stale sentinel otomatik silinir. Bu yerel otomatik indirmeyi kapatmak için
   `RUN_FRONTEND_E2E_AUTO_INSTALL=0 bash run_tests.sh`, manuel hazırlık için
   `cd web_ui_react && npx playwright install chromium`, açıkça zorlamak için
   `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu

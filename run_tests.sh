@@ -1381,12 +1381,55 @@ else
   fi
 fi
 
+FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"
+FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"
+
+frontend_playwright_package_lock_fingerprint() {
+  [[ -f "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" ]] || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1}'
+  else
+    cksum "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1 ":" $2}'
+  fi
+}
+
+frontend_playwright_sentinel_cache_ready() {
+  local executable_path=""
+  local recorded_lock_fingerprint=""
+  local current_lock_fingerprint=""
+  [[ -f "${FRONTEND_PLAYWRIGHT_SENTINEL}" ]] || return 1
+  {
+    IFS= read -r executable_path || true
+    IFS= read -r recorded_lock_fingerprint || true
+  } < "${FRONTEND_PLAYWRIGHT_SENTINEL}"
+  current_lock_fingerprint="$(frontend_playwright_package_lock_fingerprint || true)"
+  if [[ -n "${executable_path}" \
+    && -f "${executable_path}" \
+    && -n "${recorded_lock_fingerprint}" \
+    && "${recorded_lock_fingerprint}" == "${current_lock_fingerprint}" ]]; then
+    return 0
+  fi
+
+  rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"
+  return 1
+}
+
 frontend_playwright_chromium_cache_ready() {
-  node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' >/dev/null 2>&1
+  local executable_path=""
+  executable_path="$(node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' 2>/dev/null
 const fs = require("node:fs");
 const { chromium } = require("@playwright/test");
-process.exit(fs.existsSync(chromium.executablePath()) ? 0 : 1);
+const executablePath = chromium.executablePath();
+if (!fs.existsSync(executablePath)) process.exit(1);
+process.stdout.write(executablePath);
 NODE_PLAYWRIGHT_CACHE_CHECK
+)" || return 1
+  local lock_fingerprint=""
+  [[ -n "${executable_path}" && -f "${executable_path}" ]] || return 1
+  lock_fingerprint="$(frontend_playwright_package_lock_fingerprint)" || return 1
+  printf '%s\n%s\n' "${executable_path}" "${lock_fingerprint}" > "${FRONTEND_PLAYWRIGHT_SENTINEL}" || true
 }
 
 install_local_frontend_playwright_chromium_cache() {
@@ -1410,9 +1453,15 @@ resolve_local_frontend_e2e_mode() {
     return 0
   fi
 
+  if frontend_playwright_sentinel_cache_ready; then
+    RUN_FRONTEND_E2E=1
+    echo "✅ Node Playwright Chromium sentinel cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
+    return 0
+  fi
+
   if frontend_playwright_chromium_cache_ready; then
     RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
+    echo "✅ Node Playwright Chromium cache'i hazır; sentinel güncellendi ve yerel frontend smoke testleri otomatik etkinleştirildi."
     return 0
   fi
 
