@@ -81,7 +81,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - `tests/performance` altında bulunan benchmark testleri için düzenli baseline kaydı alın.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
-  bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır.
+  bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
+  `--benchmark-compare-fail=mean:10%` kalite kapısı da eklenir; ortalama sürede `%10` üzerindeki
+  regresyonlar otomatik fail üretir. Başlangıç eşiği `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde
+  değiştirilebilir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Repo içinde incelenmiş bir

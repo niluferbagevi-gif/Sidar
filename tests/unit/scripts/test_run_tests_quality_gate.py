@@ -82,6 +82,7 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
@@ -89,6 +90,7 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
     assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
+    assert 'benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
@@ -135,6 +137,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
+        assert "BENCHMARK_COMPARE_FAIL=mean:10%" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
 
     assert "Override hiyerarşisi" in env_advanced
