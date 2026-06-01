@@ -773,8 +773,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Yeni `*_baseline.json` artifact'ini commit etmeden
 > önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
 > kalite kapısı takipli `*_baseline.json` kayıtları içinden version-sort ile en güncel eşleşmeyi kullanır.
-> Baseline bulunduğunda `pytest-benchmark` karşılaştırması `--benchmark-compare-fail=mean:10%`
-> ile fail-closed çalışır; başlangıç regresyon eşiği gerektiğinde `BENCHMARK_COMPARE_FAIL` ile ayarlanabilir.
+> Baseline bulunduğunda `pytest-benchmark` karşılaştırması CI ortamında
+> `--benchmark-compare-fail=mean:10%`, yerel WSL2/GPU koşumlarında ise jitter toleransı için
+> `--benchmark-compare-fail=mean:15%` ile fail-closed çalışır; başlangıç regresyon eşiği gerektiğinde
+> `BENCHMARK_COMPARE_FAIL` ile açıkça ayarlanabilir.
 > Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
 > `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
 > Gecikme hassas akışlar için

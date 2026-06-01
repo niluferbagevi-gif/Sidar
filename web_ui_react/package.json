@@ -16,7 +16,8 @@
     "test:coverage": "vitest run --coverage",
     "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "playwright:install": "playwright install chromium"
   },
   "dependencies": {
     "react": "^18.3.1",

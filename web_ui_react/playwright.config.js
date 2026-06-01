@@ -1,7 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
+const playwrightHostPlatformOverride = process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto";
+
 export default defineConfig({
   testDir: "./e2e",
+  metadata: { playwrightHostPlatformOverride },
   reporter: [
     ["list"],
     ["html", { outputFolder: "playwright-report", open: "never" }],

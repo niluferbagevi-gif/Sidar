@@ -243,6 +243,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
+    "utils/playwright_platform.sh"
 )
 
 INSTALL_PHASE_MODULES=(
@@ -278,6 +279,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
+4ee7ec0c7bc7e8385629e79f7f23170f4ca0253d9663f9771abf6f6413a3bded  scripts/install_modules/utils/playwright_platform.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -573,7 +575,8 @@ sidar_source_install_utils \
     "python_env.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
-    "ollama_models.sh"
+    "ollama_models.sh" \
+    "playwright_platform.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
@@ -3647,30 +3650,6 @@ should_install_playwright_browsers() {
     esac
 }
 
-is_playwright_ubuntu_override_recommended() {
-    local os_release_file="${1:-/etc/os-release}"
-    local distro_id=""
-    local distro_like=""
-    local version_id=""
-    local key value
-
-    [[ -r "$os_release_file" ]] || return 1
-    while IFS='=' read -r key value; do
-        value="${value%\"}"
-        value="${value#\"}"
-        case "$key" in
-            ID) distro_id="$value" ;;
-            ID_LIKE) distro_like="$value" ;;
-            VERSION_ID) version_id="$value" ;;
-        esac
-    done < "$os_release_file"
-
-    [[ " ${distro_id,,} ${distro_like,,} " == *"ubuntu"* ]] || return 1
-    local ubuntu_major="${version_id%%.*}"
-    [[ "$ubuntu_major" =~ ^[0-9]+$ ]] || return 1
-    (( ubuntu_major >= 25 ))
-}
-
 resolve_playwright_python_spec() {
     local pyproject_file="${1:-${SCRIPT_DIR}/pyproject.toml}"
     local resolved_spec=""
@@ -6305,7 +6284,7 @@ is_alembic_at_head() {
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
-ensure_postgres_databases_exist() {
+ensure_postgres_databases_exist() (
     local db_host="$1"
     local db_port="$2"
     local db_user="$3"
@@ -6325,16 +6304,18 @@ ensure_postgres_databases_exist() {
         return 0
     fi
 
+    local psql_err_file
+    psql_err_file="$(mktemp)"
+    trap 'rm -f "$psql_err_file"' EXIT
+
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        local psql_err_file
-        psql_err_file="$(mktemp)"
+        : >"$psql_err_file"
         if ! PGPASSWORD="$db_password" "$psql_bin" -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
             -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                rm -f "$psql_err_file"
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
             info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
@@ -6343,17 +6324,14 @@ ensure_postgres_databases_exist() {
                 -v ON_ERROR_STOP=1 \
                 -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
                 if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                    rm -f "$psql_err_file"
                     fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
                 fi
-                rm -f "$psql_err_file"
                 return 1
             fi
             ok "Veritabanı hazır: ${db_name}"
         fi
-        rm -f "$psql_err_file"
     done <<<"$unique_dbs"
-}
+)
 
 
 seed_rag_metadata_after_migrations() {

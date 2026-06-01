@@ -82,9 +82,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
-  `--benchmark-compare-fail=mean:10%` kalite kapısı da eklenir; ortalama sürede `%10` üzerindeki
-  regresyonlar otomatik fail üretir. Başlangıç eşiği `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde
-  değiştirilebilir.
+  ortama göre `--benchmark-compare-fail` kalite kapısı da eklenir. CI ortamında ortalama sürede `%10`,
+  yerel WSL2/GPU koşumlarında scheduler ve model sıcaklığı jitter'ı için `%15` üzerindeki regresyonlar
+  fail üretir. Başlangıç eşiği `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde değiştirilebilir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Repo içinde incelenmiş bir
@@ -139,10 +139,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
   `GPU_BENCH_CONCURRENT_ROUNDS=3` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
-  kullanır ve stabil baseline için sırasıyla `5` ve `20` tur çalıştırır.
+  kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`
-  - `GPU_BENCH_WARMUP_ROUNDS=5`
+  - `GPU_BENCH_WARMUP_ROUNDS=8`
   - `GPU_BENCH_NUM_PREDICT=128`
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
   yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.

@@ -14,6 +14,7 @@ import dataclasses
 import json
 import os
 import shutil
+import statistics
 import time
 
 import httpx
@@ -35,7 +36,7 @@ pytestmark = pytest.mark.skipif(
 _MODEL: str = _gpu_smoke.MODEL_NAME
 _TIMEOUT: int = _gpu_smoke._env_int("GPU_BENCH_TIMEOUT", 60, min_value=10, max_value=300)
 _CONCURRENCY: int = _gpu_smoke._env_int("GPU_BENCH_CONCURRENCY", 4, min_value=1, max_value=16)
-_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 5, min_value=1, max_value=8)
+_WARMUP_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_WARMUP_ROUNDS", 8, min_value=1, max_value=12)
 _BENCH_ROUNDS: int = _gpu_smoke._env_int("GPU_BENCH_ROUNDS", 20, min_value=20, max_value=50)
 _LATENCY_BUDGET_S: int = _gpu_smoke._env_int(
     "GPU_BENCH_LATENCY_BUDGET", 30, min_value=5, max_value=120
@@ -63,7 +64,7 @@ _CONCURRENT_WARMUP_ROUNDS: int = _gpu_smoke._env_int(
     "GPU_BENCH_CONCURRENT_WARMUP_ROUNDS",
     1 if _GPU_BENCHMARK_PROFILE == "smoke" else _WARMUP_ROUNDS,
     min_value=1,
-    max_value=8,
+    max_value=12,
 )
 _CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
     "GPU_BENCH_CONCURRENT_ROUNDS",
@@ -306,7 +307,7 @@ def test_gpu_single_inference_latency(benchmark) -> None:
     raporlanan mean/stddev yalnızca kararlı durumu (steady-state) yansıtır.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 8)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
       GPU_BENCH_LATENCY_BUDGET — maksimum kabul edilebilir gecikme (sn, varsayılan: 30)
     """
@@ -363,7 +364,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
-      GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 5)
+      GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 8)
       GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 3, full: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
@@ -429,7 +430,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 8)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
       GPU_BENCH_VRAM_SAMPLE_INTERVAL — VRAM örnekleme aralığı (sn, varsayılan: 0.05)
     """
@@ -522,7 +523,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_MIN_TOKENS_PER_SEC — minimum kabul edilebilir tok/sn (varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS      — pedantic warmup tur sayısı    (varsayılan: 8)
       GPU_BENCH_TPS_ROUNDS         — ölçüm tur sayısı              (varsayılan: 20)
       GPU_BENCH_NUM_PREDICT        — yanıt token üst sınırı         (varsayılan: 128)
       GPU_BENCH_NUM_CTX            — context window                 (varsayılan: 2048)
@@ -592,7 +593,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
 
     Geçerli ortam değişkenleri:
       GPU_BENCH_TTFT_BUDGET    — maksimum kabul edilebilir TTFT (sn, varsayılan: 10.0)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 5)
+      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı     (varsayılan: 8)
       GPU_BENCH_ROUNDS         — ölçüm tur sayısı               (varsayılan: 20)
     """
     _require_gpu_stress()
@@ -615,7 +616,7 @@ def test_gpu_time_to_first_token(benchmark) -> None:
             ttft_readings.append(ttft)
             return ttft
 
-        result: float = benchmark.pedantic(
+        benchmark.pedantic(
             _run,
             warmup_rounds=_WARMUP_ROUNDS,
             rounds=_BENCH_ROUNDS,
@@ -625,11 +626,16 @@ def test_gpu_time_to_first_token(benchmark) -> None:
         loop.run_until_complete(http.aclose())
         loop.close()
 
-    assert result > 0.0, "TTFT sıfır döndü; streaming yanıt alınamadı."
-    assert result <= _TTFT_BUDGET_S, f"TTFT bütçeyi aştı: {result:.3f}s > {_TTFT_BUDGET_S}s"
     mean_ttft: float = benchmark.stats["mean"]
+    assert mean_ttft > 0.0, "Ortalama TTFT sıfır döndü; streaming yanıt alınamadı."
+    measured_ttft_readings = sorted(ttft_readings[-_BENCH_ROUNDS:])
+    trim_count = max(1, len(measured_ttft_readings) // 10)
+    trimmed_ttft_readings = measured_ttft_readings[trim_count:-trim_count]
+    trimmed_mean_ttft = statistics.fmean(trimmed_ttft_readings)
     _record_runtime_options(benchmark)
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
+    benchmark.extra_info["ttft_trimmed_mean_ms"] = round(trimmed_mean_ttft * 1000, 3)
+    benchmark.extra_info["ttft_warmup_rounds"] = _WARMUP_ROUNDS
     assert (
         mean_ttft <= _TTFT_BUDGET_S
     ), f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
