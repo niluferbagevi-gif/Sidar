@@ -567,7 +567,9 @@ backend için `SIDAR_BACKEND_URL=http://127.0.0.1:<port> npm run dev` kullanabil
 Playwright E2E akışı gerçek backend ile çakışmamak için her testte işletim sisteminden dinamik mock
 backend portu alır. Test Vite sunucusu izole `15173` portundan başlar ve port doluysa sonraki boş portu
 seçer; mock servis tüm arayüzlerde dinlerken Vite proxy bağlantısı IPv4 `127.0.0.1` üzerinden kurulur.
-Production için:
+WSL2 cold-start süresini azaltmak için Vite dependency optimizer ana HTML/giriş dosyası ve panel
+kaynaklarını önceden tarar; Node-only Playwright E2E helper dosyaları browser optimizer kapsamı dışında
+tutulur. Production için:
 
 ```bash
 npm run build

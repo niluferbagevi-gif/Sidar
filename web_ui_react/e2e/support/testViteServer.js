@@ -1,4 +1,5 @@
 import { createServer } from "vite";
+import { createSidarProxyConfig } from "../../vite.config.js";
 
 const READY_TIMEOUT_MS = 15_000;
 const READY_POLL_MS = 100;
@@ -18,9 +19,6 @@ async function waitUntilReady(url) {
 }
 
 export async function startTestViteServer({ backendUrl }) {
-  const previousBackendUrl = process.env.SIDAR_BACKEND_URL;
-  process.env.SIDAR_BACKEND_URL = backendUrl;
-
   let server;
   try {
     server = await createServer({
@@ -28,18 +26,13 @@ export async function startTestViteServer({ backendUrl }) {
         host: "0.0.0.0",
         port: 15_173,
         strictPort: false,
+        proxy: createSidarProxyConfig(backendUrl),
       },
     });
     await server.listen();
   } catch (error) {
     await server?.close();
     throw error;
-  } finally {
-    if (previousBackendUrl === undefined) {
-      delete process.env.SIDAR_BACKEND_URL;
-    } else {
-      process.env.SIDAR_BACKEND_URL = previousBackendUrl;
-    }
   }
 
   const address = server.httpServer?.address();

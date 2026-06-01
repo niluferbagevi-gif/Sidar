@@ -2,10 +2,20 @@ import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig(() => {
-  const sidarBackendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860";
-  const sidarWebSocketUrl = sidarBackendUrl.replace(/^http/, "ws");
+export function createSidarProxyConfig(
+  backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860",
+) {
+  const webSocketUrl = backendUrl.replace(/^http/, "ws");
+  return {
+    "/api": { target: backendUrl, changeOrigin: true },
+    "/ws": { target: webSocketUrl, ws: true },
+    "/admin": { target: backendUrl, changeOrigin: true },
+    "/sessions": { target: backendUrl, changeOrigin: true },
+    "/metrics": { target: backendUrl, changeOrigin: true },
+  };
+}
 
+export default defineConfig(() => {
   return {
     plugins: [react()],
     resolve: {
@@ -13,15 +23,19 @@ export default defineConfig(() => {
         "react-router-dom": path.resolve(__dirname, "src/lib/routerShim.jsx"),
       },
     },
+    optimizeDeps: {
+      entries: [
+        "index.html",
+        "src/main.jsx",
+        "src/App.jsx",
+        "src/components/*.jsx",
+        "!src/**/*.test.{js,jsx}",
+        "!e2e/**",
+      ],
+    },
     server: {
-      // Geliştirme sırasında FastAPI backend'e proxy — CORS sorununu önler
-      proxy: {
-        "/api": { target: sidarBackendUrl, changeOrigin: true },
-        "/ws": { target: sidarWebSocketUrl, ws: true },
-        "/admin": { target: sidarBackendUrl, changeOrigin: true },
-        "/sessions": { target: sidarBackendUrl, changeOrigin: true },
-        "/metrics": { target: sidarBackendUrl, changeOrigin: true },
-      },
+      // Geliştirme sırasında FastAPI backend'e proxy — CORS sorununu önler.
+      proxy: createSidarProxyConfig(),
     },
     build: {
       outDir: "dist",
