@@ -3671,6 +3671,26 @@ is_playwright_ubuntu_override_recommended() {
     (( ubuntu_major >= 25 ))
 }
 
+resolve_playwright_python_spec() {
+    local pyproject_file="${1:-${SCRIPT_DIR}/pyproject.toml}"
+    local resolved_spec=""
+
+    if [[ -r "$pyproject_file" ]]; then
+        resolved_spec="$(awk '
+            /^\[dependency-groups\]$/ { in_dependency_groups=1; next }
+            in_dependency_groups && /^\[/ { exit }
+            in_dependency_groups && /"playwright[<>=!~]/ {
+                line=$0
+                sub(/^[^"]*"/, "", line)
+                sub(/".*$/, "", line)
+                print line
+                exit
+            }
+        ' "$pyproject_file")"
+    fi
+    echo "${resolved_spec:-playwright>=1.60,<2.0}"
+}
+
 prepare_playwright_ubuntu_override_file() {
     local source_os_release="${1:-/etc/os-release}"
     local target_os_release="$2"
@@ -3708,6 +3728,8 @@ install_playwright_browsers() {
         local _pw_os_override_file=""
         local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
         local _pw_install_completed=false
+        local _pw_python_spec
+        _pw_python_spec="$(resolve_playwright_python_spec)"
 
         _is_playwright_os_mismatch_error() {
             local _output="${1:-}"
@@ -3736,6 +3758,32 @@ install_playwright_browsers() {
             prepare_playwright_ubuntu_override_file "$_pw_os_release_path" "$_pw_os_override_file"
             env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" OS_RELEASE_PATH="$_pw_os_override_file" \
                 "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
+        }
+
+        _playwright_python_upgrade_required() {
+            "${PY_CMD[@]}" - "$_pw_python_spec" <<'PY_PLAYWRIGHT_VERSION' >/dev/null 2>&1
+from importlib.metadata import PackageNotFoundError, version
+import sys
+
+from packaging.specifiers import SpecifierSet
+
+try:
+    installed_version = version("playwright")
+except PackageNotFoundError:
+    raise SystemExit(0)
+raise SystemExit(0 if installed_version not in SpecifierSet(sys.argv[1].removeprefix("playwright")) else 1)
+PY_PLAYWRIGHT_VERSION
+        }
+
+        _try_playwright_last_resort_override() {
+            if _try_playwright_ubuntu_override_install; then
+                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                    "$_pw_install_log" || true
+                ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
+            else
+                cat "$_pw_install_log" >&2
+                warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install chromium"
+            fi
         }
 
         if is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
@@ -3775,33 +3823,31 @@ install_playwright_browsers() {
                         _pw_binary_output="$(cat "$_pw_install_log")"
                         cat "$_pw_install_log" >&2
                         if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
-                            warn "Playwright binary fallback da OS uyumsuzluğu nedeniyle başarısız. Playwright >=1.55 upgrade fallback deneniyor..."
-                            if uv add --dev "playwright>=1.55,<2.0"; then
-                                if _try_playwright_install binary; then
-                                    grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
-                                        "$_pw_install_log" || true
-                                    ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
-                                else
-                                    cat "$_pw_install_log" >&2
-                                    warn "Playwright upgrade fallback sonrası kurulum yine başarısız. Son çare: OS override fallback deneniyor..."
-                                    if _try_playwright_ubuntu_override_install; then
+                            if _playwright_python_upgrade_required; then
+                                warn "Playwright binary fallback OS uyumsuzluğu nedeniyle başarısız ve kurulu paket ${_pw_python_spec} şartını sağlamıyor. Upgrade fallback deneniyor..."
+                                if uv add --dev "$_pw_python_spec"; then
+                                    if _try_playwright_install binary; then
                                         grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                                             "$_pw_install_log" || true
-                                        ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
+                                        ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
                                     else
                                         cat "$_pw_install_log" >&2
-                                        warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                                        warn "Playwright upgrade fallback sonrası kurulum yine başarısız. Son çare: OS override fallback deneniyor..."
+                                        _try_playwright_last_resort_override
                                     fi
+                                else
+                                    warn "Playwright upgrade fallback (uv add --dev \"${_pw_python_spec}\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
                                 fi
                             else
-                                warn "Playwright upgrade fallback (uv add --dev \"playwright>=1.55,<2.0\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
+                                info "Kurulu Playwright paketi ${_pw_python_spec} şartını zaten sağlıyor; gereksiz uv add upgrade fallback atlanıyor. Son çare: OS override fallback deneniyor..."
+                                _try_playwright_last_resort_override
                             fi
                         else
-                            warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install chromium"
+                            warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install chromium"
                         fi
                     fi
                 else
-                    warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"playwright>=1.55,<2.0\" sonra: uv run python -m playwright install --with-deps chromium"
+                    warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install --with-deps chromium"
                 fi
             fi
         fi

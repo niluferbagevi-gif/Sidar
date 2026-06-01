@@ -58,6 +58,110 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "resolve_playwright_python_spec reads the pyproject dependency-group and has a safe fallback" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/pyproject.toml" <<EOF
+[dependency-groups]
+dev = [
+  "playwright>=1.60,<2.0",
+]
+EOF
+
+    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "playwright>=1.60,<2.0" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == "playwright>=1.60,<2.0" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_playwright_browsers skips uv add when installed Playwright satisfies the repo spec" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=debian
+VERSION_ID="13"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" >> "$tmpdir/python.log"
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
+  "-m playwright install chromium")
+    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then exit 0; fi
+    echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
+    exit 1
+    ;;
+  "- playwright>=1.60,<2.0") exit 1 ;;
+esac
+exit 1
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+touch "$tmpdir/uv-called"
+exit 99
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    [[ ! -e "$tmpdir/uv-called" ]]
+    grep -q "^- playwright>=1.60,<2.0|$" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
+  [[ "$output" == *"OS override fallback ile tamamlandı"* ]]
+}
+
+@test "install_playwright_browsers upgrades outdated Playwright with the repo spec" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=debian
+VERSION_ID="13"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" >> "$tmpdir/python.log"
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
+  "-m playwright install chromium")
+    if [[ -e "$tmpdir/upgraded" ]]; then exit 0; fi
+    echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
+    exit 1
+    ;;
+  "- playwright>=1.60,<2.0") exit 0 ;;
+esac
+exit 1
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/uv.log"
+touch "$tmpdir/upgraded"
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    grep -q "^add --dev playwright>=1.60,<2.0$" "$tmpdir/uv.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"playwright>=1.60,<2.0 şartını sağlamıyor"* ]]
+  [[ "$output" == *"upgrade fallback ile tamamlandı"* ]]
+}
+
 @test "install_playwright_browsers starts with the OS override on Ubuntu 25+" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
