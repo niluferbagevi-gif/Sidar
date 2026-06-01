@@ -90,3 +90,35 @@ run_playwright_ubuntu_override_install() {
     rm -f "$override_os_release"
     return "$install_rc"
 }
+
+install_playwright_linux_dependencies_fallback() {
+    local -a playwright_linux_dependencies=(
+        libnss3
+        libnspr4
+        libatk1.0-0
+        libatk-bridge2.0-0
+        libcups2
+        libdrm2
+        libxkbcommon0
+        libxcomposite1
+        libxdamage1
+        libxfixes3
+        libxrandr2
+        libgbm1
+        libpango-1.0-0
+        libcairo2
+        libasound2t64
+    )
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        warn "Playwright Chromium sistem bağımlılıkları otomatik kurulamadı: apt-get bulunamadı."
+        return 1
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        warn "Playwright Chromium sistem bağımlılıkları otomatik kurulamadı: sudo bulunamadı."
+        return 1
+    fi
+
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
+        "${playwright_linux_dependencies[@]}"
+}

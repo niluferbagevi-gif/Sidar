@@ -279,7 +279,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
-1c170c73642fed89715a48baeb136d536e8d4e4dde49a23980da13a23a717d22  scripts/install_modules/utils/playwright_ubuntu_override.sh
+f07578da3c5d136c117ce3d32a63e88ef8bd6232a464cc51b622e226974d5f7f  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -3692,6 +3692,35 @@ install_playwright_browsers() {
                 "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
         }
 
+        _try_playwright_install_deps() {
+            "${PY_CMD[@]}" -m playwright install-deps chromium >"$_pw_install_log" 2>&1
+        }
+
+        _ensure_playwright_override_dependencies() {
+            info "Playwright OS override sonrası Chromium sistem bağımlılıkları doğrulanıyor..."
+            if _try_playwright_install_deps; then
+                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                    "$_pw_install_log" || true
+                ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
+                return 0
+            fi
+
+            cat "$_pw_install_log" >&2
+            if ! is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
+                warn "Playwright install-deps başarısız oldu; sabit apt fallback yalnızca Ubuntu 25+ override hostlarında uygulanır."
+                return 1
+            fi
+
+            warn "Playwright install-deps başarısız oldu; Ubuntu 25+ için sabit Chromium apt bağımlılık listesi deneniyor..."
+            if install_playwright_linux_dependencies_fallback; then
+                ok "Playwright Chromium sistem bağımlılıkları sabit apt fallback ile kuruldu."
+                return 0
+            fi
+
+            warn "Playwright Chromium sistem bağımlılıkları kurulamadı; browser binary mevcut olsa da headless çalışma doğrulanmadı."
+            return 1
+        }
+
         _playwright_python_upgrade_required() {
             "${PY_CMD[@]}" - "$_pw_python_spec" <<'PY_PLAYWRIGHT_VERSION' >/dev/null 2>&1
 from importlib.metadata import PackageNotFoundError, version
@@ -3711,7 +3740,11 @@ PY_PLAYWRIGHT_VERSION
             if _try_playwright_ubuntu_override_install; then
                 grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true
-                ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium)."
+                if _ensure_playwright_override_dependencies; then
+                    ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium + deps)."
+                else
+                    warn "Playwright OS override fallback binary indirmesi tamamlandı ancak sistem bağımlılıkları eksik kaldı."
+                fi
             else
                 cat "$_pw_install_log" >&2
                 warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install chromium"
@@ -3725,8 +3758,12 @@ PY_PLAYWRIGHT_VERSION
             if _try_playwright_ubuntu_override_install; then
                 grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true
-                ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium)."
-                _pw_install_completed=true
+                if _ensure_playwright_override_dependencies; then
+                    ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium + deps)."
+                    _pw_install_completed=true
+                else
+                    warn "Playwright proaktif OS override binary indirmesi tamamlandı ancak sistem bağımlılıkları eksik kaldı. Standart fallback zinciri deneniyor..."
+                fi
             else
                 cat "$_pw_install_log" >&2
                 warn "Playwright proaktif OS override kurulumu başarısız oldu. Standart fallback zinciri deneniyor..."

@@ -98,6 +98,7 @@ case "\$*" in
     echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
     exit 1
     ;;
+  "-m playwright install-deps chromium") exit 0 ;;
   "- playwright>=1.60,<2.0") exit 1 ;;
 esac
 exit 1
@@ -190,16 +191,55 @@ EOF
 
     install_playwright_browsers
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
     sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
     sed -n "2p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
+    sed -n "3p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
   [[ "$output" == *"Chromium override browser downloaded"* ]]
+  [[ "$output" == *"install-deps ile doğrulandı"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
   [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
   [[ "$output" != *"--with-deps"* ]]
+}
+
+@test "install_playwright_browsers installs the fixed apt dependency list when Ubuntu override install-deps fails" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="26.04"
+EOF
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "-c import playwright") exit 0 ;;
+  "-m playwright install chromium") exit 0 ;;
+  "-m playwright install-deps chromium") echo "install-deps unsupported" >&2; exit 1 ;;
+esac
+exit 1
+EOF
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/sudo"
+    export PATH="$tmpdir/bin:$PATH"
+    export OS_RELEASE_PATH="$tmpdir/os-release"
+    PLAYWRIGHT_BROWSERS_MODE=always
+
+    install_playwright_browsers
+
+    grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sabit Chromium apt bağımlılık listesi deneniyor"* ]]
+  [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
+  [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
 }
 
 @test "install_playwright_browsers keeps the Ubuntu override warning visible when the proactive attempt fails" {
