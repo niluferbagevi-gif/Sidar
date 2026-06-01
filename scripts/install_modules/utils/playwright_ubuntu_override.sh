@@ -91,6 +91,28 @@ run_playwright_ubuntu_override_install() {
     return "$install_rc"
 }
 
+playwright_linux_dependencies_ready() {
+    local package_name=""
+    local package_status=""
+    local ldconfig_cache=""
+
+    if command -v dpkg-query >/dev/null 2>&1; then
+        for package_name in libnss3 libnspr4; do
+            package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
+            [[ "$package_status" == ii* ]] || return 1
+        done
+        return 0
+    fi
+
+    if command -v ldconfig >/dev/null 2>&1; then
+        ldconfig_cache="$(ldconfig -p 2>/dev/null || true)"
+        [[ "$ldconfig_cache" == *"libnss3.so"* && "$ldconfig_cache" == *"libnspr4.so"* ]]
+        return
+    fi
+
+    return 1
+}
+
 install_playwright_linux_dependencies_fallback() {
     local -a playwright_linux_dependencies=(
         libnss3

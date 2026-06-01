@@ -279,7 +279,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
-f07578da3c5d136c117ce3d32a63e88ef8bd6232a464cc51b622e226974d5f7f  scripts/install_modules/utils/playwright_ubuntu_override.sh
+c1876a8ed4deb24ebf714d3479da628d312170828a432d5ceca4837b5185567a  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -3693,7 +3693,14 @@ install_playwright_browsers() {
         }
 
         _try_playwright_install_deps() {
-            "${PY_CMD[@]}" -m playwright install-deps chromium >"$_pw_install_log" 2>&1
+            local _pw_deps_output=""
+            if ! "${PY_CMD[@]}" -m playwright install-deps chromium >"$_pw_install_log" 2>&1; then
+                return 1
+            fi
+            _pw_deps_output="$(cat "$_pw_install_log" 2>/dev/null || true)"
+            if grep -Eqi 'Cannot install dependencies|BEWARE|is not officially supported' <<<"$_pw_deps_output"; then
+                return 1
+            fi
         }
 
         _ensure_playwright_override_dependencies() {
@@ -3701,8 +3708,11 @@ install_playwright_browsers() {
             if _try_playwright_install_deps; then
                 grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true
-                ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
-                return 0
+                if playwright_linux_dependencies_ready; then
+                    ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
+                    return 0
+                fi
+                warn "Playwright install-deps başarılı döndü ancak kritik libnss3/libnspr4 bağımlılıkları doğrulanamadı; sabit apt fallback uygulanacak."
             fi
 
             cat "$_pw_install_log" >&2
