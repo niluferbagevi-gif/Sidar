@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { startMockSidarBackend } from "./support/mockSidarBackend.js";
 
 test.describe("ChatPanel websocket e2e", () => {
+  test.describe.configure({ mode: "serial" });
+
   let backend;
 
   test.beforeAll(async () => {
