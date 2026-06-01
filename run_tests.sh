@@ -311,7 +311,13 @@ BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
 BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
-BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
+if [ "${TEST_PROFILE}" = "ci" ]; then
+  BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
+else
+  # WSL2/laptop GPU P-state ve model keep-alive jitter'ı için yerelde daha toleranslı;
+  # CI profili sabit runner regresyon kapısını yukarıda %10 olarak korur.
+  BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
+fi
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
@@ -1434,6 +1440,10 @@ NODE_PLAYWRIGHT_CACHE_CHECK
   printf '%s\n%s\n' "${executable_path}" "${lock_fingerprint}" > "${FRONTEND_PLAYWRIGHT_SENTINEL}" || true
 }
 
+PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"
+# shellcheck source=scripts/install_modules/utils/playwright_ubuntu_override.sh
+source "${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER}"
+
 install_local_frontend_playwright_chromium_cache() {
   if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
     return 1
@@ -1446,7 +1456,15 @@ install_local_frontend_playwright_chromium_cache() {
   echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
   (
     unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-    npx --no-install playwright install chromium
+    local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
+    local playwright_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
+    if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
+      echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i ubuntu24.04-x64 OS override ile hazırlanıyor."
+      run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}" \
+        npx --no-install playwright install chromium
+    else
+      npx --no-install playwright install chromium
+    fi
   )
 }
 

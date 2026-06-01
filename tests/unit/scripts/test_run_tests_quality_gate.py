@@ -82,7 +82,9 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
+    assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
     assert "resolve_benchmark_compare_target()" in script
     assert 'find .benchmarks -type f -name "*_${requested_name}.json"' in script
     assert 'find .benchmarks -type f -name "*.json"' in script
@@ -137,7 +139,8 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
-        assert "BENCHMARK_COMPARE_FAIL=mean:10%" in content
+        assert "BENCHMARK_COMPARE_FAIL=" in content
+        assert "yerelde mean:15%, CI profilinde mean:10%" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content
 
     assert "Override hiyerarşisi" in env_advanced
@@ -573,6 +576,12 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "monolitik Release bundle" in modularization_note
 
 
+def test_install_sidar_root_guard_allows_explicit_test_mode_only() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert '"${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1"' in script
+
+
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
     remote_modules = tmp_path / "remote"
     runner_dir = tmp_path / "runner"
@@ -590,6 +599,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
         "utils/db_credentials.sh",
         "utils/env_utils.sh",
         "utils/ollama_models.sh",
+        "utils/playwright_ubuntu_override.sh",
         "phases/01_context.sh",
         "phases/02_repo.sh",
         "phases/03_runtime.sh",
@@ -650,6 +660,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
         "utils/db_credentials.sh",
         "utils/env_utils.sh",
         "utils/ollama_models.sh",
+        "utils/playwright_ubuntu_override.sh",
     )
     for module in expected_modules:
         assert module in script
@@ -1247,6 +1258,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
     assert "npx --no-install playwright install chromium" in script
+    assert 'PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"' in script
+    assert 'is_playwright_ubuntu_override_recommended "${os_release_path}"' in script
+    assert 'run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}"' in script
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script
@@ -1261,6 +1275,40 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
     assert 'outputDir: "test-results"' in playwright
+    assert 'process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect"' in playwright
+    assert "metadata: { playwrightHostPlatformOverride }" in playwright
+
+
+def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_install = tmp_path / "mock-install.sh"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    mock_install.write_text(
+        """#!/usr/bin/env bash
+printf '%s|%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-}"
+grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
+""",
+        encoding="utf-8",
+    )
+    mock_install.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; source "$1"; is_playwright_ubuntu_override_recommended "$2"; run_playwright_ubuntu_override_install "$2" 120000 "$3"',
+            "bash",
+            str(helper),
+            str(os_release),
+            str(mock_install),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
 def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(tmp_path: Path) -> None:

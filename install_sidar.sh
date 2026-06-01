@@ -20,7 +20,7 @@ set -Eeuo pipefail
 
 # Güvenlik/operasyon guard: root ile çalıştırılan kurulum .venv sahipliğini bozup
 # sonraki uv run çağrılarında Permission denied zinciri üretebilir.
-if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+if [[ "${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
     echo "❌ Bu betik root/sudo ile çalıştırılamaz. Normal kullanıcı ile çalıştırın: ./install_sidar.sh" >&2
     if [[ -n "${SUDO_USER:-}" ]]; then
         echo "ℹ️ Tespit edilen normal kullanıcı: ${SUDO_USER}. Dizin sahipliği bozulduysa düzeltme:" >&2
@@ -243,6 +243,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
+    "utils/playwright_ubuntu_override.sh"
 )
 
 INSTALL_PHASE_MODULES=(
@@ -278,6 +279,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
+1c170c73642fed89715a48baeb136d536e8d4e4dde49a23980da13a23a717d22  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 e82bdca20fabbdaed0803ff02f9eba988e9b332819a19053b679905204422404  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -573,7 +575,8 @@ sidar_source_install_utils \
     "python_env.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
-    "ollama_models.sh"
+    "ollama_models.sh" \
+    "playwright_ubuntu_override.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
@@ -3647,71 +3650,6 @@ should_install_playwright_browsers() {
     esac
 }
 
-is_playwright_ubuntu_override_recommended() {
-    local os_release_file="${1:-/etc/os-release}"
-    local distro_id=""
-    local distro_like=""
-    local version_id=""
-    local key value
-
-    [[ -r "$os_release_file" ]] || return 1
-    while IFS='=' read -r key value; do
-        value="${value%\"}"
-        value="${value#\"}"
-        case "$key" in
-            ID) distro_id="$value" ;;
-            ID_LIKE) distro_like="$value" ;;
-            VERSION_ID) version_id="$value" ;;
-        esac
-    done < "$os_release_file"
-
-    [[ " ${distro_id,,} ${distro_like,,} " == *"ubuntu"* ]] || return 1
-    local ubuntu_major="${version_id%%.*}"
-    [[ "$ubuntu_major" =~ ^[0-9]+$ ]] || return 1
-    (( ubuntu_major >= 25 ))
-}
-
-resolve_playwright_python_spec() {
-    local pyproject_file="${1:-${SCRIPT_DIR}/pyproject.toml}"
-    local resolved_spec=""
-
-    if [[ -r "$pyproject_file" ]]; then
-        resolved_spec="$(awk '
-            /^\[dependency-groups\]$/ { in_dependency_groups=1; next }
-            in_dependency_groups && /^\[/ { exit }
-            in_dependency_groups && /"playwright[<>=!~]/ {
-                line=$0
-                sub(/^[^"]*"/, "", line)
-                sub(/".*$/, "", line)
-                print line
-                exit
-            }
-        ' "$pyproject_file")"
-    fi
-    echo "${resolved_spec:-playwright>=1.60,<2.0}"
-}
-
-prepare_playwright_ubuntu_override_file() {
-    local source_os_release="${1:-/etc/os-release}"
-    local target_os_release="$2"
-
-    if [[ -r "$source_os_release" ]]; then
-        cp "$source_os_release" "$target_os_release"
-    fi
-    if [[ -s "$target_os_release" ]]; then
-        if grep -q '^VERSION_ID=' "$target_os_release"; then
-            sed_inplace 's/^VERSION_ID=.*/VERSION_ID="24.04"/' "$target_os_release"
-        else
-            echo 'VERSION_ID="24.04"' >> "$target_os_release"
-        fi
-    else
-        cat >"$target_os_release" <<'EOF'
-ID=ubuntu
-VERSION_ID="24.04"
-EOF
-    fi
-}
-
 install_playwright_browsers() {
     step "Playwright Tarayıcı Motorları"
 
@@ -3725,11 +3663,10 @@ install_playwright_browsers() {
     if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
         local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
         local _pw_install_log; _pw_install_log=$(mktemp)
-        local _pw_os_override_file=""
         local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
         local _pw_install_completed=false
         local _pw_python_spec
-        _pw_python_spec="$(resolve_playwright_python_spec)"
+        _pw_python_spec="$(resolve_playwright_python_spec "${SCRIPT_DIR}/pyproject.toml")"
 
         _is_playwright_os_mismatch_error() {
             local _output="${1:-}"
@@ -3751,12 +3688,7 @@ install_playwright_browsers() {
         }
 
         _try_playwright_ubuntu_override_install() {
-            if [[ -n "$_pw_os_override_file" ]]; then
-                rm -f "$_pw_os_override_file"
-            fi
-            _pw_os_override_file="$(mktemp)"
-            prepare_playwright_ubuntu_override_file "$_pw_os_release_path" "$_pw_os_override_file"
-            env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" OS_RELEASE_PATH="$_pw_os_override_file" \
+            run_playwright_ubuntu_override_install "$_pw_os_release_path" "$pw_timeout_ms" \
                 "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
         }
 
@@ -3853,9 +3785,6 @@ PY_PLAYWRIGHT_VERSION
         fi
 
         rm -f "$_pw_install_log"
-        if [[ -n "$_pw_os_override_file" ]]; then
-            rm -f "$_pw_os_override_file"
-        fi
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
     fi
@@ -6305,7 +6234,7 @@ is_alembic_at_head() {
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
-ensure_postgres_databases_exist() {
+ensure_postgres_databases_exist() (
     local db_host="$1"
     local db_port="$2"
     local db_user="$3"
@@ -6315,6 +6244,8 @@ ensure_postgres_databases_exist() {
     local db_name=""
     local unique_dbs=""
     local psql_bin=""
+    local psql_err_file=""
+    local select_output=""
 
     # PATH kurulum sırasında değişebilir; eski Bash command hash kayıtlarının
     # sistemdeki veya PATH üzerinden sağlanan güncel psql ikilisini gölgelemesini önle.
@@ -6325,35 +6256,39 @@ ensure_postgres_databases_exist() {
         return 0
     fi
 
+    psql_err_file="$(mktemp)"
+    trap 'rm -f "$psql_err_file"' EXIT
+
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        local psql_err_file
-        psql_err_file="$(mktemp)"
-        if ! PGPASSWORD="$db_password" "$psql_bin" -w \
+        : >"$psql_err_file"
+        if ! select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                rm -f "$psql_err_file"
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
-            info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
-            if ! PGPASSWORD="$db_password" "$psql_bin" -w \
-                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-                -v ON_ERROR_STOP=1 \
-                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
-                if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                    rm -f "$psql_err_file"
-                    fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
-                fi
-                rm -f "$psql_err_file"
-                return 1
-            fi
-            ok "Veritabanı hazır: ${db_name}"
+            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name}"
+            return 1
         fi
-        rm -f "$psql_err_file"
+        if grep -qx '1' <<<"$select_output"; then
+            continue
+        fi
+
+        info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
+        if ! PGPASSWORD="$db_password" "$psql_bin" -w \
+            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
+            if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+            fi
+            return 1
+        fi
+        ok "Veritabanı hazır: ${db_name}"
     done <<<"$unique_dbs"
-}
+)
 
 
 seed_rag_metadata_after_migrations() {

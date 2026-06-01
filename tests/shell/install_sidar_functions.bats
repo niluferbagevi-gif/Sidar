@@ -806,14 +806,21 @@ EOF
     cat > "$tmpdir/psql" <<"EOF"
 #!/usr/bin/env bash
 printf "%s\n" "$*" >> "__CALLS__"
-if [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
+[[ "${PGPASSWORD:-}" == "super-secret" ]] || exit 9
+[[ "$*" == *"-w -h 127.0.0.1 -p 5432 -U sidar -d postgres"* ]] || exit 8
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
   echo "1"
   exit 0
 fi
-if [[ "$*" == *"CREATE DATABASE"* ]]; then
-  printf "%s\n" "$*" >> "__CREATE__"
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database"* ]]; then
+  exit 0
 fi
-exit 0
+if [[ "$*" == *"-v ON_ERROR_STOP=1 -c CREATE DATABASE"* ]]; then
+  printf "%s\n" "$*" >> "__CREATE__"
+  exit 0
+fi
+printf "%s\n" "unexpected psql invocation: $*" >&2
+exit 7
 EOF
     sed -i "s#__CALLS__#$psql_calls#g" "$tmpdir/psql"
     sed -i "s#__CREATE__#$psql_create#g" "$tmpdir/psql"
@@ -831,6 +838,32 @@ EOF
     fi
   '
   [ "$status" -eq 0 ]
+}
+
+@test "ensure_postgres_databases_exist fails closed when the database existence query fails" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/psql" <<"EOF"
+#!/usr/bin/env bash
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database"* ]]; then
+  printf "%s\n" "psql: error: connection refused" >&2
+  exit 2
+fi
+if [[ "$*" == *"CREATE DATABASE"* ]]; then
+  printf "%s\n" "unexpected CREATE DATABASE call" >&2
+fi
+exit 0
+EOF
+    chmod +x "$tmpdir/psql"
+    PATH="$tmpdir:$PATH"
+    hash -r
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PostgreSQL veritabanı varlık sorgusu başarısız: sidar"* ]]
+  [[ "$output" != *"unexpected CREATE DATABASE call"* ]]
 }
 
 @test "ensure_postgres_databases_exist fails closed on psql password authentication errors" {
