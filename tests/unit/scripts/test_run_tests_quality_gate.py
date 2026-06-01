@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tomllib
@@ -1252,6 +1253,11 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
     assert 'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"' in script
+    assert 'FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"' in script
+    assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"' in script
+    assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"' in script
+    assert 'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"' in script
+    assert 'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-0}"' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
@@ -1283,7 +1289,12 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
     assert script.index("resolve_local_frontend_e2e_mode") < script.index("npm run test:coverage")
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
+    assert "run_frontend_e2e_with_retry()" in script
+    assert 'if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then' in script
     assert "npm run test:e2e" in script
+    assert 'FRONTEND_E2E_EXIT_CODE=$?' in script
+    assert 'if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then' in script
+    assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
     assert "npx playwright install --with-deps chromium" in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
@@ -1293,6 +1304,138 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'outputDir: "test-results"' in playwright
     assert 'process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect"' in playwright
     assert "metadata: { playwrightHostPlatformOverride }" in playwright
+    assert "SIDAR_E2E_FRONTEND_PORT" not in playwright
+    assert "SIDAR_E2E_BACKEND_PORT" not in playwright
+    assert "timeout: 45_000" in playwright
+    assert "expect: { timeout: 15_000 }" in playwright
+    assert "fullyParallel: true" in playwright
+    assert "retries: process.env.CI ? 2 : 1" in playwright
+    assert "retries: 0" not in playwright
+    assert "workers: 1" not in playwright
+    assert "storageState: undefined" in playwright
+    assert "webServer:" not in playwright
+
+    vite = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+    websocket_spec = Path("web_ui_react/e2e/chat-websocket.spec.js").read_text(encoding="utf-8")
+    mock_backend = Path("web_ui_react/e2e/support/mockSidarBackend.js").read_text(encoding="utf-8")
+    vite_server = Path("web_ui_react/e2e/support/testViteServer.js").read_text(encoding="utf-8")
+    assert 'backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860"' in vite
+    assert 'backendUrl.replace(/^http/, "ws")' in vite
+    assert '"/ws": { target: webSocketUrl, ws: true }' in vite
+    assert "localhost:7860" not in vite
+    assert "optimizeDeps:" in vite
+    assert '"index.html"' in vite
+    assert '"src/main.jsx"' in vite
+    assert '"src/App.jsx"' in vite
+    assert '"src/components/*.jsx"' in vite
+    assert '"!src/**/*.test.{js,jsx}"' in vite
+    assert '"!e2e/**"' in vite
+    assert 'test.describe.configure({ mode: "serial" })' not in websocket_spec
+    assert "test.beforeEach(async ({ page }) =>" in websocket_spec
+    assert "test.afterEach(async () =>" in websocket_spec
+    assert "backend = await startMockSidarBackend()" in websocket_spec
+    assert "frontend = await startTestViteServer({ backendUrl: backend.url })" in websocket_spec
+    assert "await page.goto(frontend.url)" in websocket_spec
+    assert "port = 0" in mock_backend
+    assert 'server.listen(port, "0.0.0.0"' in mock_backend
+    assert "port: address.port" in mock_backend
+    assert 'url: `http://127.0.0.1:${address.port}`' in mock_backend
+    assert "port: 15_173" in vite_server
+    assert "strictPort: false" in vite_server
+    assert 'host: "0.0.0.0"' in vite_server
+    assert "proxy: createSidarProxyConfig(backendUrl)" in vite_server
+    assert "process.env.SIDAR_BACKEND_URL" not in vite_server
+    assert "await page.context().clearCookies()" in websocket_spec
+    assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
+    assert ".toBeVisible({ timeout: 15_000 })" in websocket_spec
+
+
+def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
+    script = _script()
+    helper = tmp_path / "frontend_e2e_retry.sh"
+    helper.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        + script[script.index("run_frontend_e2e_with_retry() {") : script.index("resolve_local_frontend_e2e_mode() {")]
+        + "run_frontend_e2e_with_retry\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    npm = bin_dir / "npm"
+    npm.write_text(
+        """#!/usr/bin/env bash
+count=0
+[[ -f "${MOCK_NPM_COUNT}" ]] && count="$(cat "${MOCK_NPM_COUNT}")"
+count=$((count + 1))
+printf '%s' "${count}" > "${MOCK_NPM_COUNT}"
+[[ "${count}" -ge "${MOCK_NPM_PASS_ON_ATTEMPT}" ]]
+""",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    count_file = tmp_path / "npm-count"
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "MOCK_NPM_COUNT": str(count_file),
+        "MOCK_NPM_PASS_ON_ATTEMPT": "2",
+        "FRONTEND_E2E_RETRY_ON_FAIL": "1",
+    }
+
+    success = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
+
+    assert success.returncode == 0
+    assert count_file.read_text(encoding="utf-8") == "2"
+    assert "ikinci denemede geçti" in success.stdout
+
+    count_file.unlink()
+    env["MOCK_NPM_PASS_ON_ATTEMPT"] = "3"
+    failure = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
+
+    assert failure.returncode == 1
+    assert count_file.read_text(encoding="utf-8") == "2"
+    assert "retry sonrasında da başarısız" in failure.stdout
+
+
+def test_benchmark_and_frontend_e2e_flakes_are_soft_local_but_hard_in_ci() -> None:
+    script = _script()
+    final_evaluation = script[script.index("# 4) Final Durum Değerlendirmesi") :]
+    common_prefix = """
+BACKEND_EXIT_CODE=0
+FRONTEND_EXIT_CODE=0
+FRONTEND_E2E_EXIT_CODE=1
+BENCHMARK_EXIT_CODE=1
+format_backend_failure_reasons() { printf 'none'; }
+"""
+
+    local_result = subprocess.run(
+        ["bash", "-c", common_prefix + "TEST_PROFILE=local\nBENCHMARK_ENFORCE_RESULT=0\nFRONTEND_E2E_ENFORCE_RESULT=0\n" + final_evaluation],
+        capture_output=True,
+        text=True,
+    )
+
+    assert local_result.returncode == 0
+    assert "Benchmark fazı başarısız" in local_result.stdout
+    assert "Frontend Playwright E2E fazı retry sonrasında başarısız" in local_result.stdout
+
+    ci_result = subprocess.run(
+        ["bash", "-c", common_prefix + "TEST_PROFILE=ci\nBENCHMARK_ENFORCE_RESULT=1\nFRONTEND_E2E_ENFORCE_RESULT=1\n" + final_evaluation],
+        capture_output=True,
+        text=True,
+    )
+
+    assert ci_result.returncode == 1
+    assert "Frontend E2E Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
+    assert "Benchmark Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
+
+
+def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
+    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
+
+    assert 'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";' in websocket_hook
+    assert 'useLayoutEffect(() => {\n    manualCloseRef.current = false;\n    connect();' in websocket_hook
+    assert "flushSync" not in websocket_hook
 
 
 def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:

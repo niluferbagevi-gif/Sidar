@@ -68,6 +68,19 @@ tek seferlik/geçici dosya adlarını referans almaz.
   editable `sidar` paketi tarama dışında kalır; kurulu üçüncü taraf bağımlılıkların CVE taraması
   çalışmaya devam eder.
 
+## Frontend Playwright E2E flake yönetimi
+
+- Playwright runner yalnız başarısız testleri yerelde bir, CI'da iki kez yeniden dener. Bu test-seviyesi retry,
+  cold-start kaynaklı tekil flake'leri tüm paketi baştan çalıştırmadan absorbe eder.
+- `run_tests.sh`, etkin Playwright E2E fazı Playwright retry'ları sonrasında başarısız olduğunda varsayılan olarak
+  bir kez stage retry yapar. Canonical ayar `FRONTEND_E2E_RETRY_ON_FAIL=1`, kısa uyumluluk alias'ı
+  `RETRY_ON_FAIL=1` değeridir; namespaced ayar verilirse önceliklidir.
+- CI profilinde retry sonrası E2E başarısızlığı `FRONTEND_E2E_ENFORCE_RESULT=1` varsayılanıyla hard-fail kalır.
+  WSL2/laptop cold-start ve host jitter'ına açık yerel profilde varsayılan `0`, sonucu görünür bir flake-soft-fail
+  uyarısı olarak raporlar. Sabit yerel runner üzerinde CI paritesi için değeri açıkça `1` yapın.
+- Vitest unit/coverage sonucu ayrı tutulur ve her profilde zorunlu kalite kapısı olmaya devam eder; E2E soft-fail
+  sınıflandırması frontend unit veya coverage hatalarını maskelemez.
+
 ## Coverage ratchet eşik davranışı
 
 - Güncel gate `.coveragerc` içindeki `[report] fail_under` değeridir. Ratchet yalnız başarılı
@@ -87,7 +100,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
   WSL2/laptop P-state, Docker servisleri ve model keep-alive jitter'ı görülebilen yerel profilde
   `BENCHMARK_ENFORCE_COMPARE=0` varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli
   opt-in ile açıldığında varsayılan eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü
-  biçimde override edilebilir. Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
+  biçimde override edilebilir. Benchmark fazının genel sonucu CI profilinde varsayılan hard-fail, yerelde
+  flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
+  Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve

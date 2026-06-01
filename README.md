@@ -561,7 +561,19 @@ npm install
 npm run dev
 ```
 
-Geliştirme sunucusu varsayılan olarak **http://localhost:5173** adresinde açılır. Production için:
+Geliştirme sunucusu varsayılan olarak **http://localhost:5173** adresinde açılır. Vite proxy hedefi
+varsayılan olarak IPv4 üzerinden `http://127.0.0.1:7860` adresindeki Sidar backend'idir; farklı bir
+backend için `SIDAR_BACKEND_URL=http://127.0.0.1:<port> npm run dev` kullanabilirsiniz. Frontend
+Playwright E2E akışı gerçek backend ile çakışmamak için her testte işletim sisteminden dinamik mock
+backend portu alır. Test Vite sunucusu izole `15173` portundan başlar ve port doluysa sonraki boş portu
+seçer; mock servis tüm arayüzlerde dinlerken Vite proxy bağlantısı IPv4 `127.0.0.1` üzerinden kurulur.
+WSL2 cold-start süresini azaltmak için Vite dependency optimizer ana HTML/giriş dosyası ve panel
+kaynaklarını önceden tarar; Node-only Playwright E2E helper dosyaları browser optimizer kapsamı dışında
+tutulur. Playwright runner başarısız testleri yerelde bir, CI'da iki kez yeniden dener; bunun ardından
+`run_tests.sh`, E2E aşamasının tamamı başarısız olursa varsayılan olarak bir kez stage retry yapar
+(`FRONTEND_E2E_RETRY_ON_FAIL=1`; kısa alias: `RETRY_ON_FAIL=1`). CI profilinde retry sonrası hata
+hard-fail kalır; WSL2/laptop jitter'ına açık yerel profilde E2E sonucu raporlanır ancak varsayılan olarak
+final çıkışı bloke etmez. Sıkı yerel doğrulama `FRONTEND_E2E_ENFORCE_RESULT=1` ile açılabilir. Production için:
 
 ```bash
 npm run build
@@ -778,7 +790,9 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `--benchmark-compare-fail=mean:10%` hard-fail kapısı uygulanır. WSL2/laptop jitter'ına açık yerel
 > profilde varsayılan `BENCHMARK_ENFORCE_COMPARE=0` yalnız rapor üretir; sabit bir yerel profilde kapı
 > istenirse `BENCHMARK_ENFORCE_COMPARE=1` ile açılır ve varsayılan eşik `mean:15%` olur. Eşik
-> `BENCHMARK_COMPARE_FAIL` ile açıkça override edilebilir. Benchmark komutu ayrıca GC'yi kapatır ve
+> `BENCHMARK_COMPARE_FAIL` ile açıkça override edilebilir. Benchmark fazının genel çıkışı da CI'da hard-fail,
+> yerelde flake-soft-fail olarak değerlendirilir; sıkı yerel faz doğrulaması `BENCHMARK_ENFORCE_RESULT=1` ile
+> açılabilir. Benchmark komutu ayrıca GC'yi kapatır ve
 > kalibrasyon warmup'ını etkinleştirir.
 > Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
 > `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.

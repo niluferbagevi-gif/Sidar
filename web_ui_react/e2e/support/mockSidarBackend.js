@@ -1,7 +1,7 @@
 import http from "node:http";
 import { WebSocketServer } from "ws";
 
-export async function startMockSidarBackend({ port = 7860 } = {}) {
+export async function startMockSidarBackend({ port = 0 } = {}) {
   const server = http.createServer((req, res) => {
     if (req.url === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });
@@ -73,10 +73,18 @@ export async function startMockSidarBackend({ port = 7860 } = {}) {
 
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => resolve());
+    server.listen(port, "0.0.0.0", () => resolve());
   });
 
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise((resolve) => server.close(() => resolve()));
+    throw new Error("Mock Sidar backend dinleme portunu döndürmedi.");
+  }
+
   return {
+    port: address.port,
+    url: `http://127.0.0.1:${address.port}`,
     async close() {
       await new Promise((resolve) => {
         wss.close(() => {
