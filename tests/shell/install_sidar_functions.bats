@@ -803,17 +803,27 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     psql_calls="$tmpdir/psql_calls.log"
     psql_create="$tmpdir/psql_create.log"
+    psql_errors="$tmpdir/errors"
+    mkdir -p "$psql_errors"
     cat > "$tmpdir/psql" <<"EOF"
 #!/usr/bin/env bash
 printf "%s\n" "$*" >> "__CALLS__"
-if [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = 'sidar'"* ]]; then
-  echo "1"
+[[ "${PGPASSWORD:-}" == "super-secret" ]] || exit 90
+[[ " $* " == *" -w "* ]] || exit 91
+if [[ " $* " == *" -tAc "* ]]; then
+  [[ "$*" == *"SELECT 1 FROM pg_database WHERE datname = "* ]] || exit 92
+  if [[ "$*" == *"datname = 'sidar'"* ]]; then
+    printf "1\n"
+  fi
   exit 0
 fi
-if [[ "$*" == *"CREATE DATABASE"* ]]; then
+if [[ " $* " == *" -c CREATE DATABASE "* ]]; then
+  [[ " $* " == *" -v ON_ERROR_STOP=1 "* ]] || exit 93
   printf "%s\n" "$*" >> "__CREATE__"
+  exit 0
 fi
-exit 0
+printf "unexpected psql invocation: %s\n" "$*" >&2
+exit 94
 EOF
     sed -i "s#__CALLS__#$psql_calls#g" "$tmpdir/psql"
     sed -i "s#__CREATE__#$psql_create#g" "$tmpdir/psql"
@@ -821,14 +831,16 @@ EOF
     PATH="$tmpdir:$PATH"
     hash -r
 
-    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+    TMPDIR="$psql_errors" ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
 
     grep -q -- "-h 127.0.0.1 -p 5432 -U sidar -d postgres" "$psql_calls"
+    grep -q -- "-tAc SELECT 1 FROM pg_database WHERE datname = 'sidar'" "$psql_calls"
     grep -q -- "CREATE DATABASE \"sidar_development\" OWNER \"sidar\";" "$psql_create"
     grep -q -- "CREATE DATABASE \"sidar_test\" OWNER \"sidar\";" "$psql_create"
     if grep -q -- "CREATE DATABASE \"sidar\" OWNER \"sidar\";" "$psql_create"; then
       exit 1
     fi
+    [[ -z "$(find "$psql_errors" -mindepth 1 -print -quit)" ]]
   '
   [ "$status" -eq 0 ]
 }
