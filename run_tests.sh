@@ -294,10 +294,13 @@ else
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
-  RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-0}"
+  RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
 fi
 
-if [ "${RUN_FRONTEND_E2E}" = "0" ]; then
+if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
+  # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
+  # Auto modu, frontend bağımlılıkları hazırlandıktan sonra cache'deki Node
+  # Playwright Chromium executable'ını doğrulayarak smoke kapısını etkinleştirir.
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 fi
 
@@ -1371,6 +1374,27 @@ else
   fi
 fi
 
+resolve_local_frontend_e2e_mode() {
+  if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
+    return 0
+  fi
+
+  if node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' >/dev/null 2>&1
+const fs = require("node:fs");
+const { chromium } = require("@playwright/test");
+process.exit(fs.existsSync(chromium.executablePath()) ? 0 : 1);
+NODE_PLAYWRIGHT_CACHE_CHECK
+  then
+    RUN_FRONTEND_E2E=1
+    echo "✅ Node Playwright Chromium cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
+  else
+    RUN_FRONTEND_E2E=0
+    echo "ℹ️ Frontend Playwright smoke testleri atlandı: Node Playwright Chromium cache'i bulunamadı (RUN_FRONTEND_E2E=auto)."
+    echo "   Yerelde etkinleştirmek için: cd web_ui_react && npx playwright install chromium"
+    echo "   Ardından: RUN_FRONTEND_E2E=1 bash run_tests.sh"
+  fi
+}
+
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
   if ! command -v npm >/dev/null 2>&1; then
@@ -1391,6 +1415,7 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
       if [ "${local_npm_ci_exit}" -ne 0 ]; then
         FRONTEND_EXIT_CODE=${local_npm_ci_exit}
       else
+        resolve_local_frontend_e2e_mode
         npm run test:coverage
         FRONTEND_EXIT_CODE=$?
         if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then

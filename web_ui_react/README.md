@@ -60,8 +60,11 @@ src/
 ### CI tarayıcı smoke kapısı ve coverage görünürlüğü
 
 - `run_tests.sh`, CI profilinde `RUN_FRONTEND_E2E=1` varsayılanıyla Playwright WebSocket smoke
-  senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `0` değeridir;
-  tarayıcı doğrulaması için `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu
+  senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `auto` değeridir:
+  Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
+  hazır değilse browser indirmeden açıklayıcı yönlendirmeyle atlanır. Tarayıcıyı hazırlamak için
+  `cd web_ui_react && npx playwright install chromium`, açıkça zorlamak için
+  `RUN_FRONTEND_E2E=1 bash run_tests.sh` kullanın. CI, HTML raporunu
   `web_ui_react/playwright-report/` altında artefakt olarak saklar.
 - Vitest coverage kapsamı `src/**/*.{js,jsx}` olarak açıkça tanımlıdır. Terminal raporu tam kapsanan
   dosyaları da listeler (`skipFull: false`); böylece `%100` özetinin hangi dosyalardan oluştuğu görünürdür.

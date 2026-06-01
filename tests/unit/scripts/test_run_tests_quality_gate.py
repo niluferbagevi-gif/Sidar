@@ -1210,16 +1210,24 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
 
 
-def test_run_tests_executes_playwright_smoke_in_ci_and_allows_local_opt_out() -> None:
+def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
-    assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-0}"' in script
+    assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
-    assert 'if [ "${RUN_FRONTEND_E2E}" = "0" ]; then' in script
+    assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
+    assert "resolve_local_frontend_e2e_mode()" in script
+    assert 'if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then' in script
+    assert 'const { chromium } = require("@playwright/test");' in script
+    assert 'fs.existsSync(chromium.executablePath())' in script
+    assert "RUN_FRONTEND_E2E=1" in script
+    assert "RUN_FRONTEND_E2E=0" in script
+    assert "npx playwright install chromium" in script
     assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
+    assert script.index("resolve_local_frontend_e2e_mode") < script.index("npm run test:coverage")
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "npm run test:e2e" in script
     assert "npx playwright install --with-deps chromium" in ci
