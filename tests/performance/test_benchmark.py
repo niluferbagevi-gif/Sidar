@@ -105,6 +105,33 @@ async def _initialize_schema_safely(db: Database) -> None:
             await conn.execute("SELECT pg_advisory_unlock($1)", lock_id)
 
 
+async def _warm_postgresql_connection_pool(db: Database) -> None:
+    """PostgreSQL bağlantı havuzunu ölçüm başlamadan önce tamamen ısıtır."""
+    if getattr(db, "_backend", "") != "postgresql":
+        return
+
+    pool = getattr(db, "_pg_pool", None)
+    if pool is None:
+        raise RuntimeError("PostgreSQL pool başlatılmadan ısıtılamaz.")
+
+    get_max_size = getattr(pool, "get_max_size", None)
+    connection_count = int(get_max_size()) if callable(get_max_size) else int(db.pool_size)
+
+    acquired_connections = 0
+    all_connections_acquired = asyncio.Event()
+
+    async def _ping_connection() -> None:
+        nonlocal acquired_connections
+        async with pool.acquire() as conn:
+            acquired_connections += 1
+            if acquired_connections >= connection_count:
+                all_connections_acquired.set()
+            await conn.execute("SELECT 1")
+            await all_connections_acquired.wait()
+
+    await asyncio.gather(*[_ping_connection() for _ in range(max(1, connection_count))])
+
+
 def _benchmark_db_variants() -> list[object]:
     variants: list[object] = [
         pytest.param("sqlite", id="sqlite"),
@@ -141,6 +168,7 @@ def benchmark_multi_user_db(
             db._sqlite_conn.execute("PRAGMA synchronous = NORMAL;")
             db._sqlite_conn.execute("PRAGMA busy_timeout = 10000;")
         loop.run_until_complete(_initialize_schema_safely(db))
+        loop.run_until_complete(_warm_postgresql_connection_pool(db))
     except Exception as exc:
         loop.close()
         if backend == "postgresql":
@@ -206,8 +234,8 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
 
     total_messages = benchmark.pedantic(
         _run_once,
-        warmup_rounds=3,
-        rounds=12,
+        warmup_rounds=5,
+        rounds=25,
         iterations=1,
     )
     assert total_messages == users * messages_per_session

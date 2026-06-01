@@ -773,10 +773,13 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Yeni `*_baseline.json` artifact'ini commit etmeden
 > önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
 > kalite kapısı takipli `*_baseline.json` kayıtları içinden version-sort ile en güncel eşleşmeyi kullanır.
-> Baseline bulunduğunda `pytest-benchmark` karşılaştırması profil-duyarlı fail-closed çalışır:
-> sabit runner kullanan CI profilinde `--benchmark-compare-fail=mean:10%`, WSL2/laptop jitter'ına
-> açık yerel profilde `--benchmark-compare-fail=mean:15%` uygulanır. Eşik gerektiğinde
-> `BENCHMARK_COMPARE_FAIL` ile açıkça override edilebilir.
+> Baseline bulunduğunda `pytest-benchmark` karşılaştırması her profilde raporlanır. Sabit runner
+> kullanan CI profilinde `BENCHMARK_ENFORCE_COMPARE=1` varsayılanıyla
+> `--benchmark-compare-fail=mean:10%` hard-fail kapısı uygulanır. WSL2/laptop jitter'ına açık yerel
+> profilde varsayılan `BENCHMARK_ENFORCE_COMPARE=0` yalnız rapor üretir; sabit bir yerel profilde kapı
+> istenirse `BENCHMARK_ENFORCE_COMPARE=1` ile açılır ve varsayılan eşik `mean:15%` olur. Eşik
+> `BENCHMARK_COMPARE_FAIL` ile açıkça override edilebilir. Benchmark komutu ayrıca GC'yi kapatır ve
+> kalibrasyon warmup'ını etkinleştirir.
 > Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
 > `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
 > Gecikme hassas akışlar için

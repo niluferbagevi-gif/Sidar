@@ -82,10 +82,12 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
-  profil-duyarlı `--benchmark-compare-fail` kalite kapısı da eklenir. Sabit runner kullanan CI
-  profilinde varsayılan `mean:10%`, WSL2/laptop P-state ve model keep-alive jitter'ı görülebilen yerel
-  profilde varsayılan `mean:15%` değeridir. Her iki değer de `BENCHMARK_COMPARE_FAIL` ile kontrollü
-  biçimde override edilebilir.
+  karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı sabit
+  runner kullanan CI profilinde varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%` ile açıktır.
+  WSL2/laptop P-state, Docker servisleri ve model keep-alive jitter'ı görülebilen yerel profilde
+  `BENCHMARK_ENFORCE_COMPARE=0` varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli
+  opt-in ile açıldığında varsayılan eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü
+  biçimde override edilebilir. Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve

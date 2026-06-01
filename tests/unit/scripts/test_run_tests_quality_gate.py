@@ -82,6 +82,8 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
+    assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
@@ -92,10 +94,24 @@ def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creat
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
     assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
     assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
+    assert 'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then' in script
     assert 'benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")' in script
+    assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
+    assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
+    assert 'benchmark_cmd+=(--benchmark-disable-gc)' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+
+
+def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
+    benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
+
+    assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
+    assert 'await conn.execute("SELECT 1")' in benchmark_test
+    assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
+    assert "warmup_rounds=5" in benchmark_test
+    assert "rounds=25" in benchmark_test
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
