@@ -1,17 +1,44 @@
+import net from "node:net";
 import { createServer } from "vite";
 import { createSidarProxyConfig } from "../../vite.config.js";
 
-const READY_TIMEOUT_MS = 15_000;
+const READY_TIMEOUT_MS = 60_000;
 const READY_POLL_MS = 100;
+
+async function reserveAvailablePort() {
+  const probe = net.createServer();
+  await new Promise((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const address = probe.address();
+  if (!address || typeof address === "string") {
+    await new Promise((resolve) => probe.close(resolve));
+    throw new Error("Vite E2E sunucusu için boş port ayrılamadı.");
+  }
+  await new Promise((resolve, reject) => {
+    probe.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
+}
+
+async function fetchReadyResponse(url, validateBody = () => true) {
+  const response = await fetch(url);
+  if (!response.ok) return false;
+  return validateBody(await response.text());
+}
 
 async function waitUntilReady(url) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url);
-      if (response.ok) return;
+      const [indexReady, entryReady] = await Promise.all([
+        fetchReadyResponse(url, (html) => html.includes('id="root"')),
+        fetchReadyResponse(`${url}/src/main.jsx`),
+      ]);
+      if (indexReady && entryReady) return;
     } catch {
-      // Vite may still be binding or optimizing dependencies.
+      // Vite may still be binding, transforming the SPA entry, or optimizing dependencies.
     }
     await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
   }
@@ -19,13 +46,14 @@ async function waitUntilReady(url) {
 }
 
 export async function startTestViteServer({ backendUrl }) {
+  const port = await reserveAvailablePort();
   let server;
   try {
     server = await createServer({
       server: {
-        host: "0.0.0.0",
-        port: 15_173,
-        strictPort: false,
+        host: "127.0.0.1",
+        port,
+        strictPort: true,
         proxy: createSidarProxyConfig(backendUrl),
       },
     });

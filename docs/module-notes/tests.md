@@ -72,6 +72,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 - Playwright runner yalnız başarısız testleri yerelde bir, CI'da iki kez yeniden dener. Bu test-seviyesi retry,
   cold-start kaynaklı tekil flake'leri tüm paketi baştan çalıştırmadan absorbe eder.
+- Chat websocket E2E senaryoları seri yürür ve tek bir frontend/backend test sunucusu çiftini paylaşır. Test
+  Vite sunucusu sabit port yerine işletim sisteminden dinamik port alır; readiness kontrolü SPA köküyle birlikte
+  dönüştürülmüş giriş modülünü bekler. Böylece eski süreçlerden kalan portlar ve cold-start dependency optimize
+  süresi DOM doğrulamalarına yanlış negatif olarak yansımaz.
 - `run_tests.sh`, etkin Playwright E2E fazı Playwright retry'ları sonrasında başarısız olduğunda varsayılan olarak
   bir kez stage retry yapar. Canonical ayar `FRONTEND_E2E_RETRY_ON_FAIL=1`, kısa uyumluluk alias'ı
   `RETRY_ON_FAIL=1` değeridir; namespaced ayar verilirse önceliklidir.

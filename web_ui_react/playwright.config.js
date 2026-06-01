@@ -10,8 +10,8 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
   outputDir: "test-results",
-  timeout: 45_000,
-  expect: { timeout: 15_000 },
+  timeout: 75_000,
+  expect: { timeout: 20_000 },
   fullyParallel: true,
   // Cold-start dalgalanmalarında yalnız başarısız testi yeniden çalıştır.
   // CI daha değişken runner yükleri için ek bir deneme hakkı kullanır.

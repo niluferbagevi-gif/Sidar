@@ -3,21 +3,24 @@ import { startMockSidarBackend } from "./support/mockSidarBackend.js";
 import { startTestViteServer } from "./support/testViteServer.js";
 
 test.describe("ChatPanel websocket e2e", () => {
+  test.describe.configure({ mode: "serial" });
+
   let backend;
   let frontend;
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeAll(async () => {
     backend = await startMockSidarBackend();
     frontend = await startTestViteServer({ backendUrl: backend.url });
+  });
+
+  test.beforeEach(async ({ page }) => {
     await page.context().clearCookies();
     await page.addInitScript(() => localStorage.clear());
   });
 
-  test.afterEach(async () => {
+  test.afterAll(async () => {
     await frontend?.close();
     await backend?.close();
-    frontend = undefined;
-    backend = undefined;
   });
 
   test("token kaydedildikten sonra websocket bağlanır ve presence görünür", async ({ page }) => {
