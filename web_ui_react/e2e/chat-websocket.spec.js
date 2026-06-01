@@ -1,24 +1,27 @@
 import { expect, test } from "@playwright/test";
 import { startMockSidarBackend } from "./support/mockSidarBackend.js";
-
-const e2eBackendPort = Number(process.env.SIDAR_E2E_BACKEND_PORT || "17860");
+import { startTestViteServer } from "./support/testViteServer.js";
 
 test.describe("ChatPanel websocket e2e", () => {
   let backend;
+  let frontend;
 
   test.beforeEach(async ({ page }) => {
-    backend = await startMockSidarBackend({ port: e2eBackendPort });
+    backend = await startMockSidarBackend();
+    frontend = await startTestViteServer({ backendUrl: backend.url });
     await page.context().clearCookies();
     await page.addInitScript(() => localStorage.clear());
   });
 
   test.afterEach(async () => {
+    await frontend?.close();
     await backend?.close();
+    frontend = undefined;
     backend = undefined;
   });
 
   test("token kaydedildikten sonra websocket bağlanır ve presence görünür", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(frontend.url);
 
     await expect(page.getByText("Token gerekli")).toBeVisible({ timeout: 15_000 });
 
@@ -30,7 +33,7 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   test("mesaj gönderildiğinde backend stream yanıtı chat penceresinde görünür", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(frontend.url);
 
     await page.getByLabel("Bearer token").fill("e2e-test-token");
     await page.getByRole("button", { name: "Token Kaydet" }).click();
