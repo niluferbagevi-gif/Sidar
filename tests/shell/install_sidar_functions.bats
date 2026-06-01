@@ -563,6 +563,84 @@ ENV
   [ "$status" -eq 0 ]
 }
 
+@test "is_alembic_at_head compares current and heads with the configured DATABASE_URL" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/alembic.ini"
+    cat > "$tmpdir/.env" <<EOF
+DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
+case "\$*" in
+  "-m alembic current") echo "0006_access_control_schema (head)" ;;
+  "-m alembic heads") echo "0006_access_control_schema (head)" ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    export PATH="$tmpdir/bin:$PATH"
+
+    is_alembic_at_head
+
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "post-install SIDAR_ENV change skips redundant Alembic upgrade when current is head" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=production
+DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
+EOF
+    AUTO_ENV_TYPE=development
+    NO_INTERACTION=true
+    migration_calls=0
+    is_alembic_at_head() { return 0; }
+    run_migrations() { migration_calls=$((migration_calls + 1)); }
+
+    prompt_post_install_sidar_env_mode
+
+    [[ "$migration_calls" -eq 0 ]]
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SIDAR_ENV değişti (production -> development) ancak Alembic current=head; tekrar migrasyon atlandı."* ]]
+}
+
+@test "post-install SIDAR_ENV change reruns Alembic upgrade when current is behind head" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=production
+DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
+EOF
+    AUTO_ENV_TYPE=development
+    NO_INTERACTION=true
+    migration_calls=0
+    is_alembic_at_head() { return 1; }
+    run_migrations() { migration_calls=$((migration_calls + 1)); }
+
+    prompt_post_install_sidar_env_mode
+
+    [[ "$migration_calls" -eq 1 ]]
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SIDAR_ENV değişti (production -> development) ve Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."* ]]
+}
+
 @test "06 services phases gate local migrations models smoke and audit in order" {
   run_installer_function '
     events=()

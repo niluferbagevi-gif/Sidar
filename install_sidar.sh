@@ -5423,14 +5423,19 @@ prompt_post_install_sidar_env_mode() {
         ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
-        if [[ "$previous_env" != "$selected_env" ]]; then
-            info "SIDAR_ENV değişti (${previous_env:-bilinmiyor} -> ${selected_env}); veritabanı migrasyonu tekrar doğrulanıyor..."
-            run_migrations
-        elif ! is_alembic_at_head; then
-            info "Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."
-            run_migrations
+        if is_alembic_at_head; then
+            if [[ "$previous_env" != "$selected_env" ]]; then
+                info "SIDAR_ENV değişti (${previous_env:-bilinmiyor} -> ${selected_env}) ancak Alembic current=head; tekrar migrasyon atlandı."
+            else
+                info "SIDAR_ENV değişmedi ve Alembic current=head; tekrar migrasyon atlandı."
+            fi
         else
-            info "SIDAR_ENV değişmedi ve Alembic current=head; tekrar migrasyon atlandı."
+            if [[ "$previous_env" != "$selected_env" ]]; then
+                info "SIDAR_ENV değişti (${previous_env:-bilinmiyor} -> ${selected_env}) ve Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."
+            else
+                info "Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."
+            fi
+            run_migrations
         fi
     fi
 
