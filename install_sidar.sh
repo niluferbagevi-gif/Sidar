@@ -3729,7 +3729,7 @@ install_playwright_browsers() {
         local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
         local _pw_install_completed=false
         local _pw_python_spec
-        _pw_python_spec="$(resolve_playwright_python_spec)"
+        _pw_python_spec="$(resolve_playwright_python_spec "${SCRIPT_DIR}/pyproject.toml")"
 
         _is_playwright_os_mismatch_error() {
             local _output="${1:-}"
@@ -6305,7 +6305,7 @@ is_alembic_at_head() {
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
-ensure_postgres_databases_exist() {
+ensure_postgres_databases_exist() (
     local db_host="$1"
     local db_port="$2"
     local db_user="$3"
@@ -6315,6 +6315,8 @@ ensure_postgres_databases_exist() {
     local db_name=""
     local unique_dbs=""
     local psql_bin=""
+    local psql_err_file=""
+    local select_output=""
 
     # PATH kurulum sırasında değişebilir; eski Bash command hash kayıtlarının
     # sistemdeki veya PATH üzerinden sağlanan güncel psql ikilisini gölgelemesini önle.
@@ -6325,35 +6327,39 @@ ensure_postgres_databases_exist() {
         return 0
     fi
 
+    psql_err_file="$(mktemp)"
+    trap 'rm -f "$psql_err_file"' EXIT
+
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        local psql_err_file
-        psql_err_file="$(mktemp)"
-        if ! PGPASSWORD="$db_password" "$psql_bin" -w \
+        : >"$psql_err_file"
+        if ! select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
             -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file" | grep -q '^1$'; then
+            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                rm -f "$psql_err_file"
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
-            info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
-            if ! PGPASSWORD="$db_password" "$psql_bin" -w \
-                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-                -v ON_ERROR_STOP=1 \
-                -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
-                if grep -Eqi 'authentication|password' "$psql_err_file"; then
-                    rm -f "$psql_err_file"
-                    fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
-                fi
-                rm -f "$psql_err_file"
-                return 1
-            fi
-            ok "Veritabanı hazır: ${db_name}"
+            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name}"
+            return 1
         fi
-        rm -f "$psql_err_file"
+        if grep -qx '1' <<<"$select_output"; then
+            continue
+        fi
+
+        info "Eksik PostgreSQL veritabanı oluşturuluyor: ${db_name}"
+        if ! PGPASSWORD="$db_password" "$psql_bin" -w \
+            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE \"${db_name}\" OWNER \"${db_user}\";" >/dev/null 2>>"$psql_err_file"; then
+            if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
+            fi
+            return 1
+        fi
+        ok "Veritabanı hazır: ${db_name}"
     done <<<"$unique_dbs"
-}
+)
 
 
 seed_rag_metadata_after_migrations() {
