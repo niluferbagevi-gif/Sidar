@@ -2876,7 +2876,7 @@ install_system_dependencies() {
         fi
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential shellcheck software-properties-common zstd ca-certificates gnupg jq \
+            curl wget git build-essential shellcheck bats software-properties-common zstd ca-certificates gnupg jq \
             postgresql-client-common postgresql-client
 
         ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."

@@ -293,7 +293,7 @@ else
   PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"
   RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
-  RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"
+  RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
 fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
@@ -301,7 +301,8 @@ RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
   # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
   # Auto modu, frontend bağımlılıkları hazırlandıktan sonra cache'deki Node
-  # Playwright Chromium executable'ını doğrulayarak smoke kapısını etkinleştirir.
+  # Playwright Chromium executable'ını doğrular; cache eksikse kontrollü npx
+  # adımıyla tek seferlik kurulumu deneyerek smoke kapısını etkinleştirir.
   export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 fi
 
@@ -376,7 +377,12 @@ install_local_bats_dependencies() {
 }
 
 configure_local_bats_shell_tests() {
-  if [ "${TEST_PROFILE}" != "local" ] || [ "${RUN_BATS_TESTS}" = "1" ] || command -v bats >/dev/null 2>&1; then
+  if [ "${TEST_PROFILE}" != "local" ] || [ "${RUN_BATS_TESTS}" != "auto" ]; then
+    return 0
+  fi
+  if command -v bats >/dev/null 2>&1; then
+    RUN_BATS_TESTS=1
+    echo "✅ BATS PATH üzerinde bulundu; yerel shell testleri otomatik etkinleştirildi."
     return 0
   fi
 

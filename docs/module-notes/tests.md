@@ -51,8 +51,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
   `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. CI profilinde
   `RUN_BATS_TESTS=1` varsayılanı korunur: BATS eksikse shell testleri sessizce atlanmaz ve eksik
-  altyapı hata olarak raporlanır. Yerel profilde BATS varsayılan olarak opsiyoneldir; CI paritesi
-  gerektiğinde `RUN_BATS_TESTS=1 bash run_tests.sh` ile açıkça etkinleştirilmelidir. Script, root
+  altyapı hata olarak raporlanır. Ana `install_sidar.sh` apt tabanlı yerel kurulumda `bats` paketini
+  temel sistem bağımlılıklarıyla birlikte hazırlar. Yerel profilde `RUN_BATS_TESTS=auto` varsayılanı
+  kullanılır: BATS PATH üzerinde bulunursa shell testleri otomatik etkinleştirilir; paket yoksa hızlı
+  akış atlanır. Açık opt-out için `RUN_BATS_TESTS=0`, CI paritesini zorlamak için
+  `RUN_BATS_TESTS=1 bash run_tests.sh` kullanılabilir. Script, root
   olmayan kullanıcılarda interaktif parola istemez; `sudo -n` kullanılamıyorsa net bir hatayla durur.
   Eksik yerel bağımlılıklar için `run_tests.sh` başlangıç uyarısında ortak kurulum scriptini ve
   parolasız sudo ortamlarına uygun opt-in otomatik kurulum komutunu gösterir.

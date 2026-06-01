@@ -443,8 +443,10 @@ def test_install_sidar_has_locale_switch_for_english_messages() -> None:
 
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
+    sidar_installer = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
+    assert "curl wget git build-essential shellcheck bats software-properties-common" in sidar_installer
     assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh" in installer
     assert "MISSING_PACKAGES=()" in installer
     assert 'SUDO=(sudo -n)' in installer
@@ -1040,12 +1042,13 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
 
 
-def test_run_tests_defaults_bats_to_required_in_ci_and_optional_locally() -> None:
+def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() -> None:
     script = _script()
     profile_block = script[script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index('PERFORMANCE_TEST_DIR=')]
 
     assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"') == 1
-    assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-0}"') == 1
+    assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"') == 1
+    assert "BATS PATH üzerinde bulundu; yerel shell testleri otomatik etkinleştirildi" in script
     assert "Yerel profilde BATS bulunamadı; shell testleri varsayılan olarak atlanacak" in script
     assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in script
 
@@ -1058,8 +1061,10 @@ def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninte
 
     assert "configure_local_bats_shell_tests()" in prompt_block
     assert '[ "${TEST_PROFILE}" != "local" ]' in prompt_block
-    assert '[ "${RUN_BATS_TESTS}" = "1" ]' in prompt_block
-    assert 'command -v bats >/dev/null 2>&1' in prompt_block
+    assert '[ "${RUN_BATS_TESTS}" != "auto" ]' in prompt_block
+    assert 'if command -v bats >/dev/null 2>&1; then' in prompt_block
+    assert 'RUN_BATS_TESTS=1' in prompt_block
+    assert "BATS PATH üzerinde bulundu; yerel shell testleri otomatik etkinleştirildi" in prompt_block
     assert '[ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]' in prompt_block
     assert '[ "${SIDAR_PROMPT_LOCAL_BATS_INSTALL:-1}" != "1" ]' in prompt_block
     assert '[ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]' in prompt_block
