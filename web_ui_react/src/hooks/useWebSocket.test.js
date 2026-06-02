@@ -64,6 +64,13 @@ describe("useWebSocket — bağlantı kurulumu", () => {
     expect(globalThis.WebSocket).not.toHaveBeenCalled();
   });
 
+  it("treats a whitespace-only token as unauthenticated", () => {
+    localStorage.setItem("sidar_access_token", "   ");
+    const { result } = renderHook(() => useWebSocket("session-1", {}));
+    expect(result.current.status).toBe("unauthenticated");
+    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+  });
+
   it("sets status to connecting when token exists", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));

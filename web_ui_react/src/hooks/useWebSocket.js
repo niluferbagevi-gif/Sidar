@@ -28,7 +28,11 @@ export function useWebSocket(
 ) {
   const wsRef = useRef(null);
   const joinedRoomRef = useRef("");
-  const [status, setStatus] = useState("disconnected");
+  const [status, setStatus] = useState(() =>
+    (typeof localStorage !== "undefined" && localStorage.getItem(TOKEN_KEY)?.trim())
+      ? "disconnected"
+      : "unauthenticated"
+  );
   const bufferRef = useRef("");
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef(null);
