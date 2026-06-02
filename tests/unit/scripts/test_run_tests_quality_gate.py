@@ -1313,7 +1313,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect"' in playwright
     assert "metadata: { playwrightHostPlatformOverride }" in playwright
     assert "timeout: 75_000" in playwright
-    assert "expect: { timeout: 20_000 }" in playwright
+    assert "expect: { timeout: 30_000 }" in playwright
 
     vite_server = Path("web_ui_react/e2e/support/testViteServer.js").read_text(encoding="utf-8")
     websocket_spec = Path("web_ui_react/e2e/chat-websocket.spec.js").read_text(encoding="utf-8")
@@ -1357,7 +1357,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "test.afterAll(async () =>" in websocket_spec
     assert "backend = await startMockSidarBackend()" in websocket_spec
     assert "frontend = await startTestViteServer({ backendUrl: backend.url })" in websocket_spec
-    assert "await page.goto(frontend.url)" in websocket_spec
+    assert "await page.goto(`${frontend.url}/chat`)" in websocket_spec
     assert "port = 0" in mock_backend
     assert 'server.listen(port, "0.0.0.0"' in mock_backend
     assert "port: address.port" in mock_backend
@@ -1370,7 +1370,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "process.env.SIDAR_BACKEND_URL" not in vite_server
     assert "await page.context().clearCookies()" in websocket_spec
     assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
-    assert ".toBeVisible({ timeout: 15_000 })" in websocket_spec
+    assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
