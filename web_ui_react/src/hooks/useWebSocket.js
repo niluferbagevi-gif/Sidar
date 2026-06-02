@@ -79,7 +79,6 @@ export function useWebSocket(
     const token = (localStorage.getItem(TOKEN_KEY) || "").trim();
     if (!token) {
       setStatus("unauthenticated");
-      onError?.("Lütfen giriş yapın. Erişim belirteci bulunamadı.");
       return;
     }
 

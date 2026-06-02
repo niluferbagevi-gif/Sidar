@@ -58,12 +58,25 @@ describe("useWebSocket — bağlantı kurulumu", () => {
       useWebSocket("session-1", { onError })
     );
     expect(result.current.status).toBe("unauthenticated");
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining("belirteci"));
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("does NOT create WebSocket when no token", () => {
     renderHook(() => useWebSocket("session-1", {}));
     expect(globalThis.WebSocket).not.toHaveBeenCalled();
+  });
+
+  it("reports a closed connection only after an explicit send without a token", () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWebSocket("session-1", { onError }));
+
+    expect(onError).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.send("Merhaba");
+    });
+
+    expect(onError).toHaveBeenCalledWith("Bağlantı kapalı.");
   });
 
   it("treats a whitespace-only token as unauthenticated", () => {

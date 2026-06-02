@@ -52,6 +52,6 @@ describe("App /chat websocket status integration", () => {
 
     expect(screen.getByTestId("ws-status")).toHaveAttribute("data-state", "unauthenticated");
     expect(screen.getByTestId("ws-status")).toHaveTextContent("🟠 Token gerekli");
-    expect(chatStore.setError).toHaveBeenCalledWith("Lütfen giriş yapın. Erişim belirteci bulunamadı.");
+    expect(chatStore.setError).not.toHaveBeenCalled();
   });
 });
