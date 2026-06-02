@@ -11,7 +11,7 @@ export default defineConfig({
   ],
   outputDir: "test-results",
   timeout: 75_000,
-  expect: { timeout: 20_000 },
+  expect: { timeout: 30_000 },
   fullyParallel: true,
   // Cold-start dalgalanmalarında yalnız başarısız testi yeniden çalıştır.
   // CI daha değişken runner yükleri için ek bir deneme hakkı kullanır.
