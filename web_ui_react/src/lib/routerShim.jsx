@@ -1,4 +1,4 @@
-import React, { Children, createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { Children, createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 const RouterContext = createContext({
   location: "/",
@@ -68,7 +68,7 @@ export function Routes({ children }) {
 
 export function Navigate({ to, replace = false }) {
   const { navigate } = useContext(RouterContext);
-  useEffect(() => {
+  useLayoutEffect(() => {
     navigate(to, { replace });
   }, [navigate, replace, to]);
   return null;
