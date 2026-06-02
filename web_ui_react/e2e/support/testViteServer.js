@@ -38,12 +38,29 @@ async function waitUntilReady(url) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const [indexReady, chatRouteReady, entryReady] = await Promise.all([
+      const [
+        indexReady,
+        chatRouteReady,
+        entryReady,
+        appReady,
+        statusBarReady,
+        routerShimReady,
+      ] = await Promise.all([
         fetchReadyResponse(url, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/chat`, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/src/main.jsx`),
+        fetchReadyResponse(`${url}/src/App.jsx`),
+        fetchReadyResponse(`${url}/src/components/StatusBar.jsx`),
+        fetchReadyResponse(`${url}/src/lib/routerShim.jsx`),
       ]);
-      if (indexReady && chatRouteReady && entryReady) return;
+      if (
+        indexReady &&
+        chatRouteReady &&
+        entryReady &&
+        appReady &&
+        statusBarReady &&
+        routerShimReady
+      ) return;
     } catch {
       // Vite may still be binding, transforming the SPA entry, or optimizing dependencies.
     }

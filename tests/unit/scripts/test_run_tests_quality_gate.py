@@ -1324,7 +1324,11 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "strictPort: true" in vite_server
     assert 'html.includes(\'id="root"\')' in vite_server
     assert "`${url}/src/main.jsx`" in vite_server
+    assert "`${url}/src/App.jsx`" in vite_server
+    assert "`${url}/src/components/StatusBar.jsx`" in vite_server
+    assert "`${url}/src/lib/routerShim.jsx`" in vite_server
     assert 'test.describe.configure({ mode: "serial" })' in websocket_spec
+    assert "await page.waitForSelector('[data-testid=\"ws-status\"]', { timeout: 30_000 })" in websocket_spec
     assert "test.beforeAll(async () =>" in websocket_spec
     assert "test.afterAll(async () =>" in websocket_spec
     assert "SIDAR_E2E_FRONTEND_PORT" not in playwright
