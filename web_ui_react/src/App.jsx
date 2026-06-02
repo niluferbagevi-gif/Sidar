@@ -1,15 +1,24 @@
-import React, { useMemo, useState } from "react";
+import React, { lazy, Suspense, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { ChatPanel } from "./components/ChatPanel.jsx";
-import { P2PDialoguePanel } from "./components/P2PDialoguePanel.jsx";
-import { SwarmFlowPanel } from "./components/SwarmFlowPanel.jsx";
-import { TenantAdminPanel } from "./components/TenantAdminPanel.jsx";
-import { PromptAdminPanel } from "./components/PromptAdminPanel.jsx";
-import { AgentManagerPanel } from "./components/AgentManagerPanel.jsx";
-import { PluginMarketplacePanel } from "./components/PluginMarketplacePanel.jsx";
-import { OperationsQaPanel } from "./components/OperationsQaPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, setStoredToken } from "./lib/api.js";
+
+function lazyNamed(loader, exportName) {
+  return lazy(() => loader().then((module) => ({ default: module[exportName] })));
+}
+
+const P2PDialoguePanel = lazyNamed(() => import("./components/P2PDialoguePanel.jsx"), "P2PDialoguePanel");
+const SwarmFlowPanel = lazyNamed(() => import("./components/SwarmFlowPanel.jsx"), "SwarmFlowPanel");
+const OperationsQaPanel = lazyNamed(() => import("./components/OperationsQaPanel.jsx"), "OperationsQaPanel");
+const PromptAdminPanel = lazyNamed(() => import("./components/PromptAdminPanel.jsx"), "PromptAdminPanel");
+const PluginMarketplacePanel = lazyNamed(() => import("./components/PluginMarketplacePanel.jsx"), "PluginMarketplacePanel");
+const AgentManagerPanel = lazyNamed(() => import("./components/AgentManagerPanel.jsx"), "AgentManagerPanel");
+const TenantAdminPanel = lazyNamed(() => import("./components/TenantAdminPanel.jsx"), "TenantAdminPanel");
+
+function withLazyPanel(node) {
+  return withPanelErrorBoundary(<Suspense fallback={<div className="panel__hint">Panel yükleniyor...</div>}>{node}</Suspense>);
+}
 
 const NAV_ITEMS = [
   { to: "/chat", label: "Sohbet" },
@@ -70,13 +79,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<ChatPanel />} />
-          <Route path="/p2p" element={withPanelErrorBoundary(<P2PDialoguePanel />)} />
-          <Route path="/swarm" element={withPanelErrorBoundary(<SwarmFlowPanel />)} />
-          <Route path="/ops-qa" element={withPanelErrorBoundary(<OperationsQaPanel />)} />
-          <Route path="/admin/prompts" element={<PromptAdminPanel />} />
-          <Route path="/admin/plugins" element={<PluginMarketplacePanel />} />
-          <Route path="/admin/agents" element={withPanelErrorBoundary(<AgentManagerPanel />)} />
-          <Route path="/admin/tenants" element={<TenantAdminPanel />} />
+          <Route path="/p2p" element={withLazyPanel(<P2PDialoguePanel />)} />
+          <Route path="/swarm" element={withLazyPanel(<SwarmFlowPanel />)} />
+          <Route path="/ops-qa" element={withLazyPanel(<OperationsQaPanel />)} />
+          <Route path="/admin/prompts" element={withLazyPanel(<PromptAdminPanel />)} />
+          <Route path="/admin/plugins" element={withLazyPanel(<PluginMarketplacePanel />)} />
+          <Route path="/admin/agents" element={withLazyPanel(<AgentManagerPanel />)} />
+          <Route path="/admin/tenants" element={withLazyPanel(<TenantAdminPanel />)} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
       </main>

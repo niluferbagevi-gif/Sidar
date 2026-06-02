@@ -45,6 +45,7 @@ async function waitUntilReady(url) {
         appReady,
         statusBarReady,
         routerShimReady,
+        ...componentModulesReady
       ] = await Promise.all([
         fetchReadyResponse(url, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/chat`, (html) => html.includes('id="root"')),
@@ -52,6 +53,20 @@ async function waitUntilReady(url) {
         fetchReadyResponse(`${url}/src/App.jsx`),
         fetchReadyResponse(`${url}/src/components/StatusBar.jsx`),
         fetchReadyResponse(`${url}/src/lib/routerShim.jsx`),
+        ...[
+          "ChatPanel.jsx",
+          "SwarmFlowPanel.jsx",
+          "OperationsQaPanel.jsx",
+          "AgentManagerPanel.jsx",
+          "PluginMarketplacePanel.jsx",
+          "PromptAdminPanel.jsx",
+          "TenantAdminPanel.jsx",
+          "P2PDialoguePanel.jsx",
+          "PanelErrorBoundary.jsx",
+          "VoiceAssistantPanel.jsx",
+          "ChatWindow.jsx",
+          "ChatInput.jsx",
+        ].map((component) => fetchReadyResponse(`${url}/src/components/${component}`)),
       ]);
       if (
         indexReady &&
@@ -59,7 +74,8 @@ async function waitUntilReady(url) {
         entryReady &&
         appReady &&
         statusBarReady &&
-        routerShimReady
+        routerShimReady &&
+        componentModulesReady.every(Boolean)
       ) return;
     } catch {
       // Vite may still be binding, transforming the SPA entry, or optimizing dependencies.

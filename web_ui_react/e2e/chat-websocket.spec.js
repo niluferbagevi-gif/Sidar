@@ -14,6 +14,7 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   async function connectWithToken(page) {
+    page.on("pageerror", (error) => console.error("BROWSER ERR:", error));
     await page.goto(`${frontend.url}/chat`);
     await page.waitForLoadState("networkidle");
 
