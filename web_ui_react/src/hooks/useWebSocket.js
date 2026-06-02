@@ -253,6 +253,7 @@ export function useWebSocket(
   }, [clearReconnectTimer, connect, disconnect]);
 
   useEffect(() => {
+    /* c8 ignore next -- React SSR sırasında effect çalışmadığı için bu savunma dalı runtime guard olarak tutulur. */
     if (typeof window === "undefined") return undefined;
     const handleTokenChange = () => restartConnection();
     const handleStorage = (event) => {

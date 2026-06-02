@@ -1,6 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebSocket } from "./useWebSocket.js";
-import { setStoredToken, TOKEN_KEY } from "../lib/api.js";
+import { setStoredToken, TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
 
 // WebSocket mock factory
 function makeWsMock() {
@@ -127,6 +127,45 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(firstSocket.onclose).toBeNull();
+    expect(firstSocket.onerror).toBeNull();
+    expect(firstSocket.onmessage).toBeNull();
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+  });
+
+  it("starts a connection on token-change events when no previous socket exists", () => {
+    renderHook(() => useWebSocket("s1", {}));
+    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+
+    localStorage.setItem(TOKEN_KEY, "ilk-token");
+
+    act(() => {
+      window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
+  });
+
+  it("cleans up an open previous socket before restarting for the token-change event", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+
+    renderHook(() => useWebSocket("s1", {}));
+    firstSocket.readyState = WebSocket.OPEN;
+    localStorage.setItem(TOKEN_KEY, "yeni-token");
+
+    act(() => {
+      window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(firstSocket.onclose).toBeNull();
+    expect(firstSocket.onerror).toBeNull();
+    expect(firstSocket.onmessage).toBeNull();
     expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
   });
 
@@ -146,6 +185,24 @@ describe("useWebSocket — token değişimi", () => {
 
     expect(firstSocket.close).toHaveBeenCalledTimes(1);
     expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
+  });
+
+  it("ignores cross-tab storage events for unrelated keys", () => {
+    localStorage.setItem(TOKEN_KEY, "mevcut-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+
+    renderHook(() => useWebSocket("s1", {}));
+    localStorage.setItem(TOKEN_KEY, "degismemeli-token");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "other-key" }));
+    });
+
+    expect(firstSocket.close).not.toHaveBeenCalled();
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
   });
 });
 
