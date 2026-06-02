@@ -60,8 +60,10 @@ export function Routes({ children }) {
   const { location } = useContext(RouterContext);
   const entries = Children.toArray(children);
   const matched = entries.find((child) => {
-    const path = normalizePath(child.props.path || "*");
-    return path === "*" || path === location;
+    const routePath = child.props.path || "*";
+    if (routePath === "*") return true;
+    const path = normalizePath(routePath);
+    return path === location;
   });
   return matched?.props.element || null;
 }

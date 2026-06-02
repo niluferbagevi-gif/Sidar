@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -107,9 +107,19 @@ describe("App", () => {
     expect(screen.getByText("Tenant Mock")).toBeInTheDocument();
   });
 
-  it("shows chat navigation affordance on unknown routes", () => {
+  it("catch-all rotasında bilinmeyen adresleri /chat'e yönlendirir", async () => {
     renderApp("/bilinmeyen-rota");
-    expect(screen.getByRole("link", { name: "Sohbet" })).toHaveAttribute("href", "/chat");
+
+    expect(await screen.findByTestId("chat-panel")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("link", { name: "Sohbet" })).toHaveClass("is-active"));
+  });
+
+  it("shows token-ready hint without a timestamp when a stored token exists before saving", () => {
+    api.getStoredToken.mockReturnValue("hazir-token");
+
+    renderApp("/chat");
+
+    expect(screen.getByText("Token hazır")).toBeInTheDocument();
   });
 
   it("shows default token hint when no token is set", () => {
@@ -118,9 +128,12 @@ describe("App", () => {
     expect(screen.getByText(/Admin ve sohbet API/)).toBeInTheDocument();
   });
 
-  it("Agent Manager ve Plugin Marketplace sekmelerine geçişi doğrular", async () => {
+  it("Prompt Admin, Agent Manager ve Plugin Marketplace sekmelerine geçişi doğrular", async () => {
     const user = userEvent.setup();
     renderApp("/chat");
+
+    await user.click(screen.getByRole("link", { name: "Prompt Admin" }));
+    expect(screen.getByText("Prompt Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Plugin Marketplace" }));
     expect(screen.getByText("Plugin Marketplace Mock")).toBeInTheDocument();

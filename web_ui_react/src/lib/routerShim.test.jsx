@@ -157,10 +157,8 @@ describe("Routes", () => {
     expect(screen.queryByText("Ayarlar")).not.toBeInTheDocument();
   });
 
-  it("renders nothing when no path matches", () => {
-    // normalizePath("*") → "/*" döner; "/*" === "*" karşılaştırması false olduğundan
-    // path="*" sadece gerçek "/*" URL'ini yakalar, genel wildcard gibi çalışmaz.
-    const { container } = renderWithRouter(
+  it("renders the wildcard fallback when no concrete path matches", () => {
+    renderWithRouter(
       <Routes>
         <Route path="/profil" element={<div>Profil</div>} />
         <Route path="*" element={<div>Bulunamadı</div>} />
@@ -168,8 +166,7 @@ describe("Routes", () => {
       "/bilinmeyen-rota",
     );
     expect(screen.queryByText("Profil")).not.toBeInTheDocument();
-    expect(screen.queryByText("Bulunamadı")).not.toBeInTheDocument();
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByText("Bulunamadı")).toBeInTheDocument();
   });
 
   it("renders nothing when no match and no fallback route", () => {
@@ -207,23 +204,22 @@ describe("Routes", () => {
     expect(screen.queryByText("İkinci Chat")).not.toBeInTheDocument();
   });
 
-  it("path='*' matches the literal /*  URL", () => {
-    // normalizePath("*") = "/*" — bu nedenle path="*" yalnızca "/*" URL'ini eşler
+  it("path='*' matches an arbitrary URL as a wildcard", () => {
     renderWithRouter(
       <Routes>
         <Route path="*" element={<div>Yıldız Rota</div>} />
       </Routes>,
-      "/*",
+      "/herhangi-bir-rota",
     );
     expect(screen.getByText("Yıldız Rota")).toBeInTheDocument();
   });
 
-  it("handles routes without a path prop by defaulting to '*'", () => {
+  it("handles routes without a path prop by defaulting to wildcard", () => {
     renderWithRouter(
       <Routes>
         <Route element={<div>Path Olmayan Rota</div>} />
       </Routes>,
-      "/*",
+      "/path-olmayan-fallback",
     );
     expect(screen.getByText("Path Olmayan Rota")).toBeInTheDocument();
   });
