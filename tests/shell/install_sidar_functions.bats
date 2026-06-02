@@ -179,22 +179,30 @@ EOF
     cat > "$tmpdir/bin/python" <<EOF
 #!/usr/bin/env bash
 printf "%s|%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "\${OS_RELEASE_PATH:-}" >> "$tmpdir/python.log"
+if [[ "\$*" == "-" ]]; then
+  exit 1
+fi
 if [[ "\$*" == "-m playwright install chromium" ]]; then
   echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
   echo "Chromium override browser downloaded"
 fi
 EOF
-    chmod +x "$tmpdir/bin/python"
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+printf "ii "
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
     sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
-    sed -n "2p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
-    sed -n "3p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
+    sed -n "2p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
+    sed -n "3p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
+    sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
@@ -223,18 +231,22 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt-cache" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "show libgtk-3-0t64" ]]
+EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
-    grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
+    grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"sabit Chromium apt bağımlılık listesi deneniyor"* ]]
@@ -319,7 +331,7 @@ EOF
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"kritik libnss3/libnspr4 bağımlılıkları doğrulanamadı"* ]]
+  [[ "$output" == *"kritik Chromium bağımlılıkları doğrulanamadı"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
 }
 
