@@ -19,6 +19,7 @@ describe("StatusBar — bağlantı durumu göstergesi", () => {
 
   it("shows 🟢 Bağlı for connected status", () => {
     render(<StatusBar wsStatus="connected" onNewSession={vi.fn()} />);
+    expect(screen.getByTestId("ws-status")).toHaveAttribute("data-state", "connected");
     expect(screen.getByTestId("ws-status")).toHaveTextContent("🟢 Bağlı");
   });
 
@@ -41,8 +42,8 @@ describe("StatusBar — bağlantı durumu göstergesi", () => {
 
   it("shows 🟠 Token gerekli for unauthenticated status", () => {
     render(<StatusBar wsStatus="unauthenticated" onNewSession={vi.fn()} />);
-    expect(screen.getByText(/🟠/)).toBeInTheDocument();
-    expect(screen.getByText(/Token gerekli/)).toBeInTheDocument();
+    expect(screen.getByTestId("ws-status")).toHaveAttribute("data-state", "unauthenticated");
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("🟠 Token gerekli");
   });
 
   it("falls back to disconnected for unknown status", () => {

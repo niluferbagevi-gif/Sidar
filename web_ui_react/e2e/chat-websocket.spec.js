@@ -18,10 +18,10 @@ test.describe("ChatPanel websocket e2e", () => {
     await page.waitForLoadState("networkidle");
 
     const wsStatus = page.getByTestId("ws-status");
-    await expect(wsStatus).toContainText("Token gerekli");
+    await expect(wsStatus).toHaveAttribute("data-state", "unauthenticated");
     await page.getByLabel("Bearer token").fill("e2e-test-token");
     await page.getByRole("button", { name: "Token Kaydet" }).click();
-    await expect(wsStatus).toContainText("Bağlı");
+    await expect(wsStatus).toHaveAttribute("data-state", "connected");
   }
 
   test.beforeEach(async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   test("token kaydedildikten sonra websocket bağlanır ve presence görünür", async ({ page }) => {
-    await expect(page.getByTestId("ws-status")).toContainText("Bağlı");
+    await expect(page.getByTestId("ws-status")).toHaveAttribute("data-state", "connected");
     await expect(page.getByText("👥 2 kişi")).toBeVisible();
   });
 

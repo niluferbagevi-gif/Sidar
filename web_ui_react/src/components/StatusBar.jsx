@@ -19,7 +19,7 @@ export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır", room
 
   return (
     <div className="status-bar">
-      <span className="status-bar__ws" data-testid="ws-status" title={`Session: ${sessionId}`}>
+      <span className="status-bar__ws" data-testid="ws-status" data-state={wsStatus} title={`Session: ${sessionId}`}>
         {icon} {text}
       </span>
       <span className="status-bar__room" title={`Workspace: ${roomId}`}>
