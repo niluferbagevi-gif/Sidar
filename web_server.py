@@ -210,7 +210,8 @@ def _resolve_vision_components() -> tuple[Any, Any]:
 
 
 def _resolve_psutil_module() -> Any:
-    return importlib.import_module("psutil")
+    """Resolve psutil through Python import hooks for testable fallback behavior."""
+    return builtins.__import__("psutil")
 
 
 # ─────────────────────────────────────────────
