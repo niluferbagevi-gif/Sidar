@@ -60,6 +60,17 @@ describe("useVoiceAssistant — başlangıç durumu", () => {
     expect(result.current.state.status).toBe("idle");
   });
 
+  it("does not emit duplicate telemetry when only callback references change", () => {
+    const telemetry = [];
+    const { rerender } = renderHook(({ renderId }) => useVoiceAssistant({
+      onTelemetry: (kind, content) => telemetry.push(`${renderId}:${kind}:${content}`),
+    }), { initialProps: { renderId: "first" } });
+
+    rerender({ renderId: "second" });
+
+    expect(telemetry).toEqual(["first:voice_status:idle:idle:0"]);
+  });
+
   it("returns statusLabel as Hazır initially", () => {
     const { result } = renderHook(() => useVoiceAssistant());
     expect(result.current.statusLabel).toBe("Hazır");

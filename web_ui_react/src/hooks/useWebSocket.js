@@ -38,6 +38,20 @@ export function useWebSocket(
   const reconnectTimerRef = useRef(null);
   const manualCloseRef = useRef(false);
   const connectRef = useRef(null);
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onChunk,
+    onDone,
+    onError,
+    onStatus,
+    onToolCall,
+    onThought,
+    onRoomState,
+    onRoomMessage,
+    onPresence,
+    onRoomEvent,
+    onAssistantStart,
+  };
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -91,7 +105,7 @@ export function useWebSocket(
       const raw = event.data;
 
       if (raw === "[DONE]") {
-        onDone?.(bufferRef.current);
+        callbacksRef.current.onDone?.(bufferRef.current);
         bufferRef.current = "";
         return;
       }
@@ -108,71 +122,71 @@ export function useWebSocket(
 
         if (msg.type === "room_state") {
           joinedRoomRef.current = msg.room_id || joinedRoomRef.current;
-          onRoomState?.(msg);
+          callbacksRef.current.onRoomState?.(msg);
           return;
         }
         if (msg.type === "presence") {
-          onPresence?.(msg.participants || []);
+          callbacksRef.current.onPresence?.(msg.participants || []);
           return;
         }
         if (msg.type === "room_message" && msg.message) {
-          onRoomMessage?.(msg.message);
+          callbacksRef.current.onRoomMessage?.(msg.message);
           return;
         }
         if (msg.type === "assistant_stream_start") {
           bufferRef.current = "";
-          onAssistantStart?.(msg.request_id || "");
+          callbacksRef.current.onAssistantStart?.(msg.request_id || "");
           return;
         }
         if (msg.type === "assistant_chunk") {
           const chunk = msg.chunk || "";
           bufferRef.current += chunk;
-          onChunk?.(chunk, msg.request_id || "");
+          callbacksRef.current.onChunk?.(chunk, msg.request_id || "");
           return;
         }
         if (msg.type === "assistant_done") {
-          onDone?.(msg.message || null, msg.request_id || "");
+          callbacksRef.current.onDone?.(msg.message || null, msg.request_id || "");
           bufferRef.current = "";
           return;
         }
         if (msg.type === "collaboration_event" && msg.event) {
           const eventKind = msg.event.kind || "status";
-          onRoomEvent?.(msg.event);
-          if (eventKind === "status") onStatus?.(`${msg.event.source || "room"}: ${msg.event.content || ""}`);
-          if (eventKind === "tool_call") onToolCall?.(msg.event.content || "");
-          if (eventKind === "thought") onThought?.(msg.event.content || "");
+          callbacksRef.current.onRoomEvent?.(msg.event);
+          if (eventKind === "status") callbacksRef.current.onStatus?.(`${msg.event.source || "room"}: ${msg.event.content || ""}`);
+          if (eventKind === "tool_call") callbacksRef.current.onToolCall?.(msg.event.content || "");
+          if (eventKind === "thought") callbacksRef.current.onThought?.(msg.event.content || "");
           return;
         }
         if (msg.type === "room_error") {
-          onError?.(msg.error || "Ortak çalışma alanı hatası.");
+          callbacksRef.current.onError?.(msg.error || "Ortak çalışma alanı hatası.");
           return;
         }
 
         if (msg.type === "chunk" || typeof msg.chunk === "string") {
           const chunk = msg.content ?? msg.chunk;
           bufferRef.current += chunk;
-          onChunk?.(chunk);
+          callbacksRef.current.onChunk?.(chunk);
         } else if (msg.type === "error" || typeof msg.error === "string") {
-          onError?.(msg.content ?? msg.error);
+          callbacksRef.current.onError?.(msg.content ?? msg.error);
         } else if (msg.type === "done" || msg.done === true) {
-          onDone?.(bufferRef.current || msg.content || "");
+          callbacksRef.current.onDone?.(bufferRef.current || msg.content || "");
           bufferRef.current = "";
         } else if (typeof msg.status === "string") {
-          onStatus?.(msg.status);
+          callbacksRef.current.onStatus?.(msg.status);
         } else if (typeof msg.tool_call === "string") {
-          onToolCall?.(msg.tool_call);
+          callbacksRef.current.onToolCall?.(msg.tool_call);
         } else if (typeof msg.thought === "string") {
-          onThought?.(msg.thought);
+          callbacksRef.current.onThought?.(msg.thought);
         }
       } catch {
         bufferRef.current += raw;
-        onChunk?.(raw);
+        callbacksRef.current.onChunk?.(raw);
       }
     };
 
     ws.onerror = () => {
       setStatus("error");
-      onError?.("WebSocket bağlantı hatası.");
+      callbacksRef.current.onError?.("WebSocket bağlantı hatası.");
     };
 
     ws.onclose = () => {
@@ -185,17 +199,6 @@ export function useWebSocket(
     clearReconnectTimer,
     displayName,
     joinRoom,
-    onChunk,
-    onDone,
-    onError,
-    onPresence,
-    onRoomEvent,
-    onRoomMessage,
-    onRoomState,
-    onStatus,
-    onThought,
-    onToolCall,
-    onAssistantStart,
     roomId,
     scheduleReconnect,
   ]);
@@ -227,7 +230,7 @@ export function useWebSocket(
 
   const send = useCallback((message) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      onError?.("Bağlantı kapalı.");
+      callbacksRef.current.onError?.("Bağlantı kapalı.");
       return;
     }
     bufferRef.current = "";
@@ -235,7 +238,7 @@ export function useWebSocket(
       ? { action: "message", message, room_id: roomId, display_name: displayName }
       : { room_id: roomId, display_name: displayName, ...message };
     wsRef.current.send(JSON.stringify(payload));
-  }, [displayName, onError, roomId]);
+  }, [displayName, roomId]);
 
   // İlk bağlantı durumunu paint öncesinde hesapla; token eksikse StatusBar ilk
   // görünür render'da doğrudan "Token gerekli" etiketini gösterebilsin.

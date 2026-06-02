@@ -52,6 +52,25 @@ describe("useWebSocket — bağlantı kurulumu", () => {
     expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the connection stable when callback references change between renders", () => {
+    localStorage.setItem("sidar_access_token", "test-token");
+    const errors = [];
+    const { rerender } = renderHook(({ renderId }) => useWebSocket("session-1", {
+      roomId: "ws:test",
+      onError: (message) => errors.push(`${renderId}:${message}`),
+    }), { initialProps: { renderId: "first" } });
+
+    rerender({ renderId: "second" });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(wsMockInstance.close).not.toHaveBeenCalled();
+
+    act(() => {
+      wsMockInstance.onerror?.();
+    });
+    expect(errors).toEqual(["second:WebSocket bağlantı hatası."]);
+  });
+
   it("sets status to unauthenticated when no token", () => {
     const onError = vi.fn();
     const { result } = renderHook(() =>

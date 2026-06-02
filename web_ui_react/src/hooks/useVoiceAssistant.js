@@ -124,6 +124,14 @@ export function useVoiceAssistant({
   const revokeUrlsRef = useRef(new Set());
   const unmountedRef = useRef(false);
   const stateRef = useRef(createInitialState());
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onUserTranscript,
+    onAssistantChunk,
+    onAssistantDone,
+    onError,
+    onTelemetry,
+  };
 
   const setVoiceState = useCallback((patch) => {
     setState((prev) => {
@@ -237,9 +245,9 @@ export function useVoiceAssistant({
       });
       playNextAudio();
     } catch (error) {
-      onError?.(`Ses parçası çözülemedi: ${error instanceof Error ? error.message : String(error)}`);
+      callbacksRef.current.onError?.(`Ses parçası çözülemedi: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [onError, playNextAudio, setVoiceState]);
+  }, [playNextAudio, setVoiceState]);
 
   const sendJson = useCallback((payload) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -250,11 +258,11 @@ export function useVoiceAssistant({
   }, []);
 
   const handleDone = useCallback(() => {
-    onAssistantDone?.();
+    callbacksRef.current.onAssistantDone?.();
     if (!stateRef.current.isAssistantAudioPlaying) {
       setStatus(stateRef.current.isMicActive ? "listening" : "idle");
     }
-  }, [onAssistantDone, setStatus]);
+  }, [setStatus]);
 
   const ensureVoiceSocket = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN && stateRef.current.isAuthenticated) {
@@ -267,7 +275,7 @@ export function useVoiceAssistant({
     const token = getStoredToken();
     if (!token) {
       setStatus("unauthenticated");
-      onError?.("Voice websocket için önce Bearer token kaydedin.");
+      callbacksRef.current.onError?.("Voice websocket için önce Bearer token kaydedin.");
       throw new Error("Missing token");
     }
 
@@ -334,13 +342,13 @@ export function useVoiceAssistant({
           const transcript = String(msg.transcript || "").trim();
           setVoiceState({ transcript, bufferedBytes: 0 });
           if (transcript) {
-            onUserTranscript?.(transcript);
+            callbacksRef.current.onUserTranscript?.(transcript);
             pushDiagnostic("Transcript", transcript);
           }
           return;
         }
         if (typeof msg.chunk === "string") {
-          onAssistantChunk?.(msg.chunk);
+          callbacksRef.current.onAssistantChunk?.(msg.chunk);
           return;
         }
         if (typeof msg.audio_chunk === "string") {
@@ -354,7 +362,7 @@ export function useVoiceAssistant({
         if (typeof msg.error === "string") {
           setStatus("error", msg.error);
           pushDiagnostic("Voice hata", msg.error);
-          onError?.(msg.error);
+          callbacksRef.current.onError?.(msg.error);
         }
       };
 
@@ -377,7 +385,7 @@ export function useVoiceAssistant({
     });
 
     return wsReadyPromiseRef.current;
-  }, [handleDone, onAssistantChunk, onError, onUserTranscript, pushDiagnostic, queueAudioChunk, setStatus, setVoiceState, stopPlayback]);
+  }, [handleDone, pushDiagnostic, queueAudioChunk, setStatus, setVoiceState, stopPlayback]);
 
   const beginVoiceTurn = useCallback(async ({ interrupt = false } = {}) => {
     const ws = await ensureVoiceSocket();
@@ -506,7 +514,7 @@ export function useVoiceAssistant({
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       const message = "Tarayıcı mikrofon veya MediaRecorder API desteği sunmuyor.";
       setStatus("error", message);
-      onError?.(message);
+      callbacksRef.current.onError?.(message);
       return;
     }
 
@@ -542,7 +550,7 @@ export function useVoiceAssistant({
             flushCommit();
           }
         } catch (error) {
-          onError?.(`Mikrofon verisi gönderilemedi: ${error instanceof Error ? error.message : String(error)}`);
+          callbacksRef.current.onError?.(`Mikrofon verisi gönderilemedi: ${error instanceof Error ? error.message : String(error)}`);
         }
       };
       recorder.start(MEDIA_TIMESLICE_MS);
@@ -559,9 +567,9 @@ export function useVoiceAssistant({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus("error", `Mikrofon başlatılamadı: ${message}`);
-      onError?.(`Mikrofon başlatılamadı: ${message}`);
+      callbacksRef.current.onError?.(`Mikrofon başlatılamadı: ${message}`);
     }
-  }, [ensureVoiceSocket, flushCommit, onError, pumpVad, pushDiagnostic, sendJson, setStatus, setVoiceState]);
+  }, [ensureVoiceSocket, flushCommit, pumpVad, pushDiagnostic, sendJson, setStatus, setVoiceState]);
 
   const stop = useCallback(() => {
     cleanupMic();
@@ -590,8 +598,8 @@ export function useVoiceAssistant({
   }, [pushDiagnostic, sendJson, setStatus, stopPlayback]);
 
   useEffect(() => {
-    onTelemetry?.("voice_status", `${state.status}:${state.lastVoiceState}:${state.bufferedBytes}`);
-  }, [onTelemetry, state.bufferedBytes, state.lastVoiceState, state.status]);
+    callbacksRef.current.onTelemetry?.("voice_status", `${state.status}:${state.lastVoiceState}:${state.bufferedBytes}`);
+  }, [state.bufferedBytes, state.lastVoiceState, state.status]);
 
   useEffect(() => () => {
     unmountedRef.current = true;
