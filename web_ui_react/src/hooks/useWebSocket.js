@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
 
 const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
 
-const TOKEN_KEY = "sidar_access_token";
 const RECONNECT_BASE_DELAY_MS = 800;
 const RECONNECT_MAX_DELAY_MS = 20_000;
 const RECONNECT_JITTER_MS = 600;
@@ -207,6 +207,21 @@ export function useWebSocket(
     wsRef.current?.close();
   }, [clearReconnectTimer]);
 
+  const restartConnection = useCallback(() => {
+    clearReconnectTimer();
+    joinedRoomRef.current = "";
+    const previousSocket = wsRef.current;
+    wsRef.current = null;
+    if (previousSocket) {
+      previousSocket.onclose = null;
+      previousSocket.onerror = null;
+      previousSocket.onmessage = null;
+      previousSocket.close();
+    }
+    manualCloseRef.current = false;
+    connect();
+  }, [clearReconnectTimer, connect]);
+
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
@@ -234,6 +249,20 @@ export function useWebSocket(
       disconnect();
     };
   }, [clearReconnectTimer, connect, disconnect]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const handleTokenChange = () => restartConnection();
+    const handleStorage = (event) => {
+      if (event.key === TOKEN_KEY) restartConnection();
+    };
+    window.addEventListener(TOKEN_CHANGE_EVENT, handleTokenChange);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(TOKEN_CHANGE_EVENT, handleTokenChange);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [restartConnection]);
 
   useEffect(() => {
     joinRoom(roomId, displayName);

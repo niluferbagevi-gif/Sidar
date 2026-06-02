@@ -69,7 +69,7 @@ export default function App() {
       <main className="app__main">
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<ChatPanel key={`chat-${savedAt}`} />} />
+          <Route path="/chat" element={<ChatPanel />} />
           <Route path="/p2p" element={withPanelErrorBoundary(<P2PDialoguePanel />)} />
           <Route path="/swarm" element={withPanelErrorBoundary(<SwarmFlowPanel />)} />
           <Route path="/ops-qa" element={withPanelErrorBoundary(<OperationsQaPanel />)} />

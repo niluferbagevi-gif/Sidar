@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   TOKEN_KEY,
+  TOKEN_CHANGE_EVENT,
   getStoredToken,
   setStoredToken,
   buildAuthHeaders,
@@ -88,6 +89,29 @@ describe("setStoredToken", () => {
   it("trims token before storing", () => {
     setStoredToken("  trimmed  ");
     expect(localStorage.getItem(TOKEN_KEY)).toBe("trimmed");
+  });
+
+  it("notifies listeners when the normalized token changes", () => {
+    const listener = vi.fn();
+    window.addEventListener(TOKEN_CHANGE_EVENT, listener);
+    try {
+      setStoredToken("yeni-token");
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TOKEN_CHANGE_EVENT, listener);
+    }
+  });
+
+  it("does not notify listeners when the normalized token stays the same", () => {
+    localStorage.setItem(TOKEN_KEY, "aynı-token");
+    const listener = vi.fn();
+    window.addEventListener(TOKEN_CHANGE_EVENT, listener);
+    try {
+      setStoredToken("  aynı-token  ");
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(TOKEN_CHANGE_EVENT, listener);
+    }
   });
 });
 

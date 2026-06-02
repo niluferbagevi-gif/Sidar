@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebSocket } from "./useWebSocket.js";
+import { setStoredToken, TOKEN_KEY } from "../lib/api.js";
 
 // WebSocket mock factory
 function makeWsMock() {
@@ -33,6 +34,7 @@ beforeEach(() => {
   const store = {};
   vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => store[key] ?? null);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, val) => { store[key] = val; });
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => { delete store[key]; });
 
   // WebSocket global stub
   wsMockInstance = makeWsMock();
@@ -75,6 +77,43 @@ describe("useWebSocket — bağlantı kurulumu", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));
     expect(result.current.status).toBe("connecting");
+  });
+});
+
+describe("useWebSocket — token değişimi", () => {
+  it("restarts the connection when the stored token changes in the same window", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+
+    renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      setStoredToken("yeni-token");
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+  });
+
+  it("restarts the connection for a cross-tab storage event affecting the token", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+
+    renderHook(() => useWebSocket("s1", {}));
+    localStorage.setItem(TOKEN_KEY, "sekme-token");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: TOKEN_KEY }));
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
   });
 });
 

@@ -1,4 +1,5 @@
 export const TOKEN_KEY = "sidar_access_token";
+export const TOKEN_CHANGE_EVENT = "sidar:token-change";
 
 export function getStoredToken() {
   if (typeof localStorage === "undefined") return "";
@@ -7,11 +8,15 @@ export function getStoredToken() {
 
 export function setStoredToken(token) {
   if (typeof localStorage === "undefined") return;
+  const previousToken = getStoredToken();
   const normalized = String(token || "").trim();
   if (normalized) {
     localStorage.setItem(TOKEN_KEY, normalized);
   } else {
     localStorage.removeItem(TOKEN_KEY);
+  }
+  if (previousToken !== normalized && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
   }
 }
 

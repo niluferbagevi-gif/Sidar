@@ -6,7 +6,16 @@ import { MemoryRouter } from "react-router-dom";
 import App from "./App.jsx";
 import * as api from "./lib/api.js";
 
-vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div data-testid="chat-panel">Chat Panel Mock</div> }));
+const { chatPanelMountSpy } = vi.hoisted(() => ({ chatPanelMountSpy: vi.fn() }));
+
+vi.mock("./components/ChatPanel.jsx", () => ({
+  ChatPanel: () => {
+    React.useEffect(() => {
+      chatPanelMountSpy();
+    }, []);
+    return <div data-testid="chat-panel">Chat Panel Mock</div>;
+  },
+}));
 vi.mock("./components/P2PDialoguePanel.jsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
 vi.mock("./components/SwarmFlowPanel.jsx", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
@@ -61,6 +70,17 @@ describe("App", () => {
 
     expect(api.setStoredToken).toHaveBeenCalledWith("yeni-gizli-token");
     expect(screen.getByText(/Token hazır/i)).toBeInTheDocument();
+  });
+
+  it("token kaydedildiğinde chat panelini yeniden mount etmez", async () => {
+    const user = userEvent.setup();
+    renderApp("/chat");
+
+    expect(chatPanelMountSpy).toHaveBeenCalledTimes(1);
+    await user.type(screen.getByLabelText("Bearer token"), "yeni-token");
+    await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
+
+    expect(chatPanelMountSpy).toHaveBeenCalledTimes(1);
   });
 
   it("navigasyondaki P2P bağlantısının doğru adrese gittiğini gösterir", () => {
