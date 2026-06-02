@@ -3666,6 +3666,10 @@ install_playwright_browsers() {
         local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
         local _pw_install_completed=false
         local _pw_python_spec
+        local _pw_ubuntu_version=""
+        if [[ -r "$_pw_os_release_path" ]]; then
+            _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
+        fi
         _pw_python_spec="$(resolve_playwright_python_spec "${SCRIPT_DIR}/pyproject.toml")"
 
         _is_playwright_os_mismatch_error() {
@@ -3721,7 +3725,7 @@ install_playwright_browsers() {
                 return 1
             fi
 
-            warn "Playwright install-deps başarısız oldu; Ubuntu 25+ için sabit Chromium apt bağımlılık listesi deneniyor..."
+            warn "Playwright install-deps başarısız oldu; Ubuntu ${_pw_ubuntu_version:-25+} için sabit Chromium apt bağımlılık listesi deneniyor..."
             if install_playwright_linux_dependencies_fallback; then
                 ok "Playwright Chromium sistem bağımlılıkları sabit apt fallback ile kuruldu."
                 return 0
@@ -3763,9 +3767,7 @@ PY_PLAYWRIGHT_VERSION
 
         if is_playwright_ubuntu_override_recommended "$_pw_os_release_path" &&
             ! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"; then
-            local _pw_ubuntu_version
-            _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
-            info "Ubuntu ${_pw_ubuntu_version} yüklü Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
+            info "Ubuntu ${_pw_ubuntu_version:-25+} yüklü Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
             if _try_playwright_ubuntu_override_install; then
                 grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true

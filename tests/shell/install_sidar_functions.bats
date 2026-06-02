@@ -249,7 +249,7 @@ EOF
     grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"sabit Chromium apt bağımlılık listesi deneniyor"* ]]
+  [[ "$output" == *"Ubuntu 26.04 için sabit Chromium apt bağımlılık listesi deneniyor"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
 }
@@ -291,7 +291,7 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Cannot install dependencies for ubuntu26.04-x64"* ]]
-  [[ "$output" == *"sabit Chromium apt bağımlılık listesi deneniyor"* ]]
+  [[ "$output" == *"Ubuntu 26.04 için sabit Chromium apt bağımlılık listesi deneniyor"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
 }
 
