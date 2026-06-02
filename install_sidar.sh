@@ -5992,6 +5992,20 @@ PY
 }
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
+resolve_alembic_python() {
+    local venv_python="$SCRIPT_DIR/.venv/bin/python"
+
+    if [[ -x "$venv_python" ]]; then
+        printf '%s\n' "$venv_python"
+    elif command -v python3 &>/dev/null; then
+        printf '%s\n' "python3"
+    elif command -v python &>/dev/null; then
+        printf '%s\n' "python"
+    else
+        return 1
+    fi
+}
+
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -6010,14 +6024,8 @@ run_migrations() {
 
     cd "$SCRIPT_DIR"
 
-    ALEMBIC_PYTHON=""
-    if command -v python3 &>/dev/null; then
-        ALEMBIC_PYTHON="python3"
-    elif command -v python &>/dev/null; then
-        ALEMBIC_PYTHON="python"
-    else
+    ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
-    fi
     ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
     if [[ -z "$DB_URL" && -f "$ENV_FILE" ]]; then
@@ -6265,13 +6273,7 @@ is_alembic_at_head() {
     local head_rev=""
 
     [[ -f "$alembic_ini" ]] || return 1
-    if command -v python3 &>/dev/null; then
-        py_bin="python3"
-    elif command -v python &>/dev/null; then
-        py_bin="python"
-    else
-        return 1
-    fi
+    py_bin="$(resolve_alembic_python)" || return 1
 
     [[ -f "$env_file" ]] || return 1
     db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n')"
