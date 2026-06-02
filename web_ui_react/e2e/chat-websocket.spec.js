@@ -13,9 +13,21 @@ test.describe("ChatPanel websocket e2e", () => {
     frontend = await startTestViteServer({ backendUrl: backend.url });
   });
 
+  async function connectWithToken(page) {
+    await page.goto(`${frontend.url}/chat`);
+    await page.waitForLoadState("networkidle");
+
+    const wsStatus = page.getByTestId("ws-status");
+    await expect(wsStatus).toContainText("Token gerekli");
+    await page.getByLabel("Bearer token").fill("e2e-test-token");
+    await page.getByRole("button", { name: "Token Kaydet" }).click();
+    await expect(wsStatus).toContainText("Bağlı");
+  }
+
   test.beforeEach(async ({ page }) => {
     await page.context().clearCookies();
     await page.addInitScript(() => localStorage.clear());
+    await connectWithToken(page);
   });
 
   test.afterAll(async () => {
@@ -24,24 +36,11 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   test("token kaydedildikten sonra websocket bağlanır ve presence görünür", async ({ page }) => {
-    await page.goto(`${frontend.url}/chat`);
-
-    await expect(page.getByText("Token gerekli")).toBeVisible();
-
-    await page.getByLabel("Bearer token").fill("e2e-test-token");
-    await page.getByRole("button", { name: "Token Kaydet" }).click();
-
-    await expect(page.getByText("Bağlı")).toBeVisible();
+    await expect(page.getByTestId("ws-status")).toContainText("Bağlı");
     await expect(page.getByText("👥 2 kişi")).toBeVisible();
   });
 
   test("mesaj gönderildiğinde backend stream yanıtı chat penceresinde görünür", async ({ page }) => {
-    await page.goto(`${frontend.url}/chat`);
-
-    await page.getByLabel("Bearer token").fill("e2e-test-token");
-    await page.getByRole("button", { name: "Token Kaydet" }).click();
-    await expect(page.getByText("Bağlı")).toBeVisible();
-
     await page.getByLabel("Mesaj giriş alanı").fill("Merhaba backend");
     await page.getByRole("button", { name: "Gönder" }).click();
 

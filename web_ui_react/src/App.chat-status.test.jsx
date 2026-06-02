@@ -50,7 +50,7 @@ describe("App /chat websocket status integration", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("🟠 Token gerekli")).toBeInTheDocument();
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("🟠 Token gerekli");
     expect(chatStore.setError).toHaveBeenCalledWith("Lütfen giriş yapın. Erişim belirteci bulunamadı.");
   });
 });

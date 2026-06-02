@@ -19,8 +19,7 @@ describe("StatusBar — bağlantı durumu göstergesi", () => {
 
   it("shows 🟢 Bağlı for connected status", () => {
     render(<StatusBar wsStatus="connected" onNewSession={vi.fn()} />);
-    expect(screen.getByText(/🟢/)).toBeInTheDocument();
-    expect(screen.getByText(/Bağlı/)).toBeInTheDocument();
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("🟢 Bağlı");
   });
 
   it("shows 🟡 Bağlanıyor for connecting status", () => {
