@@ -24,7 +24,7 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   test("token kaydedildikten sonra websocket bağlanır ve presence görünür", async ({ page }) => {
-    await page.goto(frontend.url);
+    await page.goto(`${frontend.url}/chat`);
 
     await expect(page.getByText("Token gerekli")).toBeVisible({ timeout: 15_000 });
 
@@ -36,7 +36,7 @@ test.describe("ChatPanel websocket e2e", () => {
   });
 
   test("mesaj gönderildiğinde backend stream yanıtı chat penceresinde görünür", async ({ page }) => {
-    await page.goto(frontend.url);
+    await page.goto(`${frontend.url}/chat`);
 
     await page.getByLabel("Bearer token").fill("e2e-test-token");
     await page.getByRole("button", { name: "Token Kaydet" }).click();
