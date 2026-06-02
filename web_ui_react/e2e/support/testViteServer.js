@@ -1,6 +1,12 @@
 import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { createSidarProxyConfig } from "../../vite.config.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WEB_UI_ROOT = path.resolve(__dirname, "../..");
+const VITE_CONFIG_FILE = path.join(WEB_UI_ROOT, "vite.config.js");
 
 const READY_TIMEOUT_MS = 60_000;
 const READY_POLL_MS = 100;
@@ -32,11 +38,12 @@ async function waitUntilReady(url) {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const [indexReady, entryReady] = await Promise.all([
+      const [indexReady, chatRouteReady, entryReady] = await Promise.all([
         fetchReadyResponse(url, (html) => html.includes('id="root"')),
+        fetchReadyResponse(`${url}/chat`, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/src/main.jsx`),
       ]);
-      if (indexReady && entryReady) return;
+      if (indexReady && chatRouteReady && entryReady) return;
     } catch {
       // Vite may still be binding, transforming the SPA entry, or optimizing dependencies.
     }
@@ -50,6 +57,8 @@ export async function startTestViteServer({ backendUrl }) {
   let server;
   try {
     server = await createServer({
+      root: WEB_UI_ROOT,
+      configFile: VITE_CONFIG_FILE,
       server: {
         host: "127.0.0.1",
         port,
