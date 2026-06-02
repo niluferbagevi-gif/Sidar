@@ -279,7 +279,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
-c1876a8ed4deb24ebf714d3479da628d312170828a432d5ceca4837b5185567a  scripts/install_modules/utils/playwright_ubuntu_override.sh
+6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 c5f5443bc25fe471c80ace535848e160ccb5a9daf0ef8fbfc23740ff008a6771  scripts/install_modules/utils/wsl_gpu_preflight.sh
 8020ab7fa0d117037117c3412dfd3aa1fdebf3f203111109aa7d60f686256334  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -3712,7 +3712,7 @@ install_playwright_browsers() {
                     ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
                     return 0
                 fi
-                warn "Playwright install-deps başarılı döndü ancak kritik libnss3/libnspr4 bağımlılıkları doğrulanamadı; sabit apt fallback uygulanacak."
+                warn "Playwright install-deps başarılı döndü ancak kritik Chromium bağımlılıkları doğrulanamadı; sabit apt fallback uygulanacak."
             fi
 
             cat "$_pw_install_log" >&2
@@ -3761,10 +3761,11 @@ PY_PLAYWRIGHT_VERSION
             fi
         }
 
-        if is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
+        if is_playwright_ubuntu_override_recommended "$_pw_os_release_path" &&
+            ! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"; then
             local _pw_ubuntu_version
             _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
-            info "Ubuntu ${_pw_ubuntu_version} Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
+            info "Ubuntu ${_pw_ubuntu_version} yüklü Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
             if _try_playwright_ubuntu_override_install; then
                 grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
                     "$_pw_install_log" || true

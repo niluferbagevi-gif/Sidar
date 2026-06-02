@@ -1493,6 +1493,51 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
     assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
+def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_supports_host(tmp_path: Path) -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_python = tmp_path / "mock-python.sh"
+    probe_log = tmp_path / "probe.log"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    mock_python.write_text(
+        """#!/usr/bin/env bash
+printf '%s|%s' "${OS_RELEASE_PATH:-}" "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" > "${MOCK_PROBE_LOG}"
+exit "${MOCK_PROBE_EXIT:-0}"
+""",
+        encoding="utf-8",
+    )
+    mock_python.chmod(0o755)
+    env = {**os.environ, "MOCK_PROBE_LOG": str(probe_log), "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE": "forced-before-probe"}
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; source "$1"; playwright_host_platform_is_officially_supported "$2" "$3"',
+            "bash",
+            str(helper),
+            str(os_release),
+            str(mock_python),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert probe_log.read_text(encoding="utf-8") == f"{os_release}|unset"
+
+
+def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependencies() -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").read_text(encoding="utf-8")
+
+    assert 'gtk_package="libgtk-3-0"' in helper
+    assert 'gtk_package="libgtk-3-0t64"' in helper
+    assert "libxshmfence1" in helper
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    assert '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"' in installer
+
+
 def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(tmp_path: Path) -> None:
     script = _script()
     helper_script = tmp_path / "frontend_playwright_helpers.sh"

@@ -27,6 +27,40 @@ is_playwright_ubuntu_override_recommended() {
     (( ubuntu_major >= 25 ))
 }
 
+# Ubuntu 25+ için override yalnız upstream Playwright host matrisi henüz bu
+# sürümü resmi olarak tanımıyorsa kullanılmalı. Python Playwright paketinin
+# bundled Node runtime'ı aynı hostPlatform modülünü kullanır; böylece yeni
+# Ubuntu desteği geldiğinde sabit ubuntu24.04 override otomatik devreden çıkar.
+playwright_host_platform_is_officially_supported() {
+    local source_os_release="${1:-/etc/os-release}"
+    shift || true
+    [[ "$#" -gt 0 ]] || return 1
+
+    env -u PLAYWRIGHT_HOST_PLATFORM_OVERRIDE OS_RELEASE_PATH="$source_os_release" "$@" - <<'PY_PLAYWRIGHT_HOST_SUPPORT' >/dev/null 2>&1
+from pathlib import Path
+import json
+import subprocess
+
+import playwright
+
+
+driver_dir = Path(playwright.__file__).resolve().parent / "driver"
+node_bin = driver_dir / "node"
+host_platform_module = driver_dir / "package" / "lib" / "server" / "utils" / "hostPlatform.js"
+if not node_bin.is_file() or not host_platform_module.is_file():
+    raise SystemExit(1)
+probe = subprocess.run(
+    [
+        str(node_bin),
+        "-e",
+        f"const platform = require({json.dumps(str(host_platform_module))}); process.exit(platform.isOfficiallySupportedPlatform ? 0 : 1);",
+    ],
+    check=False,
+)
+raise SystemExit(probe.returncode)
+PY_PLAYWRIGHT_HOST_SUPPORT
+}
+
 resolve_playwright_python_spec() {
     local pyproject_file="${1:-${SCRIPT_DIR}/pyproject.toml}"
     local resolved_spec=""
@@ -97,16 +131,20 @@ playwright_linux_dependencies_ready() {
     local ldconfig_cache=""
 
     if command -v dpkg-query >/dev/null 2>&1; then
-        for package_name in libnss3 libnspr4; do
+        for package_name in libnss3 libnspr4 libxshmfence1; do
             package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
             [[ "$package_status" == ii* ]] || return 1
         done
-        return 0
+        for package_name in libgtk-3-0t64 libgtk-3-0; do
+            package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
+            [[ "$package_status" == ii* ]] && return 0
+        done
+        return 1
     fi
 
     if command -v ldconfig >/dev/null 2>&1; then
         ldconfig_cache="$(ldconfig -p 2>/dev/null || true)"
-        [[ "$ldconfig_cache" == *"libnss3.so"* && "$ldconfig_cache" == *"libnspr4.so"* ]]
+        [[ "$ldconfig_cache" == *"libnss3.so"* && "$ldconfig_cache" == *"libnspr4.so"* && "$ldconfig_cache" == *"libgtk-3.so"* && "$ldconfig_cache" == *"libXshmfence.so"* ]]
         return
     fi
 
@@ -114,6 +152,12 @@ playwright_linux_dependencies_ready() {
 }
 
 install_playwright_linux_dependencies_fallback() {
+    local gtk_package="libgtk-3-0"
+    # Ubuntu 24.04+ t64 geçişinde paket adı libgtk-3-0t64 oldu; eski Ubuntu
+    # sürümleri için libgtk-3-0 fallback değerini koru.
+    if command -v apt-cache >/dev/null 2>&1 && apt-cache show libgtk-3-0t64 >/dev/null 2>&1; then
+        gtk_package="libgtk-3-0t64"
+    fi
     local -a playwright_linux_dependencies=(
         libnss3
         libnspr4
@@ -126,7 +170,9 @@ install_playwright_linux_dependencies_fallback() {
         libxdamage1
         libxfixes3
         libxrandr2
+        libxshmfence1
         libgbm1
+        "$gtk_package"
         libpango-1.0-0
         libcairo2
         libasound2t64
