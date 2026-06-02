@@ -3666,6 +3666,8 @@ install_playwright_browsers() {
         local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
         local _pw_install_completed=false
         local _pw_python_spec
+        local _pw_apt_noise_regex='is already the newest version|0 upgraded.*0 newly.*not upgraded|Reading package|Building dependency|Reading state|Solving dependencies|^$'
+        local _pw_browser_noise_regex="BEWARE: your OS is not officially supported|${_pw_apt_noise_regex}"
         local _pw_ubuntu_version=""
         if [[ -r "$_pw_os_release_path" ]]; then
             _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
@@ -3710,7 +3712,7 @@ install_playwright_browsers() {
         _ensure_playwright_override_dependencies() {
             info "Playwright OS override sonrası Chromium sistem bağımlılıkları doğrulanıyor..."
             if _try_playwright_install_deps; then
-                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE "$_pw_apt_noise_regex" \
                     "$_pw_install_log" || true
                 if playwright_linux_dependencies_ready; then
                     ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
@@ -3752,7 +3754,7 @@ PY_PLAYWRIGHT_VERSION
 
         _try_playwright_last_resort_override() {
             if _try_playwright_ubuntu_override_install; then
-                grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE "$_pw_browser_noise_regex" \
                     "$_pw_install_log" || true
                 if _ensure_playwright_override_dependencies; then
                     ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium + deps)."
@@ -3769,7 +3771,7 @@ PY_PLAYWRIGHT_VERSION
             ! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"; then
             info "Ubuntu ${_pw_ubuntu_version:-25+} yüklü Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
             if _try_playwright_ubuntu_override_install; then
-                grep -vE 'BEWARE: your OS is not officially supported|is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE "$_pw_browser_noise_regex" \
                     "$_pw_install_log" || true
                 if _ensure_playwright_override_dependencies; then
                     ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium + deps)."
@@ -3786,7 +3788,7 @@ PY_PLAYWRIGHT_VERSION
         if [[ "$_pw_install_completed" != true ]]; then
             info "Playwright headless optimizasyonu: yalnızca Chromium (--with-deps) kuruluyor (timeout=${pw_timeout_ms}ms)..."
             if _try_playwright_install with-deps; then
-                grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                grep -vE "$_pw_apt_noise_regex" \
                     "$_pw_install_log" || true
                 ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
             else
@@ -3797,7 +3799,7 @@ PY_PLAYWRIGHT_VERSION
                 if _is_playwright_os_mismatch_error "$_pw_install_output"; then
                     warn "Playwright --with-deps bu işletim sisteminde desteklenmiyor. Fallback: yalnızca Chromium binary kurulumu deneniyor..."
                     if _try_playwright_install binary; then
-                        grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                        grep -vE "$_pw_apt_noise_regex" \
                             "$_pw_install_log" || true
                         ok "Playwright kurulumu fallback ile tamamlandı (chromium, deps yok)."
                     else
@@ -3809,7 +3811,7 @@ PY_PLAYWRIGHT_VERSION
                                 warn "Playwright binary fallback OS uyumsuzluğu nedeniyle başarısız ve kurulu paket ${_pw_python_spec} şartını sağlamıyor. Upgrade fallback deneniyor..."
                                 if uv add --dev "$_pw_python_spec"; then
                                     if _try_playwright_install binary; then
-                                        grep -vE 'is already the newest version|0 upgraded.*0 newly|Reading package|Building dependency|Reading state|^$' \
+                                        grep -vE "$_pw_apt_noise_regex" \
                                             "$_pw_install_log" || true
                                         ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
                                     else

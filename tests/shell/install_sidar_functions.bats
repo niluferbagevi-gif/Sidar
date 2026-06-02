@@ -186,6 +186,11 @@ if [[ "\$*" == "-m playwright install chromium" ]]; then
   echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
   echo "Chromium override browser downloaded"
 fi
+if [[ "\$*" == "-m playwright install-deps chromium" ]]; then
+  echo "Reading package lists..."
+  echo "Solving dependencies..."
+  echo "0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded."
+fi
 EOF
     cat > "$tmpdir/bin/dpkg-query" <<EOF
 #!/usr/bin/env bash
@@ -209,6 +214,8 @@ EOF
   [[ "$output" == *"Chromium override browser downloaded"* ]]
   [[ "$output" == *"install-deps ile doğrulandı"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
+  [[ "$output" != *"0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded"* ]]
+  [[ "$output" != *"Solving dependencies"* ]]
   [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
   [[ "$output" != *"--with-deps"* ]]
 }
