@@ -136,6 +136,12 @@ def test_llm_client_settings_default_ollama_timeout_is_600(monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(monkeypatch):
+    monkeypatch.delenv("OLLAMA_NUM_BATCH", raising=False)
+    settings = config.LLMClientSettings()
+    assert settings.OLLAMA_NUM_BATCH == 2048
+
+
 def test_get_int_float_and_list_env_parsing(monkeypatch):
     monkeypatch.setenv("INT_OK", "42")
     monkeypatch.setenv("INT_BAD", "abc")
