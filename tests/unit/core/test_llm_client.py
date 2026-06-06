@@ -1029,12 +1029,39 @@ async def test_ollama_client_chat_sends_bounded_num_batch_when_configured(
 
 
 @pytest.mark.asyncio
-async def test_ollama_client_chat_omits_num_batch_when_disabled(mock_config, respx_mock_router) -> None:
+async def test_ollama_client_chat_auto_raises_num_batch_for_large_context(
+    mock_config, respx_mock_router
+) -> None:
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
         OLLAMA_TIMEOUT=30,
         OLLAMA_NUM_BATCH=0,
+        OLLAMA_CODING_NUM_CTX=8192,
+        ENABLE_TRACING=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    route = respx_mock_router.post("http://x/api/chat").mock(
+        return_value=httpx.Response(200, json={"message": {"content": "ok"}})
+    )
+
+    _ = await client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False)
+
+    payload = json.loads(route.calls.last.request.content.decode("utf-8"))
+    assert payload["options"]["num_ctx"] == 8192
+    assert payload["options"]["num_batch"] == 4096
+
+
+@pytest.mark.asyncio
+async def test_ollama_client_chat_omits_num_batch_when_disabled_for_small_context(
+    mock_config, respx_mock_router
+) -> None:
+    cfg = mock_config(
+        CODING_MODEL="m1",
+        OLLAMA_URL="http://x/api",
+        OLLAMA_TIMEOUT=30,
+        OLLAMA_NUM_BATCH=0,
+        OLLAMA_CODING_NUM_CTX=2048,
         ENABLE_TRACING=False,
     )
     client = llm_client.OllamaClient(cfg)
