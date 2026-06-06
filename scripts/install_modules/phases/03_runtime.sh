@@ -121,6 +121,31 @@ ensure_docker_daemon_running() {
         printf '%s\n' "$wsl_distros" | awk 'NF {print}' | grep -Fxq "docker-desktop"
     }
 
+    _wait_for_wsl_backend_docker_desktop_registered() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local backend_wait_attempts="${DOCKER_DESKTOP_BACKEND_WAIT_ATTEMPTS:-30}"
+        local backend_wait_step="${DOCKER_DESKTOP_BACKEND_WAIT_STEP:-3}"
+        if ! [[ "$backend_wait_attempts" =~ ^[0-9]+$ ]] || (( backend_wait_attempts < 1 )); then
+            backend_wait_attempts=30
+        fi
+        if ! [[ "$backend_wait_step" =~ ^[0-9]+$ ]] || (( backend_wait_step < 1 )); then
+            backend_wait_step=3
+        fi
+
+        for _attempt in $(seq 1 "$backend_wait_attempts"); do
+            if _wsl_backend_docker_desktop_registered; then
+                return 0
+            fi
+            if (( _attempt == 1 )); then
+                info "Docker Desktop backend distro kaydı bekleniyor (maks. $(( backend_wait_attempts * backend_wait_step ))sn)..."
+            fi
+            sleep "$backend_wait_step"
+        done
+        return 1
+    }
+
     _wait_for_docker_socket_mount_after_autofix() {
         local mount_wait_timeout="${WSL_INTEGRATION_SOCKET_WAIT_TIMEOUT:-30}"
         if ! [[ "$mount_wait_timeout" =~ ^[0-9]+$ ]] || (( mount_wait_timeout < 10 )); then
@@ -326,7 +351,7 @@ ensure_docker_daemon_running() {
     fi
 
     if [[ "$WSL2" == true ]] && command -v powershell.exe &>/dev/null; then
-        if ! _wsl_backend_docker_desktop_registered; then
+        if ! _wait_for_wsl_backend_docker_desktop_registered; then
             fail "Docker Desktop backend distro ('docker-desktop') WSL2'de kayıtlı değil."
             warn "Bu dağıtım manuel silinmiş olabilir ('wsl --unregister docker-desktop')."
             warn "Çözüm: Docker Desktop > Settings > Troubleshoot > Reset to factory defaults"
