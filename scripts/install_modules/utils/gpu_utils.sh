@@ -103,6 +103,16 @@ detect_gpu() {
     fi
 }
 
+print_docker_desktop_restart_notice() {
+    warn "╔════════════════════════════════════════════════════════════════════╗"
+    warn "║ Docker Desktop Restart gerekli olabilir                           ║"
+    warn "║ nvidia-container-toolkit Docker runtime ayarını değiştirdi.       ║"
+    warn "║ Windows tarafında Docker Desktop > Quit/Restart uygulayın;        ║"
+    warn "║ ardından bu WSL terminalinde 'docker info' ile nvidia runtime'ı    ║"
+    warn "║ doğrulayın ve install_sidar.sh komutunu tekrar çalıştırın.        ║"
+    warn "╚════════════════════════════════════════════════════════════════════╝"
+}
+
 setup_nvidia_docker() {
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
@@ -129,14 +139,14 @@ setup_nvidia_docker() {
                     ok "Docker servisi systemd üzerinden yeniden başlatıldı."
                 else
                     warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
-                    info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
+                    print_docker_desktop_restart_notice
                 fi
             elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
                 sudo service docker restart
                 ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
             else
                 warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
-                info "nvidia-container-toolkit'in aktif olması için Windows üzerinden Docker Desktop'ı yeniden başlatmanız gerekebilir."
+                print_docker_desktop_restart_notice
             fi
             ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
         else

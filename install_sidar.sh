@@ -276,7 +276,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
-70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
+ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
 a2c667b301c564e3ec8271fb30f6c8f94848e9bcfb98b3e1177b6f84a16d3e97  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
@@ -3430,6 +3430,16 @@ detect_gpu() {
 }
 
 # ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
+print_docker_desktop_restart_notice() {
+    warn "╔════════════════════════════════════════════════════════════════════╗"
+    warn "║ Docker Desktop Restart gerekli olabilir                           ║"
+    warn "║ nvidia-container-toolkit Docker runtime ayarını değiştirdi.       ║"
+    warn "║ Windows tarafında Docker Desktop > Quit/Restart uygulayın;        ║"
+    warn "║ ardından bu WSL terminalinde 'docker info' ile nvidia runtime'ı    ║"
+    warn "║ doğrulayın ve install_sidar.sh komutunu tekrar çalıştırın.        ║"
+    warn "╚════════════════════════════════════════════════════════════════════╝"
+}
+
 setup_nvidia_docker() {
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
@@ -3456,14 +3466,14 @@ setup_nvidia_docker() {
                     ok "Docker servisi systemd üzerinden yeniden başlatıldı."
                 else
                     warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
-                    info "nvidia-container-toolkit değişiklikleri için gerekirse Windows üzerinden Docker Desktop'ı yeniden başlatın."
+                    print_docker_desktop_restart_notice
                 fi
             elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
                 sudo service docker restart
                 ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
             else
                 warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
-                info "nvidia-container-toolkit'in aktif olması için Windows üzerinden Docker Desktop'ı yeniden başlatmanız gerekebilir."
+                print_docker_desktop_restart_notice
             fi
             ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
         else
