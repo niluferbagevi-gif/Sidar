@@ -45,6 +45,8 @@ services:
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
     ports:
       - "11434:11434"
     volumes:
@@ -59,6 +61,8 @@ services:
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
     ports:
       - "11434:11434"
     volumes:

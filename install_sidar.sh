@@ -278,7 +278,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
 70c97f98ebf1042ba2ba6c4ad91fb4119d7a0161b2e15e19526eb0b873153a04  scripts/install_modules/utils/gpu_utils.sh
 c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
-4632b0d771b75a7a505e7ae2118ae81ca20ab7927052407a6c1227fba8ffcbe2  scripts/install_modules/utils/ollama_models.sh
+a2c667b301c564e3ec8271fb30f6c8f94848e9bcfb98b3e1177b6f84a16d3e97  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -5712,24 +5712,99 @@ setup_env_file() {
 
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 
+SIDAR_OLLAMA_DEFAULT_NUM_CTX="${SIDAR_OLLAMA_DEFAULT_NUM_CTX:-8192}"
+SIDAR_OLLAMA_DEFAULT_NUM_BATCH="${SIDAR_OLLAMA_DEFAULT_NUM_BATCH:-2048}"
+
+sidar_ollama_positive_int_or_default() {
+    local raw="${1:-}"
+    local default_value="${2:-}"
+    if [[ "$raw" =~ ^[0-9]+$ ]] && (( raw > 0 )); then
+        printf '%s\n' "$raw"
+    else
+        printf '%s\n' "$default_value"
+    fi
+}
+
+sidar_ollama_read_runtime_setting() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local primary_key="${2:-}"
+    local fallback_key="${3:-}"
+    local default_value="${4:-}"
+    local raw=""
+
+    if [[ -n "$primary_key" ]]; then
+        raw="${!primary_key:-}"
+        if [[ -z "$raw" && -f "$env_file" ]]; then
+            raw=$(read_env_value_from_file "$primary_key" "$env_file")
+        fi
+    fi
+    if [[ -z "$raw" && -n "$fallback_key" ]]; then
+        raw="${!fallback_key:-}"
+        if [[ -z "$raw" && -f "$env_file" ]]; then
+            raw=$(read_env_value_from_file "$fallback_key" "$env_file")
+        fi
+    fi
+
+    sidar_ollama_positive_int_or_default "$raw" "$default_value"
+}
+
+sidar_ollama_runtime_num_ctx() {
+    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_CTX" "OLLAMA_CODING_NUM_CTX" "$SIDAR_OLLAMA_DEFAULT_NUM_CTX"
+}
+
+sidar_ollama_runtime_num_batch() {
+    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_BATCH" "" "$SIDAR_OLLAMA_DEFAULT_NUM_BATCH"
+}
+
+sidar_ollama_export_runtime_defaults() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    export OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
+    export OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
+}
+
 run_coding_model_smoke_prompt() {
     local model_name="${1:-}"
     local ollama_base_url="${2:-}"
     local response_file=""
     local response_text=""
+    local env_file="$SCRIPT_DIR/.env"
+    local ollama_num_ctx=""
+    local ollama_num_batch=""
+    local payload_file=""
 
     [[ -n "$model_name" ]] || model_name="qwen2.5-coder:7b"
     [[ -n "$ollama_base_url" ]] || ollama_base_url="http://localhost:11434"
     response_file=$(mktemp)
+    payload_file=$(mktemp)
+    ollama_num_ctx=$(sidar_ollama_runtime_num_ctx "$env_file")
+    ollama_num_batch=$(sidar_ollama_runtime_num_batch "$env_file")
 
-    info "Coding model JSON smoke testi çalışıyor (${model_name})..."
+    python3 - "$payload_file" "$model_name" "$ollama_num_ctx" "$ollama_num_batch" <<'PYSMOKEPAYLOAD'
+import json
+import sys
+
+path, model, num_ctx, num_batch = sys.argv[1:5]
+payload = {
+    "model": model,
+    "prompt": 'Return exactly this JSON and nothing else: {"sidar_smoke": true}',
+    "stream": False,
+    "format": "json",
+    "options": {"num_ctx": int(num_ctx), "num_batch": int(num_batch)},
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle)
+PYSMOKEPAYLOAD
+
+    info "Coding model JSON smoke testi çalışıyor (${model_name}, num_ctx=${ollama_num_ctx}, num_batch=${ollama_num_batch})..."
     if ! curl -fsS --max-time 75 \
         -H 'Content-Type: application/json' \
-        -d "{\"model\":\"${model_name}\",\"prompt\":\"Return exactly this JSON and nothing else: {\\\"sidar_smoke\\\": true}\",\"stream\":false,\"format\":\"json\"}" \
+        --data-binary "@${payload_file}" \
         "${ollama_base_url%/}/api/generate" > "$response_file"; then
-        rm -f "$response_file"
+        rm -f "$response_file" "$payload_file"
         fail "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi (${model_name})."
     fi
+    rm -f "$payload_file"
 
     response_text=$(python3 - "$response_file" <<'PYSMOKE' 2>/dev/null || true
 import json
@@ -5860,6 +5935,7 @@ PY
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
     OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
     ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
+    sidar_ollama_export_runtime_defaults "$env_file"
 
     if [[ ! -f "$env_file" ]]; then
         warn ".env bulunamadı, varsayılan modeller indirilemedi."
@@ -5942,7 +6018,7 @@ PY
             # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
             if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
                 info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
-                ollama serve >/dev/null 2>&1 &
+                env OLLAMA_NUM_CTX="$OLLAMA_NUM_CTX" OLLAMA_NUM_BATCH="$OLLAMA_NUM_BATCH" ollama serve >/dev/null 2>&1 &
                 temp_ollama_pid=$!
             fi
             for _ in {1..12}; do

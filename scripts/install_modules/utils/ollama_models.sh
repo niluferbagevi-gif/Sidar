@@ -6,6 +6,57 @@ SIDAR_INSTALL_UTIL_OLLAMA_MODELS_SH_LOADED=1
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
 
+SIDAR_OLLAMA_DEFAULT_NUM_CTX="${SIDAR_OLLAMA_DEFAULT_NUM_CTX:-8192}"
+SIDAR_OLLAMA_DEFAULT_NUM_BATCH="${SIDAR_OLLAMA_DEFAULT_NUM_BATCH:-2048}"
+
+sidar_ollama_positive_int_or_default() {
+    local raw="${1:-}"
+    local default_value="${2:-}"
+    if [[ "$raw" =~ ^[0-9]+$ ]] && (( raw > 0 )); then
+        printf '%s\n' "$raw"
+    else
+        printf '%s\n' "$default_value"
+    fi
+}
+
+sidar_ollama_read_runtime_setting() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local primary_key="${2:-}"
+    local fallback_key="${3:-}"
+    local default_value="${4:-}"
+    local raw=""
+
+    if [[ -n "$primary_key" ]]; then
+        raw="${!primary_key:-}"
+        if [[ -z "$raw" && -f "$env_file" ]]; then
+            raw=$(read_env_value_from_file "$primary_key" "$env_file")
+        fi
+    fi
+    if [[ -z "$raw" && -n "$fallback_key" ]]; then
+        raw="${!fallback_key:-}"
+        if [[ -z "$raw" && -f "$env_file" ]]; then
+            raw=$(read_env_value_from_file "$fallback_key" "$env_file")
+        fi
+    fi
+
+    sidar_ollama_positive_int_or_default "$raw" "$default_value"
+}
+
+sidar_ollama_runtime_num_ctx() {
+    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_CTX" "OLLAMA_CODING_NUM_CTX" "$SIDAR_OLLAMA_DEFAULT_NUM_CTX"
+}
+
+sidar_ollama_runtime_num_batch() {
+    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_BATCH" "" "$SIDAR_OLLAMA_DEFAULT_NUM_BATCH"
+}
+
+sidar_ollama_export_runtime_defaults() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    export OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
+    export OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
+}
+
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
@@ -113,6 +164,7 @@ PY
     OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
     OLLAMA_BASE_URL="${OLLAMA_VERSION_URL%/api/version}"
     ollama_tags_url="${OLLAMA_BASE_URL}/api/tags"
+    sidar_ollama_export_runtime_defaults "$env_file"
 
     if [[ ! -f "$env_file" ]]; then
         warn ".env bulunamadı, varsayılan modeller indirilemedi."
@@ -195,7 +247,7 @@ PY
             # systemd yoksa veya servis ayağa kalkmadıysa son çare olarak geçici süreç başlat.
             if ! curl -sf "$OLLAMA_VERSION_URL" &>/dev/null; then
                 info "systemd ile Ollama doğrulanamadı, geçici 'ollama serve' süreci başlatılıyor..."
-                ollama serve >/dev/null 2>&1 &
+                env OLLAMA_NUM_CTX="$OLLAMA_NUM_CTX" OLLAMA_NUM_BATCH="$OLLAMA_NUM_BATCH" ollama serve >/dev/null 2>&1 &
                 temp_ollama_pid=$!
             fi
             for _ in {1..12}; do
