@@ -373,6 +373,9 @@ docker_desktop_wsl_integration_preflight() {
                 _DOCKER_DESKTOP_AUTOFIX_RESTARTED_AT="$(date +%s)"
                 ok "Preflight autofix: Docker Desktop WSL Integration '${current_distro}' için etkinleştirildi."
             else
+                if [[ "${WSL_INTEGRATION_RESTART_REQUIRED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_restart_required" ]]; then
+                    fail "Docker Desktop WSL Integration ayarı yazıldı; socket mount'un yeni oturuma enjekte edilmesi için Windows PowerShell'de 'wsl --shutdown' çalıştırın, Ubuntu'yu yeniden açın ve install_sidar.sh komutunu tekrar başlatın."
+                fi
                 warn "Preflight autofix tamamlanamadı; Docker daemon kontrol aşamasında tekrar denenecek."
             fi
         else

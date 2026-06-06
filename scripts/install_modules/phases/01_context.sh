@@ -22,6 +22,9 @@ sidar_phase_initialize_context() {
             elif [[ -n "$current_distro" ]] && declare -F apply_wsl_integration_autofix >/dev/null 2>&1; then
                 info "Preflight sonrası otomatik WSL Integration düzeltmesi deneniyor: '${current_distro}'."
                 if ! apply_wsl_integration_autofix "$current_distro"; then
+                    if [[ "${WSL_INTEGRATION_RESTART_REQUIRED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_restart_required" ]]; then
+                        fail "Docker Desktop WSL Integration ayarı yazıldı; socket mount'un yeni oturuma enjekte edilmesi için Windows PowerShell'de 'wsl --shutdown' çalıştırın, Ubuntu'yu yeniden açın ve install_sidar.sh komutunu tekrar başlatın."
+                    fi
                     warn "Preflight sonrası WSL Integration otomatik düzeltmesi başarısız oldu; kullanıcı onayı istenmeden kurulum devam edecek."
                     warn "Manuel adım gerekli: Docker Desktop > Settings > Resources > WSL Integration > '${current_distro}' toggle'ını açın."
                     warn "Ardından install_sidar.sh komutunu yeniden çalıştırın."

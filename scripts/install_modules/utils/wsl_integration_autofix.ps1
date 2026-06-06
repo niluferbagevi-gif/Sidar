@@ -1,6 +1,8 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
-    [string]$CurrentDistro
+    [string]$CurrentDistro,
+
+    [switch]$LaunchedFromTargetDistro
 )
 
 $ErrorActionPreference = "Stop"
@@ -171,10 +173,18 @@ if (-not $registered) {
     exit 2
 }
 
-if (Wait-TargetDistroDockerRuntime -TimeoutSeconds 60 -StepSeconds 2) {
-    Write-Host "Docker daemon hedef WSL dağıtımı içinden doğrulandı; autofix başarılı."
-    exit 0
+if (-not $LaunchedFromTargetDistro) {
+    Write-Host "Docker Desktop backend distro göründü; socket bind-mount yenilemesi için '$CurrentDistro' terminate ediliyor."
+    & wsl.exe --terminate $CurrentDistro 2>$null
+    Start-Sleep -Seconds 2
+    if (Wait-TargetDistroDockerRuntime -TimeoutSeconds 60 -StepSeconds 2) {
+        Write-Host "Docker daemon hedef WSL dağıtımı içinden terminate sonrası doğrulandı; autofix başarılı."
+        exit 0
+    }
+
+    Write-Error "Docker Desktop backend distro görünüyor ancak '$CurrentDistro' terminate sonrası /var/run/docker.sock doğrulanamadı. WSL entegrasyonu için 'wsl --terminate $CurrentDistro' veya 'wsl --shutdown' ardından dağıtımı yeniden açıp kurulumu tekrar çalıştırın."
+    exit 3
 }
 
-Write-Error "Docker Desktop backend distro görünüyor ancak '$CurrentDistro' içinde /var/run/docker.sock doğrulanamadı. WSL entegrasyonu için 'wsl --terminate $CurrentDistro' ardından dağıtımı yeniden açıp kurulumu tekrar çalıştırın."
-exit 3
+Write-Error "Docker Desktop backend distro görünüyor ve ayarlar yazıldı; ancak '$CurrentDistro' içinden /var/run/docker.sock doğrulanamadı. Bu betik hedef WSL dağıtımı içinden çalıştığı için kendi oturumunu güvenli şekilde terminate edemez. Windows PowerShell'de bir kez 'wsl --shutdown' çalıştırın, Ubuntu'yu yeniden açın ve kurulumu tekrar başlatın."
+exit 4

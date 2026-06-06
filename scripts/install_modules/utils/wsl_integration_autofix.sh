@@ -20,6 +20,7 @@ apply_wsl_integration_autofix() {
     powershell.exe -NoProfile -ExecutionPolicy Bypass \
         -File "$windows_script_path" \
         -CurrentDistro "$current_distro" \
+        -LaunchedFromTargetDistro \
         2>"$stderr_log"
     local ps_exit=$?
     if [[ "$ps_exit" -ne 0 ]]; then
@@ -29,6 +30,12 @@ apply_wsl_integration_autofix() {
         elif [[ "$ps_exit" -eq 3 ]]; then
             warn "PowerShell autofix Docker Desktop backend'i gördü ancak hedef WSL dağıtımında /var/run/docker.sock doğrulanamadı (exit=3)."
             warn "Öneri: 'wsl --terminate ${current_distro}' ardından dağıtımı yeniden açıp kurulumu tekrar çalıştırın."
+        elif [[ "$ps_exit" -eq 4 ]]; then
+            warn "PowerShell autofix ayarları yazdı ancak socket mount için mevcut WSL oturumunun yeniden başlatılması gerekiyor (exit=4)."
+            warn "Öneri: Windows PowerShell'de bir kez 'wsl --shutdown' çalıştırın, Ubuntu'yu yeniden açın ve kurulumu tekrar çalıştırın."
+            WSL_INTEGRATION_RESTART_REQUIRED=true
+            export WSL_INTEGRATION_RESTART_REQUIRED
+            : > "${TMPDIR:-/tmp}/sidar_wsl_integration_restart_required"
         else
             warn "PowerShell WSL Integration autofix komutu başarısız oldu (exit=${ps_exit})."
         fi

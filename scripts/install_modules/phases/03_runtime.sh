@@ -235,6 +235,9 @@ ensure_docker_daemon_running() {
         fi
 
         if ! apply_wsl_integration_autofix "$current_distro"; then
+            if [[ "${WSL_INTEGRATION_RESTART_REQUIRED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_restart_required" ]]; then
+                fail "Docker Desktop WSL Integration ayarı yazıldı; socket mount'un yeni oturuma enjekte edilmesi için Windows PowerShell'de 'wsl --shutdown' çalıştırın, Ubuntu'yu yeniden açın ve install_sidar.sh komutunu tekrar başlatın."
+            fi
             warn "Docker Desktop WSL Integration ayarı otomatik güncellenemedi."
             return 1
         fi
