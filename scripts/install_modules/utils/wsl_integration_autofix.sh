@@ -24,8 +24,11 @@ apply_wsl_integration_autofix() {
     local ps_exit=$?
     if [[ "$ps_exit" -ne 0 ]]; then
         if [[ "$ps_exit" -eq 2 ]]; then
-            warn "PowerShell autofix backend kaydını doğrulayamadı (exit=2). Docker Desktop reset/reinstall gerekli olabilir."
+            warn "PowerShell autofix backend kaydını veya hedef WSL socket doğrulamasını tamamlayamadı (exit=2). Docker Desktop reset/reinstall gerekli olabilir."
             warn "Öneri: Docker Desktop > Settings > Troubleshoot > Reset to factory defaults"
+        elif [[ "$ps_exit" -eq 3 ]]; then
+            warn "PowerShell autofix Docker Desktop backend'i gördü ancak hedef WSL dağıtımında /var/run/docker.sock doğrulanamadı (exit=3)."
+            warn "Öneri: 'wsl --terminate ${current_distro}' ardından dağıtımı yeniden açıp kurulumu tekrar çalıştırın."
         else
             warn "PowerShell WSL Integration autofix komutu başarısız oldu (exit=${ps_exit})."
         fi

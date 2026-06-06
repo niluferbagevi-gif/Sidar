@@ -15,14 +15,41 @@ function Resolve-DockerDesktopExe {
     return (Join-Path ${env:ProgramFiles} 'Docker\Docker\Docker Desktop.exe')
 }
 
+function Test-TargetDistroDockerRuntime {
+    $probeScript = "test -S /var/run/docker.sock && command -v docker >/dev/null 2>&1 && DOCKER_HOST=unix:///var/run/docker.sock docker version --format '{{.Server.Version}}'"
+    $probe = & wsl.exe @('-d', $CurrentDistro, '--', 'sh', '-lc', $probeScript) 2>$null
+    return ($LASTEXITCODE -eq 0 -and ($probe | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1))
+}
+
+function Wait-TargetDistroDockerRuntime {
+    param(
+        [int]$TimeoutSeconds = 30,
+        [int]$StepSeconds = 2
+    )
+
+    $elapsed = 0
+    while ($elapsed -lt $TimeoutSeconds) {
+        if (Test-TargetDistroDockerRuntime) {
+            return $true
+        }
+        Start-Sleep -Seconds $StepSeconds
+        $elapsed += $StepSeconds
+    }
+    return $false
+}
+
 $dockerExe = Resolve-DockerDesktopExe
 
-# Docker daemon zaten canlıysa disruptive restart/autofix'e girme.
+# Disruptive restart/autofix yalnızca hedef WSL distro içinden daemon socket'i doğrulanıyorsa atlanır.
+# Windows tarafındaki `docker info` tek başına Docker Desktop engine'in Ubuntu'ya socket mount ettiğini kanıtlamaz.
+if (Test-TargetDistroDockerRuntime) {
+    Write-Host "Docker daemon hedef WSL dağıtımı içinden yanıt veriyor; restart atlandı."
+    exit 0
+}
 try {
     & docker info 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Docker daemon yanıt veriyor; restart atlandı."
-        exit 0
+        Write-Warning "Windows tarafında Docker daemon yanıt veriyor; hedef WSL dağıtımı socket doğrulaması başarısız olduğu için autofix devam edecek."
     }
 }
 catch {}
@@ -125,6 +152,10 @@ Start-Process $dockerExe -WindowStyle Hidden
 $registered = $false
 for ($i = 0; $i -lt 45; $i++) {
     Start-Sleep -Seconds 2
+    if (Test-TargetDistroDockerRuntime) {
+        Write-Host "Docker daemon hedef WSL dağıtımı içinden doğrulandı; autofix başarılı."
+        exit 0
+    }
     if ((wsl.exe -l -q 2>$null) -match 'docker-desktop') {
         $registered = $true
         break
@@ -132,14 +163,18 @@ for ($i = 0; $i -lt 45; $i++) {
 }
 if (-not $registered) {
     Write-Warning "docker-desktop distro kaydı beklenen sürede görünmedi; UI/WSL liste güncellemesi gecikmiş olabilir."
-    try {
-        & docker info 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Docker daemon yanıt veriyor; backend distro görünürlüğü gecikmeli olsa da autofix başarılı kabul edildi."
-            exit 0
-        }
+    if (Wait-TargetDistroDockerRuntime -TimeoutSeconds 20 -StepSeconds 2) {
+        Write-Host "Docker daemon hedef WSL dağıtımı içinden doğrulandı; backend distro görünürlüğü gecikmeli olsa da autofix başarılı."
+        exit 0
     }
-    catch {}
-    Write-Error "docker-desktop görünmüyor ve Docker daemon da yanıt vermiyor."
+    Write-Error "docker-desktop görünmüyor ve hedef WSL dağıtımı içinden Docker socket doğrulanamıyor. Windows tarafındaki docker info başarısı bu kontrol için yeterli değildir."
     exit 2
 }
+
+if (Wait-TargetDistroDockerRuntime -TimeoutSeconds 60 -StepSeconds 2) {
+    Write-Host "Docker daemon hedef WSL dağıtımı içinden doğrulandı; autofix başarılı."
+    exit 0
+}
+
+Write-Error "Docker Desktop backend distro görünüyor ancak '$CurrentDistro' içinde /var/run/docker.sock doğrulanamadı. WSL entegrasyonu için 'wsl --terminate $CurrentDistro' ardından dağıtımı yeniden açıp kurulumu tekrar çalıştırın."
+exit 3
