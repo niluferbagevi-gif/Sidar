@@ -139,6 +139,52 @@ ensure_docker_daemon_running() {
         return 1
     }
 
+    _report_wsl_docker_timeout_diagnostics() {
+        [[ "$WSL2" == true ]] || return 0
+        command -v powershell.exe &>/dev/null || return 0
+
+        local wsl_distros="" wsl_status="" socket_mount=""
+        wsl_distros="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe -l -q" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r')"
+        if printf '%s\n' "$wsl_distros" | awk 'NF {print}' | grep -Eq '^docker-desktop(-data)?$'; then
+            warn "Docker tanı: wsl.exe -l -q çıktısında docker-desktop backend kayıtlı görünüyor."
+        else
+            warn "Docker tanı: wsl.exe -l -q çıktısında docker-desktop backend görünmüyor."
+        fi
+        if [[ -n "$wsl_distros" ]]; then
+            warn "Docker tanı: wsl.exe -l -q çıktısı:"
+            while IFS= read -r _line; do
+                [[ -n "$_line" ]] && warn "  $_line"
+            done <<< "$wsl_distros"
+        fi
+
+        if [[ -S /var/run/docker.sock ]]; then
+            warn "Docker tanı: /var/run/docker.sock socket dosyası mevcut; daemon hâlâ yanıt vermiyorsa Docker Desktop socket'i hazır değil veya erişim reddediliyor."
+        else
+            warn "Docker tanı: /var/run/docker.sock socket dosyası bu WSL dağıtımına mount edilmemiş."
+        fi
+        socket_mount="$(mount 2>/dev/null | grep -F '/var/run/docker.sock' || true)"
+        if [[ -n "$socket_mount" ]]; then
+            warn "Docker tanı: mount çıktısında docker.sock girdisi:"
+            while IFS= read -r _line; do
+                [[ -n "$_line" ]] && warn "  $_line"
+            done <<< "$socket_mount"
+        else
+            warn "Docker tanı: mount çıktısında /var/run/docker.sock girdisi bulunamadı."
+        fi
+
+        wsl_status="$(powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; wsl.exe --status" 2>/dev/null | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\0\r')"
+        if [[ -n "$wsl_status" ]]; then
+            warn "Docker tanı: wsl.exe --status çıktısı:"
+            while IFS= read -r _line; do
+                [[ -n "$_line" ]] && warn "  $_line"
+            done <<< "$wsl_status"
+        else
+            warn "Docker tanı: wsl.exe --status çıktısı alınamadı."
+        fi
+
+        warn "Öneri: Windows PowerShell'de 'wsl --shutdown' çalıştırın, Ubuntu'ya yeniden girin ve install_sidar.sh komutunu tekrar başlatın."
+    }
+
     _docker_wsl_integration_postcheck() {
         [[ "$WSL2" == true ]] || return 0
         command -v powershell.exe &>/dev/null || return 0
@@ -383,8 +429,10 @@ ensure_docker_daemon_running() {
 
     if _docker_ready_with_socket; then return 0; fi
 
+    _report_wsl_docker_timeout_diagnostics
+
     if [[ "$STRICT_DOCKER" == "true" ]]; then
-        fail "Docker daemon erişilemedi. --strict-docker / SIDAR_REQUIRE_DOCKER=1 etkin olduğu için kurulum fail-fast durduruldu."
+        fail "Docker daemon erişilemedi. --strict-docker / SIDAR_REQUIRE_DOCKER=1 etkin olduğu için kurulum fail-fast durduruldu. Windows PowerShell'de 'wsl --shutdown' çalıştırıp Ubuntu'ya yeniden girmeniz gerekebilir."
     fi
 
     return 1
