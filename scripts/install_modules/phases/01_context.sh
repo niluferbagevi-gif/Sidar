@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+sidar_fail_if_wsl_integration_autofix_applied_current_session() {
+    if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied") ]]; then
+        fail "WSL integration ilk defa açıldı. Lütfen Windows'tan wsl --shutdown çalıştırın, Ubuntu'ya yeniden girin ve ./install_sidar.sh komutunu tekrar başlatın."
+    fi
+}
+
 sidar_phase_initialize_context() {
     banner
     report_repo_lookup_context
@@ -7,6 +13,7 @@ sidar_phase_initialize_context() {
     sidar_source_install_utils "wsl_gpu_preflight.sh"
     sidar_source_install_utils "wsl_integration_autofix.sh"
     run_wsl2_gpu_preflight
+    sidar_fail_if_wsl_integration_autofix_applied_current_session
     if [[ "${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" ]]; then
         info "Docker Desktop WSL Integration preflight tekrar çağrısı atlandı (oturum içinde otomatik düzeltme daha önce uygulandı)."
     else
@@ -34,6 +41,7 @@ sidar_phase_initialize_context() {
             fi
         fi
     fi
+    sidar_fail_if_wsl_integration_autofix_applied_current_session
     if [[ "$OFFLINE_MODE" == true ]]; then
         OFFLINE_PACKAGES_DIR="$(resolve_offline_packages_dir || true)"
         if [[ -n "$OFFLINE_PACKAGES_DIR" ]]; then
