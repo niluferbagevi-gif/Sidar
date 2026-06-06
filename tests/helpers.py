@@ -24,7 +24,7 @@ def make_test_config(**overrides: Any) -> MagicMock:
         "OLLAMA_CONTEXT_MAX_CHARS": 12000,
         "OLLAMA_KEEP_ALIVE": "30m",
         "OLLAMA_NUM_BATCH": 2048,
-        "OLLAMA_CODING_NUM_CTX": 8192,
+        "OLLAMA_CODING_NUM_CTX": 4096,
         "LLM_MAX_RETRIES": 2,
         "LLM_RETRY_BASE_DELAY": 0.01,
         "LLM_RETRY_MAX_DELAY": 0.02,

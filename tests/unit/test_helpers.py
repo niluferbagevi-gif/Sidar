@@ -30,7 +30,7 @@ def test_make_test_config_uses_spec_set_with_full_app_config(
         OLLAMA_CONTEXT_MAX_CHARS = 12000
         OLLAMA_KEEP_ALIVE = "30m"
         OLLAMA_NUM_BATCH = 2048
-        OLLAMA_CODING_NUM_CTX = 8192
+        OLLAMA_CODING_NUM_CTX = 4096
         LLM_MAX_RETRIES = 1
         LLM_RETRY_BASE_DELAY = 0.1
         LLM_RETRY_MAX_DELAY = 0.2
@@ -62,6 +62,8 @@ def test_make_test_config_uses_spec_set_with_full_app_config(
     monkeypatch.setitem(sys.modules, "config", fake_config)
 
     cfg = make_test_config()
+    assert cfg.OLLAMA_NUM_BATCH == 2048
+    assert cfg.OLLAMA_CODING_NUM_CTX == 4096
     assert FullConfig().initialize_directories() is True
     assert FullConfig().validate_critical_settings() is True
 
