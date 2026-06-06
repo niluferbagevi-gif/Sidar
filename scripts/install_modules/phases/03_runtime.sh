@@ -358,12 +358,12 @@ ensure_docker_daemon_running() {
                 ok "Docker daemon erişilebilir duruma geldi."
                 return 0
             fi
-            if [[ -e /dev/dxg || -S /var/run/docker.sock ]]; then
+            if [[ -S /var/run/docker.sock ]]; then
                 no_signal_seconds=0
             else
                 no_signal_seconds=$(( no_signal_seconds + sleep_step ))
                 if (( no_signal_seconds >= no_signal_limit )); then
-                    warn "Docker Desktop hazırlığında ${no_signal_limit}sn boyunca /dev/dxg veya /var/run/docker.sock sinyali alınamadı; erken çıkılıyor."
+                    warn "Docker Desktop hazırlığında ${no_signal_limit}sn boyunca /var/run/docker.sock sinyali alınamadı; erken çıkılıyor."
                     return 1
                 fi
             fi
