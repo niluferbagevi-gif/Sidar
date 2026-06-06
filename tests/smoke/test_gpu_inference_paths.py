@@ -113,8 +113,9 @@ async def test_gpu_stress_skips_when_ollama_binary_missing(monkeypatch):
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_ollama_service_unreachable(monkeypatch):
     class _FakeClient:
-        def __init__(self, _cfg):
-            pass
+        def __init__(self, cfg):
+            assert cfg.OLLAMA_NUM_BATCH == 2048
+            assert cfg.OLLAMA_CODING_NUM_CTX == 4096
 
         async def is_available(self):
             return False
@@ -131,8 +132,9 @@ async def test_gpu_stress_skips_when_ollama_service_unreachable(monkeypatch):
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_model_is_not_installed(monkeypatch):
     class _FakeClient:
-        def __init__(self, _cfg):
-            pass
+        def __init__(self, cfg):
+            assert cfg.OLLAMA_NUM_BATCH == 2048
+            assert cfg.OLLAMA_CODING_NUM_CTX == 4096
 
         async def is_available(self):
             return True
@@ -152,8 +154,9 @@ async def test_gpu_stress_skips_when_model_is_not_installed(monkeypatch):
 @pytest.mark.asyncio
 async def test_gpu_stress_success_path_without_real_gpu(monkeypatch):
     class _FakeClient:
-        def __init__(self, _cfg):
-            pass
+        def __init__(self, cfg):
+            assert cfg.OLLAMA_NUM_BATCH == 2048
+            assert cfg.OLLAMA_CODING_NUM_CTX == 4096
 
         async def is_available(self):
             return True
@@ -165,12 +168,13 @@ async def test_gpu_stress_success_path_without_real_gpu(monkeypatch):
             assert kwargs["model"] == gpu_smoke.MODEL_NAME
             assert kwargs["json_mode"] is False
             assert kwargs["messages"][0]["role"] == "user"
+            assert kwargs["messages"][0]["content"].count("GPU stres testi metni.") == 128
             return "ok"
 
     monkeypatch.setenv("RUN_GPU_STRESS", "1")
     monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "1")
     monkeypatch.setenv("GPU_STRESS_ROUNDS", "1")
-    monkeypatch.setenv("GPU_STRESS_PROMPT_REPEAT", "64")
+    monkeypatch.delenv("GPU_STRESS_PROMPT_REPEAT", raising=False)
     monkeypatch.setenv("GPU_STRESS_LATENCY_BUDGET", "10")
     monkeypatch.setattr(gpu_smoke, "OllamaClient", _FakeClient)
     monkeypatch.setattr(gpu_smoke, "make_test_config", lambda **kwargs: SimpleNamespace(**kwargs))

@@ -17,6 +17,9 @@ from tests.helpers import make_test_config
 # İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
 MODEL_NAME = os.getenv("GPU_SMOKE_MODEL") or os.getenv("CODING_MODEL") or "qwen2.5-coder:7b"
 _NVIDIA_SMI_TIMEOUT_S = 0.4
+GPU_STRESS_DEFAULT_PROMPT_REPEAT = 128
+GPU_STRESS_DEFAULT_NUM_BATCH = 2048
+GPU_STRESS_DEFAULT_NUM_CTX = 4096
 
 
 def _nvidia_smi_cmd() -> str | None:
@@ -162,6 +165,8 @@ async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
         USE_GPU=True,
         OLLAMA_URL="http://localhost:11434",
         OLLAMA_TIMEOUT=_env_int("GPU_STRESS_TIMEOUT", 45, min_value=10, max_value=180),
+        OLLAMA_NUM_BATCH=GPU_STRESS_DEFAULT_NUM_BATCH,
+        OLLAMA_CODING_NUM_CTX=GPU_STRESS_DEFAULT_NUM_CTX,
         CODING_MODEL=MODEL_NAME,
     )
     client = OllamaClient(cfg)
@@ -173,8 +178,20 @@ async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
 
     concurrency = _env_int("GPU_STRESS_CONCURRENCY", 4, min_value=1, max_value=16)
     rounds = _env_int("GPU_STRESS_ROUNDS", 3, min_value=1, max_value=20)
-    prompt_repeat = _env_int("GPU_STRESS_PROMPT_REPEAT", 256, min_value=64, max_value=4096)
+    prompt_repeat = _env_int(
+        "GPU_STRESS_PROMPT_REPEAT",
+        GPU_STRESS_DEFAULT_PROMPT_REPEAT,
+        min_value=64,
+        max_value=4096,
+    )
     latency_budget_seconds = _env_int("GPU_STRESS_LATENCY_BUDGET", 60, min_value=10, max_value=240)
+    print(
+        "GPU stress config: "
+        f"prompt_repeat={prompt_repeat} (env GPU_STRESS_PROMPT_REPEAT), "
+        f"num_batch={GPU_STRESS_DEFAULT_NUM_BATCH}, "
+        f"num_ctx={GPU_STRESS_DEFAULT_NUM_CTX}, "
+        f"concurrency={concurrency}, rounds={rounds}"
+    )
 
     prompt = "Aşağıdaki metni kısaca özetle ve sadece iki cümle döndür:\n" + (
         "GPU stres testi metni. " * prompt_repeat
