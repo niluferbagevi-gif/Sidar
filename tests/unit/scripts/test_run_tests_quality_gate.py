@@ -848,10 +848,12 @@ def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_instal
     assert 'sudo -n -v 2>/dev/null || exit 0' in ollama_block
     assert 'sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"' in ollama_block
     assert 'kill "$sudo_keepalive_pid" 2>/dev/null || true' in ollama_block
-    assert 'sh "$ollama_install_script" || ollama_install_rc=$?' in ollama_block
-    assert 'if ollama -v &>/dev/null; then' in ollama_block
-    assert "Kurulum tamamlanmış kabul ediliyor" in ollama_block
-    assert 'fail "Ollama kurulum betiği başarısız oldu (rc=${ollama_install_rc})."' in ollama_block
+    assert 'if sh "$ollama_install_script"; then' in ollama_block
+    assert '_ollama_rc=$?' in ollama_block
+    assert 'if (( _ollama_rc != 0 )); then' in ollama_block
+    assert "command -v ollama &>/dev/null && ollama -v &>/dev/null" in ollama_block
+    assert "büyük olasılıkla sudo timestamp expire" in ollama_block
+    assert "/var/log/syslog veya logs/install_*.log" in ollama_block
 
 
 def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:

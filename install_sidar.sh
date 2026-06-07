@@ -3318,8 +3318,12 @@ ensure_prerequisites() {
             sudo_keepalive_pid=$!
             info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
 
-            local ollama_install_rc=0
-            sh "$ollama_install_script" || ollama_install_rc=$?
+            local _ollama_rc=0
+            if sh "$ollama_install_script"; then
+                _ollama_rc=0
+            else
+                _ollama_rc=$?
+            fi
 
             if [[ -n "$sudo_keepalive_pid" ]]; then
                 kill "$sudo_keepalive_pid" 2>/dev/null || true
@@ -3327,11 +3331,11 @@ ensure_prerequisites() {
             fi
             [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
 
-            if [[ "$ollama_install_rc" -ne 0 ]]; then
-                if ollama -v &>/dev/null; then
-                    warn "Ollama kurulum betiği rc=${ollama_install_rc} ile döndü; ancak ollama CLI doğrulandı. Kurulum tamamlanmış kabul ediliyor."
+            if (( _ollama_rc != 0 )); then
+                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
+                    warn "Ollama install.sh rc=${_ollama_rc} döndü (büyük olasılıkla sudo timestamp expire); ancak 'ollama -v' yanıt veriyor, kurulum tamamlanmış kabul ediliyor."
                 else
-                    fail "Ollama kurulum betiği başarısız oldu (rc=${ollama_install_rc})."
+                    fail "Ollama kurulumu başarısız (rc=${_ollama_rc}). /var/log/syslog veya logs/install_*.log dosyalarını kontrol edin."
                 fi
             fi
             ok "Ollama başarıyla kuruldu."
