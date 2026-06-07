@@ -3308,8 +3308,32 @@ ensure_prerequisites() {
                 sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
             fi
 
-            sh "$ollama_install_script"
+            local sudo_keepalive_pid=""
+            (
+                while true; do
+                    sudo -n -v 2>/dev/null || exit 0
+                    sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"
+                done
+            ) &
+            sudo_keepalive_pid=$!
+            info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
+
+            local ollama_install_rc=0
+            sh "$ollama_install_script" || ollama_install_rc=$?
+
+            if [[ -n "$sudo_keepalive_pid" ]]; then
+                kill "$sudo_keepalive_pid" 2>/dev/null || true
+                wait "$sudo_keepalive_pid" 2>/dev/null || true
+            fi
             [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
+
+            if [[ "$ollama_install_rc" -ne 0 ]]; then
+                if ollama -v &>/dev/null; then
+                    warn "Ollama kurulum betiği rc=${ollama_install_rc} ile döndü; ancak ollama CLI doğrulandı. Kurulum tamamlanmış kabul ediliyor."
+                else
+                    fail "Ollama kurulum betiği başarısız oldu (rc=${ollama_install_rc})."
+                fi
+            fi
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"

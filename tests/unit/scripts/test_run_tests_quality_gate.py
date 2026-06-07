@@ -837,6 +837,23 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/phases' in bundler
 
 
+def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_install_rc() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    ollama_block = script[
+        script.index("# Ollama (varsayılan AI provider)") : script.index(
+            "# Servisin anlık olarak yanıt verip vermediğini kontrol et"
+        )
+    ]
+
+    assert 'sudo -n -v 2>/dev/null || exit 0' in ollama_block
+    assert 'sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"' in ollama_block
+    assert 'kill "$sudo_keepalive_pid" 2>/dev/null || true' in ollama_block
+    assert 'sh "$ollama_install_script" || ollama_install_rc=$?' in ollama_block
+    assert 'if ollama -v &>/dev/null; then' in ollama_block
+    assert "Kurulum tamamlanmış kabul ediliyor" in ollama_block
+    assert 'fail "Ollama kurulum betiği başarısız oldu (rc=${ollama_install_rc})."' in ollama_block
+
+
 def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
