@@ -61,6 +61,9 @@ sidar_is_deterministic_failure_signal() {
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
+        *"sudo: timed out"*|*"ollama_install"*)
+            return 1
+            ;;
         *"assert"*|*"smoke test failed"*|*"pytest"*|*"unit test"*|*"test failed"*|*"deterministic"*)
             return 0
             ;;

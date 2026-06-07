@@ -879,6 +879,11 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
                 sidar_retry_budget_for_failure 03_runtime 'network fetch' 'temporary failure'
             sidar_retry_budget_for_failure 03_runtime 'pytest' 'deterministic failure'
             sidar_retry_budget_for_failure 04_workspace 'unknown' 'unknown'
+            if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' 'sudo: timed out deterministic'; then
+                echo deterministic
+            else
+                echo transient
+            fi
             """,
         ],
         check=True,
@@ -887,7 +892,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
         text=True,
     )
 
-    assert result.stdout.splitlines() == ["3", "2", "1", "1"]
+    assert result.stdout.splitlines() == ["3", "2", "1", "1", "transient"]
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
@@ -921,6 +926,7 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "SIDAR_INSTALL_AUTO_HEAL" in remediation_utils
     assert "SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS" in remediation_utils
     assert "02_repo|03_runtime|05_frontend|06_models|06_services" in remediation_utils
+    assert '*"sudo: timed out"*|*"ollama_install"*)' in remediation_utils
     assert "sidar_phase_remediation_strategy()" in remediation_utils
     assert '03_runtime)' in remediation_utils
     assert 'ollama-installed-despite-rc' in remediation_utils
