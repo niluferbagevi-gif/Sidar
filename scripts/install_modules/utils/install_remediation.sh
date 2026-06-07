@@ -61,6 +61,9 @@ sidar_is_deterministic_failure_signal() {
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
+        *"sudo: timed out"*|*"ollama_install"*)
+            return 1
+            ;;
         *"assert"*|*"smoke test failed"*|*"pytest"*|*"unit test"*|*"test failed"*|*"deterministic"*)
             return 0
             ;;
@@ -83,7 +86,7 @@ sidar_retry_budget_for_failure() {
     fi
 
     case "$phase" in
-        02_repo|05_frontend|06_models|06_services)
+        02_repo|03_runtime|05_frontend|06_models|06_services)
             echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
             ;;
         *)
@@ -276,6 +279,16 @@ sidar_phase_remediation_strategy() {
     local reason="$3"
 
     case "$phase" in
+        03_runtime)
+            if [[ "$failed_cmd $reason" == *"ollama_install"* || "$failed_cmd $reason" == *"sudo: timed out"* ]]; then
+                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
+                    sidar_write_remediation_report "$phase" "ollama-installed-despite-rc" "treat-as-success;resume-phase"
+                    return 0
+                fi
+                sidar_write_remediation_report "$phase" "ollama-install-retry" "rerun-install-script;refresh-sudo"
+                return 0
+            fi
+            ;;
         04_workspace)
             if [[ "$failed_cmd" == *"rm -rf"* && "$reason" == *"Permission denied"* ]]; then
                 sidar_remediate_root_owned_venv
