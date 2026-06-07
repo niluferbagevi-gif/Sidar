@@ -83,7 +83,7 @@ sidar_retry_budget_for_failure() {
     fi
 
     case "$phase" in
-        02_repo|05_frontend|06_models|06_services)
+        02_repo|03_runtime|05_frontend|06_models|06_services)
             echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
             ;;
         *)
