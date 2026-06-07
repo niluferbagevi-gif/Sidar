@@ -276,6 +276,16 @@ sidar_phase_remediation_strategy() {
     local reason="$3"
 
     case "$phase" in
+        03_runtime)
+            if [[ "$failed_cmd $reason" == *"ollama_install"* || "$failed_cmd $reason" == *"sudo: timed out"* ]]; then
+                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
+                    sidar_write_remediation_report "$phase" "ollama-installed-despite-rc" "treat-as-success;resume-phase"
+                    return 0
+                fi
+                sidar_write_remediation_report "$phase" "ollama-install-retry" "rerun-install-script;refresh-sudo"
+                return 0
+            fi
+            ;;
         04_workspace)
             if [[ "$failed_cmd" == *"rm -rf"* && "$reason" == *"Permission denied"* ]]; then
                 sidar_remediate_root_owned_venv

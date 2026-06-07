@@ -897,11 +897,80 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "SIDAR_INSTALL_AUTO_HEAL" in remediation_utils
     assert "SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS" in remediation_utils
     assert "sidar_phase_remediation_strategy()" in remediation_utils
+    assert '03_runtime)' in remediation_utils
+    assert 'ollama-installed-despite-rc' in remediation_utils
+    assert 'treat-as-success;resume-phase' in remediation_utils
+    assert 'ollama-install-retry' in remediation_utils
+    assert 'rerun-install-script;refresh-sudo' in remediation_utils
     assert "sidar_resume_after_remediation()" in remediation_utils
     assert "uv.lock" in remediation_utils
     assert "uv lock" in remediation_utils
     assert "exec env" in remediation_utils
     assert "artifacts/install/remediation" in remediation_utils
+
+
+def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ollama = bin_dir / "ollama"
+    ollama.write_text("#!/usr/bin/env bash\necho 'ollama version 0.0-test'\n", encoding="utf-8")
+    ollama.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            PATH="$2:$PATH"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path),
+            str(bin_dir),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "reason=ollama-installed-despite-rc" in result.stdout
+    assert "action=treat-as-success;resume-phase" in result.stdout
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            ollama() { return 1; }
+            export -f ollama
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path / "retry"),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "reason=ollama-install-retry" in result.stdout
+    assert "action=rerun-install-script;refresh-sudo" in result.stdout
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:
