@@ -277,7 +277,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
 ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
-c970e3091d2cd96c9c8530674f14fd0421015f091c824c9ce404a1540e8b855b  scripts/install_modules/utils/install_remediation.sh
+5981bb2bed51643da6c090fb670189f02fdf1b46a99d2168eafba28ef07496fe  scripts/install_modules/utils/install_remediation.sh
 a2c667b301c564e3ec8271fb30f6c8f94848e9bcfb98b3e1177b6f84a16d3e97  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
@@ -3308,8 +3308,36 @@ ensure_prerequisites() {
                 sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
             fi
 
-            sh "$ollama_install_script"
+            local sudo_keepalive_pid=""
+            (
+                while true; do
+                    sudo -n -v 2>/dev/null || exit 0
+                    sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"
+                done
+            ) &
+            sudo_keepalive_pid=$!
+            info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
+
+            local _ollama_rc=0
+            if sh "$ollama_install_script"; then
+                _ollama_rc=0
+            else
+                _ollama_rc=$?
+            fi
+
+            if [[ -n "$sudo_keepalive_pid" ]]; then
+                kill "$sudo_keepalive_pid" 2>/dev/null || true
+                wait "$sudo_keepalive_pid" 2>/dev/null || true
+            fi
             [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
+
+            if (( _ollama_rc != 0 )); then
+                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
+                    warn "Ollama install.sh rc=${_ollama_rc} döndü (büyük olasılıkla sudo timestamp expire); ancak 'ollama -v' yanıt veriyor, kurulum tamamlanmış kabul ediliyor."
+                else
+                    fail "Ollama kurulumu başarısız (rc=${_ollama_rc}). /var/log/syslog veya logs/install_*.log dosyalarını kontrol edin."
+                fi
+            fi
             ok "Ollama başarıyla kuruldu."
         else
             warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
