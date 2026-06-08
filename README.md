@@ -379,8 +379,41 @@ ollama pull qwen2.5-coder:7b
 OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 ```
 
-> Güvenlik notu: `install_sidar.sh` varsayılan olarak uzaktan kurulum scripti çalıştırmaz.
-> Otomatik kurulum gerekiyorsa bilinçli opt-in ile çalıştırın: `ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh`.
+> Güvenlik notu: `install_sidar.sh`, Ollama veya uv eksik olduğunda resmi uzak
+> kurulum betiklerini indirmeden önce SHA-256 değeri ister. Bu değerler upstream
+> içerik değişebildiği için repoda sabit varsayılan olarak tutulmaz; operatör
+> betiği inceleyip aynı içerikten hash üretmeli veya risk kabulüyle doğrulamayı
+> açıkça devre dışı bırakmalıdır.
+
+#### Ollama/uv uzak betik hash doğrulaması
+
+Yeni Ubuntu/WSL kurulumunda sistemde `ollama` veya `uv` yoksa, doğrulanmamış uzak
+betik çalıştırmayı önlemek için aşağıdaki değişkenlerden ilgili olanı kurulumdan
+önce ayarlayın. Bu akış TOFU (trust-on-first-use) hazırlığıdır: indirilen betiği
+önce inceleyin, sonra hash'i aynı dosyadan üretin.
+
+```bash
+tmp_uv=$(mktemp)
+curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  https://astral.sh/uv/install.sh -o "$tmp_uv"
+less "$tmp_uv"
+export UV_INSTALL_SHA256=$(sha256sum "$tmp_uv" | awk '{print $1}')
+rm -f "$tmp_uv"
+
+tmp_ollama=$(mktemp)
+curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  https://ollama.com/install.sh -o "$tmp_ollama"
+less "$tmp_ollama"
+export OLLAMA_INSTALL_SHA256=$(sha256sum "$tmp_ollama" | awk '{print $1}')
+rm -f "$tmp_ollama"
+
+./install_sidar.sh
+```
+
+Doğrulamayı bilinçli olarak atlamak gerekiyorsa yalnız geçici ve izole ortamlarda
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh` kullanılabilir. Offline veya
+kurumsal dağıtımlarda tercih edilen yol, `offline_packages/manifest.json` içindeki
+SHA-256 doğrulamasına bağlı bundle akışıdır.
 
 
 ### Paket Varlıkları, Offline Bundle ve Release Kalite Kapıları
@@ -469,8 +502,12 @@ chmod +x install_sidar.sh
 # etkileşim istemeden test-ready kurulum:
 ./install_sidar.sh --ci
 
+# Uzak uv/Ollama kurulum betikleri gerekiyorsa önce SHA-256 değişkenlerini
+# hazırlayın (yukarıdaki "Ollama/uv uzak betik hash doğrulaması" bölümüne bakın).
+./install_sidar.sh
+
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
-ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
+ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
 ```
 
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya

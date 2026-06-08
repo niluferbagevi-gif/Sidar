@@ -898,6 +898,23 @@ verify_offline_bundle_manifest() {
     ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
 }
 
+remote_script_checksum_hint() {
+    local script_url="$1"
+    local script_label="$2"
+    local checksum_var="${script_label^^}_SHA256"
+
+    cat <<EOF
+${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
+Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):
+  tmp=\$(mktemp)
+  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o "\$tmp"
+  less "\$tmp"
+  export ${checksum_var}=\$(sha256sum "\$tmp" | awk '{print \$1}')
+  rm -f "\$tmp"
+Alternatif: risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
+EOF
+}
+
 download_verified_script() {
     local script_url="$1"
     local expected_sha="$2"
@@ -922,8 +939,10 @@ download_verified_script() {
 
     if [[ -z "$expected_sha" ]]; then
         if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+            local checksum_hint
+            checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
             rm -f "$script_file"
-            fail "${script_label} checksum değeri tanımlı değil. ${script_label^^}_SHA256 değişkenini ayarlayın veya ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+            fail "$checksum_hint"
         fi
         warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
     elif [[ "$actual_sha" != "$expected_sha" ]]; then

@@ -1052,6 +1052,26 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "tekrar menü göstermeden" in launch_body
 
 
+def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    docs = Path("README.md").read_text(encoding="utf-8")
+    modular_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "remote_script_checksum_hint()" in script
+    assert "Supply-chain doğrulamasını korumak" in script
+    assert r'less "\$tmp"' in script
+    assert r"export ${checksum_var}=\$(sha256sum" in script
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1" in script
+    assert "UV_INSTALL_SHA256" in docs
+    assert "OLLAMA_INSTALL_SHA256" in docs
+    assert "https://astral.sh/uv/install.sh" in docs
+    assert "https://ollama.com/install.sh" in docs
+    assert "UV_INSTALL_SHA256" in modular_note
+    assert "OLLAMA_INSTALL_SHA256" in modular_note
+
+
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")

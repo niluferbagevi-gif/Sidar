@@ -69,6 +69,39 @@ Böylece hibrit dağıtım korunur: çevrimiçi standart kullanıcılar dinamik 
 indiren kök betiği kullanır; kurumsal/offline kullanıcılar ise modül indirme ihtiyacı
 olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
 
+## Uzak kurulum betikleri ve SHA-256 sözleşmesi
+
+`install_sidar.sh`, eksik `uv` veya `ollama` için resmi uzak kurulum betiklerini
+çalıştırmadan önce `UV_INSTALL_SHA256` ve `OLLAMA_INSTALL_SHA256` değişkenlerini
+kontrol eder. Bu değişkenler boşsa ve `ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça
+verilmemişse kurulum fail-fast durur. Amaç, `https://astral.sh/uv/install.sh` veya
+`https://ollama.com/install.sh` üzerinde upstream içerik değişimi/supply-chain riski
+oluştuğunda sessizce doğrulanmamış betik çalıştırmamaktır.
+
+Operatör yeni bir WSL/Ubuntu makinede önce betiği indirip incelemeli, sonra aynı
+dosyadan SHA-256 üretip export etmelidir:
+
+```bash
+tmp_uv=$(mktemp)
+curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  https://astral.sh/uv/install.sh -o "$tmp_uv"
+less "$tmp_uv"
+export UV_INSTALL_SHA256=$(sha256sum "$tmp_uv" | awk '{print $1}')
+rm -f "$tmp_uv"
+
+tmp_ollama=$(mktemp)
+curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  https://ollama.com/install.sh -o "$tmp_ollama"
+less "$tmp_ollama"
+export OLLAMA_INSTALL_SHA256=$(sha256sum "$tmp_ollama" | awk '{print $1}')
+rm -f "$tmp_ollama"
+```
+
+Hash değerlerini repoya kalıcı varsayılan olarak eklemek, upstream betikler haber
+vermeden değiştiğinde yeni kurulumları yine kıracağı için bilinçli release/pin
+kararı gerektirir. Air-gapped kurulumlarda tercih edilen yol, uzak betik yerine
+`offline_packages/manifest.json` tarafından doğrulanan offline bundle kullanmaktır.
+
 ## WSL2 Docker uyumluluğu
 
 WSL2 ortamında Docker tabanlı akışların sağlıklı çalışması için Docker Desktop içinde
