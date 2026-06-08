@@ -24,6 +24,7 @@ from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_gpu_detect import normalize_gpu_memory_fractions
 from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
+from core.config_secrets import is_nonempty_secret
 from sidar_version import PRODUCT_VERSION
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
@@ -403,16 +404,6 @@ _PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 def normalize_ai_provider(provider: str | None) -> str:
     """Normalize configured AI provider names for consistent validation and routing."""
     return (provider or "ollama").strip().lower() or "ollama"
-
-
-def is_nonempty_secret(value: str | None) -> bool:
-    """Return whether a secret-like config value is present and not obviously malformed."""
-    if value is None:
-        return False
-    stripped = value.strip()
-    if not stripped:
-        return False
-    return not any(char in stripped for char in ("\n", "\r", "\x00"))
 
 
 def is_valid_http_url(value: str | None) -> bool:

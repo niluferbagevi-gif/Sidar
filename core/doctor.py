@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
 
+from core.config_secrets import DEFAULT_WEAK_SECRET_VALUES, is_weak_secret
 from core.rag.readiness import build_readiness_report
 from sidar_assets.paths import migrations_path
 
@@ -45,22 +46,7 @@ class DoctorCheck:
         }
 
 
-WEAK_SECRET_VALUES = {
-    "",
-    "sidar",
-    "admin",
-    "password",
-    "changeme",
-    "change_me",
-    "secret",
-    "default",
-    "test",
-    "example",
-    "postgres",
-    "root",
-    "123456",
-    "12345678",
-}
+WEAK_SECRET_VALUES = set(DEFAULT_WEAK_SECRET_VALUES)
 
 
 def _run_command(cmd: list[str], *, timeout: int = 20) -> tuple[int, str]:
@@ -89,8 +75,7 @@ def _status_from_bool(ok: bool, warn: bool = False) -> str:
 
 
 def _is_weak_secret(value: str | None) -> bool:
-    normalized = (value or "").strip()
-    return normalized.lower() in WEAK_SECRET_VALUES or len(normalized) < 24
+    return is_weak_secret(value, known_weak_values=WEAK_SECRET_VALUES)
 
 
 def check_uv() -> DoctorCheck:
