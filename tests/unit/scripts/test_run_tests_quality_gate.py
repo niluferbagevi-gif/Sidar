@@ -837,6 +837,25 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/phases' in bundler
 
 
+def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_install_rc() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    ollama_block = script[
+        script.index("# Ollama (varsayılan AI provider)") : script.index(
+            "# Servisin anlık olarak yanıt verip vermediğini kontrol et"
+        )
+    ]
+
+    assert 'sudo -n -v 2>/dev/null || exit 0' in ollama_block
+    assert 'sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"' in ollama_block
+    assert 'kill "$sudo_keepalive_pid" 2>/dev/null || true' in ollama_block
+    assert 'if sh "$ollama_install_script"; then' in ollama_block
+    assert '_ollama_rc=$?' in ollama_block
+    assert 'if (( _ollama_rc != 0 )); then' in ollama_block
+    assert "command -v ollama &>/dev/null && ollama -v &>/dev/null" in ollama_block
+    assert "büyük olasılıkla sudo timestamp expire" in ollama_block
+    assert "/var/log/syslog veya logs/install_*.log" in ollama_block
+
+
 def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
@@ -845,6 +864,35 @@ def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
     phase_runner_pos = script.index('sidar_run_install_phase "01_context"')
 
     assert strict_mode_pos < default_pos < phase_runner_pos
+
+
+def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_retry_budget_for_failure 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT=2 \
+                sidar_retry_budget_for_failure 03_runtime 'network fetch' 'temporary failure'
+            sidar_retry_budget_for_failure 03_runtime 'pytest' 'deterministic failure'
+            sidar_retry_budget_for_failure 04_workspace 'unknown' 'unknown'
+            if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' 'sudo: timed out deterministic'; then
+                echo deterministic
+            else
+                echo transient
+            fi
+            """,
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == ["3", "2", "1", "1", "transient"]
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
@@ -877,12 +925,83 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
 
     assert "SIDAR_INSTALL_AUTO_HEAL" in remediation_utils
     assert "SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS" in remediation_utils
+    assert "02_repo|03_runtime|05_frontend|06_models|06_services" in remediation_utils
+    assert '*"sudo: timed out"*|*"ollama_install"*)' in remediation_utils
     assert "sidar_phase_remediation_strategy()" in remediation_utils
+    assert '03_runtime)' in remediation_utils
+    assert 'ollama-installed-despite-rc' in remediation_utils
+    assert 'treat-as-success;resume-phase' in remediation_utils
+    assert 'ollama-install-retry' in remediation_utils
+    assert 'rerun-install-script;refresh-sudo' in remediation_utils
     assert "sidar_resume_after_remediation()" in remediation_utils
     assert "uv.lock" in remediation_utils
     assert "uv lock" in remediation_utils
     assert "exec env" in remediation_utils
     assert "artifacts/install/remediation" in remediation_utils
+
+
+def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    ollama = bin_dir / "ollama"
+    ollama.write_text("#!/usr/bin/env bash\necho 'ollama version 0.0-test'\n", encoding="utf-8")
+    ollama.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            PATH="$2:$PATH"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path),
+            str(bin_dir),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "reason=ollama-installed-despite-rc" in result.stdout
+    assert "action=treat-as-success;resume-phase" in result.stdout
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            ollama() { return 1; }
+            export -f ollama
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path / "retry"),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "reason=ollama-install-retry" in result.stdout
+    assert "action=rerun-install-script;refresh-sudo" in result.stdout
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:
