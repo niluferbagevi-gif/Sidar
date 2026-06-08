@@ -78,11 +78,15 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creation() -> None:
+def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creation() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
+        'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
+    )
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
@@ -1370,19 +1374,23 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_benchmark_baseline_promotion_stays_optional_in_generic_ci_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
+    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
-    assert "yalnız aynı sabit runner profilinde" in notes
-    assert "commitlenmiş baseline olmaması temiz clone kurulumunu bloke etmemelidir" in notes
+    assert "Ana CI hattı artık repodaki" in notes
+    assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
+    assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     gpu_benchmark = Path("tests/performance/test_gpu_benchmark.py").read_text(encoding="utf-8")
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
 
@@ -1391,7 +1399,11 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
     assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
+    assert '10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS' in gpu_benchmark
+    assert 'min_value=10' in gpu_benchmark
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)' in gpu_benchmark
     assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
 

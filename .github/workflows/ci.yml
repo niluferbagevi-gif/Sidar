@@ -224,6 +224,9 @@ jobs:
           BENCHMARK_TREND_COMPARE: "1"
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
           BENCHMARK_TREND_WINDOW: "15"
+          BENCHMARK_ENFORCE_COMPARE: "1"
+          BENCHMARK_COMPARE_REQUIRED: "1"
+          BENCHMARK_COMPARE_FAIL: "mean:10%"
           BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |
           set -o pipefail

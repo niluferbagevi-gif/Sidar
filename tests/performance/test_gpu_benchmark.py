@@ -67,8 +67,8 @@ _CONCURRENT_WARMUP_ROUNDS: int = _gpu_smoke._env_int(
 )
 _CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
     "GPU_BENCH_CONCURRENT_ROUNDS",
-    3 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
-    min_value=1,
+    10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
+    min_value=10,
     max_value=50,
 )
 
@@ -364,7 +364,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
       GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 8)
-      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 3, full: 20)
+      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()

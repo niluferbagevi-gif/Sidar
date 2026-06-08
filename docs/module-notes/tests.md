@@ -112,12 +112,12 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
   artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
   jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.
-- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Repo içinde incelenmiş bir
-  `*_baseline.json` kaydı olsa bile genel GitHub-hosted CI hattında koşulsuz
-  `BENCHMARK_COMPARE_REQUIRED=1` kullanmayın: farklı CPU/OS profilleri anlamlı olmayan karşılaştırma
-  ve fail-closed uyarı üretebilir. Bu zorunluluğu yalnız aynı sabit runner profilinde en az bir baseline
-  kaydedildikten sonra açın. Yerel ilk kurulum/bootstrap akışlarında değer `0` kalmalıdır; repoda
-  commitlenmiş baseline olmaması temiz clone kurulumunu bloke etmemelidir.
+- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
+  incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
+  `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`
+  değerleriyle baseline eksikliği veya `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk
+  kurulum/bootstrap akışlarında değer `0` kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir
+  ancak CI'a girecek baseline değişikliği kontrollü review'dan geçmelidir.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
   kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
@@ -164,7 +164,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `test_gpu_vram_peak_under_load`
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
-  `GPU_BENCH_CONCURRENT_ROUNDS=3` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
+  `GPU_BENCH_CONCURRENT_ROUNDS=10` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
   kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`
