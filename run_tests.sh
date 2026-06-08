@@ -249,15 +249,42 @@ cleanup_zone_identifier_artifacts || exit 1
 
 run_precommit_autofix || exit 1
 
-DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY'
+COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-.coveragerc}"
+COVERAGE_RATCHET_MIN_EXISTING_GATE="${COVERAGE_RATCHET_MIN_EXISTING_GATE:-5}"
+
+validate_coverage_ratchet_state() {
+  if [ ! -f "${COVERAGE_RATCHET_STATE_FILE}" ]; then
+    echo "❌ Coverage ratchet state dosyası bulunamadı: ${COVERAGE_RATCHET_STATE_FILE}" >&2
+    echo "   Bu dosya repo'ya commit edilmeli ve .gitignore kapsamına alınmamalıdır." >&2
+    echo "   Baseline kaybı, coverage gate'in %0'dan yeniden başlamasına neden olabilir." >&2
+    return 1
+  fi
+
+  python - "${COVERAGE_RATCHET_STATE_FILE}" "${COVERAGE_RATCHET_MIN_EXISTING_GATE}" <<'PY_RATCHET_STATE'
 from configparser import ConfigParser
 from pathlib import Path
+import sys
 
+state_path = Path(sys.argv[1])
+min_gate = float(sys.argv[2])
 cfg = ConfigParser()
-cfg.read(Path(".coveragerc"))
-print(cfg.get("report", "fail_under", fallback="90"))
-PY
-)"
+cfg.read(state_path)
+if not cfg.has_section("report") or not cfg.has_option("report", "fail_under"):
+    raise SystemExit(f"{state_path} içinde [report] fail_under bulunamadı")
+try:
+    gate = float(cfg.get("report", "fail_under"))
+except ValueError as exc:
+    raise SystemExit(f"{state_path} içindeki fail_under sayısal değil") from exc
+if gate < min_gate:
+    raise SystemExit(
+        f"{state_path} fail_under={gate:g}; beklenen minimum {min_gate:g}. "
+        "Coverage ratchet baseline sıfırlanmış olabilir."
+    )
+print(f"{gate:g}")
+PY_RATCHET_STATE
+}
+
+DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
 IS_CI_ENV=0
@@ -1291,17 +1318,18 @@ update_progressive_coverage_gate() {
 
   echo "📈 Coverage ratcheting kontrolü çalıştırılıyor (step=${COVERAGE_RATCHET_STEP:-1}, min=${COVERAGE_RATCHET_MIN_GATE:-5}, max=${COVERAGE_RATCHET_MAX_GATE:-100})..."
   if uv run python scripts/coverage_ratchet.py \
-    --coveragerc .coveragerc \
+    --coveragerc "${COVERAGE_RATCHET_STATE_FILE}" \
     --coverage-json coverage.json \
     --step "${COVERAGE_RATCHET_STEP:-1}" \
     --min-gate "${COVERAGE_RATCHET_MIN_GATE:-5}" \
     --max-gate "${COVERAGE_RATCHET_MAX_GATE:-100}"; then
-    DEFAULT_COVERAGE_FAIL_UNDER="$(python - <<'PY_RATCHET_GATE'
+    DEFAULT_COVERAGE_FAIL_UNDER="$(python - "${COVERAGE_RATCHET_STATE_FILE}" <<'PY_RATCHET_GATE'
 from configparser import ConfigParser
 from pathlib import Path
+import sys
 
 cfg = ConfigParser()
-cfg.read(Path(".coveragerc"))
+cfg.read(Path(sys.argv[1]))
 print(cfg.get("report", "fail_under", fallback="5"))
 PY_RATCHET_GATE
 )"

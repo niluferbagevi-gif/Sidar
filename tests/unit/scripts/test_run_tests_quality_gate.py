@@ -17,6 +17,25 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
+    script = _script()
+    coveragerc = Path(".coveragerc")
+
+    assert coveragerc.exists()
+    content = coveragerc.read_text(encoding="utf-8")
+    assert "[report]" in content
+    assert "fail_under = 100" in content
+    assert not any(
+        line.strip() == ".coveragerc"
+        for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
+    )
+    assert 'COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-.coveragerc}"' in script
+    assert "validate_coverage_ratchet_state()" in script
+    assert 'if [ ! -f "${COVERAGE_RATCHET_STATE_FILE}" ]; then' in script
+    assert "Coverage ratchet state dosyası bulunamadı" in script
+    assert "Coverage ratchet baseline sıfırlanmış olabilir" in script
+    assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
