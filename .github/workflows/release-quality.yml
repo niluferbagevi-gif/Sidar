@@ -59,6 +59,7 @@ jobs:
       - name: Build React dist assets
         run: |
           npm --prefix web_ui_react ci
+          npm --prefix web_ui_react run audit:high
           npm --prefix web_ui_react run build
           test -d web_ui_react/dist
       - uses: astral-sh/setup-uv@v4

@@ -162,6 +162,13 @@ jobs:
           npm ci
           npm run lint
 
+      - name: Run frontend dependency audit gate
+        env:
+          FRONTEND_NPM_AUDIT_LEVEL: high
+        run: |
+          cd web_ui_react
+          npm audit --audit-level="${FRONTEND_NPM_AUDIT_LEVEL}"
+
       - name: Install Playwright Chromium for frontend smoke tests
         run: |
           cd web_ui_react
