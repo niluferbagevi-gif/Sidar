@@ -17,6 +17,14 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def test_mypy_is_strict_python_311() -> None:
+    config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    mypy = config["tool"]["mypy"]
+
+    assert mypy["python_version"] == "3.11"
+    assert mypy["strict"] is True
+
+
 def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     script = _script()
     coveragerc = Path(".coveragerc")
@@ -1438,6 +1446,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
+    assert 'RUN_FRONTEND_E2E: "1"' in ci
+    assert 'FRONTEND_E2E_ENFORCE_RESULT: "1"' in ci
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
     assert 'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"' in script

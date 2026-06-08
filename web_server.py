@@ -71,7 +71,7 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
-from config import Config
+from config import Config, get_config
 from core.ci_remediation import build_ci_failure_context
 from core.db import (
     ContentAssetRecord,
@@ -571,7 +571,7 @@ set_hitl_broadcast_hook(_hitl_broadcast)
 #  UYGULAMA BAŞLATMA
 # ─────────────────────────────────────────────
 
-cfg = Config()
+cfg = get_config()
 Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
