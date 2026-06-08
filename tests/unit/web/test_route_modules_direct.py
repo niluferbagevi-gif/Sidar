@@ -561,3 +561,39 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     response = TestClient(app).get("/metrics", headers={"Accept": "text/plain"})
     assert response.status_code == 200
     assert response.json()["version"] == "fallback"
+
+
+def test_frontend_static_router_injects_config_without_head_tag(tmp_path: Path) -> None:
+    from web.routes.static import build_frontend_router
+
+    (tmp_path / "index.html").write_text("<body>SPA</body>", encoding="utf-8")
+    router = build_frontend_router(web_dir=lambda: tmp_path, grafana_url=lambda: "http://grafana")
+    app = FastAPI()
+    app.include_router(router)
+
+    res = TestClient(app).get("/")
+
+    assert res.status_code == 200
+    assert res.text.startswith("<script>window.__SIDAR_CONFIG__")
+    assert "http://grafana" in res.text
+    assert "<body>SPA</body>" in res.text
+
+
+def test_frontend_static_router_legacy_exports_cover_asset_paths(tmp_path: Path) -> None:
+    from web.routes.static import build_frontend_router
+
+    router = build_frontend_router(web_dir=lambda: tmp_path, grafana_url=lambda: "http://grafana")
+
+    assert {"favicon", "serve_vendor", "index"}.issubset(router.legacy_exports)
+
+
+def test_configure_loopback_cors_adds_middleware() -> None:
+    from web.middleware.cors import LOOPBACK_ORIGIN_REGEX, configure_loopback_cors
+
+    app = FastAPI()
+    configure_loopback_cors(app)
+
+    assert app.user_middleware
+    options = app.user_middleware[0].kwargs
+    assert options["allow_origin_regex"] == LOOPBACK_ORIGIN_REGEX
+    assert options["allow_methods"] == ["GET", "POST", "DELETE"]

@@ -10513,3 +10513,10 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
     assert calls["unsubscribe"] == ["sub-room-cleanup"]
     assert calls["reset"] == ["ctx:u1"]
     assert room.active_task is None
+
+
+def test_web_server_uses_cached_config_singleton() -> None:
+    import config as config_module
+    import web_server
+
+    assert web_server.cfg is config_module.get_config()

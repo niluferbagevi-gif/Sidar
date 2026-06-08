@@ -54,8 +54,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -72,7 +71,7 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
-from config import Config
+from config import Config, get_config
 from core.ci_remediation import build_ci_failure_context
 from core.db import (
     ContentAssetRecord,
@@ -93,6 +92,7 @@ from core.utils.network_validation import (
 )
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
+from web.middleware.cors import configure_loopback_cors
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.health import build_health_router
@@ -101,6 +101,7 @@ from web.routes.metrics import build_metrics_router
 from web.routes.orchestration import build_orchestration_router
 from web.routes.project_ops import build_project_ops_router
 from web.routes.rag import build_rag_router
+from web.routes.static import build_frontend_router
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
@@ -570,7 +571,7 @@ set_hitl_broadcast_hook(_hitl_broadcast)
 #  UYGULAMA BAŞLATMA
 # ─────────────────────────────────────────────
 
-cfg = Config()
+cfg = get_config()
 Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
@@ -2660,12 +2661,7 @@ async def _close_redis_client() -> None:
 
 
 # CORS: localhost/loopback kökenlerine porttan bağımsız izin ver.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type"],
-)
+configure_loopback_cors(app)
 
 # React SPA yalnızca web_ui_react/dist üzerinden sunulur.
 REACT_DIST_DIR = web_dist_path()
@@ -2695,44 +2691,6 @@ _mount_frontend_static_routes(app, WEB_DIR)
 # ─────────────────────────────────────────────
 #  ROTALAR
 # ─────────────────────────────────────────────
-
-
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon() -> Any:
-    """Tarayıcının favicon isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
-    return Response(status_code=204)
-
-
-@app.get("/vendor/{file_path:path}", include_in_schema=False)
-async def serve_vendor(file_path: str) -> Any:
-    """React dist altındaki vendor kütüphanelerini servis eder."""
-    vendor_dir = (WEB_DIR / "vendor").resolve()
-    safe_path = (vendor_dir / file_path).resolve()
-    if not str(safe_path).startswith(str(vendor_dir)):
-        return Response(status_code=403)
-    if not safe_path.exists():
-        return Response(status_code=404)
-    return FileResponse(safe_path)
-
-
-@app.get("/", response_class=HTMLResponse)
-async def index() -> Any:
-    """Ana sayfa — React SPA build çıktısı."""
-    html_file = WEB_DIR / "index.html"
-    if not html_file.exists():
-        return HTMLResponse(
-            "<h1>Hata: React dist bulunamadı. web_ui_react içinde npm run build çalıştırın.</h1>",
-            status_code=500,
-        )
-    grafana_url = str(
-        getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000"
-    )
-    config_script = (
-        f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url)}}};</script>'
-    )
-    html = html_file.read_text(encoding="utf-8")
-    html = html.replace("</head>", f"{config_script}\n</head>", 1)
-    return HTMLResponse(html)
 
 
 async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
@@ -3672,6 +3630,15 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     return JSONResponse(health_data)
 
 
+
+frontend_router = build_frontend_router(
+    web_dir=lambda: WEB_DIR,
+    grafana_url=lambda: str(
+        getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000"
+    ),
+)
+app.include_router(frontend_router)
+
 health_router = build_health_router(
     lambda require_dependencies: _health_response(require_dependencies=require_dependencies)
 )
@@ -3772,6 +3739,7 @@ orchestration_router = build_orchestration_router(
 app.include_router(orchestration_router)
 
 for _router in (
+    frontend_router,
     health_router,
     agent_router,
     rag_router,
@@ -3785,6 +3753,9 @@ for _router in (
         globals()[_name] = _obj
 
 # Explicit legacy re-exports for static analyzers (ruff/mypy).
+favicon = frontend_router.legacy_exports["favicon"]
+serve_vendor = frontend_router.legacy_exports["serve_vendor"]
+index = frontend_router.legacy_exports["index"]
 register_user = auth_admin_router.legacy_exports["register_user"]
 login_user = auth_admin_router.legacy_exports["login_user"]
 auth_me = auth_admin_router.legacy_exports["auth_me"]

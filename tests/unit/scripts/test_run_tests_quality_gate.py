@@ -17,6 +17,33 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def test_mypy_is_strict_python_311() -> None:
+    config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    mypy = config["tool"]["mypy"]
+
+    assert mypy["python_version"] == "3.11"
+    assert mypy["strict"] is True
+
+
+def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
+    script = _script()
+    coveragerc = Path(".coveragerc")
+
+    assert coveragerc.exists()
+    content = coveragerc.read_text(encoding="utf-8")
+    assert "[report]" in content
+    assert "fail_under = 100" in content
+    assert not any(
+        line.strip() == ".coveragerc"
+        for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
+    )
+    assert 'COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-.coveragerc}"' in script
+    assert "validate_coverage_ratchet_state()" in script
+    assert 'if [ ! -f "${COVERAGE_RATCHET_STATE_FILE}" ]; then' in script
+    assert "Coverage ratchet state dosyası bulunamadı" in script
+    assert "Coverage ratchet baseline sıfırlanmış olabilir" in script
+    assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
@@ -78,11 +105,15 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enables_benchmark_compare_but_allows_first_run_baseline_creation() -> None:
+def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creation() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
     assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
+        'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
+    )
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
@@ -1212,11 +1243,18 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
 
 def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() -> None:
     script = _script()
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     preflight = script[
         script.index("prepare_docker_test_image()") : script.index("run_bats_shell_tests()")
     ]
 
     assert 'AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"' in script
+    assert 'AUTO_BUILD_DOCKER_TEST_IMAGE: "1"' in ci
+    assert 'DOCKER_TEST_IMAGE: "sidar:latest"' in ci
+    assert 'DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."' in ci
+    assert 'image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}' in compose
+    assert 'build:' in compose and 'context: .' in compose
     assert 'if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then' in preflight
     assert 'local test_image="${DOCKER_TEST_IMAGE:-sidar:latest}"' in preflight
     assert 'docker image inspect "${test_image}"' in preflight
@@ -1370,19 +1408,23 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_benchmark_baseline_promotion_stays_optional_in_generic_ci_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
+    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
-    assert "yalnız aynı sabit runner profilinde" in notes
-    assert "commitlenmiş baseline olmaması temiz clone kurulumunu bloke etmemelidir" in notes
+    assert "Ana CI hattı artık repodaki" in notes
+    assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
+    assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     gpu_benchmark = Path("tests/performance/test_gpu_benchmark.py").read_text(encoding="utf-8")
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
 
@@ -1391,7 +1433,11 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
     assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
+    assert '10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS' in gpu_benchmark
+    assert 'min_value=10' in gpu_benchmark
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)' in gpu_benchmark
     assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
 
@@ -1400,6 +1446,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
+    assert 'RUN_FRONTEND_E2E: "1"' in ci
+    assert 'FRONTEND_E2E_ENFORCE_RESULT: "1"' in ci
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
     assert 'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"' in script

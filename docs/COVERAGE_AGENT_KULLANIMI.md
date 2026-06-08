@@ -128,7 +128,9 @@ veya `coverage-campaign` bağlamında etiketlenmesini sağlar.
 
 `COVERAGE_RATCHET_STEP`, otonom coverage hedefi değildir; `run_tests.sh` sonunda
 `.coveragerc` içindeki günlük kalite kapısının kaç yüzde puanlık basamaklarla yukarı
-taşınacağını belirler. Hesaplama `scripts/coverage_ratchet.py` içindeki
+taşınacağını belirler. `.coveragerc` aynı zamanda ratchet state dosyasıdır; repo'da
+commitli olmalı ve eksik/sıfırlanmış gate durumunda `run_tests.sh` fail-closed davranmalıdır.
+Hesaplama `scripts/coverage_ratchet.py` içindeki
 `compute_next_gate(...)` fonksiyonunda ölçülen coverage'ı aşağıdaki formülle ulaşılan
 basamağa yuvarlar ve mevcut gate'i asla düşürmez:
 
