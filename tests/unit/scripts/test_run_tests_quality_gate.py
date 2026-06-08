@@ -1235,11 +1235,18 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
 
 def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() -> None:
     script = _script()
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     preflight = script[
         script.index("prepare_docker_test_image()") : script.index("run_bats_shell_tests()")
     ]
 
     assert 'AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"' in script
+    assert 'AUTO_BUILD_DOCKER_TEST_IMAGE: "1"' in ci
+    assert 'DOCKER_TEST_IMAGE: "sidar:latest"' in ci
+    assert 'DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."' in ci
+    assert 'image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}' in compose
+    assert 'build:' in compose and 'context: .' in compose
     assert 'if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then' in preflight
     assert 'local test_image="${DOCKER_TEST_IMAGE:-sidar:latest}"' in preflight
     assert 'docker image inspect "${test_image}"' in preflight
