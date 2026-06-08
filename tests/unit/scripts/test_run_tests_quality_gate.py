@@ -660,7 +660,10 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
     assert raw_script.startswith(b"\xef\xbb\xbf")
     script = raw_script.decode("utf-8-sig")
     assert '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()' in script
-    assert 'Write-Error "docker-desktop görünmüyor ve Docker daemon da yanıt vermiyor."' in script
+    # Verify the durable contract of the WSL-side socket validation instead of the
+    # exact user-facing sentence, which may evolve as diagnostics are clarified.
+    assert 'Write-Error "docker-desktop görünmüyor' in script
+    assert "WSL dağıtımı içinden Docker socket doğrulanamıyor" in script
 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
