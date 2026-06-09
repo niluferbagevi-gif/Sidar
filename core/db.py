@@ -420,6 +420,29 @@ class Database:
             getattr(self.cfg, "DATABASE_URL", "") or ""
         ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
         self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
+        # ── PostgreSQL bağlantı havuzu profilini cfg'den oku.
+        # Eski testler ve düz Config kullanımı bu alanları tanımlamayabilir;
+        # tutarlı varsayılanlarla geriye dönük uyumluluğu koruyoruz.
+        self.pool_min_size = max(1, int(getattr(self.cfg, "DB_POOL_MIN_SIZE", 1) or 1))
+        # SQLAlchemy stili ``max_overflow`` üzerine eklenen tampon; asyncpg
+        # max_size = pool_size + overflow olarak hesaplanır.
+        pool_overflow = max(0, int(getattr(self.cfg, "DB_POOL_MAX_OVERFLOW", 0) or 0))
+        self.pool_max_size = max(self.pool_min_size, self.pool_size + pool_overflow)
+        self.pool_max_queries = max(
+            1, int(getattr(self.cfg, "DB_POOL_MAX_QUERIES", 50_000) or 50_000)
+        )
+        self.pool_max_inactive_seconds = max(
+            0.0,
+            float(getattr(self.cfg, "DB_POOL_MAX_INACTIVE_SECONDS", 300.0) or 300.0),
+        )
+        self.pool_acquire_timeout_seconds = max(
+            0.0,
+            float(getattr(self.cfg, "DB_POOL_ACQUIRE_TIMEOUT_SECONDS", 10.0) or 10.0),
+        )
+        self.pool_command_timeout_seconds = max(
+            0.0,
+            float(getattr(self.cfg, "DB_POOL_COMMAND_TIMEOUT_SECONDS", 30.0) or 30.0),
+        )
         self.schema_version_table = str(
             getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions"
         )
@@ -710,8 +733,12 @@ class Database:
         try:
             self._pg_pool = await pool_factory(
                 dsn=dsn,
-                min_size=1,
-                max_size=max(1, self.pool_size),
+                min_size=self.pool_min_size,
+                max_size=max(self.pool_min_size, self.pool_max_size),
+                max_queries=self.pool_max_queries,
+                max_inactive_connection_lifetime=self.pool_max_inactive_seconds,
+                timeout=self.pool_acquire_timeout_seconds,
+                command_timeout=self.pool_command_timeout_seconds,
             )
         except Exception as exc:
             pool_error_type = None

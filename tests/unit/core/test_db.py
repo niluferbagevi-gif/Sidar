@@ -2411,8 +2411,62 @@ async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_pa
     await injected_db._connect_postgresql()
 
     assert injected_db._pg_pool is pool
-    assert calls == [{"dsn": "postgresql://u:p@db.example/db", "min_size": 1, "max_size": 2}]
+    # DummyCfg yeni havuz alanlarını tanımlamaz; Database varsayılan
+    # profilini uygular ve asyncpg.create_pool'a tam kwargs kümesini geçirir.
+    assert calls == [
+        {
+            "dsn": "postgresql://u:p@db.example/db",
+            "min_size": 1,
+            "max_size": 2,
+            "max_queries": 50_000,
+            "max_inactive_connection_lifetime": 300.0,
+            "timeout": 10.0,
+            "command_timeout": 30.0,
+        }
+    ]
     await injected_db.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_propagates_custom_pool_profile(tmp_path) -> None:
+    """Test profili gibi cfg üzerindeki agresif havuz değerleri asyncpg'ye geçer."""
+
+    @dataclass
+    class TunedCfg(DummyCfg):
+        DB_POOL_SIZE: int = 4
+        DB_POOL_MIN_SIZE: int = 2
+        DB_POOL_MAX_OVERFLOW: int = 2
+        DB_POOL_MAX_QUERIES: int = 10_000
+        DB_POOL_MAX_INACTIVE_SECONDS: float = 30.0
+        DB_POOL_ACQUIRE_TIMEOUT_SECONDS: float = 5.0
+        DB_POOL_COMMAND_TIMEOUT_SECONDS: float = 10.0
+
+    pool = FakePgAdapter()
+    calls: list[dict] = []
+
+    async def _factory(**kwargs):
+        calls.append(kwargs)
+        return pool
+
+    tuned_db = Database(
+        TunedCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path)),
+        pg_pool_factory=_factory,
+    )
+    await tuned_db._connect_postgresql()
+
+    # asyncpg max_size = DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW olarak hesaplanmalı.
+    assert calls == [
+        {
+            "dsn": "postgresql://u:p@db.example/db",
+            "min_size": 2,
+            "max_size": 6,
+            "max_queries": 10_000,
+            "max_inactive_connection_lifetime": 30.0,
+            "timeout": 5.0,
+            "command_timeout": 10.0,
+        }
+    ]
+    await tuned_db.close()
 
 
 @pytest.mark.asyncio
