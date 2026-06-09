@@ -229,8 +229,13 @@ jobs:
           BENCHMARK_TREND_COMPARE: "1"
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
           BENCHMARK_TREND_WINDOW: "15"
-          BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_REQUIRED: "1"
+          # CI runner pytest-benchmark baseline'ını commit edilmiş bir lokal
+          # makine baseline'ı ile karşılaştırmaz; her fresh CI run kendi
+          # baseline'ını yazar. Mekanik regression gate doğrulaması ise
+          # tests/performance/test_regression_gate_canary.py +
+          # scripts/ci/verify_benchmark_regression_gate.sh tarafından yapılır.
+          BENCHMARK_ENFORCE_COMPARE: "0"
+          BENCHMARK_COMPARE_REQUIRED: "0"
           BENCHMARK_COMPARE_FAIL: "mean:10%"
           BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |

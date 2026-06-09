@@ -402,7 +402,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
       GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 8)
-      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)
+      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 15, full: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()

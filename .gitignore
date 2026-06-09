@@ -13,6 +13,13 @@ build/
 wheels/
 *.whl
 
+# pytest-benchmark baselines — machine-specific (CPU/GPU/RAM); should NOT be
+# committed because cross-machine comparison always trips the regression gate.
+# Local devs maintain their own baseline; CI generates a fresh one per run.
+# Gate verification is handled by tests/performance/test_regression_gate_canary.py
+# (see scripts/ci/verify_benchmark_regression_gate.sh).
+.benchmarks/
+
 # Virtual environments
 .venv/
 .venv-container/
