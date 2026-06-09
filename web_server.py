@@ -571,6 +571,7 @@ set_hitl_broadcast_hook(_hitl_broadcast)
 #  UYGULAMA BAŞLATMA
 # ─────────────────────────────────────────────
 
+
 def _refresh_cfg(config_instance: Config | None = None) -> Config:
     """Keep web_server's cached Config reference aligned with config.reload_environment()."""
     global cfg
@@ -2095,9 +2096,7 @@ def _load_plugin_agent_class(
         # the web_server module cannot override an available agent.base_agent module.
         base_agent_module = sys.modules.get("agent.base_agent")
         canonical_base = (
-            getattr(base_agent_module, "BaseAgent", None)
-            if base_agent_module is not None
-            else None
+            getattr(base_agent_module, "BaseAgent", None) if base_agent_module is not None else None
         )
         candidates: list[Any] = []
         seen: set[int] = set()
@@ -3641,7 +3640,6 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
             return JSONResponse(health_data, status_code=503)
 
     return JSONResponse(health_data)
-
 
 
 frontend_router = build_frontend_router(

@@ -3541,7 +3541,9 @@ async def test_pgvector_failure_message_uses_shared_db_diagnosis(monkeypatch) ->
     assert "DATABASE_URL değerlerini kontrol edin" not in message
 
 
-async def test_entity_extraction_ignores_empty_tag_value_after_normalization(tmp_path: Path) -> None:
+async def test_entity_extraction_ignores_empty_tag_value_after_normalization(
+    tmp_path: Path,
+) -> None:
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
 

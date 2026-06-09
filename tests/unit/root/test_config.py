@@ -276,7 +276,9 @@ def test_reload_environment_notifies_registered_callbacks(monkeypatch):
     monkeypatch.setattr(
         config.Config, "_log_dotenv_load_status", staticmethod(lambda *args, **kwargs: None)
     )
-    monkeypatch.setattr(config.Config, "get_missing_critical_runtime_keys", staticmethod(lambda: []))
+    monkeypatch.setattr(
+        config.Config, "get_missing_critical_runtime_keys", staticmethod(lambda: [])
+    )
 
     config.register_config_reload_callback(calls.append)
     config.register_config_reload_callback(calls.append)

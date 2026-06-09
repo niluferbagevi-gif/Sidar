@@ -106,7 +106,9 @@ async def test_register_user_maps_database_exception_to_conflict() -> None:
     def _register_user(**_kwargs: Any) -> Any:
         raise RuntimeError("duplicate username")
 
-    register_user = _build_auth_exports(SimpleNamespace(register_user=_register_user))["register_user"]
+    register_user = _build_auth_exports(SimpleNamespace(register_user=_register_user))[
+        "register_user"
+    ]
 
     with pytest.raises(HTTPException, match="Kullanıcı oluşturulamadı: duplicate username") as exc:
         await register_user({"username": "alice", "password": "secret1"})

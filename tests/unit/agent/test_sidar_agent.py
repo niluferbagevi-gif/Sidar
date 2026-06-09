@@ -3340,7 +3340,9 @@ async def test_get_nightly_distributed_lock_lazy_initializes_redis_manager(
     assert created == [("redis://localhost:6379/0", 7, 0.125)]
 
 
-async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(sidar_agent_factory) -> None:
+async def test_get_nightly_distributed_lock_skips_when_redis_url_missing(
+    sidar_agent_factory,
+) -> None:
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_DISTRIBUTED_AGENT_LOCKS=True, REDIS_URL="")
 
@@ -3381,9 +3383,7 @@ async def test_optional_distributed_lock_failures_allow_nightly_maintenance_fall
     assert lease is None
     assert skip_reason is None
 
-    broken_lock = types.SimpleNamespace(
-        acquire=AsyncMock(side_effect=RuntimeError("redis-down"))
-    )
+    broken_lock = types.SimpleNamespace(acquire=AsyncMock(side_effect=RuntimeError("redis-down")))
     monkeypatch.setattr(agent, "_get_nightly_distributed_lock", lambda: broken_lock)
     lease, skip_reason = await agent._acquire_nightly_distributed_lease()
     assert lease is None

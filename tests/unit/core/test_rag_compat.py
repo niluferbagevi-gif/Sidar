@@ -26,9 +26,12 @@ def test_document_store_facade_status_embedding_and_cache_helpers(
     assert document_store.build_store_status_label(passive_store) == (
         "BM25 fallback aktif | pgvector (pasif)"
     )
-    assert document_store.build_store_status_label(
-        SimpleNamespace(status=lambda: "pgvector (pasif)", _vector_backend="pgvector")
-    ) == "pgvector (pasif)"
+    assert (
+        document_store.build_store_status_label(
+            SimpleNamespace(status=lambda: "pgvector (pasif)", _vector_backend="pgvector")
+        )
+        == "pgvector (pasif)"
+    )
 
     embedding = object()
     monkeypatch.setattr(document_store, "_build_embedding_function", lambda **_: embedding)
@@ -38,7 +41,9 @@ def test_document_store_facade_status_embedding_and_cache_helpers(
     }
     assert document_store.embedding_device_info(use_gpu=False, gpu_device=0)["device"] == "cpu"
 
-    monkeypatch.setattr(document_store, "embed_texts_for_semantic_cache", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        document_store, "embed_texts_for_semantic_cache", lambda *_args, **_kwargs: []
+    )
     assert document_store.embed_texts_for_cache(["one", "two"]) == [[0.0], [0.0]]
     assert document_store.embed_texts_for_cache([]) == []
     monkeypatch.setattr(

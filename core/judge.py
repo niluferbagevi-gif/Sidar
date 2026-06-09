@@ -150,11 +150,15 @@ class LLMJudge:
             ).strip()
             or None
         )
-        self.provider = get_prefixed_env(
-            "SIDAR_JUDGE_PROVIDER",
-            "JUDGE_PROVIDER",
-            str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama"),
-        ).strip().lower()
+        self.provider = (
+            get_prefixed_env(
+                "SIDAR_JUDGE_PROVIDER",
+                "JUDGE_PROVIDER",
+                str(getattr(self.config, "JUDGE_PROVIDER", "ollama") or "ollama"),
+            )
+            .strip()
+            .lower()
+        )
         self.sample_rate = max(
             0.0,
             min(
