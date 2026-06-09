@@ -578,8 +578,13 @@ def _refresh_cfg(config_instance: Config | None = None) -> Config:
     return cfg
 
 
+def _on_config_reload(config_instance: Config) -> None:
+    """Callback hook used by config.reload_environment(); aligns the cached Config reference."""
+    _refresh_cfg(config_instance)
+
+
 cfg = _refresh_cfg()
-register_config_reload_callback(_refresh_cfg)
+register_config_reload_callback(_on_config_reload)
 Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
