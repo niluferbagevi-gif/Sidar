@@ -1469,7 +1469,10 @@ def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> No
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
+    assert "Verify benchmark regression gate catches synthetic slowdown" in ci
+    assert "uv run python scripts/ci/verify_benchmark_regression_gate.py" in ci
     assert "Ana CI hattı artık repodaki" in notes
+    assert "verify_benchmark_regression_gate.py" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
     assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
 
