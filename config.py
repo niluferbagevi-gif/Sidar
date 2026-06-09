@@ -1102,14 +1102,10 @@ class Config:
     DB_POOL_MAX_INACTIVE_SECONDS: float = get_float_env("DB_POOL_MAX_INACTIVE_SECONDS", 300.0)
     # asyncpg ``timeout`` — havuzdan bağlantı edinmek için maksimum bekleme süresi.
     # Havuz doluyken sonsuza kadar beklemeyip hızlı başarısızlık üretir.
-    DB_POOL_ACQUIRE_TIMEOUT_SECONDS: float = get_float_env(
-        "DB_POOL_ACQUIRE_TIMEOUT_SECONDS", 10.0
-    )
+    DB_POOL_ACQUIRE_TIMEOUT_SECONDS: float = get_float_env("DB_POOL_ACQUIRE_TIMEOUT_SECONDS", 10.0)
     # asyncpg ``command_timeout`` — varsayılan sorgu zaman aşımı.
     # Tek bir kaçak sorgu havuzu kilitleyemesin diye sınırlandırır.
-    DB_POOL_COMMAND_TIMEOUT_SECONDS: float = get_float_env(
-        "DB_POOL_COMMAND_TIMEOUT_SECONDS", 30.0
-    )
+    DB_POOL_COMMAND_TIMEOUT_SECONDS: float = get_float_env("DB_POOL_COMMAND_TIMEOUT_SECONDS", 30.0)
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )
@@ -1999,9 +1995,7 @@ def _restore_reload_registry_from_previous_module() -> (
     return callbacks, previous_instance
 
 
-_config_reload_callbacks, _last_notified_instance = (
-    _restore_reload_registry_from_previous_module()
-)
+_config_reload_callbacks, _last_notified_instance = _restore_reload_registry_from_previous_module()
 
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
