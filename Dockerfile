@@ -92,7 +92,7 @@ RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --extra dev --no-install-project
+    uv sync --frozen --all-extras --no-install-project
 RUN uv run python -c "import shutil; assert shutil.which('pyright-langserver'), 'pyright-langserver missing'; assert shutil.which('pyright'), 'pyright missing'"
 
 # Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
@@ -108,9 +108,13 @@ RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
 # Uygulama kodlarını kopyala
 COPY . .
 
-# Proje paketini mevcut lock dosyasına göre ortama kur
+# Proje paketini mevcut lock dosyasına göre ortama kur.
+# uv 0.11+ '--all-extras' ile '--extra <name>' birlikte kullanımını reddediyor;
+# 'dev' extra'sı zaten [project.optional-dependencies] altında tanımlı ve
+# --all-extras kapsamına dahil. Playwright gibi dependency-group bağımlılıkları
+# uv tarafından default olarak otomatik kurulur.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-extras --extra dev
+    uv sync --frozen --all-extras
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
 RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
