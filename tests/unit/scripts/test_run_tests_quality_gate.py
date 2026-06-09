@@ -17,6 +17,58 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def _extract_run_tests_function(name: str) -> str:
+    script = _script()
+    start_marker = f"{name}() {{"
+    start = script.index(start_marker)
+    next_function = script.index("\nresolve_docker_compose_cmd()", start)
+    return script[start:next_function]
+
+
+def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports(tmp_path) -> None:
+    coverage_dir = tmp_path / "coverage"
+    nested_dir = coverage_dir / "components" / "button"
+    nested_dir.mkdir(parents=True)
+    (coverage_dir / "base.css").write_text("body { color: #111; }\n", encoding="utf-8")
+    (coverage_dir / "index.html").write_text(
+        '<html><head><link rel="stylesheet" href="base.css" /></head><body></body></html>',
+        encoding="utf-8",
+    )
+    (nested_dir / "index.html").write_text(
+        '<html><head><link rel="stylesheet" href="../../base.css" /></head><body></body></html>',
+        encoding="utf-8",
+    )
+    runner = tmp_path / "run_dark_mode.sh"
+    runner.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        + _extract_run_tests_function("apply_dark_mode_to_frontend_coverage_report")
+        + f'\napply_dark_mode_to_frontend_coverage_report "{coverage_dir}"\n',
+        encoding="utf-8",
+    )
+
+    subprocess.run(["bash", str(runner)], check=True)
+
+    assert '@import url("./sidar_dark_mode.css");' not in (coverage_dir / "base.css").read_text(
+        encoding="utf-8"
+    )
+    assert (coverage_dir / "sidar_dark_mode.css").exists()
+    root_html = (coverage_dir / "index.html").read_text(encoding="utf-8")
+    nested_html = (nested_dir / "index.html").read_text(encoding="utf-8")
+    assert 'href="base.css" />\n<link rel="stylesheet" href="sidar_dark_mode.css" />' in root_html
+    assert (
+        'href="../../base.css" />\n<link rel="stylesheet" href="../../sidar_dark_mode.css" />'
+        in nested_html
+    )
+
+
+def test_frontend_coverage_dark_mode_failure_sets_frontend_exit_code() -> None:
+    script = _script()
+    late_import_append = "printf '\\n@import url(\"./sidar_dark_mode.css\");\\n' >> \"${base_css}\""
+    assert late_import_append not in script
+    assert 'if ! apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"; then' in script
+    assert 'FRONTEND_EXIT_CODE=1' in script
+
+
 def test_mypy_is_strict_python_311() -> None:
     config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     mypy = config["tool"]["mypy"]

@@ -499,10 +499,9 @@ open_artifact() {
 
 apply_dark_mode_to_frontend_coverage_report() {
   local coverage_dir="$1"
-  local base_css="${coverage_dir}/base.css"
   local dark_css="${coverage_dir}/sidar_dark_mode.css"
 
-  if [ ! -f "${base_css}" ]; then
+  if [ ! -d "${coverage_dir}" ]; then
     return 0
   fi
 
@@ -519,10 +518,73 @@ html, body {
 a {
   color: #58a6ff !important;
 }
+
+.coverage-summary,
+table.coverage-summary td,
+table.coverage-summary th,
+.wrapper,
+.pad1,
+.footer {
+  background: #0f1117 !important;
+  color: #e6edf3 !important;
+}
+
+.coverage-summary tbody tr:hover {
+  background: #1c2230 !important;
+}
+
+.fl,
+.cline-any,
+.cstat-no,
+.cbranch-no,
+.cstat-yes,
+.cbranch-yes {
+  color: #e6edf3 !important;
+}
 CSS_DARK
 
-  if ! grep -Fq '@import url("./sidar_dark_mode.css");' "${base_css}"; then
-    printf '\n@import url("./sidar_dark_mode.css");\n' >> "${base_css}"
+  if ! uv run python - "${coverage_dir}" "${dark_css}" <<'PY'
+from __future__ import annotations
+
+import os
+import re
+import sys
+from pathlib import Path
+
+coverage_dir = Path(sys.argv[1]).resolve()
+dark_css = Path(sys.argv[2]).resolve()
+index_files = sorted(coverage_dir.rglob("index.html"))
+missing: list[str] = []
+link_pattern = re.compile(
+    r'(<link\b[^>]*\bhref=["\'][^"\']*base\.css["\'][^>]*>)',
+    re.IGNORECASE,
+)
+
+for html_path in index_files:
+    content = html_path.read_text(encoding="utf-8")
+    if "sidar_dark_mode.css" not in content:
+        href = os.path.relpath(dark_css, html_path.parent).replace(os.sep, "/")
+        dark_link = f'<link rel="stylesheet" href="{href}" />'
+        if link_pattern.search(content):
+            content = link_pattern.sub(r"\1\n" + dark_link, content, count=1)
+        elif "</head>" in content.lower():
+            content = re.sub(r"</head>", dark_link + "\n</head>", content, count=1, flags=re.IGNORECASE)
+        else:
+            content = dark_link + "\n" + content
+        html_path.write_text(content, encoding="utf-8")
+
+    if "sidar_dark_mode.css" not in html_path.read_text(encoding="utf-8"):
+        missing.append(str(html_path.relative_to(coverage_dir)))
+
+if missing:
+    print(
+        "Dark mode coverage CSS link could not be injected into: " + ", ".join(missing),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+  then
+    return 1
   fi
 }
 
@@ -1617,7 +1679,10 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
 
       if [ -f "coverage/base.css" ]; then
         echo "Frontend test raporuna kalıcı karanlık tema (dark mode) uygulanıyor..."
-        apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"
+        if ! apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"; then
+          echo "❌ Frontend coverage dark mode link doğrulaması başarısız oldu."
+          FRONTEND_EXIT_CODE=1
+        fi
       fi
 
       # coverage/lcov-report/index.html CI araçları (ör. SonarQube) için korunur,
