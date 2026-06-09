@@ -1507,6 +1507,20 @@ else
   fi
 fi
 
+# Benchmark regression gate canary (opt-in).
+# `--benchmark-compare-fail` kapısının sessiz hale gelmediğini doğrulamak için
+# yapay yavaşlatma altında canary çalıştırır. Ana baseline'a dokunmaz.
+if [ "${RUN_BENCHMARK_GATE_CANARY:-0}" = "1" ]; then
+  echo "🔬 Benchmark regression gate canary çalıştırılıyor (RUN_BENCHMARK_GATE_CANARY=1)..."
+  if ! ./scripts/ci/verify_benchmark_regression_gate.sh; then
+    echo "❌ Benchmark regression gate sessiz: canary doğrulaması başarısız."
+    BENCHMARK_EXIT_CODE=1
+    record_backend_failure "benchmark_regression_gate_canary"
+  else
+    echo "✅ Benchmark regression gate canary doğrulandı (yapay yavaşlatma alarm tetikledi)."
+  fi
+fi
+
 FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"
 FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"
 
