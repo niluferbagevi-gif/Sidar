@@ -834,6 +834,33 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     assert 'main "$@"' in script
 
 
+def test_install_sidar_exposes_stable_phase_aliases_for_modular_installer() -> None:
+    aliases = {
+        "install/01_context.sh": "scripts/install_modules/phases/01_context.sh",
+        "install/02_repo.sh": "scripts/install_modules/phases/02_repo.sh",
+        "install/03_runtime.sh": "scripts/install_modules/phases/03_runtime.sh",
+        "install/04_workspace.sh": "scripts/install_modules/phases/04_workspace.sh",
+        "install/05_frontend.sh": "scripts/install_modules/phases/05_frontend.sh",
+        "install/06_services.sh": "scripts/install_modules/phases/06_services.sh",
+        "install/07_finish.sh": "scripts/install_modules/phases/07_finish.sh",
+    }
+    readme = Path("install/README.md").read_text(encoding="utf-8")
+
+    assert "standalone dağıtım/orchestrator" in readme
+    assert "scripts/tools/bundle_install_sidar.sh" in readme
+    assert "scripts/install_modules/phases/*.sh" in readme
+
+    for alias, canonical in aliases.items():
+        alias_path = Path(alias)
+        alias_content = alias_path.read_text(encoding="utf-8")
+
+        assert alias_path.is_file()
+        assert Path(canonical).is_file()
+        assert f"`{alias}` → `{canonical}`" in readme
+        assert "_sidar_install_alias_root" in alias_content
+        assert f'source "${{_sidar_install_alias_root}}/{canonical}"' in alias_content
+
+
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")

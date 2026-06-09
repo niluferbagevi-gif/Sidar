@@ -2,9 +2,26 @@
 
 Bu repo, kurulum betiğini geliştirme aşamasında modüler tutmak için şu yapıyı kullanır:
 
-- `install_sidar.sh`: repo checkout içinden çalıştırılan ana giriş betiği
-- `scripts/install_modules/*.sh`: fonksiyon bazlı modüller
+- `install_sidar.sh`: repo checkout içinden çalıştırılan ana orkestratör ve dağıtım girişi
+- `install/*.sh`: insan incelemesi ve dış otomasyonlar için kararlı faz alias dosyaları
+- `scripts/install_modules/phases/*.sh`: faz uygulamalarının tek doğruluk kaynağı
+- `scripts/install_modules/utils/*.sh`: fonksiyon bazlı yardımcı modüller
 - `scripts/tools/bundle_install_sidar.sh`: release için tek dosya bundle üretici
+
+
+## Faz alias sözleşmesi
+
+Öncelikli mimari hedef, büyük `install_sidar.sh` dosyasının iş mantığını fazlara ayırıp
+ana betiği yalnızca orkestratör/dağıtım giriş noktası olarak tutmaktır. Bu sözleşme
+şu şekilde uygulanır:
+
+- `install/01_context.sh`, `install/04_workspace.sh` gibi kök faz alias'ları dışarıdan
+  okunabilir kararlı yollar sağlar.
+- Alias dosyaları iş mantığı içermez; ilgili `scripts/install_modules/phases/*.sh`
+  dosyasını kaynaklar.
+- Yeni veya büyüyen kurulum adımları önce `scripts/install_modules/phases/` veya
+  `scripts/install_modules/utils/` altına taşınmalı, `install_sidar.sh` içinde yalnızca
+  faz çağrısı / bundle uyumluluğu kalmalıdır.
 
 ## Bundle üretimi
 
