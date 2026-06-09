@@ -14,7 +14,14 @@ RUN_TESTS = Path("run_tests.sh")
 
 
 def _script() -> str:
-    return RUN_TESTS.read_text(encoding="utf-8")
+    script = RUN_TESTS.read_text(encoding="utf-8")
+    stage_dir = Path("scripts/test_stages")
+    if stage_dir.exists():
+        stage_sources = "\n".join(
+            stage.read_text(encoding="utf-8") for stage in sorted(stage_dir.glob("*.sh"))
+        )
+        script = f"{script}\n{stage_sources}"
+    return script
 
 
 def _extract_run_tests_function(name: str) -> str:
@@ -1417,7 +1424,7 @@ def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_s
 
 def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:
     script = _script()
-    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend kalite akışı")]
+    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend lint/type-check")]
 
     assert 'record_backend_failure "bats_missing"' in script
     assert 'record_backend_failure "bats_failed"' in script
@@ -1733,7 +1740,7 @@ printf '%s' "${count}" > "${MOCK_NPM_COUNT}"
 
 def test_benchmark_and_frontend_e2e_flakes_are_soft_local_but_hard_in_ci() -> None:
     script = _script()
-    final_evaluation = script[script.index("# 4) Final Durum Değerlendirmesi") :]
+    final_evaluation = script[script.index("# 7) Final Durum Değerlendirmesi") :]
     common_prefix = """
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -1853,7 +1860,7 @@ def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_rem
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
         script[
-            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 3) Frontend React testleri")
+            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 6) Frontend React testleri")
         ],
         encoding="utf-8",
     )
@@ -1946,3 +1953,35 @@ def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
     assert 'include: ["src/**/*.{js,jsx}"]' in vite
     assert 'reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"]' in vite
     assert "skipFull: false" in vite
+
+
+def test_run_tests_uses_sourceable_stage_modules_for_quality_flow() -> None:
+    script = RUN_TESTS.read_text(encoding="utf-8")
+    expected_stages = [
+        "01_lint.sh",
+        "02_pytest.sh",
+        "03_bats.sh",
+        "04_security.sh",
+        "05_benchmark.sh",
+        "06_frontend.sh",
+        "07_finalize.sh",
+    ]
+
+    assert 'TEST_STAGE_DIR="${SCRIPT_DIR}/scripts/test_stages"' in script
+    assert 'SIDAR_RUN_TESTS_CONTEXT=1' in script
+    assert 'source "${TEST_STAGE_DIR}/${test_stage_file}"' in script
+    for stage_name in expected_stages:
+        stage_path = Path("scripts/test_stages") / stage_name
+        assert f'"{stage_name}"' in script
+        assert stage_path.exists()
+        stage_source = stage_path.read_text(encoding="utf-8")
+        assert "SIDAR_RUN_TESTS_CONTEXT" in stage_source
+        assert "doğrudan çalıştırılmaz" in stage_source
+
+    assert "run_static_analysis_gates" in Path("scripts/test_stages/01_lint.sh").read_text(encoding="utf-8")
+    assert "run_pytest_coverage_report" in Path("scripts/test_stages/02_pytest.sh").read_text(encoding="utf-8")
+    assert "run_bats_shell_tests" in Path("scripts/test_stages/03_bats.sh").read_text(encoding="utf-8")
+    assert "run_security_analysis_gates" in Path("scripts/test_stages/04_security.sh").read_text(encoding="utf-8")
+    assert "PERFORMANCE_TEST_DIR" in Path("scripts/test_stages/05_benchmark.sh").read_text(encoding="utf-8")
+    assert "npm run test:coverage" in Path("scripts/test_stages/06_frontend.sh").read_text(encoding="utf-8")
+    assert "FINAL_EXIT_CODE" in Path("scripts/test_stages/07_finalize.sh").read_text(encoding="utf-8")

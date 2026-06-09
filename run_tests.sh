@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2034
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -377,6 +378,7 @@ AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"
 DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 
+# shellcheck disable=SC2034  # consumed by sourced scripts/test_stages/*.sh
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 FRONTEND_E2E_EXIT_CODE=0
@@ -833,6 +835,7 @@ resolve_benchmark_compare_target() {
   # yerleşimlerinde etiketi (örn. "baseline") dosyaya eşleyemeyebiliyor.
   # Bu nedenle karşılaştırma hedefini deterministik olarak bulduğumuz JSON
   # dosyasının tam path'iyle geçiriyoruz.
+  # shellcheck disable=SC2034  # consumed by sourced benchmark stage after resolver returns
   BENCHMARK_COMPARE_FILE="${latest_file}"
   BENCHMARK_COMPARE_SELECTOR="${latest_file}"
   return 0
@@ -1403,343 +1406,21 @@ PY_RATCHET_GATE
   fi
 }
 
-# 1) Backend kalite akışı (3 faz):
-#    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
-#    Faz-2: Statik analiz + otonom iyileştirme
-#    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
-if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
-  run_pytest_coverage_report
-  run_bats_shell_tests
-  update_progressive_coverage_gate
-else
-  echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
-  BACKEND_EXIT_CODE=1
-fi
-
-# Güvenlik kapıları pytest yürütümünü bloke etmez; sonuç final çıkışta değerlendirilir.
-if ! run_security_analysis_gates; then
-  echo "⚠️ Güvenlik analizi başarısız oldu; pytest sonuçları üretildi, final çıkış kodu başarısız olarak işaretlenecek."
-  BACKEND_EXIT_CODE=1
-fi
-
-# 2) Kritik yol performans baseline testleri (pytest-benchmark)
-if [ "${RUN_BENCHMARKS}" = "auto" ] && [ "${TEST_PROFILE}" = "ci" ]; then
-  echo "ℹ️ CI profilinde RUN_BENCHMARKS=auto; ağır performans benchmarkları ana CI'da atlanacak ve nightly/release benchmark workflow'larına bırakılacak."
-  RUN_BENCHMARKS=0
-fi
-if [ "${RUN_BENCHMARKS}" = "0" ]; then
-  echo "⚠️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-  if command -v nvidia-smi >/dev/null 2>&1 || [ "${USE_GPU:-0}" = "1" ]; then
-    echo "⚠️ GPU/hızlandırıcı algılandı; performans regresyonlarını erken yakalamak için benchmark fazını kapatmayın."
-    echo "ℹ️ Öneri (lokal GPU): RUN_BENCHMARKS=required bash run_tests.sh"
-  fi
-  echo "⚠️ Performans regresyonlarının erken tespiti için CI/local pipeline'larda benchmark fazını düzenli çalıştırın."
-  echo "ℹ️ Öneri (lokal): RUN_BENCHMARKS=required bash run_tests.sh"
-  echo "ℹ️ Öneri (hedefli): uv run pytest -q ${PERFORMANCE_TEST_DIR} --benchmark-json=${BENCHMARK_JSON_OUTPUT}"
-elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
-  echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
-  benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
-  mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
-  benchmark_cmd=(
-    env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
-    --benchmark-save="${BENCHMARK_BASELINE_NAME}"
-    --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
-    --benchmark-warmup="${BENCHMARK_WARMUP}"
-    --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
-  )
-  if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
-    benchmark_cmd+=(--benchmark-disable-gc)
-  fi
-
-  if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
-    if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
-      benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
-      if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
-        echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
-        benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
-      else
-        echo "⚠️ Benchmark karşılaştırması rapor modunda (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
-        echo "ℹ️ Yerelde regresyon hard-fail kapısı için BENCHMARK_ENFORCE_COMPARE=1 kullanın."
-      fi
-    else
-      echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
-      echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
-      if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
-        echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
-        echo "ℹ️ İlk kurulum/yerel bootstrap için BENCHMARK_COMPARE_REQUIRED=0 kullanın veya önce benchmark baseline üretin."
-        BENCHMARK_EXIT_CODE=1
-      fi
-    fi
-  else
-    echo "ℹ️ Benchmark karşılaştırması devre dışı (BENCHMARK_ENABLE_COMPARE=0)."
-  fi
-
-  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
-    echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
-    "${benchmark_cmd[@]}"
-    BENCHMARK_EXIT_CODE=$?
-  fi
-
-  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
-    echo "✅ Benchmark JSON raporu oluşturuldu: ${BENCHMARK_JSON_OUTPUT}"
-  elif [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
-    echo "⚠️ Benchmark testleri geçti ancak JSON raporu bulunamadı: ${BENCHMARK_JSON_OUTPUT}"
-    BENCHMARK_EXIT_CODE=1
-  fi
-
-  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_TREND_COMPARE}" = "1" ]; then
-    if [ -f "coverage.xml" ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
-      echo "📉 Benchmark trend + coverage.xml karşılaştırması çalıştırılıyor..."
-      if ! python scripts/ci/check_benchmark_coverage_trend.py \
-        --benchmark-json "${BENCHMARK_JSON_OUTPUT}" \
-        --coverage-xml coverage.xml \
-        --history-json "${BENCHMARK_TREND_HISTORY}" \
-        --window "${BENCHMARK_TREND_WINDOW}" \
-        --max-regression-pct "${BENCHMARK_TREND_MAX_REGRESSION_PCT}"; then
-        echo "❌ Benchmark trend karşılaştırması kalite kapısından kaldı."
-        BENCHMARK_EXIT_CODE=1
-      fi
-    else
-      echo "⚠️ Benchmark trend karşılaştırması atlandı: coverage.xml veya benchmark JSON bulunamadı."
-      BENCHMARK_EXIT_CODE=1
-    fi
-  fi
-else
-  echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."
-  if [ "${RUN_BENCHMARKS}" = "required" ]; then
-    echo "❌ RUN_BENCHMARKS=required iken benchmark dizini bulunamadı."
-    BENCHMARK_EXIT_CODE=1
-  fi
-fi
-
-FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"
-FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"
-
-frontend_playwright_package_lock_fingerprint() {
-  [[ -f "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" ]] || return 1
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1}'
-  else
-    cksum "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}" | awk '{print $1 ":" $2}'
-  fi
-}
-
-frontend_playwright_sentinel_cache_ready() {
-  local executable_path=""
-  local recorded_lock_fingerprint=""
-  local current_lock_fingerprint=""
-  [[ -f "${FRONTEND_PLAYWRIGHT_SENTINEL}" ]] || return 1
-  {
-    IFS= read -r executable_path || true
-    IFS= read -r recorded_lock_fingerprint || true
-  } < "${FRONTEND_PLAYWRIGHT_SENTINEL}"
-  current_lock_fingerprint="$(frontend_playwright_package_lock_fingerprint || true)"
-  if [[ -n "${executable_path}" \
-    && -f "${executable_path}" \
-    && -n "${recorded_lock_fingerprint}" \
-    && "${recorded_lock_fingerprint}" == "${current_lock_fingerprint}" ]]; then
-    return 0
-  fi
-
-  rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"
-  return 1
-}
-
-frontend_playwright_chromium_cache_ready() {
-  local executable_path=""
-  executable_path="$(node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' 2>/dev/null
-const fs = require("node:fs");
-const { chromium } = require("@playwright/test");
-const executablePath = chromium.executablePath();
-if (!fs.existsSync(executablePath)) process.exit(1);
-process.stdout.write(executablePath);
-NODE_PLAYWRIGHT_CACHE_CHECK
-)" || return 1
-  local lock_fingerprint=""
-  [[ -n "${executable_path}" && -f "${executable_path}" ]] || return 1
-  lock_fingerprint="$(frontend_playwright_package_lock_fingerprint)" || return 1
-  printf '%s\n%s\n' "${executable_path}" "${lock_fingerprint}" > "${FRONTEND_PLAYWRIGHT_SENTINEL}" || true
-}
-
-PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"
-# shellcheck source=scripts/install_modules/utils/playwright_ubuntu_override.sh
-source "${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER}"
-
-install_local_frontend_playwright_chromium_cache() {
-  if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
-    return 1
-  fi
-  if ! command -v npx >/dev/null 2>&1; then
-    echo "⚠️ Node Playwright Chromium cache'i otomatik kurulamadı: npx bulunamadı."
-    return 1
-  fi
-
-  echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
-  (
-    unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
-    local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
-    local playwright_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-    if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
-      echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i ubuntu24.04-x64 OS override ile hazırlanıyor."
-      run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}" \
-        npx --no-install playwright install chromium
-    else
-      npx --no-install playwright install chromium
-    fi
-  )
-}
-
-run_frontend_e2e_with_retry() {
-  local e2e_exit_code=0
-
-  echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor..."
-  if npm run test:e2e; then
-    return 0
-  else
-    e2e_exit_code=$?
-  fi
-
-  if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then
-    return "${e2e_exit_code}"
-  fi
-
-  echo "⚠️ Frontend Playwright smoke testleri başarısız oldu (çıkış=${e2e_exit_code}); flake elemek için bir kez yeniden deneniyor..."
-  if npm run test:e2e; then
-    echo "✅ Frontend Playwright smoke testleri ikinci denemede geçti. İlk hata flake olarak raporlandı."
-    return 0
-  else
-    e2e_exit_code=$?
-  fi
-
-  echo "❌ Frontend Playwright smoke testleri retry sonrasında da başarısız (çıkış=${e2e_exit_code})."
-  return "${e2e_exit_code}"
-}
-
-resolve_local_frontend_e2e_mode() {
-  if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
-    return 0
-  fi
-
-  if frontend_playwright_sentinel_cache_ready; then
-    RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium sentinel cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
-    return 0
-  fi
-
-  if frontend_playwright_chromium_cache_ready; then
-    RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium cache'i hazır; sentinel güncellendi ve yerel frontend smoke testleri otomatik etkinleştirildi."
-    return 0
-  fi
-
-  if install_local_frontend_playwright_chromium_cache && frontend_playwright_chromium_cache_ready; then
-    RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium cache'i otomatik kuruldu; yerel frontend smoke testleri etkinleştirildi."
-    return 0
-  fi
-
-  RUN_FRONTEND_E2E=0
-  echo "⚠️ Frontend Playwright smoke testleri atlandı: Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=auto)."
-  if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
-    echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
-  fi
-  echo "   Manuel kurulum için: cd web_ui_react && npx playwright install chromium"
-  echo "   Ardından: RUN_FRONTEND_E2E=1 bash run_tests.sh"
-}
-
-# 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
-if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
-    FRONTEND_EXIT_CODE=1
-  else
-    echo "🚀 Frontend (React) Testleri Başlıyor..."
-    if pushd web_ui_react > /dev/null; then
-      # Yerel ortamda yavaşlığı önlemek için CI değişkenine göre davran.
-      if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
-        echo "ℹ️ CI ortamı tespit edildi, 'npm ci' çalıştırılıyor..."
-        npm ci
-      else
-        echo "ℹ️ Yerel ortam tespit edildi, 'npm install' çalıştırılıyor..."
-        npm install
-      fi
-      local_npm_ci_exit=$?
-      if [ "${local_npm_ci_exit}" -ne 0 ]; then
-        FRONTEND_EXIT_CODE=${local_npm_ci_exit}
-      else
-        resolve_local_frontend_e2e_mode
-        npm run test:coverage
-        FRONTEND_EXIT_CODE=$?
-        if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-          if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
-            run_frontend_e2e_with_retry
-            FRONTEND_E2E_EXIT_CODE=$?
-          else
-            echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
-          fi
-        fi
-      fi
-
-      if [ -f "coverage/base.css" ]; then
-        echo "Frontend test raporuna kalıcı karanlık tema (dark mode) uygulanıyor..."
-        if ! apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"; then
-          echo "❌ Frontend coverage dark mode link doğrulaması başarısız oldu."
-          FRONTEND_EXIT_CODE=1
-        fi
-      fi
-
-      # coverage/lcov-report/index.html CI araçları (ör. SonarQube) için korunur,
-      # ancak tarayıcıda mükerrer rapor açılmasını önlemek için sadece ana HTML raporu açılır.
-      open_artifact "$PWD/coverage/index.html"
-
-      popd > /dev/null || true
-    else
-      FRONTEND_EXIT_CODE=1
-    fi
-  fi
-elif [ -d "web_ui_react" ]; then
-  echo "⚠️ Frontend testleri atlandı: web_ui_react/package.json bulunamadı."
-fi
-
-echo "======================================================"
-
-# 4) Final Durum Değerlendirmesi
-FINAL_EXIT_CODE=0
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ]; then
-  FINAL_EXIT_CODE=1
-fi
-if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
-  if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then
-    FINAL_EXIT_CODE=1
-  else
-    echo "⚠️ Benchmark fazı başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
-    echo "   Sıkı yerel doğrulama için: BENCHMARK_ENFORCE_RESULT=1 bash run_tests.sh"
-  fi
-fi
-if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
-  if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then
-    FINAL_EXIT_CODE=1
-  else
-    echo "⚠️ Frontend Playwright E2E fazı retry sonrasında başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
-    echo "   Sıkı yerel doğrulama için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
-  fi
-fi
-
-if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
-  echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
-  echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
-  if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
-    echo "   Backend Hata Nedenleri: $(format_backend_failure_reasons)"
-  fi
-  echo "   Frontend Unit/Coverage Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
-  echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
-  echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
-  exit 1
-else
-  echo "✅ Zorunlu Backend, Frontend ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
-  echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
-  echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
-  exit 0
-fi
+# Test stages are split into small source files so run_tests.sh remains the
+# compatibility-oriented orchestrator while each phase owns its execution flow.
+# shellcheck disable=SC2034  # consumed by sourced scripts/test_stages/*.sh guards
+SIDAR_RUN_TESTS_CONTEXT=1
+TEST_STAGE_DIR="${SCRIPT_DIR}/scripts/test_stages"
+TEST_STAGE_FILES=(
+  "01_lint.sh"
+  "02_pytest.sh"
+  "03_bats.sh"
+  "04_security.sh"
+  "05_benchmark.sh"
+  "06_frontend.sh"
+  "07_finalize.sh"
+)
+for test_stage_file in "${TEST_STAGE_FILES[@]}"; do
+  # shellcheck source=/dev/null
+  source "${TEST_STAGE_DIR}/${test_stage_file}"
+done

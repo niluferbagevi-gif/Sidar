@@ -46,6 +46,20 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - `python:3.11-slim`, genel sandbox fallback imajıdır; proje test imajının yerine geçirilmemelidir.
   Proje test akışları `uv`, pytest ve extras bağımlılıklarını içeren `sidar:latest` imajını kullanmalıdır.
 
+
+## `run_tests.sh` faz mimarisi
+
+- `run_tests.sh` geriye dönük uyumlu ana orkestratör olarak kalır: ortam normalizasyonu, ortak helper
+  fonksiyonları ve final stage source sırası burada tanımlıdır. Çalıştırılabilir faz gövdeleri
+  `scripts/test_stages/*.sh` altında tutulur.
+- Faz dosyaları sırasıyla lint/type-check önkoşulları (`01_lint.sh`), backend unit/integration pytest +
+  coverage (`02_pytest.sh`), BATS shell testleri + coverage ratchet (`03_bats.sh`), güvenlik taraması
+  (`04_security.sh`), benchmark (`05_benchmark.sh`), frontend Vitest/Playwright (`06_frontend.sh`) ve final
+  çıkış kodu değerlendirmesinden (`07_finalize.sh`) oluşur.
+- `scripts/test_stages/*.sh` dosyaları doğrudan çalıştırılmak için değil, `run_tests.sh` tarafından source
+  edilmek için tasarlanmıştır. Yeni kalite kapısı eklenirken önce uygun stage dosyası genişletilmeli;
+  stage sırası değişiyorsa `TEST_STAGE_FILES` listesi ve bu doküman birlikte güncellenmelidir.
+
 ## Shell testleri ve bağımlılık güvenlik taraması
 
 - `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,

@@ -202,10 +202,10 @@ jobs:
           tests/smoke/test_install_verification.py
           tests/smoke/test_repo_phase_coverage_dark_mode_assets.py
 
-      - name: Run ShellCheck for installer and install modules
+      - name: Run ShellCheck for shell orchestrators
         run: |
           shopt -s globstar nullglob
-          uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
+          uv run shellcheck --severity=warning -x install_sidar.sh run_tests.sh scripts/install_modules/**/*.sh scripts/test_stages/*.sh
 
       - name: Prepare isolated test database (sidar_test) + Alembic upgrade
         env:
