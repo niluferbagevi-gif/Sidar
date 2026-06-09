@@ -1492,6 +1492,7 @@ def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> No
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS: "30"' in nightly_gpu
     assert "Ana CI hattı artık repodaki" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
     assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
@@ -1508,13 +1509,20 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
     assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
-    assert '10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS' in gpu_benchmark
-    assert 'min_value=10' in gpu_benchmark
-    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)' in gpu_benchmark
+    assert '15 if _GPU_BENCHMARK_PROFILE == "smoke" else max(_BENCH_ROUNDS, 30)' in gpu_benchmark
+    assert 'min_value=15' in gpu_benchmark
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 15, full: 30)' in gpu_benchmark
     assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
-    assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
+    assert '"GPU_BENCH_VRAM_CONCURRENCY"' in gpu_benchmark
+    assert '"vram_workload_shape"' in gpu_benchmark
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in notes
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=30" in notes
+    assert "vram_workload_shape" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in env_test_example
+    assert "GPU_BENCH_VRAM_WORKLOAD_LABEL=prod-batch-shape" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in env_advanced
 
 
 def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:

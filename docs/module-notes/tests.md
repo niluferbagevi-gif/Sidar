@@ -180,12 +180,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `test_gpu_vram_peak_under_load`
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
-  `GPU_BENCH_CONCURRENT_ROUNDS=10` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
-  kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
+  `GPU_BENCH_CONCURRENT_ROUNDS=15` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
+  kullanır ve yüksek varyansı daha hassas yakalamak için sırasıyla `8` ve `30` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`
   - `GPU_BENCH_WARMUP_ROUNDS=8`
+  - `GPU_BENCH_CONCURRENT_ROUNDS=30`
   - `GPU_BENCH_NUM_PREDICT=128`
+- VRAM tepe ölçümü prod batch şekliyle takip edilmelidir. Prod concurrency farklıysa
+  `GPU_BENCH_VRAM_CONCURRENCY` ve `GPU_BENCH_VRAM_WORKLOAD_LABEL` değerlerini açık set edin;
+  benchmark JSON içindeki `vram_workload_shape` metadata'sı bu profili trend anahtarına taşır.
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
   yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.
 - Nightly GPU trend geçmişi yalnız eşdeğer çalışma profillerini karşılaştırır. Profil anahtarı; model,

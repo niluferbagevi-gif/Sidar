@@ -21,6 +21,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
       GPU_TREND_WINDOW: "7"
       GPU_TREND_THRESHOLD_PERCENT: "20"
+      GPU_BENCH_CONCURRENT_ROUNDS: "30"
+      GPU_BENCH_VRAM_WORKLOAD_LABEL: "nightly-prod-batch"
 
     steps:
       - name: Checkout
