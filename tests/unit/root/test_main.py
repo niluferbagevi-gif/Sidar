@@ -10519,4 +10519,32 @@ def test_web_server_uses_cached_config_singleton() -> None:
     import config as config_module
     import web_server
 
-    assert web_server.cfg is config_module.get_config()
+    first = config_module.get_config()
+    second = config_module.get_config()
+
+    assert first is second
+    assert web_server.cfg is first
+    assert isinstance(web_server.cfg, config_module.Config)
+
+
+def test_web_server_refreshes_cached_config_after_environment_reload(monkeypatch) -> None:
+    import config as config_module
+    import web_server
+
+    original_cfg = web_server.cfg
+    monkeypatch.setattr(config_module, "_reload_dotenv_chain", lambda *, profile=None: None)
+    monkeypatch.setattr(config_module, "apply_runtime_env_overrides", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        config_module.Config, "_log_dotenv_load_status", staticmethod(lambda *args, **kwargs: None)
+    )
+    monkeypatch.setattr(
+        config_module.Config,
+        "get_missing_critical_runtime_keys",
+        staticmethod(lambda: []),
+    )
+
+    reloaded = config_module.reload_environment()
+
+    assert reloaded is config_module.get_config()
+    assert web_server.cfg is reloaded
+    assert web_server.cfg is not original_cfg

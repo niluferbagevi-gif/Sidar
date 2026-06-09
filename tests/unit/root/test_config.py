@@ -266,6 +266,27 @@ def test_get_config_returns_singleton(monkeypatch):
     assert first is second
 
 
+def test_reload_environment_notifies_registered_callbacks(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(config, "_config_instance", None)
+    monkeypatch.setattr(config, "_config_reload_callbacks", [])
+    monkeypatch.setattr(config, "_reload_dotenv_chain", lambda *, profile=None: None)
+    monkeypatch.setattr(config, "apply_runtime_env_overrides", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        config.Config, "_log_dotenv_load_status", staticmethod(lambda *args, **kwargs: None)
+    )
+    monkeypatch.setattr(config.Config, "get_missing_critical_runtime_keys", staticmethod(lambda: []))
+
+    config.register_config_reload_callback(calls.append)
+    config.register_config_reload_callback(calls.append)
+
+    reloaded = config.reload_environment(profile="development")
+
+    assert reloaded is config.get_config()
+    assert calls == [reloaded]
+
+
 def test_config_import_handles_missing_dotenv_file_override(monkeypatch):
     calls: list[dict[str, object]] = []
 

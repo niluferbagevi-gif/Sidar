@@ -1942,6 +1942,25 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     os.environ.update(effective_env)
 
 
+ConfigReloadCallback = Callable[["Config"], None]
+_config_reload_callbacks: list[ConfigReloadCallback] = []
+
+
+def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
+    """Register a process-local hook that synchronizes cached Config references after reload."""
+    if callback not in _config_reload_callbacks:
+        _config_reload_callbacks.append(callback)
+
+
+def _notify_config_reload_callbacks(config_instance: "Config") -> None:
+    """Notify reload subscribers without letting one stale hook break environment reloads."""
+    for callback in list(_config_reload_callbacks):
+        try:
+            callback(config_instance)
+        except Exception as exc:  # pragma: no cover - defensive isolation for app hooks
+            logger.warning("Config reload callback failed: %s", exc)
+
+
 def reload_environment(*, profile: str | None = None) -> "Config":
     """Reload dotenv files after an environment file is created and refresh Config defaults."""
     global _config_instance
@@ -1958,7 +1977,9 @@ def reload_environment(*, profile: str | None = None) -> "Config":
     Config._hardware_loaded = False
     _config_instance = None
     Config._log_dotenv_load_status(missing_keys=Config.get_missing_critical_runtime_keys())
-    return get_config()
+    reloaded = get_config()
+    _notify_config_reload_callbacks(reloaded)
+    return reloaded
 
 
 def _safe_choice_for_reload(value: object, default: str, allowed: set[str]) -> str:

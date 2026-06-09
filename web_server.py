@@ -71,7 +71,7 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
-from config import Config, get_config
+from config import Config, get_config, register_config_reload_callback
 from core.ci_remediation import build_ci_failure_context
 from core.db import (
     ContentAssetRecord,
@@ -571,7 +571,15 @@ set_hitl_broadcast_hook(_hitl_broadcast)
 #  UYGULAMA BAŞLATMA
 # ─────────────────────────────────────────────
 
-cfg = get_config()
+def _refresh_cfg(config_instance: Config | None = None) -> Config:
+    """Keep web_server's cached Config reference aligned with config.reload_environment()."""
+    global cfg
+    cfg = config_instance if config_instance is not None else get_config()
+    return cfg
+
+
+cfg = _refresh_cfg()
+register_config_reload_callback(_refresh_cfg)
 Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
