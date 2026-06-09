@@ -52,8 +52,16 @@ sidar_ollama_runtime_num_batch() {
 
 sidar_ollama_export_runtime_defaults() {
     local env_file="${1:-$SCRIPT_DIR/.env}"
-    export OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
-    export OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    # SC2155: command substitution'ı export ile aynı satıra koymak, alt
+    # komutun exit code'unu maskeler. Önce local'e atayıp sonra export ediyoruz
+    # ki sidar_ollama_runtime_num_* fonksiyonlarının olası hatası `set -e`/`pipefail`
+    # gözünden kaçmasın.
+    local resolved_num_ctx
+    local resolved_num_batch
+    resolved_num_ctx="$(sidar_ollama_runtime_num_ctx "$env_file")"
+    resolved_num_batch="$(sidar_ollama_runtime_num_batch "$env_file")"
+    export OLLAMA_NUM_CTX="$resolved_num_ctx"
+    export OLLAMA_NUM_BATCH="$resolved_num_batch"
     info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
 }
 
