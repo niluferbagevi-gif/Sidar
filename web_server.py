@@ -95,6 +95,7 @@ from sidar_assets.paths import web_dist_path
 from web.middleware.cors import configure_loopback_cors
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
+from web.routes.capabilities import build_capabilities_router
 from web.routes.health import build_health_router
 from web.routes.hitl import build_hitl_router
 from web.routes.metrics import build_metrics_router
@@ -3751,6 +3752,17 @@ orchestration_router = build_orchestration_router(
 )
 app.include_router(orchestration_router)
 
+capabilities_router = build_capabilities_router(
+    cfg=cfg,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    resolve_vision_components=lambda: _resolve_vision_components(),
+    get_entity_memory=lambda: _get_entity_memory(),
+    get_feedback_store=lambda: _get_feedback_store(),
+    get_slack_manager=lambda: _get_slack_manager(),
+    get_jira_manager=lambda: _get_jira_manager(),
+)
+app.include_router(capabilities_router)
+
 for _router in (
     frontend_router,
     health_router,
@@ -3761,6 +3773,7 @@ for _router in (
     metrics_router,
     project_ops_router,
     orchestration_router,
+    capabilities_router,
 ):
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
@@ -3776,6 +3789,23 @@ admin_stats = auth_admin_router.legacy_exports["admin_stats"]
 admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
 admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
 admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
+api_vision_analyze = capabilities_router.legacy_exports["api_vision_analyze"]
+api_vision_mockup = capabilities_router.legacy_exports["api_vision_mockup"]
+api_entity_upsert = capabilities_router.legacy_exports["api_entity_upsert"]
+api_entity_get_profile = capabilities_router.legacy_exports["api_entity_get_profile"]
+api_entity_delete = capabilities_router.legacy_exports["api_entity_delete"]
+api_feedback_record = capabilities_router.legacy_exports["api_feedback_record"]
+api_feedback_stats = capabilities_router.legacy_exports["api_feedback_stats"]
+api_slack_send = capabilities_router.legacy_exports["api_slack_send"]
+api_slack_channels = capabilities_router.legacy_exports["api_slack_channels"]
+api_jira_create_issue = capabilities_router.legacy_exports["api_jira_create_issue"]
+api_jira_search_issues = capabilities_router.legacy_exports["api_jira_search_issues"]
+_VisionAnalyzeRequest = capabilities_router.legacy_exports["_VisionAnalyzeRequest"]
+_VisionMockupRequest = capabilities_router.legacy_exports["_VisionMockupRequest"]
+_EntityUpsertRequest = capabilities_router.legacy_exports["_EntityUpsertRequest"]
+_FeedbackRecordRequest = capabilities_router.legacy_exports["_FeedbackRecordRequest"]
+_SlackSendRequest = capabilities_router.legacy_exports["_SlackSendRequest"]
+_JiraCreateRequest = capabilities_router.legacy_exports["_JiraCreateRequest"]
 
 
 # Legacy endpoint declarations kept in web_server.py for backwards-compatible
@@ -3919,88 +3949,7 @@ async def llm_prometheus_metrics(
 # ── Vision ──────────────────────────────────
 
 
-class _VisionAnalyzeRequest(BaseModel):
-    image_base64: str = Field(..., description="Base64 kodlu görüntü verisi")
-    mime_type: str = Field("image/png", description="Görüntü MIME türü")
-    analysis_type: str = Field("general", description="Analiz türü: general, ui, chart, document")
-    prompt: str | None = Field(None, description="Özel analiz talimatı (opsiyonel)")
-
-
-class _VisionMockupRequest(BaseModel):
-    image_base64: str = Field(..., description="Base64 kodlu mockup görüntüsü")
-    mime_type: str = Field("image/png", description="Görüntü MIME türü")
-    framework: str = Field("html", description="Hedef framework: html, react, vue")
-    prompt: str | None = Field(None, description="Ek talimat (opsiyonel)")
-
-
-@app.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])
-async def api_vision_analyze(req: _VisionAnalyzeRequest) -> Any:
-    """VisionPipeline ile görüntüyü analiz eder."""
-    agent = await _resolve_agent_instance()
-    VisionPipeline, build_analyze_prompt = _resolve_vision_components()
-    pipeline = VisionPipeline(agent.llm, cfg)
-    prompt = req.prompt or build_analyze_prompt(req.analysis_type)
-    try:
-        result = await pipeline.analyze(
-            image_b64=req.image_base64,
-            mime_type=req.mime_type,
-            prompt=prompt,
-        )
-    except TypeError:
-        try:
-            image_bytes = base64.b64decode(req.image_base64, validate=True)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}"
-            ) from exc
-
-        result = await pipeline.analyze(
-            image_bytes=image_bytes,
-            mime_type=req.mime_type,
-            analysis_type=req.analysis_type,
-        )
-    return JSONResponse({"success": True, "result": result})
-
-
-@app.post("/api/vision/mockup", summary="Mockup → Kod Dönüşümü", tags=["Vision"])
-async def api_vision_mockup(req: _VisionMockupRequest) -> Any:
-    """VisionPipeline ile mockup görüntüsünden kod üretir."""
-    agent = await _resolve_agent_instance()
-    VisionPipeline, _build_analyze_prompt = _resolve_vision_components()
-    pipeline = VisionPipeline(agent.llm, cfg)
-    try:
-        code = await pipeline.mockup_to_code(
-            image_b64=req.image_base64,
-            mime_type=req.mime_type,
-            framework=req.framework,
-            extra_instructions=req.prompt or "",
-        )
-    except TypeError:
-        try:
-            image_bytes = base64.b64decode(req.image_base64, validate=True)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}"
-            ) from exc
-
-        code = await pipeline.mockup_to_code(
-            image_bytes=image_bytes,
-            mime_type=req.mime_type,
-            framework=req.framework,
-            extra_instructions=req.prompt or "",
-        )
-    return JSONResponse({"success": True, "code": code})
-
-
-# ── EntityMemory ─────────────────────────────
-
-
-class _EntityUpsertRequest(BaseModel):
-    user_id: str = Field(..., description="Kullanıcı kimliği")
-    key: str = Field(..., description="Bellek anahtarı")
-    value: str = Field(..., description="Saklanacak değer")
-    ttl_days: int | None = Field(None, description="Yaşam süresi (gün); None = kalıcı")
-
+# Capability routes live in web.routes.capabilities; lightweight state helpers remain here.
 
 _entity_memory_instance = None
 
@@ -4018,45 +3967,6 @@ async def _get_entity_memory() -> Any:
                 status_code=501, detail=f"EntityMemory başlatılamadı: {exc}"
             ) from exc
     return _entity_memory_instance
-
-
-@app.post("/api/memory/entity/upsert", summary="Varlık Belleği Yaz", tags=["EntityMemory"])
-async def api_entity_upsert(req: _EntityUpsertRequest) -> Any:
-    """Kullanıcıya ait bir bellek kaydını ekler veya günceller."""
-    mem = await _get_entity_memory()
-    await mem.upsert(user_id=req.user_id, key=req.key, value=req.value, ttl_days=req.ttl_days)
-    return JSONResponse({"success": True})
-
-
-@app.get("/api/memory/entity/{user_id}", summary="Varlık Belleği Profili", tags=["EntityMemory"])
-async def api_entity_get_profile(user_id: str) -> Any:
-    """Bir kullanıcının tüm bellek profilini döner."""
-    mem = await _get_entity_memory()
-    profile = await mem.get_profile(user_id=user_id)
-    return JSONResponse({"success": True, "user_id": user_id, "profile": profile})
-
-
-@app.delete(
-    "/api/memory/entity/{user_id}/{key}",
-    summary="Varlık Belleği Sil",
-    tags=["EntityMemory"],
-)
-async def api_entity_delete(user_id: str, key: str) -> Any:
-    """Kullanıcıya ait bir bellek kaydını siler."""
-    mem = await _get_entity_memory()
-    deleted = await mem.delete(user_id=user_id, key=key)
-    return JSONResponse({"success": deleted})
-
-
-# ── FeedbackStore ────────────────────────────
-
-
-class _FeedbackRecordRequest(BaseModel):
-    user_id: str = Field(..., description="Kullanıcı kimliği")
-    prompt: str = Field(..., description="Kullanıcı girdisi")
-    response: str = Field(..., description="Model çıktısı")
-    rating: int = Field(..., ge=1, le=5, description="Değerlendirme puanı (1–5)")
-    note: str | None = Field(None, description="Ek not")
 
 
 _feedback_store_instance = None
@@ -4077,37 +3987,6 @@ async def _get_feedback_store() -> Any:
     return _feedback_store_instance
 
 
-@app.post("/api/feedback/record", summary="Geri Bildirim Kaydet", tags=["ActiveLearning"])
-async def api_feedback_record(req: _FeedbackRecordRequest) -> Any:
-    """Kullanıcı geri bildirimini FeedbackStore'a kaydeder."""
-    store = await _get_feedback_store()
-    await store.record(
-        user_id=req.user_id,
-        prompt=req.prompt,
-        response=req.response,
-        rating=req.rating,
-        note=req.note or "",
-    )
-    return JSONResponse({"success": True})
-
-
-@app.get("/api/feedback/stats", summary="Geri Bildirim İstatistikleri", tags=["ActiveLearning"])
-async def api_feedback_stats() -> Any:
-    """FeedbackStore istatistiklerini döner."""
-    store = await _get_feedback_store()
-    stats = await store.stats()
-    return JSONResponse({"success": True, "stats": stats})
-
-
-# ── Slack ────────────────────────────────────
-
-
-class _SlackSendRequest(BaseModel):
-    text: str = Field(..., description="Gönderilecek mesaj metni")
-    channel: str | None = Field(None, description="Hedef kanal (ör. #general)")
-    thread_ts: str | None = Field(None, description="Thread zaman damgası")
-
-
 _slack_mgr_instance = None
 
 
@@ -4125,41 +4004,7 @@ async def _get_slack_manager() -> Any:
     return _slack_mgr_instance
 
 
-@app.post("/api/integrations/slack/send", summary="Slack Mesajı Gönder", tags=["Slack"])
-async def api_slack_send(req: _SlackSendRequest) -> Any:
-    """Slack kanalına mesaj gönderir."""
-    maybe_mgr = _get_slack_manager()
-    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
-    ok, err = await mgr.send_message(text=req.text, channel=req.channel, thread_ts=req.thread_ts)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Slack hatası: {err}")
-    return JSONResponse({"success": True})
-
-
-@app.get("/api/integrations/slack/channels", summary="Slack Kanal Listesi", tags=["Slack"])
-async def api_slack_channels() -> Any:
-    """Workspace'deki Slack kanallarını listeler (SDK gerektirir)."""
-    maybe_mgr = _get_slack_manager()
-    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
-    ok, channels, err = await mgr.list_channels()
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Slack hatası: {err}")
-    return JSONResponse({"success": True, "channels": channels})
-
-
 # ── Jira ─────────────────────────────────────
-
-
-class _JiraCreateRequest(BaseModel):
-    project_key: str = Field(..., description="Jira proje anahtarı (ör. SIDAR)")
-    summary: str = Field(..., description="Issue başlığı")
-    description: str | None = Field(None, description="Issue açıklaması")
-    issue_type: str = Field("Task", description="Issue türü: Task, Bug, Story")
-    priority: str | None = Field(None, description="Öncelik: Highest, High, Medium, Low")
 
 
 _jira_mgr_instance = None
@@ -4177,36 +4022,6 @@ def _get_jira_manager() -> Any:
             default_project=getattr(cfg, "JIRA_DEFAULT_PROJECT", ""),
         )
     return _jira_mgr_instance
-
-
-@app.post("/api/integrations/jira/issue", summary="Jira Issue Oluştur", tags=["Jira"])
-async def api_jira_create_issue(req: _JiraCreateRequest) -> Any:
-    """Jira'da yeni bir issue oluşturur."""
-    mgr = _get_jira_manager()
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
-    ok, issue, err = await mgr.create_issue(
-        project_key=req.project_key,
-        summary=req.summary,
-        description=req.description or "",
-        issue_type=req.issue_type,
-        priority=req.priority,
-    )
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Jira hatası: {err}")
-    return JSONResponse({"success": True, "issue": issue})
-
-
-@app.get("/api/integrations/jira/issues", summary="Jira Issue Arama", tags=["Jira"])
-async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
-    """JQL sorgusuna göre Jira issue'larını listeler."""
-    mgr = _get_jira_manager()
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
-    ok, issues, err = await mgr.search_issues(jql=jql, max_results=max_results)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Jira hatası: {err}")
-    return JSONResponse({"success": True, "issues": issues, "total": len(issues)})
 
 
 # ── Teams ────────────────────────────────────
