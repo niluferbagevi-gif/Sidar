@@ -44,6 +44,8 @@ class DummyCfg:
     JWT_TTL_DAYS: int = 3
     SQLITE_MAX_CONCURRENT_OPS: int = 4
     SIDAR_AUTO_MIGRATE: bool = True
+    PASSWORD_HASH_ALGORITHM: str = "pbkdf2_sha256"
+    PASSWORD_PBKDF2_ITERATIONS: int = 120000
 
 
 class _FakeAcquire:
@@ -226,6 +228,10 @@ def test_helper_functions_basic_contracts() -> None:
     assert not _verify_password("wrong", hashed)
     assert not _verify_password("abc123", "invalid")
     assert not _verify_password("abc123", "sha1$salt$deadbeef")
+
+    configured_hash = _hash_password("abc123", salt="fixedsalt", iterations=321)
+    assert configured_hash.startswith("pbkdf2_sha256$321$fixedsalt$")
+    assert _verify_password("abc123", configured_hash)
 
     assert _quote_sql_identifier("schema_versions") == '"schema_versions"'
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
@@ -2381,6 +2387,30 @@ def test_postgres_failure_diagnosis_uses_doctor_details_and_auth_message(monkeyp
     assert "yetki/parola hatası" in core_db._postgres_user_action_message(
         "password authentication failed"
     )
+
+
+@pytest.mark.asyncio
+async def test_database_uses_configured_password_hash_iterations(sqlite_db: Database) -> None:
+    sqlite_db.password_pbkdf2_iterations = 1234
+
+    await sqlite_db.create_user("iter-user", password="pw")
+
+    assert sqlite_db._sqlite_conn is not None
+    row = sqlite_db._sqlite_conn.execute(
+        "SELECT password_hash FROM users WHERE username=?", ("iter-user",)
+    ).fetchone()
+    assert row is not None
+    assert str(row["password_hash"]).startswith("pbkdf2_sha256$1234$")
+    assert await sqlite_db.authenticate_user("iter-user", "pw") is not None
+
+
+@pytest.mark.asyncio
+async def test_database_rejects_unsupported_password_hash_algorithm(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'x.db'}", BASE_DIR=str(tmp_path))
+    cfg.PASSWORD_HASH_ALGORITHM = "argon2id"
+
+    with pytest.raises(ValueError, match="Unsupported PASSWORD_HASH_ALGORITHM"):
+        Database(cfg)
 
 
 @pytest.mark.asyncio

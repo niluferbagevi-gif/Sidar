@@ -641,6 +641,20 @@ def get_db_pool_pre_ping_default() -> bool:
     return get_bool_env("DB_POOL_PRE_PING_PROD", True)
 
 
+def get_password_pbkdf2_iterations_default() -> int:
+    """Return profile-aware PBKDF2 password hashing iterations.
+
+    Unit/CI/local test runs keep the KDF intentionally cheap so functional tests
+    do not spend most of their time in CPU-bound password derivation. Runtime
+    without a test profile uses a higher work factor; performance benchmarks can pin
+    their own explicit value via ``SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS``.
+    """
+    password_profile = os.getenv("TEST_PROFILE", "").strip().lower()
+    if password_profile in {"test", "ci", "local"}:
+        return max(1, get_int_env("PASSWORD_PBKDF2_ITERATIONS_TEST", 120000))
+    return max(1, get_int_env("PASSWORD_PBKDF2_ITERATIONS_PROD", 720000))
+
+
 # ═══════════════════════════════════════════════════════════════
 # LOGLAMA SİSTEMİ  (dinamik, RotatingFileHandler)
 # ═══════════════════════════════════════════════════════════════
@@ -1128,6 +1142,10 @@ class Config:
         "DB_POOL_RECYCLE_SECONDS", get_db_pool_recycle_seconds_default()
     )
     DB_POOL_PRE_PING: bool = get_bool_env("DB_POOL_PRE_PING", get_db_pool_pre_ping_default())
+    PASSWORD_HASH_ALGORITHM: str = os.getenv("PASSWORD_HASH_ALGORITHM", "pbkdf2_sha256").strip()
+    PASSWORD_PBKDF2_ITERATIONS: int = get_int_env(
+        "PASSWORD_PBKDF2_ITERATIONS", get_password_pbkdf2_iterations_default()
+    )
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )

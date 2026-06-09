@@ -124,6 +124,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `SIDAR_BENCHMARK_DB_POOL_MIN_SIZE` değerini aynı kapasiteye eşitler. `SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW`,
   `SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS` ve `SIDAR_BENCHMARK_DB_POOL_PRE_PING` yalnız hedefli testlerde
   override edilmelidir; baseline yenilerken kullanılan değerleri PR açıklamasında belirtin.
+- Auth benchmarkları normal test profilinin düşük PBKDF2 maliyetini değil, varsayılan olarak prod iş
+  faktörünü ölçer: `SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS`, yoksa
+  `PASSWORD_PBKDF2_ITERATIONS_PROD` (varsayılan `720000`). Bu değeri değiştirerek baseline yenilerseniz
+  benchmark JSON'u ve PR açıklaması aynı iş faktörünü açıkça belirtmelidir.
 - `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
   incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
   `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`

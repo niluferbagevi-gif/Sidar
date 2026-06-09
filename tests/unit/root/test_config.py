@@ -197,6 +197,23 @@ def test_db_pool_profile_defaults_split_test_and_production(monkeypatch):
     assert config.get_db_pool_pre_ping_default() is True
 
 
+def test_password_pbkdf2_iterations_default_splits_test_and_production(monkeypatch):
+    monkeypatch.setenv("TEST_PROFILE", "ci")
+    assert config.get_password_pbkdf2_iterations_default() == 120000
+
+    monkeypatch.setenv("PASSWORD_PBKDF2_ITERATIONS_TEST", "240000")
+    assert config.get_password_pbkdf2_iterations_default() == 240000
+
+    monkeypatch.setenv("TEST_PROFILE", "local")
+    assert config.get_password_pbkdf2_iterations_default() == 240000
+
+    monkeypatch.delenv("TEST_PROFILE", raising=False)
+    assert config.get_password_pbkdf2_iterations_default() == 720000
+
+    monkeypatch.setenv("PASSWORD_PBKDF2_ITERATIONS_PROD", "900000")
+    assert config.get_password_pbkdf2_iterations_default() == 900000
+
+
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
     original = config.Config.AI_PROVIDER
     config.Config.AI_PROVIDER = "ollama"

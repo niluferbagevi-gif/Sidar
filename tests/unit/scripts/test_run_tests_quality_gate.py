@@ -199,6 +199,8 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW" in benchmark_test
     assert "SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS" in benchmark_test
     assert "SIDAR_BENCHMARK_DB_POOL_PRE_PING" in benchmark_test
+    assert "SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS" in benchmark_test
+    assert "PASSWORD_PBKDF2_ITERATIONS_PROD" in benchmark_test
     assert "warmup_rounds=5" in benchmark_test
     assert "rounds=25" in benchmark_test
 

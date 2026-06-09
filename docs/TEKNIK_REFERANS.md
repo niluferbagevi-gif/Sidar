@@ -77,6 +77,10 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
   Prod/local profilde pool talebe göre büyür, varsayılan overflow `5`, recycle `300s`,
   pre-ping açıktır.
 - SQLite’da thread-safe bağlantı için `check_same_thread=False`, `PRAGMA foreign_keys=ON`, `journal_mode=WAL` açılır.
+- Kullanıcı şifreleri `pbkdf2_sha256` formatında ve hash kaydı içinde iterasyon sayısı saklanarak türetilir.
+  `PASSWORD_PBKDF2_ITERATIONS` açık verilirse tüm profillerde onu kullanır; verilmezse test/CI/local test
+  profili `PASSWORD_PBKDF2_ITERATIONS_TEST` (varsayılan `120000`), runtime/prod profil
+  `PASSWORD_PBKDF2_ITERATIONS_PROD` (varsayılan `720000`) değerini kullanır.
 
 ### 2.2 Tablo şemaları ve ilişkiler
 
