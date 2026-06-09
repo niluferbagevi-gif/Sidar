@@ -102,12 +102,15 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
   karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı sabit
-  runner kullanan CI profilinde varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%` ile açıktır.
-  WSL2/laptop P-state, Docker servisleri ve model keep-alive jitter'ı görülebilen yerel profilde
-  `BENCHMARK_ENFORCE_COMPARE=0` varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli
-  opt-in ile açıldığında varsayılan eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü
-  biçimde override edilebilir. Benchmark fazının genel sonucu CI profilinde varsayılan hard-fail, yerelde
-  flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
+  runner kullanan nightly/release benchmark workflow'larında `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%`
+  ile açıktır. Ana CI hattında `RUN_BENCHMARKS=auto` ağır `tests/performance` fazını süreyi kontrol altında
+  tutmak için atlar; lokal profilde varsayılan `RUN_BENCHMARKS=required` kalır. WSL2/laptop P-state, Docker
+  servisleri ve model keep-alive jitter'ı görülebilen yerel profilde `BENCHMARK_ENFORCE_COMPARE=0`
+  varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli opt-in ile açıldığında varsayılan
+  eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde override edilebilir.
+  Benchmark fazının genel sonucu ana CI'da çalıştırılmadığı sürece nightly/release job'larında hard-fail,
+  yerelde ise flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için
+  `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
@@ -128,17 +131,18 @@ tek seferlik/geçici dosya adlarını referans almaz.
   faktörünü ölçer: `SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS`, yoksa
   `PASSWORD_PBKDF2_ITERATIONS_PROD` (varsayılan `720000`). Bu değeri değiştirerek baseline yenilerseniz
   benchmark JSON'u ve PR açıklaması aynı iş faktörünü açıkça belirtmelidir.
-- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
-  incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
+- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı hızlı kalite kapısı
+  olarak kalır; repodaki incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eden
   `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`
-  değerleriyle baseline eksikliği veya `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk
-  kurulum/bootstrap akışlarında değer `0` kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir
-  ancak CI'a girecek baseline değişikliği kontrollü review'dan geçmelidir.
+  ayarları nightly/release benchmark workflow'larında uygulanır. Bu job'larda baseline eksikliği veya
+  `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk kurulum/bootstrap akışlarında değer `0`
+  kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir ancak CI'a girecek baseline
+  değişikliği kontrollü review'dan geçmelidir.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
-  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
-  incelemeyi kolaylaştırmak için `coverage.xml`, trend JSON dosyaları ve üretilen `.benchmarks/`
-  baseline adaylarını birlikte `backend-quality-trend-artifacts` artifact'i olarak yükler.
+  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Nightly/release
+  benchmark workflow'ları incelemeyi kolaylaştırmak için trend JSON dosyaları ve üretilen `.benchmarks/`
+  baseline adaylarını artifact olarak yükler; ana CI ise yalnız hızlı kalite artefaktlarını warn modunda toplar.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket

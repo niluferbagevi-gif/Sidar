@@ -157,7 +157,7 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creation() -> None:
+def test_run_tests_skips_ci_auto_benchmarks_but_supports_required_compare() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
@@ -187,6 +187,10 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+    assert 'RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"' in script
+    assert 'RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"' in script
+    assert 'if [ "${RUN_BENCHMARKS}" = "auto" ] && [ "${TEST_PROFILE}" = "ci" ]; then' in script
+    assert "ağır performans benchmarkları ana CI'da atlanacak" in script
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
@@ -260,6 +264,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in install_script
 
     for content in (env_advanced, env_test_example):
+        assert "RUN_BENCHMARKS=required" in content
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
         assert "BENCHMARK_COMPARE_FAIL=" in content
@@ -1488,12 +1493,13 @@ def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> No
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
-    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
-    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
+    assert 'RUN_BENCHMARKS: "auto"' in ci
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
+    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' not in ci
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' not in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert 'GPU_BENCH_CONCURRENT_ROUNDS: "30"' in nightly_gpu
-    assert "Ana CI hattı artık repodaki" in notes
+    assert "Ana CI hattı hızlı kalite kapısı" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
     assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
 

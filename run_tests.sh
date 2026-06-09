@@ -1423,6 +1423,10 @@ if ! run_security_analysis_gates; then
 fi
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
+if [ "${RUN_BENCHMARKS}" = "auto" ] && [ "${TEST_PROFILE}" = "ci" ]; then
+  echo "ℹ️ CI profilinde RUN_BENCHMARKS=auto; ağır performans benchmarkları ana CI'da atlanacak ve nightly/release benchmark workflow'larına bırakılacak."
+  RUN_BENCHMARKS=0
+fi
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "⚠️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
   if command -v nvidia-smi >/dev/null 2>&1 || [ "${USE_GPU:-0}" = "1" ]; then
