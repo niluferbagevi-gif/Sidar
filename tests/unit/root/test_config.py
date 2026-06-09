@@ -181,6 +181,22 @@ def test_get_db_pool_size_default_respects_postgres_and_hard_cap(monkeypatch):
     assert config.get_db_pool_size_default() == 12
 
 
+def test_db_pool_profile_defaults_split_test_and_production(monkeypatch):
+    monkeypatch.setenv("DB_POOL_SIZE", "7")
+    monkeypatch.setenv("TEST_PROFILE", "ci")
+
+    assert config.get_db_pool_min_size_default() == 7
+    assert config.get_db_pool_max_overflow_default() == 0
+    assert config.get_db_pool_recycle_seconds_default() == 0.0
+    assert config.get_db_pool_pre_ping_default() is False
+
+    monkeypatch.setenv("TEST_PROFILE", "local")
+    assert config.get_db_pool_min_size_default() == 1
+    assert config.get_db_pool_max_overflow_default() == 5
+    assert config.get_db_pool_recycle_seconds_default() == 300.0
+    assert config.get_db_pool_pre_ping_default() is True
+
+
 def test_set_provider_mode_maps_and_rejects_invalid(monkeypatch):
     original = config.Config.AI_PROVIDER
     config.Config.AI_PROVIDER = "ollama"

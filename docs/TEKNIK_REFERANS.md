@@ -67,7 +67,15 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - `DATABASE_URL` `postgresql://` veya `postgresql+asyncpg://` ile başlıyorsa backend **PostgreSQL** seçilir.
 - Aksi durumda backend **SQLite** (`sqlite+aiosqlite:///data/sidar.db`) olarak çalışır.
-- PostgreSQL’de `asyncpg.create_pool(min_size=1, max_size=DB_POOL_SIZE)` kullanılır.
+- PostgreSQL’de `asyncpg.create_pool(...)` profil-duyarlı pool ayarlarıyla kullanılır:
+  `DB_POOL_SIZE` ana kapasiteyi, `DB_POOL_MIN_SIZE` sıcak/eager bağlantı sayısını,
+  `DB_POOL_MAX_OVERFLOW` geçici ek kapasiteyi (`max_size = size + overflow`),
+  `DB_POOL_RECYCLE_SECONDS` asyncpg `max_inactive_connection_lifetime` değerini ve
+  `DB_POOL_PRE_PING` acquire başına `SELECT 1` liveness kontrolünü yönetir.
+- Test/CI profilinde varsayılanlar benchmark jitter'ını azaltmak için daha agresiftir:
+  pool minimumu `DB_POOL_SIZE` kadar ısıtılır, overflow/recycle/pre-ping kapalıdır.
+  Prod/local profilde pool talebe göre büyür, varsayılan overflow `5`, recycle `300s`,
+  pre-ping açıktır.
 - SQLite’da thread-safe bağlantı için `check_same_thread=False`, `PRAGMA foreign_keys=ON`, `journal_mode=WAL` açılır.
 
 ### 2.2 Tablo şemaları ve ilişkiler

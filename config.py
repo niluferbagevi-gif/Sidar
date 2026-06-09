@@ -604,6 +604,43 @@ def get_db_pool_size_default() -> int:
     return max(2, min(cpu_count * per_core, max_by_postgres, hard_cap))
 
 
+def _is_test_profile() -> bool:
+    return os.getenv("TEST_PROFILE", "").strip().lower() in {"test", "ci"}
+
+
+def get_db_pool_min_size_default() -> int:
+    """Return profile-aware PostgreSQL pool warm size.
+
+    Test/CI runs use a fully warm asyncpg pool so benchmark deltas measure the
+    workload rather than lazy connection creation. Production keeps one eager
+    connection by default and grows on demand.
+    """
+    if _is_test_profile():
+        return get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
+    return 1
+
+
+def get_db_pool_max_overflow_default() -> int:
+    """Return profile-aware overflow capacity mapped onto asyncpg max_size."""
+    if _is_test_profile():
+        return max(0, get_int_env("DB_POOL_MAX_OVERFLOW_TEST", 0))
+    return max(0, get_int_env("DB_POOL_MAX_OVERFLOW_PROD", 5))
+
+
+def get_db_pool_recycle_seconds_default() -> float:
+    """Return profile-aware idle connection recycle seconds for asyncpg."""
+    if _is_test_profile():
+        return max(0.0, get_float_env("DB_POOL_RECYCLE_SECONDS_TEST", 0.0))
+    return max(0.0, get_float_env("DB_POOL_RECYCLE_SECONDS_PROD", 300.0))
+
+
+def get_db_pool_pre_ping_default() -> bool:
+    """Return profile-aware connection liveness probe default."""
+    if _is_test_profile():
+        return get_bool_env("DB_POOL_PRE_PING_TEST", False)
+    return get_bool_env("DB_POOL_PRE_PING_PROD", True)
+
+
 # ═══════════════════════════════════════════════════════════════
 # LOGLAMA SİSTEMİ  (dinamik, RotatingFileHandler)
 # ═══════════════════════════════════════════════════════════════
@@ -1085,6 +1122,12 @@ class Config:
     CONTAINER_DATABASE_URL: str | None = None
     SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
+    DB_POOL_MIN_SIZE: int = get_int_env("DB_POOL_MIN_SIZE", get_db_pool_min_size_default())
+    DB_POOL_MAX_OVERFLOW: int = get_int_env("DB_POOL_MAX_OVERFLOW", get_db_pool_max_overflow_default())
+    DB_POOL_RECYCLE_SECONDS: float = get_float_env(
+        "DB_POOL_RECYCLE_SECONDS", get_db_pool_recycle_seconds_default()
+    )
+    DB_POOL_PRE_PING: bool = get_bool_env("DB_POOL_PRE_PING", get_db_pool_pre_ping_default())
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )

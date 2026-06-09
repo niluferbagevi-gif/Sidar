@@ -2416,6 +2416,34 @@ async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_connect_postgresql_uses_profile_specific_pool_options(tmp_path) -> None:
+    pool = FakePgAdapter()
+    calls = []
+
+    async def _factory(**kwargs):
+        calls.append(kwargs)
+        return pool
+
+    cfg = DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path))
+    cfg.DB_POOL_SIZE = 4
+    cfg.DB_POOL_MIN_SIZE = 4
+    cfg.DB_POOL_MAX_OVERFLOW = 2
+    cfg.DB_POOL_RECYCLE_SECONDS = 30
+    cfg.DB_POOL_PRE_PING = True
+    db = Database(cfg, pg_pool_factory=_factory)
+
+    await db._connect_postgresql()
+
+    assert db._pg_pool is pool
+    assert calls[0]["dsn"] == "postgresql://u:p@db.example/db"
+    assert calls[0]["min_size"] == 4
+    assert calls[0]["max_size"] == 6
+    assert calls[0]["max_inactive_connection_lifetime"] == 30.0
+    assert callable(calls[0]["setup"])
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_connect_postgresql_pool_error_detection_tolerates_asyncpg_reimport_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

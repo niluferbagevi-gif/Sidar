@@ -419,7 +419,13 @@ class Database:
         self.database_url = (
             getattr(self.cfg, "DATABASE_URL", "") or ""
         ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
-        self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
+        self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
+        self.pool_min_size = max(0, int(getattr(self.cfg, "DB_POOL_MIN_SIZE", 1) or 1))
+        self.pool_max_overflow = max(0, int(getattr(self.cfg, "DB_POOL_MAX_OVERFLOW", 0) or 0))
+        self.pool_recycle_seconds = max(
+            0.0, float(getattr(self.cfg, "DB_POOL_RECYCLE_SECONDS", 0.0) or 0.0)
+        )
+        self.pool_pre_ping = bool(getattr(self.cfg, "DB_POOL_PRE_PING", False))
         self.schema_version_table = str(
             getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions"
         )
@@ -707,12 +713,24 @@ class Database:
             return
 
         dsn = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        max_pool_size = max(1, self.pool_size + self.pool_max_overflow)
+        min_pool_size = min(max_pool_size, self.pool_min_size)
+        pool_kwargs: dict[str, Any] = {
+            "dsn": dsn,
+            "min_size": min_pool_size,
+            "max_size": max_pool_size,
+        }
+        if self.pool_recycle_seconds > 0:
+            pool_kwargs["max_inactive_connection_lifetime"] = self.pool_recycle_seconds
+        if self.pool_pre_ping:
+
+            async def _pre_ping(conn: Any) -> None:
+                await conn.execute("SELECT 1")
+
+            pool_kwargs["setup"] = _pre_ping
+
         try:
-            self._pg_pool = await pool_factory(
-                dsn=dsn,
-                min_size=1,
-                max_size=max(1, self.pool_size),
-            )
+            self._pg_pool = await pool_factory(**pool_kwargs)
         except Exception as exc:
             pool_error_type = None
             if self._pg_pool_factory is None:

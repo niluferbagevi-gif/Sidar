@@ -169,6 +169,7 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
+    assert "export TEST_PROFILE" in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
     assert "resolve_benchmark_compare_target()" in script
@@ -194,6 +195,10 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
     assert 'await conn.execute("SELECT 1")' in benchmark_test
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_MIN_SIZE" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_PRE_PING" in benchmark_test
     assert "warmup_rounds=5" in benchmark_test
     assert "rounds=25" in benchmark_test
 

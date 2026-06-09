@@ -305,6 +305,7 @@ if [ "${TEST_PROFILE}" != "ci" ] && [ "${TEST_PROFILE}" != "local" ]; then
   echo "⚠️ Geçersiz TEST_PROFILE='${TEST_PROFILE}'. 'local' profiline düşülüyor."
   TEST_PROFILE="local"
 fi
+export TEST_PROFILE
 
 if [ "${TEST_PROFILE}" = "ci" ]; then
   AUTO_OPEN_ARTIFACTS=0

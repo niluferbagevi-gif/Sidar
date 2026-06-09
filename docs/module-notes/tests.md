@@ -119,6 +119,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
   artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
   jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.
+- PostgreSQL benchmark fixture'ı, SQLite karşılaştırmasında lazy connection açılışını ölçüme karıştırmamak
+  için `SIDAR_BENCHMARK_DB_POOL_SIZE` kadar bağlantıyı fixture başında ısıtır ve varsayılan
+  `SIDAR_BENCHMARK_DB_POOL_MIN_SIZE` değerini aynı kapasiteye eşitler. `SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW`,
+  `SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS` ve `SIDAR_BENCHMARK_DB_POOL_PRE_PING` yalnız hedefli testlerde
+  override edilmelidir; baseline yenilerken kullanılan değerleri PR açıklamasında belirtin.
 - `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
   incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
   `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`
