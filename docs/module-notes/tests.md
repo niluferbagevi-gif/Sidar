@@ -111,6 +111,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
+- Regression alarmının sessiz kalmadığını hedefli doğrulamak için CI, gerçek `.benchmarks`
+  dizinine dokunmayan sentetik self-test'i de çalıştırır:
+  - `uv run python scripts/ci/verify_benchmark_regression_gate.py`
+  Bu script geçici bir hızlı baseline üretir, aynı benchmark'ı kontrollü yavaşlatır ve
+  `--benchmark-compare-fail=mean:50%` sonucunun fail-closed döndüğünü doğrular.
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
   artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
   jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.

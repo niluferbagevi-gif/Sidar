@@ -198,6 +198,22 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "rounds=25" in benchmark_test
 
 
+def test_benchmark_regression_gate_self_test_is_documented_and_wired_to_ci() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    self_test = Path("scripts/ci/verify_benchmark_regression_gate.py").read_text(encoding="utf-8")
+
+    assert "Verify benchmark regression gate fails closed" in ci_workflow
+    assert "uv run python scripts/ci/verify_benchmark_regression_gate.py" in ci_workflow
+    assert "uv run python scripts/ci/verify_benchmark_regression_gate.py" in notes
+    assert "--benchmark-compare-fail=mean:50%" in notes
+    assert "TemporaryDirectory" in self_test
+    assert "--benchmark-storage" in self_test
+    assert "--benchmark-save=baseline" in self_test
+    assert "--benchmark-compare-fail=mean:50%" in self_test
+    assert "return 1" in self_test[self_test.index("if regression.returncode == 0") :]
+
+
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
