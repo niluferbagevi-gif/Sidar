@@ -1113,6 +1113,13 @@ class Config:
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )
+    # PBKDF2-SHA256 iş faktörü. Varsayılan OWASP 2024 baseline'ıdır (600 000).
+    # Test profili .env.test üzerinden bu değeri düşürebilir; benchmark sürelerini
+    # sıkıştırır ve gerçek I/O delta'sını şifre türetme maliyetiyle maskelememizi
+    # önler. Üretimde 600_000 altına inmeyin; donanım iyileştikçe arttırın.
+    # core/db.py içindeki _hash_password çağrı zamanında env değişkenini okur;
+    # bu alan adminlere keşfedilebilirlik ve dokümantasyon için açıkça tutulmuştur.
+    PASSWORD_HASH_ITERATIONS: int = get_int_env("PASSWORD_HASH_ITERATIONS", 600_000)
     DB_DEGRADED_SQLITE_URL: str = os.getenv("DB_DEGRADED_SQLITE_URL", "")
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
