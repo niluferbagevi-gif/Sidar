@@ -1943,8 +1943,33 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
 
 
 ConfigReloadCallback = Callable[["Config"], None]
-_config_reload_callbacks: list[ConfigReloadCallback] = []
-_last_notified_instance: "Config | None" = None
+
+
+def _restore_reload_registry_from_previous_module() -> (
+    tuple[list["ConfigReloadCallback"], "Config | None"]
+):
+    """`importlib.reload(config)` çağrısı sonrası callback registry'sini koru.
+
+    Modül yeniden çalıştırıldığında modül globalleri sıfırlanır; bu durum
+    ``register_config_reload_callback`` ile bağlanmış abonelerin (örn.
+    ``web_server._on_config_reload``) sessizce düşmesine yol açar. Python ilk
+    importtan itibaren modülü ``sys.modules`` içine yerleştirdiği için reload
+    sırasında önceki ``_config_reload_callbacks`` listesini ve son notify edilen
+    Config kimliğini buradan okuyup yeni binding'lere taşıyarak registry'nin
+    reload boundary'sinde dirençli kalmasını sağlarız.
+    """
+    existing_module = sys.modules[__name__]
+    previous_callbacks = getattr(existing_module, "_config_reload_callbacks", None)
+    callbacks: list[ConfigReloadCallback] = (
+        list(previous_callbacks) if isinstance(previous_callbacks, list) else []
+    )
+    previous_instance = getattr(existing_module, "_last_notified_instance", None)
+    return callbacks, previous_instance
+
+
+_config_reload_callbacks, _last_notified_instance = (
+    _restore_reload_registry_from_previous_module()
+)
 
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
