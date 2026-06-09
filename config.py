@@ -1944,6 +1944,7 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
 
 ConfigReloadCallback = Callable[["Config"], None]
 _config_reload_callbacks: list[ConfigReloadCallback] = []
+_last_notified_instance: "Config | None" = None
 
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
@@ -1953,7 +1954,15 @@ def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
 
 
 def _notify_config_reload_callbacks(config_instance: "Config") -> None:
-    """Notify reload subscribers without letting one stale hook break environment reloads."""
+    """Notify reload subscribers exactly once per active Config identity.
+
+    Idempotent on instance identity so callers (`get_config`, `reload_environment`)
+    can invoke it eagerly without double-firing subscribers when nothing changed.
+    """
+    global _last_notified_instance
+    if _last_notified_instance is config_instance:
+        return
+    _last_notified_instance = config_instance
     for callback in list(_config_reload_callbacks):
         try:
             callback(config_instance)
@@ -1978,7 +1987,6 @@ def reload_environment(*, profile: str | None = None) -> "Config":
     _config_instance = None
     Config._log_dotenv_load_status(missing_keys=Config.get_missing_critical_runtime_keys())
     reloaded = get_config()
-    _notify_config_reload_callbacks(reloaded)
     return reloaded
 
 
@@ -1993,10 +2001,17 @@ _config_instance: "Config | None" = None
 
 
 def get_config() -> "Config":
-    """Proses genelinde tek Config örneği döndürür (thread-safe, lazy)."""
+    """Proses genelinde tek Config örneği döndürür (thread-safe, lazy).
+
+    Her çağrıda mevcut singleton üzerinden idempotent notify çalıştırır; böylece
+    monkeypatch yoluyla `_config_instance` dışarıdan değiştirilmiş olsa bile
+    `web_server.cfg` gibi cached referanslar bir sonraki `get_config()` çağrısında
+    otomatik olarak canlı singleton'a hizalanır.
+    """
     global _config_instance
     if _config_instance is None:
         _config_instance = Config()
+    _notify_config_reload_callbacks(_config_instance)
     return _config_instance
 
 

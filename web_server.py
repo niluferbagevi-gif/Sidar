@@ -583,8 +583,8 @@ def _on_config_reload(config_instance: Config) -> None:
     _refresh_cfg(config_instance)
 
 
-cfg = _refresh_cfg()
 register_config_reload_callback(_on_config_reload)
+cfg = _refresh_cfg()
 Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
