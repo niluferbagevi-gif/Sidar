@@ -77,7 +77,12 @@ def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
     )
     monkeypatch.setitem(sys.modules, "torch", torch)
     available = _detect(_Logger())
-    assert (available.has_cuda, available.gpu_count, available.gpu_name, available.cuda_version) == (
+    assert (
+        available.has_cuda,
+        available.gpu_count,
+        available.gpu_name,
+        available.cuda_version,
+    ) == (
         True,
         2,
         "Test GPU",
@@ -106,7 +111,9 @@ def test_detect_gpu_handles_missing_torch_and_runtime_error(
     monkeypatch.setitem(
         sys.modules,
         "torch",
-        SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: (_ for _ in ()).throw(RuntimeError("x")))),
+        SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: (_ for _ in ()).throw(RuntimeError("x")))
+        ),
     )
     assert _detect(_Logger()).gpu_name == "Tespit Edilemedi"
 

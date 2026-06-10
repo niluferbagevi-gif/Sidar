@@ -67,7 +67,11 @@ _CONCURRENT_WARMUP_ROUNDS: int = _gpu_smoke._env_int(
 )
 _CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
     "GPU_BENCH_CONCURRENT_ROUNDS",
-    10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
+    # Smoke profili 10 → 15: önceki ölçümde StdDev 64 ms / IQR 94 ms ile rounds=10
+    # istatistiksel olarak zayıftı; 15 tur ~%50 daha fazla örneklem ile regresyon
+    # tespit hassasiyetini artırır. Pipeline'a eklediği ek süre tek koşum başına
+    # ~5 round × ~7 s/round ≈ 35 s; smoke profilinde kabul edilebilir.
+    15 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
     min_value=10,
     max_value=50,
 )
@@ -177,6 +181,21 @@ def _apply_keep_alive(payload: dict[str, object]) -> dict[str, object]:
     return payload
 
 
+def _workload_shape_signature() -> str:
+    """Tek satırlık, deterministik workload shape imzası.
+
+    Trend karşılaştırıcı bu imzadan iki koşum arasında shape değişimini
+    (örn. num_ctx 2048→4096) ayırt edebilir; aksi halde trend grafiğinde
+    farklı profilleri aynı seriye sıkıştırırız.
+    """
+    return (
+        f"concurrency={_CONCURRENCY}"
+        f"|num_batch={_NUM_BATCH}"
+        f"|num_ctx={_NUM_CTX}"
+        f"|num_predict={_NUM_PREDICT}"
+    )
+
+
 def _record_runtime_options(benchmark) -> None:
     """Attach workload-shaping Ollama options so trend history compares like-for-like runs."""
     benchmark.extra_info["ollama_model"] = _MODEL
@@ -184,6 +203,25 @@ def _record_runtime_options(benchmark) -> None:
     benchmark.extra_info["ollama_num_batch"] = _NUM_BATCH
     benchmark.extra_info["ollama_num_predict"] = _NUM_PREDICT
     benchmark.extra_info["ollama_num_ctx"] = _NUM_CTX
+    benchmark.extra_info["workload_shape"] = _workload_shape_signature()
+
+
+def _record_vram_workload_shape(benchmark) -> None:
+    """VRAM testine özgü shape parametrelerini ek olarak kaydet.
+
+    `vram_workload_shape` anahtarı, VRAM tepe ölçümünü etkileyen tüm
+    boyut/zamanlama parametrelerini tek satırda bir araya getirir. Trend
+    karşılaştırıcı bu imzayı görerek shape değişikliklerini regresyon olarak
+    yanlış raporlamaz. Üretim batch boyutu değiştiğinde bu env değerlerini
+    güncellemek (örn. `GPU_BENCH_CONCURRENCY=8` veya `GPU_BENCH_NUM_PREDICT=256`)
+    burada da otomatik yansır.
+    """
+    benchmark.extra_info["vram_workload_shape"] = (
+        f"{_workload_shape_signature()}"
+        f"|vram_sample_interval_s={_VRAM_SAMPLE_INTERVAL_S}"
+        f"|vram_rounds={_BENCH_ROUNDS}"
+        f"|vram_warmup_rounds={_WARMUP_ROUNDS}"
+    )
 
 
 def _ollama_options() -> dict[str, int | float]:
@@ -364,7 +402,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
       GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 8)
-      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)
+      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 15, full: 20)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()
@@ -444,6 +482,9 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
         )
     if _gpu_smoke._read_gpu_memory_used_mib() is None:
         pytest.skip("nvidia-smi VRAM ölçümü kullanılamıyor.")
+
+    _record_runtime_options(benchmark)
+    _record_vram_workload_shape(benchmark)
 
     client = _make_ollama_client()
     loop = asyncio.new_event_loop()
@@ -649,4 +690,29 @@ def test_runtime_options_metadata_records_workload_shape() -> None:
         "ollama_num_batch": _NUM_BATCH,
         "ollama_num_predict": _NUM_PREDICT,
         "ollama_num_ctx": _NUM_CTX,
+        "workload_shape": _workload_shape_signature(),
     }
+
+
+def test_vram_workload_shape_metadata_includes_vram_specific_dimensions() -> None:
+    """VRAM testinin shape imzasının sampling ve tur sayısını da kapsamasını doğrula.
+
+    Trend karşılaştırıcı VRAM tepe ölçümünü etkileyen tüm boyut/zamanlama
+    parametrelerini bu tek anahtardan okur; aksi halde sample interval veya
+    rounds değişimi gözden kaçar ve regresyon yanlış sınıflandırılır.
+    """
+
+    class _BenchmarkStub:
+        extra_info: dict[str, object] = {}
+
+    benchmark = _BenchmarkStub()
+    _record_vram_workload_shape(benchmark)
+
+    signature = benchmark.extra_info["vram_workload_shape"]
+    assert isinstance(signature, str)
+    # Genel shape (_workload_shape_signature) içeriği bu imzanın baş kısmı olmalı.
+    assert signature.startswith(_workload_shape_signature())
+    # VRAM'e özgü ek parametreler imzada görünmeli.
+    assert "vram_sample_interval_s=" in signature
+    assert f"vram_rounds={_BENCH_ROUNDS}" in signature
+    assert f"vram_warmup_rounds={_WARMUP_ROUNDS}" in signature

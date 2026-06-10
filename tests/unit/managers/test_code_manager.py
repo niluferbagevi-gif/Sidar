@@ -2590,7 +2590,9 @@ def test_resolve_lsp_command_falls_back_to_binary_without_uv_or_uvx(manager, mon
 
 def test_resolve_lsp_command_skips_uvx_for_custom_python_server(manager, monkeypatch):
     manager.python_lsp_server = "custom-python-lsp"
-    monkeypatch.setattr(cm.shutil, "which", lambda binary: "/usr/bin/uvx" if binary == "uvx" else None)
+    monkeypatch.setattr(
+        cm.shutil, "which", lambda binary: "/usr/bin/uvx" if binary == "uvx" else None
+    )
     monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
 
     assert manager._resolve_lsp_command("python") == ["custom-python-lsp", "--stdio"]

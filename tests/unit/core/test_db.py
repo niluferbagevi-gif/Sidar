@@ -21,6 +21,7 @@ import core.db as core_db
 from core.db import (
     Database,
     _expires_in,
+    _get_pbkdf2_iterations,
     _hash_password,
     _json_dumps,
     _new_entity_id,
@@ -221,7 +222,9 @@ def test_helper_functions_basic_contracts() -> None:
     hashed = _hash_password("abc123")
     assert hashed.startswith("pbkdf2_sha256$")
     _, iteration_text, _, _ = hashed.split("$", 3)
-    assert int(iteration_text) >= 600000
+    # İş faktörü artık PASSWORD_HASH_ITERATIONS env'inden okunuyor; hash tam
+    # olarak bu değeri kodlamalı (env yoksa OWASP 2024 baseline = 600_000).
+    assert int(iteration_text) == _get_pbkdf2_iterations()
     assert _verify_password("abc123", hashed)
     assert not _verify_password("wrong", hashed)
     assert not _verify_password("abc123", "invalid")
@@ -242,6 +245,68 @@ def test_verify_password_accepts_legacy_120k_hash_format() -> None:
 def test_verify_password_rejects_unknown_algorithm_and_invalid_iterations() -> None:
     assert _verify_password("abc123", "unknown_algo$600000$salt$deadbeef") is False
     assert _verify_password("abc123", "pbkdf2_sha256$not-a-number$salt$deadbeef") is False
+
+
+def test_get_pbkdf2_iterations_defaults_to_owasp_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PASSWORD_HASH_ITERATIONS", raising=False)
+    assert _get_pbkdf2_iterations() == 600_000
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("50000", 50_000),
+        ("720000", 720_000),
+        ("  900000  ", 900_000),
+    ],
+)
+def test_get_pbkdf2_iterations_honors_env_override(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
+) -> None:
+    monkeypatch.setenv("PASSWORD_HASH_ITERATIONS", raw)
+    assert _get_pbkdf2_iterations() == expected
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "not-a-number", "1e5"])
+def test_get_pbkdf2_iterations_falls_back_when_value_is_invalid(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("PASSWORD_HASH_ITERATIONS", raw)
+    assert _get_pbkdf2_iterations() == 600_000
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "500"])
+def test_get_pbkdf2_iterations_clamps_below_absolute_floor(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("PASSWORD_HASH_ITERATIONS", raw)
+    # Yapılandırma hatasıyla iş faktörünün anlamsızlaşmaması için 1 000 alt sınır.
+    assert _get_pbkdf2_iterations() == 1_000
+
+
+def test_hash_password_writes_configured_iteration_count_into_encoded_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PASSWORD_HASH_ITERATIONS", "75000")
+    encoded = _hash_password("benchmark-pw")
+    _, iteration_text, _, _ = encoded.split("$", 3)
+    assert int(iteration_text) == 75_000
+    # Aynı override altında round-trip yapılabilmeli.
+    assert _verify_password("benchmark-pw", encoded)
+
+
+def test_verify_password_legacy_three_part_still_uses_canonical_600k_even_under_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Üretimde 600 000 ile üretilmiş 3-bölümlü kalıntı hash, test profilinde
+    # PASSWORD_HASH_ITERATIONS=50 000 olsa bile doğrulanabilmeli (geri-uyumluluk).
+    salt = "legacy-canonical-salt"
+    digest = hashlib.pbkdf2_hmac("sha256", b"abc123", salt.encode("utf-8"), 600_000).hex()
+    encoded = f"pbkdf2_sha256${salt}${digest}"
+    monkeypatch.setenv("PASSWORD_HASH_ITERATIONS", "50000")
+    assert _verify_password("abc123", encoded)
 
 
 @pytest.mark.parametrize(
@@ -2411,8 +2476,62 @@ async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_pa
     await injected_db._connect_postgresql()
 
     assert injected_db._pg_pool is pool
-    assert calls == [{"dsn": "postgresql://u:p@db.example/db", "min_size": 1, "max_size": 2}]
+    # DummyCfg yeni havuz alanlarını tanımlamaz; Database varsayılan
+    # profilini uygular ve asyncpg.create_pool'a tam kwargs kümesini geçirir.
+    assert calls == [
+        {
+            "dsn": "postgresql://u:p@db.example/db",
+            "min_size": 1,
+            "max_size": 2,
+            "max_queries": 50_000,
+            "max_inactive_connection_lifetime": 300.0,
+            "timeout": 10.0,
+            "command_timeout": 30.0,
+        }
+    ]
     await injected_db.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_postgresql_propagates_custom_pool_profile(tmp_path) -> None:
+    """Test profili gibi cfg üzerindeki agresif havuz değerleri asyncpg'ye geçer."""
+
+    @dataclass
+    class TunedCfg(DummyCfg):
+        DB_POOL_SIZE: int = 4
+        DB_POOL_MIN_SIZE: int = 2
+        DB_POOL_MAX_OVERFLOW: int = 2
+        DB_POOL_MAX_QUERIES: int = 10_000
+        DB_POOL_MAX_INACTIVE_SECONDS: float = 30.0
+        DB_POOL_ACQUIRE_TIMEOUT_SECONDS: float = 5.0
+        DB_POOL_COMMAND_TIMEOUT_SECONDS: float = 10.0
+
+    pool = FakePgAdapter()
+    calls: list[dict] = []
+
+    async def _factory(**kwargs):
+        calls.append(kwargs)
+        return pool
+
+    tuned_db = Database(
+        TunedCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path)),
+        pg_pool_factory=_factory,
+    )
+    await tuned_db._connect_postgresql()
+
+    # asyncpg max_size = DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW olarak hesaplanmalı.
+    assert calls == [
+        {
+            "dsn": "postgresql://u:p@db.example/db",
+            "min_size": 2,
+            "max_size": 6,
+            "max_queries": 10_000,
+            "max_inactive_connection_lifetime": 30.0,
+            "timeout": 5.0,
+            "command_timeout": 10.0,
+        }
+    ]
+    await tuned_db.close()
 
 
 @pytest.mark.asyncio

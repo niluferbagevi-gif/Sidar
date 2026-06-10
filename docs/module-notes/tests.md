@@ -166,7 +166,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `test_gpu_vram_peak_under_load`
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
-  `GPU_BENCH_CONCURRENT_ROUNDS=10` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
+  `GPU_BENCH_CONCURRENT_ROUNDS=15` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
   kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`

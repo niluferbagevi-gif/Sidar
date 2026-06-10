@@ -278,7 +278,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 572058d30bb6937b52f4084dac170a606f2e112bcfed1fd1aa7b1dff11d9a29e  scripts/install_modules/utils/env_utils.sh
 ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
 5981bb2bed51643da6c090fb670189f02fdf1b46a99d2168eafba28ef07496fe  scripts/install_modules/utils/install_remediation.sh
-a2c667b301c564e3ec8271fb30f6c8f94848e9bcfb98b3e1177b6f84a16d3e97  scripts/install_modules/utils/ollama_models.sh
+aa5f4258f6e7ab1a3a849a3be165ff5f313744d1699c1b8d4d301f2cfeaf8a1a  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -5815,8 +5815,16 @@ sidar_ollama_runtime_num_batch() {
 
 sidar_ollama_export_runtime_defaults() {
     local env_file="${1:-$SCRIPT_DIR/.env}"
-    export OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
-    export OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    # SC2155: command substitution'ı export ile aynı satıra koymak, alt
+    # komutun exit code'unu maskeler. Önce local'e atayıp sonra export ediyoruz
+    # ki sidar_ollama_runtime_num_* fonksiyonlarının olası hatası `set -e`/`pipefail`
+    # gözünden kaçmasın.
+    local resolved_num_ctx
+    local resolved_num_batch
+    resolved_num_ctx="$(sidar_ollama_runtime_num_ctx "$env_file")"
+    resolved_num_batch="$(sidar_ollama_runtime_num_batch "$env_file")"
+    export OLLAMA_NUM_CTX="$resolved_num_ctx"
+    export OLLAMA_NUM_BATCH="$resolved_num_batch"
     info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
 }
 

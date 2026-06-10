@@ -828,6 +828,15 @@ EOF
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
     run_test_artifact_audit() { events+=(run_test_artifact_audit); }
+    # Bu test cagri sirasini dogrular; gercek postgres/Docker/dotenv etkilesimi
+    # baska testlerin kapsamindadir. Aksi halde sandbox postgres baglantisi
+    # veya Docker daemon yokken ensure_postgres_databases_exist ve
+    # phase06_docker_daemon_gate_or_fail non-zero doner, set -e akisi dusurur.
+    # Yorum ASCII tutuluyor cunku bats snippet tek tirnak icinde, apostrof
+    # gomulemez.
+    ensure_postgres_databases_exist() { :; }
+    sync_database_passwords_before_smoke_tests() { :; }
+    phase06_docker_daemon_gate_or_fail() { :; }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
@@ -847,6 +856,12 @@ EOF
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
     run_test_artifact_audit() { events+=(unexpected_audit); return 99; }
+    # docker mode: lokal hazirlik adimlari atlanir ama seed_rag_in_docker_after_startup
+    # ve phase06_docker_daemon_gate_or_fail gercek docker compose / daemon erisimi
+    # ister. Sandbox ortamlarda bunlar non-zero doner; testin amaci durum
+    # bayraklarinin dogru set edildigini ve event sirasinin korundugunu kanitlamak.
+    seed_rag_in_docker_after_startup() { :; }
+    phase06_docker_daemon_gate_or_fail() { :; }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation

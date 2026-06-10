@@ -1085,9 +1085,37 @@ class Config:
     CONTAINER_DATABASE_URL: str | None = None
     SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
+    # asyncpg ``min_size`` — havuzda sürekli sıcak tutulacak minimum bağlantı.
+    # 0 verilirse asyncpg lazy-create yapar ve ilk istek "cold start" maliyeti öder;
+    # yük altındaki testlerde ve prod'da bu cold start bağlantı işlemini bench/p99'a
+    # yansıtır.
+    DB_POOL_MIN_SIZE: int = get_int_env("DB_POOL_MIN_SIZE", 1)
+    # SQLAlchemy stili ``max_overflow`` — DB_POOL_SIZE üzerine eklenen tampon.
+    # asyncpg.create_pool max_size, bu iki değerin toplamı olur.
+    DB_POOL_MAX_OVERFLOW: int = get_int_env("DB_POOL_MAX_OVERFLOW", 0)
+    # asyncpg ``max_queries`` — bir bağlantı bu kadar sorgudan sonra geri dönüştürülür.
+    # Uzun ömürlü bağlantılarda statement cache şişmesini ve sızıntıları sınırlar.
+    DB_POOL_MAX_QUERIES: int = get_int_env("DB_POOL_MAX_QUERIES", 50_000)
+    # asyncpg ``max_inactive_connection_lifetime`` — SQLAlchemy'deki ``pool_recycle``
+    # karşılığı. Sıfırlanmış idle bağlantıların pgbouncer/NAT timeout'larına takılıp
+    # "connection reset" üretmesini önler.
+    DB_POOL_MAX_INACTIVE_SECONDS: float = get_float_env("DB_POOL_MAX_INACTIVE_SECONDS", 300.0)
+    # asyncpg ``timeout`` — havuzdan bağlantı edinmek için maksimum bekleme süresi.
+    # Havuz doluyken sonsuza kadar beklemeyip hızlı başarısızlık üretir.
+    DB_POOL_ACQUIRE_TIMEOUT_SECONDS: float = get_float_env("DB_POOL_ACQUIRE_TIMEOUT_SECONDS", 10.0)
+    # asyncpg ``command_timeout`` — varsayılan sorgu zaman aşımı.
+    # Tek bir kaçak sorgu havuzu kilitleyemesin diye sınırlandırır.
+    DB_POOL_COMMAND_TIMEOUT_SECONDS: float = get_float_env("DB_POOL_COMMAND_TIMEOUT_SECONDS", 30.0)
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )
+    # PBKDF2-SHA256 iş faktörü. Varsayılan OWASP 2024 baseline'ıdır (600 000).
+    # Test profili .env.test üzerinden bu değeri düşürebilir; benchmark sürelerini
+    # sıkıştırır ve gerçek I/O delta'sını şifre türetme maliyetiyle maskelememizi
+    # önler. Üretimde 600_000 altına inmeyin; donanım iyileştikçe arttırın.
+    # core/db.py içindeki _hash_password çağrı zamanında env değişkenini okur;
+    # bu alan adminlere keşfedilebilirlik ve dokümantasyon için açıkça tutulmuştur.
+    PASSWORD_HASH_ITERATIONS: int = get_int_env("PASSWORD_HASH_ITERATIONS", 600_000)
     DB_DEGRADED_SQLITE_URL: str = os.getenv("DB_DEGRADED_SQLITE_URL", "")
     DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
     DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
@@ -1967,9 +1995,7 @@ def _restore_reload_registry_from_previous_module() -> (
     return callbacks, previous_instance
 
 
-_config_reload_callbacks, _last_notified_instance = (
-    _restore_reload_registry_from_previous_module()
-)
+_config_reload_callbacks, _last_notified_instance = _restore_reload_registry_from_previous_module()
 
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:

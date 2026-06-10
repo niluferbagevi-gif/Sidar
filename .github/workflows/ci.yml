@@ -98,7 +98,7 @@ jobs:
           uv run python - <<'PY_CHECK'
           from pathlib import Path
 
-          manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8").strip("\\n")
+          manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8").strip("\n")
           lines = Path('install_sidar.sh').read_text(encoding='utf-8').splitlines()
 
           marker = "cat <<'SIDAR_INSTALL_MANIFEST_EOF' > \"$manifest_path\""
@@ -110,7 +110,7 @@ jobs:
           if end_idx is None:
               raise SystemExit('install_sidar.sh içinde manifest heredoc bitişi bulunamadı.')
 
-          heredoc = "\\n".join(lines[start_idx + 1:end_idx]).strip("\\n")
+          heredoc = "\n".join(lines[start_idx + 1:end_idx]).strip("\n")
           if manifest != heredoc:
               raise SystemExit(
                   'Manifest uyumsuzluğu: .sidar_manifest.txt ile install_sidar.sh heredoc hash satırları birebir aynı değil.'
@@ -200,7 +200,7 @@ jobs:
         run: >-
           uv run pytest -q --no-cov
           tests/smoke/test_install_verification.py
-          tests/smoke/test_repo_phase_coverage_dark_mode_assets.py
+          tests/smoke/test_repo_phase_dark_mode_assets.py
 
       - name: Run ShellCheck for installer and install modules
         run: |
@@ -229,8 +229,13 @@ jobs:
           BENCHMARK_TREND_COMPARE: "1"
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
           BENCHMARK_TREND_WINDOW: "15"
-          BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_REQUIRED: "1"
+          # CI runner pytest-benchmark baseline'ını commit edilmiş bir lokal
+          # makine baseline'ı ile karşılaştırmaz; her fresh CI run kendi
+          # baseline'ını yazar. Mekanik regression gate doğrulaması ise
+          # tests/performance/test_regression_gate_canary.py +
+          # scripts/ci/verify_benchmark_regression_gate.sh tarafından yapılır.
+          BENCHMARK_ENFORCE_COMPARE: "0"
+          BENCHMARK_COMPARE_REQUIRED: "0"
           BENCHMARK_COMPARE_FAIL: "mean:10%"
           BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |

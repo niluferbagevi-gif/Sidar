@@ -283,6 +283,12 @@ filterwarnings = [
   "ignore::pydantic.warnings.PydanticDeprecatedSince20",
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
+  # Baseline farklı bir makinede (örn. lokal WSL2 + NVIDIA GPU) kaydedilip CI runner
+  # (4 CPU / no GPU) ile karşılaştırılınca pytest-benchmark machine_info uyarısı
+  # üretir. Bu uyarı "error"a yükseltildiğinde INTERNALERROR ile session iptal olur
+  # ve regression gate hiç çalışamaz. Karşılaştırma sayısal değerler üzerinden
+  # zaten yapılıyor; machine_info uyarısı sadece bilgilendirme amaçlı.
+  "ignore:Benchmark machine_info is different\\..*:pytest_benchmark.logger.PytestBenchmarkWarning",
   "ignore:invalid escape sequence '\\\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",
   "ignore:invalid escape sequence.*:DeprecationWarning:sentence_transformers.*",
 ]

@@ -43,9 +43,7 @@ def build_frontend_router(
                 "<h1>Hata: React dist bulunamadı. web_ui_react içinde npm run build çalıştırın.</h1>",
                 status_code=500,
             )
-        config_script = (
-            f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url())}}};</script>'
-        )
+        config_script = f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url())}}};</script>'
         html = html_file.read_text(encoding="utf-8")
         if "</head>" in html:
             html = html.replace("</head>", f"{config_script}</head>", 1)
