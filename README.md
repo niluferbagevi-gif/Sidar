@@ -832,8 +832,11 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > yerelde flake-soft-fail olarak değerlendirilir; sıkı yerel faz doğrulaması `BENCHMARK_ENFORCE_RESULT=1` ile
 > açılabilir. Benchmark komutu ayrıca GC'yi kapatır ve
 > kalibrasyon warmup'ını etkinleştirir.
-> Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
-> `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
+> Ana CI hattı gerçek performans paketinden önce
+> `uv run python scripts/ci/verify_benchmark_regression_gate.py` ile sentetik bir baseline + bilinçli
+> yavaşlama doğrulaması çalıştırır; böylece `--benchmark-compare-fail` kapısının alarm üretmeden
+> sessiz kalması ayrı bir CI hatası olur. Ana CI hattı inceleme için `benchmark.json`, `history.json` ve
+> yeni `.benchmarks/` baseline adaylarını `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
 > Gecikme hassas akışlar için
 > periyodik olarak `bash run_tests.sh` veya
 > `uv run pytest -q tests/performance/ --benchmark-json=artifacts/benchmark/benchmark.json`

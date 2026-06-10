@@ -217,6 +217,9 @@ jobs:
             -c "GRANT ALL PRIVILEGES ON DATABASE sidar_test TO sidar;"
           uv run alembic upgrade head
 
+      - name: Verify benchmark regression gate catches synthetic slowdown
+        run: uv run python scripts/ci/verify_benchmark_regression_gate.py
+
       - name: Run test suite (single pass + coverage gate)
         env:
           RUN_BENCHMARKS: "required"
