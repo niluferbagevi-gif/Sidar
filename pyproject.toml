@@ -26,6 +26,11 @@ classifiers = [
 ]
 
 dependencies = [
+  # NOTE: Bu liste şu anda legacy tam kurulum yüzeyidir; dev/test araçları da
+  # burada tutulur çünkü repo standardı `uv sync --all-extras` ile local/CI
+  # paritesini korumaktır. Production-minimal ayrıştırma için
+  # docs/DEPENDENCY_PROFILE_PLAN.md ve [tool.sidar.dependency_profile_plan]
+  # takip edilir; bu PR mevcut kurulum sözleşmesini değiştirmez.
   # ── Temel altyapı ──────────────────────────────────────────────────────
   "packaging~=24.1",
   "python-dotenv==1.2.2",
@@ -238,6 +243,28 @@ dev = [
   "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
 ]
 
+
+[tool.sidar.dependency_profile_plan]
+current_install_standard = "uv sync --all-extras"
+status = "planned"
+owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
+summary = "Runtime/dev/test dependency split will be introduced only with coordinated CI, Docker and installer changes."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "runtime"
+intent = "Minimum library/runtime dependencies required by core Sidar imports."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "dev"
+intent = "pytest, lint, type-check and security-audit tools used by local/CI gates."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "all"
+intent = "Current complete developer experience; must keep uv sync --all-extras compatibility."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "production"
+intent = "Web/API runtime plus postgres and telemetry extras; no pytest/ruff/mypy/bandit/safety once the split lands."
 
 [tool.bandit]
 exclude_dirs = [
