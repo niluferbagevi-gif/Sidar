@@ -150,6 +150,16 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
     assert "CREATE ROLE %I LOGIN PASSWORD %L" in script
     assert "ALTER ROLE %I WITH LOGIN PASSWORD %L" in script
+    assert "is_safe_postgres_identifier()" in script
+    assert "^[A-Za-z_][A-Za-z0-9_]*$" in script
+    assert "Geçersiz TEST_DATABASE_NAME" in script
+    assert "Geçersiz TEST_DATABASE_USER" in script
+    assert script.index('is_safe_postgres_identifier "${test_db_name}"') < script.index(
+        'DROP DATABASE IF EXISTS ${test_db_name}'
+    )
+    assert script.index('is_safe_postgres_identifier "${test_db_user}"') < script.index(
+        'GRANT ALL PRIVILEGES ON DATABASE ${test_db_name} TO ${test_db_user}'
+    )
     assert (
         "TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER"
         in script

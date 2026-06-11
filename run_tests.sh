@@ -958,6 +958,12 @@ wait_for_test_services_ready() {
   return 1
 }
 
+
+is_safe_postgres_identifier() {
+  local identifier="$1"
+  [[ "${identifier}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
   local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
@@ -975,6 +981,18 @@ prepare_test_database() {
   if [ "${SMOKE_SKIP_EXTERNAL_INFRA:-0}" = "1" ]; then
     echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1; harici altyapı mevcut değil, test veritabanı hazırlığı atlanıyor."
     return 0
+  fi
+
+  if ! is_safe_postgres_identifier "${test_db_name}"; then
+    echo "❌ Geçersiz TEST_DATABASE_NAME: yalnız [A-Za-z_][A-Za-z0-9_]* biçimindeki PostgreSQL identifier kabul edilir."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! is_safe_postgres_identifier "${test_db_user}"; then
+    echo "❌ Geçersiz TEST_DATABASE_USER: yalnız [A-Za-z_][A-Za-z0-9_]* biçimindeki PostgreSQL identifier kabul edilir."
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   if [ "${#DOCKER_COMPOSE_CMD[@]}" -eq 0 ] && ! resolve_docker_compose_cmd; then
