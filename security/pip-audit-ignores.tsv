@@ -1,6 +1,6 @@
 # vuln_id	package	expires	reason
-# Temporary risk acceptance for the locked torch 2.12.0 resolver output while a
-# compatible torch/torchvision pair below 2.12 is validated for Sidar's RAG,
-# Whisper, CPU/GPU and CUDA test profiles. Remove this entry as soon as uv.lock
-# can be moved to a non-vulnerable compatible PyTorch release.
-CVE-2025-3000	torch	2026-07-11	Temporary acceptance for locked torch 2.12.0 until compatible <2.12 resolver update is validated.
+# Temporary risk acceptance for the locked torch 2.12.0 resolver output while
+# pyproject.toml now prevents fresh resolutions from selecting torch>=2.12.
+# Remove this entry as soon as uv.lock can be moved to a compatible <2.12
+# torch/torchvision pair and RAG, Whisper, CPU/GPU and CUDA test profiles pass.
+CVE-2025-3000	torch	2026-07-11	Temporary acceptance for locked torch 2.12.0; pyproject caps future resolver output below 2.12 until lock refresh is validated.

@@ -22,6 +22,19 @@ production-minimal paket profiline geçiş planını tanımlar. Mevcut repo stan
 | `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
 | `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | Docker/installer ile birlikte tanıtılmalıdır. |
 
+## Güvenlik odaklı çözümleme sınırları
+
+- `rag` extra içindeki PyTorch çözümlemesi geçici olarak `torch>=2.4.1,<2.12` ve
+  `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, `pip-audit`
+  tarafından raporlanan `torch 2.12.0 / CVE-2025-3000` bulgusu için açık uçlu resolver
+  davranışını durdurur.
+- `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
+  `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
+  `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
+  yeniden çalıştırılmalıdır.
+- Bu sınır kaldırılmadan önce RAG embedding, Whisper/STT, CPU-only ve GPU/CUDA smoke
+  profilleri birlikte doğrulanmalıdır.
+
 ## Aşamalı geçiş
 
 1. **Envanter:** Ana `dependencies` içindeki paketleri `runtime`, `dev`, optional integration ve provider

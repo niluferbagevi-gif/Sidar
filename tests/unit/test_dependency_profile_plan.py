@@ -25,3 +25,16 @@ def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_curr
 
     for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
         assert any(dep.startswith(package_prefix) for dep in dependencies)
+
+
+def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    rag_deps = pyproject["project"]["optional-dependencies"]["rag"]
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+    policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
+
+    assert "torch>=2.4.1,<2.12" in rag_deps
+    assert "torchvision>=0.19,<0.27" in rag_deps
+    assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
+    assert "CVE-2025-3000" in docs
+    assert "pyproject caps future resolver output below 2.12" in policy

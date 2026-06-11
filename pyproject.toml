@@ -155,8 +155,10 @@ telemetry = [
 rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
-  "torch>=2.4.1",
-  "torchvision",
+  # Keep torch below 2.12 until CVE-2025-3000 is resolved in the active audit policy.
+  # Re-evaluate together with torchvision because their minor versions are coupled.
+  "torch>=2.4.1,<2.12",
+  "torchvision>=0.19,<0.27",
   "sentence-transformers>=3.0.1,<6.0.0",
 ]
 lora = [
