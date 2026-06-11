@@ -318,7 +318,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 5
+# Coverage gate threshold is intentionally owned by .coveragerc [report].fail_under.
+# run_tests.sh reads that value and applies it once at the final combined report.
 show_missing = true
 skip_covered = true
 precision = 2

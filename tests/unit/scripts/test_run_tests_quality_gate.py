@@ -83,8 +83,11 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
 
     assert coveragerc.exists()
     content = coveragerc.read_text(encoding="utf-8")
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
     assert "[report]" in content
     assert "fail_under = 100" in content
+    assert "fail_under" not in pyproject["tool"]["coverage"]["report"]
     assert not any(
         line.strip() == ".coveragerc"
         for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
@@ -101,7 +104,7 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
 
     assert "--cov-fail-under=0" in script
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
-    assert "final coverage report --fail-under" in script
+    assert ".coveragerc [report].fail_under değerinden okundu" in script
 
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:

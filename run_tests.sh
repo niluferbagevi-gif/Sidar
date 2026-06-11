@@ -463,7 +463,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (final coverage report --fail-under ile .coveragerc fail_under değerini override eder)"
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (.coveragerc [report].fail_under değerinden okundu; açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir)"
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 
