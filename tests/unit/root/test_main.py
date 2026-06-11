@@ -4572,7 +4572,7 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
 
 
@@ -4644,7 +4644,7 @@ async def test_websocket_chat_streams_tool_thought_and_done_packets(monkeypatch)
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
     assert {"tool_call": "web_search"} in ws.payloads
     assert {"thought": "analiz"} in ws.payloads
@@ -4946,7 +4946,7 @@ async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monk
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert reset_called["count"] == 0
 
 
@@ -5110,7 +5110,7 @@ async def test_websocket_chat_suppresses_send_error_when_agent_response_crashes(
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
 
 
@@ -5179,7 +5179,7 @@ async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypat
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
 
 
@@ -5257,7 +5257,7 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert any(item.get("type") == "assistant_stream_start" for item in events)
     assert any(
         item.get("type") == "room_error" and "network timeout" in item.get("error", "")
@@ -5333,7 +5333,7 @@ async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(
     await web_server.websocket_chat(ws)
 
     room_errors = [item for item in ws.payloads if item.get("type") == "room_error"]
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
     assert any("komut bulunamadı" in item.get("error", "") for item in room_errors)
     assert any("yazma yetkisine sahip değil" in item.get("error", "") for item in room_errors)
@@ -8900,7 +8900,7 @@ async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_e
 
     ws_disconnect = _WsDisconnect()
     await web_server.websocket_chat(ws_disconnect)
-    assert ws_disconnect.subprotocol == "good-token"
+    assert ws_disconnect.subprotocol is None
 
     ws_unexpected = _WsUnexpected()
     await web_server.websocket_chat(ws_unexpected)
@@ -9027,7 +9027,7 @@ async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_clo
     )
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert cancelled_flags["top_level"] is True
     assert cancelled_flags["room_task"] is True
 
@@ -9567,7 +9567,7 @@ async def test_websocket_chat_status_pump_timeout_path_runs_and_unsubscribes(mon
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert {"auth_ok": True} in ws.payloads
     assert any(item.get("chunk") == "merhaba" for item in ws.payloads)
 
@@ -9648,7 +9648,7 @@ async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypa
     ws = _Ws()
     await web_server.websocket_chat(ws)
 
-    assert ws.subprotocol == "good-token"
+    assert ws.subprotocol is None
     assert any(item.get("type") == "collaboration_event" for item in events)
     assert any(
         item.get("type") == "assistant_done" and item.get("cancelled") is True for item in events

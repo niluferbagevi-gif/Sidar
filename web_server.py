@@ -106,6 +106,28 @@ from web.routes.static import build_frontend_router
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
+SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
+_WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
+
+
+def _parse_ws_subprotocol_values(raw_header: str) -> list[str]:
+    return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
+
+
+def _extract_ws_header_token(raw_header: str) -> tuple[str, str | None]:
+    """Extract a websocket auth token without echoing raw tokens as subprotocols."""
+
+    protocols = _parse_ws_subprotocol_values(raw_header)
+    if not protocols:
+        return "", None
+    accept_subprotocol = SIDAR_WS_CHAT_PROTOCOL if SIDAR_WS_CHAT_PROTOCOL in protocols else None
+    for candidate in protocols:
+        if candidate == SIDAR_WS_CHAT_PROTOCOL:
+            continue
+        if _WS_PROTOCOL_TOKEN_RE.fullmatch(candidate):
+            return candidate, accept_subprotocol
+    return "", accept_subprotocol
+
 try:
     from agent.core.contracts import (
         LEGACY_FEDERATION_PROTOCOL_V1,
@@ -2752,13 +2774,14 @@ async def websocket_chat(websocket: WebSocket) -> Any:
     1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
     2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
     """
-    # Sec-WebSocket-Protocol başlığından token'ı oku (JSON payload'dan daha güvenli)
+    # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
+    # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
+    # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token = proto_header or ""
+    header_token, accept_subprotocol = _extract_ws_header_token(proto_header)
 
-    if header_token:
-        # Subprotocol echo-back zorunlu; aksi hâlde tarayıcı bağlantıyı kapatır
-        await websocket.accept(subprotocol=header_token)
+    if accept_subprotocol:
+        await websocket.accept(subprotocol=accept_subprotocol)
     else:
         await websocket.accept()
 
