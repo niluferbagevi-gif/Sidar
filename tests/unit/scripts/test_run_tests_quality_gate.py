@@ -133,6 +133,41 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage json -o coverage.json" in gate_function
 
 
+def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> None:
+    script = _script()
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
+    env_prod_example = Path(".env.production.example").read_text(encoding="utf-8")
+    env_development_example = Path(".env.development.example").read_text(encoding="utf-8")
+    env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert 'local enable_gpu_tests="${ENABLE_GPU_TESTS:-auto}"' in script
+    assert "gpu_hardware_available()" in script
+    assert "ENABLE_GPU_TESTS=auto -> 1" in script
+    assert "ENABLE_GPU_TESTS=auto -> 0" in script
+    assert "if ! gpu_hardware_available; then" in script
+
+    assert "USE_GPU=false" in env_example
+    assert "REQUIRE_GPU=false" in env_example
+    assert "USE_GPU=false" in env_test_example
+    assert "REQUIRE_GPU=false" in env_test_example
+    assert "USE_GPU=false" in env_prod_example
+    assert "REQUIRE_GPU=false" in env_prod_example
+    assert "USE_GPU=false" in env_development_example
+    assert "REQUIRE_GPU=false" in env_development_example
+
+    assert "REQUIRE_GPU=true" in installer
+    assert "REQUIRE_GPU=false" in installer
+    assert "USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true" in installer
+    assert "USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false" in installer
+    assert "USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true" in env_utils
+    assert "USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false" in env_utils
+    assert "install_sidar.sh` GPU tespit ederse" in readme
+    assert "varsayılan `REQUIRE_GPU=false`" in readme
+
+
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
     script = _script()
 
@@ -422,6 +457,8 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "POSTGRES_CONTAINER_HOST=postgres" in env_development
     assert "POSTGRES_DB=sidar_development" in env_development
     assert "OLLAMA_NUM_PARALLEL=4" in env_development
+    assert "USE_GPU=false" in env_development
+    assert "REQUIRE_GPU=false" in env_development
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
     assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development
     assert "RAG_GPU_MEMORY_FRACTION=0.3" in env_development

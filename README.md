@@ -88,6 +88,7 @@
 - VRAM fraksiyonu kontrolü (`GPU_MEMORY_FRACTION`)
 - Çoklu GPU desteği (`MULTI_GPU=true`)
 - WSL2 NVIDIA sürücü desteği (pynvml + nvidia-smi fallback)
+- CPU-only makinelerde ilk kurulum güvenli başlar: örnek env dosyaları `USE_GPU=false` / `REQUIRE_GPU=false` verir; `install_sidar.sh` GPU tespit ederse geliştirme `.env` dosyasını otomatik `USE_GPU=true` / `REQUIRE_GPU=true` olarak yazar.
 
 ### GitHub Entegrasyonu (GitHubManager)
 - Depo bilgisi ve istatistikleri
@@ -355,7 +356,9 @@ SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-pla
 Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki lokal geliştirme varsayılan URL'sinin önüne geçirir. `SIDAR_ENV=production` iken bu lokal fallback bilinçli olarak reddedilir; üretim/CI/container migration çalıştırmalarında güçlü kimlik bilgileriyle `DATABASE_URL` veya `-x database_url=...` verilmelidir.
 
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
-> `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın.
+> `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
+> varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
+> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir.
 
 ### Çevre Değişkenleri
 
@@ -933,8 +936,9 @@ düşer ve bunu loglar; yerel geliştirme izolasyonunu hazırlamak için
 `.env.development.example` dosyasını `.env.development` olarak kopyalayıp placeholder secret
 değerlerini güncelleyin. Geliştirme şablonu `POSTGRES_DB=sidar_development` kullanır;
 böylece temel/production `POSTGRES_DB=sidar` verisiyle aynı veritabanına yazmaz. Yerel
-Ollama + `qwen2.5-coder:7b` kullanımında
-`.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
+Ollama + `qwen2.5-coder:7b` kullanımında CPU-only geliştirme şablonu `USE_GPU=false` / `REQUIRE_GPU=false`
+ile başlar; `install_sidar.sh` yalnız GPU tespit ettiğinde oluşturulan `.env` dosyasında bu değerleri
+`true` yapar. `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
 `RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
 aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API

@@ -985,7 +985,9 @@ class Config:
 
     # ─── Donanım & GPU ───────────────────────────────────────
     USE_GPU: bool = get_bool_env("USE_GPU", True)
-    REQUIRE_GPU: bool = get_bool_env("REQUIRE_GPU", True)
+    # CPU-only hosts should boot without failing critical validation. Installers may
+    # set REQUIRE_GPU=true when CUDA hardware is detected and desired.
+    REQUIRE_GPU: bool = get_bool_env("REQUIRE_GPU", False)
     GPU_INFO: str = "Devre Dışı / CPU Modu"
     GPU_COUNT: int = 0
     CPU_COUNT: int = os.cpu_count() or 1

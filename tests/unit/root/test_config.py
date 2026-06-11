@@ -45,6 +45,13 @@ def test_get_external_bool_env_rejects_unknown_values(monkeypatch):
         config.get_external_bool_env("HF_HUB_OFFLINE", False)
 
 
+def test_require_gpu_defaults_to_false_for_cpu_only_bootstrap() -> None:
+    source = Path("config.py").read_text(encoding="utf-8")
+
+    assert 'REQUIRE_GPU: bool = get_bool_env("REQUIRE_GPU", False)' in source
+    assert "CPU-only hosts should boot without failing critical validation" in source
+
+
 def test_database_urls_are_derived_from_postgres_parts(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)

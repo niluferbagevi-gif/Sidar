@@ -964,6 +964,10 @@ is_safe_postgres_identifier() {
   [[ "${identifier}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
+gpu_hardware_available() {
+  command -v nvidia-smi >/dev/null 2>&1 || command -v nvidia-smi.exe >/dev/null 2>&1
+}
+
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
   local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
@@ -1162,11 +1166,22 @@ PY
   # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
   local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under=0)
 
-  if [ "${ENABLE_GPU_TESTS:-1}" != "1" ]; then
+  local enable_gpu_tests="${ENABLE_GPU_TESTS:-auto}"
+  if [ "${enable_gpu_tests}" = "auto" ]; then
+    if gpu_hardware_available; then
+      enable_gpu_tests="1"
+      echo "ℹ️ GPU donanımı tespit edildi; ENABLE_GPU_TESTS=auto -> 1."
+    else
+      enable_gpu_tests="0"
+      echo "ℹ️ GPU donanımı tespit edilmedi; ENABLE_GPU_TESTS=auto -> 0 ve GPU testleri atlanacak."
+    fi
+  fi
+
+  if [ "${enable_gpu_tests}" != "1" ]; then
     echo "ℹ️ GPU testleri atlanıyor (Çalıştırmak için: ENABLE_GPU_TESTS=1 bash run_tests.sh)"
     base_pytest_cmd+=(-m "not gpu")
   else
-    if ! command -v nvidia-smi >/dev/null 2>&1 && ! command -v nvidia-smi.exe >/dev/null 2>&1; then
+    if ! gpu_hardware_available; then
       echo "⚠️ ENABLE_GPU_TESTS=1 verildi ancak nvidia-smi bulunamadı. GPU testleri güvenli fallback ile atlanıyor."
       base_pytest_cmd+=(-m "not gpu")
     else
@@ -1449,7 +1464,7 @@ fi
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "⚠️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
-  if command -v nvidia-smi >/dev/null 2>&1 || [ "${USE_GPU:-0}" = "1" ]; then
+  if gpu_hardware_available || [ "${USE_GPU:-0}" = "1" ]; then
     echo "⚠️ GPU/hızlandırıcı algılandı; performans regresyonlarını erken yakalamak için benchmark fazını kapatmayın."
     echo "ℹ️ Öneri (lokal GPU): RUN_BENCHMARKS=required bash run_tests.sh"
   fi

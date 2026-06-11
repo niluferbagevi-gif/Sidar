@@ -81,10 +81,15 @@ setup_env_file() {
     propagate_shared_secrets_to_env_variants "$ENV_FILE"
     validate_required_security_profile "$ENV_FILE"
 
-    # GPU tespitine göre USE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
+    # GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
     if command -v sed &>/dev/null; then
         if [[ "$GPU_AVAILABLE" == true ]]; then
             sed_inplace 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
+            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
+                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=true/' "$ENV_FILE"
+            else
+                echo 'REQUIRE_GPU=true' >> "$ENV_FILE"
+            fi
             sed_inplace 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
 
             # Docker için GPU modunu ön tanımlı yap
@@ -94,16 +99,22 @@ setup_env_file() {
                 echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
             fi
 
-            ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
+            ok ".env: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
             ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
         else
             sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
+            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
+                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=false/' "$ENV_FILE"
+            else
+                echo 'REQUIRE_GPU=false' >> "$ENV_FILE"
+            fi
+            sed_inplace 's/^GPU_MIXED_PRECISION=true/GPU_MIXED_PRECISION=false/' "$ENV_FILE"
             if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
                 sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
-            ok ".env: USE_GPU=false, COMPOSE_PROFILES=cpu ayarlandı."
+            ok ".env: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
         fi
     fi
 
