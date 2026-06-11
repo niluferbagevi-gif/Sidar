@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -18,11 +19,18 @@ async def _noop_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-def register_exception_handlers(application: FastAPI) -> None:
+def _expose_exception_details() -> bool:
+    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+
+
+def register_exception_handlers(
+    application: FastAPI, *, expose_exception_details: bool | None = None
+) -> None:
     """Register Sidar's JSON exception handlers on a FastAPI application."""
 
     if not hasattr(application, "exception_handler"):
         return
+    include_detail = _expose_exception_details() if expose_exception_details is None else expose_exception_details
 
     @application.exception_handler(HTTPException)
     async def _http_exception_handler(_request: Request, exc: HTTPException) -> Any:
@@ -41,16 +49,17 @@ def register_exception_handlers(application: FastAPI) -> None:
             getattr(request.url, "path", "?"),
             exc,
         )
-        return JSONResponse(
-            {"success": False, "error": "İç sunucu hatası", "detail": str(exc)},
-            status_code=500,
-        )
+        content = {"success": False, "error": "İç sunucu hatası"}
+        if include_detail:
+            content["detail"] = str(exc)
+        return JSONResponse(content, status_code=500)
 
 
 def create_app(
     *,
     lifespan: Callable[[FastAPI], Any] | None = None,
     register_handlers: bool = True,
+    expose_exception_details: bool | None = None,
 ) -> FastAPI:
     """Create the Sidar FastAPI application shell.
 
@@ -70,5 +79,7 @@ def create_app(
         lifespan=lifespan or _noop_lifespan,
     )
     if register_handlers:
-        register_exception_handlers(application)
+        register_exception_handlers(
+            application, expose_exception_details=expose_exception_details
+        )
     return application
