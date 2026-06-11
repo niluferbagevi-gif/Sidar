@@ -482,11 +482,26 @@ class SystemHealthManager:
     #  TAM RAPOR
     # ─────────────────────────────────────────────
 
+    def get_agent_catalog_health(self) -> dict[str, Any]:
+        """Return built-in agent catalog health without breaking base health checks."""
+        try:
+            from agent.registry import AgentCatalog
+
+            return AgentCatalog.health_summary()
+        except Exception as exc:  # pragma: no cover - defensive readiness fallback
+            return {
+                "status": "degraded",
+                "degraded": True,
+                "error": "agent_catalog_health_failed",
+                "detail": str(exc),
+            }
+
     def get_health_summary(self) -> dict[str, Any]:
         """Kubernetes / Docker monitör sistemleri için yapısal (JSON) sağlık özeti."""
         cpu = self.get_cpu_usage()
         mem = self.get_memory_info()
         gpu = self.get_gpu_info()
+        agent_catalog = self.get_agent_catalog_health()
         summary = {
             "status": "healthy",
             "cpu_percent": cpu if cpu is not None else 0.0,
@@ -495,7 +510,10 @@ class SystemHealthManager:
             "ollama_online": self.check_ollama(),
             "python_version": platform.python_version(),
             "os": platform.system(),
+            "agent_catalog": agent_catalog,
         }
+        if agent_catalog.get("status") == "degraded":
+            summary["status"] = "degraded"
         if getattr(self.cfg, "ENABLE_DEPENDENCY_HEALTHCHECKS", False):
             dependencies = self.get_dependency_health()
             summary["dependencies"] = dependencies

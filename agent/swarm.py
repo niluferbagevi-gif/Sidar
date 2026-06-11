@@ -165,9 +165,39 @@ _INTENT_CAPABILITY_MAP: dict[str, str] = {
     "seo": "seo_analysis",
     "campaign": "campaign_copy",
     "coverage": "coverage_analysis",
-    "qa": "coverage_analysis",
+    "qa": "test_generation",
     "tests": "test_generation",
     "mixed": "code_generation",  # varsayılan
+}
+
+_INTENT_ROLE_PREFERENCE: dict[str, str] = {
+    "code": "coder",
+    "code_generation": "coder",
+    "file_io": "coder",
+    "shell_execution": "coder",
+    "mixed": "coder",
+    "research": "researcher",
+    "web_search": "researcher",
+    "rag_search": "researcher",
+    "summarization": "researcher",
+    "review": "reviewer",
+    "code_review": "reviewer",
+    "security": "reviewer",
+    "security_audit": "reviewer",
+    "quality_check": "reviewer",
+    "marketing": "poyraz",
+    "seo": "poyraz",
+    "campaign": "poyraz",
+    "marketing_strategy": "poyraz",
+    "seo_analysis": "poyraz",
+    "campaign_copy": "poyraz",
+    "audience_ops": "poyraz",
+    "coverage": "coverage",
+    "coverage_analysis": "coverage",
+    "qa": "qa",
+    "tests": "qa",
+    "test_generation": "qa",
+    "ci_remediation": "qa",
 }
 
 
@@ -262,6 +292,11 @@ class TaskRouter:
             # Fallback: herhangi bir kayıtlı ajan
             all_agents = catalog.list_all()
             return all_agents[0] if all_agents else None
+        preferred_role = _INTENT_ROLE_PREFERENCE.get(intent)
+        if preferred_role:
+            for spec in candidates:
+                if getattr(spec, "role_name", "") == preferred_role:
+                    return cast(AgentSpec, spec)
         return cast(AgentSpec, candidates[0])
 
     def route_by_role(self, role_name: str) -> AgentSpec | None:

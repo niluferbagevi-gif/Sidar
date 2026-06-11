@@ -5,8 +5,11 @@ from __future__ import annotations
 import pytest
 
 from agent.registry import (
+    BUILTIN_ROLE_CONTRACTS,
+    BUILTIN_ROLE_MODULES,
     AgentCatalog,
     AgentSpec,
+    _clear_builtin_import_failures,
     _format_import_failure,
     _import_builtin_roles,
 )
@@ -190,6 +193,79 @@ def test_unregister_returns_false_for_unknown_role() -> None:
     assert AgentCatalog.unregister("definitely_unknown_role") is False
 
 
+def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() -> None:
+    import agent.roles as role_exports
+    from agent.core.supervisor import SupervisorAgent
+    from agent.swarm import TaskRouter
+
+    router = TaskRouter()
+    supervisor_prompts = {
+        "code": "kod yaz",
+        "research": "web kaynak araştır",
+        "review": "pull request incele",
+        "marketing": "seo kampanya planı",
+        "coverage": "coverage pytest eksik test",
+        "qa": "qa kalite kapısı ci hatası",
+    }
+
+    assert BUILTIN_ROLE_MODULES == tuple(contract.module_name for contract in BUILTIN_ROLE_CONTRACTS)
+
+    for contract in BUILTIN_ROLE_CONTRACTS:
+        assert contract.class_name in role_exports.__all__
+        exported_cls = getattr(role_exports, contract.class_name)
+        spec = AgentCatalog.get(contract.role_name)
+        assert spec is not None, contract.role_name
+        assert spec.is_builtin is True
+        assert spec.agent_class is exported_cls
+        assert set(contract.capabilities).issubset(set(spec.capabilities))
+
+        for intent in contract.swarm_intents:
+            routed = router.route(intent)
+            assert routed is not None, intent
+            assert routed.role_name == contract.role_name
+
+        for intent in contract.supervisor_intents:
+            assert SupervisorAgent._intent(supervisor_prompts[intent]) == intent
+
+
+def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
+    snapshot = dict(AgentCatalog._registry)
+    AgentCatalog._registry.clear()
+    try:
+        AgentCatalog.register_type(
+            role_name="coder",
+            agent_class=_DummyAgent,
+            capabilities=["code_generation"],
+            is_builtin=True,
+        )
+        health = AgentCatalog.health_summary()
+
+        assert health["status"] == "degraded"
+        assert "researcher" in health["missing_builtin_roles"]
+        assert health["capability_mismatches"]["coder"]["missing"]
+
+        def _fake_import_module(module_name: str):
+            raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
+
+        import importlib
+
+        original_import = importlib.import_module
+        importlib.import_module = _fake_import_module
+        try:
+            _import_builtin_roles()
+        finally:
+            importlib.import_module = original_import
+
+        health = AgentCatalog.health_summary()
+        assert health["status"] == "degraded"
+        assert health["import_failures"]
+        assert "dotenv" in next(iter(health["import_failures"].values()))
+    finally:
+        _clear_builtin_import_failures()
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
 def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.MonkeyPatch) -> None:
     imported_modules: list[str] = []
 
@@ -201,7 +277,10 @@ def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.Mo
 
     monkeypatch.setattr("importlib.import_module", _fake_import_module)
 
-    _import_builtin_roles()
+    try:
+        _import_builtin_roles()
+    finally:
+        _clear_builtin_import_failures()
 
     assert imported_modules == [
         "agent.roles.coder_agent",
@@ -228,6 +307,7 @@ def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
         with caplog.at_level("WARNING", logger="agent.registry"):
             _import_builtin_roles()
     finally:
+        _clear_builtin_import_failures()
         AgentCatalog._registry.clear()
         AgentCatalog._registry.update(snapshot)
 
@@ -269,6 +349,7 @@ def test_import_builtin_roles_logs_non_module_not_found_failures(
         with caplog.at_level("WARNING", logger="agent.registry"):
             _import_builtin_roles()
     finally:
+        _clear_builtin_import_failures()
         AgentCatalog._registry.clear()
         AgentCatalog._registry.update(snapshot)
 

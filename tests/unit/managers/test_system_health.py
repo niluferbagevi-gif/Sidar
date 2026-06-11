@@ -195,6 +195,28 @@ def test_get_health_summary_marks_degraded_when_dependency_unhealthy(monkeypatch
     assert summary["dependencies"]["database"]["healthy"] is False
 
 
+def test_get_health_summary_marks_degraded_when_agent_catalog_degraded(monkeypatch):
+    manager = _build_manager(monkeypatch)
+    monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 12.0)
+    monkeypatch.setattr(manager, "get_memory_info", lambda: {"percent": 40.0})
+    monkeypatch.setattr(manager, "get_gpu_info", lambda: {"available": False})
+    monkeypatch.setattr(manager, "check_ollama", lambda: True)
+    monkeypatch.setattr(
+        manager,
+        "get_agent_catalog_health",
+        lambda: {
+            "status": "degraded",
+            "degraded": True,
+            "missing_builtin_roles": ["qa"],
+        },
+    )
+
+    summary = manager.get_health_summary()
+
+    assert summary["status"] == "degraded"
+    assert summary["agent_catalog"]["missing_builtin_roles"] == ["qa"]
+
+
 def test_full_report_includes_gpu_reason_and_updates_metrics(monkeypatch):
     manager = _build_manager(monkeypatch)
     captured = {}
