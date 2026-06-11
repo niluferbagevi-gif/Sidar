@@ -326,6 +326,7 @@ fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 # RETRY_ON_FAIL genel kullanıcı kısayoludur; namespaced değer verilirse öncelik ondadır.
 FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"
+FRONTEND_E2E_NPM_SCRIPT="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
 if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"
   FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"
@@ -378,8 +379,15 @@ AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
+FRONTEND_LINT_EXIT_CODE=0
+FRONTEND_COVERAGE_EXIT_CODE=0
 FRONTEND_E2E_EXIT_CODE=0
+FRONTEND_LINT_RAN=0
+FRONTEND_COVERAGE_RAN=0
+FRONTEND_E2E_RAN=0
 BENCHMARK_EXIT_CODE=0
+FRONTEND_COVERAGE_REPORT_PATH="web_ui_react/coverage/index.html"
+FRONTEND_PLAYWRIGHT_REPORT_PATH="web_ui_react/playwright-report/index.html"
 DOCKER_TEST_SERVICES_STARTED=0
 DOCKER_COMPOSE_CMD=()
 BACKEND_FAILURE_REASONS=()
@@ -406,6 +414,49 @@ format_backend_failure_reasons() {
   for reason in "${BACKEND_FAILURE_REASONS[@]:1}"; do
     printf ', %s' "${reason}"
   done
+}
+
+format_quality_status() {
+  local code="$1"
+  local ran="${2:-1}"
+  local label_not_run="${3:-çalışmadı}"
+  if [ "${ran}" != "1" ]; then
+    printf '%s' "${label_not_run}"
+  elif [ "${code}" = "0" ]; then
+    printf 'geçti'
+  else
+    printf 'başarısız (exit=%s)' "${code}"
+  fi
+}
+
+print_frontend_quality_summary() {
+  echo ""
+  echo "🧭 Frontend kalite kapısı özeti"
+  echo "   Lint (npm run lint): $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}")"
+  echo "   Coverage (npm run test:coverage): $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}")"
+  echo "   Playwright (${FRONTEND_E2E_NPM_SCRIPT}): $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "atlanmış") (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
+  if [ -f "${FRONTEND_COVERAGE_REPORT_PATH}" ]; then
+    echo "   Frontend coverage artefaktı: ${FRONTEND_COVERAGE_REPORT_PATH}"
+  else
+    echo "   Frontend coverage artefaktı: üretilmedi (${FRONTEND_COVERAGE_REPORT_PATH})"
+  fi
+  if [ -f "${FRONTEND_PLAYWRIGHT_REPORT_PATH}" ]; then
+    echo "   Playwright artefaktı: ${FRONTEND_PLAYWRIGHT_REPORT_PATH}"
+  fi
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### Frontend quality gate"
+      echo ""
+      echo "| Gate | Command | Result |"
+      echo "| --- | --- | --- |"
+      echo "| Lint | \`npm run lint\` | $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}" "skipped") |"
+      echo "| Coverage | \`npm run test:coverage\` | $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}" "skipped") |"
+      echo "| Playwright smoke | \`npm run ${FRONTEND_E2E_NPM_SCRIPT}\` | $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "skipped") |"
+      echo ""
+      echo "- Coverage artifact: \`${FRONTEND_COVERAGE_REPORT_PATH}\`"
+      echo "- Playwright artifact: \`${FRONTEND_PLAYWRIGHT_REPORT_PATH}\`"
+    } >> "${GITHUB_STEP_SUMMARY}"
+  fi
 }
 
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -1631,9 +1682,10 @@ install_local_frontend_playwright_chromium_cache() {
 
 run_frontend_e2e_with_retry() {
   local e2e_exit_code=0
+  local frontend_e2e_script="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
 
-  echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor..."
-  if npm run test:e2e; then
+  echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor (${frontend_e2e_script})..."
+  if npm run "${frontend_e2e_script}"; then
     return 0
   else
     e2e_exit_code=$?
@@ -1644,7 +1696,7 @@ run_frontend_e2e_with_retry() {
   fi
 
   echo "⚠️ Frontend Playwright smoke testleri başarısız oldu (çıkış=${e2e_exit_code}); flake elemek için bir kez yeniden deneniyor..."
-  if npm run test:e2e; then
+  if npm run "${frontend_e2e_script}"; then
     echo "✅ Frontend Playwright smoke testleri ikinci denemede geçti. İlk hata flake olarak raporlandı."
     return 0
   else
@@ -1708,14 +1760,26 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_EXIT_CODE=${local_npm_ci_exit}
       else
         resolve_local_frontend_e2e_mode
-        npm run test:coverage
-        FRONTEND_EXIT_CODE=$?
-        if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-          if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
-            run_frontend_e2e_with_retry
-            FRONTEND_E2E_EXIT_CODE=$?
-          else
-            echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+        echo "🧹 Frontend lint kalite kapısı çalıştırılıyor: npm run lint"
+        FRONTEND_LINT_RAN=1
+        npm run lint
+        FRONTEND_LINT_EXIT_CODE=$?
+        if [ "${FRONTEND_LINT_EXIT_CODE}" -ne 0 ]; then
+          FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
+        else
+          echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
+          FRONTEND_COVERAGE_RAN=1
+          npm run test:coverage
+          FRONTEND_COVERAGE_EXIT_CODE=$?
+          FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+          if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
+            if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
+              FRONTEND_E2E_RAN=1
+              run_frontend_e2e_with_retry
+              FRONTEND_E2E_EXIT_CODE=$?
+            else
+              echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+            fi
           fi
         fi
       fi
@@ -1740,6 +1804,8 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
 elif [ -d "web_ui_react" ]; then
   echo "⚠️ Frontend testleri atlandı: web_ui_react/package.json bulunamadı."
 fi
+
+print_frontend_quality_summary
 
 echo "======================================================"
 

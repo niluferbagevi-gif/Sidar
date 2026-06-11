@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js",
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {

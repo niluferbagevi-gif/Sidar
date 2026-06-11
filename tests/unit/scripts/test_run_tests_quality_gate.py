@@ -1603,18 +1603,27 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script
     assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
-    assert script.index("resolve_local_frontend_e2e_mode") < script.index("npm run test:coverage")
+    frontend_gate_block = script[script.index("# 3) Frontend React testleri") : script.index("# 4) Final Durum Değerlendirmesi")]
+    assert frontend_gate_block.index("resolve_local_frontend_e2e_mode") < frontend_gate_block.index("npm run lint") < frontend_gate_block.index("npm run test:coverage")
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "run_frontend_e2e_with_retry()" in script
     assert 'if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then' in script
-    assert "npm run test:e2e" in script
+    assert 'FRONTEND_E2E_NPM_SCRIPT="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"' in script
+    assert 'npm run "${frontend_e2e_script}"' in script
+    assert "print_frontend_quality_summary()" in script
+    assert "Frontend kalite kapısı özeti" in script
+    assert "Frontend coverage artefaktı" in script
+    assert "GITHUB_STEP_SUMMARY" in script
     assert 'FRONTEND_E2E_EXIT_CODE=$?' in script
     assert 'if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then' in script
     assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
     assert "npx playwright install --with-deps chromium" in ci
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
+    package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
+    assert '"test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js"' in package_json
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
     assert 'outputDir: "test-results"' in playwright
@@ -1716,6 +1725,7 @@ printf '%s' "${count}" > "${MOCK_NPM_COUNT}"
         "MOCK_NPM_COUNT": str(count_file),
         "MOCK_NPM_PASS_ON_ATTEMPT": "2",
         "FRONTEND_E2E_RETRY_ON_FAIL": "1",
+        "FRONTEND_E2E_NPM_SCRIPT": "test:e2e:smoke",
     }
 
     success = subprocess.run([str(helper)], env=env, capture_output=True, text=True)
