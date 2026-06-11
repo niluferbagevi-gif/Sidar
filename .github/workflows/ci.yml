@@ -202,8 +202,21 @@ jobs:
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run bandit -c pyproject.toml -q -r .
+          mkdir -p artifacts/security
           mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
-          uv run --with pip-audit pip-audit --skip-editable --timeout 30 "${pip_audit_ignore_args[@]}"
+          if ! uv run --with pip-audit pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json "${pip_audit_ignore_args[@]}"; then
+            python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30
+            exit 1
+          fi
+
+      - name: Upload security audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-artifacts
+          path: artifacts/security/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh

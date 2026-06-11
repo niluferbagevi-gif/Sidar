@@ -1503,9 +1503,18 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
 
     assert "python scripts/pip_audit_ignore_args.py" in script
-    assert 'pip-audit --skip-editable --timeout "${pip_audit_timeout}" "${pip_audit_ignore_args[@]}"' in script
+    assert "PIP_AUDIT_ARTIFACT_DIR:-artifacts/security" in script
+    assert "pip-audit-report.raw.json" in script
+    assert "pip-audit-failure.json" in script
+    assert 'pip-audit --skip-editable --timeout "${pip_audit_timeout}"' in script
+    assert '--format json --output "${pip_audit_raw_report}"' in script
+    assert 'python scripts/pip_audit_failure_artifact.py "${pip_audit_raw_report}"' in script
     assert "python scripts/pip_audit_ignore_args.py" in ci_workflow
-    assert 'pip-audit --skip-editable --timeout 30 "${pip_audit_ignore_args[@]}"' in ci_workflow
+    assert "mkdir -p artifacts/security" in ci_workflow
+    assert "pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json" in ci_workflow
+    assert "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30" in ci_workflow
+    assert "name: security-audit-artifacts" in ci_workflow
+    assert "artifacts/security/" in ci_workflow
     assert "CVE-2025-3000\ttorch\t2026-07-11" in policy
 
 

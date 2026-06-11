@@ -905,6 +905,10 @@ run_security_analysis_gates() {
   local pip_audit_max_retries="${PIP_AUDIT_MAX_RETRIES:-2}"
   local pip_audit_attempt=1
   local pip_audit_wait_seconds="${PIP_AUDIT_RETRY_WAIT_SECONDS:-5}"
+  local pip_audit_artifact_dir="${PIP_AUDIT_ARTIFACT_DIR:-artifacts/security}"
+  local pip_audit_raw_report="${pip_audit_artifact_dir}/pip-audit-report.raw.json"
+  local pip_audit_failure_artifact="${pip_audit_artifact_dir}/pip-audit-failure.json"
+  mkdir -p "${pip_audit_artifact_dir}"
 
   local pip_audit_ignore_args=()
   if ! mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py); then
@@ -914,7 +918,10 @@ run_security_analysis_gates() {
   fi
 
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
-    if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}" "${pip_audit_ignore_args[@]}"; then
+    rm -f "${pip_audit_raw_report}"
+    if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}" \
+      --format json --output "${pip_audit_raw_report}" "${pip_audit_ignore_args[@]}"; then
+      rm -f "${pip_audit_failure_artifact}"
       return 0
     fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
@@ -925,6 +932,11 @@ run_security_analysis_gates() {
   done
 
   echo "❌ pip-audit güvenlik taraması ${pip_audit_max_retries} denemede başarısız."
+  if python scripts/pip_audit_failure_artifact.py "${pip_audit_raw_report}" "${pip_audit_failure_artifact}" --timeout "${pip_audit_timeout}"; then
+    echo "🧾 pip-audit hata artefaktı yazıldı: ${pip_audit_failure_artifact}"
+  else
+    echo "⚠️ pip-audit hata artefaktı üretilemedi."
+  fi
   BACKEND_EXIT_CODE=1
   return 1
 }
