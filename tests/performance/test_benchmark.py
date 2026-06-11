@@ -72,11 +72,35 @@ def _postgresql_benchmark_url() -> str | None:
 
 
 def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
-    benchmark_pool_size = int(os.getenv("SIDAR_BENCHMARK_DB_POOL_SIZE", "5") or "5")
+    benchmark_pool_size = max(1, int(os.getenv("SIDAR_BENCHMARK_DB_POOL_SIZE", "5") or "5"))
+    benchmark_pool_overflow = max(
+        0, int(os.getenv("SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW", "0") or "0")
+    )
+    benchmark_pbkdf2_iterations = max(
+        1,
+        int(
+            os.getenv(
+                "SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS",
+                os.getenv("PASSWORD_PBKDF2_ITERATIONS_PROD", "720000"),
+            )
+            or "1"
+        ),
+    )
     return SimpleNamespace(
         DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
-        DB_POOL_SIZE=max(1, benchmark_pool_size),
+        DB_POOL_SIZE=benchmark_pool_size,
+        DB_POOL_MIN_SIZE=max(
+            1, int(os.getenv("SIDAR_BENCHMARK_DB_POOL_MIN_SIZE", str(benchmark_pool_size)) or "1")
+        ),
+        DB_POOL_MAX_OVERFLOW=benchmark_pool_overflow,
+        DB_POOL_RECYCLE_SECONDS=max(
+            0.0, float(os.getenv("SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS", "0") or "0")
+        ),
+        DB_POOL_PRE_PING=os.getenv("SIDAR_BENCHMARK_DB_POOL_PRE_PING", "0").lower()
+        in {"1", "true", "yes", "on"},
+        PASSWORD_HASH_ALGORITHM="pbkdf2_sha256",
+        PASSWORD_PBKDF2_ITERATIONS=benchmark_pbkdf2_iterations,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",

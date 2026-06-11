@@ -202,10 +202,10 @@ jobs:
           tests/smoke/test_install_verification.py
           tests/smoke/test_repo_phase_coverage_dark_mode_assets.py
 
-      - name: Run ShellCheck for installer and install modules
+      - name: Run ShellCheck for shell orchestrators
         run: |
           shopt -s globstar nullglob
-          uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
+          uv run shellcheck --severity=warning -x install_sidar.sh run_tests.sh scripts/install_modules/**/*.sh scripts/test_stages/*.sh
 
       - name: Prepare isolated test database (sidar_test) + Alembic upgrade
         env:
@@ -217,22 +217,17 @@ jobs:
             -c "GRANT ALL PRIVILEGES ON DATABASE sidar_test TO sidar;"
           uv run alembic upgrade head
 
+      - name: Verify benchmark regression gate fails closed
+        run: uv run python scripts/ci/verify_benchmark_regression_gate.py
+
       - name: Run test suite (single pass + coverage gate)
         env:
-          RUN_BENCHMARKS: "required"
+          RUN_BENCHMARKS: "auto"
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
-          BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
-          BENCHMARK_TREND_COMPARE: "1"
-          BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
-          BENCHMARK_TREND_WINDOW: "15"
-          BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_REQUIRED: "1"
-          BENCHMARK_COMPARE_FAIL: "mean:10%"
-          BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |
           set -o pipefail
           mkdir -p artifacts

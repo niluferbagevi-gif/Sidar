@@ -14,7 +14,14 @@ RUN_TESTS = Path("run_tests.sh")
 
 
 def _script() -> str:
-    return RUN_TESTS.read_text(encoding="utf-8")
+    script = RUN_TESTS.read_text(encoding="utf-8")
+    stage_dir = Path("scripts/test_stages")
+    if stage_dir.exists():
+        stage_sources = "\n".join(
+            stage.read_text(encoding="utf-8") for stage in sorted(stage_dir.glob("*.sh"))
+        )
+        script = f"{script}\n{stage_sources}"
+    return script
 
 
 def _extract_run_tests_function(name: str) -> str:
@@ -157,7 +164,7 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creation() -> None:
+def test_run_tests_skips_ci_auto_benchmarks_but_supports_required_compare() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
@@ -169,6 +176,7 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
     assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
+    assert "export TEST_PROFILE" in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
     assert "resolve_benchmark_compare_target()" in script
@@ -186,6 +194,10 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+    assert 'RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"' in script
+    assert 'RUN_BENCHMARKS="${RUN_BENCHMARKS:-required}"' in script
+    assert 'if [ "${RUN_BENCHMARKS}" = "auto" ] && [ "${TEST_PROFILE}" = "ci" ]; then' in script
+    assert "ağır performans benchmarkları ana CI'da atlanacak" in script
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
@@ -194,8 +206,30 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
     assert 'await conn.execute("SELECT 1")' in benchmark_test
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_MIN_SIZE" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS" in benchmark_test
+    assert "SIDAR_BENCHMARK_DB_POOL_PRE_PING" in benchmark_test
+    assert "SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS" in benchmark_test
+    assert "PASSWORD_PBKDF2_ITERATIONS_PROD" in benchmark_test
     assert "warmup_rounds=5" in benchmark_test
     assert "rounds=25" in benchmark_test
+
+
+def test_benchmark_regression_gate_self_test_is_documented_and_wired_to_ci() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    self_test = Path("scripts/ci/verify_benchmark_regression_gate.py").read_text(encoding="utf-8")
+
+    assert "Verify benchmark regression gate fails closed" in ci_workflow
+    assert "uv run python scripts/ci/verify_benchmark_regression_gate.py" in ci_workflow
+    assert "uv run python scripts/ci/verify_benchmark_regression_gate.py" in notes
+    assert "--benchmark-compare-fail=mean:50%" in notes
+    assert "TemporaryDirectory" in self_test
+    assert "--benchmark-storage" in self_test
+    assert "--benchmark-save=baseline" in self_test
+    assert "--benchmark-compare-fail=mean:50%" in self_test
+    assert "return 1" in self_test[self_test.index("if regression.returncode == 0") :]
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
@@ -237,6 +271,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in install_script
 
     for content in (env_advanced, env_test_example):
+        assert "RUN_BENCHMARKS=required" in content
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
         assert "BENCHMARK_COMPARE_REQUIRED=0" in content
         assert "BENCHMARK_COMPARE_FAIL=" in content
@@ -806,6 +841,33 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     assert 'main "$@"' in script
 
 
+def test_install_sidar_exposes_stable_phase_aliases_for_modular_installer() -> None:
+    aliases = {
+        "install/01_context.sh": "scripts/install_modules/phases/01_context.sh",
+        "install/02_repo.sh": "scripts/install_modules/phases/02_repo.sh",
+        "install/03_runtime.sh": "scripts/install_modules/phases/03_runtime.sh",
+        "install/04_workspace.sh": "scripts/install_modules/phases/04_workspace.sh",
+        "install/05_frontend.sh": "scripts/install_modules/phases/05_frontend.sh",
+        "install/06_services.sh": "scripts/install_modules/phases/06_services.sh",
+        "install/07_finish.sh": "scripts/install_modules/phases/07_finish.sh",
+    }
+    readme = Path("install/README.md").read_text(encoding="utf-8")
+
+    assert "standalone dağıtım/orchestrator" in readme
+    assert "scripts/tools/bundle_install_sidar.sh" in readme
+    assert "scripts/install_modules/phases/*.sh" in readme
+
+    for alias, canonical in aliases.items():
+        alias_path = Path(alias)
+        alias_content = alias_path.read_text(encoding="utf-8")
+
+        assert alias_path.is_file()
+        assert Path(canonical).is_file()
+        assert f"`{alias}` → `{canonical}`" in readme
+        assert "_sidar_install_alias_root" in alias_content
+        assert f'source "${{_sidar_install_alias_root}}/{canonical}"' in alias_content
+
+
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
@@ -1362,7 +1424,7 @@ def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_s
 
 def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:
     script = _script()
-    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend kalite akışı")]
+    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend lint/type-check")]
 
     assert 'record_backend_failure "bats_missing"' in script
     assert 'record_backend_failure "bats_failed"' in script
@@ -1465,11 +1527,13 @@ def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> No
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
-    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
-    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
+    assert 'RUN_BENCHMARKS: "auto"' in ci
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
+    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' not in ci
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' not in ci
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
-    assert "Ana CI hattı artık repodaki" in notes
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS: "30"' in nightly_gpu
+    assert "Ana CI hattı hızlı kalite kapısı" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
     assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
 
@@ -1485,13 +1549,20 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
     assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
-    assert '10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS' in gpu_benchmark
-    assert 'min_value=10' in gpu_benchmark
-    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)' in gpu_benchmark
+    assert '15 if _GPU_BENCHMARK_PROFILE == "smoke" else max(_BENCH_ROUNDS, 30)' in gpu_benchmark
+    assert 'min_value=15' in gpu_benchmark
+    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 15, full: 30)' in gpu_benchmark
     assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
-    assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
+    assert '"GPU_BENCH_VRAM_CONCURRENCY"' in gpu_benchmark
+    assert '"vram_workload_shape"' in gpu_benchmark
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in notes
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=30" in notes
+    assert "vram_workload_shape" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in env_test_example
+    assert "GPU_BENCH_VRAM_WORKLOAD_LABEL=prod-batch-shape" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
+    assert "GPU_BENCH_CONCURRENT_ROUNDS=15" in env_advanced
 
 
 def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:
@@ -1669,7 +1740,7 @@ printf '%s' "${count}" > "${MOCK_NPM_COUNT}"
 
 def test_benchmark_and_frontend_e2e_flakes_are_soft_local_but_hard_in_ci() -> None:
     script = _script()
-    final_evaluation = script[script.index("# 4) Final Durum Değerlendirmesi") :]
+    final_evaluation = script[script.index("# 7) Final Durum Değerlendirmesi") :]
     common_prefix = """
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -1789,7 +1860,7 @@ def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_rem
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
         script[
-            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 3) Frontend React testleri")
+            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 6) Frontend React testleri")
         ],
         encoding="utf-8",
     )
@@ -1882,3 +1953,35 @@ def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
     assert 'include: ["src/**/*.{js,jsx}"]' in vite
     assert 'reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"]' in vite
     assert "skipFull: false" in vite
+
+
+def test_run_tests_uses_sourceable_stage_modules_for_quality_flow() -> None:
+    script = RUN_TESTS.read_text(encoding="utf-8")
+    expected_stages = [
+        "01_lint.sh",
+        "02_pytest.sh",
+        "03_bats.sh",
+        "04_security.sh",
+        "05_benchmark.sh",
+        "06_frontend.sh",
+        "07_finalize.sh",
+    ]
+
+    assert 'TEST_STAGE_DIR="${SCRIPT_DIR}/scripts/test_stages"' in script
+    assert 'SIDAR_RUN_TESTS_CONTEXT=1' in script
+    assert 'source "${TEST_STAGE_DIR}/${test_stage_file}"' in script
+    for stage_name in expected_stages:
+        stage_path = Path("scripts/test_stages") / stage_name
+        assert f'"{stage_name}"' in script
+        assert stage_path.exists()
+        stage_source = stage_path.read_text(encoding="utf-8")
+        assert "SIDAR_RUN_TESTS_CONTEXT" in stage_source
+        assert "doğrudan çalıştırılmaz" in stage_source
+
+    assert "run_static_analysis_gates" in Path("scripts/test_stages/01_lint.sh").read_text(encoding="utf-8")
+    assert "run_pytest_coverage_report" in Path("scripts/test_stages/02_pytest.sh").read_text(encoding="utf-8")
+    assert "run_bats_shell_tests" in Path("scripts/test_stages/03_bats.sh").read_text(encoding="utf-8")
+    assert "run_security_analysis_gates" in Path("scripts/test_stages/04_security.sh").read_text(encoding="utf-8")
+    assert "PERFORMANCE_TEST_DIR" in Path("scripts/test_stages/05_benchmark.sh").read_text(encoding="utf-8")
+    assert "npm run test:coverage" in Path("scripts/test_stages/06_frontend.sh").read_text(encoding="utf-8")
+    assert "FINAL_EXIT_CODE" in Path("scripts/test_stages/07_finalize.sh").read_text(encoding="utf-8")

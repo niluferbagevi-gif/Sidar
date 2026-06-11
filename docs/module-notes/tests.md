@@ -46,6 +46,20 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - `python:3.11-slim`, genel sandbox fallback imajıdır; proje test imajının yerine geçirilmemelidir.
   Proje test akışları `uv`, pytest ve extras bağımlılıklarını içeren `sidar:latest` imajını kullanmalıdır.
 
+
+## `run_tests.sh` faz mimarisi
+
+- `run_tests.sh` geriye dönük uyumlu ana orkestratör olarak kalır: ortam normalizasyonu, ortak helper
+  fonksiyonları ve final stage source sırası burada tanımlıdır. Çalıştırılabilir faz gövdeleri
+  `scripts/test_stages/*.sh` altında tutulur.
+- Faz dosyaları sırasıyla lint/type-check önkoşulları (`01_lint.sh`), backend unit/integration pytest +
+  coverage (`02_pytest.sh`), BATS shell testleri + coverage ratchet (`03_bats.sh`), güvenlik taraması
+  (`04_security.sh`), benchmark (`05_benchmark.sh`), frontend Vitest/Playwright (`06_frontend.sh`) ve final
+  çıkış kodu değerlendirmesinden (`07_finalize.sh`) oluşur.
+- `scripts/test_stages/*.sh` dosyaları doğrudan çalıştırılmak için değil, `run_tests.sh` tarafından source
+  edilmek için tasarlanmıştır. Yeni kalite kapısı eklenirken önce uygun stage dosyası genişletilmeli;
+  stage sırası değişiyorsa `TEST_STAGE_FILES` listesi ve bu doküman birlikte güncellenmelidir.
+
 ## Shell testleri ve bağımlılık güvenlik taraması
 
 - `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
@@ -102,29 +116,47 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
   karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı sabit
-  runner kullanan CI profilinde varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%` ile açıktır.
-  WSL2/laptop P-state, Docker servisleri ve model keep-alive jitter'ı görülebilen yerel profilde
-  `BENCHMARK_ENFORCE_COMPARE=0` varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli
-  opt-in ile açıldığında varsayılan eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü
-  biçimde override edilebilir. Benchmark fazının genel sonucu CI profilinde varsayılan hard-fail, yerelde
-  flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
+  runner kullanan nightly/release benchmark workflow'larında `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%`
+  ile açıktır. Ana CI hattında `RUN_BENCHMARKS=auto` ağır `tests/performance` fazını süreyi kontrol altında
+  tutmak için atlar; lokal profilde varsayılan `RUN_BENCHMARKS=required` kalır. WSL2/laptop P-state, Docker
+  servisleri ve model keep-alive jitter'ı görülebilen yerel profilde `BENCHMARK_ENFORCE_COMPARE=0`
+  varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli opt-in ile açıldığında varsayılan
+  eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde override edilebilir.
+  Benchmark fazının genel sonucu ana CI'da çalıştırılmadığı sürece nightly/release job'larında hard-fail,
+  yerelde ise flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için
+  `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
+- Regression alarmının sessiz kalmadığını hedefli doğrulamak için CI, gerçek `.benchmarks`
+  dizinine dokunmayan sentetik self-test'i de çalıştırır:
+  - `uv run python scripts/ci/verify_benchmark_regression_gate.py`
+  Bu script geçici bir hızlı baseline üretir, aynı benchmark'ı kontrollü yavaşlatır ve
+  `--benchmark-compare-fail=mean:50%` sonucunun fail-closed döndüğünü doğrular.
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
   artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
   jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.
-- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
-  incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
+- PostgreSQL benchmark fixture'ı, SQLite karşılaştırmasında lazy connection açılışını ölçüme karıştırmamak
+  için `SIDAR_BENCHMARK_DB_POOL_SIZE` kadar bağlantıyı fixture başında ısıtır ve varsayılan
+  `SIDAR_BENCHMARK_DB_POOL_MIN_SIZE` değerini aynı kapasiteye eşitler. `SIDAR_BENCHMARK_DB_POOL_MAX_OVERFLOW`,
+  `SIDAR_BENCHMARK_DB_POOL_RECYCLE_SECONDS` ve `SIDAR_BENCHMARK_DB_POOL_PRE_PING` yalnız hedefli testlerde
+  override edilmelidir; baseline yenilerken kullanılan değerleri PR açıklamasında belirtin.
+- Auth benchmarkları normal test profilinin düşük PBKDF2 maliyetini değil, varsayılan olarak prod iş
+  faktörünü ölçer: `SIDAR_BENCHMARK_PASSWORD_PBKDF2_ITERATIONS`, yoksa
+  `PASSWORD_PBKDF2_ITERATIONS_PROD` (varsayılan `720000`). Bu değeri değiştirerek baseline yenilerseniz
+  benchmark JSON'u ve PR açıklaması aynı iş faktörünü açıkça belirtmelidir.
+- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı hızlı kalite kapısı
+  olarak kalır; repodaki incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eden
   `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`
-  değerleriyle baseline eksikliği veya `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk
-  kurulum/bootstrap akışlarında değer `0` kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir
-  ancak CI'a girecek baseline değişikliği kontrollü review'dan geçmelidir.
+  ayarları nightly/release benchmark workflow'larında uygulanır. Bu job'larda baseline eksikliği veya
+  `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk kurulum/bootstrap akışlarında değer `0`
+  kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir ancak CI'a girecek baseline
+  değişikliği kontrollü review'dan geçmelidir.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
-  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
-  incelemeyi kolaylaştırmak için `coverage.xml`, trend JSON dosyaları ve üretilen `.benchmarks/`
-  baseline adaylarını birlikte `backend-quality-trend-artifacts` artifact'i olarak yükler.
+  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Nightly/release
+  benchmark workflow'ları incelemeyi kolaylaştırmak için trend JSON dosyaları ve üretilen `.benchmarks/`
+  baseline adaylarını artifact olarak yükler; ana CI ise yalnız hızlı kalite artefaktlarını warn modunda toplar.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
@@ -166,12 +198,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `test_gpu_vram_peak_under_load`
 - Eşzamanlı throughput testi iki profile ayrılmıştır. Yerel/PR akışında varsayılan
   `RUN_GPU_BENCHMARKS=smoke`, pahalı paralel ölçümü `GPU_BENCH_CONCURRENT_WARMUP_ROUNDS=1` ve
-  `GPU_BENCH_CONCURRENT_ROUNDS=10` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
-  kullanır ve stabil baseline için sırasıyla `8` ve `20` tur çalıştırır.
+  `GPU_BENCH_CONCURRENT_ROUNDS=15` ile sınırlar. Nightly GPU trend akışı `RUN_GPU_BENCHMARKS=full`
+  kullanır ve yüksek varyansı daha hassas yakalamak için sırasıyla `8` ve `30` tur çalıştırır.
 - Varyans stabilitesi için full profil önerileri:
   - `RUN_GPU_BENCHMARKS=full`
   - `GPU_BENCH_WARMUP_ROUNDS=8`
+  - `GPU_BENCH_CONCURRENT_ROUNDS=30`
   - `GPU_BENCH_NUM_PREDICT=128`
+- VRAM tepe ölçümü prod batch şekliyle takip edilmelidir. Prod concurrency farklıysa
+  `GPU_BENCH_VRAM_CONCURRENCY` ve `GPU_BENCH_VRAM_WORKLOAD_LABEL` değerlerini açık set edin;
+  benchmark JSON içindeki `vram_workload_shape` metadata'sı bu profili trend anahtarına taşır.
 - Test tarafında varsayılan fallback `OLLAMA_NUM_PARALLEL=GPU_BENCH_CONCURRENCY` olarak hizalanmıştır;
   yine de üretim-benzeri doğrulama için bu değişkeni servis başlatırken açıkça set edin.
 - Nightly GPU trend geçmişi yalnız eşdeğer çalışma profillerini karşılaştırır. Profil anahtarı; model,

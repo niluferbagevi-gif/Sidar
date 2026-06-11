@@ -67,10 +67,17 @@ _CONCURRENT_WARMUP_ROUNDS: int = _gpu_smoke._env_int(
 )
 _CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
     "GPU_BENCH_CONCURRENT_ROUNDS",
-    10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
-    min_value=10,
-    max_value=50,
+    15 if _GPU_BENCHMARK_PROFILE == "smoke" else max(_BENCH_ROUNDS, 30),
+    min_value=15,
+    max_value=60,
 )
+_VRAM_CONCURRENCY: int = _gpu_smoke._env_int(
+    "GPU_BENCH_VRAM_CONCURRENCY",
+    _CONCURRENCY,
+    min_value=1,
+    max_value=16,
+)
+_VRAM_WORKLOAD_LABEL: str = os.getenv("GPU_BENCH_VRAM_WORKLOAD_LABEL", "prod-batch-shape").strip()
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -184,6 +191,19 @@ def _record_runtime_options(benchmark) -> None:
     benchmark.extra_info["ollama_num_batch"] = _NUM_BATCH
     benchmark.extra_info["ollama_num_predict"] = _NUM_PREDICT
     benchmark.extra_info["ollama_num_ctx"] = _NUM_CTX
+
+
+def _record_vram_workload_shape(benchmark, *, num_parallel: int) -> None:
+    """Record the VRAM workload shape so prod-batch changes become separate trends."""
+    benchmark.extra_info["vram_workload_shape"] = {
+        "label": _VRAM_WORKLOAD_LABEL or "prod-batch-shape",
+        "concurrency": _VRAM_CONCURRENCY,
+        "ollama_num_parallel": num_parallel,
+        "num_batch": _NUM_BATCH,
+        "num_ctx": _NUM_CTX,
+        "num_predict": _NUM_PREDICT,
+        "sample_interval_s": _VRAM_SAMPLE_INTERVAL_S,
+    }
 
 
 def _ollama_options() -> dict[str, int | float]:
@@ -364,7 +384,7 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
       GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
       RUN_GPU_BENCHMARKS       — smoke|full profil seçimi    (varsayılan: smoke)
       GPU_BENCH_CONCURRENT_WARMUP_ROUNDS — eşzamanlı test ısınma turu (smoke: 1, full: 8)
-      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)
+      GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 15, full: 30)
       OLLAMA_NUM_PARALLEL      — Ollama paralel request limiti (öneri: >= GPU_BENCH_CONCURRENCY)
     """
     _require_gpu_stress()
@@ -416,6 +436,15 @@ def test_gpu_concurrent_throughput(benchmark) -> None:
 
     assert len(results) == _CONCURRENCY, "Bazı eşzamanlı istekler yanıt döndürmedi."
     assert all(isinstance(r, str) and r.strip() for r in results), "Bazı yanıtlar boş döndü."
+    concurrent_mean_s = float(benchmark.stats.get("mean", 0.0) or 0.0)
+    concurrent_stddev_s = float(benchmark.stats.get("stddev", 0.0) or 0.0)
+    concurrent_iqr_s = float(benchmark.stats.get("iqr", 0.0) or 0.0)
+    benchmark.extra_info["concurrent_stddev_ms"] = round(concurrent_stddev_s * 1000, 3)
+    benchmark.extra_info["concurrent_iqr_ms"] = round(concurrent_iqr_s * 1000, 3)
+    if concurrent_mean_s > 0:
+        benchmark.extra_info["concurrent_cv_percent"] = round(
+            (concurrent_stddev_s / concurrent_mean_s) * 100, 3
+        )
 
 
 @pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
@@ -428,19 +457,20 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
     bir örneklenir; her tur için tepe değer kaydedilir.
 
     Geçerli ortam değişkenleri:
-      GPU_BENCH_CONCURRENCY    — eşzamanlı istek sayısı      (varsayılan: 4)
-      GPU_BENCH_WARMUP_ROUNDS  — pedantic warmup tur sayısı  (varsayılan: 8)
-      GPU_BENCH_ROUNDS         — ölçüm tur sayısı            (varsayılan: 20)
-      GPU_BENCH_VRAM_SAMPLE_INTERVAL — VRAM örnekleme aralığı (sn, varsayılan: 0.05)
+      GPU_BENCH_VRAM_CONCURRENCY — VRAM prod batch eşzamanlılığı (varsayılan: GPU_BENCH_CONCURRENCY)
+      GPU_BENCH_WARMUP_ROUNDS    — pedantic warmup tur sayısı    (varsayılan: 8)
+      GPU_BENCH_ROUNDS           — ölçüm tur sayısı              (varsayılan: 20)
+      GPU_BENCH_VRAM_SAMPLE_INTERVAL — VRAM örnekleme aralığı    (sn, varsayılan: 0.05)
+      GPU_BENCH_VRAM_WORKLOAD_LABEL — metadata workload etiketi  (varsayılan: prod-batch-shape)
     """
     _require_gpu_stress()
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
     num_parallel = _ollama_num_parallel()
-    if num_parallel < _CONCURRENCY:
+    if num_parallel < _VRAM_CONCURRENCY:
         pytest.skip(
             "VRAM yük testinde gerçek paralellik için OLLAMA_NUM_PARALLEL yetersiz: "
-            f"{num_parallel} < {_CONCURRENCY}."
+            f"{num_parallel} < {_VRAM_CONCURRENCY}."
         )
     if _gpu_smoke._read_gpu_memory_used_mib() is None:
         pytest.skip("nvidia-smi VRAM ölçümü kullanılamıyor.")
@@ -467,7 +497,7 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
 
             sampler = asyncio.create_task(_sample())
             try:
-                await asyncio.gather(*[_chat_content(prompt, http) for _ in range(_CONCURRENCY)])
+                await asyncio.gather(*[_chat_content(prompt, http) for _ in range(_VRAM_CONCURRENCY)])
             finally:
                 stop.set()
                 await sampler
@@ -502,8 +532,11 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
             f"{max(observed_peaks)} MiB > {utilization_limit_mib} MiB "
             f"({_MAX_VRAM_UTILIZATION:.0%} of {total_vram} MiB)."
         )
+    _record_runtime_options(benchmark)
+    _record_vram_workload_shape(benchmark, num_parallel=num_parallel)
     benchmark.extra_info["vram_peak_mib"] = int(max(observed_peaks))
     benchmark.extra_info["vram_peak_mean_mib"] = round(sum(observed_peaks) / len(observed_peaks), 3)
+    benchmark.extra_info["vram_rounds"] = len(observed_peaks)
 
 
 @pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
@@ -649,4 +682,24 @@ def test_runtime_options_metadata_records_workload_shape() -> None:
         "ollama_num_batch": _NUM_BATCH,
         "ollama_num_predict": _NUM_PREDICT,
         "ollama_num_ctx": _NUM_CTX,
+    }
+
+
+def test_vram_workload_shape_metadata_records_prod_batch_shape() -> None:
+    """VRAM trendleri prod batch şekli değişince ayrı profil olarak ayrışmalı."""
+
+    class _BenchmarkStub:
+        extra_info: dict[str, object] = {}
+
+    benchmark = _BenchmarkStub()
+    _record_vram_workload_shape(benchmark, num_parallel=_VRAM_CONCURRENCY)
+
+    assert benchmark.extra_info["vram_workload_shape"] == {
+        "label": _VRAM_WORKLOAD_LABEL or "prod-batch-shape",
+        "concurrency": _VRAM_CONCURRENCY,
+        "ollama_num_parallel": _VRAM_CONCURRENCY,
+        "num_batch": _NUM_BATCH,
+        "num_ctx": _NUM_CTX,
+        "num_predict": _NUM_PREDICT,
+        "sample_interval_s": _VRAM_SAMPLE_INTERVAL_S,
     }

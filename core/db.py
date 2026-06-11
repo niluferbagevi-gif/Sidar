@@ -327,11 +327,17 @@ def _pbkdf2_sha256(password: str, salt: str, iterations: int) -> str:
     return digest.hex()
 
 
-def _hash_password(password: str, salt: str | None = None) -> str:
+def _normalize_pbkdf2_iterations(iterations: int | None = None) -> int:
+    return max(1, int(iterations or _PBKDF2_MIN_ITERATIONS))
+
+
+def _hash_password(
+    password: str, salt: str | None = None, *, iterations: int | None = None
+) -> str:
     real_salt = salt or secrets.token_hex(16)
-    # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
-    digest_hex = _pbkdf2_sha256(password, real_salt, _PBKDF2_MIN_ITERATIONS)
-    return f"{_PBKDF2_ALGORITHM}${_PBKDF2_MIN_ITERATIONS}${real_salt}${digest_hex}"
+    work_factor = _normalize_pbkdf2_iterations(iterations)
+    digest_hex = _pbkdf2_sha256(password, real_salt, work_factor)
+    return f"{_PBKDF2_ALGORITHM}${work_factor}${real_salt}${digest_hex}"
 
 
 def _verify_password(password: str, encoded: str) -> bool:
@@ -419,7 +425,21 @@ class Database:
         self.database_url = (
             getattr(self.cfg, "DATABASE_URL", "") or ""
         ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
-        self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
+        self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
+        self.pool_min_size = max(0, int(getattr(self.cfg, "DB_POOL_MIN_SIZE", 1) or 1))
+        self.pool_max_overflow = max(0, int(getattr(self.cfg, "DB_POOL_MAX_OVERFLOW", 0) or 0))
+        self.pool_recycle_seconds = max(
+            0.0, float(getattr(self.cfg, "DB_POOL_RECYCLE_SECONDS", 0.0) or 0.0)
+        )
+        self.pool_pre_ping = bool(getattr(self.cfg, "DB_POOL_PRE_PING", False))
+        self.password_hash_algorithm = str(
+            getattr(self.cfg, "PASSWORD_HASH_ALGORITHM", _PBKDF2_ALGORITHM) or _PBKDF2_ALGORITHM
+        ).strip()
+        if self.password_hash_algorithm != _PBKDF2_ALGORITHM:
+            raise ValueError(f"Unsupported PASSWORD_HASH_ALGORITHM: {self.password_hash_algorithm}")
+        self.password_pbkdf2_iterations = _normalize_pbkdf2_iterations(
+            int(getattr(self.cfg, "PASSWORD_PBKDF2_ITERATIONS", _PBKDF2_MIN_ITERATIONS) or 0)
+        )
         self.schema_version_table = str(
             getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions"
         )
@@ -707,12 +727,24 @@ class Database:
             return
 
         dsn = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        max_pool_size = max(1, self.pool_size + self.pool_max_overflow)
+        min_pool_size = min(max_pool_size, self.pool_min_size)
+        pool_kwargs: dict[str, Any] = {
+            "dsn": dsn,
+            "min_size": min_pool_size,
+            "max_size": max_pool_size,
+        }
+        if self.pool_recycle_seconds > 0:
+            pool_kwargs["max_inactive_connection_lifetime"] = self.pool_recycle_seconds
+        if self.pool_pre_ping:
+
+            async def _pre_ping(conn: Any) -> None:
+                await conn.execute("SELECT 1")
+
+            pool_kwargs["setup"] = _pre_ping
+
         try:
-            self._pg_pool = await pool_factory(
-                dsn=dsn,
-                min_size=1,
-                max_size=max(1, self.pool_size),
-            )
+            self._pg_pool = await pool_factory(**pool_kwargs)
         except Exception as exc:
             pool_error_type = None
             if self._pg_pool_factory is None:
@@ -1665,7 +1697,11 @@ class Database:
     ) -> UserRecord:
         user_id = _new_entity_id()
         created_at_dt, created_at = _utc_now_pair()
-        password_hash = _hash_password(password) if password else None
+        password_hash = (
+            _hash_password(password, iterations=self.password_pbkdf2_iterations)
+            if password
+            else None
+        )
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None

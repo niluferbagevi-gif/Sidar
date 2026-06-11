@@ -1,13 +1,14 @@
-# 3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)
+# 3.4 `web_server.py` — FastAPI Web Sunucusu
 
 ## Rapor İçeriği (Taşınan Bölüm)
 
-**Amaç:** WebSocket destekli asenkron chat, DB tabanlı kimlik doğrulama ve kurumsal metrik/bütçe uçlarını tek API yüzeyinde sunar.
+**Amaç:** WebSocket destekli asenkron chat, DB tabanlı kimlik doğrulama ve kurumsal metrik/bütçe uçlarını tek API yüzeyinde sunar. Sürdürülebilirlik hedefi, `web_server.py` dosyasını uygulama bootstrap + WebSocket orkestrasyonu + router mount katmanı olarak inceltmek ve REST endpoint gruplarını `web/routes/*` modüllerine taşımaktır.
 
 **Kurumsal v3.0 Öne Çıkanlar:**
 - **Bearer Token middleware:** HTTP isteklerinde zorunlu kimlik doğrulama (`basic_auth_middleware`).
 - **Auth uçları:** `/auth/register`, `/auth/login`, `/auth/me`.
 - **Bütçe/telemetri uçları:** `/api/budget`, `/metrics/llm`, `/metrics/llm/prometheus`.
+- **Capability router ayrıştırması:** Vision, EntityMemory, FeedbackStore, Slack ve Jira endpoint'leri `web/routes/capabilities.py` içine taşınmıştır; `web_server.py` yalnız state helper'ları ve legacy export yüzeyini korur.
 - **WebSocket Auth Handshake:** `/ws/chat` bağlantısında ilk mesajın `action="auth"` ve geçerli token içermesi zorunlu; aksi durumda policy violation ile bağlantı kapatılır.
 
 **Temel API Endpoint'leri (özet):**
