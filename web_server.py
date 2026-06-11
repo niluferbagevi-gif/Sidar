@@ -1563,7 +1563,10 @@ async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
 
 
 _register_exception_handlers = _app_factory.register_exception_handlers
-app = _app_factory.create_app(lifespan=_app_lifespan)
+app = _app_factory.create_app(
+    lifespan=_app_lifespan,
+    version=str(getattr(cfg, "VERSION", "") or ""),
+)
 
 
 @app.middleware("http")

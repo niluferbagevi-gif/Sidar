@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from sidar_version import PRODUCT_VERSION
 from web.app_factory import create_app, register_exception_handlers
 
 
@@ -16,8 +17,15 @@ def test_create_app_registers_metadata_and_json_http_exception_handler() -> None
     response = TestClient(app, raise_server_exceptions=False).get("/boom")
 
     assert app.title == "Sidar Web UI & REST API"
+    assert app.version == PRODUCT_VERSION
     assert response.status_code == 418
     assert response.json() == {"success": False, "error": "teapot", "code": "E_TEAPOT"}
+
+
+def test_create_app_allows_central_version_override() -> None:
+    app = create_app(version="9.8.7")
+
+    assert app.version == "9.8.7"
 
 
 def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch) -> None:

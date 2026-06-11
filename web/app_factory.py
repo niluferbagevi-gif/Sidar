@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from sidar_version import PRODUCT_VERSION
+
 logger = logging.getLogger("sidar.web")
 
 
@@ -30,7 +32,11 @@ def register_exception_handlers(
 
     if not hasattr(application, "exception_handler"):
         return
-    include_detail = _expose_exception_details() if expose_exception_details is None else expose_exception_details
+    include_detail = (
+        _expose_exception_details()
+        if expose_exception_details is None
+        else expose_exception_details
+    )
 
     @application.exception_handler(HTTPException)
     async def _http_exception_handler(_request: Request, exc: HTTPException) -> Any:
@@ -60,6 +66,7 @@ def create_app(
     lifespan: Callable[[FastAPI], Any] | None = None,
     register_handlers: bool = True,
     expose_exception_details: bool | None = None,
+    version: str = PRODUCT_VERSION,
 ) -> FastAPI:
     """Create the Sidar FastAPI application shell.
 
@@ -73,7 +80,7 @@ def create_app(
             "Sidar AI Ajanı için Web Arayüzü ve REST API uç noktaları. "
             "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
         ),
-        version="3.0.0",
+        version=str(version or PRODUCT_VERSION),
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan or _noop_lifespan,
