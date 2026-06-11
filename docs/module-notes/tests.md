@@ -34,6 +34,15 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Yeni test eklerken önce modül klasörü belirlenmeli, sonra mevcut dosyaya genişletme
   mümkünse yeni dosya açılmamalıdır.
 
+
+## CI servis kimlik bilgileri
+
+- `.github/workflows/ci.yml` içindeki PostgreSQL servis parolası (`POSTGRES_PASSWORD=sidar`)
+  yalnız GitHub Actions'ın ephemeral test servisi içindir. Production `.env` örnekleri, installer
+  çıktıları veya deploy runbook'ları için referans parola olarak kullanılmamalıdır.
+- CI test veritabanı `sidar_test` her koşuda yeniden oluşturulur; bu değerlerin amacı yalnız
+  `uv sync --frozen --all-extras` sonrası migration/test akışını deterministik çalıştırmaktır.
+
 ## Docker sandbox test imajı hazırlığı
 
 - `CodeManager`, açık bir `DOCKER_TEST_IMAGE` verilmemişse yerel Docker daemon'da önce

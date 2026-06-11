@@ -1497,6 +1497,17 @@ def test_ci_uploads_benchmark_reports_and_reviewable_baseline_candidates() -> No
     assert "if-no-files-found: warn" in artifact_block
 
 
+def test_ci_postgres_credentials_are_documented_as_test_only() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+
+    assert "Test-only CI service credentials" in ci
+    assert "ephemeral postgres service" in ci
+    assert "POSTGRES_PASSWORD=sidar" in notes
+    assert "yalnız GitHub Actions'ın ephemeral test servisi içindir" in notes
+    assert "Production `.env` örnekleri" in notes
+
+
 def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> None:
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -1537,8 +1548,11 @@ def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "path: .benchmarks" in ci
     assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in ci
     assert "Resolve benchmark baseline gate mode" in ci
+    assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' in ci
+    assert "GITHUB_STEP_SUMMARY" in ci
+    assert "reviewable baseline artifact/cache candidate" in ci
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci

@@ -23,6 +23,7 @@ jobs:
       postgres:
         image: postgres:16
         env:
+          # Test-only CI service credentials; production samples/runbooks must not reuse this password.
           POSTGRES_USER: sidar
           POSTGRES_PASSWORD: sidar
           POSTGRES_DB: sidar
@@ -51,6 +52,7 @@ jobs:
       SMOKE_SKIP_EXTERNAL_INFRA: "0"
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
+      # Test-only CI service credentials matching the ephemeral postgres service above.
       POSTGRES_USER: sidar
       POSTGRES_PASSWORD: sidar
       POSTGRES_DB: sidar
@@ -97,13 +99,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .benchmarks
           benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
           if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
             echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"
             echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; compare gate is required."
+            {
+              echo "### Benchmark baseline"
+              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; compare gate is required."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"
             echo "::notice title=Benchmark baseline::No cached benchmark baseline found for ${benchmark_compare_name}; this run seeds a baseline artifact/cache candidate."
+            {
+              echo "### Benchmark baseline"
+              echo "- No cached baseline found for \`${benchmark_compare_name}\`; this run seeds a reviewable baseline artifact/cache candidate."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Diagnose environment (always)
