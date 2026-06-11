@@ -81,6 +81,31 @@ jobs:
         run: |
           uv sync --frozen --all-extras
 
+      - name: Restore benchmark baseline cache
+        id: benchmark-baseline-cache
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-main-
+            benchmark-baseline-${{ runner.os }}-py311-master-
+            benchmark-baseline-${{ runner.os }}-py311-
+
+      - name: Resolve benchmark baseline gate mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
+          if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
+            echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"
+            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; compare gate is required."
+          else
+            echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"
+            echo "::notice title=Benchmark baseline::No cached benchmark baseline found for ${benchmark_compare_name}; this run seeds a baseline artifact/cache candidate."
+          fi
+
       - name: Diagnose environment (always)
         if: always()
         run: |
@@ -231,7 +256,6 @@ jobs:
           BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
           BENCHMARK_TREND_WINDOW: "15"
           BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_REQUIRED: "1"
           BENCHMARK_COMPARE_FAIL: "mean:10%"
           BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |

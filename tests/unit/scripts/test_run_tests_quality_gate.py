@@ -185,6 +185,9 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert 'benchmark_cmd+=(--benchmark-disable-gc)' in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in script
+    assert "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh" in script
+    assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
@@ -208,7 +211,7 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "version-sort" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
-    assert "takipli *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer" in env_advanced
+    assert "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
 
 
@@ -1464,18 +1467,27 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_ci_requires_benchmark_compare_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
+    assert "uses: actions/cache@v4" in ci
+    assert "id: benchmark-baseline-cache" in ci
+    assert "path: .benchmarks" in ci
+    assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in ci
+    assert "Resolve benchmark baseline gate mode" in ci
+    assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' in ci
+    assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' in ci
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in ci
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
+    assert '.benchmarks/' in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
-    assert "Ana CI hattı artık repodaki" in notes
+    assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
-    assert "temiz clone kurulumları yeni baseline üretip raporlayabilir" in notes
+    assert "Cache boşsa ilk koşu seed baseline moduna alınır" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:

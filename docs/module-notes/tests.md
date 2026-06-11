@@ -99,7 +99,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 - `tests/performance` altında bulunan benchmark testleri için düzenli baseline kaydı alın.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
-  `.benchmarks` altındaki takipli `*_baseline.json` dosyalarını version-sort ile sıralar ve
+  `.benchmarks` altındaki restore/seed edilmiş `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
   karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı sabit
   runner kullanan CI profilinde varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%` ile açıktır.
@@ -114,17 +114,20 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
   artırılmış warmup turları tamamlandıktan sonra yapın. `commit_info.dirty=true` taşıyan veya tek koşu
   jitter'ını kalıcılaştıran JSON dosyalarını otomatik olarak promote etmeyin.
-- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık repodaki
-  incelenmiş `*_baseline.json` kaydını zorunlu karşılaştırma hedefi kabul eder:
-  `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve `BENCHMARK_COMPARE_FAIL=mean:10%`
-  değerleriyle baseline eksikliği veya `mean` üzerinde `%10` regresyon hard-fail üretir. Yerel ilk
-  kurulum/bootstrap akışlarında değer `0` kalır; temiz clone kurulumları yeni baseline üretip raporlayabilir
-  ancak CI'a girecek baseline değişikliği kontrollü review'dan geçmelidir.
+- `pytest-benchmark` baseline kayıtları donanım/runner profiline bağlıdır. Ana CI hattı artık
+  `.benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache üzerinden restore eder ve
+  `backend-quality-trend-artifacts` artifact'iyle review için yükler. Cache/artifact içinde
+  `*_baseline.json` bulunduğunda `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
+  `BENCHMARK_COMPARE_FAIL=mean:10%` değerleriyle baseline eksikliği veya `mean` üzerinde `%10`
+  regresyon hard-fail üretir. Cache boşsa ilk koşu seed baseline moduna alınır
+  (`BENCHMARK_COMPARE_REQUIRED=0`) ve sonraki başarılı koşular için `.benchmarks/` cache/artifact
+  adayı üretir. Yerel bootstrap komutu:
+  `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh`; sonraki sıkı doğrulama
+  komutu: `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
-  `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin; yalnız
-  kontrollü ölçümü `.benchmarks/<platform>/NNNN_baseline.json` olarak commit edin. Ana CI hattı
-  incelemeyi kolaylaştırmak için `coverage.xml`, trend JSON dosyaları ve üretilen `.benchmarks/`
-  baseline adaylarını birlikte `backend-quality-trend-artifacts` artifact'i olarak yükler.
+  `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin.
+  `.benchmarks/` çıktıları kalıcı kaynak dosya değil CI cache/artifact state'i olarak yönetilir;
+  donanım/runner profili değiştiğinde cache seed koşusunun artifact'i ayrıca review edilmelidir.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket

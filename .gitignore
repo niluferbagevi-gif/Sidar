@@ -46,6 +46,7 @@ credentials/
 # Backups & build artifacts
 backups/
 artifacts/
+.benchmarks/
 
 # Logs
 logs/
