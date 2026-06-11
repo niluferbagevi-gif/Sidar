@@ -1444,12 +1444,16 @@ def test_ci_uploads_benchmark_reports_and_reviewable_baseline_candidates() -> No
     assert "if-no-files-found: warn" in artifact_block
 
 
-def test_pip_audit_skips_only_local_editable_package_in_local_and_ci_gates() -> None:
+def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> None:
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
 
-    assert 'pip-audit --skip-editable --timeout "${pip_audit_timeout}"' in script
-    assert "pip-audit --skip-editable --timeout 30" in ci_workflow
+    assert "python scripts/pip_audit_ignore_args.py" in script
+    assert 'pip-audit --skip-editable --timeout "${pip_audit_timeout}" "${pip_audit_ignore_args[@]}"' in script
+    assert "python scripts/pip_audit_ignore_args.py" in ci_workflow
+    assert 'pip-audit --skip-editable --timeout 30 "${pip_audit_ignore_args[@]}"' in ci_workflow
+    assert "CVE-2025-3000\ttorch\t2026-07-11" in policy
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:

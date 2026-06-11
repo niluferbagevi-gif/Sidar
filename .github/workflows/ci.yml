@@ -177,7 +177,8 @@ jobs:
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run bandit -c pyproject.toml -q -r .
-          uv run --with pip-audit pip-audit --skip-editable --timeout 30
+          mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
+          uv run --with pip-audit pip-audit --skip-editable --timeout 30 "${pip_audit_ignore_args[@]}"
 
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh

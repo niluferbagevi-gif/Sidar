@@ -855,8 +855,15 @@ run_security_analysis_gates() {
   local pip_audit_attempt=1
   local pip_audit_wait_seconds="${PIP_AUDIT_RETRY_WAIT_SECONDS:-5}"
 
+  local pip_audit_ignore_args=()
+  if ! mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py); then
+    echo "❌ pip-audit ignore politikası geçersiz veya süresi dolmuş."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
-    if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}"; then
+    if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}" "${pip_audit_ignore_args[@]}"; then
       return 0
     fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
