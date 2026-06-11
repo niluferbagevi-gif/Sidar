@@ -103,6 +103,7 @@ from web.routes.orchestration import build_orchestration_router
 from web.routes.project_ops import build_project_ops_router
 from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
+from web.routes.webhooks import build_webhooks_router
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 
@@ -3739,6 +3740,25 @@ orchestration_router = build_orchestration_router(
 )
 app.include_router(orchestration_router)
 
+webhooks_router = build_webhooks_router(
+    cfg=cfg,
+    logger=logger,
+    resolve_agent_instance=lambda: _resolve_agent_instance(),
+    await_if_needed=_await_if_needed,
+    verify_hmac_signature=lambda *args, **kwargs: _verify_hmac_signature(*args, **kwargs),
+    resolve_ci_failure_context=lambda event_name, payload: _resolve_ci_failure_context(
+        event_name, payload
+    ),
+    run_event_driven_federation_workflow=(
+        lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
+    ),
+    embed_event_driven_federation_payload=(
+        lambda payload, workflow: _embed_event_driven_federation_payload(payload, workflow)
+    ),
+    dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+)
+app.include_router(webhooks_router)
+
 for _router in (
     frontend_router,
     health_router,
@@ -3749,6 +3769,7 @@ for _router in (
     metrics_router,
     project_ops_router,
     orchestration_router,
+    webhooks_router,
 ):
     for _name, _obj in _router.legacy_exports.items():
         globals()[_name] = _obj
@@ -3764,6 +3785,7 @@ admin_stats = auth_admin_router.legacy_exports["admin_stats"]
 admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
 admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
 admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
+github_webhook = webhooks_router.legacy_exports["github_webhook"]
 
 
 # Legacy endpoint declarations kept in web_server.py for backwards-compatible
@@ -5091,128 +5113,8 @@ async def swarm_federation_feedback(
 
 
 # ─────────────────────────────────────────────
-#  GitHub Webhook
+#  GitHub Webhook routes live in web/routes/webhooks.py
 # ─────────────────────────────────────────────
-
-
-@app.post(
-    "/api/webhook",
-    summary="GitHub Webhook Alıcısı",
-    description="GitHub repository'sinden gelen Push, PR ve Issue olaylarını dinler ve doğrular.",
-    responses={
-        200: {"description": "Webhook başarıyla işlendi"},
-        401: {"description": "Geçersiz imza"},
-    },
-)
-async def github_webhook(
-    request: Request,
-    x_github_event: str = Header(default=""),
-    x_hub_signature_256: str = Header(default=""),
-) -> Any:
-    """GitHub'dan gelen webhook tetiklemelerini karşılar."""
-    payload_body = await request.body()
-    secret = getattr(cfg, "GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
-
-    if not secret:
-        logger.warning(
-            "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
-            "Üretim ortamında mutlaka ayarlayın."
-        )
-    if secret:
-        if not x_hub_signature_256:
-            raise HTTPException(status_code=401, detail="X-Hub-Signature-256 başlığı eksik.")
-
-        expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected_signature, x_hub_signature_256):
-            logger.warning("Geçersiz GitHub Webhook imzası algılandı!")
-            raise HTTPException(status_code=401, detail="Geçersiz imza.")
-
-    try:
-        data = json.loads(payload_body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
-
-    agent = await _resolve_agent_instance()
-    msg = ""
-
-    if x_github_event == "push":
-        pusher = data.get("pusher", {}).get("name", "Biri")
-        ref = data.get("ref", "")
-        branch = ref.split("/")[-1] if "/" in ref else ref
-        msg = f"[GITHUB BİLDİRİMİ] '{pusher}' adlı kullanıcı '{branch}' dalına yeni kod yükledi (push)."
-    elif x_github_event == "pull_request":
-        action = data.get("action")
-        pr_title = data.get("pull_request", {}).get("title", "")
-        pr_num = data.get("pull_request", {}).get("number", "")
-        msg = f"[GITHUB BİLDİRİMİ] Pull Request #{pr_num} durumu güncellendi ({action}): {pr_title}"
-    elif x_github_event == "issues":
-        action = data.get("action")
-        issue_title = data.get("issue", {}).get("title", "")
-        issue_num = data.get("issue", {}).get("number", "")
-        msg = f"[GITHUB BİLDİRİMİ] Issue #{issue_num} durumu güncellendi ({action}): {issue_title}"
-
-    ci_context = _resolve_ci_failure_context(x_github_event, data if isinstance(data, dict) else {})
-    if ci_context:
-        msg = (
-            "[GITHUB CI] Başarısız pipeline algılandı: "
-            f"{ci_context.get('workflow_name', x_github_event)} "
-            f"(run_id={ci_context.get('run_id', '-')}, conclusion={ci_context.get('conclusion', '-')})"
-        )
-
-    if msg:
-        logger.info("Webhook işlendi: %s", msg)
-        await _await_if_needed(agent.memory.add("user", msg))
-        await _await_if_needed(
-            agent.memory.add(
-                "assistant",
-                "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
-            )
-        )
-        if bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
-            with contextlib.suppress(Exception):
-                payload_dict = data if isinstance(data, dict) else {"payload": data}
-                federation_workflow = (
-                    None
-                    if ci_context
-                    else await _await_if_needed(
-                        _run_event_driven_federation_workflow(
-                            source="github",
-                            event_name=x_github_event,
-                            payload=payload_dict,
-                        )
-                    )
-                )
-                dispatch_payload = ci_context if ci_context else payload_dict
-                dispatch_meta = {
-                    "source": "github",
-                    "provider": "github",
-                    "ci_failure": "true" if ci_context else "false",
-                }
-                if federation_workflow:
-                    dispatch_payload = _embed_event_driven_federation_payload(
-                        payload_dict, federation_workflow
-                    )
-                    dispatch_meta.update(
-                        {
-                            "event_driven_federation": "true",
-                            "workflow_type": str(
-                                federation_workflow.get("workflow_type") or "external_event"
-                            ),
-                            "correlation_id": str(federation_workflow.get("correlation_id") or ""),
-                        }
-                    )
-                await _await_if_needed(
-                    _dispatch_autonomy_trigger(
-                        trigger_source="webhook:github:ci_failure"
-                        if ci_context
-                        else "webhook:github",
-                        event_name="ci_failure_remediation" if ci_context else x_github_event,
-                        payload=dispatch_payload,
-                        meta=dispatch_meta,
-                    )
-                )
-
-    return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
 
 
 @app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)

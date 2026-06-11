@@ -18,6 +18,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
 
     for module in (
         "web/routes/ws_chat.py",
+        "web/routes/webhooks.py",
         "core/db/auth.py",
         "core/rag/embeddings.py",
         "managers/code/patcher.py",
@@ -29,3 +30,4 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "Compatibility shim" in plan
     assert "Küçük PR" in plan
     assert "Test-first güvence" in plan
+    assert "GitHub webhook router çıkarımı yapıldı" in plan
