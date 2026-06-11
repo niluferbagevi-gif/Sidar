@@ -92,6 +92,7 @@ from core.utils.network_validation import (
 )
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
+from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
@@ -1539,47 +1540,8 @@ async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
     return str(jwt.encode(payload, secret_key, algorithm=algorithm))
 
 
-app = FastAPI(
-    title="Sidar Web UI & REST API",
-    description=(
-        "Sidar AI Ajanı için Web Arayüzü ve REST API uç noktaları. "
-        "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
-    ),
-    version="3.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=_app_lifespan,
-)
-
-
-def _register_exception_handlers(application: FastAPI) -> None:
-    if not hasattr(application, "exception_handler"):
-        return
-
-    @application.exception_handler(HTTPException)
-    async def _http_exception_handler(_request: Request, exc: HTTPException) -> Any:
-        detail = getattr(exc, "detail", "İstek işlenemedi.")
-        if isinstance(detail, dict):
-            content = {"success": False, **detail}
-            content.setdefault("error", "İstek işlenemedi.")
-        else:
-            content = {"success": False, "error": str(detail or "İstek işlenemedi.")}
-        return JSONResponse(content, status_code=getattr(exc, "status_code", 500))
-
-    @application.exception_handler(Exception)
-    async def _unhandled_exception_handler(request: Request, exc: Exception) -> Any:
-        logger.exception(
-            "İşlenmeyen web hatası: path=%s error=%s",
-            getattr(request.url, "path", "?"),
-            exc,
-        )
-        return JSONResponse(
-            {"success": False, "error": "İç sunucu hatası", "detail": str(exc)},
-            status_code=500,
-        )
-
-
-_register_exception_handlers(app)
+_register_exception_handlers = _app_factory.register_exception_handlers
+app = _app_factory.create_app(lifespan=_app_lifespan)
 
 
 @app.middleware("http")
