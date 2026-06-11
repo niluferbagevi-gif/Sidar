@@ -725,6 +725,20 @@ SANDBOX_LIMITS = {
 # DONANIM TESPİTİ
 # ═══════════════════════════════════════════════════════════════
 
+# Project-supported PyTorch CUDA wheel guidance. Re-check periodically against
+# the official PyTorch selector/release notes; keep this list aligned with
+# install_sidar.sh's dynamic selector and prefer uv-managed installs in
+# user-facing guidance. Last reviewed: 2026-06-11.
+PYTORCH_STABLE_CUDA_WHEEL_TAGS: tuple[str, ...] = ("cu128", "cu126", "cu124")
+PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG: str = PYTORCH_STABLE_CUDA_WHEEL_TAGS[0]
+PYTORCH_RECOMMENDED_CUDA_INDEX_URL: str = (
+    f"https://download.pytorch.org/whl/{PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG}"
+)
+PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND: str = (
+    "uv pip install torch torchvision "
+    f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
+)
+
 
 @dataclass
 class HardwareInfo:
@@ -841,8 +855,10 @@ def check_hardware() -> HardwareInfo:
                 logger.warning(
                     "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
                     "Windows NVIDIA sürücüsü güncel mi? "
-                    "PyTorch CUDA 13.x wheel ile kuruldu mu? "
-                    "(uv pip install torch --index-url https://download.pytorch.org/whl/cu130)"
+                    "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
+                    "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
+                    ", ".join(PYTORCH_STABLE_CUDA_WHEEL_TAGS),
+                    PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
                 )
             else:
                 logger.info("ℹ️  CUDA bulunamadı — CPU modunda çalışılacak.")
