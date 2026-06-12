@@ -187,9 +187,11 @@ class SupervisorAgent(BaseAgent):
             for t in ("seo", "kampanya", "pazarlama", "hedef kitle", "growth", "funnel", "reklam")
         ):
             return "marketing"
+        if any(t in text for t in ("qa", "kalite kapısı", "ci hatası", "ci remediation")):
+            return "qa"
         if any(
             t in text
-            for t in ("coverage", "kapsama", "pytest", "eksik test", "test yaz", "test üret", "qa")
+            for t in ("coverage", "kapsama", "pytest", "eksik test", "test yaz", "test üret")
         ):
             return "coverage"
         return "code"
@@ -455,6 +457,18 @@ class SupervisorAgent(BaseAgent):
             if not _consume_turn():
                 return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             result = await self._delegate(receiver, task_prompt, "coverage")
+            delegated = self._coerce_delegation_request(result.summary)
+            if delegated is not None:
+                result = await self._route_p2p(
+                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                )
+            return str(result.summary)
+
+        if intent == "qa":
+            await self.events.publish("supervisor", "QA ajanına yönlendiriliyor...")
+            if not _consume_turn():
+                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+            result = await self._delegate("qa", task_prompt, "qa")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
