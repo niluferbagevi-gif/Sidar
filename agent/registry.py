@@ -28,6 +28,85 @@ class AgentSpec:
     is_builtin: bool = True
 
 
+@dataclass(frozen=True)
+class BuiltinRoleContract:
+    """Built-in role wiring contract shared by registry/router/health tests."""
+
+    role_name: str
+    class_name: str
+    module_name: str
+    capabilities: tuple[str, ...]
+    supervisor_intents: tuple[str, ...] = ()
+    swarm_intents: tuple[str, ...] = ()
+
+
+BUILTIN_ROLE_CONTRACTS: tuple[BuiltinRoleContract, ...] = (
+    BuiltinRoleContract(
+        role_name="coder",
+        class_name="CoderAgent",
+        module_name="agent.roles.coder_agent",
+        capabilities=("code_generation", "file_io", "shell_execution", "code_review"),
+        supervisor_intents=("code",),
+        swarm_intents=("code", "mixed", "code_generation", "file_io", "shell_execution"),
+    ),
+    BuiltinRoleContract(
+        role_name="researcher",
+        class_name="ResearcherAgent",
+        module_name="agent.roles.researcher_agent",
+        capabilities=("web_search", "rag_search", "summarization"),
+        supervisor_intents=("research",),
+        swarm_intents=("research", "web_search", "rag_search", "summarization"),
+    ),
+    BuiltinRoleContract(
+        role_name="reviewer",
+        class_name="ReviewerAgent",
+        module_name="agent.roles.reviewer_agent",
+        capabilities=("code_review", "security_audit", "quality_check"),
+        supervisor_intents=("review",),
+        swarm_intents=("review", "code_review", "security", "security_audit", "quality_check"),
+    ),
+    BuiltinRoleContract(
+        role_name="poyraz",
+        class_name="PoyrazAgent",
+        module_name="agent.roles.poyraz_agent",
+        capabilities=("marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"),
+        supervisor_intents=("marketing",),
+        swarm_intents=(
+            "marketing",
+            "seo",
+            "campaign",
+            "marketing_strategy",
+            "seo_analysis",
+            "campaign_copy",
+            "audience_ops",
+        ),
+    ),
+    BuiltinRoleContract(
+        role_name="coverage",
+        class_name="CoverageAgent",
+        module_name="agent.roles.coverage_agent",
+        capabilities=("coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"),
+        supervisor_intents=("coverage",),
+        swarm_intents=("coverage", "coverage_analysis"),
+    ),
+    BuiltinRoleContract(
+        role_name="qa",
+        class_name="QAAgent",
+        module_name="agent.roles.qa_agent",
+        capabilities=("test_generation", "ci_remediation"),
+        supervisor_intents=("qa",),
+        swarm_intents=("qa", "tests", "test_generation", "ci_remediation"),
+    ),
+)
+BUILTIN_ROLE_MODULES: tuple[str, ...] = tuple(
+    contract.module_name for contract in BUILTIN_ROLE_CONTRACTS
+)
+EXPECTED_BUILTIN_ROLE_NAMES: tuple[str, ...] = tuple(
+    contract.role_name for contract in BUILTIN_ROLE_CONTRACTS
+)
+_BUILTIN_IMPORT_FAILURES: dict[str, str] = {}
+
+
 class AgentCatalog:
     """Sınıf-tabanlı ajan tip kataloğu."""
 
@@ -108,6 +187,11 @@ class AgentCatalog:
         return list(cls._registry.values())
 
     @classmethod
+    def health_summary(cls) -> dict[str, Any]:
+        """Return a structured health view for built-in role catalog wiring."""
+        return get_agent_catalog_health()
+
+    @classmethod
     def create(cls, role_name: str, **kwargs: Any) -> object:
         spec = cls.get(role_name)
         if spec is None:
@@ -145,24 +229,65 @@ def _format_import_failure(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+def get_agent_catalog_health() -> dict[str, Any]:
+    """Expose AgentCatalog readiness for health endpoints and diagnostics."""
+    specs_by_role = {spec.role_name: spec for spec in AgentCatalog.list_all()}
+    registered_builtin_roles = sorted(
+        spec.role_name for spec in specs_by_role.values() if spec.is_builtin
+    )
+    missing_builtin_roles: list[str] = []
+    non_builtin_builtin_roles: list[str] = []
+    capability_mismatches: dict[str, dict[str, list[str]]] = {}
+
+    for contract in BUILTIN_ROLE_CONTRACTS:
+        spec = specs_by_role.get(contract.role_name)
+        if spec is None:
+            missing_builtin_roles.append(contract.role_name)
+            continue
+        if not spec.is_builtin:
+            non_builtin_builtin_roles.append(contract.role_name)
+        expected_capabilities = set(contract.capabilities)
+        actual_capabilities = set(spec.capabilities or [])
+        missing_capabilities = sorted(expected_capabilities - actual_capabilities)
+        if missing_capabilities:
+            capability_mismatches[contract.role_name] = {"missing": missing_capabilities}
+
+    degraded = bool(
+        _BUILTIN_IMPORT_FAILURES
+        or missing_builtin_roles
+        or non_builtin_builtin_roles
+        or capability_mismatches
+    )
+    return {
+        "status": "degraded" if degraded else "healthy",
+        "degraded": degraded,
+        "expected_builtin_roles": list(EXPECTED_BUILTIN_ROLE_NAMES),
+        "registered_builtin_roles": registered_builtin_roles,
+        "missing_builtin_roles": missing_builtin_roles,
+        "non_builtin_builtin_roles": non_builtin_builtin_roles,
+        "import_failures": dict(_BUILTIN_IMPORT_FAILURES),
+        "capability_mismatches": capability_mismatches,
+    }
+
+
+def _clear_builtin_import_failures() -> None:
+    """Reset recorded built-in import failures (primarily for deterministic tests)."""
+    _BUILTIN_IMPORT_FAILURES.clear()
+
+
 def _import_builtin_roles() -> None:
     """Yerleşik ajan modüllerini içe aktararak dekoratör tabanlı kaydı tetikler."""
     import importlib
 
     failures: list[tuple[str, Exception]] = []
+    _clear_builtin_import_failures()
 
-    for module_name in (
-        "agent.roles.coder_agent",
-        "agent.roles.researcher_agent",
-        "agent.roles.reviewer_agent",
-        "agent.roles.poyraz_agent",
-        "agent.roles.coverage_agent",
-        "agent.roles.qa_agent",
-    ):
+    for module_name in BUILTIN_ROLE_MODULES:
         try:
             importlib.import_module(module_name)
         except Exception as exc:
             failures.append((module_name, exc))
+            _BUILTIN_IMPORT_FAILURES[module_name] = _format_import_failure(exc)
             logger.debug("Builtin role import'u atlandı: %s", module_name, exc_info=True)
 
     if failures and not _has_builtin_specs():
