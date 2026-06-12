@@ -943,6 +943,29 @@ def test_check_hardware_non_cuda_and_generic_exception(monkeypatch):
     assert info2.gpu_name == "Tespit Edilemedi"
 
 
+def test_check_hardware_wsl_cuda_guidance_uses_current_pytorch_strategy(
+    monkeypatch, caplog
+):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: True)
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(is_available=lambda: False),
+        version=types.SimpleNamespace(cuda=None),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "torch", fake_torch)
+
+    with caplog.at_level(logging.WARNING, logger="Sidar.Config"):
+        info = config.check_hardware()
+
+    assert info.gpu_name == "CUDA Bulunamadı"
+    assert "cu130" not in caplog.text
+    assert "cu128, cu126, cu124" in caplog.text
+    assert (
+        "uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128"
+        in caplog.text
+    )
+
+
 def test_check_hardware_normalizes_explicit_llm_rag_fraction_sum(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setenv("LLM_GPU_MEMORY_FRACTION", "0.9")
