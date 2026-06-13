@@ -1526,7 +1526,8 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     assert "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30" in ci_workflow
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
-    assert "CVE-2025-3000\ttorch\t2026-07-11" in policy
+    assert "No active pip-audit vulnerability exceptions." in policy
+    assert "CVE-2025-3000" not in policy
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
