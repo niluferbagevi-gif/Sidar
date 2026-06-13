@@ -93,6 +93,7 @@ from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
+from web.routes import collaboration as collaboration_routes
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.health import build_health_router
@@ -244,10 +245,9 @@ def _resolve_psutil_module() -> Any:
 #  HITL WebSocket Yayın Kümesi
 # ─────────────────────────────────────────────
 _hitl_ws_clients: set[WebSocket] = set()
-_COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
-class _CollaborationParticipant:
+class _CollaborationParticipant(collaboration_routes.CollaborationParticipant):
     def __init__(
         self,
         websocket: WebSocket,
@@ -259,152 +259,75 @@ class _CollaborationParticipant:
         write_scopes: list[str] | None = None,
         joined_at: str = "",
     ) -> None:
-        normalized_role = _normalize_collaboration_role(role)
-        normalized_joined_at = joined_at
-
-        # Eski test yardımcıları/çağrılar 5. pozisyonel argümanı joined_at olarak geçiyor.
-        # Bu geriye dönük uyumluluk kolu, "2026-..." benzeri ISO zaman damgalarını
-        # role yerine joined_at olarak yorumlar.
-        if (
-            not joined_at
-            and not can_write
-            and write_scopes is None
-            and isinstance(role, str)
-            and role
-            and ("T" in role or "+" in role or role.endswith("Z") or role.lower() == "now")
-        ):
-            normalized_role = "user"
-            normalized_joined_at = role
-
-        self.websocket = websocket
-        self.user_id = user_id
-        self.username = username
-        self.display_name = display_name
-        self.role = normalized_role
-        self.can_write = bool(can_write)
-        self.write_scopes = list(write_scopes or [])
-        self.joined_at = normalized_joined_at or _collaboration_now_iso()
+        super().__init__(
+            websocket,
+            user_id,
+            username,
+            display_name,
+            role,
+            can_write,
+            write_scopes,
+            joined_at,
+            now_iso=_collaboration_now_iso,
+        )
 
 
-class _CollaborationRoom:
-    def __init__(
-        self,
-        room_id: str,
-        participants: dict[int, _CollaborationParticipant] | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        telemetry: list[dict[str, Any]] | None = None,
-        active_task: asyncio.Task[Any] | None = None,
-    ) -> None:
-        self.room_id = room_id
-        self.participants = participants if participants is not None else {}
-        self.messages = messages if messages is not None else []
-        self.telemetry = telemetry if telemetry is not None else []
-        self.active_task = active_task
-
-
+_CollaborationRoom = collaboration_routes.CollaborationRoom
 _collaboration_rooms: dict[str, _CollaborationRoom] = {}
-_COLLAB_WRITE_INTENT_RE = re.compile(
-    r"(?i)\b("
-    r"write|edit|patch|modify|delete|remove|rename|commit|push|create file|save file|"
-    r"yaz|düzenle|değiştir|sil|kaldır|yeniden adlandır|commit at|dosya oluştur|dosya kaydet"
-    r")\b"
-)
-_COLLAB_WRITE_ROLES = {"admin", "maintainer", "developer", "editor"}
 
 
 def _collaboration_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return collaboration_routes.collaboration_now_iso()
 
 
 def _normalize_room_id(room_id: str) -> str:
-    normalized = (room_id or "").strip() or "workspace:default"
-    if not _COLLAB_ROOM_RE.match(normalized):
-        raise HTTPException(status_code=400, detail="Geçersiz room_id")
-    return normalized
+    return collaboration_routes.normalize_room_id(room_id)
 
 
 def _socket_key(websocket: WebSocket) -> int:
-    return id(websocket)
+    return collaboration_routes.socket_key(websocket)
 
 
 def _serialize_collaboration_participant(participant: _CollaborationParticipant) -> dict[str, Any]:
-    return {
-        "user_id": participant.user_id,
-        "username": participant.username,
-        "display_name": participant.display_name,
-        "role": participant.role,
-        "can_write": "true" if participant.can_write else "false",
-        "write_scopes": list(participant.write_scopes),
-        "joined_at": participant.joined_at,
-    }
+    return collaboration_routes.serialize_collaboration_participant(participant)
 
 
 def _normalize_collaboration_role(role: str) -> str:
-    allowed_roles = {"admin", "maintainer", "developer", "editor", "user"}
-    normalized = (role or "").strip().lower()
-    return normalized if normalized in allowed_roles else "user"
+    return collaboration_routes.normalize_collaboration_role(role)
 
 
 def _collaboration_write_scopes_for_role(role: str, room_id: str) -> list[str]:
-    normalized_role = _normalize_collaboration_role(role)
-    base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
-    if normalized_role == "admin":
-        return [str(base_dir)]
-    if normalized_role in _COLLAB_WRITE_ROLES:
-        return [str(base_dir / "workspaces" / room_id.replace(":", "/"))]
-    return []
+    return collaboration_routes.collaboration_write_scopes_for_role(
+        role, room_id, base_dir=Path(getattr(cfg, "BASE_DIR", "."))
+    )
 
 
 def _collaboration_command_requires_write(command: str) -> bool:
-    return bool(_COLLAB_WRITE_INTENT_RE.search(str(command or "")))
+    return collaboration_routes.collaboration_command_requires_write(command)
 
 
 def _mask_collaboration_text(text: str) -> str:
-    try:
-        dlp_module = importlib.import_module("core.dlp")
-        mask_pii = getattr(dlp_module, "mask_pii", None)
-        if callable(mask_pii):
-            return str(mask_pii(str(text or "")))
-    except Exception as exc:
-        logger.debug("DLP maskeleme uygulanamadı, ham metin döndürüldü: %s", exc)
-    return str(text or "")
+    return collaboration_routes.mask_collaboration_text(
+        text, import_module=importlib.import_module, logger_obj=logger
+    )
 
 
 def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
-    return {
-        "room_id": room.room_id,
-        "participants": [
-            _serialize_collaboration_participant(item)
-            for item in sorted(
-                room.participants.values(), key=lambda value: value.display_name.lower()
-            )
-        ],
-        "messages": list(room.messages[-120:]),
-        "telemetry": list(room.telemetry[-120:]),
-    }
+    return collaboration_routes.serialize_collaboration_room(room)
 
 
 def _append_room_message(
     room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
 ) -> None:
-    room.messages.append(payload)
-    if len(room.messages) > limit:
-        room.messages = room.messages[-limit:]
+    collaboration_routes.append_room_message(room, payload, limit=limit)
 
 
 def _append_room_telemetry(
     room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
 ) -> None:
-    safe_payload = dict(payload)
-    if "content" in safe_payload:
-        safe_payload["content"] = _mask_collaboration_text(
-            str(safe_payload.get("content", "") or "")
-        )
-    if "error" in safe_payload:
-        safe_payload["error"] = _mask_collaboration_text(str(safe_payload.get("error", "") or ""))
-    room.telemetry.append(safe_payload)
-    if len(room.telemetry) > limit:
-        room.telemetry = room.telemetry[-limit:]
+    collaboration_routes.append_room_telemetry(
+        room, payload, mask_text=_mask_collaboration_text, limit=limit
+    )
 
 
 def _build_room_message(
@@ -417,28 +340,21 @@ def _build_room_message(
     kind: str = "message",
     request_id: str = "",
 ) -> dict[str, Any]:
-    return {
-        "id": secrets.token_hex(8),
-        "room_id": room_id,
-        "role": role,
-        "kind": kind,
-        "content": _mask_collaboration_text(content),
-        "author_name": author_name,
-        "author_id": author_id,
-        "request_id": request_id,
-        "ts": _collaboration_now_iso(),
-    }
+    return collaboration_routes.build_room_message(
+        room_id=room_id,
+        role=role,
+        content=content,
+        author_name=author_name,
+        author_id=author_id,
+        kind=kind,
+        request_id=request_id,
+        mask_text=_mask_collaboration_text,
+        now_iso=_collaboration_now_iso,
+    )
 
 
 async def _broadcast_room_payload(room: _CollaborationRoom, payload: dict[str, Any]) -> None:
-    stale: list[int] = []
-    for key, participant in list(room.participants.items()):
-        try:
-            await participant.websocket.send_json(payload)
-        except Exception:
-            stale.append(key)
-    for key in stale:
-        room.participants.pop(key, None)
+    await collaboration_routes.broadcast_room_payload(room, payload)
 
 
 async def _emit_control_room_event(
@@ -449,7 +365,6 @@ async def _emit_control_room_event(
     content: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    """REST-triggered operation/QA events are mirrored into collaboration rooms."""
     normalized = _normalize_room_id(room_id or "ops:control")
     room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
     event = {
@@ -474,101 +389,38 @@ async def _join_collaboration_room(
     display_name: str,
     user_role: str = "user",
 ) -> _CollaborationRoom:
-    normalized = _normalize_room_id(room_id)
-    current_room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
-    if current_room_id and current_room_id != normalized:
-        await _leave_collaboration_room(websocket)
-
-    room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
-    write_scopes = _collaboration_write_scopes_for_role(user_role, normalized)
-    room.participants[_socket_key(websocket)] = _CollaborationParticipant(
-        websocket=websocket,
+    return await collaboration_routes.join_collaboration_room(
+        _collaboration_rooms,
+        websocket,
+        room_id=room_id,
         user_id=user_id,
         username=username,
-        display_name=(display_name or username or user_id or "Anonim").strip()[:80],
-        role=_normalize_collaboration_role(user_role),
-        can_write=bool(write_scopes),
-        write_scopes=write_scopes,
-        joined_at=_collaboration_now_iso(),
+        display_name=display_name,
+        user_role=user_role,
+        base_dir=Path(getattr(cfg, "BASE_DIR", ".")),
+        socket_key_func=_socket_key,
+        leave_room=_leave_collaboration_room,
+        now_iso=_collaboration_now_iso,
     )
-    websocket._sidar_room_id = normalized  # type: ignore[attr-defined, unused-ignore]
-    await websocket.send_json({"type": "room_state", **_serialize_collaboration_room(room)})
-    await _broadcast_room_payload(
-        room,
-        {
-            "type": "presence",
-            "room_id": normalized,
-            "participants": _serialize_collaboration_room(room)["participants"],
-        },
-    )
-    return room
 
 
 async def _leave_collaboration_room(websocket: WebSocket) -> None:
-    room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
-    if not room_id:
-        return
-    room = _collaboration_rooms.get(room_id)
-    websocket._sidar_room_id = ""  # type: ignore[attr-defined, unused-ignore]
-    if room is None:
-        return
-    room.participants.pop(_socket_key(websocket), None)
-    if room.participants:
-        await _broadcast_room_payload(
-            room,
-            {
-                "type": "presence",
-                "room_id": room.room_id,
-                "participants": _serialize_collaboration_room(room)["participants"],
-            },
-        )
-        return
-    if room.active_task and not room.active_task.done():
-        room.active_task.cancel()
-    _collaboration_rooms.pop(room_id, None)
+    await collaboration_routes.leave_collaboration_room(
+        _collaboration_rooms, websocket, socket_key_func=_socket_key
+    )
 
 
 def _is_sidar_mention(message: str) -> bool:
-    return bool(re.search(r"(^|\s)@sidar\b", message, flags=re.IGNORECASE))
+    return collaboration_routes.is_sidar_mention(message)
 
 
 def _strip_sidar_mention(message: str) -> str:
-    stripped = re.sub(r"(^|\s)@sidar\b", " ", message, count=1, flags=re.IGNORECASE)
-    return " ".join(stripped.split()).strip()
+    return collaboration_routes.strip_sidar_mention(message)
 
 
 def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, command: str) -> str:
-    transcript: list[str] = []
-    for item in room.messages[-10:]:
-        transcript.append(
-            f"[{item.get('role', 'user')}] {item.get('author_name', 'Anonim')}: {str(item.get('content', '')).strip()[:240]}"
-        )
-    recent_context = "\n".join(transcript) if transcript else "(henüz ortak geçmiş yok)"
-    participants = ", ".join(
-        f"{participant.display_name}<{participant.role}>"
-        for participant in sorted(
-            room.participants.values(), key=lambda value: value.display_name.lower()
-        )
-    )
-    actor = next(
-        (item for item in room.participants.values() if item.display_name == actor_name),
-        None,
-    )
-    actor_role = actor.role if actor else "user"
-    actor_scopes = ", ".join(actor.write_scopes) if actor and actor.write_scopes else "read-only"
-    return (
-        "[COLLABORATION WORKSPACE]\n"
-        f"room_id={room.room_id}\n"
-        f"participants={participants or 'unknown'}\n"
-        f"requesting_user={actor_name}\n"
-        f"requesting_role={actor_role}\n"
-        f"requesting_write_scopes={actor_scopes}\n"
-        "recent_transcript=\n"
-        f"{recent_context}\n\n"
-        "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor. "
-        "Yanıtında ekip bağlamını koru ve gerekiyorsa kimin ne istediğini netleştir. "
-        "Yazma işlemlerinde sadece requesting_write_scopes kapsamındaki dizinleri kullan.\n\n"
-        f"Current command:\n{command}"
+    return collaboration_routes.build_collaboration_prompt(
+        room, actor_name=actor_name, command=command
     )
 
 
