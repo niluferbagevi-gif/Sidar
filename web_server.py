@@ -94,6 +94,7 @@ from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
 from web.routes import collaboration as collaboration_routes
+from web.routes import ws_chat as ws_chat_routes
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.health import build_health_router
@@ -2495,489 +2496,49 @@ async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
         await websocket.close(code=1008, reason=reason)
 
 
+def _build_ws_chat_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        anyio_closed=_ANYIO_CLOSED,
+        append_room_message=_append_room_message,
+        append_room_telemetry=_append_room_telemetry,
+        await_if_needed=_await_if_needed,
+        broadcast_room_payload=_broadcast_room_payload,
+        build_collaboration_prompt=_build_collaboration_prompt,
+        build_room_message=_build_room_message,
+        collaboration_command_requires_write=_collaboration_command_requires_write,
+        collaboration_now_iso=_collaboration_now_iso,
+        collaboration_rooms=_collaboration_rooms,
+        extract_ws_header_token=_extract_ws_header_token,
+        get_agent_event_bus=get_agent_event_bus,
+        is_sidar_mention=_is_sidar_mention,
+        iter_stream_chunks=_iter_stream_chunks,
+        join_collaboration_room=_join_collaboration_room,
+        leave_collaboration_room=_leave_collaboration_room,
+        llm_api_error_cls=LLMAPIError,
+        logger=logger,
+        mask_collaboration_text=_mask_collaboration_text,
+        normalize_collaboration_role=_normalize_collaboration_role,
+        rate_limit=_RATE_LIMIT,
+        rate_window=_RATE_WINDOW,
+        redis_is_rate_limited=_redis_is_rate_limited,
+        reset_current_metrics_user_id=reset_current_metrics_user_id,
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_user_from_token=_resolve_user_from_token,
+        set_current_metrics_user_id=set_current_metrics_user_id,
+        socket_key=_socket_key,
+        strip_sidar_mention=_strip_sidar_mention,
+        ws_close_policy_violation=_ws_close_policy_violation,
+    )
+
+
 async def _ws_stream_agent_text_response(
     websocket: WebSocket, agent: SidarAgent, prompt: str
 ) -> None:
-    """Agent text çıktısını voice/chat benzeri websocket istemcisine aktar."""
-    tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
-    thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
-    voice_pipeline = getattr(websocket, "_sidar_voice_pipeline", None)
-    duplex_state = getattr(websocket, "_sidar_voice_duplex_state", None)
-    pending_voice_text = ""
-
-    async def _emit_voice_segments(*, flush: bool = False) -> None:
-        nonlocal pending_voice_text
-        if not voice_pipeline or not getattr(voice_pipeline, "enabled", False):
-            return
-        if hasattr(voice_pipeline, "buffer_assistant_text"):
-            _turn_id, packets = voice_pipeline.buffer_assistant_text(
-                duplex_state,
-                pending_voice_text,
-                flush=flush,
-            )
-            pending_voice_text = ""
-        else:
-            ready_segments, remainder = voice_pipeline.extract_ready_segments(
-                pending_voice_text, flush=flush
-            )
-            pending_voice_text = remainder
-            packets = [
-                {"assistant_turn_id": 0, "audio_sequence": idx, "text": segment}
-                for idx, segment in enumerate(ready_segments, start=1)
-            ]
-        for packet in packets:
-            segment = str(packet.get("text", "") or "").strip()
-            if not segment:
-                continue
-            tts_result = await voice_pipeline.synthesize_text(segment)
-            if not tts_result.get("success"):
-                continue
-            audio_bytes = bytes(tts_result.get("audio_bytes") or b"")
-            if not audio_bytes:
-                continue
-            await websocket.send_json(
-                {
-                    "audio_chunk": base64.b64encode(audio_bytes).decode("ascii"),
-                    "audio_text": segment,
-                    "audio_mime_type": tts_result.get("mime_type", "audio/wav"),
-                    "audio_provider": tts_result.get("provider", ""),
-                    "audio_voice": tts_result.get("voice", ""),
-                    "assistant_turn_id": int(packet.get("assistant_turn_id", 0) or 0),
-                    "audio_sequence": int(packet.get("audio_sequence", 0) or 0),
-                }
-            )
-
-    async for chunk in agent.respond(prompt):
-        m_tool = tool_sentinel.match(chunk)
-        m_thought = thought_sentinel.match(chunk)
-        if m_tool:
-            await websocket.send_json({"tool_call": m_tool.group(1)})
-        elif m_thought:
-            await websocket.send_json({"thought": m_thought.group(1)})
-        else:
-            await websocket.send_json({"chunk": chunk})
-            if voice_pipeline and getattr(voice_pipeline, "enabled", False):
-                pending_voice_text += chunk
-                await _emit_voice_segments()
-
-    await _emit_voice_segments(flush=True)
+    await ws_chat_routes.ws_stream_agent_text_response(websocket, agent, prompt)
 
 
-@app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket) -> Any:
-    """
-    Çift yönlü WebSocket chat arayüzü.
-    Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
-    ve anlık iptal (cancel) isteklerini yönetir.
-
-    Kimlik Doğrulama (tercih sırası):
-    1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
-    2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
-    """
-    # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
-    # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
-    # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
-    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token, accept_subprotocol = _extract_ws_header_token(proto_header)
-
-    if accept_subprotocol:
-        await websocket.accept(subprotocol=accept_subprotocol)
-    else:
-        await websocket.accept()
-
-    agent = await _resolve_agent_instance()
-    active_task: asyncio.Task[Any] | None = None
-    ws_user_id = ""
-    ws_username = ""
-    ws_user_role = "user"
-    ws_authenticated = False
-    joined_room_id = ""
-
-    # Başlık token'ı varsa bağlantı açılır açılmaz doğrula
-    if header_token:
-        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await _ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
-        ws_user_id = ws_user.id
-        ws_username = ws_user.username
-        ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
-        ws_authenticated = True
-        await agent.memory.set_active_user(ws_user_id, ws_username)
-        with contextlib.suppress(Exception):
-            await websocket.send_json({"auth_ok": True})
-
-    async def generate_response(msg: str) -> None:
-        sub_id = None
-        status_task = None
-        stop_status = asyncio.Event()
-        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
-        try:
-            if len(agent.memory) == 0:
-                title = msg[:30] + "..." if len(msg) > 30 else msg
-                if hasattr(agent.memory, "aupdate_title"):
-                    await _await_if_needed(agent.memory.aupdate_title(title))
-                else:
-                    await _await_if_needed(agent.memory.update_title(title))
-
-            event_bus = get_agent_event_bus()
-            sub_id, status_queue = event_bus.subscribe()
-
-            async def _status_pump() -> None:
-                while not stop_status.is_set():
-                    try:
-                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except TimeoutError:
-                        continue
-                    await websocket.send_json({"status": f"{evt.source}: {evt.message}"})
-
-            status_task = asyncio.create_task(_status_pump())
-
-            _TOOL_SENTINEL = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
-            _THOUGHT_SENTINEL = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
-
-            async for chunk in agent.respond(msg):
-                m_tool = _TOOL_SENTINEL.match(chunk)
-                m_thought = _THOUGHT_SENTINEL.match(chunk)
-
-                if m_tool:
-                    await websocket.send_json({"tool_call": m_tool.group(1)})
-                elif m_thought:
-                    await websocket.send_json({"thought": m_thought.group(1)})
-                else:
-                    await websocket.send_json({"chunk": chunk})
-
-            await websocket.send_json({"done": True})
-        except asyncio.CancelledError:
-            pass
-        except LLMAPIError as exc:
-            logger.warning(
-                "LLM sağlayıcı hatası: provider=%s status=%s retryable=%s",
-                exc.provider,
-                exc.status_code,
-                exc.retryable,
-            )
-            try:
-                await websocket.send_json(
-                    {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
-                        "done": True,
-                    }
-                )
-            except Exception as exc:
-                logger.debug("WebSocket LLM hata mesajı gönderilemedi: %s", exc)
-        except Exception as exc:
-            logger.exception("Agent respond hatası: %s", exc)
-            try:
-                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-            except Exception as exc:
-                logger.debug("WebSocket sistem hata mesajı gönderilemedi: %s", exc)
-        finally:
-            stop_status.set()
-            if status_task is not None:
-                status_task.cancel()
-                with contextlib.suppress(Exception):
-                    await status_task
-            if sub_id is not None:
-                get_agent_event_bus().unsubscribe(sub_id)
-            if ctx_token is not None:
-                reset_current_metrics_user_id(ctx_token)
-
-    async def generate_room_response(
-        room: _CollaborationRoom, *, actor_name: str, msg: str
-    ) -> None:
-        sub_id = None
-        status_task = None
-        stop_status = asyncio.Event()
-        request_id = secrets.token_hex(6)
-        collaboration_prompt = _build_collaboration_prompt(room, actor_name=actor_name, command=msg)
-        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
-        try:
-            event_bus = get_agent_event_bus()
-            sub_id, status_queue = event_bus.subscribe()
-
-            async def _status_pump() -> None:
-                while not stop_status.is_set():
-                    try:
-                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except TimeoutError:
-                        continue
-                    payload = {
-                        "id": secrets.token_hex(8),
-                        "room_id": room.room_id,
-                        "kind": "status",
-                        "source": evt.source,
-                        "content": _mask_collaboration_text(evt.message),
-                        "ts": _collaboration_now_iso(),
-                    }
-                    _append_room_telemetry(room, payload)
-                    await _broadcast_room_payload(
-                        room, {"type": "collaboration_event", "event": payload}
-                    )
-
-            status_task = asyncio.create_task(_status_pump())
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "assistant_stream_start",
-                    "room_id": room.room_id,
-                    "request_id": request_id,
-                    "author_name": "SİDAR",
-                },
-            )
-            result = await agent._try_multi_agent(collaboration_prompt)
-            for chunk in _iter_stream_chunks(result):
-                await _broadcast_room_payload(
-                    room,
-                    {
-                        "type": "assistant_chunk",
-                        "room_id": room.room_id,
-                        "request_id": request_id,
-                        "chunk": _mask_collaboration_text(chunk),
-                        "author_name": "SİDAR",
-                    },
-                )
-
-            assistant_message = _build_room_message(
-                room_id=room.room_id,
-                role="assistant",
-                content=result,
-                author_name="SİDAR",
-                author_id="sidar",
-                kind="assistant_reply",
-                request_id=request_id,
-            )
-            _append_room_message(room, assistant_message)
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "assistant_done",
-                    "room_id": room.room_id,
-                    "request_id": request_id,
-                    "message": assistant_message,
-                },
-            )
-        except asyncio.CancelledError:
-            with contextlib.suppress(Exception):
-                await _broadcast_room_payload(
-                    room,
-                    {
-                        "type": "assistant_done",
-                        "room_id": room.room_id,
-                        "request_id": request_id,
-                        "cancelled": True,
-                        "message": None,
-                    },
-                )
-            raise
-        except Exception as exc:
-            logger.exception("Collaborative agent response error: %s", exc)
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "room_error",
-                    "room_id": room.room_id,
-                    "error": _mask_collaboration_text(str(exc)),
-                    "request_id": request_id,
-                },
-            )
-        finally:
-            stop_status.set()
-            if status_task is not None:
-                status_task.cancel()
-                with contextlib.suppress(Exception):
-                    await status_task
-            if sub_id is not None:
-                get_agent_event_bus().unsubscribe(sub_id)
-            if room.active_task is not None and room.active_task.done():
-                room.active_task = None
-            if ctx_token is not None:
-                reset_current_metrics_user_id(ctx_token)
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                payload = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-
-            action = payload.get("action")
-            user_message = payload.get("message", "").strip()
-
-            if not ws_authenticated:
-                if action != "auth":
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                auth_token = (payload.get("token", "") or "").strip()
-                if not auth_token:
-                    await _ws_close_policy_violation(websocket, "Authentication token missing")
-                    return
-                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
-                if not ws_user:
-                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
-                    return
-                ws_user_id = ws_user.id
-                ws_username = ws_user.username
-                ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
-                ws_authenticated = True
-                await agent.memory.set_active_user(ws_user_id, ws_username)
-                with contextlib.suppress(Exception):
-                    await websocket.send_json({"auth_ok": True})
-                continue
-
-            if action == "join_room":
-                target_room_id = str(payload.get("room_id", "") or "").strip()
-                display_name = str(
-                    payload.get("display_name", "") or ws_username or ws_user_id
-                ).strip()
-                room = await _join_collaboration_room(
-                    websocket,
-                    room_id=target_room_id,
-                    user_id=ws_user_id,
-                    username=ws_username,
-                    display_name=display_name,
-                    user_role=ws_user_role,
-                )
-                joined_room_id = room.room_id
-                continue
-
-            if action == "cancel" and active_task and not active_task.done():
-                active_task.cancel()
-                await websocket.send_json(
-                    {
-                        "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
-                        "done": True,
-                    }
-                )
-                continue
-
-            if action == "cancel" and joined_room_id:
-                existing_room = _collaboration_rooms.get(joined_room_id)
-                if (
-                    existing_room
-                    and existing_room.active_task
-                    and not existing_room.active_task.done()
-                ):
-                    existing_room.active_task.cancel()
-                continue
-
-            if not user_message:
-                continue
-
-            client_ip = websocket.client.host if websocket.client else "unknown"
-            if await _redis_is_rate_limited("chat_ws", client_ip, _RATE_LIMIT, _RATE_WINDOW):
-                await websocket.send_json(
-                    {
-                        "chunk": "[Hız Sınırı] Çok fazla istek. Lütfen bir dakika bekleyin.",
-                        "done": True,
-                    }
-                )
-                continue
-
-            if active_task and not active_task.done():
-                active_task.cancel()
-
-            if joined_room_id:
-                room_entry = _collaboration_rooms.get(joined_room_id)
-                if room_entry is None:
-                    room_entry = await _join_collaboration_room(
-                        websocket,
-                        room_id=joined_room_id,
-                        user_id=ws_user_id,
-                        username=ws_username,
-                        display_name=ws_username or ws_user_id,
-                        user_role=ws_user_role,
-                    )
-                room = room_entry
-                display_name = (
-                    str(payload.get("display_name", "") or ws_username or ws_user_id).strip()
-                    or ws_username
-                    or ws_user_id
-                    or "Anonim"
-                )
-                user_message_payload = _build_room_message(
-                    room_id=room.room_id,
-                    role="user",
-                    content=user_message,
-                    author_name=display_name,
-                    author_id=ws_user_id or display_name,
-                    kind="sidar_command"
-                    if _is_sidar_mention(user_message)
-                    else "collaboration_note",
-                )
-                _append_room_message(room, user_message_payload)
-                await _broadcast_room_payload(
-                    room, {"type": "room_message", "message": user_message_payload}
-                )
-
-                if _is_sidar_mention(user_message):
-                    command = _strip_sidar_mention(user_message)
-                    if not command:
-                        await _broadcast_room_payload(
-                            room,
-                            {
-                                "type": "room_error",
-                                "room_id": room.room_id,
-                                "error": "@Sidar etiketi sonrası komut bulunamadı.",
-                            },
-                        )
-                        continue
-                    participant = room.participants.get(_socket_key(websocket))
-                    if _collaboration_command_requires_write(command) and not (
-                        participant and participant.can_write
-                    ):
-                        _append_room_telemetry(
-                            room,
-                            {
-                                "id": secrets.token_hex(8),
-                                "room_id": room.room_id,
-                                "kind": "rbac_denied",
-                                "source": "collaboration_rbac",
-                                "content": command,
-                                "ts": _collaboration_now_iso(),
-                            },
-                        )
-                        await _broadcast_room_payload(
-                            room,
-                            {
-                                "type": "room_error",
-                                "room_id": room.room_id,
-                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
-                            },
-                        )
-                        continue
-                    if room.active_task and not room.active_task.done():
-                        room.active_task.cancel()
-                    room.active_task = asyncio.create_task(
-                        generate_room_response(room, actor_name=display_name, msg=command)
-                    )
-                    await asyncio.sleep(0)
-                continue
-
-            active_task = asyncio.create_task(generate_response(user_message))
-
-    except WebSocketDisconnect:
-        logger.info("İstemci WebSocket bağlantısını kesti.")
-        if active_task and not active_task.done():
-            active_task.cancel()
-        await _leave_collaboration_room(websocket)
-    except Exception as _ws_exc:
-        # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
-        # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
-        if _ANYIO_CLOSED is not None and isinstance(_ws_exc, _ANYIO_CLOSED):
-            logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_task and not active_task.done():
-                active_task.cancel()
-            await _leave_collaboration_room(websocket)
-        else:
-            logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
-            with contextlib.suppress(Exception):
-                await websocket.send_json(
-                    {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True}
-                )
-            with contextlib.suppress(Exception):
-                await _leave_collaboration_room(websocket)
+    return await ws_chat_routes.websocket_chat(websocket, _build_ws_chat_dependencies())
 
 
 @app.websocket("/ws/voice")
@@ -3499,6 +3060,9 @@ hitl_router = build_hitl_router(
     get_hitl_gate=lambda: get_hitl_gate(),
 )
 app.include_router(hitl_router)
+
+ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)
+app.include_router(ws_chat_router)
 
 metrics_router = build_metrics_router(
     require_metrics_access=_require_metrics_access,
