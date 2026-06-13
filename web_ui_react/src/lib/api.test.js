@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   TOKEN_KEY,
   TOKEN_CHANGE_EVENT,
+  TOKEN_STORAGE_MODE_KEY,
   getStoredToken,
   setStoredToken,
   buildAuthHeaders,
@@ -26,6 +27,7 @@ const mockFetch = (response) => {
 
 // localStorage stub — her testten önce temizlenir
 beforeEach(() => {
+  setStoredToken("");
   localStorage.clear();
   vi.restoreAllMocks();
 });
@@ -47,25 +49,29 @@ describe("getStoredToken", () => {
   });
 
   it("returns stored token", () => {
+    localStorage.setItem(TOKEN_STORAGE_MODE_KEY, "local");
     localStorage.setItem(TOKEN_KEY, "test-bearer-token");
     expect(getStoredToken()).toBe("test-bearer-token");
   });
 
   it("trims whitespace from stored token", () => {
+    localStorage.setItem(TOKEN_STORAGE_MODE_KEY, "local");
     localStorage.setItem(TOKEN_KEY, "  trimmed-token  ");
     expect(getStoredToken()).toBe("trimmed-token");
   });
 
   it("returns empty string for whitespace-only value", () => {
+    localStorage.setItem(TOKEN_STORAGE_MODE_KEY, "local");
     localStorage.setItem(TOKEN_KEY, "   ");
     expect(getStoredToken()).toBe("");
   });
 });
 
 describe("setStoredToken", () => {
-  it("stores a valid token in localStorage", () => {
+  it("stores a valid token in memory by default", () => {
     setStoredToken("yeni-token");
-    expect(localStorage.getItem(TOKEN_KEY)).toBe("yeni-token");
+    expect(getStoredToken()).toBe("yeni-token");
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 
   it("removes the key when empty string provided", () => {
@@ -88,7 +94,13 @@ describe("setStoredToken", () => {
 
   it("trims token before storing", () => {
     setStoredToken("  trimmed  ");
-    expect(localStorage.getItem(TOKEN_KEY)).toBe("trimmed");
+    expect(getStoredToken()).toBe("trimmed");
+  });
+
+  it("persists to localStorage only when explicitly requested", () => {
+    setStoredToken("  persisted  ", { persist: true });
+    expect(localStorage.getItem(TOKEN_KEY)).toBe("persisted");
+    expect(localStorage.getItem(TOKEN_STORAGE_MODE_KEY)).toBe("local");
   });
 
   it("notifies listeners when the normalized token changes", () => {
@@ -103,7 +115,7 @@ describe("setStoredToken", () => {
   });
 
   it("does not notify listeners when the normalized token stays the same", () => {
-    localStorage.setItem(TOKEN_KEY, "aynı-token");
+    setStoredToken("aynı-token");
     const listener = vi.fn();
     window.addEventListener(TOKEN_CHANGE_EVENT, listener);
     try {
@@ -140,7 +152,7 @@ describe("api.js localStorage checks", () => {
 
 describe("buildAuthHeaders", () => {
   it("returns Authorization header when token exists", () => {
-    localStorage.setItem(TOKEN_KEY, "my-token");
+    setStoredToken("my-token");
     const headers = buildAuthHeaders();
     expect(headers).toEqual({ Authorization: "Bearer my-token" });
   });
@@ -151,7 +163,7 @@ describe("buildAuthHeaders", () => {
   });
 
   it("merges extra headers when token exists", () => {
-    localStorage.setItem(TOKEN_KEY, "tok");
+    setStoredToken("tok");
     const headers = buildAuthHeaders({ "Content-Type": "application/json" });
     expect(headers["Authorization"]).toBe("Bearer tok");
     expect(headers["Content-Type"]).toBe("application/json");
@@ -164,7 +176,7 @@ describe("buildAuthHeaders", () => {
   });
 
   it("does not mutate extraHeaders argument", () => {
-    localStorage.setItem(TOKEN_KEY, "tok");
+    setStoredToken("tok");
     const extra = { "X-Foo": "bar" };
     buildAuthHeaders(extra);
     expect(extra).toEqual({ "X-Foo": "bar" });
@@ -184,7 +196,7 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
   });
 
   it("includes Authorization header in request", async () => {
-    localStorage.setItem(TOKEN_KEY, "test-tok");
+    setStoredToken("test-tok");
     const fetchMock = mockFetch({
       ok: true,
       headers: { get: () => "application/json" },
@@ -193,6 +205,7 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
 
     await fetchJson("/api/secure");
     const [, options] = fetchMock.mock.calls[0];
+    expect(options.credentials).toBe("include");
     expect(options.headers["Authorization"]).toBe("Bearer test-tok");
   });
 
@@ -382,7 +395,7 @@ describe("agent API bridge helpers", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/qa/coverage/tasks",
-      expect.objectContaining({ headers: {} }),
+      expect.objectContaining({ credentials: "include", headers: {} }),
     );
   });
 

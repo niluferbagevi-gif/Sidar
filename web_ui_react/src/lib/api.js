@@ -1,23 +1,86 @@
 export const TOKEN_KEY = "sidar_access_token";
 export const TOKEN_CHANGE_EVENT = "sidar:token-change";
+export const TOKEN_STORAGE_MODE_KEY = "sidar_token_storage_mode";
 
-export function getStoredToken() {
-  if (typeof localStorage === "undefined") return "";
-  return (localStorage.getItem(TOKEN_KEY) || "").trim();
+let inMemoryToken = "";
+
+function getBrowserStorage(kind = "localStorage") {
+  if (typeof globalThis === "undefined") return null;
+  try {
+    return globalThis[kind] || null;
+  } catch {
+    return null;
+  }
 }
 
-export function setStoredToken(token) {
-  if (typeof localStorage === "undefined") return;
-  const previousToken = getStoredToken();
-  const normalized = String(token || "").trim();
-  if (normalized) {
-    localStorage.setItem(TOKEN_KEY, normalized);
-  } else {
-    localStorage.removeItem(TOKEN_KEY);
-  }
+function getTokenStorageMode() {
+  const storage = getBrowserStorage("localStorage");
+  return storage?.getItem(TOKEN_STORAGE_MODE_KEY) === "local" ? "local" : "memory";
+}
+
+function notifyTokenChange(previousToken, normalized) {
   if (previousToken !== normalized && typeof window !== "undefined") {
     window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
   }
+}
+
+function readLegacyLocalToken() {
+  const storage = getBrowserStorage("localStorage");
+  return (storage?.getItem(TOKEN_KEY) || "").trim();
+}
+
+export function getStoredToken() {
+  if (inMemoryToken) return inMemoryToken.trim();
+  if (getTokenStorageMode() !== "local") return "";
+  return readLegacyLocalToken();
+}
+
+export function setStoredToken(token, options = {}) {
+  const previousToken = getStoredToken();
+  const normalized = String(token || "").trim();
+  const persist = options.persist === true;
+  const localStorageRef = getBrowserStorage("localStorage");
+
+  inMemoryToken = normalized;
+  if (localStorageRef) {
+    if (persist && normalized) {
+      localStorageRef.setItem(TOKEN_KEY, normalized);
+      localStorageRef.setItem(TOKEN_STORAGE_MODE_KEY, "local");
+    } else {
+      localStorageRef.removeItem(TOKEN_KEY);
+      localStorageRef.setItem(TOKEN_STORAGE_MODE_KEY, "memory");
+    }
+  }
+  notifyTokenChange(previousToken, normalized);
+}
+
+export function clearStoredToken() {
+  setStoredToken("");
+}
+
+export function getTokenPrincipal(token = getStoredToken()) {
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+  try {
+    const base64Payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = base64Payload.padEnd(base64Payload.length + ((4 - (base64Payload.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(paddedPayload));
+    return {
+      id: String(payload.sub || payload.id || ""),
+      username: String(payload.username || ""),
+      role: String(payload.role || "user").toLowerCase(),
+      tenant_id: String(payload.tenant_id || "default"),
+      exp: Number(payload.exp || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function isAdminPrincipal(principal) {
+  const role = String(principal?.role || "").toLowerCase();
+  const username = String(principal?.username || "");
+  return role === "admin" || username === "default_admin";
 }
 
 export function buildAuthHeaders(extraHeaders = {}) {
@@ -27,6 +90,7 @@ export function buildAuthHeaders(extraHeaders = {}) {
 
 export async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
+    credentials: "include",
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -46,6 +110,10 @@ export async function fetchJson(url, options = {}) {
     throw new Error(detail);
   }
   return payload;
+}
+
+export function getCurrentUser() {
+  return fetchJson("/auth/me");
 }
 
 export function runPoyrazOperation(toolName, payload = {}, roomId = "ops:control") {

@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
-import { getStoredToken, setStoredToken } from "./lib/api.js";
+import { getStoredToken, getTokenPrincipal, isAdminPrincipal, setStoredToken } from "./lib/api.js";
 
 function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
@@ -25,23 +25,39 @@ const NAV_ITEMS = [
   { to: "/p2p", label: "P2P Diyalog" },
   { to: "/swarm", label: "Swarm Akışı" },
   { to: "/ops-qa", label: "Poyraz & Coverage" },
-  { to: "/admin/prompts", label: "Prompt Admin" },
-  { to: "/admin/plugins", label: "Plugin Marketplace" },
-  { to: "/admin/agents", label: "Agent Manager" },
-  { to: "/admin/tenants", label: "Tenant Admin" },
+  { to: "/admin/prompts", label: "Prompt Admin", requiresAdmin: true },
+  { to: "/admin/plugins", label: "Plugin Marketplace", requiresAdmin: true },
+  { to: "/admin/agents", label: "Agent Manager", requiresAdmin: true },
+  { to: "/admin/tenants", label: "Tenant Admin", requiresAdmin: true },
 ];
+
+function AdminRoute({ isAdmin, children }) {
+  if (isAdmin) return children;
+  return (
+    <section className="panel" role="alert">
+      <h2>Admin yetkisi gerekli</h2>
+      <p className="panel__hint">Bu panel backend ile aynı admin yetki modelini izler. Admin rolü olmayan oturumlar için işlem yapılmaz.</p>
+    </section>
+  );
+}
 
 export default function App() {
   const [tokenValue, setTokenValue] = useState(() => getStoredToken() || "");
   const [savedAt, setSavedAt] = useState(0);
+  const [persistToken, setPersistToken] = useState(false);
+
+  const principal = useMemo(() => getTokenPrincipal(tokenValue), [tokenValue]);
+  const isAdmin = isAdminPrincipal(principal);
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => !item.requiresAdmin || isAdmin), [isAdmin]);
 
   const tokenHint = useMemo(() => {
-    if (!tokenValue) return "Admin ve sohbet API’leri için Bearer token saklayın.";
-    return `Token hazır${savedAt ? ` · ${new Date(savedAt).toLocaleTimeString("tr-TR")}` : ""}`;
-  }, [savedAt, tokenValue]);
+    if (!tokenValue) return "Admin ve sohbet API’leri için Bearer token girin; varsayılan olarak yalnızca bellekte tutulur.";
+    const roleHint = principal?.role ? ` · rol: ${principal.role}` : "";
+    return `Token hazır${roleHint}${savedAt ? ` · ${new Date(savedAt).toLocaleTimeString("tr-TR")}` : ""}`;
+  }, [principal?.role, savedAt, tokenValue]);
 
   const handleTokenSave = () => {
-    setStoredToken(tokenValue);
+    setStoredToken(tokenValue, { persist: persistToken });
     setSavedAt(Date.now());
   };
 
@@ -62,13 +78,17 @@ export default function App() {
             placeholder="Bearer token"
             aria-label="Bearer token"
           />
+          <label className="token-toolbar__persist">
+            <input type="checkbox" checked={persistToken} onChange={(e) => setPersistToken(e.target.checked)} />
+            Bu cihazda kalıcı sakla
+          </label>
           <button onClick={handleTokenSave}>Token Kaydet</button>
           <span className="token-toolbar__hint">{tokenHint}</span>
         </div>
       </header>
 
       <nav className="app__tabs" aria-label="Ana bölümler">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "is-active" : "")}>
             {item.label}
           </NavLink>
@@ -82,10 +102,10 @@ export default function App() {
           <Route path="/p2p" element={withLazyPanel(<P2PDialoguePanel />)} />
           <Route path="/swarm" element={withLazyPanel(<SwarmFlowPanel />)} />
           <Route path="/ops-qa" element={withLazyPanel(<OperationsQaPanel />)} />
-          <Route path="/admin/prompts" element={withLazyPanel(<PromptAdminPanel />)} />
-          <Route path="/admin/plugins" element={withLazyPanel(<PluginMarketplacePanel />)} />
-          <Route path="/admin/agents" element={withLazyPanel(<AgentManagerPanel />)} />
-          <Route path="/admin/tenants" element={withLazyPanel(<TenantAdminPanel />)} />
+          <Route path="/admin/prompts" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<PromptAdminPanel />)}</AdminRoute>} />
+          <Route path="/admin/plugins" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<PluginMarketplacePanel />)}</AdminRoute>} />
+          <Route path="/admin/agents" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<AgentManagerPanel />)}</AdminRoute>} />
+          <Route path="/admin/tenants" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<TenantAdminPanel />)}</AdminRoute>} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
       </main>

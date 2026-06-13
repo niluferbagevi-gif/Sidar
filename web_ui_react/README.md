@@ -75,3 +75,17 @@ src/
   `web_ui_react/playwright-report/` altında artefakt olarak saklar.
 - Vitest coverage kapsamı `src/**/*.{js,jsx}` olarak açıkça tanımlıdır. Terminal raporu tam kapsanan
   dosyaları da listeler (`skipFull: false`); böylece `%100` özetinin hangi dosyalardan oluştuğu görünürdür.
+- CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
+  uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
+  `coverage-final.json` dosyaları tek artefakt altında saklanır.
+
+
+## Kimlik doğrulama ve admin görünürlüğü
+
+- Bearer token girişi varsayılan olarak yalnızca sekme belleğinde tutulur; `localStorage` kullanımı XSS etkisini
+  büyütebildiği için sadece kullanıcı "Bu cihazda kalıcı sakla" seçeneğini işaretlediğinde etkinleşir.
+- API istemcisi `credentials: "include"` ile istek atar; backend HttpOnly cookie tabanlı kısa ömürlü oturum
+  modeline geçtiğinde SPA aynı çağrı yolunu kullanabilir.
+- Admin sekmeleri JWT içindeki `role=admin` veya `username=default_admin` bilgisiyle görünür olur. Aynı panel
+  rotaları doğrudan açıldığında da UI guard gösterilir; gerçek yetkilendirme backend `require_admin_user` ve
+  access-policy kontrollerinde kalır.

@@ -33,6 +33,13 @@ vi.mock("./lib/api.js", async () => {
   };
 });
 
+function makeJwt(payload) {
+  return ["e30", btoa(JSON.stringify(payload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"), "sig"].join(".");
+}
+
+const ADMIN_TOKEN = makeJwt({ sub: "1", username: "admin", role: "admin" });
+const USER_TOKEN = makeJwt({ sub: "2", username: "user", role: "user" });
+
 function renderApp(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -44,7 +51,7 @@ function renderApp(initialPath = "/") {
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.getStoredToken.mockReturnValue(null);
+    api.getStoredToken.mockReturnValue(ADMIN_TOKEN);
   });
 
   it("başlık bilgisini render eder ve / rotasında chat paneline yönlendirir", () => {
@@ -57,18 +64,16 @@ describe("App", () => {
 
   it("token kaydet akışında API yardımcılarını doğru çağırır", async () => {
     const user = userEvent.setup();
-    api.getStoredToken.mockReturnValue("eski-token");
-
     renderApp("/chat");
 
     const input = screen.getByLabelText("Bearer token");
-    expect(input).toHaveValue("eski-token");
+    expect(input).toHaveValue(ADMIN_TOKEN);
 
     await user.clear(input);
     await user.type(input, "yeni-gizli-token");
     await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
 
-    expect(api.setStoredToken).toHaveBeenCalledWith("yeni-gizli-token");
+    expect(api.setStoredToken).toHaveBeenCalledWith("yeni-gizli-token", { persist: false });
     expect(screen.getByText(/Token hazır/i)).toBeInTheDocument();
   });
 
@@ -115,17 +120,15 @@ describe("App", () => {
   });
 
   it("shows token-ready hint without a timestamp when a stored token exists before saving", () => {
-    api.getStoredToken.mockReturnValue("hazir-token");
-
     renderApp("/chat");
 
-    expect(screen.getByText("Token hazır")).toBeInTheDocument();
+    expect(screen.getByText(/Token hazır/)).toBeInTheDocument();
   });
 
   it("shows default token hint when no token is set", () => {
     api.getStoredToken.mockReturnValue(null);
     renderApp("/");
-    expect(screen.getByText(/Admin ve sohbet API/)).toBeInTheDocument();
+    expect(screen.getByText(/varsayılan olarak yalnızca bellekte/)).toBeInTheDocument();
   });
 
   it("Prompt Admin, Agent Manager ve Plugin Marketplace sekmelerine geçişi doğrular", async () => {
@@ -140,5 +143,25 @@ describe("App", () => {
 
     await user.click(screen.getByRole("link", { name: "Agent Manager" }));
     expect(screen.getByText("Agent Manager Mock")).toBeInTheDocument();
+  });
+
+  it("admin olmayan oturumlarda admin navigasyonunu gizler ve doğrudan girişte guard gösterir", () => {
+    api.getStoredToken.mockReturnValue(USER_TOKEN);
+
+    renderApp("/admin/prompts");
+
+    expect(screen.queryByRole("link", { name: "Prompt Admin" })).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Admin yetkisi gerekli");
+    expect(screen.queryByText("Prompt Mock")).not.toBeInTheDocument();
+  });
+
+  it("kalıcı saklama seçildiğinde tokenı localStorage uyumlu modda kaydeder", async () => {
+    const user = userEvent.setup();
+    renderApp("/chat");
+
+    await user.click(screen.getByRole("checkbox", { name: /Bu cihazda kalıcı sakla/i }));
+    await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
+
+    expect(api.setStoredToken).toHaveBeenCalledWith(ADMIN_TOKEN, { persist: true });
   });
 });

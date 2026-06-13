@@ -152,6 +152,15 @@ a { color: inherit; text-decoration: none; }
 }
 
 .token-toolbar input { max-width: 280px; }
+.token-toolbar__persist {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.token-toolbar__persist input { width: auto; max-width: none; }
 .token-toolbar__hint { color: var(--text-muted); font-size: 0.78rem; }
 
 button {

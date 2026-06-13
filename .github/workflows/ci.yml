@@ -348,8 +348,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage-report
-          path: web_ui_react/coverage/
-          if-no-files-found: ignore
+          path: |
+            web_ui_react/coverage/
+            web_ui_react/coverage/lcov-report/
+            web_ui_react/coverage/lcov.info
+            web_ui_react/coverage/coverage-final.json
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Check .env.example ↔ config.py parity
