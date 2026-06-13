@@ -87,7 +87,20 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
 
     assert "[report]" in content
     assert "fail_under = 100" in content
+    assert pyproject["tool"]["coverage"]["run"]["branch"] is True
     assert "fail_under" not in pyproject["tool"]["coverage"]["report"]
+
+    coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
+    test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
+    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+
+    assert "güncel repo gate: `%100`" in coverage_agent_docs
+    assert "güncel repo gate: `%98`" not in coverage_agent_docs
+    assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
+    assert "Coverage Quality Gate (`fail_under=100`)" in project_report
+    assert "Coverage Hard Gate (%100)" in project_report
+    assert "fail_under = 90" not in project_report
+    assert "COVERAGE_FAIL_UNDER:-90" not in project_report
     assert not any(
         line.strip() == ".coveragerc"
         for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
