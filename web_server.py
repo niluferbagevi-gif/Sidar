@@ -34,13 +34,12 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, cast
 
 import anyio
-import jwt
 import uvicorn
 from fastapi import (
     Body,
@@ -104,30 +103,32 @@ from web.routes.project_ops import build_project_ops_router
 from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
+from web.security import (
+    SIDAR_WS_CHAT_PROTOCOL as _SIDAR_WS_CHAT_PROTOCOL,
+)
+from web.security import (
+    build_user_from_jwt_payload,
+    extract_ws_header_token,
+    get_jwt_secret,
+    get_request_user,
+    is_admin_user,
+    issue_auth_token,
+    parse_ws_subprotocol_values,
+    require_admin_user,
+    require_metrics_access,
+    resolve_user_from_token,
+)
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
-
-SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
-_WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
+SIDAR_WS_CHAT_PROTOCOL = _SIDAR_WS_CHAT_PROTOCOL
 
 
 def _parse_ws_subprotocol_values(raw_header: str) -> list[str]:
-    return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
+    return parse_ws_subprotocol_values(raw_header)
 
 
 def _extract_ws_header_token(raw_header: str) -> tuple[str, str | None]:
-    """Extract a websocket auth token without echoing raw tokens as subprotocols."""
-
-    protocols = _parse_ws_subprotocol_values(raw_header)
-    if not protocols:
-        return "", None
-    accept_subprotocol = SIDAR_WS_CHAT_PROTOCOL if SIDAR_WS_CHAT_PROTOCOL in protocols else None
-    for candidate in protocols:
-        if candidate == SIDAR_WS_CHAT_PROTOCOL:
-            continue
-        if _WS_PROTOCOL_TOKEN_RE.fullmatch(candidate):
-            return candidate, accept_subprotocol
-    return "", accept_subprotocol
+    return extract_ws_header_token(raw_header)
 
 try:
     from agent.core.contracts import (
@@ -1508,59 +1509,19 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def _build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
-    user_id = str(payload.get("sub", "") or "").strip()
-    username = str(payload.get("username", "") or "").strip()
-    role = str(payload.get("role", "user") or "user").strip() or "user"
-    tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
-    if not user_id or not username:
-        return None
-    return SimpleNamespace(id=user_id, username=username, role=role, tenant_id=tenant_id)
+    return build_user_from_jwt_payload(payload)
 
 
 def _get_jwt_secret() -> str:
-    """Config'ten JWT secret'ı oku. Ayarlanmamışsa CRITICAL uyarısı ver."""
-    key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "")
-    if not key:
-        logger.critical(
-            "JWT_SECRET_KEY yapılandırılmamış! Geliştirme ortamında geçici bir "
-            "anahtar kullanılıyor. Üretim ortamında .env dosyasına güçlü bir "
-            "JWT_SECRET_KEY değeri eklemelisiniz."
-        )
-        key = "sidar-dev-secret"
-    return key
+    return get_jwt_secret(cfg, logger)
 
 
 async def _resolve_user_from_token(_agent: SidarAgent | None, token: str) -> Any:
-    secret_key = _get_jwt_secret()
-    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
-    try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return _build_user_from_jwt_payload(payload)
-    except jwt.PyJWTError:
-        pass
-    # Fallback: DB token lookup (opak / oturum tabanlı token desteği)
-    if _agent and hasattr(_agent, "memory") and hasattr(_agent.memory, "db"):
-        db_user = await _agent.memory.db.get_user_by_token(token)
-        if db_user:
-            return db_user
-    return None
+    return await resolve_user_from_token(_agent, token, config=cfg, logger_obj=logger)
 
 
 async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
-    del agent  # Stateless JWT üretiminde DB bağımlılığı yok.
-    secret_key = _get_jwt_secret()
-    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
-    ttl_days = max(1, int(getattr(cfg, "JWT_TTL_DAYS", 7) or 7))
-    now = datetime.now(UTC)
-    payload = {
-        "sub": str(user.id),
-        "username": str(user.username),
-        "role": str(getattr(user, "role", "user") or "user"),
-        "tenant_id": str(getattr(user, "tenant_id", "default") or "default"),
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(days=ttl_days)).timestamp()),
-    }
-    return str(jwt.encode(payload, secret_key, algorithm=algorithm))
+    return await issue_auth_token(agent, user, config=cfg, logger_obj=logger)
 
 
 _register_exception_handlers = _app_factory.register_exception_handlers
@@ -1660,36 +1621,19 @@ _setup_tracing()
 
 
 def _get_request_user(request: Request) -> Any:
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Yetkisiz erişim")
-    return user
+    return get_request_user(request)
 
 
 def _is_admin_user(user: Any) -> bool:
-    role = str(getattr(user, "role", "") or "").strip().lower()
-    username = str(getattr(user, "username", "") or "").strip()
-    return role == "admin" or username == "default_admin"
+    return is_admin_user(user)
 
 
 def _require_admin_user(user: Any = Depends(_get_request_user)) -> Any:
-    if not _is_admin_user(user):
-        raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
-    return user
+    return require_admin_user(user)
 
 
 def _require_metrics_access(request: Request, user: Any = Depends(_get_request_user)) -> Any:
-    """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
-    metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
-    if metrics_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
-            return user
-    if _is_admin_user(user):
-        return user
-    raise HTTPException(
-        status_code=403, detail="Metrics erişimi için admin yetkisi veya METRICS_TOKEN gerekiyor"
-    )
+    return require_metrics_access(request, user, config=cfg)
 
 
 def _get_user_tenant(user: Any) -> str:
