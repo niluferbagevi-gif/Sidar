@@ -21,6 +21,7 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 import web_server
+from web import security as web_security
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
 
@@ -2622,36 +2623,36 @@ class _ChatWebSocket:
 
 
 def test_ws_chat_protocol_token_parser_uses_fixed_subprotocol_without_echoing_token() -> None:
-    token, accepted = web_server._extract_ws_header_token(
-        f"{web_server.SIDAR_WS_CHAT_PROTOCOL}, ey.fake-token_123"
+    token, accepted = web_security.extract_ws_header_token(
+        f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, ey.fake-token_123"
     )
 
     assert token == "ey.fake-token_123"
-    assert accepted == web_server.SIDAR_WS_CHAT_PROTOCOL
+    assert accepted == web_security.SIDAR_WS_CHAT_PROTOCOL
     assert accepted != token
 
 
 def test_ws_chat_protocol_token_parser_keeps_legacy_header_without_echo() -> None:
-    token, accepted = web_server._extract_ws_header_token("legacy-token")
+    token, accepted = web_security.extract_ws_header_token("legacy-token")
 
     assert token == "legacy-token"
     assert accepted is None
 
 
 def test_ws_protocol_token_parser_supports_voice_and_hitl_fixed_protocols() -> None:
-    voice_token, voice_accepted = web_server._extract_ws_header_token(
-        f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, voice-token",
-        web_server.SIDAR_WS_VOICE_PROTOCOL,
+    voice_token, voice_accepted = web_security.extract_ws_header_token(
+        f"{web_security.SIDAR_WS_VOICE_PROTOCOL}, voice-token",
+        web_security.SIDAR_WS_VOICE_PROTOCOL,
     )
-    hitl_token, hitl_accepted = web_server._extract_ws_header_token(
-        f"{web_server.SIDAR_WS_HITL_PROTOCOL}, hitl-token",
-        web_server.SIDAR_WS_HITL_PROTOCOL,
+    hitl_token, hitl_accepted = web_security.extract_ws_header_token(
+        f"{web_security.SIDAR_WS_HITL_PROTOCOL}, hitl-token",
+        web_security.SIDAR_WS_HITL_PROTOCOL,
     )
 
     assert voice_token == "voice-token"
-    assert voice_accepted == web_server.SIDAR_WS_VOICE_PROTOCOL
+    assert voice_accepted == web_security.SIDAR_WS_VOICE_PROTOCOL
     assert hitl_token == "hitl-token"
-    assert hitl_accepted == web_server.SIDAR_WS_HITL_PROTOCOL
+    assert hitl_accepted == web_security.SIDAR_WS_HITL_PROTOCOL
 
 
 @pytest.mark.asyncio
@@ -2682,12 +2683,12 @@ async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(
     ws = _ChatWebSocket(
         [web_server.json.dumps({"message": "hello"})],
         headers={
-            "sec-websocket-protocol": f"{web_server.SIDAR_WS_CHAT_PROTOCOL}, good-token"
+            "sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, good-token"
         },
     )
     await web_server.websocket_chat(ws)
 
-    assert ws.accepted == [web_server.SIDAR_WS_CHAT_PROTOCOL]
+    assert ws.accepted == [web_security.SIDAR_WS_CHAT_PROTOCOL]
     assert "good-token" not in ws.accepted
     assert {"auth_ok": True} in ws.sent
 
@@ -6632,7 +6633,7 @@ async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token
     class _Ws:
         def __init__(self):
             self.headers = {
-                "sec-websocket-protocol": f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, good-token"
+                "sec-websocket-protocol": f"{web_security.SIDAR_WS_VOICE_PROTOCOL}, good-token"
             }
             self.accepted = []
             self.sent = []
@@ -6663,7 +6664,7 @@ async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token
     ws = _Ws()
     await web_server.websocket_voice(ws)
 
-    assert ws.accepted == [web_server.SIDAR_WS_VOICE_PROTOCOL]
+    assert ws.accepted == [web_security.SIDAR_WS_VOICE_PROTOCOL]
     assert "good-token" not in ws.accepted
     assert {"auth_ok": True} in ws.sent
 
@@ -7278,7 +7279,7 @@ async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(
 
     class _Ws:
         headers = {
-            "sec-websocket-protocol": f"{web_server.SIDAR_WS_HITL_PROTOCOL}, good-token"
+            "sec-websocket-protocol": f"{web_security.SIDAR_WS_HITL_PROTOCOL}, good-token"
         }
 
         def __init__(self):
@@ -7308,7 +7309,7 @@ async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(
     ws = _Ws()
     await web_server.websocket_hitl(ws)
 
-    assert ws.accepted_subprotocols == [web_server.SIDAR_WS_HITL_PROTOCOL]
+    assert ws.accepted_subprotocols == [web_security.SIDAR_WS_HITL_PROTOCOL]
     assert "good-token" not in ws.accepted_subprotocols
     assert ws.sent == [{"type": "hitl_snapshot", "pending": []}]
     assert ws not in web_server._hitl_ws_clients

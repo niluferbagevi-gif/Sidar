@@ -21,6 +21,7 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 import web_server
+from web import security as web_security
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
 
@@ -6239,7 +6240,7 @@ async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token
     class _Ws:
         def __init__(self):
             self.headers = {
-                "sec-websocket-protocol": f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, good-token"
+                "sec-websocket-protocol": f"{web_security.SIDAR_WS_VOICE_PROTOCOL}, good-token"
             }
             self.accepted = []
             self.sent = []
@@ -6270,7 +6271,7 @@ async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token
     ws = _Ws()
     await web_server.websocket_voice(ws)
 
-    assert ws.accepted == [web_server.SIDAR_WS_VOICE_PROTOCOL]
+    assert ws.accepted == [web_security.SIDAR_WS_VOICE_PROTOCOL]
     assert "good-token" not in ws.accepted
     assert {"auth_ok": True} in ws.sent
 

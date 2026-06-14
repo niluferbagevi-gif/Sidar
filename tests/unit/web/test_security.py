@@ -32,6 +32,27 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
     assert protocol == security.SIDAR_WS_CHAT_PROTOCOL
 
 
+def test_extract_ws_header_token_supports_voice_and_hitl_fixed_protocols() -> None:
+    voice_token, voice_protocol = security.extract_ws_header_token(
+        "sidar.voice.v1, voice-token", security.SIDAR_WS_VOICE_PROTOCOL
+    )
+    hitl_token, hitl_protocol = security.extract_ws_header_token(
+        "sidar.hitl.v1, hitl-token", security.SIDAR_WS_HITL_PROTOCOL
+    )
+
+    assert voice_token == "voice-token"
+    assert voice_protocol == security.SIDAR_WS_VOICE_PROTOCOL
+    assert hitl_token == "hitl-token"
+    assert hitl_protocol == security.SIDAR_WS_HITL_PROTOCOL
+
+
+def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -> None:
+    token, protocol = security.extract_ws_header_token("legacy-token")
+
+    assert token == "legacy-token"
+    assert protocol is None
+
+
 def test_get_jwt_secret_uses_development_fallback_and_logs() -> None:
     logger = _Logger()
 

@@ -87,6 +87,7 @@ from core.utils.network_validation import (
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
+from web import security as web_security
 from web.middleware.cors import configure_loopback_cors
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
@@ -105,22 +106,11 @@ from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
 from web.security import (
-    SIDAR_WS_CHAT_PROTOCOL as _SIDAR_WS_CHAT_PROTOCOL,
-)
-from web.security import (
-    SIDAR_WS_HITL_PROTOCOL as _SIDAR_WS_HITL_PROTOCOL,
-)
-from web.security import (
-    SIDAR_WS_VOICE_PROTOCOL as _SIDAR_WS_VOICE_PROTOCOL,
-)
-from web.security import (
     build_user_from_jwt_payload,
-    extract_ws_header_token,
     get_jwt_secret,
     get_request_user,
     is_admin_user,
     issue_auth_token,
-    parse_ws_subprotocol_values,
     require_admin_user,
     require_metrics_access,
     resolve_user_from_token,
@@ -128,19 +118,6 @@ from web.security import (
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
-SIDAR_WS_CHAT_PROTOCOL = _SIDAR_WS_CHAT_PROTOCOL
-SIDAR_WS_VOICE_PROTOCOL = _SIDAR_WS_VOICE_PROTOCOL
-SIDAR_WS_HITL_PROTOCOL = _SIDAR_WS_HITL_PROTOCOL
-
-
-def _parse_ws_subprotocol_values(raw_header: str) -> list[str]:
-    return parse_ws_subprotocol_values(raw_header)
-
-
-def _extract_ws_header_token(
-    raw_header: str, accepted_protocol: str = SIDAR_WS_CHAT_PROTOCOL
-) -> tuple[str, str | None]:
-    return extract_ws_header_token(raw_header, accepted_protocol)
 
 try:
     from agent.core.contracts import (
@@ -2489,7 +2466,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         leave_collaboration_room=_leave_collaboration_room,
         llm_api_error_cls=LLMAPIError,
         logger=logger,
-        extract_ws_header_token=_extract_ws_header_token,
+        extract_ws_header_token=web_security.extract_ws_header_token,
         mask_collaboration_text=_mask_collaboration_text,
         normalize_collaboration_role=_normalize_collaboration_role,
         rate_limit=_RATE_LIMIT,
@@ -2522,12 +2499,12 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
         cfg=cfg,
         llm_api_error_cls=LLMAPIError,
         logger=logger,
-        extract_ws_header_token=_extract_ws_header_token,
+        extract_ws_header_token=web_security.extract_ws_header_token,
         resolve_agent_instance=_resolve_agent_instance,
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
         ws_stream_agent_text_response=_ws_stream_agent_text_response,
-        ws_voice_protocol=SIDAR_WS_VOICE_PROTOCOL,
+        ws_voice_protocol=web_security.SIDAR_WS_VOICE_PROTOCOL,
     )
 
 
@@ -2652,8 +2629,8 @@ hitl_router = build_hitl_router(
     hitl_ws_clients=_hitl_ws_clients,
     get_hitl_store=lambda: get_hitl_store(),
     get_hitl_gate=lambda: get_hitl_gate(),
-    extract_ws_header_token=_extract_ws_header_token,
-    ws_hitl_protocol=SIDAR_WS_HITL_PROTOCOL,
+    extract_ws_header_token=web_security.extract_ws_header_token,
+    ws_hitl_protocol=web_security.SIDAR_WS_HITL_PROTOCOL,
 )
 
 ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)
