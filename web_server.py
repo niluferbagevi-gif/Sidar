@@ -46,7 +46,6 @@ from fastapi import (
     Depends,
     FastAPI,
     File,
-    Header,
     HTTPException,
     Request,
     UploadFile,
@@ -86,7 +85,9 @@ from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
+from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
+from web.routes import federation as federation_routes
 from web.routes import operations as operations_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -3263,41 +3264,9 @@ app.include_router(operations_router)
 # ─────────────────────────────────────────────
 
 
-class _FederationTaskRequest(BaseModel):
-    task_id: str = Field(..., description="Dış platform tarafından verilen görev kimliği")
-    source_system: str = Field(..., description="Gönderen swarm platformu (örn. crewai, autogen)")
-    source_agent: str = Field(..., description="Gönderen ajan veya workflow adı")
-    target_agent: str = Field("supervisor", description="Sidar içinde hedef ajan/rol")
-    goal: str = Field(..., description="Sidar'ın çalıştıracağı hedef görev")
-    protocol: str = Field("federation.v1", description="Federation sözleşme sürümü")
-    intent: str = Field("mixed", description="Görev intent tipi")
-    context: dict[str, str] = Field(default_factory=dict, description="Yapısal bağlam")
-    inputs: list[str] = Field(default_factory=list, description="Ek girdiler")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
-    correlation_id: str = Field("", description="Dış sistemlerle iz sürme için korelasyon kimliği")
-
-
-class _FederationFeedbackRequest(BaseModel):
-    feedback_id: str = Field(..., description="Dış sistem action feedback kaydı kimliği")
-    source_system: str = Field(..., description="Feedback gönderen dış sistem")
-    source_agent: str = Field(..., description="Feedback gönderen ajan/workflow")
-    action_name: str = Field(..., description="Geri besleme verilen aksiyon adı")
-    status: str = Field(..., description="Aksiyonun dış sistemdeki durumu")
-    summary: str = Field(..., description="İnsan/ajan tarafından üretilen kısa özet")
-    related_task_id: str = Field("", description="İlişkili federation task id")
-    related_trigger_id: str = Field("", description="İlişkili autonomy trigger id")
-    details: dict[str, Any] = Field(default_factory=dict, description="Detay payload")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
-    correlation_id: str = Field("", description="Dış sistemlerle paylaşılan korelasyon kimliği")
-
-
-class _AutonomyWakeRequest(BaseModel):
-    event_name: str = Field("manual_wake", description="Manuel/proaktif tetik olay adı")
-    prompt: str = Field(..., description="Ajanın değerlendireceği proaktif prompt")
-    source: str = Field("manual", description="Tetik kaynağı etiketi")
-    payload: dict[str, Any] = Field(default_factory=dict, description="Ek olay payload'u")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek meta verisi")
-
+_FederationTaskRequest = federation_routes.FederationTaskRequest
+_FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
+_AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
 def _verify_hmac_signature(
     payload_body: bytes, secret_value: str, signature_header: str, *, label: str
@@ -3312,233 +3281,49 @@ def _verify_hmac_signature(
         raise HTTPException(status_code=401, detail="Geçersiz imza.")
 
 
-@app.post(
-    "/api/autonomy/webhook/{source}",
-    summary="Otonom Webhook Tetikleyicisi",
-    description="Harici sistem olaylarını Sidar'a otonom trigger olarak iletir.",
-)
-async def autonomy_webhook(
-    source: str,
-    request: Request,
-    x_sidar_signature: str = Header(default=""),
-) -> JSONResponse:
-    """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
-    if not bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
-        raise HTTPException(status_code=503, detail="Event webhook özelliği devre dışı.")
-
-    payload_body = await request.body()
-    _verify_hmac_signature(
-        payload_body,
-        str(getattr(cfg, "AUTONOMY_WEBHOOK_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Autonomy webhook",
-    )
-
-    try:
-        data = json.loads(payload_body.decode("utf-8")) if payload_body else {}
-    except json.JSONDecodeError:
-        return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
-
-    payload_dict = data if isinstance(data, dict) else {"payload": data}
-    resolved_event_name = str(payload_dict.get("event_name", source) or source)
-    ci_context = _resolve_ci_failure_context(resolved_event_name, payload_dict)
-    federation_workflow = (
-        None
-        if ci_context
-        else await _run_event_driven_federation_workflow(
-            source=source,
-            event_name=resolved_event_name,
-            payload=payload_dict,
-        )
-    )
-    dispatch_payload = ci_context if ci_context else payload_dict
-    dispatch_meta = {
-        "source": source,
-        "provider": source,
-        "ci_failure": "true" if ci_context else "false",
-    }
-    if federation_workflow:
-        dispatch_payload = _embed_event_driven_federation_payload(payload_dict, federation_workflow)
-        dispatch_meta.update(
-            {
-                "event_driven_federation": "true",
-                "workflow_type": str(federation_workflow.get("workflow_type") or "external_event"),
-                "correlation_id": str(federation_workflow.get("correlation_id") or ""),
-            }
-        )
-    result = await _dispatch_autonomy_trigger(
-        trigger_source=f"webhook:{source}:ci_failure" if ci_context else f"webhook:{source}",
-        event_name="ci_failure_remediation" if ci_context else resolved_event_name,
-        payload=dispatch_payload,
-        meta=dispatch_meta,
-    )
-    return JSONResponse(
-        {"success": True, "result": result, "event_driven_federation": federation_workflow}
-    )
-
-
-@app.post(
-    "/api/autonomy/wake",
-    summary="Manuel Otonomi Uyanışı",
-    description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
-)
-async def autonomy_wake(req: _AutonomyWakeRequest) -> Any:
-    """Webhook dışı manuel/proaktif tetik giriş noktası."""
-    payload = dict(req.payload or {})
-    payload["prompt"] = req.prompt.strip()
-    result = await _await_if_needed(
-        _dispatch_autonomy_trigger(
-            trigger_source=f"manual:{req.source.strip() or 'manual'}",
-            event_name=req.event_name.strip() or "manual_wake",
-            payload=payload,
-            meta=dict(req.meta or {}),
-        )
-    )
-    return JSONResponse({"success": True, "result": result})
-
-
-@app.get(
-    "/api/autonomy/activity",
-    summary="Otonomi Aktivite Akışı",
-    description="Webhook/cron/manual kaynaklı son proaktif tetik geçmişini döndürür.",
-)
-async def autonomy_activity(limit: int = 20) -> Any:
-    """Son proaktif tetik kayıtlarını UI ve operasyon panelleri için sunar."""
-    agent = await _resolve_agent_instance()
-    return JSONResponse({"success": True, "activity": agent.get_autonomy_activity(limit=limit)})
-
-
-@app.post(
-    "/api/swarm/federation",
-    summary="Dış Swarm Federation Görevi",
-    description="CrewAI/AutoGen gibi dış platformlardan gelen görevleri Sidar içinde çalıştırır.",
-)
-async def swarm_federation_execute(
-    req: _FederationTaskRequest,
-    x_sidar_signature: str = Header(default=""),
-) -> Any:
-    """Federasyon görevlerini Sidar içinde çalıştırıp yapısal sonuç döndürür."""
-    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
-        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
-
-    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    _verify_hmac_signature(
-        raw_body,
-        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Federation",
-    )
-
-    envelope = FederationTaskEnvelope(
-        task_id=req.task_id,
-        source_system=req.source_system,
-        source_agent=req.source_agent,
-        target_system="sidar",
-        target_agent=req.target_agent,
-        goal=req.goal,
-        protocol=normalize_federation_protocol(req.protocol),
-        intent=req.intent,
-        context=dict(req.context or {}),
-        inputs=list(req.inputs or []),
-        meta=dict(req.meta or {}),
-        correlation_id=req.correlation_id,
-    )
-    federation_payload = {
-        "kind": "federation_task",
-        "federation_task": asdict(envelope),
-        "federation_prompt": envelope.to_prompt(),
-        "task_id": envelope.task_id,
-        "source_system": envelope.source_system,
-        "source_agent": envelope.source_agent,
-        "target_agent": envelope.target_agent,
-        "correlation_id": envelope.correlation_id,
-    }
-    trigger_result = await _dispatch_autonomy_trigger(
-        trigger_source=f"federation:{envelope.source_system}",
-        event_name="federation_task",
-        payload=federation_payload,
-        meta={
-            "protocol": envelope.protocol,
-            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
-            "correlation_id": envelope.correlation_id,
-        },
-    )
-    summary = str(trigger_result.get("summary", "") or "").strip()
-    result = FederationTaskResult(
-        task_id=envelope.task_id,
-        source_system="sidar",
-        source_agent=envelope.target_agent,
-        target_system=envelope.source_system,
-        target_agent=envelope.source_agent,
-        status="success" if summary else "failed",
-        summary=summary or "Sidar görev için çıktı üretemedi.",
-        protocol=envelope.protocol,
-        correlation_id=envelope.correlation_id,
-        meta={
-            "protocol": envelope.protocol,
-            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
-            "correlation_id": envelope.correlation_id,
-            "autonomy_trigger_id": str(trigger_result.get("trigger_id", "") or ""),
-            "action_feedback_endpoint": "/api/swarm/federation/feedback",
-        },
-    )
-    return JSONResponse({"success": True, "result": asdict(result)})
-
-
-@app.post(
-    "/api/swarm/federation/feedback",
-    summary="Dış Swarm Action Feedback",
-    description="Dış swarm sistemlerinden gelen action feedback sinyallerini autonomy korelasyon akışına bağlar.",
-)
-async def swarm_federation_feedback(
-    req: _FederationFeedbackRequest,
-    x_sidar_signature: str = Header(default=""),
-) -> Any:
-    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
-        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
-
-    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    _verify_hmac_signature(
-        raw_body,
-        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Federation feedback",
-    )
-
-    feedback = ActionFeedback(
-        feedback_id=req.feedback_id,
-        source_system=req.source_system,
-        source_agent=req.source_agent,
-        action_name=req.action_name,
-        status=req.status,
-        summary=req.summary,
-        related_task_id=req.related_task_id,
-        related_trigger_id=req.related_trigger_id,
-        details=dict(req.details or {}),
-        meta=dict(req.meta or {}),
-        correlation_id=derive_correlation_id(
-            req.correlation_id, req.related_task_id, req.related_trigger_id, req.feedback_id
+def _build_autonomy_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        await_if_needed=_await_if_needed,
+        cfg=cfg,
+        dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+        embed_event_driven_federation_payload=(
+            lambda payload, workflow: _embed_event_driven_federation_payload(payload, workflow)
         ),
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_ci_failure_context=_resolve_ci_failure_context,
+        run_event_driven_federation_workflow=(
+            lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
+        ),
+        verify_hmac_signature=_verify_hmac_signature,
     )
-    trigger = feedback.to_external_trigger()
-    result = await _dispatch_autonomy_trigger(
-        trigger_source=trigger.source,
-        event_name=trigger.event_name,
-        payload=dict(trigger.payload or {}),
-        meta=dict(trigger.meta or {}),
+
+
+def _build_federation_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        action_feedback_cls=ActionFeedback,
+        cfg=cfg,
+        derive_correlation_id=derive_correlation_id,
+        dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+        federation_task_envelope_cls=FederationTaskEnvelope,
+        federation_task_result_cls=FederationTaskResult,
+        legacy_federation_protocol_v1=LEGACY_FEDERATION_PROTOCOL_V1,
+        normalize_federation_protocol=normalize_federation_protocol,
+        verify_hmac_signature=_verify_hmac_signature,
     )
-    return JSONResponse(
-        {
-            "success": True,
-            "result": result,
-            "feedback": {
-                "feedback_id": feedback.feedback_id,
-                "correlation_id": feedback.correlation_id,
-                "related_task_id": feedback.related_task_id,
-                "related_trigger_id": feedback.related_trigger_id,
-            },
-        }
-    )
+
+
+autonomy_webhook = autonomy_routes.autonomy_webhook
+autonomy_wake = autonomy_routes.autonomy_wake
+autonomy_activity = autonomy_routes.autonomy_activity
+swarm_federation_execute = federation_routes.swarm_federation_execute
+swarm_federation_feedback = federation_routes.swarm_federation_feedback
+
+
+autonomy_router = autonomy_routes.build_autonomy_router(_build_autonomy_dependencies)
+app.include_router(autonomy_router)
+
+federation_router = federation_routes.build_federation_router(_build_federation_dependencies)
+app.include_router(federation_router)
 
 
 # ─────────────────────────────────────────────
