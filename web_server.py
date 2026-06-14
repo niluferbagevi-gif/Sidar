@@ -2522,19 +2522,27 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
 async def websocket_voice(websocket: WebSocket) -> Any:
     return await ws_voice_routes.websocket_voice(websocket, _build_ws_voice_dependencies())
 
+def _expose_operational_error_details() -> bool:
+    return _app_factory._expose_exception_details()
+
+
+def _health_error_payload(error: str, exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {"status": "degraded", "error": error}
+    if _expose_operational_error_details():
+        payload["detail"] = str(exc)
+    return payload
+
+
 async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     try:
         agent = await _resolve_agent_instance()
         health_data = agent.health.get_health_summary()
     except Exception as exc:
-        logger.warning("Health check güvenli fallback'e düştü: %s", exc)
+        logger.exception("Health check güvenli fallback'e düştü: %s", exc)
+        payload = _health_error_payload("health_check_failed", exc)
+        payload["uptime_seconds"] = int(time.monotonic() - _start_time)
         return JSONResponse(
-            {
-                "status": "degraded",
-                "error": "health_check_failed",
-                "detail": str(exc),
-                "uptime_seconds": int(time.monotonic() - _start_time),
-            },
+            payload,
             status_code=503,
         )
 
@@ -2549,8 +2557,14 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
         try:
             dependency_health = agent.health.get_dependency_health()
         except Exception as exc:
-            logger.warning("Dependency health sorgusu başarısız oldu: %s", exc)
-            health_data["dependencies"] = {"error": {"healthy": False, "detail": str(exc)}}
+            logger.exception("Dependency health sorgusu başarısız oldu: %s", exc)
+            dependency_error: dict[str, Any] = {
+                "healthy": False,
+                "error": "dependency_health_failed",
+            }
+            if _expose_operational_error_details():
+                dependency_error["detail"] = str(exc)
+            health_data["dependencies"] = {"error": dependency_error}
             health_data["status"] = "degraded"
             return JSONResponse(health_data, status_code=503)
         health_data["dependencies"] = dependency_health

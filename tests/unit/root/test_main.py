@@ -7185,6 +7185,47 @@ async def test_readiness_check_and_metrics_json_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_health_response_hides_agent_exception_detail_in_production(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+
+    async def _resolve():
+        raise RuntimeError("dsn=postgresql://sidar:secret@example/internal")
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    response = await web_server._health_response(require_dependencies=False)
+
+    assert response.status_code == 503
+    assert b'"health_check_failed"' in response.body
+    assert b'postgresql://sidar:secret' not in response.body
+    assert b'"detail"' not in response.body
+
+
+@pytest.mark.asyncio
+async def test_health_response_hides_dependency_exception_detail_in_production(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+
+    class _Health:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+        def get_dependency_health(self):
+            raise RuntimeError("redis://:secret@example:6379/0")
+
+    async def _resolve():
+        return SimpleNamespace(cfg=SimpleNamespace(AI_PROVIDER="openai"), health=_Health())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve)
+
+    response = await web_server._health_response(require_dependencies=True)
+
+    assert response.status_code == 503
+    assert b'"dependency_health_failed"' in response.body
+    assert b'redis://:secret' not in response.body
+    assert b'"detail"' not in response.body
+
+
+@pytest.mark.asyncio
 async def test_health_response_dependency_exception_marks_degraded(monkeypatch):
     class _Health:
         def get_health_summary(self):
