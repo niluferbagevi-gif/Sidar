@@ -71,12 +71,6 @@ from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from config import Config, get_config, register_config_reload_callback
 from core.ci_remediation import build_ci_failure_context
-from core.db import (
-    ContentAssetRecord,
-    CoverageTaskRecord,
-    MarketingCampaignRecord,
-    OperationChecklistRecord,
-)
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
 from core.llm_metrics import (
@@ -93,6 +87,7 @@ from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
 from web.routes import collaboration as collaboration_routes
+from web.routes import operations as operations_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
 from web.routes.agent import build_agent_router
@@ -1671,51 +1666,9 @@ def _serialize_swarm_result(record: Any) -> dict[str, Any]:
     }
 
 
-def _serialize_campaign(record: MarketingCampaignRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "name": str(getattr(record, "name", "") or ""),
-        "channel": str(getattr(record, "channel", "") or ""),
-        "objective": str(getattr(record, "objective", "") or ""),
-        "status": str(getattr(record, "status", "draft") or "draft"),
-        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
-        "budget": float(getattr(record, "budget", 0.0) or 0.0),
-        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
-
-def _serialize_content_asset(record: ContentAssetRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "campaign_id": int(getattr(record, "campaign_id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "asset_type": str(getattr(record, "asset_type", "") or ""),
-        "title": str(getattr(record, "title", "") or ""),
-        "content": str(getattr(record, "content", "") or ""),
-        "channel": str(getattr(record, "channel", "") or ""),
-        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
-
-def _serialize_operation_checklist(record: OperationChecklistRecord) -> dict[str, Any]:
-    campaign_id = getattr(record, "campaign_id", None)
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "campaign_id": None if campaign_id is None else int(campaign_id),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "title": str(getattr(record, "title", "") or ""),
-        "items_json": str(getattr(record, "items_json", "[]") or "[]"),
-        "status": str(getattr(record, "status", "pending") or "pending"),
-        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
+_serialize_campaign = operations_routes.serialize_campaign
+_serialize_content_asset = operations_routes.serialize_content_asset
+_serialize_operation_checklist = operations_routes.serialize_operation_checklist
 
 _PLUGIN_ROLE_RE = re.compile(r"^[a-zA-Z0-9_-]{2,64}$")
 
@@ -3204,104 +3157,18 @@ class _TeamsSendRequest(BaseModel):
     title: str | None = Field(None, description="Mesaj başlığı")
 
 
-class _OperationChecklistCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=160)
-    items: list[str] = Field(default_factory=list)
-    status: str = Field(default="pending", min_length=1, max_length=32)
-
-
-class _ContentAssetCreateRequest(BaseModel):
-    asset_type: str = Field(..., min_length=1, max_length=64)
-    title: str = Field(..., min_length=1, max_length=160)
-    content: str = Field(..., min_length=1)
-    channel: str = Field(default="", max_length=64)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class _CampaignCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=160)
-    channel: str = Field(default="", max_length=64)
-    objective: str = Field(default="", max_length=400)
-    status: str = Field(default="draft", min_length=1, max_length=32)
-    budget: float = Field(default=0.0, ge=0.0)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    initial_assets: list[_ContentAssetCreateRequest] = Field(default_factory=list)
-    initial_checklists: list[_OperationChecklistCreateRequest] = Field(default_factory=list)
-
-
-class _PoyrazToolRunRequest(BaseModel):
-    tool_name: str = Field(..., min_length=1, max_length=80)
-    payload: dict[str, Any] = Field(default_factory=dict)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _LandingPageDraftRequest(BaseModel):
-    brand_name: str = Field(..., min_length=1, max_length=160)
-    offer: str = Field(..., min_length=1, max_length=600)
-    audience: str = Field(..., min_length=1, max_length=400)
-    call_to_action: str = Field(..., min_length=1, max_length=160)
-    tone: str = Field(default="professional", max_length=64)
-    sections: list[str] = Field(default_factory=list)
-    campaign_id: int | None = Field(default=None)
-    store_asset: bool = Field(default=False)
-    asset_title: str = Field(default="Landing Page Taslağı", max_length=160)
-    channel: str = Field(default="web", max_length=64)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _CampaignCopyGenerateRequest(BaseModel):
-    campaign_name: str = Field(..., min_length=1, max_length=160)
-    objective: str = Field(..., min_length=1, max_length=400)
-    audience: str = Field(..., min_length=1, max_length=400)
-    channels: list[str] = Field(default_factory=list)
-    offer: str = Field(default="", max_length=600)
-    tone: str = Field(default="professional", max_length=64)
-    call_to_action: str = Field(default="", max_length=160)
-    campaign_id: int | None = Field(default=None)
-    store_asset: bool = Field(default=False)
-    asset_title: str = Field(default="Kampanya Kopyası", max_length=160)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _ServiceOperationsPlanRequest(BaseModel):
-    campaign_id: int | None = Field(default=None)
-    campaign_name: str = Field(default="", max_length=160)
-    service_name: str = Field(default="", max_length=160)
-    audience: str = Field(default="", max_length=400)
-    menu_plan: dict[str, list[str]] = Field(default_factory=dict)
-    vendor_assignments: dict[str, str] = Field(default_factory=dict)
-    timeline: list[str] = Field(default_factory=list)
-    notes: str = Field(default="", max_length=2000)
-    persist_checklist: bool = Field(default=True)
-    checklist_title: str = Field(default="Operasyon Planı", max_length=160)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _CoverageAnalyzeRequest(BaseModel):
-    coverage_xml: str = Field(default="coverage.xml", max_length=512)
-    coveragerc: str = Field(default=".coveragerc", max_length=512)
-    coverage_output: str = Field(default="")
-    limit: int = Field(default=25, ge=1, le=200)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
-
-class _CoverageGenerateRequest(BaseModel):
-    coverage_finding: dict[str, Any] = Field(default_factory=dict)
-    coveragerc: dict[str, Any] = Field(default_factory=dict)
-    target_path: str = Field(default="", max_length=512)
-    pytest_output: str = Field(default="")
-    analysis: dict[str, Any] = Field(default_factory=dict)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
-
-class _CoverageBatchRequest(BaseModel):
-    coverage_xml: str = Field(default="coverage.xml", max_length=512)
-    coveragerc: str = Field(default=".coveragerc", max_length=512)
-    limit: int = Field(default=10, ge=1, le=100)
-    batch_size: int = Field(default=1, ge=1, le=10)
-    append: bool = Field(default=True)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
+# Operations/Poyraz/Coverage HTTP request models and route handlers live in
+# web.routes.operations; aliases are kept for existing direct unit-test imports.
+_OperationChecklistCreateRequest = operations_routes.OperationChecklistCreateRequest
+_ContentAssetCreateRequest = operations_routes.ContentAssetCreateRequest
+_CampaignCreateRequest = operations_routes.CampaignCreateRequest
+_PoyrazToolRunRequest = operations_routes.PoyrazToolRunRequest
+_LandingPageDraftRequest = operations_routes.LandingPageDraftRequest
+_CampaignCopyGenerateRequest = operations_routes.CampaignCopyGenerateRequest
+_ServiceOperationsPlanRequest = operations_routes.ServiceOperationsPlanRequest
+_CoverageAnalyzeRequest = operations_routes.CoverageAnalyzeRequest
+_CoverageGenerateRequest = operations_routes.CoverageGenerateRequest
+_CoverageBatchRequest = operations_routes.CoverageBatchRequest
 
 _teams_mgr_instance = None
 _poyraz_agent_instance: Any | None = None
@@ -3329,32 +3196,39 @@ async def _get_coverage_agent_instance() -> Any:
 
 
 def _decode_agent_tool_result(raw_result: Any) -> dict[str, Any]:
-    """Normalize agent tool output for API clients without hiding plain-text output."""
-    if isinstance(raw_result, dict):
-        return raw_result
-    text_result = str(raw_result or "")
-    try:
-        parsed = json.loads(text_result)
-    except json.JSONDecodeError:
-        return {"success": bool(text_result.strip()), "output": text_result}
-    if isinstance(parsed, dict):
-        return parsed
-    return {"success": True, "output": parsed}
+    return operations_routes.decode_agent_tool_result(raw_result)
 
 
-def _serialize_coverage_task(record: CoverageTaskRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "requester_role": str(getattr(record, "requester_role", "") or ""),
-        "command": str(getattr(record, "command", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "target_path": str(getattr(record, "target_path", "") or ""),
-        "suggested_test_path": str(getattr(record, "suggested_test_path", "") or ""),
-        "review_payload_json": str(getattr(record, "review_payload_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+def _serialize_coverage_task(record: Any) -> dict[str, Any]:
+    return operations_routes.serialize_coverage_task(record)
+
+
+def _build_operations_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        await_if_needed=_await_if_needed,
+        emit_control_room_event=_emit_control_room_event,
+        get_coverage_agent_instance=_get_coverage_agent_instance,
+        get_poyraz_agent_instance=_get_poyraz_agent_instance,
+        get_request_user=_get_request_user,
+        get_user_tenant=_get_user_tenant,
+        resolve_agent_instance=_resolve_agent_instance,
+    )
+
+
+api_operations_list_campaigns = operations_routes.api_operations_list_campaigns
+api_operations_create_campaign = operations_routes.api_operations_create_campaign
+api_operations_list_assets = operations_routes.api_operations_list_assets
+api_operations_add_asset = operations_routes.api_operations_add_asset
+api_operations_list_checklists = operations_routes.api_operations_list_checklists
+api_operations_add_checklist = operations_routes.api_operations_add_checklist
+api_operations_poyraz_run = operations_routes.api_operations_poyraz_run
+api_operations_generate_landing_page = operations_routes.api_operations_generate_landing_page
+api_operations_generate_campaign_copy = operations_routes.api_operations_generate_campaign_copy
+api_operations_plan_service = operations_routes.api_operations_plan_service
+api_qa_coverage_tasks = operations_routes.api_qa_coverage_tasks
+api_qa_coverage_analyze = operations_routes.api_qa_coverage_analyze
+api_qa_coverage_generate = operations_routes.api_qa_coverage_generate
+api_qa_coverage_batch = operations_routes.api_qa_coverage_batch
 
 
 def _get_teams_manager() -> Any:
@@ -3380,430 +3254,8 @@ async def api_teams_send(req: _TeamsSendRequest) -> Any:
     return JSONResponse({"success": True})
 
 
-@app.get(
-    "/api/operations/campaigns", summary="Operasyon Kampanyalarını Listele", tags=["Operations"]
-)
-async def api_operations_list_campaigns(
-    status: str = "",
-    limit: int = 50,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    campaigns = await agent.memory.db.list_marketing_campaigns(
-        tenant_id=_get_user_tenant(_user),
-        status=status,
-        limit=limit,
-    )
-    return JSONResponse(
-        {"success": True, "campaigns": [_serialize_campaign(item) for item in campaigns]}
-    )
-
-
-@app.post("/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"])
-async def api_operations_create_campaign(
-    req: _CampaignCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    db = agent.memory.db
-    campaign = await db.upsert_marketing_campaign(
-        tenant_id=_get_user_tenant(_user),
-        name=req.name,
-        channel=req.channel,
-        objective=req.objective,
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-        budget=float(req.budget or 0.0),
-        metadata=dict(req.metadata or {}),
-    )
-    assets = []
-    for asset_item in req.initial_assets:
-        assets.append(
-            await db.add_content_asset(
-                campaign_id=int(campaign.id),
-                tenant_id=_get_user_tenant(_user),
-                asset_type=asset_item.asset_type,
-                title=asset_item.title,
-                content=asset_item.content,
-                channel=asset_item.channel,
-                metadata=dict(asset_item.metadata or {}),
-            )
-        )
-    checklists = []
-    for checklist_item in req.initial_checklists:
-        checklists.append(
-            await db.add_operation_checklist(
-                campaign_id=int(campaign.id),
-                tenant_id=_get_user_tenant(_user),
-                title=checklist_item.title,
-                items=list(checklist_item.items or []),
-                status=checklist_item.status,
-                owner_user_id=str(getattr(_user, "id", "") or ""),
-            )
-        )
-    return JSONResponse(
-        {
-            "success": True,
-            "campaign": _serialize_campaign(campaign),
-            "assets": [_serialize_content_asset(item) for item in assets],
-            "checklists": [_serialize_operation_checklist(item) for item in checklists],
-        }
-    )
-
-
-@app.get(
-    "/api/operations/campaigns/{campaign_id}/assets",
-    summary="Kampanya İçerik Varlıklarını Listele",
-    tags=["Operations"],
-)
-async def api_operations_list_assets(
-    campaign_id: int,
-    limit: int = 100,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    assets = await agent.memory.db.list_content_assets(
-        tenant_id=_get_user_tenant(_user),
-        campaign_id=campaign_id,
-        limit=limit,
-    )
-    return JSONResponse(
-        {"success": True, "assets": [_serialize_content_asset(item) for item in assets]}
-    )
-
-
-@app.post(
-    "/api/operations/campaigns/{campaign_id}/assets",
-    summary="Kampanyaya İçerik Varlığı Ekle",
-    tags=["Operations"],
-)
-async def api_operations_add_asset(
-    campaign_id: int,
-    req: _ContentAssetCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    asset = await agent.memory.db.add_content_asset(
-        campaign_id=campaign_id,
-        tenant_id=_get_user_tenant(_user),
-        asset_type=req.asset_type,
-        title=req.title,
-        content=req.content,
-        channel=req.channel,
-        metadata=dict(req.metadata or {}),
-    )
-    return JSONResponse({"success": True, "asset": _serialize_content_asset(asset)})
-
-
-@app.get(
-    "/api/operations/campaigns/{campaign_id}/checklists",
-    summary="Kampanya Operasyon Checklistlerini Listele",
-    tags=["Operations"],
-)
-async def api_operations_list_checklists(
-    campaign_id: int,
-    limit: int = 100,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    checklists = await agent.memory.db.list_operation_checklists(
-        tenant_id=_get_user_tenant(_user),
-        campaign_id=campaign_id,
-        limit=limit,
-    )
-    return JSONResponse(
-        {
-            "success": True,
-            "checklists": [_serialize_operation_checklist(item) for item in checklists],
-        }
-    )
-
-
-@app.post(
-    "/api/operations/campaigns/{campaign_id}/checklists",
-    summary="Kampanyaya Operasyon Checklisti Ekle",
-    tags=["Operations"],
-)
-async def api_operations_add_checklist(
-    campaign_id: int,
-    req: _OperationChecklistCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    checklist = await agent.memory.db.add_operation_checklist(
-        campaign_id=campaign_id,
-        tenant_id=_get_user_tenant(_user),
-        title=req.title,
-        items=list(req.items or []),
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-    )
-    return JSONResponse({"success": True, "checklist": _serialize_operation_checklist(checklist)})
-
-
-@app.post(
-    "/api/operations/poyraz/run",
-    summary="Poyraz operasyon aracını çalıştır",
-    tags=["Operations"],
-)
-async def api_operations_poyraz_run(
-    req: _PoyrazToolRunRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    """React/REST istemcileri için PoyrazAgent araçlarına yapılandırılmış köprü."""
-    allowed_tools = {
-        "build_landing_page",
-        "generate_campaign_copy",
-        "create_marketing_campaign",
-        "store_content_asset",
-        "create_operation_checklist",
-        "plan_service_operations",
-        "ingest_video_insights",
-    }
-    tool_name = req.tool_name.strip()
-    if tool_name not in allowed_tools:
-        raise HTTPException(
-            status_code=400, detail="Bu Poyraz aracı REST operasyon köprüsünde desteklenmiyor."
-        )
-    payload = {**dict(req.payload or {}), "tenant_id": _get_user_tenant(_user)}
-    if "owner_user_id" not in payload:
-        payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="poyraz",
-        content=f"Poyraz aracı başlatıldı: {tool_name}",
-        payload={"tool": tool_name},
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content=f"Poyraz aracı tamamlandı: {tool_name}",
-        payload={"tool": tool_name, "success": bool(result.get("success", True))},
-    )
-    return JSONResponse(
-        {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/landing-page",
-    summary="Poyraz landing page taslağı üret",
-    tags=["Operations"],
-)
-async def api_operations_generate_landing_page(
-    req: _LandingPageDraftRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content="Landing page üretimi başlatıldı."
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"build_landing_page|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="poyraz", content="Landing page üretimi tamamlandı."
-    )
-    return JSONResponse(
-        {"success": True, "output": result.get("output", raw_result), "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/campaign-copy",
-    summary="Poyraz kampanya kopyası üret",
-    tags=["Operations"],
-)
-async def api_operations_generate_campaign_copy(
-    req: _CampaignCopyGenerateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="poyraz",
-        content="Kampanya kopyası üretimi başlatıldı.",
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"generate_campaign_copy|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="poyraz", content="Kampanya kopyası üretimi tamamlandı."
-    )
-    return JSONResponse(
-        {"success": True, "output": result.get("output", raw_result), "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/service-plan",
-    summary="Poyraz servis operasyon planı üret",
-    tags=["Operations"],
-)
-async def api_operations_plan_service(
-    req: _ServiceOperationsPlanRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content="Servis operasyon planı başlatıldı."
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"plan_service_operations|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content="Servis operasyon planı tamamlandı.",
-        payload={"success": bool(result.get("success", True))},
-    )
-    return JSONResponse({"success": bool(result.get("success", True)), "result": result})
-
-
-@app.get(
-    "/api/qa/coverage/tasks",
-    summary="Coverage görev geçmişini listele",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_tasks(
-    status: str = "",
-    limit: int = 50,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    tasks = await agent.memory.db.list_coverage_tasks(
-        tenant_id=_get_user_tenant(_user), status=status or None, limit=limit
-    )
-    return JSONResponse(
-        {"success": True, "tasks": [_serialize_coverage_task(item) for item in tasks]}
-    )
-
-
-@app.post(
-    "/api/qa/coverage/analyze",
-    summary="Coverage raporunu analiz et",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_analyze(
-    req: _CoverageAnalyzeRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="coverage", content="Coverage analizi başlatıldı."
-    )
-    raw_result = await coverage_agent._tool_analyze_coverage_report(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="coverage", content="Coverage analizi tamamlandı."
-    )
-    return JSONResponse({"success": True, "analysis": result, "tenant_id": _get_user_tenant(_user)})
-
-
-@app.post(
-    "/api/qa/coverage/generate",
-    summary="Coverage bulgusu için test adayı üret",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_generate(
-    req: _CoverageGenerateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage test adayı üretimi başlatıldı.",
-    )
-    raw_candidate = await coverage_agent._tool_generate_missing_tests(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    rejection_reason = coverage_agent._candidate_rejection_reason(
-        str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
-    )
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage test adayı kalite kontrolünden geçti."
-        if not rejection_reason
-        else "Coverage test adayı kalite kapısında reddedildi.",
-        payload={"quality_rejection_reason": rejection_reason},
-    )
-    return JSONResponse(
-        {
-            "success": not bool(rejection_reason),
-            "candidate": str(raw_candidate or ""),
-            "quality_rejection_reason": rejection_reason,
-            "tenant_id": _get_user_tenant(_user),
-        }
-    )
-
-
-@app.post(
-    "/api/qa/coverage/batch",
-    summary="CoverageAgent otonom batch iyileştirme çalıştır",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_batch(
-    req: _CoverageBatchRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage batch iyileştirme başlatıldı.",
-    )
-    result = await coverage_agent.run_autonomous_coverage_batch(
-        coverage_xml=req.coverage_xml,
-        coveragerc=req.coveragerc,
-        limit=req.limit,
-        batch_size=req.batch_size,
-        append=req.append,
-    )
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage batch iyileştirme tamamlandı.",
-        payload={"success": bool(result.get("success", False)), "status": result.get("status", "")},
-    )
-    return JSONResponse(
-        {
-            "success": bool(result.get("success", False)),
-            "result": result,
-            "tenant_id": _get_user_tenant(_user),
-        }
-    )
+operations_router = operations_routes.build_operations_router(_build_operations_dependencies)
+app.include_router(operations_router)
 
 
 # ─────────────────────────────────────────────
