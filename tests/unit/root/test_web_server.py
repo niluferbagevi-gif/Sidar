@@ -2838,7 +2838,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
 
     await web_server.websocket_chat(ws)
 
-    assert ws.accepted == ["token-1"]
+    assert ws.accepted == [None]
     assert any(event.get("type") == "room_error" for event in broadcast_events)
     assert any("Hız Sınırı" in payload.get("chunk", "") for payload in ws.sent)
 
@@ -4819,7 +4819,7 @@ async def test_websocket_chat_rejects_invalid_header_token(monkeypatch):
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
-    assert ws.accepted == "bad-token"
+    assert ws.accepted is None
     assert ws.closed == {"code": 1008, "reason": "Invalid or expired token"}
 
 

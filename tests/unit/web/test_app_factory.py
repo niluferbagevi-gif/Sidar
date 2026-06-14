@@ -65,3 +65,24 @@ def test_register_exception_handlers_is_noop_without_exception_handler() -> None
         pass
 
     register_exception_handlers(NoExceptionHandler())  # type: ignore[arg-type]
+
+
+def test_register_routers_includes_routes_and_collects_legacy_exports() -> None:
+    from fastapi import APIRouter
+
+    from web.app_factory import register_routers
+
+    app = create_app()
+    router = APIRouter()
+
+    @router.get("/factory-ping")
+    async def factory_ping() -> dict[str, bool]:
+        return {"ok": True}
+
+    router.legacy_exports = {"factory_ping": factory_ping}  # type: ignore[attr-defined]
+
+    exports = register_routers(app, [router])
+    response = TestClient(app).get("/factory-ping")
+
+    assert response.json() == {"ok": True}
+    assert exports == {"factory_ping": factory_ping}

@@ -34,25 +34,25 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, cast
 
 import anyio
-import jwt
 import uvicorn
 from fastapi import (
     Body,
     Depends,
     FastAPI,
     File,
-    Header,
     HTTPException,
     Request,
     UploadFile,
     WebSocket,
-    WebSocketDisconnect,
+)
+from fastapi import (
+    WebSocketDisconnect as _FastAPIWebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -73,12 +73,6 @@ from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from config import Config, get_config, register_config_reload_callback
 from core.ci_remediation import build_ci_failure_context
-from core.db import (
-    ContentAssetRecord,
-    CoverageTaskRecord,
-    MarketingCampaignRecord,
-    OperationChecklistRecord,
-)
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
 from core.llm_metrics import (
@@ -94,6 +88,12 @@ from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
+from web.routes import autonomy as autonomy_routes
+from web.routes import collaboration as collaboration_routes
+from web.routes import federation as federation_routes
+from web.routes import operations as operations_routes
+from web.routes import ws_chat as ws_chat_routes
+from web.routes import ws_voice as ws_voice_routes
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.health import build_health_router
@@ -104,30 +104,33 @@ from web.routes.project_ops import build_project_ops_router
 from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
+from web.security import (
+    SIDAR_WS_CHAT_PROTOCOL as _SIDAR_WS_CHAT_PROTOCOL,
+)
+from web.security import (
+    build_user_from_jwt_payload,
+    extract_ws_header_token,
+    get_jwt_secret,
+    get_request_user,
+    is_admin_user,
+    issue_auth_token,
+    parse_ws_subprotocol_values,
+    require_admin_user,
+    require_metrics_access,
+    resolve_user_from_token,
+)
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
-
-SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
-_WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
+WebSocketDisconnect = _FastAPIWebSocketDisconnect
+SIDAR_WS_CHAT_PROTOCOL = _SIDAR_WS_CHAT_PROTOCOL
 
 
 def _parse_ws_subprotocol_values(raw_header: str) -> list[str]:
-    return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
+    return parse_ws_subprotocol_values(raw_header)
 
 
 def _extract_ws_header_token(raw_header: str) -> tuple[str, str | None]:
-    """Extract a websocket auth token without echoing raw tokens as subprotocols."""
-
-    protocols = _parse_ws_subprotocol_values(raw_header)
-    if not protocols:
-        return "", None
-    accept_subprotocol = SIDAR_WS_CHAT_PROTOCOL if SIDAR_WS_CHAT_PROTOCOL in protocols else None
-    for candidate in protocols:
-        if candidate == SIDAR_WS_CHAT_PROTOCOL:
-            continue
-        if _WS_PROTOCOL_TOKEN_RE.fullmatch(candidate):
-            return candidate, accept_subprotocol
-    return "", accept_subprotocol
+    return extract_ws_header_token(raw_header)
 
 try:
     from agent.core.contracts import (
@@ -243,10 +246,9 @@ def _resolve_psutil_module() -> Any:
 #  HITL WebSocket Yayın Kümesi
 # ─────────────────────────────────────────────
 _hitl_ws_clients: set[WebSocket] = set()
-_COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
-class _CollaborationParticipant:
+class _CollaborationParticipant(collaboration_routes.CollaborationParticipant):
     def __init__(
         self,
         websocket: WebSocket,
@@ -258,152 +260,75 @@ class _CollaborationParticipant:
         write_scopes: list[str] | None = None,
         joined_at: str = "",
     ) -> None:
-        normalized_role = _normalize_collaboration_role(role)
-        normalized_joined_at = joined_at
-
-        # Eski test yardımcıları/çağrılar 5. pozisyonel argümanı joined_at olarak geçiyor.
-        # Bu geriye dönük uyumluluk kolu, "2026-..." benzeri ISO zaman damgalarını
-        # role yerine joined_at olarak yorumlar.
-        if (
-            not joined_at
-            and not can_write
-            and write_scopes is None
-            and isinstance(role, str)
-            and role
-            and ("T" in role or "+" in role or role.endswith("Z") or role.lower() == "now")
-        ):
-            normalized_role = "user"
-            normalized_joined_at = role
-
-        self.websocket = websocket
-        self.user_id = user_id
-        self.username = username
-        self.display_name = display_name
-        self.role = normalized_role
-        self.can_write = bool(can_write)
-        self.write_scopes = list(write_scopes or [])
-        self.joined_at = normalized_joined_at or _collaboration_now_iso()
+        super().__init__(
+            websocket,
+            user_id,
+            username,
+            display_name,
+            role,
+            can_write,
+            write_scopes,
+            joined_at,
+            now_iso=_collaboration_now_iso,
+        )
 
 
-class _CollaborationRoom:
-    def __init__(
-        self,
-        room_id: str,
-        participants: dict[int, _CollaborationParticipant] | None = None,
-        messages: list[dict[str, Any]] | None = None,
-        telemetry: list[dict[str, Any]] | None = None,
-        active_task: asyncio.Task[Any] | None = None,
-    ) -> None:
-        self.room_id = room_id
-        self.participants = participants if participants is not None else {}
-        self.messages = messages if messages is not None else []
-        self.telemetry = telemetry if telemetry is not None else []
-        self.active_task = active_task
-
-
+_CollaborationRoom = collaboration_routes.CollaborationRoom
 _collaboration_rooms: dict[str, _CollaborationRoom] = {}
-_COLLAB_WRITE_INTENT_RE = re.compile(
-    r"(?i)\b("
-    r"write|edit|patch|modify|delete|remove|rename|commit|push|create file|save file|"
-    r"yaz|düzenle|değiştir|sil|kaldır|yeniden adlandır|commit at|dosya oluştur|dosya kaydet"
-    r")\b"
-)
-_COLLAB_WRITE_ROLES = {"admin", "maintainer", "developer", "editor"}
 
 
 def _collaboration_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return collaboration_routes.collaboration_now_iso()
 
 
 def _normalize_room_id(room_id: str) -> str:
-    normalized = (room_id or "").strip() or "workspace:default"
-    if not _COLLAB_ROOM_RE.match(normalized):
-        raise HTTPException(status_code=400, detail="Geçersiz room_id")
-    return normalized
+    return collaboration_routes.normalize_room_id(room_id)
 
 
 def _socket_key(websocket: WebSocket) -> int:
-    return id(websocket)
+    return collaboration_routes.socket_key(websocket)
 
 
 def _serialize_collaboration_participant(participant: _CollaborationParticipant) -> dict[str, Any]:
-    return {
-        "user_id": participant.user_id,
-        "username": participant.username,
-        "display_name": participant.display_name,
-        "role": participant.role,
-        "can_write": "true" if participant.can_write else "false",
-        "write_scopes": list(participant.write_scopes),
-        "joined_at": participant.joined_at,
-    }
+    return collaboration_routes.serialize_collaboration_participant(participant)
 
 
 def _normalize_collaboration_role(role: str) -> str:
-    allowed_roles = {"admin", "maintainer", "developer", "editor", "user"}
-    normalized = (role or "").strip().lower()
-    return normalized if normalized in allowed_roles else "user"
+    return collaboration_routes.normalize_collaboration_role(role)
 
 
 def _collaboration_write_scopes_for_role(role: str, room_id: str) -> list[str]:
-    normalized_role = _normalize_collaboration_role(role)
-    base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
-    if normalized_role == "admin":
-        return [str(base_dir)]
-    if normalized_role in _COLLAB_WRITE_ROLES:
-        return [str(base_dir / "workspaces" / room_id.replace(":", "/"))]
-    return []
+    return collaboration_routes.collaboration_write_scopes_for_role(
+        role, room_id, base_dir=Path(getattr(cfg, "BASE_DIR", "."))
+    )
 
 
 def _collaboration_command_requires_write(command: str) -> bool:
-    return bool(_COLLAB_WRITE_INTENT_RE.search(str(command or "")))
+    return collaboration_routes.collaboration_command_requires_write(command)
 
 
 def _mask_collaboration_text(text: str) -> str:
-    try:
-        dlp_module = importlib.import_module("core.dlp")
-        mask_pii = getattr(dlp_module, "mask_pii", None)
-        if callable(mask_pii):
-            return str(mask_pii(str(text or "")))
-    except Exception as exc:
-        logger.debug("DLP maskeleme uygulanamadı, ham metin döndürüldü: %s", exc)
-    return str(text or "")
+    return collaboration_routes.mask_collaboration_text(
+        text, import_module=importlib.import_module, logger_obj=logger
+    )
 
 
 def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
-    return {
-        "room_id": room.room_id,
-        "participants": [
-            _serialize_collaboration_participant(item)
-            for item in sorted(
-                room.participants.values(), key=lambda value: value.display_name.lower()
-            )
-        ],
-        "messages": list(room.messages[-120:]),
-        "telemetry": list(room.telemetry[-120:]),
-    }
+    return collaboration_routes.serialize_collaboration_room(room)
 
 
 def _append_room_message(
     room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
 ) -> None:
-    room.messages.append(payload)
-    if len(room.messages) > limit:
-        room.messages = room.messages[-limit:]
+    collaboration_routes.append_room_message(room, payload, limit=limit)
 
 
 def _append_room_telemetry(
     room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
 ) -> None:
-    safe_payload = dict(payload)
-    if "content" in safe_payload:
-        safe_payload["content"] = _mask_collaboration_text(
-            str(safe_payload.get("content", "") or "")
-        )
-    if "error" in safe_payload:
-        safe_payload["error"] = _mask_collaboration_text(str(safe_payload.get("error", "") or ""))
-    room.telemetry.append(safe_payload)
-    if len(room.telemetry) > limit:
-        room.telemetry = room.telemetry[-limit:]
+    collaboration_routes.append_room_telemetry(
+        room, payload, mask_text=_mask_collaboration_text, limit=limit
+    )
 
 
 def _build_room_message(
@@ -416,28 +341,21 @@ def _build_room_message(
     kind: str = "message",
     request_id: str = "",
 ) -> dict[str, Any]:
-    return {
-        "id": secrets.token_hex(8),
-        "room_id": room_id,
-        "role": role,
-        "kind": kind,
-        "content": _mask_collaboration_text(content),
-        "author_name": author_name,
-        "author_id": author_id,
-        "request_id": request_id,
-        "ts": _collaboration_now_iso(),
-    }
+    return collaboration_routes.build_room_message(
+        room_id=room_id,
+        role=role,
+        content=content,
+        author_name=author_name,
+        author_id=author_id,
+        kind=kind,
+        request_id=request_id,
+        mask_text=_mask_collaboration_text,
+        now_iso=_collaboration_now_iso,
+    )
 
 
 async def _broadcast_room_payload(room: _CollaborationRoom, payload: dict[str, Any]) -> None:
-    stale: list[int] = []
-    for key, participant in list(room.participants.items()):
-        try:
-            await participant.websocket.send_json(payload)
-        except Exception:
-            stale.append(key)
-    for key in stale:
-        room.participants.pop(key, None)
+    await collaboration_routes.broadcast_room_payload(room, payload)
 
 
 async def _emit_control_room_event(
@@ -448,7 +366,6 @@ async def _emit_control_room_event(
     content: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    """REST-triggered operation/QA events are mirrored into collaboration rooms."""
     normalized = _normalize_room_id(room_id or "ops:control")
     room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
     event = {
@@ -473,101 +390,38 @@ async def _join_collaboration_room(
     display_name: str,
     user_role: str = "user",
 ) -> _CollaborationRoom:
-    normalized = _normalize_room_id(room_id)
-    current_room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
-    if current_room_id and current_room_id != normalized:
-        await _leave_collaboration_room(websocket)
-
-    room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
-    write_scopes = _collaboration_write_scopes_for_role(user_role, normalized)
-    room.participants[_socket_key(websocket)] = _CollaborationParticipant(
-        websocket=websocket,
+    return await collaboration_routes.join_collaboration_room(
+        _collaboration_rooms,
+        websocket,
+        room_id=room_id,
         user_id=user_id,
         username=username,
-        display_name=(display_name or username or user_id or "Anonim").strip()[:80],
-        role=_normalize_collaboration_role(user_role),
-        can_write=bool(write_scopes),
-        write_scopes=write_scopes,
-        joined_at=_collaboration_now_iso(),
+        display_name=display_name,
+        user_role=user_role,
+        base_dir=Path(getattr(cfg, "BASE_DIR", ".")),
+        socket_key_func=_socket_key,
+        leave_room=_leave_collaboration_room,
+        now_iso=_collaboration_now_iso,
     )
-    websocket._sidar_room_id = normalized  # type: ignore[attr-defined, unused-ignore]
-    await websocket.send_json({"type": "room_state", **_serialize_collaboration_room(room)})
-    await _broadcast_room_payload(
-        room,
-        {
-            "type": "presence",
-            "room_id": normalized,
-            "participants": _serialize_collaboration_room(room)["participants"],
-        },
-    )
-    return room
 
 
 async def _leave_collaboration_room(websocket: WebSocket) -> None:
-    room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
-    if not room_id:
-        return
-    room = _collaboration_rooms.get(room_id)
-    websocket._sidar_room_id = ""  # type: ignore[attr-defined, unused-ignore]
-    if room is None:
-        return
-    room.participants.pop(_socket_key(websocket), None)
-    if room.participants:
-        await _broadcast_room_payload(
-            room,
-            {
-                "type": "presence",
-                "room_id": room.room_id,
-                "participants": _serialize_collaboration_room(room)["participants"],
-            },
-        )
-        return
-    if room.active_task and not room.active_task.done():
-        room.active_task.cancel()
-    _collaboration_rooms.pop(room_id, None)
+    await collaboration_routes.leave_collaboration_room(
+        _collaboration_rooms, websocket, socket_key_func=_socket_key
+    )
 
 
 def _is_sidar_mention(message: str) -> bool:
-    return bool(re.search(r"(^|\s)@sidar\b", message, flags=re.IGNORECASE))
+    return collaboration_routes.is_sidar_mention(message)
 
 
 def _strip_sidar_mention(message: str) -> str:
-    stripped = re.sub(r"(^|\s)@sidar\b", " ", message, count=1, flags=re.IGNORECASE)
-    return " ".join(stripped.split()).strip()
+    return collaboration_routes.strip_sidar_mention(message)
 
 
 def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, command: str) -> str:
-    transcript: list[str] = []
-    for item in room.messages[-10:]:
-        transcript.append(
-            f"[{item.get('role', 'user')}] {item.get('author_name', 'Anonim')}: {str(item.get('content', '')).strip()[:240]}"
-        )
-    recent_context = "\n".join(transcript) if transcript else "(henüz ortak geçmiş yok)"
-    participants = ", ".join(
-        f"{participant.display_name}<{participant.role}>"
-        for participant in sorted(
-            room.participants.values(), key=lambda value: value.display_name.lower()
-        )
-    )
-    actor = next(
-        (item for item in room.participants.values() if item.display_name == actor_name),
-        None,
-    )
-    actor_role = actor.role if actor else "user"
-    actor_scopes = ", ".join(actor.write_scopes) if actor and actor.write_scopes else "read-only"
-    return (
-        "[COLLABORATION WORKSPACE]\n"
-        f"room_id={room.room_id}\n"
-        f"participants={participants or 'unknown'}\n"
-        f"requesting_user={actor_name}\n"
-        f"requesting_role={actor_role}\n"
-        f"requesting_write_scopes={actor_scopes}\n"
-        "recent_transcript=\n"
-        f"{recent_context}\n\n"
-        "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor. "
-        "Yanıtında ekip bağlamını koru ve gerekiyorsa kimin ne istediğini netleştir. "
-        "Yazma işlemlerinde sadece requesting_write_scopes kapsamındaki dizinleri kullan.\n\n"
-        f"Current command:\n{command}"
+    return collaboration_routes.build_collaboration_prompt(
+        room, actor_name=actor_name, command=command
     )
 
 
@@ -1508,59 +1362,25 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def _build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
-    user_id = str(payload.get("sub", "") or "").strip()
-    username = str(payload.get("username", "") or "").strip()
-    role = str(payload.get("role", "user") or "user").strip() or "user"
-    tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
-    if not user_id or not username:
-        return None
-    return SimpleNamespace(id=user_id, username=username, role=role, tenant_id=tenant_id)
+    return build_user_from_jwt_payload(payload)
 
 
 def _get_jwt_secret() -> str:
-    """Config'ten JWT secret'ı oku. Ayarlanmamışsa CRITICAL uyarısı ver."""
-    key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "")
-    if not key:
-        logger.critical(
-            "JWT_SECRET_KEY yapılandırılmamış! Geliştirme ortamında geçici bir "
-            "anahtar kullanılıyor. Üretim ortamında .env dosyasına güçlü bir "
-            "JWT_SECRET_KEY değeri eklemelisiniz."
-        )
-        key = "sidar-dev-secret"
-    return key
+    return get_jwt_secret(cfg, logger)
 
 
 async def _resolve_user_from_token(_agent: SidarAgent | None, token: str) -> Any:
-    secret_key = _get_jwt_secret()
-    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
-    try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return _build_user_from_jwt_payload(payload)
-    except jwt.PyJWTError:
-        pass
-    # Fallback: DB token lookup (opak / oturum tabanlı token desteği)
-    if _agent and hasattr(_agent, "memory") and hasattr(_agent.memory, "db"):
-        db_user = await _agent.memory.db.get_user_by_token(token)
-        if db_user:
-            return db_user
-    return None
+    return await resolve_user_from_token(_agent, token, config=cfg, logger_obj=logger)
 
 
 async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
-    del agent  # Stateless JWT üretiminde DB bağımlılığı yok.
-    secret_key = _get_jwt_secret()
-    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
-    ttl_days = max(1, int(getattr(cfg, "JWT_TTL_DAYS", 7) or 7))
-    now = datetime.now(UTC)
-    payload = {
-        "sub": str(user.id),
-        "username": str(user.username),
-        "role": str(getattr(user, "role", "user") or "user"),
-        "tenant_id": str(getattr(user, "tenant_id", "default") or "default"),
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(days=ttl_days)).timestamp()),
-    }
-    return str(jwt.encode(payload, secret_key, algorithm=algorithm))
+    return await issue_auth_token(agent, user, config=cfg, logger_obj=logger)
+
+
+async def _await_if_needed(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 _register_exception_handlers = _app_factory.register_exception_handlers
@@ -1660,36 +1480,19 @@ _setup_tracing()
 
 
 def _get_request_user(request: Request) -> Any:
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Yetkisiz erişim")
-    return user
+    return get_request_user(request)
 
 
 def _is_admin_user(user: Any) -> bool:
-    role = str(getattr(user, "role", "") or "").strip().lower()
-    username = str(getattr(user, "username", "") or "").strip()
-    return role == "admin" or username == "default_admin"
+    return is_admin_user(user)
 
 
 def _require_admin_user(user: Any = Depends(_get_request_user)) -> Any:
-    if not _is_admin_user(user):
-        raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
-    return user
+    return require_admin_user(user)
 
 
 def _require_metrics_access(request: Request, user: Any = Depends(_get_request_user)) -> Any:
-    """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
-    metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
-    if metrics_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
-            return user
-    if _is_admin_user(user):
-        return user
-    raise HTTPException(
-        status_code=403, detail="Metrics erişimi için admin yetkisi veya METRICS_TOKEN gerekiyor"
-    )
+    return require_metrics_access(request, user, config=cfg)
 
 
 def _get_user_tenant(user: Any) -> str:
@@ -1868,51 +1671,9 @@ def _serialize_swarm_result(record: Any) -> dict[str, Any]:
     }
 
 
-def _serialize_campaign(record: MarketingCampaignRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "name": str(getattr(record, "name", "") or ""),
-        "channel": str(getattr(record, "channel", "") or ""),
-        "objective": str(getattr(record, "objective", "") or ""),
-        "status": str(getattr(record, "status", "draft") or "draft"),
-        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
-        "budget": float(getattr(record, "budget", 0.0) or 0.0),
-        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
-
-def _serialize_content_asset(record: ContentAssetRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "campaign_id": int(getattr(record, "campaign_id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "asset_type": str(getattr(record, "asset_type", "") or ""),
-        "title": str(getattr(record, "title", "") or ""),
-        "content": str(getattr(record, "content", "") or ""),
-        "channel": str(getattr(record, "channel", "") or ""),
-        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
-
-def _serialize_operation_checklist(record: OperationChecklistRecord) -> dict[str, Any]:
-    campaign_id = getattr(record, "campaign_id", None)
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "campaign_id": None if campaign_id is None else int(campaign_id),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "title": str(getattr(record, "title", "") or ""),
-        "items_json": str(getattr(record, "items_json", "[]") or "[]"),
-        "status": str(getattr(record, "status", "pending") or "pending"),
-        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
-
+_serialize_campaign = operations_routes.serialize_campaign
+_serialize_content_asset = operations_routes.serialize_content_asset
+_serialize_operation_checklist = operations_routes.serialize_operation_checklist
 
 _PLUGIN_ROLE_RE = re.compile(r"^[a-zA-Z0-9_-]{2,64}$")
 
@@ -2699,899 +2460,68 @@ async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
         await websocket.close(code=1008, reason=reason)
 
 
+def _build_ws_chat_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        anyio_closed=_ANYIO_CLOSED,
+        append_room_message=_append_room_message,
+        append_room_telemetry=_append_room_telemetry,
+        await_if_needed=_await_if_needed,
+        broadcast_room_payload=_broadcast_room_payload,
+        build_collaboration_prompt=_build_collaboration_prompt,
+        build_room_message=_build_room_message,
+        collaboration_command_requires_write=_collaboration_command_requires_write,
+        collaboration_now_iso=_collaboration_now_iso,
+        collaboration_rooms=_collaboration_rooms,
+        extract_ws_header_token=_extract_ws_header_token,
+        get_agent_event_bus=get_agent_event_bus,
+        is_sidar_mention=_is_sidar_mention,
+        iter_stream_chunks=_iter_stream_chunks,
+        join_collaboration_room=_join_collaboration_room,
+        leave_collaboration_room=_leave_collaboration_room,
+        llm_api_error_cls=LLMAPIError,
+        logger=logger,
+        mask_collaboration_text=_mask_collaboration_text,
+        normalize_collaboration_role=_normalize_collaboration_role,
+        rate_limit=_RATE_LIMIT,
+        rate_window=_RATE_WINDOW,
+        redis_is_rate_limited=_redis_is_rate_limited,
+        reset_current_metrics_user_id=reset_current_metrics_user_id,
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_user_from_token=_resolve_user_from_token,
+        set_current_metrics_user_id=set_current_metrics_user_id,
+        socket_key=_socket_key,
+        strip_sidar_mention=_strip_sidar_mention,
+        ws_auth_message_timeout=float(getattr(cfg, "WS_AUTH_MESSAGE_TIMEOUT_SECONDS", 5.0) or 5.0),
+        ws_close_policy_violation=_ws_close_policy_violation,
+    )
+
+
 async def _ws_stream_agent_text_response(
     websocket: WebSocket, agent: SidarAgent, prompt: str
 ) -> None:
-    """Agent text çıktısını voice/chat benzeri websocket istemcisine aktar."""
-    tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
-    thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
-    voice_pipeline = getattr(websocket, "_sidar_voice_pipeline", None)
-    duplex_state = getattr(websocket, "_sidar_voice_duplex_state", None)
-    pending_voice_text = ""
-
-    async def _emit_voice_segments(*, flush: bool = False) -> None:
-        nonlocal pending_voice_text
-        if not voice_pipeline or not getattr(voice_pipeline, "enabled", False):
-            return
-        if hasattr(voice_pipeline, "buffer_assistant_text"):
-            _turn_id, packets = voice_pipeline.buffer_assistant_text(
-                duplex_state,
-                pending_voice_text,
-                flush=flush,
-            )
-            pending_voice_text = ""
-        else:
-            ready_segments, remainder = voice_pipeline.extract_ready_segments(
-                pending_voice_text, flush=flush
-            )
-            pending_voice_text = remainder
-            packets = [
-                {"assistant_turn_id": 0, "audio_sequence": idx, "text": segment}
-                for idx, segment in enumerate(ready_segments, start=1)
-            ]
-        for packet in packets:
-            segment = str(packet.get("text", "") or "").strip()
-            if not segment:
-                continue
-            tts_result = await voice_pipeline.synthesize_text(segment)
-            if not tts_result.get("success"):
-                continue
-            audio_bytes = bytes(tts_result.get("audio_bytes") or b"")
-            if not audio_bytes:
-                continue
-            await websocket.send_json(
-                {
-                    "audio_chunk": base64.b64encode(audio_bytes).decode("ascii"),
-                    "audio_text": segment,
-                    "audio_mime_type": tts_result.get("mime_type", "audio/wav"),
-                    "audio_provider": tts_result.get("provider", ""),
-                    "audio_voice": tts_result.get("voice", ""),
-                    "assistant_turn_id": int(packet.get("assistant_turn_id", 0) or 0),
-                    "audio_sequence": int(packet.get("audio_sequence", 0) or 0),
-                }
-            )
-
-    async for chunk in agent.respond(prompt):
-        m_tool = tool_sentinel.match(chunk)
-        m_thought = thought_sentinel.match(chunk)
-        if m_tool:
-            await websocket.send_json({"tool_call": m_tool.group(1)})
-        elif m_thought:
-            await websocket.send_json({"thought": m_thought.group(1)})
-        else:
-            await websocket.send_json({"chunk": chunk})
-            if voice_pipeline and getattr(voice_pipeline, "enabled", False):
-                pending_voice_text += chunk
-                await _emit_voice_segments()
-
-    await _emit_voice_segments(flush=True)
+    await ws_chat_routes.ws_stream_agent_text_response(websocket, agent, prompt)
 
 
-@app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket) -> Any:
-    """
-    Çift yönlü WebSocket chat arayüzü.
-    Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
-    ve anlık iptal (cancel) isteklerini yönetir.
-
-    Kimlik Doğrulama (tercih sırası):
-    1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
-    2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
-    """
-    # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
-    # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
-    # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
-    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token, accept_subprotocol = _extract_ws_header_token(proto_header)
-
-    if accept_subprotocol:
-        await websocket.accept(subprotocol=accept_subprotocol)
-    else:
-        await websocket.accept()
-
-    agent = await _resolve_agent_instance()
-    active_task: asyncio.Task[Any] | None = None
-    ws_user_id = ""
-    ws_username = ""
-    ws_user_role = "user"
-    ws_authenticated = False
-    joined_room_id = ""
-
-    # Başlık token'ı varsa bağlantı açılır açılmaz doğrula
-    if header_token:
-        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await _ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
-        ws_user_id = ws_user.id
-        ws_username = ws_user.username
-        ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
-        ws_authenticated = True
-        await agent.memory.set_active_user(ws_user_id, ws_username)
-        with contextlib.suppress(Exception):
-            await websocket.send_json({"auth_ok": True})
-
-    async def generate_response(msg: str) -> None:
-        sub_id = None
-        status_task = None
-        stop_status = asyncio.Event()
-        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
-        try:
-            if len(agent.memory) == 0:
-                title = msg[:30] + "..." if len(msg) > 30 else msg
-                if hasattr(agent.memory, "aupdate_title"):
-                    await _await_if_needed(agent.memory.aupdate_title(title))
-                else:
-                    await _await_if_needed(agent.memory.update_title(title))
-
-            event_bus = get_agent_event_bus()
-            sub_id, status_queue = event_bus.subscribe()
-
-            async def _status_pump() -> None:
-                while not stop_status.is_set():
-                    try:
-                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except TimeoutError:
-                        continue
-                    await websocket.send_json({"status": f"{evt.source}: {evt.message}"})
-
-            status_task = asyncio.create_task(_status_pump())
-
-            _TOOL_SENTINEL = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
-            _THOUGHT_SENTINEL = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
-
-            async for chunk in agent.respond(msg):
-                m_tool = _TOOL_SENTINEL.match(chunk)
-                m_thought = _THOUGHT_SENTINEL.match(chunk)
-
-                if m_tool:
-                    await websocket.send_json({"tool_call": m_tool.group(1)})
-                elif m_thought:
-                    await websocket.send_json({"thought": m_thought.group(1)})
-                else:
-                    await websocket.send_json({"chunk": chunk})
-
-            await websocket.send_json({"done": True})
-        except asyncio.CancelledError:
-            pass
-        except LLMAPIError as exc:
-            logger.warning(
-                "LLM sağlayıcı hatası: provider=%s status=%s retryable=%s",
-                exc.provider,
-                exc.status_code,
-                exc.retryable,
-            )
-            try:
-                await websocket.send_json(
-                    {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
-                        "done": True,
-                    }
-                )
-            except Exception as exc:
-                logger.debug("WebSocket LLM hata mesajı gönderilemedi: %s", exc)
-        except Exception as exc:
-            logger.exception("Agent respond hatası: %s", exc)
-            try:
-                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-            except Exception as exc:
-                logger.debug("WebSocket sistem hata mesajı gönderilemedi: %s", exc)
-        finally:
-            stop_status.set()
-            if status_task is not None:
-                status_task.cancel()
-                with contextlib.suppress(Exception):
-                    await status_task
-            if sub_id is not None:
-                get_agent_event_bus().unsubscribe(sub_id)
-            if ctx_token is not None:
-                reset_current_metrics_user_id(ctx_token)
-
-    async def generate_room_response(
-        room: _CollaborationRoom, *, actor_name: str, msg: str
-    ) -> None:
-        sub_id = None
-        status_task = None
-        stop_status = asyncio.Event()
-        request_id = secrets.token_hex(6)
-        collaboration_prompt = _build_collaboration_prompt(room, actor_name=actor_name, command=msg)
-        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
-        try:
-            event_bus = get_agent_event_bus()
-            sub_id, status_queue = event_bus.subscribe()
-
-            async def _status_pump() -> None:
-                while not stop_status.is_set():
-                    try:
-                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
-                    except TimeoutError:
-                        continue
-                    payload = {
-                        "id": secrets.token_hex(8),
-                        "room_id": room.room_id,
-                        "kind": "status",
-                        "source": evt.source,
-                        "content": _mask_collaboration_text(evt.message),
-                        "ts": _collaboration_now_iso(),
-                    }
-                    _append_room_telemetry(room, payload)
-                    await _broadcast_room_payload(
-                        room, {"type": "collaboration_event", "event": payload}
-                    )
-
-            status_task = asyncio.create_task(_status_pump())
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "assistant_stream_start",
-                    "room_id": room.room_id,
-                    "request_id": request_id,
-                    "author_name": "SİDAR",
-                },
-            )
-            result = await agent._try_multi_agent(collaboration_prompt)
-            for chunk in _iter_stream_chunks(result):
-                await _broadcast_room_payload(
-                    room,
-                    {
-                        "type": "assistant_chunk",
-                        "room_id": room.room_id,
-                        "request_id": request_id,
-                        "chunk": _mask_collaboration_text(chunk),
-                        "author_name": "SİDAR",
-                    },
-                )
-
-            assistant_message = _build_room_message(
-                room_id=room.room_id,
-                role="assistant",
-                content=result,
-                author_name="SİDAR",
-                author_id="sidar",
-                kind="assistant_reply",
-                request_id=request_id,
-            )
-            _append_room_message(room, assistant_message)
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "assistant_done",
-                    "room_id": room.room_id,
-                    "request_id": request_id,
-                    "message": assistant_message,
-                },
-            )
-        except asyncio.CancelledError:
-            with contextlib.suppress(Exception):
-                await _broadcast_room_payload(
-                    room,
-                    {
-                        "type": "assistant_done",
-                        "room_id": room.room_id,
-                        "request_id": request_id,
-                        "cancelled": True,
-                        "message": None,
-                    },
-                )
-            raise
-        except Exception as exc:
-            logger.exception("Collaborative agent response error: %s", exc)
-            await _broadcast_room_payload(
-                room,
-                {
-                    "type": "room_error",
-                    "room_id": room.room_id,
-                    "error": _mask_collaboration_text(str(exc)),
-                    "request_id": request_id,
-                },
-            )
-        finally:
-            stop_status.set()
-            if status_task is not None:
-                status_task.cancel()
-                with contextlib.suppress(Exception):
-                    await status_task
-            if sub_id is not None:
-                get_agent_event_bus().unsubscribe(sub_id)
-            if room.active_task is not None and room.active_task.done():
-                room.active_task = None
-            if ctx_token is not None:
-                reset_current_metrics_user_id(ctx_token)
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                payload = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-
-            action = payload.get("action")
-            user_message = payload.get("message", "").strip()
-
-            if not ws_authenticated:
-                if action != "auth":
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                auth_token = (payload.get("token", "") or "").strip()
-                if not auth_token:
-                    await _ws_close_policy_violation(websocket, "Authentication token missing")
-                    return
-                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
-                if not ws_user:
-                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
-                    return
-                ws_user_id = ws_user.id
-                ws_username = ws_user.username
-                ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
-                ws_authenticated = True
-                await agent.memory.set_active_user(ws_user_id, ws_username)
-                with contextlib.suppress(Exception):
-                    await websocket.send_json({"auth_ok": True})
-                continue
-
-            if action == "join_room":
-                target_room_id = str(payload.get("room_id", "") or "").strip()
-                display_name = str(
-                    payload.get("display_name", "") or ws_username or ws_user_id
-                ).strip()
-                room = await _join_collaboration_room(
-                    websocket,
-                    room_id=target_room_id,
-                    user_id=ws_user_id,
-                    username=ws_username,
-                    display_name=display_name,
-                    user_role=ws_user_role,
-                )
-                joined_room_id = room.room_id
-                continue
-
-            if action == "cancel" and active_task and not active_task.done():
-                active_task.cancel()
-                await websocket.send_json(
-                    {
-                        "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
-                        "done": True,
-                    }
-                )
-                continue
-
-            if action == "cancel" and joined_room_id:
-                existing_room = _collaboration_rooms.get(joined_room_id)
-                if (
-                    existing_room
-                    and existing_room.active_task
-                    and not existing_room.active_task.done()
-                ):
-                    existing_room.active_task.cancel()
-                continue
-
-            if not user_message:
-                continue
-
-            client_ip = websocket.client.host if websocket.client else "unknown"
-            if await _redis_is_rate_limited("chat_ws", client_ip, _RATE_LIMIT, _RATE_WINDOW):
-                await websocket.send_json(
-                    {
-                        "chunk": "[Hız Sınırı] Çok fazla istek. Lütfen bir dakika bekleyin.",
-                        "done": True,
-                    }
-                )
-                continue
-
-            if active_task and not active_task.done():
-                active_task.cancel()
-
-            if joined_room_id:
-                room_entry = _collaboration_rooms.get(joined_room_id)
-                if room_entry is None:
-                    room_entry = await _join_collaboration_room(
-                        websocket,
-                        room_id=joined_room_id,
-                        user_id=ws_user_id,
-                        username=ws_username,
-                        display_name=ws_username or ws_user_id,
-                        user_role=ws_user_role,
-                    )
-                room = room_entry
-                display_name = (
-                    str(payload.get("display_name", "") or ws_username or ws_user_id).strip()
-                    or ws_username
-                    or ws_user_id
-                    or "Anonim"
-                )
-                user_message_payload = _build_room_message(
-                    room_id=room.room_id,
-                    role="user",
-                    content=user_message,
-                    author_name=display_name,
-                    author_id=ws_user_id or display_name,
-                    kind="sidar_command"
-                    if _is_sidar_mention(user_message)
-                    else "collaboration_note",
-                )
-                _append_room_message(room, user_message_payload)
-                await _broadcast_room_payload(
-                    room, {"type": "room_message", "message": user_message_payload}
-                )
-
-                if _is_sidar_mention(user_message):
-                    command = _strip_sidar_mention(user_message)
-                    if not command:
-                        await _broadcast_room_payload(
-                            room,
-                            {
-                                "type": "room_error",
-                                "room_id": room.room_id,
-                                "error": "@Sidar etiketi sonrası komut bulunamadı.",
-                            },
-                        )
-                        continue
-                    participant = room.participants.get(_socket_key(websocket))
-                    if _collaboration_command_requires_write(command) and not (
-                        participant and participant.can_write
-                    ):
-                        _append_room_telemetry(
-                            room,
-                            {
-                                "id": secrets.token_hex(8),
-                                "room_id": room.room_id,
-                                "kind": "rbac_denied",
-                                "source": "collaboration_rbac",
-                                "content": command,
-                                "ts": _collaboration_now_iso(),
-                            },
-                        )
-                        await _broadcast_room_payload(
-                            room,
-                            {
-                                "type": "room_error",
-                                "room_id": room.room_id,
-                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
-                            },
-                        )
-                        continue
-                    if room.active_task and not room.active_task.done():
-                        room.active_task.cancel()
-                    room.active_task = asyncio.create_task(
-                        generate_room_response(room, actor_name=display_name, msg=command)
-                    )
-                    await asyncio.sleep(0)
-                continue
-
-            active_task = asyncio.create_task(generate_response(user_message))
-
-    except WebSocketDisconnect:
-        logger.info("İstemci WebSocket bağlantısını kesti.")
-        if active_task and not active_task.done():
-            active_task.cancel()
-        await _leave_collaboration_room(websocket)
-    except Exception as _ws_exc:
-        # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
-        # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
-        if _ANYIO_CLOSED is not None and isinstance(_ws_exc, _ANYIO_CLOSED):
-            logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_task and not active_task.done():
-                active_task.cancel()
-            await _leave_collaboration_room(websocket)
-        else:
-            logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
-            with contextlib.suppress(Exception):
-                await websocket.send_json(
-                    {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True}
-                )
-            with contextlib.suppress(Exception):
-                await _leave_collaboration_room(websocket)
+    return await ws_chat_routes.websocket_chat(websocket, _build_ws_chat_dependencies())
 
 
-@app.websocket("/ws/voice")
+def _build_ws_voice_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        anyio_closed=_ANYIO_CLOSED,
+        await_if_needed=_await_if_needed,
+        cfg=cfg,
+        llm_api_error_cls=LLMAPIError,
+        logger=logger,
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_user_from_token=_resolve_user_from_token,
+        ws_close_policy_violation=_ws_close_policy_violation,
+        ws_stream_agent_text_response=_ws_stream_agent_text_response,
+    )
+
+
 async def websocket_voice(websocket: WebSocket) -> Any:
-    """
-    Gerçek zamanlı ses oturumu için websocket.
-
-    MVP davranışı:
-    - İstemci binary ses chunk'larını gönderir.
-    - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
-    - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
-    """
-    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token = proto_header or ""
-
-    if header_token:
-        await websocket.accept(subprotocol=header_token)
-    else:
-        await websocket.accept()
-
-    try:
-        from core.multimodal import MultimodalPipeline
-    except ImportError:
-        await websocket.send_json({"error": "core.multimodal modülü yüklenemedi.", "done": True})
-        await websocket.close(code=1011, reason="multimodal unavailable")
-        return
-
-    try:
-        from core.voice import VoicePipeline
-    except ImportError:
-        VoicePipeline = None  # type: ignore[misc, assignment]
-
-    agent = await _resolve_agent_instance()
-    pipeline = MultimodalPipeline(agent.llm, cfg)
-    voice_pipeline = None
-    voice_init_error = ""
-    if VoicePipeline is not None:
-        try:
-            voice_pipeline = VoicePipeline(cfg)
-        except Exception as exc:
-            voice_init_error = f"Voice Disabled: {exc.__class__.__name__}"
-            logger.warning("Voice pipeline başlatılamadı, voice devre dışı: %s", exc)
-    max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
-
-    audio_buffer = bytearray()
-    ws_user_id = ""
-    ws_username = ""
-    ws_authenticated = False
-    session_mime_type = "audio/webm"
-    session_language: str | None = None
-    session_prompt = ""
-    voice_sequence = 0
-    active_response_task: asyncio.Task[Any] | None = None
-    websocket._sidar_voice_pipeline = voice_pipeline  # type: ignore[attr-defined, unused-ignore]
-    duplex_state = (
-        voice_pipeline.create_duplex_state()
-        if voice_pipeline is not None and hasattr(voice_pipeline, "create_duplex_state")
-        else None
-    )
-    websocket._sidar_voice_duplex_state = duplex_state  # type: ignore[attr-defined, unused-ignore]
-
-    async def _emit_voice_state(event: str) -> None:
-        nonlocal voice_sequence
-        voice_sequence += 1
-        if voice_pipeline is None or not hasattr(voice_pipeline, "build_voice_state_payload"):
-            await websocket.send_json(
-                {
-                    "voice_state": str(event or "").strip().lower() or "unknown",
-                    "buffered_bytes": len(audio_buffer),
-                    "sequence": voice_sequence,
-                    "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "auto_commit_ready": False,
-                    "duplex_enabled": bool(getattr(voice_pipeline, "duplex_enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "interrupt_ready": False,
-                    "tts_enabled": bool(getattr(voice_pipeline, "enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "voice_disabled_reason": voice_init_error,
-                    "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
-                    "output_buffer_chars": len(
-                        getattr(duplex_state, "output_text_buffer", "") or ""
-                    ),
-                    "last_interrupt_reason": str(
-                        getattr(duplex_state, "last_interrupt_reason", "") or ""
-                    ),
-                }
-            )
-            return
-        await websocket.send_json(
-            voice_pipeline.build_voice_state_payload(
-                event=event,
-                buffered_bytes=len(audio_buffer),
-                sequence=voice_sequence,
-                duplex_state=duplex_state,
-            )
-        )
-
-    async def _cancel_active_response(reason: str) -> None:
-        nonlocal active_response_task
-        interrupt_payload = (
-            voice_pipeline.interrupt_assistant_turn(duplex_state, reason=reason)
-            if voice_pipeline is not None and hasattr(voice_pipeline, "interrupt_assistant_turn")
-            else {
-                "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
-                "dropped_text_chars": 0,
-                "cancelled_audio_sequences": 0,
-                "reason": reason,
-            }
-        )
-        if active_response_task is None or active_response_task.done():
-            return
-        active_response_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await active_response_task
-        await websocket.send_json(
-            {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
-        )
-        active_response_task = None
-
-    async def _run_voice_turn(
-        *,
-        audio_bytes: bytes,
-        mime_type: str,
-        language: str | None,
-        prompt: str,
-    ) -> None:
-        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
-            return
-
-        result = await pipeline.transcribe_bytes(
-            audio_bytes,
-            mime_type=mime_type,
-            language=language,
-            prompt=prompt,
-        )
-        await _emit_voice_state("processed")
-
-        if not isinstance(result, dict) or not result.get("success"):
-            reason = "Ses transkripsiyonu başarısız oldu."
-            if isinstance(result, dict):
-                reason = str(result.get("reason", reason) or reason)
-            await websocket.send_json({"error": reason, "done": True})
-            return
-
-        transcript_text = str(result.get("text", "") or "").strip()
-        await websocket.send_json(
-            {
-                "transcript": transcript_text,
-                "language": result.get("language", ""),
-                "provider": result.get("provider", ""),
-            }
-        )
-        if not transcript_text:
-            await websocket.send_json({"done": True})
-            return
-
-        assistant_turn_id = (
-            voice_pipeline.begin_assistant_turn(duplex_state)
-            if voice_pipeline is not None and hasattr(voice_pipeline, "begin_assistant_turn")
-            else int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
-        )
-        await websocket.send_json(
-            {"assistant_turn": "started", "assistant_turn_id": assistant_turn_id}
-        )
-
-        try:
-            await _ws_stream_agent_text_response(websocket, agent, transcript_text)
-        except LLMAPIError as exc:
-            await websocket.send_json(
-                {
-                    "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
-                    "done": True,
-                }
-            )
-            return
-        except Exception as exc:
-            logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
-            await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-            return
-
-        await websocket.send_json(
-            {"assistant_turn": "completed", "assistant_turn_id": assistant_turn_id}
-        )
-        await websocket.send_json({"done": True})
-
-    async def _process_audio_commit() -> None:
-        nonlocal audio_buffer, active_response_task
-        if not audio_buffer:
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
-            return
-
-        if active_response_task and not active_response_task.done():
-            await _cancel_active_response("superseded_by_new_turn")
-
-        commit_audio = bytes(audio_buffer)
-        audio_buffer.clear()
-        active_response_task = asyncio.create_task(
-            _run_voice_turn(
-                audio_bytes=commit_audio,
-                mime_type=session_mime_type,
-                language=session_language,
-                prompt=session_prompt,
-            )
-        )
-
-    if header_token:
-        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await _ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
-        ws_user_id = ws_user.id
-        ws_username = ws_user.username
-        ws_authenticated = True
-        await agent.memory.set_active_user(ws_user_id, ws_username)
-        with contextlib.suppress(Exception):
-            await websocket.send_json({"auth_ok": True})
-
-    try:
-        while True:
-            packet = await websocket.receive()
-            packet_type = packet.get("type")
-            if packet_type == "websocket.disconnect":
-                raise WebSocketDisconnect()
-
-            bytes_payload = packet.get("bytes")
-            if bytes_payload is not None:
-                if not ws_authenticated:
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                if len(audio_buffer) + len(bytes_payload) > max_voice_bytes:
-                    await _ws_close_policy_violation(websocket, "Voice payload too large")
-                    return
-                audio_buffer.extend(bytes_payload)
-                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
-                await _emit_voice_state("chunk")
-                continue
-
-            text_payload = packet.get("text")
-            if text_payload is None:
-                continue
-
-            try:
-                payload = json.loads(text_payload)
-            except json.JSONDecodeError:
-                continue
-
-            action = str(payload.get("action", "") or "").strip().lower()
-            if not ws_authenticated:
-                if action != "auth":
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                auth_token = (payload.get("token", "") or "").strip()
-                if not auth_token:
-                    await _ws_close_policy_violation(websocket, "Authentication token missing")
-                    return
-                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
-                if not ws_user:
-                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
-                    return
-                ws_user_id = ws_user.id
-                ws_username = ws_user.username
-                ws_authenticated = True
-                await agent.memory.set_active_user(ws_user_id, ws_username)
-                with contextlib.suppress(Exception):
-                    await websocket.send_json({"auth_ok": True})
-                continue
-
-            if action in {"start", "reset"}:
-                audio_buffer.clear()
-                session_mime_type = str(payload.get("mime_type", "audio/webm") or "audio/webm")
-                session_language = payload.get("language")
-                session_prompt = str(payload.get("prompt", "") or "")
-                await websocket.send_json(
-                    {
-                        "voice_session": "ready",
-                        "mime_type": session_mime_type,
-                        "duplex": True,
-                        "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)),
-                        "tts_enabled": bool(getattr(voice_pipeline, "enabled", False))
-                        if voice_pipeline is not None
-                        else False,
-                        "voice_disabled_reason": str(
-                            getattr(voice_pipeline, "voice_disabled_reason", "") or voice_init_error
-                        ),
-                    }
-                )
-                await _emit_voice_state("ready")
-                continue
-
-            if action == "append_base64":
-                encoded_chunk = str(payload.get("chunk", "") or "").strip()
-                if not encoded_chunk:
-                    continue
-                try:
-                    decoded_chunk = base64.b64decode(encoded_chunk, validate=True)
-                except Exception:
-                    await websocket.send_json(
-                        {"error": "Geçersiz base64 ses parçası", "done": True}
-                    )
-                    continue
-                if len(audio_buffer) + len(decoded_chunk) > max_voice_bytes:
-                    await _ws_close_policy_violation(websocket, "Voice payload too large")
-                    return
-                audio_buffer.extend(decoded_chunk)
-                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
-                await _emit_voice_state("chunk")
-                continue
-
-            if action == "cancel":
-                audio_buffer.clear()
-                await _cancel_active_response("user_cancelled")
-                await _emit_voice_state("cancelled")
-                await websocket.send_json({"cancelled": True, "done": True})
-                continue
-
-            if action == "vad_event":
-                vad_state = str(payload.get("state", "") or "unknown")
-                await _emit_voice_state(vad_state)
-                if (
-                    voice_pipeline
-                    and hasattr(voice_pipeline, "should_interrupt_response")
-                    and voice_pipeline.should_interrupt_response(len(audio_buffer), event=vad_state)
-                ):
-                    await _cancel_active_response("barge_in")
-                if voice_pipeline and voice_pipeline.should_commit_audio(
-                    len(audio_buffer), event=vad_state
-                ):
-                    await _process_audio_commit()
-                continue
-
-            if action not in {"commit", "process", "end", "vad_commit"}:
-                continue
-
-            session_mime_type = str(
-                payload.get("mime_type", session_mime_type) or session_mime_type
-            )
-            session_language = payload.get("language", session_language)
-            session_prompt = str(payload.get("prompt", session_prompt) or session_prompt)
-            await _process_audio_commit()
-    except WebSocketDisconnect:
-        logger.info("İstemci voice WebSocket bağlantısını kesti.")
-        if active_response_task and not active_response_task.done():
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await active_response_task
-    except Exception as exc:
-        if _ANYIO_CLOSED is not None and isinstance(exc, _ANYIO_CLOSED):
-            logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_response_task and not active_response_task.done():  # pragma: no cover
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await active_response_task
-        else:
-            logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
-
-
-@app.get(
-    "/status",
-    summary="Ajan Durumunu Getir",
-    description="Ajanın donanım, LLM bağlantı, bellek ve sağlayıcı durumlarını JSON olarak döndürür.",
-    responses={200: {"description": "Başarılı durum yanıtı"}},
-)
-async def status() -> Any:
-    """Ajan durum bilgisini JSON olarak döndür."""
-    a = await _resolve_agent_instance()
-    gpu_info = a.health.get_gpu_info()
-    # Sağlayıcıya göre doğru model adını gönder
-    if a.cfg.AI_PROVIDER == "gemini":
-        model_display = getattr(a.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
-    else:
-        model_display = a.cfg.CODING_MODEL
-
-    enc_status = "Etkin (Fernet)" if getattr(a.cfg, "MEMORY_ENCRYPTION_KEY", "") else "Devre Dışı"
-
-    ollama_t0 = time.monotonic()
-    ollama_online = a.health.check_ollama()
-    ollama_latency_ms = int((time.monotonic() - ollama_t0) * 1000)
-
-    return JSONResponse(
-        {
-            "version": a.VERSION,
-            "provider": a.cfg.AI_PROVIDER,
-            "model": model_display,
-            "access_level": a.cfg.ACCESS_LEVEL,
-            "memory_count": len(a.memory),
-            "github": a.github.is_available(),
-            "web_search": a.web.is_available(),
-            "rag_status": a.docs.status(),
-            "pkg_status": a.pkg.status(),
-            "enc_status": enc_status,
-            # GPU bilgisi
-            "gpu_enabled": a.cfg.USE_GPU,
-            "gpu_info": a.cfg.GPU_INFO,
-            "gpu_count": getattr(a.cfg, "GPU_COUNT", 0),
-            "cuda_version": getattr(a.cfg, "CUDA_VERSION", "N/A"),
-            "gpu_devices": gpu_info.get("devices", []),
-            "ollama_online": ollama_online,
-            "ollama_latency_ms": ollama_latency_ms,
-        }
-    )
-
-
-async def _await_if_needed(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
+    return await ws_voice_routes.websocket_voice(websocket, _build_ws_voice_dependencies())
 
 async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     try:
@@ -3639,12 +2569,10 @@ frontend_router = build_frontend_router(
         getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000"
     ),
 )
-app.include_router(frontend_router)
 
 health_router = build_health_router(
     lambda require_dependencies: _health_response(require_dependencies=require_dependencies)
 )
-app.include_router(health_router)
 agent_router = build_agent_router(
     require_admin_user=_require_admin_user,
     register_plugin_agent=lambda **kwargs: _register_plugin_agent(**kwargs),
@@ -3664,7 +2592,6 @@ agent_router = build_agent_router(
     agent_plugin_register_request_model=_AgentPluginRegisterRequest,
     plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
 )
-app.include_router(agent_router)
 
 rag_router = build_rag_router(
     resolve_agent_instance=lambda: _resolve_agent_instance(),
@@ -3673,7 +2600,6 @@ rag_router = build_rag_router(
     server_root=lambda: Path(__file__).parent.resolve(),
     logger=logger,
 )
-app.include_router(rag_router)
 
 auth_admin_router = build_auth_admin_router(
     resolve_agent_instance=lambda: _resolve_agent_instance(),
@@ -3690,7 +2616,6 @@ auth_admin_router = build_auth_admin_router(
     prompt_activate_request_model=_PromptActivateRequest,
     policy_upsert_request_model=_PolicyUpsertRequest,
 )
-app.include_router(auth_admin_router)
 
 hitl_router = build_hitl_router(
     get_request_user=_get_request_user,
@@ -3702,7 +2627,10 @@ hitl_router = build_hitl_router(
     get_hitl_store=lambda: get_hitl_store(),
     get_hitl_gate=lambda: get_hitl_gate(),
 )
-app.include_router(hitl_router)
+
+ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)
+
+ws_voice_router = ws_voice_routes.build_ws_voice_router(_build_ws_voice_dependencies)
 
 metrics_router = build_metrics_router(
     require_metrics_access=_require_metrics_access,
@@ -3715,7 +2643,6 @@ metrics_router = build_metrics_router(
     reset_current_metrics_user_id=reset_current_metrics_user_id,
     logger=logger,
 )
-app.include_router(metrics_router)
 
 project_ops_router = build_project_ops_router(
     get_request_user=_get_request_user,
@@ -3725,7 +2652,6 @@ project_ops_router = build_project_ops_router(
     cfg=cfg,
     logger=logger,
 )
-app.include_router(project_ops_router)
 
 orchestration_router = build_orchestration_router(
     get_request_user=_get_request_user,
@@ -3738,7 +2664,6 @@ orchestration_router = build_orchestration_router(
     swarm_execute_request_model=_SwarmExecuteRequest,
     serialize_swarm_result=_serialize_swarm_result,
 )
-app.include_router(orchestration_router)
 
 webhooks_router = build_webhooks_router(
     cfg=cfg,
@@ -3757,22 +2682,25 @@ webhooks_router = build_webhooks_router(
     ),
     dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
 )
-app.include_router(webhooks_router)
 
-for _router in (
-    frontend_router,
-    health_router,
-    agent_router,
-    rag_router,
-    auth_admin_router,
-    hitl_router,
-    metrics_router,
-    project_ops_router,
-    orchestration_router,
-    webhooks_router,
-):
-    for _name, _obj in _router.legacy_exports.items():
-        globals()[_name] = _obj
+_legacy_route_exports = _app_factory.register_routers(
+    app,
+    [
+        frontend_router,
+        health_router,
+        agent_router,
+        rag_router,
+        auth_admin_router,
+        hitl_router,
+        ws_chat_router,
+        ws_voice_router,
+        metrics_router,
+        project_ops_router,
+        orchestration_router,
+        webhooks_router,
+    ],
+)
+globals().update(_legacy_route_exports)
 
 # Explicit legacy re-exports for static analyzers (ruff/mypy).
 favicon = frontend_router.legacy_exports["favicon"]
@@ -4227,104 +3155,18 @@ class _TeamsSendRequest(BaseModel):
     title: str | None = Field(None, description="Mesaj başlığı")
 
 
-class _OperationChecklistCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=160)
-    items: list[str] = Field(default_factory=list)
-    status: str = Field(default="pending", min_length=1, max_length=32)
-
-
-class _ContentAssetCreateRequest(BaseModel):
-    asset_type: str = Field(..., min_length=1, max_length=64)
-    title: str = Field(..., min_length=1, max_length=160)
-    content: str = Field(..., min_length=1)
-    channel: str = Field(default="", max_length=64)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class _CampaignCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=160)
-    channel: str = Field(default="", max_length=64)
-    objective: str = Field(default="", max_length=400)
-    status: str = Field(default="draft", min_length=1, max_length=32)
-    budget: float = Field(default=0.0, ge=0.0)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    initial_assets: list[_ContentAssetCreateRequest] = Field(default_factory=list)
-    initial_checklists: list[_OperationChecklistCreateRequest] = Field(default_factory=list)
-
-
-class _PoyrazToolRunRequest(BaseModel):
-    tool_name: str = Field(..., min_length=1, max_length=80)
-    payload: dict[str, Any] = Field(default_factory=dict)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _LandingPageDraftRequest(BaseModel):
-    brand_name: str = Field(..., min_length=1, max_length=160)
-    offer: str = Field(..., min_length=1, max_length=600)
-    audience: str = Field(..., min_length=1, max_length=400)
-    call_to_action: str = Field(..., min_length=1, max_length=160)
-    tone: str = Field(default="professional", max_length=64)
-    sections: list[str] = Field(default_factory=list)
-    campaign_id: int | None = Field(default=None)
-    store_asset: bool = Field(default=False)
-    asset_title: str = Field(default="Landing Page Taslağı", max_length=160)
-    channel: str = Field(default="web", max_length=64)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _CampaignCopyGenerateRequest(BaseModel):
-    campaign_name: str = Field(..., min_length=1, max_length=160)
-    objective: str = Field(..., min_length=1, max_length=400)
-    audience: str = Field(..., min_length=1, max_length=400)
-    channels: list[str] = Field(default_factory=list)
-    offer: str = Field(default="", max_length=600)
-    tone: str = Field(default="professional", max_length=64)
-    call_to_action: str = Field(default="", max_length=160)
-    campaign_id: int | None = Field(default=None)
-    store_asset: bool = Field(default=False)
-    asset_title: str = Field(default="Kampanya Kopyası", max_length=160)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _ServiceOperationsPlanRequest(BaseModel):
-    campaign_id: int | None = Field(default=None)
-    campaign_name: str = Field(default="", max_length=160)
-    service_name: str = Field(default="", max_length=160)
-    audience: str = Field(default="", max_length=400)
-    menu_plan: dict[str, list[str]] = Field(default_factory=dict)
-    vendor_assignments: dict[str, str] = Field(default_factory=dict)
-    timeline: list[str] = Field(default_factory=list)
-    notes: str = Field(default="", max_length=2000)
-    persist_checklist: bool = Field(default=True)
-    checklist_title: str = Field(default="Operasyon Planı", max_length=160)
-    room_id: str = Field(default="ops:control", max_length=120)
-
-
-class _CoverageAnalyzeRequest(BaseModel):
-    coverage_xml: str = Field(default="coverage.xml", max_length=512)
-    coveragerc: str = Field(default=".coveragerc", max_length=512)
-    coverage_output: str = Field(default="")
-    limit: int = Field(default=25, ge=1, le=200)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
-
-class _CoverageGenerateRequest(BaseModel):
-    coverage_finding: dict[str, Any] = Field(default_factory=dict)
-    coveragerc: dict[str, Any] = Field(default_factory=dict)
-    target_path: str = Field(default="", max_length=512)
-    pytest_output: str = Field(default="")
-    analysis: dict[str, Any] = Field(default_factory=dict)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
-
-class _CoverageBatchRequest(BaseModel):
-    coverage_xml: str = Field(default="coverage.xml", max_length=512)
-    coveragerc: str = Field(default=".coveragerc", max_length=512)
-    limit: int = Field(default=10, ge=1, le=100)
-    batch_size: int = Field(default=1, ge=1, le=10)
-    append: bool = Field(default=True)
-    room_id: str = Field(default="qa:coverage", max_length=120)
-
+# Operations/Poyraz/Coverage HTTP request models and route handlers live in
+# web.routes.operations; aliases are kept for existing direct unit-test imports.
+_OperationChecklistCreateRequest = operations_routes.OperationChecklistCreateRequest
+_ContentAssetCreateRequest = operations_routes.ContentAssetCreateRequest
+_CampaignCreateRequest = operations_routes.CampaignCreateRequest
+_PoyrazToolRunRequest = operations_routes.PoyrazToolRunRequest
+_LandingPageDraftRequest = operations_routes.LandingPageDraftRequest
+_CampaignCopyGenerateRequest = operations_routes.CampaignCopyGenerateRequest
+_ServiceOperationsPlanRequest = operations_routes.ServiceOperationsPlanRequest
+_CoverageAnalyzeRequest = operations_routes.CoverageAnalyzeRequest
+_CoverageGenerateRequest = operations_routes.CoverageGenerateRequest
+_CoverageBatchRequest = operations_routes.CoverageBatchRequest
 
 _teams_mgr_instance = None
 _poyraz_agent_instance: Any | None = None
@@ -4352,32 +3194,39 @@ async def _get_coverage_agent_instance() -> Any:
 
 
 def _decode_agent_tool_result(raw_result: Any) -> dict[str, Any]:
-    """Normalize agent tool output for API clients without hiding plain-text output."""
-    if isinstance(raw_result, dict):
-        return raw_result
-    text_result = str(raw_result or "")
-    try:
-        parsed = json.loads(text_result)
-    except json.JSONDecodeError:
-        return {"success": bool(text_result.strip()), "output": text_result}
-    if isinstance(parsed, dict):
-        return parsed
-    return {"success": True, "output": parsed}
+    return operations_routes.decode_agent_tool_result(raw_result)
 
 
-def _serialize_coverage_task(record: CoverageTaskRecord) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "requester_role": str(getattr(record, "requester_role", "") or ""),
-        "command": str(getattr(record, "command", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "target_path": str(getattr(record, "target_path", "") or ""),
-        "suggested_test_path": str(getattr(record, "suggested_test_path", "") or ""),
-        "review_payload_json": str(getattr(record, "review_payload_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+def _serialize_coverage_task(record: Any) -> dict[str, Any]:
+    return operations_routes.serialize_coverage_task(record)
+
+
+def _build_operations_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        await_if_needed=_await_if_needed,
+        emit_control_room_event=_emit_control_room_event,
+        get_coverage_agent_instance=_get_coverage_agent_instance,
+        get_poyraz_agent_instance=_get_poyraz_agent_instance,
+        get_request_user=_get_request_user,
+        get_user_tenant=_get_user_tenant,
+        resolve_agent_instance=_resolve_agent_instance,
+    )
+
+
+api_operations_list_campaigns = operations_routes.api_operations_list_campaigns
+api_operations_create_campaign = operations_routes.api_operations_create_campaign
+api_operations_list_assets = operations_routes.api_operations_list_assets
+api_operations_add_asset = operations_routes.api_operations_add_asset
+api_operations_list_checklists = operations_routes.api_operations_list_checklists
+api_operations_add_checklist = operations_routes.api_operations_add_checklist
+api_operations_poyraz_run = operations_routes.api_operations_poyraz_run
+api_operations_generate_landing_page = operations_routes.api_operations_generate_landing_page
+api_operations_generate_campaign_copy = operations_routes.api_operations_generate_campaign_copy
+api_operations_plan_service = operations_routes.api_operations_plan_service
+api_qa_coverage_tasks = operations_routes.api_qa_coverage_tasks
+api_qa_coverage_analyze = operations_routes.api_qa_coverage_analyze
+api_qa_coverage_generate = operations_routes.api_qa_coverage_generate
+api_qa_coverage_batch = operations_routes.api_qa_coverage_batch
 
 
 def _get_teams_manager() -> Any:
@@ -4403,430 +3252,8 @@ async def api_teams_send(req: _TeamsSendRequest) -> Any:
     return JSONResponse({"success": True})
 
 
-@app.get(
-    "/api/operations/campaigns", summary="Operasyon Kampanyalarını Listele", tags=["Operations"]
-)
-async def api_operations_list_campaigns(
-    status: str = "",
-    limit: int = 50,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    campaigns = await agent.memory.db.list_marketing_campaigns(
-        tenant_id=_get_user_tenant(_user),
-        status=status,
-        limit=limit,
-    )
-    return JSONResponse(
-        {"success": True, "campaigns": [_serialize_campaign(item) for item in campaigns]}
-    )
-
-
-@app.post("/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"])
-async def api_operations_create_campaign(
-    req: _CampaignCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    db = agent.memory.db
-    campaign = await db.upsert_marketing_campaign(
-        tenant_id=_get_user_tenant(_user),
-        name=req.name,
-        channel=req.channel,
-        objective=req.objective,
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-        budget=float(req.budget or 0.0),
-        metadata=dict(req.metadata or {}),
-    )
-    assets = []
-    for asset_item in req.initial_assets:
-        assets.append(
-            await db.add_content_asset(
-                campaign_id=int(campaign.id),
-                tenant_id=_get_user_tenant(_user),
-                asset_type=asset_item.asset_type,
-                title=asset_item.title,
-                content=asset_item.content,
-                channel=asset_item.channel,
-                metadata=dict(asset_item.metadata or {}),
-            )
-        )
-    checklists = []
-    for checklist_item in req.initial_checklists:
-        checklists.append(
-            await db.add_operation_checklist(
-                campaign_id=int(campaign.id),
-                tenant_id=_get_user_tenant(_user),
-                title=checklist_item.title,
-                items=list(checklist_item.items or []),
-                status=checklist_item.status,
-                owner_user_id=str(getattr(_user, "id", "") or ""),
-            )
-        )
-    return JSONResponse(
-        {
-            "success": True,
-            "campaign": _serialize_campaign(campaign),
-            "assets": [_serialize_content_asset(item) for item in assets],
-            "checklists": [_serialize_operation_checklist(item) for item in checklists],
-        }
-    )
-
-
-@app.get(
-    "/api/operations/campaigns/{campaign_id}/assets",
-    summary="Kampanya İçerik Varlıklarını Listele",
-    tags=["Operations"],
-)
-async def api_operations_list_assets(
-    campaign_id: int,
-    limit: int = 100,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    assets = await agent.memory.db.list_content_assets(
-        tenant_id=_get_user_tenant(_user),
-        campaign_id=campaign_id,
-        limit=limit,
-    )
-    return JSONResponse(
-        {"success": True, "assets": [_serialize_content_asset(item) for item in assets]}
-    )
-
-
-@app.post(
-    "/api/operations/campaigns/{campaign_id}/assets",
-    summary="Kampanyaya İçerik Varlığı Ekle",
-    tags=["Operations"],
-)
-async def api_operations_add_asset(
-    campaign_id: int,
-    req: _ContentAssetCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    asset = await agent.memory.db.add_content_asset(
-        campaign_id=campaign_id,
-        tenant_id=_get_user_tenant(_user),
-        asset_type=req.asset_type,
-        title=req.title,
-        content=req.content,
-        channel=req.channel,
-        metadata=dict(req.metadata or {}),
-    )
-    return JSONResponse({"success": True, "asset": _serialize_content_asset(asset)})
-
-
-@app.get(
-    "/api/operations/campaigns/{campaign_id}/checklists",
-    summary="Kampanya Operasyon Checklistlerini Listele",
-    tags=["Operations"],
-)
-async def api_operations_list_checklists(
-    campaign_id: int,
-    limit: int = 100,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    checklists = await agent.memory.db.list_operation_checklists(
-        tenant_id=_get_user_tenant(_user),
-        campaign_id=campaign_id,
-        limit=limit,
-    )
-    return JSONResponse(
-        {
-            "success": True,
-            "checklists": [_serialize_operation_checklist(item) for item in checklists],
-        }
-    )
-
-
-@app.post(
-    "/api/operations/campaigns/{campaign_id}/checklists",
-    summary="Kampanyaya Operasyon Checklisti Ekle",
-    tags=["Operations"],
-)
-async def api_operations_add_checklist(
-    campaign_id: int,
-    req: _OperationChecklistCreateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    checklist = await agent.memory.db.add_operation_checklist(
-        campaign_id=campaign_id,
-        tenant_id=_get_user_tenant(_user),
-        title=req.title,
-        items=list(req.items or []),
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-    )
-    return JSONResponse({"success": True, "checklist": _serialize_operation_checklist(checklist)})
-
-
-@app.post(
-    "/api/operations/poyraz/run",
-    summary="Poyraz operasyon aracını çalıştır",
-    tags=["Operations"],
-)
-async def api_operations_poyraz_run(
-    req: _PoyrazToolRunRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    """React/REST istemcileri için PoyrazAgent araçlarına yapılandırılmış köprü."""
-    allowed_tools = {
-        "build_landing_page",
-        "generate_campaign_copy",
-        "create_marketing_campaign",
-        "store_content_asset",
-        "create_operation_checklist",
-        "plan_service_operations",
-        "ingest_video_insights",
-    }
-    tool_name = req.tool_name.strip()
-    if tool_name not in allowed_tools:
-        raise HTTPException(
-            status_code=400, detail="Bu Poyraz aracı REST operasyon köprüsünde desteklenmiyor."
-        )
-    payload = {**dict(req.payload or {}), "tenant_id": _get_user_tenant(_user)}
-    if "owner_user_id" not in payload:
-        payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="poyraz",
-        content=f"Poyraz aracı başlatıldı: {tool_name}",
-        payload={"tool": tool_name},
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content=f"Poyraz aracı tamamlandı: {tool_name}",
-        payload={"tool": tool_name, "success": bool(result.get("success", True))},
-    )
-    return JSONResponse(
-        {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/landing-page",
-    summary="Poyraz landing page taslağı üret",
-    tags=["Operations"],
-)
-async def api_operations_generate_landing_page(
-    req: _LandingPageDraftRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content="Landing page üretimi başlatıldı."
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"build_landing_page|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="poyraz", content="Landing page üretimi tamamlandı."
-    )
-    return JSONResponse(
-        {"success": True, "output": result.get("output", raw_result), "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/campaign-copy",
-    summary="Poyraz kampanya kopyası üret",
-    tags=["Operations"],
-)
-async def api_operations_generate_campaign_copy(
-    req: _CampaignCopyGenerateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="poyraz",
-        content="Kampanya kopyası üretimi başlatıldı.",
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"generate_campaign_copy|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="poyraz", content="Kampanya kopyası üretimi tamamlandı."
-    )
-    return JSONResponse(
-        {"success": True, "output": result.get("output", raw_result), "result": result}
-    )
-
-
-@app.post(
-    "/api/operations/service-plan",
-    summary="Poyraz servis operasyon planı üret",
-    tags=["Operations"],
-)
-async def api_operations_plan_service(
-    req: _ServiceOperationsPlanRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    payload["tenant_id"] = _get_user_tenant(_user)
-    payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content="Servis operasyon planı başlatıldı."
-    )
-    poyraz = await _await_if_needed(_get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(
-        f"plan_service_operations|{json.dumps(payload, ensure_ascii=False)}"
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content="Servis operasyon planı tamamlandı.",
-        payload={"success": bool(result.get("success", True))},
-    )
-    return JSONResponse({"success": bool(result.get("success", True)), "result": result})
-
-
-@app.get(
-    "/api/qa/coverage/tasks",
-    summary="Coverage görev geçmişini listele",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_tasks(
-    status: str = "",
-    limit: int = 50,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    agent = await _resolve_agent_instance()
-    tasks = await agent.memory.db.list_coverage_tasks(
-        tenant_id=_get_user_tenant(_user), status=status or None, limit=limit
-    )
-    return JSONResponse(
-        {"success": True, "tasks": [_serialize_coverage_task(item) for item in tasks]}
-    )
-
-
-@app.post(
-    "/api/qa/coverage/analyze",
-    summary="Coverage raporunu analiz et",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_analyze(
-    req: _CoverageAnalyzeRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await _emit_control_room_event(
-        req.room_id, kind="tool_call", source="coverage", content="Coverage analizi başlatıldı."
-    )
-    raw_result = await coverage_agent._tool_analyze_coverage_report(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    result = _decode_agent_tool_result(raw_result)
-    await _emit_control_room_event(
-        req.room_id, kind="status", source="coverage", content="Coverage analizi tamamlandı."
-    )
-    return JSONResponse({"success": True, "analysis": result, "tenant_id": _get_user_tenant(_user)})
-
-
-@app.post(
-    "/api/qa/coverage/generate",
-    summary="Coverage bulgusu için test adayı üret",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_generate(
-    req: _CoverageGenerateRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage test adayı üretimi başlatıldı.",
-    )
-    raw_candidate = await coverage_agent._tool_generate_missing_tests(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    rejection_reason = coverage_agent._candidate_rejection_reason(
-        str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
-    )
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage test adayı kalite kontrolünden geçti."
-        if not rejection_reason
-        else "Coverage test adayı kalite kapısında reddedildi.",
-        payload={"quality_rejection_reason": rejection_reason},
-    )
-    return JSONResponse(
-        {
-            "success": not bool(rejection_reason),
-            "candidate": str(raw_candidate or ""),
-            "quality_rejection_reason": rejection_reason,
-            "tenant_id": _get_user_tenant(_user),
-        }
-    )
-
-
-@app.post(
-    "/api/qa/coverage/batch",
-    summary="CoverageAgent otonom batch iyileştirme çalıştır",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_batch(
-    req: _CoverageBatchRequest,
-    _user: Any = Depends(_get_request_user),
-) -> JSONResponse:
-    coverage_agent = await _await_if_needed(_get_coverage_agent_instance())
-    await _emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage batch iyileştirme başlatıldı.",
-    )
-    result = await coverage_agent.run_autonomous_coverage_batch(
-        coverage_xml=req.coverage_xml,
-        coveragerc=req.coveragerc,
-        limit=req.limit,
-        batch_size=req.batch_size,
-        append=req.append,
-    )
-    await _emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage batch iyileştirme tamamlandı.",
-        payload={"success": bool(result.get("success", False)), "status": result.get("status", "")},
-    )
-    return JSONResponse(
-        {
-            "success": bool(result.get("success", False)),
-            "result": result,
-            "tenant_id": _get_user_tenant(_user),
-        }
-    )
+operations_router = operations_routes.build_operations_router(_build_operations_dependencies)
+_app_factory.register_routers(app, [operations_router])
 
 
 # ─────────────────────────────────────────────
@@ -4834,41 +3261,9 @@ async def api_qa_coverage_batch(
 # ─────────────────────────────────────────────
 
 
-class _FederationTaskRequest(BaseModel):
-    task_id: str = Field(..., description="Dış platform tarafından verilen görev kimliği")
-    source_system: str = Field(..., description="Gönderen swarm platformu (örn. crewai, autogen)")
-    source_agent: str = Field(..., description="Gönderen ajan veya workflow adı")
-    target_agent: str = Field("supervisor", description="Sidar içinde hedef ajan/rol")
-    goal: str = Field(..., description="Sidar'ın çalıştıracağı hedef görev")
-    protocol: str = Field("federation.v1", description="Federation sözleşme sürümü")
-    intent: str = Field("mixed", description="Görev intent tipi")
-    context: dict[str, str] = Field(default_factory=dict, description="Yapısal bağlam")
-    inputs: list[str] = Field(default_factory=list, description="Ek girdiler")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
-    correlation_id: str = Field("", description="Dış sistemlerle iz sürme için korelasyon kimliği")
-
-
-class _FederationFeedbackRequest(BaseModel):
-    feedback_id: str = Field(..., description="Dış sistem action feedback kaydı kimliği")
-    source_system: str = Field(..., description="Feedback gönderen dış sistem")
-    source_agent: str = Field(..., description="Feedback gönderen ajan/workflow")
-    action_name: str = Field(..., description="Geri besleme verilen aksiyon adı")
-    status: str = Field(..., description="Aksiyonun dış sistemdeki durumu")
-    summary: str = Field(..., description="İnsan/ajan tarafından üretilen kısa özet")
-    related_task_id: str = Field("", description="İlişkili federation task id")
-    related_trigger_id: str = Field("", description="İlişkili autonomy trigger id")
-    details: dict[str, Any] = Field(default_factory=dict, description="Detay payload")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
-    correlation_id: str = Field("", description="Dış sistemlerle paylaşılan korelasyon kimliği")
-
-
-class _AutonomyWakeRequest(BaseModel):
-    event_name: str = Field("manual_wake", description="Manuel/proaktif tetik olay adı")
-    prompt: str = Field(..., description="Ajanın değerlendireceği proaktif prompt")
-    source: str = Field("manual", description="Tetik kaynağı etiketi")
-    payload: dict[str, Any] = Field(default_factory=dict, description="Ek olay payload'u")
-    meta: dict[str, str] = Field(default_factory=dict, description="Ek meta verisi")
-
+_FederationTaskRequest = federation_routes.FederationTaskRequest
+_FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
+_AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
 def _verify_hmac_signature(
     payload_body: bytes, secret_value: str, signature_header: str, *, label: str
@@ -4883,233 +3278,49 @@ def _verify_hmac_signature(
         raise HTTPException(status_code=401, detail="Geçersiz imza.")
 
 
-@app.post(
-    "/api/autonomy/webhook/{source}",
-    summary="Otonom Webhook Tetikleyicisi",
-    description="Harici sistem olaylarını Sidar'a otonom trigger olarak iletir.",
-)
-async def autonomy_webhook(
-    source: str,
-    request: Request,
-    x_sidar_signature: str = Header(default=""),
-) -> JSONResponse:
-    """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
-    if not bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
-        raise HTTPException(status_code=503, detail="Event webhook özelliği devre dışı.")
-
-    payload_body = await request.body()
-    _verify_hmac_signature(
-        payload_body,
-        str(getattr(cfg, "AUTONOMY_WEBHOOK_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Autonomy webhook",
-    )
-
-    try:
-        data = json.loads(payload_body.decode("utf-8")) if payload_body else {}
-    except json.JSONDecodeError:
-        return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
-
-    payload_dict = data if isinstance(data, dict) else {"payload": data}
-    resolved_event_name = str(payload_dict.get("event_name", source) or source)
-    ci_context = _resolve_ci_failure_context(resolved_event_name, payload_dict)
-    federation_workflow = (
-        None
-        if ci_context
-        else await _run_event_driven_federation_workflow(
-            source=source,
-            event_name=resolved_event_name,
-            payload=payload_dict,
-        )
-    )
-    dispatch_payload = ci_context if ci_context else payload_dict
-    dispatch_meta = {
-        "source": source,
-        "provider": source,
-        "ci_failure": "true" if ci_context else "false",
-    }
-    if federation_workflow:
-        dispatch_payload = _embed_event_driven_federation_payload(payload_dict, federation_workflow)
-        dispatch_meta.update(
-            {
-                "event_driven_federation": "true",
-                "workflow_type": str(federation_workflow.get("workflow_type") or "external_event"),
-                "correlation_id": str(federation_workflow.get("correlation_id") or ""),
-            }
-        )
-    result = await _dispatch_autonomy_trigger(
-        trigger_source=f"webhook:{source}:ci_failure" if ci_context else f"webhook:{source}",
-        event_name="ci_failure_remediation" if ci_context else resolved_event_name,
-        payload=dispatch_payload,
-        meta=dispatch_meta,
-    )
-    return JSONResponse(
-        {"success": True, "result": result, "event_driven_federation": federation_workflow}
-    )
-
-
-@app.post(
-    "/api/autonomy/wake",
-    summary="Manuel Otonomi Uyanışı",
-    description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
-)
-async def autonomy_wake(req: _AutonomyWakeRequest) -> Any:
-    """Webhook dışı manuel/proaktif tetik giriş noktası."""
-    payload = dict(req.payload or {})
-    payload["prompt"] = req.prompt.strip()
-    result = await _await_if_needed(
-        _dispatch_autonomy_trigger(
-            trigger_source=f"manual:{req.source.strip() or 'manual'}",
-            event_name=req.event_name.strip() or "manual_wake",
-            payload=payload,
-            meta=dict(req.meta or {}),
-        )
-    )
-    return JSONResponse({"success": True, "result": result})
-
-
-@app.get(
-    "/api/autonomy/activity",
-    summary="Otonomi Aktivite Akışı",
-    description="Webhook/cron/manual kaynaklı son proaktif tetik geçmişini döndürür.",
-)
-async def autonomy_activity(limit: int = 20) -> Any:
-    """Son proaktif tetik kayıtlarını UI ve operasyon panelleri için sunar."""
-    agent = await _resolve_agent_instance()
-    return JSONResponse({"success": True, "activity": agent.get_autonomy_activity(limit=limit)})
-
-
-@app.post(
-    "/api/swarm/federation",
-    summary="Dış Swarm Federation Görevi",
-    description="CrewAI/AutoGen gibi dış platformlardan gelen görevleri Sidar içinde çalıştırır.",
-)
-async def swarm_federation_execute(
-    req: _FederationTaskRequest,
-    x_sidar_signature: str = Header(default=""),
-) -> Any:
-    """Federasyon görevlerini Sidar içinde çalıştırıp yapısal sonuç döndürür."""
-    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
-        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
-
-    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    _verify_hmac_signature(
-        raw_body,
-        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Federation",
-    )
-
-    envelope = FederationTaskEnvelope(
-        task_id=req.task_id,
-        source_system=req.source_system,
-        source_agent=req.source_agent,
-        target_system="sidar",
-        target_agent=req.target_agent,
-        goal=req.goal,
-        protocol=normalize_federation_protocol(req.protocol),
-        intent=req.intent,
-        context=dict(req.context or {}),
-        inputs=list(req.inputs or []),
-        meta=dict(req.meta or {}),
-        correlation_id=req.correlation_id,
-    )
-    federation_payload = {
-        "kind": "federation_task",
-        "federation_task": asdict(envelope),
-        "federation_prompt": envelope.to_prompt(),
-        "task_id": envelope.task_id,
-        "source_system": envelope.source_system,
-        "source_agent": envelope.source_agent,
-        "target_agent": envelope.target_agent,
-        "correlation_id": envelope.correlation_id,
-    }
-    trigger_result = await _dispatch_autonomy_trigger(
-        trigger_source=f"federation:{envelope.source_system}",
-        event_name="federation_task",
-        payload=federation_payload,
-        meta={
-            "protocol": envelope.protocol,
-            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
-            "correlation_id": envelope.correlation_id,
-        },
-    )
-    summary = str(trigger_result.get("summary", "") or "").strip()
-    result = FederationTaskResult(
-        task_id=envelope.task_id,
-        source_system="sidar",
-        source_agent=envelope.target_agent,
-        target_system=envelope.source_system,
-        target_agent=envelope.source_agent,
-        status="success" if summary else "failed",
-        summary=summary or "Sidar görev için çıktı üretemedi.",
-        protocol=envelope.protocol,
-        correlation_id=envelope.correlation_id,
-        meta={
-            "protocol": envelope.protocol,
-            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
-            "correlation_id": envelope.correlation_id,
-            "autonomy_trigger_id": str(trigger_result.get("trigger_id", "") or ""),
-            "action_feedback_endpoint": "/api/swarm/federation/feedback",
-        },
-    )
-    return JSONResponse({"success": True, "result": asdict(result)})
-
-
-@app.post(
-    "/api/swarm/federation/feedback",
-    summary="Dış Swarm Action Feedback",
-    description="Dış swarm sistemlerinden gelen action feedback sinyallerini autonomy korelasyon akışına bağlar.",
-)
-async def swarm_federation_feedback(
-    req: _FederationFeedbackRequest,
-    x_sidar_signature: str = Header(default=""),
-) -> Any:
-    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
-        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
-
-    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    _verify_hmac_signature(
-        raw_body,
-        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Federation feedback",
-    )
-
-    feedback = ActionFeedback(
-        feedback_id=req.feedback_id,
-        source_system=req.source_system,
-        source_agent=req.source_agent,
-        action_name=req.action_name,
-        status=req.status,
-        summary=req.summary,
-        related_task_id=req.related_task_id,
-        related_trigger_id=req.related_trigger_id,
-        details=dict(req.details or {}),
-        meta=dict(req.meta or {}),
-        correlation_id=derive_correlation_id(
-            req.correlation_id, req.related_task_id, req.related_trigger_id, req.feedback_id
+def _build_autonomy_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        await_if_needed=_await_if_needed,
+        cfg=cfg,
+        dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+        embed_event_driven_federation_payload=(
+            lambda payload, workflow: _embed_event_driven_federation_payload(payload, workflow)
         ),
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_ci_failure_context=_resolve_ci_failure_context,
+        run_event_driven_federation_workflow=(
+            lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
+        ),
+        verify_hmac_signature=_verify_hmac_signature,
     )
-    trigger = feedback.to_external_trigger()
-    result = await _dispatch_autonomy_trigger(
-        trigger_source=trigger.source,
-        event_name=trigger.event_name,
-        payload=dict(trigger.payload or {}),
-        meta=dict(trigger.meta or {}),
+
+
+def _build_federation_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        action_feedback_cls=ActionFeedback,
+        cfg=cfg,
+        derive_correlation_id=derive_correlation_id,
+        dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+        federation_task_envelope_cls=FederationTaskEnvelope,
+        federation_task_result_cls=FederationTaskResult,
+        legacy_federation_protocol_v1=LEGACY_FEDERATION_PROTOCOL_V1,
+        normalize_federation_protocol=normalize_federation_protocol,
+        verify_hmac_signature=_verify_hmac_signature,
     )
-    return JSONResponse(
-        {
-            "success": True,
-            "result": result,
-            "feedback": {
-                "feedback_id": feedback.feedback_id,
-                "correlation_id": feedback.correlation_id,
-                "related_task_id": feedback.related_task_id,
-                "related_trigger_id": feedback.related_trigger_id,
-            },
-        }
-    )
+
+
+autonomy_webhook = autonomy_routes.autonomy_webhook
+autonomy_wake = autonomy_routes.autonomy_wake
+autonomy_activity = autonomy_routes.autonomy_activity
+swarm_federation_execute = federation_routes.swarm_federation_execute
+swarm_federation_feedback = federation_routes.swarm_federation_feedback
+
+
+autonomy_router = autonomy_routes.build_autonomy_router(_build_autonomy_dependencies)
+_app_factory.register_routers(app, [autonomy_router])
+
+federation_router = federation_routes.build_federation_router(_build_federation_dependencies)
+_app_factory.register_routers(app, [federation_router])
 
 
 # ─────────────────────────────────────────────
