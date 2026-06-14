@@ -620,8 +620,8 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (`fail_under=90`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml` |
-| Ayrı coverage adımı (`--cov-fail-under=90`) | ✅ Aktif | `.github/workflows/ci.yml` |
+| Coverage Quality Gate (`fail_under=100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml` |
+| Final birleşik coverage adımı (`coverage report --fail-under=100`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
@@ -630,12 +630,12 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 
 Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + enterprise senaryo regresyonları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır. Swarm orkestrasyonu ile Active Learning hattı da artık bu model içinde açık isimli hedefli regresyon dilimi olarak ayrı görünürlük kazanmıştır.
 
-### 6.2 Coverage Hard Gate (%90)
+### 6.2 Coverage Hard Gate (%100)
 
-- `.coveragerc` içinde `fail_under = 90` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
+- `.coveragerc` içinde `fail_under = 100` zorunlu kalite kapısı olarak tanımlıdır; rapor görünürlüğü `pyproject.toml` coverage ayarlarıyla `show_missing = true` olarak korunur.
 - `pytest.ini`, `python_files = test_*.py` ve `asyncio_mode = auto` ayarlarıyla aynı test evrenini deterministik biçimde çalıştırır.
-- CI hattı (`.github/workflows/ci.yml`) coverage eşiğinden hemen önce `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` için hedefli bir regresyon dilimi koşturur; ardından ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=90` komutu ile coverage eşiğini uygular.
-- `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"` değişkeniyle aynı eşiği yerelde tekrarlar.
+- CI hattı (`.github/workflows/ci.yml`) coverage eşiğinden hemen önce `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` için hedefli bir regresyon dilimi koşturur; ardından final birleşik rapor adımında `coverage report --fail-under=${COVERAGE_FAIL_UNDER}` komutu ile `.coveragerc` kaynaklı coverage eşiğini uygular.
+- `run_tests.sh` betiği de açık override yoksa `.coveragerc` içindeki `[report].fail_under` değerini okuyarak aynı eşiği yerelde tekrarlar.
 - `migration-cutover-checks.yml` production rehearsal hattı da aynı Swarm + Active Learning dilimini `tests/test_migration_ci_guards.py` guard testi ile birlikte çalıştırarak veri migrasyonu, connection pool smoke ve öğrenme/orkestrasyon omurgasını tek cutover zincirinde toplar.
 - Depoda `test_quick_100.py` ve `test_ultimate_coverage.py` gibi agresif kapsama odaklı testler bulunur; bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
 
@@ -1462,7 +1462,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** “%100 test kapsaması” ifadesi kültürel/ideal hedef olarak korunabilir; ancak güncel ve kodlanmış resmî kalite kapısı `.coveragerc`, `run_tests.sh` ve CI üzerinde `%90` eşiğiyle uygulanmaktadır.
+> **Not:** “%100 test kapsaması” ifadesi kültürel/ideal hedef olarak korunabilir; ancak güncel ve kodlanmış resmî kalite kapısı `.coveragerc`, `run_tests.sh` ve CI üzerinde `%100` eşiğiyle uygulanmaktadır.
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi

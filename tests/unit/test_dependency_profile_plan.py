@@ -37,4 +37,6 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "torchvision>=0.19,<0.27" in rag_deps
     assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
     assert "CVE-2025-3000" in docs
-    assert "pyproject caps future resolver output below 2.12" in policy
+    assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
+    assert "CVE-2025-3000" not in policy
+    assert "No active pip-audit vulnerability exceptions." in policy

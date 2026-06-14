@@ -96,7 +96,7 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%98`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%100`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; başarısızsa değişiklik merge/PR öncesi düzeltilir. |
 | CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER` | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Merge engelleyici CI profilidir; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |

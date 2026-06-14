@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from sidar_version import PRODUCT_VERSION
@@ -61,6 +61,23 @@ def register_exception_handlers(
         return JSONResponse(content, status_code=500)
 
 
+def register_routers(application: FastAPI, routers: list[APIRouter]) -> dict[str, Any]:
+    """Include route modules on the app and collect legacy endpoint exports.
+
+    Route modules may expose a ``legacy_exports`` mapping for backwards-compatible
+    direct imports/tests while app construction keeps router registration in one
+    orchestration point.
+    """
+
+    legacy_exports: dict[str, Any] = {}
+    for router in routers:
+        application.include_router(router)
+        exports = getattr(router, "legacy_exports", {}) or {}
+        if isinstance(exports, dict):
+            legacy_exports.update(exports)
+    return legacy_exports
+
+
 def create_app(
     *,
     lifespan: Callable[[FastAPI], Any] | None = None,
@@ -70,8 +87,9 @@ def create_app(
 ) -> FastAPI:
     """Create the Sidar FastAPI application shell.
 
-    Route registration is intentionally left to ``web_server.py`` for backwards
-    compatibility while endpoint clusters continue moving into ``web.routes``.
+    Router construction remains dependency-driven in ``web_server.py``, while
+    router registration is centralized through ``register_routers`` in this
+    factory module.
     """
 
     application = FastAPI(

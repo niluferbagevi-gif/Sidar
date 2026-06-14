@@ -22,6 +22,13 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 - `run_tests.sh`, açık `COVERAGE_FAIL_UNDER` verilmemişse `.coveragerc` değerini okur ve başarılı test koşusundan sonra `COVERAGE_RATCHET_STEP` varsayılanı `%1` puan olacak şekilde gate’i yalnızca yukarı ratchet eder.
 - Otonom CoverageAgent koşularında tek denemelik kapsam ayrıca mikro limitlerle korunur: varsayılan `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3`, `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`, `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25` ve `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10`.
 - Coverage gate eşiği için tek teknik doğruluk kaynağı `.coveragerc` dosyasıdır; `pyproject.toml` içinde ayrı bir `fail_under` tutulmaz. `run_tests.sh` bu değeri okur ve yalnız final birleşik raporda uygular; açık `COVERAGE_FAIL_UNDER` sadece bilinçli geçici override olarak kullanılmalıdır.
+- Branch coverage ölçümü `[tool.coverage.run] branch = true` ayarıyla yapılır; hızlı doğrulama için
+  `uv run pytest --no-cov <hedef-testler>` kullanılabilir, ancak tam gate gerektiğinde `./run_tests.sh`
+  veya aşağıdaki gibi `.coveragerc` değerini okuyan final rapor komutu çalıştırılmalıdır:
+
+  ```bash
+  uv run python -m coverage report --fail-under=$(python -c "import configparser; cfg=configparser.ConfigParser(); cfg.read('.coveragerc'); print(cfg.get('report', 'fail_under'))")
+  ```
 - Bu nedenle aşağıdaki “kademeli hedefler”, global gate’in alternatifi değil; **modül bazlı iyileştirme hedefi** olarak yorumlanmalıdır.
 
 ### Proje Ekibine Aksiyon Notu (2026-04-08)
