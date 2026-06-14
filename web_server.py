@@ -51,7 +51,6 @@ from fastapi import (
     Request,
     UploadFile,
     WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -95,6 +94,7 @@ from web import app_factory as _app_factory
 from web.middleware.cors import configure_loopback_cors
 from web.routes import collaboration as collaboration_routes
 from web.routes import ws_chat as ws_chat_routes
+from web.routes import ws_voice as ws_voice_routes
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
 from web.routes.health import build_health_router
@@ -1377,6 +1377,12 @@ async def _issue_auth_token(agent: SidarAgent, user: Any) -> str:
     return await issue_auth_token(agent, user, config=cfg, logger_obj=logger)
 
 
+async def _await_if_needed(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 _register_exception_handlers = _app_factory.register_exception_handlers
 app = _app_factory.create_app(
     lifespan=_app_lifespan,
@@ -2541,414 +2547,22 @@ async def websocket_chat(websocket: WebSocket) -> Any:
     return await ws_chat_routes.websocket_chat(websocket, _build_ws_chat_dependencies())
 
 
-@app.websocket("/ws/voice")
+def _build_ws_voice_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        anyio_closed=_ANYIO_CLOSED,
+        await_if_needed=_await_if_needed,
+        cfg=cfg,
+        llm_api_error_cls=LLMAPIError,
+        logger=logger,
+        resolve_agent_instance=_resolve_agent_instance,
+        resolve_user_from_token=_resolve_user_from_token,
+        ws_close_policy_violation=_ws_close_policy_violation,
+        ws_stream_agent_text_response=_ws_stream_agent_text_response,
+    )
+
+
 async def websocket_voice(websocket: WebSocket) -> Any:
-    """
-    Gerçek zamanlı ses oturumu için websocket.
-
-    MVP davranışı:
-    - İstemci binary ses chunk'larını gönderir.
-    - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
-    - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
-    """
-    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token = proto_header or ""
-
-    if header_token:
-        await websocket.accept(subprotocol=header_token)
-    else:
-        await websocket.accept()
-
-    try:
-        from core.multimodal import MultimodalPipeline
-    except ImportError:
-        await websocket.send_json({"error": "core.multimodal modülü yüklenemedi.", "done": True})
-        await websocket.close(code=1011, reason="multimodal unavailable")
-        return
-
-    try:
-        from core.voice import VoicePipeline
-    except ImportError:
-        VoicePipeline = None  # type: ignore[misc, assignment]
-
-    agent = await _resolve_agent_instance()
-    pipeline = MultimodalPipeline(agent.llm, cfg)
-    voice_pipeline = None
-    voice_init_error = ""
-    if VoicePipeline is not None:
-        try:
-            voice_pipeline = VoicePipeline(cfg)
-        except Exception as exc:
-            voice_init_error = f"Voice Disabled: {exc.__class__.__name__}"
-            logger.warning("Voice pipeline başlatılamadı, voice devre dışı: %s", exc)
-    max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
-
-    audio_buffer = bytearray()
-    ws_user_id = ""
-    ws_username = ""
-    ws_authenticated = False
-    session_mime_type = "audio/webm"
-    session_language: str | None = None
-    session_prompt = ""
-    voice_sequence = 0
-    active_response_task: asyncio.Task[Any] | None = None
-    websocket._sidar_voice_pipeline = voice_pipeline  # type: ignore[attr-defined, unused-ignore]
-    duplex_state = (
-        voice_pipeline.create_duplex_state()
-        if voice_pipeline is not None and hasattr(voice_pipeline, "create_duplex_state")
-        else None
-    )
-    websocket._sidar_voice_duplex_state = duplex_state  # type: ignore[attr-defined, unused-ignore]
-
-    async def _emit_voice_state(event: str) -> None:
-        nonlocal voice_sequence
-        voice_sequence += 1
-        if voice_pipeline is None or not hasattr(voice_pipeline, "build_voice_state_payload"):
-            await websocket.send_json(
-                {
-                    "voice_state": str(event or "").strip().lower() or "unknown",
-                    "buffered_bytes": len(audio_buffer),
-                    "sequence": voice_sequence,
-                    "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "auto_commit_ready": False,
-                    "duplex_enabled": bool(getattr(voice_pipeline, "duplex_enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "interrupt_ready": False,
-                    "tts_enabled": bool(getattr(voice_pipeline, "enabled", False))
-                    if voice_pipeline is not None
-                    else False,
-                    "voice_disabled_reason": voice_init_error,
-                    "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
-                    "output_buffer_chars": len(
-                        getattr(duplex_state, "output_text_buffer", "") or ""
-                    ),
-                    "last_interrupt_reason": str(
-                        getattr(duplex_state, "last_interrupt_reason", "") or ""
-                    ),
-                }
-            )
-            return
-        await websocket.send_json(
-            voice_pipeline.build_voice_state_payload(
-                event=event,
-                buffered_bytes=len(audio_buffer),
-                sequence=voice_sequence,
-                duplex_state=duplex_state,
-            )
-        )
-
-    async def _cancel_active_response(reason: str) -> None:
-        nonlocal active_response_task
-        interrupt_payload = (
-            voice_pipeline.interrupt_assistant_turn(duplex_state, reason=reason)
-            if voice_pipeline is not None and hasattr(voice_pipeline, "interrupt_assistant_turn")
-            else {
-                "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
-                "dropped_text_chars": 0,
-                "cancelled_audio_sequences": 0,
-                "reason": reason,
-            }
-        )
-        if active_response_task is None or active_response_task.done():
-            return
-        active_response_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await active_response_task
-        await websocket.send_json(
-            {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
-        )
-        active_response_task = None
-
-    async def _run_voice_turn(
-        *,
-        audio_bytes: bytes,
-        mime_type: str,
-        language: str | None,
-        prompt: str,
-    ) -> None:
-        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
-            return
-
-        result = await pipeline.transcribe_bytes(
-            audio_bytes,
-            mime_type=mime_type,
-            language=language,
-            prompt=prompt,
-        )
-        await _emit_voice_state("processed")
-
-        if not isinstance(result, dict) or not result.get("success"):
-            reason = "Ses transkripsiyonu başarısız oldu."
-            if isinstance(result, dict):
-                reason = str(result.get("reason", reason) or reason)
-            await websocket.send_json({"error": reason, "done": True})
-            return
-
-        transcript_text = str(result.get("text", "") or "").strip()
-        await websocket.send_json(
-            {
-                "transcript": transcript_text,
-                "language": result.get("language", ""),
-                "provider": result.get("provider", ""),
-            }
-        )
-        if not transcript_text:
-            await websocket.send_json({"done": True})
-            return
-
-        assistant_turn_id = (
-            voice_pipeline.begin_assistant_turn(duplex_state)
-            if voice_pipeline is not None and hasattr(voice_pipeline, "begin_assistant_turn")
-            else int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
-        )
-        await websocket.send_json(
-            {"assistant_turn": "started", "assistant_turn_id": assistant_turn_id}
-        )
-
-        try:
-            await _ws_stream_agent_text_response(websocket, agent, transcript_text)
-        except LLMAPIError as exc:
-            await websocket.send_json(
-                {
-                    "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
-                    "done": True,
-                }
-            )
-            return
-        except Exception as exc:
-            logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
-            await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-            return
-
-        await websocket.send_json(
-            {"assistant_turn": "completed", "assistant_turn_id": assistant_turn_id}
-        )
-        await websocket.send_json({"done": True})
-
-    async def _process_audio_commit() -> None:
-        nonlocal audio_buffer, active_response_task
-        if not audio_buffer:
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
-            return
-
-        if active_response_task and not active_response_task.done():
-            await _cancel_active_response("superseded_by_new_turn")
-
-        commit_audio = bytes(audio_buffer)
-        audio_buffer.clear()
-        active_response_task = asyncio.create_task(
-            _run_voice_turn(
-                audio_bytes=commit_audio,
-                mime_type=session_mime_type,
-                language=session_language,
-                prompt=session_prompt,
-            )
-        )
-
-    if header_token:
-        ws_user = await _await_if_needed(_resolve_user_from_token(agent, header_token))
-        if not ws_user:
-            await _ws_close_policy_violation(websocket, "Invalid or expired token")
-            return
-        ws_user_id = ws_user.id
-        ws_username = ws_user.username
-        ws_authenticated = True
-        await agent.memory.set_active_user(ws_user_id, ws_username)
-        with contextlib.suppress(Exception):
-            await websocket.send_json({"auth_ok": True})
-
-    try:
-        while True:
-            packet = await websocket.receive()
-            packet_type = packet.get("type")
-            if packet_type == "websocket.disconnect":
-                raise WebSocketDisconnect()
-
-            bytes_payload = packet.get("bytes")
-            if bytes_payload is not None:
-                if not ws_authenticated:
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                if len(audio_buffer) + len(bytes_payload) > max_voice_bytes:
-                    await _ws_close_policy_violation(websocket, "Voice payload too large")
-                    return
-                audio_buffer.extend(bytes_payload)
-                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
-                await _emit_voice_state("chunk")
-                continue
-
-            text_payload = packet.get("text")
-            if text_payload is None:
-                continue
-
-            try:
-                payload = json.loads(text_payload)
-            except json.JSONDecodeError:
-                continue
-
-            action = str(payload.get("action", "") or "").strip().lower()
-            if not ws_authenticated:
-                if action != "auth":
-                    await _ws_close_policy_violation(websocket, "Authentication required")
-                    return
-                auth_token = (payload.get("token", "") or "").strip()
-                if not auth_token:
-                    await _ws_close_policy_violation(websocket, "Authentication token missing")
-                    return
-                ws_user = await _await_if_needed(_resolve_user_from_token(agent, auth_token))
-                if not ws_user:
-                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
-                    return
-                ws_user_id = ws_user.id
-                ws_username = ws_user.username
-                ws_authenticated = True
-                await agent.memory.set_active_user(ws_user_id, ws_username)
-                with contextlib.suppress(Exception):
-                    await websocket.send_json({"auth_ok": True})
-                continue
-
-            if action in {"start", "reset"}:
-                audio_buffer.clear()
-                session_mime_type = str(payload.get("mime_type", "audio/webm") or "audio/webm")
-                session_language = payload.get("language")
-                session_prompt = str(payload.get("prompt", "") or "")
-                await websocket.send_json(
-                    {
-                        "voice_session": "ready",
-                        "mime_type": session_mime_type,
-                        "duplex": True,
-                        "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)),
-                        "tts_enabled": bool(getattr(voice_pipeline, "enabled", False))
-                        if voice_pipeline is not None
-                        else False,
-                        "voice_disabled_reason": str(
-                            getattr(voice_pipeline, "voice_disabled_reason", "") or voice_init_error
-                        ),
-                    }
-                )
-                await _emit_voice_state("ready")
-                continue
-
-            if action == "append_base64":
-                encoded_chunk = str(payload.get("chunk", "") or "").strip()
-                if not encoded_chunk:
-                    continue
-                try:
-                    decoded_chunk = base64.b64decode(encoded_chunk, validate=True)
-                except Exception:
-                    await websocket.send_json(
-                        {"error": "Geçersiz base64 ses parçası", "done": True}
-                    )
-                    continue
-                if len(audio_buffer) + len(decoded_chunk) > max_voice_bytes:
-                    await _ws_close_policy_violation(websocket, "Voice payload too large")
-                    return
-                audio_buffer.extend(decoded_chunk)
-                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
-                await _emit_voice_state("chunk")
-                continue
-
-            if action == "cancel":
-                audio_buffer.clear()
-                await _cancel_active_response("user_cancelled")
-                await _emit_voice_state("cancelled")
-                await websocket.send_json({"cancelled": True, "done": True})
-                continue
-
-            if action == "vad_event":
-                vad_state = str(payload.get("state", "") or "unknown")
-                await _emit_voice_state(vad_state)
-                if (
-                    voice_pipeline
-                    and hasattr(voice_pipeline, "should_interrupt_response")
-                    and voice_pipeline.should_interrupt_response(len(audio_buffer), event=vad_state)
-                ):
-                    await _cancel_active_response("barge_in")
-                if voice_pipeline and voice_pipeline.should_commit_audio(
-                    len(audio_buffer), event=vad_state
-                ):
-                    await _process_audio_commit()
-                continue
-
-            if action not in {"commit", "process", "end", "vad_commit"}:
-                continue
-
-            session_mime_type = str(
-                payload.get("mime_type", session_mime_type) or session_mime_type
-            )
-            session_language = payload.get("language", session_language)
-            session_prompt = str(payload.get("prompt", session_prompt) or session_prompt)
-            await _process_audio_commit()
-    except WebSocketDisconnect:
-        logger.info("İstemci voice WebSocket bağlantısını kesti.")
-        if active_response_task and not active_response_task.done():
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await active_response_task
-    except Exception as exc:
-        if _ANYIO_CLOSED is not None and isinstance(exc, _ANYIO_CLOSED):
-            logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_response_task and not active_response_task.done():  # pragma: no cover
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await active_response_task
-        else:
-            logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
-
-
-@app.get(
-    "/status",
-    summary="Ajan Durumunu Getir",
-    description="Ajanın donanım, LLM bağlantı, bellek ve sağlayıcı durumlarını JSON olarak döndürür.",
-    responses={200: {"description": "Başarılı durum yanıtı"}},
-)
-async def status() -> Any:
-    """Ajan durum bilgisini JSON olarak döndür."""
-    a = await _resolve_agent_instance()
-    gpu_info = a.health.get_gpu_info()
-    # Sağlayıcıya göre doğru model adını gönder
-    if a.cfg.AI_PROVIDER == "gemini":
-        model_display = getattr(a.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
-    else:
-        model_display = a.cfg.CODING_MODEL
-
-    enc_status = "Etkin (Fernet)" if getattr(a.cfg, "MEMORY_ENCRYPTION_KEY", "") else "Devre Dışı"
-
-    ollama_t0 = time.monotonic()
-    ollama_online = a.health.check_ollama()
-    ollama_latency_ms = int((time.monotonic() - ollama_t0) * 1000)
-
-    return JSONResponse(
-        {
-            "version": a.VERSION,
-            "provider": a.cfg.AI_PROVIDER,
-            "model": model_display,
-            "access_level": a.cfg.ACCESS_LEVEL,
-            "memory_count": len(a.memory),
-            "github": a.github.is_available(),
-            "web_search": a.web.is_available(),
-            "rag_status": a.docs.status(),
-            "pkg_status": a.pkg.status(),
-            "enc_status": enc_status,
-            # GPU bilgisi
-            "gpu_enabled": a.cfg.USE_GPU,
-            "gpu_info": a.cfg.GPU_INFO,
-            "gpu_count": getattr(a.cfg, "GPU_COUNT", 0),
-            "cuda_version": getattr(a.cfg, "CUDA_VERSION", "N/A"),
-            "gpu_devices": gpu_info.get("devices", []),
-            "ollama_online": ollama_online,
-            "ollama_latency_ms": ollama_latency_ms,
-        }
-    )
-
-
-async def _await_if_needed(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
+    return await ws_voice_routes.websocket_voice(websocket, _build_ws_voice_dependencies())
 
 async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     try:
@@ -3063,6 +2677,9 @@ app.include_router(hitl_router)
 
 ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)
 app.include_router(ws_chat_router)
+
+ws_voice_router = ws_voice_routes.build_ws_voice_router(_build_ws_voice_dependencies)
+app.include_router(ws_voice_router)
 
 metrics_router = build_metrics_router(
     require_metrics_access=_require_metrics_access,
