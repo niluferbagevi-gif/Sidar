@@ -108,6 +108,12 @@ from web.security import (
     SIDAR_WS_CHAT_PROTOCOL as _SIDAR_WS_CHAT_PROTOCOL,
 )
 from web.security import (
+    SIDAR_WS_HITL_PROTOCOL as _SIDAR_WS_HITL_PROTOCOL,
+)
+from web.security import (
+    SIDAR_WS_VOICE_PROTOCOL as _SIDAR_WS_VOICE_PROTOCOL,
+)
+from web.security import (
     build_user_from_jwt_payload,
     extract_ws_header_token,
     get_jwt_secret,
@@ -123,14 +129,18 @@ from web.security import (
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
 SIDAR_WS_CHAT_PROTOCOL = _SIDAR_WS_CHAT_PROTOCOL
+SIDAR_WS_VOICE_PROTOCOL = _SIDAR_WS_VOICE_PROTOCOL
+SIDAR_WS_HITL_PROTOCOL = _SIDAR_WS_HITL_PROTOCOL
 
 
 def _parse_ws_subprotocol_values(raw_header: str) -> list[str]:
     return parse_ws_subprotocol_values(raw_header)
 
 
-def _extract_ws_header_token(raw_header: str) -> tuple[str, str | None]:
-    return extract_ws_header_token(raw_header)
+def _extract_ws_header_token(
+    raw_header: str, accepted_protocol: str = SIDAR_WS_CHAT_PROTOCOL
+) -> tuple[str, str | None]:
+    return extract_ws_header_token(raw_header, accepted_protocol)
 
 try:
     from agent.core.contracts import (
@@ -2472,7 +2482,6 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         collaboration_command_requires_write=_collaboration_command_requires_write,
         collaboration_now_iso=_collaboration_now_iso,
         collaboration_rooms=_collaboration_rooms,
-        extract_ws_header_token=_extract_ws_header_token,
         get_agent_event_bus=get_agent_event_bus,
         is_sidar_mention=_is_sidar_mention,
         iter_stream_chunks=_iter_stream_chunks,
@@ -2480,6 +2489,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         leave_collaboration_room=_leave_collaboration_room,
         llm_api_error_cls=LLMAPIError,
         logger=logger,
+        extract_ws_header_token=_extract_ws_header_token,
         mask_collaboration_text=_mask_collaboration_text,
         normalize_collaboration_role=_normalize_collaboration_role,
         rate_limit=_RATE_LIMIT,
@@ -2512,15 +2522,18 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
         cfg=cfg,
         llm_api_error_cls=LLMAPIError,
         logger=logger,
+        extract_ws_header_token=_extract_ws_header_token,
         resolve_agent_instance=_resolve_agent_instance,
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
         ws_stream_agent_text_response=_ws_stream_agent_text_response,
+        ws_voice_protocol=SIDAR_WS_VOICE_PROTOCOL,
     )
 
 
 async def websocket_voice(websocket: WebSocket) -> Any:
     return await ws_voice_routes.websocket_voice(websocket, _build_ws_voice_dependencies())
+
 
 def _expose_operational_error_details() -> bool:
     return _app_factory._expose_exception_details()
@@ -2639,6 +2652,8 @@ hitl_router = build_hitl_router(
     hitl_ws_clients=_hitl_ws_clients,
     get_hitl_store=lambda: get_hitl_store(),
     get_hitl_gate=lambda: get_hitl_gate(),
+    extract_ws_header_token=_extract_ws_header_token,
+    ws_hitl_protocol=SIDAR_WS_HITL_PROTOCOL,
 )
 
 ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)

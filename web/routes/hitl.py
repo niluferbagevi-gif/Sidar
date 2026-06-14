@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from web.routes import LegacyExportRouter
+from web.security import SIDAR_WS_HITL_PROTOCOL
+from web.security import extract_ws_header_token as default_extract_ws_header_token
 
 
 class HITLRespondRequest(BaseModel):
@@ -27,6 +29,8 @@ def build_hitl_router(
     hitl_ws_clients: set[WebSocket],
     get_hitl_store: Callable[[], Any],
     get_hitl_gate: Callable[[], Any],
+    extract_ws_header_token: Callable[[str, str], tuple[str, str | None]] = default_extract_ws_header_token,
+    ws_hitl_protocol: str = SIDAR_WS_HITL_PROTOCOL,
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
@@ -96,9 +100,13 @@ def build_hitl_router(
         bearer_token = ""  # Empty sentinel; populated from Authorization header.  # nosec B105
         if auth_header.lower().startswith("bearer "):
             bearer_token = auth_header[7:].strip()
-        header_token = proto_header or bearer_token
-        if header_token:
-            await websocket.accept(subprotocol=header_token)
+        header_token, accept_subprotocol = extract_ws_header_token(
+            proto_header, ws_hitl_protocol
+        )
+        if not header_token:
+            header_token = bearer_token
+        if accept_subprotocol:
+            await websocket.accept(subprotocol=accept_subprotocol)
         else:
             await websocket.accept()
 

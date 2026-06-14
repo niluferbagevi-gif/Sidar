@@ -32,10 +32,12 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
     - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
     """
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token = proto_header or ""
+    header_token, accept_subprotocol = deps.extract_ws_header_token(
+        proto_header, deps.ws_voice_protocol
+    )
 
-    if header_token:
-        await websocket.accept(subprotocol=header_token)
+    if accept_subprotocol:
+        await websocket.accept(subprotocol=accept_subprotocol)
     else:
         await websocket.accept()
 

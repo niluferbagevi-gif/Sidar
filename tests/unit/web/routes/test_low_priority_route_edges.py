@@ -64,7 +64,7 @@ async def test_hitl_websocket_extracts_bearer_token_and_rejects_invalid_user() -
 
     await router.legacy_exports["websocket_hitl"](websocket)
 
-    assert websocket.accepted == ["invalid-token"]
+    assert websocket.accepted == [None]
     assert closed == ["Invalid or expired token"]
 
 

@@ -2638,6 +2638,22 @@ def test_ws_chat_protocol_token_parser_keeps_legacy_header_without_echo() -> Non
     assert accepted is None
 
 
+def test_ws_protocol_token_parser_supports_voice_and_hitl_fixed_protocols() -> None:
+    voice_token, voice_accepted = web_server._extract_ws_header_token(
+        f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, voice-token",
+        web_server.SIDAR_WS_VOICE_PROTOCOL,
+    )
+    hitl_token, hitl_accepted = web_server._extract_ws_header_token(
+        f"{web_server.SIDAR_WS_HITL_PROTOCOL}, hitl-token",
+        web_server.SIDAR_WS_HITL_PROTOCOL,
+    )
+
+    assert voice_token == "voice-token"
+    assert voice_accepted == web_server.SIDAR_WS_VOICE_PROTOCOL
+    assert hitl_token == "hitl-token"
+    assert hitl_accepted == web_server.SIDAR_WS_HITL_PROTOCOL
+
+
 @pytest.mark.asyncio
 async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
     class _Memory:
@@ -6589,7 +6605,7 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
         {"sec-websocket-protocol": "good-token"}, [{"type": "websocket.disconnect"}]
     )
     await web_server.websocket_voice(ws_header_auth)
-    assert ws_header_auth.accepted == "good-token"
+    assert ws_header_auth.accepted is None
     assert {"auth_ok": True} in ws_header_auth.sent
 
     ws_unauth_action = _Ws(
@@ -6597,6 +6613,59 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
     )
     await web_server.websocket_voice(ws_unauth_action)
     assert closed_reasons[-1] == "Authentication required"
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    class _Memory:
+        async def set_active_user(self, *_args):
+            return None
+
+    class _Agent:
+        llm = object()
+        memory = _Memory()
+
+    class _MultimodalPipeline:
+        def __init__(self, *_args):
+            pass
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {
+                "sec-websocket-protocol": f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, good-token"
+            }
+            self.accepted = []
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted.append(subprotocol)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            return {"type": "websocket.disconnect"}
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert ws.accepted == [web_server.SIDAR_WS_VOICE_PROTOCOL]
+    assert "good-token" not in ws.accepted
+    assert {"auth_ok": True} in ws.sent
 
 
 @pytest.mark.asyncio
@@ -7155,7 +7224,7 @@ async def test_websocket_hitl_rejects_invalid_header_token(monkeypatch):
     ws = _Ws()
     await web_server.websocket_hitl(ws)
 
-    assert ws.accepted_subprotocols == ["bad-token"]
+    assert ws.accepted_subprotocols == [None]
     assert closes == [(ws, "Invalid or expired token")]
     assert ws not in web_server._hitl_ws_clients
 
@@ -7196,7 +7265,51 @@ async def test_websocket_hitl_accepts_valid_header_token_and_cleans_up(monkeypat
     ws = _Ws()
     await web_server.websocket_hitl(ws)
 
-    assert ws.accepted_subprotocols == ["good-token"]
+    assert ws.accepted_subprotocols == [None]
+    assert ws.sent == [{"type": "hitl_snapshot", "pending": []}]
+    assert ws not in web_server._hitl_ws_clients
+
+
+@pytest.mark.asyncio
+async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    class _Store:
+        async def pending(self):
+            return []
+
+    class _Ws:
+        headers = {
+            "sec-websocket-protocol": f"{web_server.SIDAR_WS_HITL_PROTOCOL}, good-token"
+        }
+
+        def __init__(self):
+            self.accepted_subprotocols = []
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted_subprotocols.append(subprotocol)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive_text(self):
+            raise web_server.WebSocketDisconnect()
+
+    async def _resolve_agent():
+        return SimpleNamespace()
+
+    def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return SimpleNamespace(id="u1", role="operator")
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "get_hitl_store", lambda: _Store())
+
+    ws = _Ws()
+    await web_server.websocket_hitl(ws)
+
+    assert ws.accepted_subprotocols == [web_server.SIDAR_WS_HITL_PROTOCOL]
+    assert "good-token" not in ws.accepted_subprotocols
     assert ws.sent == [{"type": "hitl_snapshot", "pending": []}]
     assert ws not in web_server._hitl_ws_clients
 

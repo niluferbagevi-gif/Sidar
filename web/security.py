@@ -16,6 +16,8 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 
 SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
+SIDAR_WS_VOICE_PROTOCOL = "sidar.voice.v1"
+SIDAR_WS_HITL_PROTOCOL = "sidar.hitl.v1"
 _WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
 
 
@@ -25,15 +27,17 @@ def parse_ws_subprotocol_values(raw_header: str) -> list[str]:
     return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
 
 
-def extract_ws_header_token(raw_header: str) -> tuple[str, str | None]:
+def extract_ws_header_token(
+    raw_header: str, accepted_protocol: str = SIDAR_WS_CHAT_PROTOCOL
+) -> tuple[str, str | None]:
     """Extract a websocket auth token without echoing raw tokens as subprotocols."""
 
     protocols = parse_ws_subprotocol_values(raw_header)
     if not protocols:
         return "", None
-    accept_subprotocol = SIDAR_WS_CHAT_PROTOCOL if SIDAR_WS_CHAT_PROTOCOL in protocols else None
+    accept_subprotocol = accepted_protocol if accepted_protocol in protocols else None
     for candidate in protocols:
-        if candidate == SIDAR_WS_CHAT_PROTOCOL:
+        if candidate == accepted_protocol:
             continue
         if _WS_PROTOCOL_TOKEN_RE.fullmatch(candidate):
             return candidate, accept_subprotocol

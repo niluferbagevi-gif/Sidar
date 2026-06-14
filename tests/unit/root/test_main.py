@@ -6212,7 +6212,7 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
         {"sec-websocket-protocol": "good-token"}, [{"type": "websocket.disconnect"}]
     )
     await web_server.websocket_voice(ws_header_auth)
-    assert ws_header_auth.accepted == "good-token"
+    assert ws_header_auth.accepted is None
     assert {"auth_ok": True} in ws_header_auth.sent
 
     ws_unauth_action = _Ws(
@@ -6220,6 +6220,59 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
     )
     await web_server.websocket_voice(ws_unauth_action)
     assert closed_reasons[-1] == "Authentication required"
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    class _Memory:
+        async def set_active_user(self, *_args):
+            return None
+
+    class _Agent:
+        llm = object()
+        memory = _Memory()
+
+    class _MultimodalPipeline:
+        def __init__(self, *_args):
+            pass
+
+    class _Ws:
+        def __init__(self):
+            self.headers = {
+                "sec-websocket-protocol": f"{web_server.SIDAR_WS_VOICE_PROTOCOL}, good-token"
+            }
+            self.accepted = []
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted.append(subprotocol)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def receive(self):
+            return {"type": "websocket.disconnect"}
+
+    async def _resolve_agent():
+        return _Agent()
+
+    async def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return SimpleNamespace(id="u1", username="ada")
+
+    mm_module = types.ModuleType("core.multimodal")
+    mm_module.MultimodalPipeline = _MultimodalPipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", mm_module)
+    monkeypatch.delitem(sys.modules, "core.voice", raising=False)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+
+    ws = _Ws()
+    await web_server.websocket_voice(ws)
+
+    assert ws.accepted == [web_server.SIDAR_WS_VOICE_PROTOCOL]
+    assert "good-token" not in ws.accepted
+    assert {"auth_ok": True} in ws.sent
 
 
 @pytest.mark.asyncio
