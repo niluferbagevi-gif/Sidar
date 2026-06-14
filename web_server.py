@@ -51,6 +51,9 @@ from fastapi import (
     UploadFile,
     WebSocket,
 )
+from fastapi import (
+    WebSocketDisconnect as _FastAPIWebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from opentelemetry import trace
@@ -118,6 +121,7 @@ from web.security import (
 )
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
+WebSocketDisconnect = _FastAPIWebSocketDisconnect
 SIDAR_WS_CHAT_PROTOCOL = _SIDAR_WS_CHAT_PROTOCOL
 
 
@@ -2564,12 +2568,10 @@ frontend_router = build_frontend_router(
         getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000"
     ),
 )
-app.include_router(frontend_router)
 
 health_router = build_health_router(
     lambda require_dependencies: _health_response(require_dependencies=require_dependencies)
 )
-app.include_router(health_router)
 agent_router = build_agent_router(
     require_admin_user=_require_admin_user,
     register_plugin_agent=lambda **kwargs: _register_plugin_agent(**kwargs),
@@ -2589,7 +2591,6 @@ agent_router = build_agent_router(
     agent_plugin_register_request_model=_AgentPluginRegisterRequest,
     plugin_marketplace_install_request_model=_PluginMarketplaceInstallRequest,
 )
-app.include_router(agent_router)
 
 rag_router = build_rag_router(
     resolve_agent_instance=lambda: _resolve_agent_instance(),
@@ -2598,7 +2599,6 @@ rag_router = build_rag_router(
     server_root=lambda: Path(__file__).parent.resolve(),
     logger=logger,
 )
-app.include_router(rag_router)
 
 auth_admin_router = build_auth_admin_router(
     resolve_agent_instance=lambda: _resolve_agent_instance(),
@@ -2615,7 +2615,6 @@ auth_admin_router = build_auth_admin_router(
     prompt_activate_request_model=_PromptActivateRequest,
     policy_upsert_request_model=_PolicyUpsertRequest,
 )
-app.include_router(auth_admin_router)
 
 hitl_router = build_hitl_router(
     get_request_user=_get_request_user,
@@ -2627,13 +2626,10 @@ hitl_router = build_hitl_router(
     get_hitl_store=lambda: get_hitl_store(),
     get_hitl_gate=lambda: get_hitl_gate(),
 )
-app.include_router(hitl_router)
 
 ws_chat_router = ws_chat_routes.build_ws_chat_router(_build_ws_chat_dependencies)
-app.include_router(ws_chat_router)
 
 ws_voice_router = ws_voice_routes.build_ws_voice_router(_build_ws_voice_dependencies)
-app.include_router(ws_voice_router)
 
 metrics_router = build_metrics_router(
     require_metrics_access=_require_metrics_access,
@@ -2646,7 +2642,6 @@ metrics_router = build_metrics_router(
     reset_current_metrics_user_id=reset_current_metrics_user_id,
     logger=logger,
 )
-app.include_router(metrics_router)
 
 project_ops_router = build_project_ops_router(
     get_request_user=_get_request_user,
@@ -2656,7 +2651,6 @@ project_ops_router = build_project_ops_router(
     cfg=cfg,
     logger=logger,
 )
-app.include_router(project_ops_router)
 
 orchestration_router = build_orchestration_router(
     get_request_user=_get_request_user,
@@ -2669,7 +2663,6 @@ orchestration_router = build_orchestration_router(
     swarm_execute_request_model=_SwarmExecuteRequest,
     serialize_swarm_result=_serialize_swarm_result,
 )
-app.include_router(orchestration_router)
 
 webhooks_router = build_webhooks_router(
     cfg=cfg,
@@ -2688,22 +2681,25 @@ webhooks_router = build_webhooks_router(
     ),
     dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
 )
-app.include_router(webhooks_router)
 
-for _router in (
-    frontend_router,
-    health_router,
-    agent_router,
-    rag_router,
-    auth_admin_router,
-    hitl_router,
-    metrics_router,
-    project_ops_router,
-    orchestration_router,
-    webhooks_router,
-):
-    for _name, _obj in _router.legacy_exports.items():
-        globals()[_name] = _obj
+_legacy_route_exports = _app_factory.register_routers(
+    app,
+    [
+        frontend_router,
+        health_router,
+        agent_router,
+        rag_router,
+        auth_admin_router,
+        hitl_router,
+        ws_chat_router,
+        ws_voice_router,
+        metrics_router,
+        project_ops_router,
+        orchestration_router,
+        webhooks_router,
+    ],
+)
+globals().update(_legacy_route_exports)
 
 # Explicit legacy re-exports for static analyzers (ruff/mypy).
 favicon = frontend_router.legacy_exports["favicon"]
@@ -3256,7 +3252,7 @@ async def api_teams_send(req: _TeamsSendRequest) -> Any:
 
 
 operations_router = operations_routes.build_operations_router(_build_operations_dependencies)
-app.include_router(operations_router)
+_app_factory.register_routers(app, [operations_router])
 
 
 # ─────────────────────────────────────────────
@@ -3320,10 +3316,10 @@ swarm_federation_feedback = federation_routes.swarm_federation_feedback
 
 
 autonomy_router = autonomy_routes.build_autonomy_router(_build_autonomy_dependencies)
-app.include_router(autonomy_router)
+_app_factory.register_routers(app, [autonomy_router])
 
 federation_router = federation_routes.build_federation_router(_build_federation_dependencies)
-app.include_router(federation_router)
+_app_factory.register_routers(app, [federation_router])
 
 
 # ─────────────────────────────────────────────
