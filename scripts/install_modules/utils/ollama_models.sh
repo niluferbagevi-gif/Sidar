@@ -52,8 +52,10 @@ sidar_ollama_runtime_num_batch() {
 
 sidar_ollama_export_runtime_defaults() {
     local env_file="${1:-$SCRIPT_DIR/.env}"
-    export OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
-    export OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    OLLAMA_NUM_CTX="$(sidar_ollama_runtime_num_ctx "$env_file")"
+    OLLAMA_NUM_BATCH="$(sidar_ollama_runtime_num_batch "$env_file")"
+    export OLLAMA_NUM_CTX
+    export OLLAMA_NUM_BATCH
     info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
 }
 
