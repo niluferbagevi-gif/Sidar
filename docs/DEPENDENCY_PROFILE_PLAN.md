@@ -66,6 +66,8 @@ Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
    sınıflarına etiketle. Bu aşamada lock veya install davranışı değişmez.
 2. **CI dry-run:** Yeni profil komutlarını ayrı non-blocking job olarak dene; örn. production image için
    `uv sync --frozen --extra production` ancak ana gate yine `uv sync --all-extras` kalır.
+   İlk takip işi `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ıdır;
+   `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
 3. **Docker/installer koordinasyonu:** Production Dockerfile, installer ve deploy runbook'ları yeni profile
    göre güncellenmeden ana `dependencies` daraltılmaz.
 4. **Ana liste daraltma:** Sadece dry-run ve installer doğrulaması geçtikten sonra dev/test araçları ana

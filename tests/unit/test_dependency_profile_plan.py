@@ -73,6 +73,17 @@ def test_dependency_inventory_labels_every_main_dependency() -> None:
     assert inventory["owner_doc"] == "docs/DEPENDENCY_PROFILE_PLAN.md"
 
 
+def test_ci_has_non_blocking_production_profile_dry_run() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert "production-profile-dry-run:" in workflow
+    assert "continue-on-error: true" in workflow
+    assert "uv sync --frozen --extra production" in workflow
+    assert "production-profile-dry-run" in docs
+    assert "ana CI gate'ini kırmaz" in docs
+
+
 def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_current_deps() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     dependencies = set(pyproject["project"]["dependencies"])

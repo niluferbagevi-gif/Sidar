@@ -359,6 +359,28 @@ jobs:
       - name: Check .env.example ↔ config.py parity
         run: bash scripts/check_env_parity.sh
 
+  production-profile-dry-run:
+    name: Production dependency profile dry run (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: false
+
+      - name: Dry-run production dependency profile
+        run: uv sync --frozen --extra production
+
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
     runs-on: ubuntu-latest
