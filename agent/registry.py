@@ -283,11 +283,11 @@ def _import_builtin_roles() -> None:
     # AST contract tests can detect drift without importing optional role dependencies.
     builtin_role_modules = (
         "agent.roles.coder_agent",
-        "agent.roles.coverage_agent",
-        "agent.roles.poyraz_agent",
-        "agent.roles.qa_agent",
         "agent.roles.researcher_agent",
         "agent.roles.reviewer_agent",
+        "agent.roles.poyraz_agent",
+        "agent.roles.coverage_agent",
+        "agent.roles.qa_agent",
     )
     if set(builtin_role_modules) != set(BUILTIN_ROLE_MODULES):
         logger.warning(
