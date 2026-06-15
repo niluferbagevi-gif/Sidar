@@ -279,10 +279,27 @@ def _import_builtin_roles() -> None:
     """Yerleşik ajan modüllerini içe aktararak dekoratör tabanlı kaydı tetikler."""
     import importlib
 
+    # Keep this literal list in sync with ``agent.roles.__init__`` so lightweight
+    # AST contract tests can detect drift without importing optional role dependencies.
+    builtin_role_modules = (
+        "agent.roles.coder_agent",
+        "agent.roles.coverage_agent",
+        "agent.roles.poyraz_agent",
+        "agent.roles.qa_agent",
+        "agent.roles.researcher_agent",
+        "agent.roles.reviewer_agent",
+    )
+    if set(builtin_role_modules) != set(BUILTIN_ROLE_MODULES):
+        logger.warning(
+            "Yerleşik ajan rol kontratı ile import listesi uyumsuz: %s != %s",
+            builtin_role_modules,
+            BUILTIN_ROLE_MODULES,
+        )
+
     failures: list[tuple[str, Exception]] = []
     _clear_builtin_import_failures()
 
-    for module_name in BUILTIN_ROLE_MODULES:
+    for module_name in builtin_role_modules:
         try:
             importlib.import_module(module_name)
         except Exception as exc:
