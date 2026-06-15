@@ -3,6 +3,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 
 def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
@@ -45,6 +47,30 @@ def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
         assert representative_package in docs
     assert "install/lock davranışını" in docs
     assert "ana `dependencies` listesinden paket taşımaz" in docs
+
+
+def test_dependency_inventory_labels_every_main_dependency() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    inventory = pyproject["tool"]["sidar"]["dependency_inventory"]
+    labels = inventory["labels"]
+    allowed_labels = set(inventory["allowed_labels"])
+    dependency_names = {
+        Requirement(dependency).name for dependency in pyproject["project"]["dependencies"]
+    }
+
+    assert set(labels) == dependency_names
+    assert set(labels.values()) <= allowed_labels
+    for required_label in (
+        "runtime",
+        "dev",
+        "provider",
+        "integration",
+        "test-double",
+        "security-tool",
+    ):
+        assert required_label in labels.values()
+    assert inventory["status"] == "inventory-only"
+    assert inventory["owner_doc"] == "docs/DEPENDENCY_PROFILE_PLAN.md"
 
 
 def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_current_deps() -> None:

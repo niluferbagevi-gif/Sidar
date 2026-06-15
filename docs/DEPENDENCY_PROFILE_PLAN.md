@@ -28,6 +28,9 @@ Bu tablo, **Envanter** fazının başlangıç sınıflandırmasıdır; install/l
 değiştirmez ve ana `dependencies` listesinden paket taşımaz. Amaç, sonraki PR'larda
 CI dry-run, Docker image ve installer/runbook değişiklikleriyle birlikte hangi paketin
 hangi profile aday olduğunu açıkça izlemektir.
+Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
+`[tool.sidar.dependency_inventory.labels]` altında tutulur; izin verilen etiketler
+`runtime`, `dev`, `provider`, `integration`, `test-double` ve `security-tool` değerleridir.
 
 | Sınıf | Aday paketler / extras | Geçiş notu |
 |---|---|---|
