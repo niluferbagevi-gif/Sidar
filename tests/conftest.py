@@ -172,11 +172,18 @@ DEFAULT_FREEZEGUN_IGNORE_MODULES = (
     "transformers",
     "tiktoken",
     "pydantic",
-    # LLM ekosisteminde lazy-import zinciri yoğun paketler:
+    # LLM/ML ekosisteminde lazy-import zinciri yoğun paketler.
+    # freezegun yüklü modüllerin attribute'larını gezerken transformers /
+    # sentencepiece yanında huggingface_hub -> torch -> triton zincirini de
+    # tetikleyebilir; torch tarafındaki TORCH_LIBRARY kayıtları ikinci kez
+    # çalıştırıldığında test süreci deterministik olmayan biçimde düşebilir.
     "tokenizers",
     "langchain",
     "langchain_core",
     "langchain_community",
+    "huggingface_hub",
+    "torch",
+    "triton",
 )
 
 
