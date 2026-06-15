@@ -84,6 +84,23 @@ def test_ci_has_non_blocking_production_profile_dry_run() -> None:
     assert "ana CI gate'ini kırmaz" in docs
 
 
+def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() -> None:
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert "## Dockerfile / installer geçiş PR kapsamı" in docs
+    for target in (
+        "Dockerfile",
+        "install_sidar.sh",
+        "scripts/install_modules/utils/python_env.sh",
+        "Runbook / docs",
+    ):
+        assert target in docs
+    assert "Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez" in docs
+    assert "`--dependency-profile=all|production`" in docs
+    assert "varsayılan `all` kalmalı" in docs
+    assert "ana `dependencies` listesi daraltılmamalıdır" in docs
+
+
 def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_current_deps() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     dependencies = set(pyproject["project"]["dependencies"])

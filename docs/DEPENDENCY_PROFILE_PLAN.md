@@ -75,6 +75,21 @@ Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
+## Dockerfile / installer geçiş PR kapsamı
+
+Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez. Production profile geçişi
+ayrı bir PR olarak ele alınmalı ve aşağıdaki dosyaları aynı değişiklik serisinde koordine etmelidir:
+
+| Alan | Mevcut sözleşme | Ayrı PR hedefi | Gerekli doğrulama |
+|---|---|---|---|
+| `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras --extra dev` kullanır. | Production image için `uv sync --frozen --extra production` denemesini ayrı stage/arg ile tanıt; dev araçlarını kaldırmadan önce dry-run sonuçlarını raporla. | Image build dry-run, web boot smoke, OpenAPI metadata smoke, import smoke. |
+| `install_sidar.sh` | Yerel/CI paritesi için `uv sync --frozen --all-extras` ana kurulum akışıdır. | `--dependency-profile=all|production` veya eşdeğer env override tasarla; varsayılan `all` kalmalı. | Online/offline installer smoke, `--ci` bundle smoke, pyright/self-heal dev bağımlılığı kontrolü. |
+| `scripts/install_modules/utils/python_env.sh` | Modüler installer yolu `uv sync --frozen --all-extras --extra dev` ile dev araçlarını garanti eder. | Profile-aware sync arg builder ekle; production seçilse bile dev-only kontrollerin bilinçli atlandığını raporla. | Shellcheck, installer module tests, production profile dry-run. |
+| Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
+
+Ayrı PR kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı, `production-profile-dry-run`
+job'ı non-blocking kalmalı ve Docker/installer değişiklikleri geçmeden ana `dependencies` listesi daraltılmamalıdır.
+
 ## Kabul kriterleri
 
 - `uv sync --all-extras` geliştirici/CI standardı kesintisiz çalışır.
