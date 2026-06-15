@@ -19,6 +19,34 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
         assert tool_name in docs
 
 
+def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert "## Envanter taslağı" in docs
+    for inventory_class in (
+        "runtime-core",
+        "runtime-web",
+        "runtime-db",
+        "runtime-rag-content",
+        "runtime-ops-telemetry",
+        "optional-provider",
+        "optional-integration",
+        "dev-quality",
+    ):
+        assert inventory_class in docs
+    for representative_package in (
+        "fastapi",
+        "SQLAlchemy",
+        "opentelemetry-*",
+        "pytest-*",
+        "bandit",
+        "safety",
+    ):
+        assert representative_package in docs
+    assert "install/lock davranışını" in docs
+    assert "ana `dependencies` listesinden paket taşımaz" in docs
+
+
 def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_current_deps() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     dependencies = set(pyproject["project"]["dependencies"])
