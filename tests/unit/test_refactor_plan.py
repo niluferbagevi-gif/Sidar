@@ -31,3 +31,6 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "Küçük PR" in plan
     assert "Test-first güvence" in plan
     assert "GitHub webhook router çıkarımı yapıldı" in plan
+    assert "`/ws/chat` router factory" in plan
+    assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
+    assert "middleware/frontend fallback bootstrap boundary" in plan
