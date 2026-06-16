@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import hashlib
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,19 +24,63 @@ def digest(rel: Path) -> str:
     return h.hexdigest()
 
 
-def main() -> int:
+def _expected_payload() -> str:
     entries = [f"{digest(rel)}  {rel.as_posix()}" for rel in TARGET_FILES]
-    payload = "\n".join(entries) + "\n"
-    MANIFEST_FILE.write_text(payload, encoding="utf-8")
+    return "\n".join(entries) + "\n"
 
-    install_text = INSTALL_SCRIPT.read_text(encoding="utf-8")
+
+def _rewrite_install_script(install_text: str, payload: str) -> str:
     pattern = re.compile(
         rf"({re.escape(START)}\n)(.*?)(\n{re.escape(END)})",
         re.DOTALL,
     )
-    updated_text, count = pattern.subn(rf"\1{payload.rstrip()}\3", install_text, count=1)
+    body = payload.rstrip()
+    updated_text, count = pattern.subn(
+        lambda m: f"{m.group(1)}{body}{m.group(3)}", install_text, count=1
+    )
     if count != 1:
         raise RuntimeError("install_sidar.sh içindeki çekirdek manifest heredoc bloğu bulunamadı.")
+    return updated_text
+
+
+def _check() -> int:
+    payload = _expected_payload()
+    actual_manifest = MANIFEST_FILE.read_text(encoding="utf-8") if MANIFEST_FILE.exists() else ""
+    install_text = INSTALL_SCRIPT.read_text(encoding="utf-8")
+    rewritten = _rewrite_install_script(install_text, payload)
+
+    drift = []
+    if actual_manifest != payload:
+        drift.append(".sidar_manifest.txt")
+    if rewritten != install_text:
+        drift.append("install_sidar.sh (SIDAR_INSTALL_MANIFEST_EOF heredoc)")
+    if drift:
+        joined = ", ".join(drift)
+        print(
+            f"Çekirdek install manifest drift tespit edildi: {joined}. "
+            "Düzeltmek için: scripts/sync_install_manifest.sh",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Manifest dosyalarıyla eşleşmiyorsa hedefleri değiştirmeden non-zero ile çık.",
+    )
+    args = parser.parse_args()
+
+    if args.check:
+        return _check()
+
+    payload = _expected_payload()
+    MANIFEST_FILE.write_text(payload, encoding="utf-8")
+    install_text = INSTALL_SCRIPT.read_text(encoding="utf-8")
+    updated_text = _rewrite_install_script(install_text, payload)
     INSTALL_SCRIPT.write_text(updated_text, encoding="utf-8")
     return 0
 

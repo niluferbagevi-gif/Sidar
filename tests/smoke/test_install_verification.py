@@ -48,3 +48,24 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
 
 def test_python_version() -> None:
     assert sys.version_info >= (3, 11)
+
+
+def test_install_sidar_embedded_manifests_in_sync() -> None:
+    repo_root = Path(os.getcwd())
+    for tool, extra in (
+        ("update_core_install_manifest.py", []),
+        ("update_install_module_hash_manifest.py", ["--target", "install_sidar.sh"]),
+    ):
+        result = subprocess.run(
+            [sys.executable, f"scripts/tools/{tool}", *extra, "--check"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"{tool} drift tespit etti. install_sidar.sh içindeki gömülü manifest, "
+            "scripts/install_modules veya core/* gerçek dosyalarıyla uyumsuz. "
+            "Düzeltmek için scripts/sync_install_module_hashes.sh veya "
+            "scripts/sync_install_manifest.sh çalıştırın.\n"
+            f"stderr: {result.stderr}"
+        )
