@@ -22,6 +22,12 @@ if [[ ! -d "$MODULE_DIR" ]]; then
     exit 1
 fi
 
+cd "$ROOT_DIR"
+if ! uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check; then
+    echo "Root install_sidar.sh gömülü modül manifesti güncel değil. Önce ./scripts/sync_install_module_hashes.sh çalıştırın." >&2
+    exit 1
+fi
+
 {
     printf '#!/usr/bin/env bash\n# Sidar bundled installer\n# version: %s\n# bundled: %s\n# source: scripts/tools/bundle_install_sidar.sh\n\n' "$SIDAR_VERSION" "$BUILD_DATE"
     awk -v module_dir="$MODULE_DIR" '
