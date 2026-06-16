@@ -554,6 +554,56 @@ cd ~/Sidar
 ./install_sidar.sh
 ```
 
+### Sorun giderme (kurulum modül hash uyuşmazlığı)
+
+Raw `install_sidar.sh` ile başlatılan kurulum aşağıdakine benzer bir hatayla durursa:
+
+```
+❌  Kurulum modül hash doğrulaması başarısız (1 hata).
+
+Karşılaştırma:
+  • Manifest kaynağı: install_sidar.sh içine gömülü EMBEDDED_MODULE_HASHES_MANIFEST
+  • Beklenen (raw installer):   repo=..., branch=main
+  • Mevcut (klonlanmış repo):   repo=..., branch=main
+  • Uyumsuz modüller (1): scripts/install_modules/utils/ollama_models.sh
+```
+
+Bu hata güvenlik gate'inin çalıştığının kanıtıdır: indirilen `install_sidar.sh`
+içine gömülü modül hash listesi ile bootstrap sırasında klonlanan repo'daki gerçek
+modül dosyalarının SHA-256'sı eşleşmiyor. Geçersiz bir modülün yüklenmesini
+önlemek için kurulum bilinçli olarak durduruldu.
+
+Ne yapmalısınız:
+
+- **Normal kullanıcı**: Bu hatayı raporlayın
+  ([yeni issue açın](https://github.com/niluferbagevi-gif/Sidar/issues/new))
+  ve manifesti güncel olan bir installer release'i bekleyin. Sorun genellikle
+  manifest senkronlanmadan bir modül commit'i merge edildiğinde oluşur ve
+  bakım ekibi tarafından kısa sürede düzeltilir. Risk kabul etmeden devam
+  etmeyin.
+- **Geliştirici (repo üzerinde çalışıyorsanız)**: Repo kökünde manifesti
+  yenileyip değişikliği commit/PR edin:
+
+  ```bash
+  ./scripts/sync_install_module_hashes.sh
+  git add install_sidar.sh
+  git commit -m "Sync install_sidar.sh module hashes"
+  ```
+
+  Wrapper artık hangi modülün hash satırının değiştiğini ve `bash -n` syntax
+  kontrolünün sonucunu özetler. CI manifestin senkron kaldığını gate
+  olarak doğrular (`make check-install-manifests`).
+
+- **Bilinçli risk kabulü (yalnızca güvenilir, izole ortamlarda)**:
+  Çalıştırılacak modül kodunu doğrulamadan devam etmeyi kabul ediyorsanız:
+
+  ```bash
+  ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 bash install_sidar.sh
+  ```
+
+  Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen scriptlere
+  karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır.
+
 ---
 
 ## Kullanım

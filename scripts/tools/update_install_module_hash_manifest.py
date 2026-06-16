@@ -46,11 +46,69 @@ def update_target(target: Path) -> None:
     target.write_text(updated, encoding="utf-8")
 
 
+def _extract_embedded_payload(content: str) -> str | None:
+    pattern = re.compile(rf"{START_RE}\n(.*?)\n{END_MARKER}", re.DOTALL)
+    match = pattern.search(content)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _parse_manifest_lines(payload: str) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for raw in payload.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        entries[parts[1]] = parts[0]
+    return entries
+
+
+def diff_target(target: Path) -> list[tuple[str, str | None, str | None]]:
+    """Return per-path drift entries: (path, embedded_hash, actual_hash).
+
+    ``None`` on either side signals "missing from that manifest". The list is
+    sorted by path for deterministic reporting.
+    """
+    embedded_raw = _extract_embedded_payload(target.read_text(encoding="utf-8"))
+    if embedded_raw is None:
+        raise RuntimeError(f"Manifest bloğu bulunamadı: {target}")
+    embedded = _parse_manifest_lines(embedded_raw)
+    actual = _parse_manifest_lines(build_payload())
+    drift: list[tuple[str, str | None, str | None]] = []
+    for path in sorted(set(embedded) | set(actual)):
+        emb = embedded.get(path)
+        act = actual.get(path)
+        if emb != act:
+            drift.append((path, emb, act))
+    return drift
+
+
 def check_target(target: Path) -> bool:
     content = target.read_text(encoding="utf-8")
     payload = build_payload()
     updated = _rewrite(content, payload)
     return updated == content
+
+
+def _format_drift_report(target: Path, drift: list[tuple[str, str | None, str | None]]) -> str:
+    rel_target = target.relative_to(ROOT)
+    short = lambda h: (h or "yok").ljust(64) if h else "yok".ljust(64)  # noqa: E731
+    lines = [
+        f"Manifest drift tespit edildi: {rel_target} içindeki gömülü modül hash bloğu",
+        "scripts/install_modules altındaki gerçek dosyalarla uyumsuz.",
+        "",
+        f"Drift satırları ({len(drift)} adet):",
+        f"  {'gömülü manifest':64}  {'gerçek dosya':64}  yol",
+    ]
+    for path, embedded_hash, actual_hash in drift:
+        lines.append(f"  {short(embedded_hash)}  {short(actual_hash)}  {path}")
+    lines.append("")
+    lines.append("Düzeltmek için: scripts/sync_install_module_hashes.sh")
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -64,14 +122,10 @@ def main() -> int:
     args = parser.parse_args()
     target = (ROOT / args.target).resolve()
     if args.check:
-        if check_target(target):
+        drift = diff_target(target)
+        if not drift:
             return 0
-        print(
-            f"Manifest drift tespit edildi: {target.relative_to(ROOT)} içindeki gömülü modül "
-            "hash bloğu scripts/install_modules altındaki gerçek dosyalarla uyumsuz. "
-            "Düzeltmek için: scripts/sync_install_module_hashes.sh",
-            file=sys.stderr,
-        )
+        print(_format_drift_report(target, drift), file=sys.stderr)
         return 1
     update_target(target)
     return 0
