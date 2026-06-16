@@ -69,3 +69,43 @@ def test_install_sidar_embedded_manifests_in_sync() -> None:
             "scripts/sync_install_manifest.sh çalıştırın.\n"
             f"stderr: {result.stderr}"
         )
+
+
+def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
+    lines = install_sidar_path.read_text(encoding="utf-8").splitlines()
+    start: int | None = None
+    end: int | None = None
+    for idx, line in enumerate(lines):
+        if start is None and "<<'SIDAR_MODULE_HASHES_EOF'" in line:
+            start = idx + 1
+            continue
+        if start is not None and line.strip() == "SIDAR_MODULE_HASHES_EOF":
+            end = idx
+            break
+    assert start is not None and end is not None, (
+        f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
+    )
+    return "\n".join(lines[start:end])
+
+
+def test_bundled_install_sidar_manifest_matches() -> None:
+    repo_root = Path(os.getcwd())
+    bundle_script = repo_root / "scripts" / "tools" / "bundle_install_sidar.sh"
+    subprocess.run(["bash", str(bundle_script)], cwd=repo_root, check=True)
+
+    bundled_installer = repo_root / "dist" / "install_sidar.sh"
+    module_hashes = repo_root / "dist" / "MODULE_HASHES.txt"
+    assert bundled_installer.exists(), "Bundle çıktısı dist/install_sidar.sh oluşmadı."
+    assert module_hashes.exists(), "Bundle çıktısı dist/MODULE_HASHES.txt oluşmadı."
+
+    embedded = _extract_embedded_module_hashes(repo_root / "install_sidar.sh")
+    manifest_payload = "\n".join(
+        line
+        for line in module_hashes.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert embedded == manifest_payload, (
+        "install_sidar.sh gömülü modül hash manifesti dist/MODULE_HASHES.txt ile "
+        "uyumsuz. Bundle release'i durdurun ve scripts/sync_install_module_hashes.sh "
+        "çalıştırdıktan sonra yeniden bundle alın."
+    )

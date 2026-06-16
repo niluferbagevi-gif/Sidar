@@ -149,7 +149,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: standalone-install-sidar
-          path: dist/install_sidar.sh
+          path: |
+            dist/install_sidar.sh
+            dist/MODULE_HASHES.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -466,12 +468,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Verify install manifest integrity before bundling
+        run: |
+          uv run python scripts/tools/update_core_install_manifest.py --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+
       - name: Build standalone installer bundle
         run: |
           bash scripts/tools/bundle_install_sidar.sh
           bash -n dist/install_sidar.sh
 
+      - name: Smoke verify bundled installer integrity
+        run: |
+          uv run pytest -q --no-cov tests/smoke/test_install_verification.py::test_bundled_install_sidar_manifest_matches
+
       - name: Publish standalone installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/install_sidar.sh
+          files: |
+            dist/install_sidar.sh
+            dist/MODULE_HASHES.txt
