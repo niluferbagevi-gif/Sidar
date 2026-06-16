@@ -59,23 +59,10 @@ sidar_ollama_export_runtime_defaults() {
     info "Ollama runtime context varsayılanları: OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}, OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH}."
 }
 
-download_ollama_models() {
-    step "Ollama Modelleri Hazırlanıyor"
-    local estimated_size_gb="~14.8 GB"
-    local temp_ollama_pid=""
-    local ollama_tags_url=""
-    local tags_payload=""
-    local existing_model_count=0
-    local env_file="$SCRIPT_DIR/.env"
-    local missing_required_models=""
-    local resolved_models_csv=""
-    local should_prompt_for_download=true
-    local -a models_to_pull=()
-    local -a models=()
-    _count_ollama_models_from_tags() {
-        local payload="$1"
-        if command -v python3 &>/dev/null; then
-            python3 - "$payload" <<'PY' 2>/dev/null || echo "0"
+sidar_ollama_count_models_from_tags() {
+    local payload="$1"
+    if command -v python3 &>/dev/null; then
+        python3 - "$payload" <<'PY' 2>/dev/null || echo "0"
 import json
 import sys
 raw = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -90,18 +77,19 @@ if isinstance(models, list):
 else:
     print("0")
 PY
-        else
-            printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
-        fi
-    }
-    _model_exists_in_tags() {
-        local payload="$1"
-        local model_name="$2"
-        if [[ -z "$payload" || -z "$model_name" ]]; then
-            return 1
-        fi
-        if command -v python3 &>/dev/null; then
-            python3 - "$payload" "$model_name" <<'PY' >/dev/null 2>&1
+    else
+        printf "%s" "$payload" | grep -o '"name"[[:space:]]*:' | wc -l | tr -d '[:space:]'
+    fi
+}
+
+sidar_ollama_model_exists_in_tags() {
+    local payload="$1"
+    local model_name="$2"
+    if [[ -z "$payload" || -z "$model_name" ]]; then
+        return 1
+    fi
+    if command -v python3 &>/dev/null; then
+        python3 - "$payload" "$model_name" <<'PY' >/dev/null 2>&1
 import json
 import sys
 
@@ -124,17 +112,31 @@ if ":" not in target and f"{target}:latest" in names:
     raise SystemExit(0)
 raise SystemExit(1)
 PY
-            return $?
-        fi
+        return $?
+    fi
 
-        if printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}\""; then
-            return 0
-        fi
-        if [[ "$model_name" != *:* ]] && printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}:latest\""; then
-            return 0
-        fi
-        return 1
-    }
+    if printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}\""; then
+        return 0
+    fi
+    if [[ "$model_name" != *:* ]] && printf "%s" "$payload" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${model_name}:latest\""; then
+        return 0
+    fi
+    return 1
+}
+
+download_ollama_models() {
+    step "Ollama Modelleri Hazırlanıyor"
+    local estimated_size_gb="~14.8 GB"
+    local temp_ollama_pid=""
+    local ollama_tags_url=""
+    local tags_payload=""
+    local existing_model_count=0
+    local env_file="$SCRIPT_DIR/.env"
+    local missing_required_models=""
+    local resolved_models_csv=""
+    local should_prompt_for_download=true
+    local -a models_to_pull=()
+    local -a models=()
     cleanup_temp_ollama() {
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
             info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
@@ -196,10 +198,10 @@ PY
     if command -v ollama &>/dev/null; then
         tags_payload=$(curl -sf "$ollama_tags_url" 2>/dev/null || true)
         if [[ -n "$tags_payload" ]]; then
-            existing_model_count=$(_count_ollama_models_from_tags "$tags_payload")
+            existing_model_count=$(sidar_ollama_count_models_from_tags "$tags_payload")
             for model in "${models[@]}"; do
                 [[ -n "$model" ]] || continue
-                if _model_exists_in_tags "$tags_payload" "$model"; then
+                if sidar_ollama_model_exists_in_tags "$tags_payload" "$model"; then
                     continue
                 fi
                 models_to_pull+=("$model")
