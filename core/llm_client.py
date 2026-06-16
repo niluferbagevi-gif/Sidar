@@ -11,6 +11,7 @@ import importlib
 import inspect
 import json
 import logging
+import os
 import random
 import sys
 import time
@@ -888,6 +889,30 @@ class GeminiClient(BaseLLMClient):
 class OpenAIClient(BaseLLMClient):
     """OpenAI Chat Completions istemcisi (opsiyonel sağlayıcı)."""
 
+    @staticmethod
+    def _is_test_profile(config: Any) -> bool:
+        env_name = str(
+            getattr(config, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
+        ).strip().lower()
+        return env_name in {"test", "testing"} or bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+    @classmethod
+    def _is_dummy_test_api_key(cls, api_key: str, config: Any) -> bool:
+        return cls._is_test_profile(config) and str(api_key or "").startswith("sk-test")
+
+    @staticmethod
+    def _dummy_api_key_response(api_key: str) -> str:
+        return json.dumps(
+            {
+                "tool": "final_answer",
+                "argument": (
+                    "[HATA] Test OpenAI API anahtarı algılandı; gerçek OpenAI isteği "
+                    "gönderilmedi."
+                ),
+                "thought": f"Dummy key guard ({api_key[:7]}...)",
+            }
+        )
+
     def json_mode_config(self) -> dict[str, Any]:
         return {
             "response_format": {
@@ -917,6 +942,9 @@ class OpenAIClient(BaseLLMClient):
                     "thought": "Key eksik",
                 }
             )
+            return _fallback_stream(msg) if stream else msg
+        if self._is_dummy_test_api_key(str(api_key), self.config):
+            msg = self._dummy_api_key_response(str(api_key))
             return _fallback_stream(msg) if stream else msg
 
         model_name = str(model or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini"))

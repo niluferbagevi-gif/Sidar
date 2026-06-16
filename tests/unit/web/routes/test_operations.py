@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,10 @@ class _Memory:
 
 async def _resolve_agent_instance():
     return SimpleNamespace(memory=_Memory())
+
+
+async def _resolve_agent_instance_raises():
+    raise RuntimeError("password authentication failed for user sidar")
 
 
 @pytest.mark.asyncio
@@ -46,3 +51,23 @@ def test_operations_serializers_normalize_optional_campaign_id() -> None:
 
     assert payload["campaign_id"] is None
     assert payload["items_json"] == "[]"
+
+
+@pytest.mark.asyncio
+async def test_operations_router_returns_controlled_db_error_when_agent_resolution_fails() -> None:
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            resolve_agent_instance=_resolve_agent_instance_raises,
+        )
+    )
+
+    response = await operations.api_operations_list_campaigns(_user=SimpleNamespace(id="u1"))
+
+    assert response.status_code == 503
+    payload = json.loads(response.body)
+    assert payload == {
+        "success": False,
+        "error": "database_unavailable",
+        "message": "Veritabanı geçici olarak kullanılamıyor.",
+    }

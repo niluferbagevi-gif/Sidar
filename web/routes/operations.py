@@ -193,6 +193,22 @@ def decode_agent_tool_result(raw_result: Any) -> dict[str, Any]:
     return {"success": True, "output": parsed}
 
 
+def _database_unavailable_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "success": False,
+            "error": "database_unavailable",
+            "message": "Veritabanı geçici olarak kullanılamıyor.",
+        },
+        status_code=503,
+    )
+
+
+async def _resolve_operations_db(deps: Any) -> Any:
+    agent = await deps.resolve_agent_instance()
+    return agent.memory.db
+
+
 def serialize_coverage_task(record: Any) -> dict[str, Any]:
     return {
         "id": int(getattr(record, "id", 0) or 0),
@@ -215,10 +231,13 @@ async def api_operations_list_campaigns(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    campaigns = await agent.memory.db.list_marketing_campaigns(
-        tenant_id=deps.get_user_tenant(_user), status=status, limit=limit
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        campaigns = await db.list_marketing_campaigns(
+            tenant_id=deps.get_user_tenant(_user), status=status, limit=limit
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse({"success": True, "campaigns": [serialize_campaign(item) for item in campaigns]})
 
 
@@ -228,42 +247,44 @@ async def api_operations_create_campaign(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    db = agent.memory.db
-    tenant_id = deps.get_user_tenant(_user)
-    campaign = await db.upsert_marketing_campaign(
-        tenant_id=tenant_id,
-        name=req.name,
-        channel=req.channel,
-        objective=req.objective,
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-        budget=float(req.budget or 0.0),
-        metadata=dict(req.metadata or {}),
-    )
-    assets = [
-        await db.add_content_asset(
-            campaign_id=int(campaign.id),
+    try:
+        db = await _resolve_operations_db(deps)
+        tenant_id = deps.get_user_tenant(_user)
+        campaign = await db.upsert_marketing_campaign(
             tenant_id=tenant_id,
-            asset_type=item.asset_type,
-            title=item.title,
-            content=item.content,
-            channel=item.channel,
-            metadata=dict(item.metadata or {}),
-        )
-        for item in req.initial_assets
-    ]
-    checklists = [
-        await db.add_operation_checklist(
-            campaign_id=int(campaign.id),
-            tenant_id=tenant_id,
-            title=item.title,
-            items=list(item.items or []),
-            status=item.status,
+            name=req.name,
+            channel=req.channel,
+            objective=req.objective,
+            status=req.status,
             owner_user_id=str(getattr(_user, "id", "") or ""),
+            budget=float(req.budget or 0.0),
+            metadata=dict(req.metadata or {}),
         )
-        for item in req.initial_checklists
-    ]
+        assets = [
+            await db.add_content_asset(
+                campaign_id=int(campaign.id),
+                tenant_id=tenant_id,
+                asset_type=item.asset_type,
+                title=item.title,
+                content=item.content,
+                channel=item.channel,
+                metadata=dict(item.metadata or {}),
+            )
+            for item in req.initial_assets
+        ]
+        checklists = [
+            await db.add_operation_checklist(
+                campaign_id=int(campaign.id),
+                tenant_id=tenant_id,
+                title=item.title,
+                items=list(item.items or []),
+                status=item.status,
+                owner_user_id=str(getattr(_user, "id", "") or ""),
+            )
+            for item in req.initial_checklists
+        ]
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse(
         {
             "success": True,
@@ -285,10 +306,13 @@ async def api_operations_list_assets(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    assets = await agent.memory.db.list_content_assets(
-        tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        assets = await db.list_content_assets(
+            tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse({"success": True, "assets": [serialize_content_asset(item) for item in assets]})
 
 
@@ -303,16 +327,19 @@ async def api_operations_add_asset(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    asset = await agent.memory.db.add_content_asset(
-        campaign_id=campaign_id,
-        tenant_id=deps.get_user_tenant(_user),
-        asset_type=req.asset_type,
-        title=req.title,
-        content=req.content,
-        channel=req.channel,
-        metadata=dict(req.metadata or {}),
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        asset = await db.add_content_asset(
+            campaign_id=campaign_id,
+            tenant_id=deps.get_user_tenant(_user),
+            asset_type=req.asset_type,
+            title=req.title,
+            content=req.content,
+            channel=req.channel,
+            metadata=dict(req.metadata or {}),
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse({"success": True, "asset": serialize_content_asset(asset)})
 
 
@@ -327,10 +354,13 @@ async def api_operations_list_checklists(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    checklists = await agent.memory.db.list_operation_checklists(
-        tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        checklists = await db.list_operation_checklists(
+            tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse(
         {"success": True, "checklists": [serialize_operation_checklist(item) for item in checklists]}
     )
@@ -347,15 +377,18 @@ async def api_operations_add_checklist(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    checklist = await agent.memory.db.add_operation_checklist(
-        campaign_id=campaign_id,
-        tenant_id=deps.get_user_tenant(_user),
-        title=req.title,
-        items=list(req.items or []),
-        status=req.status,
-        owner_user_id=str(getattr(_user, "id", "") or ""),
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        checklist = await db.add_operation_checklist(
+            campaign_id=campaign_id,
+            tenant_id=deps.get_user_tenant(_user),
+            title=req.title,
+            items=list(req.items or []),
+            status=req.status,
+            owner_user_id=str(getattr(_user, "id", "") or ""),
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse({"success": True, "checklist": serialize_operation_checklist(checklist)})
 
 
@@ -476,10 +509,13 @@ async def api_qa_coverage_tasks(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    agent = await deps.resolve_agent_instance()
-    tasks = await agent.memory.db.list_coverage_tasks(
-        tenant_id=deps.get_user_tenant(_user), status=status or None, limit=limit
-    )
+    try:
+        db = await _resolve_operations_db(deps)
+        tasks = await db.list_coverage_tasks(
+            tenant_id=deps.get_user_tenant(_user), status=status or None, limit=limit
+        )
+    except Exception:
+        return _database_unavailable_response()
     return JSONResponse({"success": True, "tasks": [serialize_coverage_task(item) for item in tasks]})
 
 

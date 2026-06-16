@@ -1202,6 +1202,25 @@ async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_r
 
 
 @pytest.mark.asyncio
+async def test_openai_client_sk_test_key_is_blocked_in_test_profile(
+    respx_mock_router,
+) -> None:
+    cfg = _make_config(
+        OPENAI_API_KEY="sk-test",
+        OPENAI_MODEL="gpt-x",
+        SIDAR_ENV="testing",
+        ENABLE_TRACING=False,
+    )
+    client = llm_client.OpenAIClient(cfg)
+
+    out = await client.chat([{"role": "user", "content": "x"}], stream=False)
+
+    payload = json.loads(out)
+    assert "Test OpenAI API anahtarı" in payload["argument"]
+    assert not respx_mock_router.calls
+
+
+@pytest.mark.asyncio
 async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) -> None:
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False)
     client = llm_client.OpenAIClient(cfg)
