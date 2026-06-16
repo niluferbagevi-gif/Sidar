@@ -2565,6 +2565,51 @@ async def _health_response(require_dependencies: bool = False) -> JSONResponse:
     return JSONResponse(health_data)
 
 
+async def _status_response() -> JSONResponse:
+    """Return the legacy /status payload kept for backwards-compatible callers."""
+    started_at = time.monotonic()
+    agent = await _resolve_agent_instance()
+    cfg_obj = agent.cfg
+    provider = str(getattr(cfg_obj, "AI_PROVIDER", "") or "")
+    model = (
+        str(getattr(cfg_obj, "GEMINI_MODEL", "") or "")
+        if provider == "gemini"
+        else str(getattr(cfg_obj, "CODING_MODEL", "") or "")
+    )
+
+    ollama_online = bool(agent.health.check_ollama())
+    ollama_latency_ms = int((time.monotonic() - started_at) * 1000)
+
+    payload: dict[str, Any] = {
+        "status": "ok",
+        "version": getattr(agent, "VERSION", ""),
+        "uptime_seconds": int(time.monotonic() - _start_time),
+        "provider": provider,
+        "model": model,
+        "ollama_online": ollama_online,
+        "ollama_latency_ms": ollama_latency_ms,
+        "gpu": {
+            "enabled": bool(getattr(cfg_obj, "USE_GPU", False)),
+            "info": agent.health.get_gpu_info(),
+            "configured_info": getattr(cfg_obj, "GPU_INFO", {}),
+            "count": getattr(cfg_obj, "GPU_COUNT", 0),
+            "cuda_version": getattr(cfg_obj, "CUDA_VERSION", ""),
+        },
+        "memory": {
+            "turns": len(getattr(agent, "memory", [])),
+            "encrypted": bool(getattr(cfg_obj, "MEMORY_ENCRYPTION_KEY", "")),
+        },
+        "access_level": getattr(cfg_obj, "ACCESS_LEVEL", ""),
+        "services": {
+            "github": bool(agent.github.is_available()),
+            "web_search": bool(agent.web.is_available()),
+            "docs": agent.docs.status(),
+            "package_info": agent.pkg.status(),
+        },
+        "llm_metrics": get_llm_metrics_collector().snapshot(),
+    }
+    return JSONResponse(payload)
+
 
 frontend_router = build_frontend_router(
     web_dir=lambda: WEB_DIR,
@@ -2574,7 +2619,8 @@ frontend_router = build_frontend_router(
 )
 
 health_router = build_health_router(
-    lambda require_dependencies: _health_response(require_dependencies=require_dependencies)
+    lambda require_dependencies: _health_response(require_dependencies=require_dependencies),
+    _status_response,
 )
 agent_router = build_agent_router(
     require_admin_user=_require_admin_user,
@@ -2711,6 +2757,7 @@ globals().update(_legacy_route_exports)
 favicon = frontend_router.legacy_exports["favicon"]
 serve_vendor = frontend_router.legacy_exports["serve_vendor"]
 index = frontend_router.legacy_exports["index"]
+status = health_router.legacy_exports["status"]
 register_user = auth_admin_router.legacy_exports["register_user"]
 login_user = auth_admin_router.legacy_exports["login_user"]
 auth_me = auth_admin_router.legacy_exports["auth_me"]

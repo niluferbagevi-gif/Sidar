@@ -8,6 +8,7 @@ from web.routes import LegacyExportRouter
 
 def build_health_router(
     health_response: Callable[[bool], Awaitable[Any]],
+    status_response: Callable[[], Awaitable[Any]] | None = None,
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
@@ -28,8 +29,18 @@ def build_health_router(
     async def readiness_check() -> Any:
         return await health_response(True)
 
+    status_endpoint: Callable[[], Awaitable[Any]] | None = None
+    if status_response is not None:
+        @router.get("/status", include_in_schema=False)
+        async def status() -> Any:
+            return await status_response()
+
+        status_endpoint = status
+
     router.legacy_exports = {
         "health_check": health_check,
         "readiness_check": readiness_check,
     }
+    if status_endpoint is not None:
+        router.legacy_exports["status"] = status_endpoint
     return router

@@ -26,3 +26,19 @@ def test_health_router_distinguishes_liveness_and_readiness() -> None:
     assert readiness.status_code == 503
     assert readiness.json() == {"ready": True}
     assert readiness_flags == [False, False, True]
+
+
+def test_health_router_can_expose_legacy_status_endpoint() -> None:
+    async def _health_response(readiness: bool) -> Any:
+        return JSONResponse({"ready": readiness})
+
+    async def _status_response() -> Any:
+        return JSONResponse({"status": "ok", "legacy": True})
+
+    app = FastAPI()
+    router = build_health_router(_health_response, _status_response)
+    app.include_router(router)
+    client = TestClient(app)
+
+    assert router.legacy_exports["status"].__name__ == "status"
+    assert client.get("/status").json() == {"status": "ok", "legacy": True}
