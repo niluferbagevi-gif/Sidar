@@ -8,6 +8,7 @@ veya `AgentCatalog.register_type(...)` metoduyla eklenir.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -107,6 +108,53 @@ EXPECTED_BUILTIN_ROLE_NAMES: tuple[str, ...] = tuple(
 _BUILTIN_IMPORT_FAILURES: dict[str, str] = {}
 
 
+def _builtin_contract_by_role(role_name: str) -> BuiltinRoleContract | None:
+    """Return the built-in role contract for ``role_name`` when it exists."""
+    for contract in BUILTIN_ROLE_CONTRACTS:
+        if contract.role_name == role_name:
+            return contract
+    return None
+
+
+def _resolve_canonical_builtin_class(
+    *, role_name: str, agent_class: type[Any], is_builtin: bool
+) -> type[Any]:
+    """Prefer canonical class objects for built-in roles imported via temp module names.
+
+    Some tests and loaders execute a built-in role file with an ad-hoc module name
+    (for example ``reviewer_agent_under_test``). Python then creates a distinct
+    class object even though the source file is the same. Built-in registry
+    entries must point at the canonical import path declared in
+    ``BUILTIN_ROLE_CONTRACTS`` so exports, router/supervisor checks, and runtime
+    creation agree on class identity.
+    """
+    contract = _builtin_contract_by_role(role_name)
+    if not is_builtin or contract is None:
+        return agent_class
+    if agent_class.__module__ == contract.module_name:
+        return agent_class
+
+    try:
+        module = importlib.import_module(contract.module_name)
+        canonical_class = getattr(module, contract.class_name)
+    except Exception as exc:  # pragma: no cover - defensive fallback for optional deps
+        _BUILTIN_IMPORT_FAILURES[contract.module_name] = _format_import_failure(exc)
+        logger.debug(
+            "Builtin role canonical import'u başarısız; geçici sınıf korunuyor: %s",
+            contract.module_name,
+            exc_info=True,
+        )
+        return agent_class
+
+    logger.debug(
+        "AgentCatalog: '%s' için geçici modül sınıfı canonical sınıfa normalize edildi (%s -> %s).",
+        role_name,
+        agent_class.__module__,
+        contract.module_name,
+    )
+    return canonical_class
+
+
 class AgentCatalog:
     """Sınıf-tabanlı ajan tip kataloğu."""
 
@@ -158,9 +206,12 @@ class AgentCatalog:
         The programmatic API keeps ``is_builtin=True`` as its historical default.
         Runtime/plugin callers should pass ``is_builtin=False`` explicitly.
         """
+        resolved_agent_class = _resolve_canonical_builtin_class(
+            role_name=role_name, agent_class=agent_class, is_builtin=is_builtin
+        )
         spec = AgentSpec(
             role_name=role_name,
-            agent_class=agent_class,
+            agent_class=resolved_agent_class,
             capabilities=capabilities or [],
             description=description,
             version=version,

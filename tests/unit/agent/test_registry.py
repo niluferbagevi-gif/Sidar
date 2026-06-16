@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import pytest
 
 from agent.registry import (
@@ -226,6 +230,37 @@ def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() ->
 
         for intent in contract.supervisor_intents:
             assert SupervisorAgent._intent(supervisor_prompts[intent]) == intent
+
+
+def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -> None:
+    import agent.roles as role_exports
+
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None
+
+    temp_module_name = "reviewer_agent_under_test"
+    module_path = Path("agent/roles/reviewer_agent.py").resolve()
+    spec = importlib.util.spec_from_file_location(temp_module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+
+    try:
+        sys.modules[temp_module_name] = module
+        spec.loader.exec_module(module)
+
+        temp_cls = module.ReviewerAgent
+        exported_cls = getattr(role_exports, contract.class_name)
+        registered_spec = AgentCatalog.get(contract.role_name)
+
+        assert temp_cls is not exported_cls
+        assert registered_spec is not None
+        assert registered_spec.agent_class is exported_cls
+        assert registered_spec.agent_class.__module__ == contract.module_name
+    finally:
+        sys.modules.pop(temp_module_name, None)
+        AgentCatalog._registry[contract.role_name] = original_spec
 
 
 def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
