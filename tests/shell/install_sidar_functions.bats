@@ -1080,7 +1080,6 @@ EOF
   root="$(repo_root)"
   local tmpdir
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
 
   # Mimic the SCRIPT_DIR layout that install_sidar.sh would inspect.
   mkdir -p "$tmpdir/scripts/install_modules/utils"
@@ -1106,6 +1105,8 @@ EOF
     fail() { printf "FAIL_OUT::%s\n" "$*" >&2; exit 1; }
     verify_install_module_hashes_if_present
   ' _ "$tmpdir" "$root"
+
+  rm -rf "$tmpdir"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL_OUT::"* ]]
