@@ -526,6 +526,7 @@ verify_install_module_hashes_if_present() {
     local target=""
     local actual=""
     local failures=0
+    local -a mismatched_files=()
 
     if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${INSTALL_REMOTE_MODULE_HASH_BYPASS:-0}" == "1" ]]; then
         info "Test modu file:// fallback modül doğrulaması atlandı; indirilen modül listesi dosya varlığıyla doğrulanacak."
@@ -550,20 +551,70 @@ verify_install_module_hashes_if_present() {
         if [[ ! -f "$target" ]]; then
             warn "Hash doğrulama atlandı (dosya yok): ${rel_path}"
             failures=$((failures + 1))
+            mismatched_files+=("${rel_path} (eksik dosya)")
             continue
         fi
         actual="$(compute_sha256 "$target")"
         if [[ "$actual" != "$expected" ]]; then
             warn "Hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
             failures=$((failures + 1))
+            mismatched_files+=("${rel_path}")
         fi
     done < <(awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}' "$hash_manifest")
 
     if (( failures > 0 )); then
-        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
-            warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor."
+        local manifest_source="MODULE_HASHES.txt (${hash_manifest})"
+        if [[ -n "$embedded_manifest_file" ]]; then
+            manifest_source="install_sidar.sh içine gömülü EMBEDDED_MODULE_HASHES_MANIFEST"
+        fi
+
+        local installer_branch="${SIDAR_BOOTSTRAP_CLONE_REF:-${SIDAR_REPO_BRANCH:-main}}"
+        local installer_repo="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
+        local clone_branch="bilinmiyor"
+        local clone_remote="bilinmiyor"
+        if command -v git >/dev/null 2>&1 && [[ -d "${SCRIPT_DIR}/.git" ]]; then
+            clone_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo bilinmiyor)"
+            clone_remote="$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo bilinmiyor)"
+        fi
+
+        local mismatched_csv=""
+        if (( ${#mismatched_files[@]} > 0 )); then
+            local _ifs_old="$IFS"
+            IFS=', '
+            mismatched_csv="${mismatched_files[*]}"
+            IFS="$_ifs_old"
+        fi
+
+        local scope_hint
+        if (( failures == 1 )); then
+            scope_hint="Yalnızca tek dosyada uyuşmazlık var: bu, ilgili modül güncellenirken install_sidar.sh içindeki gömülü manifestin güncellenmemiş olduğunun klasik göstergesidir."
         else
-            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata). Düzeltme için scripts/sync_install_module_hashes.sh çalıştırın veya (risk kabulüyle) ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile devam edin. Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
+            scope_hint="${failures} dosyada uyuşmazlık var: birden çok modül değiştiği için scripts/sync_install_module_hashes.sh manifesti tek adımda tazeler."
+        fi
+
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor. Uyumsuz modüller: ${mismatched_csv} (manifest=${manifest_source}, installer=${installer_branch}, clone=${clone_branch})."
+        else
+            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata).
+
+Karşılaştırma:
+  • Manifest kaynağı: ${manifest_source}
+  • Beklenen (raw installer):   repo=${installer_repo}, branch=${installer_branch}
+  • Mevcut (klonlanmış repo):   repo=${clone_remote}, branch=${clone_branch}
+  • Uyumsuz modüller (${failures}): ${mismatched_csv}
+
+${scope_hint}
+
+Bu hata genellikle scripts/install_modules altındaki bir dosya değiştirilip
+install_sidar.sh içindeki gömülü manifest güncellenmeden merge edildiğinde
+oluşur. Çözüm:
+  1) Repo'da scripts/sync_install_module_hashes.sh çalıştırıp PR/commit'i
+     güncel hashlerle yenileyin (önerilen).
+  2) Geçici/test kullanım için, risk kabulüyle:
+       ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 bash install_sidar.sh ...
+     (modül kodu doğrulanmadığından yalnızca güvenilir ortamlarda yapın).
+
+Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
         fi
     else
         ok "Kurulum modül hash doğrulaması başarılı."

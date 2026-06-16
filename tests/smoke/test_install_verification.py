@@ -247,6 +247,19 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
         "Manifest gate'in drift'i hata mesajıyla raporlaması bekleniyordu.\n"
         f"--- combined ---\n{combined}"
     )
+    for required_marker in (
+        "Karşılaştırma:",
+        "Beklenen (raw installer):",
+        "Mevcut (klonlanmış repo):",
+        "Uyumsuz modüller",
+        "scripts/install_modules/utils/ollama_models.sh",
+        "scripts/sync_install_module_hashes.sh",
+        "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1",
+    ):
+        assert required_marker in combined, (
+            f"Drift hata mesajında beklenen bilgi yok: {required_marker!r}.\n"
+            f"--- combined ---\n{combined}"
+        )
 
 
 def test_bundled_install_sidar_manifest_matches() -> None:
