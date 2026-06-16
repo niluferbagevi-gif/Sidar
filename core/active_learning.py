@@ -700,6 +700,33 @@ class LoRATrainer:
             logger.error("LoRATrainer.train hatası: %s", exc, exc_info=True)
             return {"success": False, "reason": str(exc)}
 
+    @staticmethod
+    def _is_optional_4bit_dependency_error(exc: RuntimeError) -> bool:
+        """Return whether a RuntimeError came from optional 4-bit acceleration deps."""
+        message = str(exc).lower()
+        optional_dependency_markers = (
+            "4-bit",
+            "4bit",
+            "bitsandbytes",
+            "bnb",
+            "cuda",
+            "quantization",
+            "torch_library",
+            "triton",
+        )
+        return any(marker in message for marker in optional_dependency_markers)
+
+    def _build_4bit_quantization_config(self) -> Any:
+        """Build QLoRA quantization config or raise an optional dependency error."""
+        import torch
+        from transformers import BitsAndBytesConfig
+
+        return typing.cast(Any, BitsAndBytesConfig)(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+
     def _run_training(self, dataset_path: str) -> dict[str, Any]:
         """PEFT LoRA/QLoRA eğitim döngüsü."""
         from datasets import load_dataset
@@ -730,18 +757,21 @@ class LoRATrainer:
         }
         if self.use_4bit:
             try:
-                import torch
-                from transformers import BitsAndBytesConfig
-
-                bnb_config = typing.cast(Any, BitsAndBytesConfig)(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.float16,
-                )
+                bnb_config = self._build_4bit_quantization_config()
                 model_kwargs["quantization_config"] = bnb_config
                 logger.info("LoRATrainer: QLoRA (4-bit) modu aktif.")
-            except ImportError:
-                logger.warning("LoRATrainer: bitsandbytes kurulu değil, 4-bit modu devre dışı.")
+            except (ImportError, ModuleNotFoundError) as exc:
+                logger.warning(
+                    "LoRATrainer: 4-bit bağımlılıkları yüklenemedi (%s), 4-bit modu devre dışı.",
+                    exc,
+                )
+            except RuntimeError as exc:
+                if not self._is_optional_4bit_dependency_error(exc):
+                    raise
+                logger.warning(
+                    "LoRATrainer: 4-bit hızlandırma başlatılamadı (%s), 4-bit modu devre dışı.",
+                    exc,
+                )
 
         model = AutoModelForCausalLM.from_pretrained(self.base_model, **model_kwargs)  # nosec B615
 

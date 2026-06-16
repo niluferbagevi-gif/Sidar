@@ -751,8 +751,24 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
     monkeypatch.setitem(sys.modules, "peft", fake_peft)
     monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+    monkeypatch.setattr(
+        trainer,
+        "_build_4bit_quantization_config",
+        lambda: (_ for _ in ()).throw(
+            RuntimeError("Only a single TORCH_LIBRARY can be used to register the namespace triton")
+        ),
+    )
 
     assert trainer._run_training("x")["success"] is True
+
+
+def test_lora_4bit_runtime_error_filter_preserves_model_errors() -> None:
+    trainer = al.LoRATrainer(config=DummyConfig())
+
+    assert trainer._is_optional_4bit_dependency_error(
+        RuntimeError("Only a single TORCH_LIBRARY can be used to register triton")
+    )
+    assert not trainer._is_optional_4bit_dependency_error(RuntimeError("model config is invalid"))
 
 
 def test_lora_run_training_4bit_quant_and_conversation_branches(monkeypatch, tmp_path):
