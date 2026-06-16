@@ -1,11 +1,11 @@
 """Multi-agent role paketleri."""
 
-from .coder_agent import CoderAgent
-from .coverage_agent import CoverageAgent
-from .poyraz_agent import PoyrazAgent
-from .qa_agent import QAAgent
-from .researcher_agent import ResearcherAgent
-from .reviewer_agent import ReviewerAgent
+from agent.roles.coder_agent import CoderAgent
+from agent.roles.coverage_agent import CoverageAgent
+from agent.roles.poyraz_agent import PoyrazAgent
+from agent.roles.qa_agent import QAAgent
+from agent.roles.researcher_agent import ResearcherAgent
+from agent.roles.reviewer_agent import ReviewerAgent
 
 __all__ = [
     "ResearcherAgent",
