@@ -365,12 +365,14 @@ download_remote_install_module() {
     fi
 
     if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "$remote_module_base" == file://* ]]; then
+        INSTALL_REMOTE_MODULE_HASH_BYPASS=1
         :
     else
         verify_remote_install_module_hash "$module_rel" "$tmp_module_path"
     fi
     install -m 0644 "$tmp_module_path" "$destination_path"
     rm -f "$tmp_module_path"
+    info "Fallback modül indirildi: ${module_rel} -> ${destination_path}"
 }
 
 download_remote_install_modules() {
@@ -428,7 +430,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     fi
     info "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
 
-    if [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
         info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
         cd "$HOME/Sidar" || fail "Mevcut repo dizinine geçilemedi: $HOME/Sidar"
         exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
@@ -442,7 +444,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
         INSTALL_MODULES_DOWNLOADED=1
         ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
-    elif command -v git >/dev/null 2>&1; then
+    elif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v git >/dev/null 2>&1; then
         bootstrap_clone_and_reexec
     fi
 
@@ -524,6 +526,11 @@ verify_install_module_hashes_if_present() {
     local target=""
     local actual=""
     local failures=0
+
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${INSTALL_REMOTE_MODULE_HASH_BYPASS:-0}" == "1" ]]; then
+        info "Test modu file:// fallback modül doğrulaması atlandı; indirilen modül listesi dosya varlığıyla doğrulanacak."
+        return 0
+    fi
 
     if [[ ! -f "$hash_manifest" && -n "${EMBEDDED_MODULE_HASHES_MANIFEST:-}" ]]; then
         embedded_manifest_file="$(mktemp "${TMPDIR:-/tmp}/sidar_module_hashes.XXXXXX")"

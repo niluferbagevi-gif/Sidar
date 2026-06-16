@@ -800,6 +800,8 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
     )
 
     assert "Kurulum modülleri indirildi" in result.stderr
+    assert "Fallback modül indirildi: install_helpers.sh ->" in result.stderr
+    assert "Test modu file:// fallback modül doğrulaması atlandı" in result.stderr
     assert "install_modules" in result.stdout
 
 
