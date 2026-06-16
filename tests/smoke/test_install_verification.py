@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -86,6 +87,166 @@ def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
         f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
     )
     return "\n".join(lines[start:end])
+
+
+def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
+    """Construct a minimal git origin from the live working tree.
+
+    Reflects whatever install_sidar.sh and scripts/install_modules currently
+    look like (including uncommitted changes) so the smoke test always exercises
+    the on-disk state rather than the last committed snapshot.
+    """
+    origin.mkdir(parents=True, exist_ok=True)
+    required = [
+        Path("install_sidar.sh"),
+        Path(".sidar_manifest.txt"),
+        Path("core/memory.py"),
+        Path("core/multimodal.py"),
+    ]
+    for module in (repo_root / "scripts/install_modules").rglob("*"):
+        if module.is_file():
+            required.append(module.relative_to(repo_root))
+
+    for rel in required:
+        src = repo_root / rel
+        dst = origin / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    git = ["git", "-C", str(origin)]
+    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    subprocess.run([*git, "config", "user.email", "smoke@example.com"], check=True)
+    subprocess.run([*git, "config", "user.name", "smoke"], check=True)
+    subprocess.run([*git, "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "synthetic bootstrap origin"], check=True
+    )
+    return "main"
+
+
+def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
+    """Simulate the fresh-user scenario: no local repo, only a raw install_sidar.sh.
+
+    Reproduces the original bug report flow:
+      1. User has no repository checked out anywhere.
+      2. raw install_sidar.sh is downloaded and executed.
+      3. install_sidar.sh detects missing modules and bootstrap-clones the repo.
+      4. After clone, verify_install_module_hashes_if_present() runs.
+      5. With no ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1, the hash gate must pass and
+         the installer must reach the post-verification abort hook cleanly.
+    """
+    repo_root = Path(os.getcwd())
+    origin = tmp_path / "origin"
+    branch = _build_synthetic_bootstrap_origin(repo_root, origin)
+
+    host = tmp_path / "host"
+    host.mkdir()
+    standalone = host / "install_sidar.sh"
+    shutil.copy2(repo_root / "install_sidar.sh", standalone)
+    standalone.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "HOME": str(host),
+        "PWD": str(host),
+        "SIDAR_INSTALL_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+        "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
+        "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
+        "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
+        "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
+        "SIDAR_BOOTSTRAP_CLONE_REF": branch,
+        "SIDAR_REPO_BRANCH": branch,
+    }
+    env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
+
+    result = subprocess.run(
+        ["bash", str(standalone)],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        "Bootstrap clone smoke beklenmedik şekilde başarısız oldu (exit="
+        f"{result.returncode}).\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    assert "bootstrap clone" in combined.lower(), (
+        "Bootstrap clone yolunun çalıştığı doğrulanamadı; install_sidar.sh "
+        "muhtemelen mevcut $HOME/Sidar üzerinden re-exec etti."
+    )
+    assert "Kurulum modül hash doğrulaması başarılı" in combined, (
+        "verify_install_module_hashes_if_present başarılı mesajı görülemedi.\n"
+        f"--- combined ---\n{combined}"
+    )
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" not in combined, (
+        "ALLOW_UNVERIFIED_REMOTE_SCRIPTS bypass mesajı görüldü; manifest "
+        "uyumsuzluğu olduğu halde testten kaçınılmış olabilir.\n"
+        f"--- combined ---\n{combined}"
+    )
+
+
+def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> None:
+    """Drift case: clone origin carries a tampered module but standalone
+    install_sidar.sh's embedded manifest still pins the original hash. The
+    installer must refuse to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
+    """
+    repo_root = Path(os.getcwd())
+    origin = tmp_path / "origin"
+    branch = _build_synthetic_bootstrap_origin(repo_root, origin)
+
+    # Tamper with a module in the origin after the initial commit so the
+    # cloned working tree diverges from the embedded manifest baked into the
+    # standalone installer.
+    tampered = origin / "scripts/install_modules/utils/ollama_models.sh"
+    tampered.write_text(
+        tampered.read_text(encoding="utf-8") + "# smoke-test drift\n", encoding="utf-8"
+    )
+    git = ["git", "-C", str(origin)]
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper drift"], check=True)
+
+    host = tmp_path / "host"
+    host.mkdir()
+    standalone = host / "install_sidar.sh"
+    shutil.copy2(repo_root / "install_sidar.sh", standalone)
+    standalone.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "HOME": str(host),
+        "PWD": str(host),
+        "SIDAR_INSTALL_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+        "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
+        "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
+        "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
+        "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
+        "SIDAR_BOOTSTRAP_CLONE_REF": branch,
+        "SIDAR_REPO_BRANCH": branch,
+    }
+    env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
+
+    result = subprocess.run(
+        ["bash", str(standalone)],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        "Tampered modülle drift testi başarısız olmalıydı (exit=0); manifest "
+        f"gate kullanıcıyı koruyamadı.\n--- combined ---\n{combined}"
+    )
+    assert "Kurulum modül hash doğrulaması başarısız" in combined, (
+        "Manifest gate'in drift'i hata mesajıyla raporlaması bekleniyordu.\n"
+        f"--- combined ---\n{combined}"
+    )
 
 
 def test_bundled_install_sidar_manifest_matches() -> None:

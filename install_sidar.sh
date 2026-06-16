@@ -444,7 +444,7 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
         INSTALL_MODULES_DOWNLOADED=1
         ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
-    elif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v git >/dev/null 2>&1; then
+    elif { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE:-0}" == "1" ]]; } && command -v git >/dev/null 2>&1; then
         bootstrap_clone_and_reexec
     fi
 
@@ -573,6 +573,10 @@ verify_install_module_hashes_if_present() {
 }
 
 verify_install_module_hashes_if_present
+if [[ "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" == "1" ]]; then
+    info "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1; hash doğrulaması sonrası erken çıkış."
+    exit 0
+fi
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 sidar_source_install_utils \
