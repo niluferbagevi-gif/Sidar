@@ -1042,6 +1042,82 @@ EOF
   [[ "$output" != *"unexpected CREATE DATABASE call"* ]]
 }
 
+@test "describe_install_module_hash_source reports repo branch, bootstrap branch, and local branch context" {
+  run_installer_function '
+    export SIDAR_REPO_URL="https://github.com/test-org/Sidar.git"
+    export SIDAR_REPO_BRANCH="release/test"
+    export SIDAR_BOOTSTRAP_CLONE_REF="release/test"
+    output="$(describe_install_module_hash_source)"
+    [[ "$output" == *"repo_url=https://github.com/test-org/Sidar.git"* ]]
+    [[ "$output" == *"repo_branch=release/test"* ]]
+    [[ "$output" == *"bootstrap_branch=release/test"* ]]
+    [[ "$output" == *"local_branch="* ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "describe_install_module_hash_source falls back to defaults when bootstrap variables are unset" {
+  run_installer_function '
+    unset SIDAR_REPO_URL SIDAR_REPO_BRANCH SIDAR_BOOTSTRAP_CLONE_REF || true
+    output="$(describe_install_module_hash_source)"
+    [[ "$output" == *"repo_url=https://github.com/niluferbagevi-gif/Sidar.git"* ]]
+    [[ "$output" == *"repo_branch=main"* ]]
+    [[ "$output" == *"bootstrap_branch=main"* ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "embedded module hash manifest in install_sidar.sh matches scripts/install_modules contents" {
+  local root
+  root="$(repo_root)"
+  run uv run python "$root/scripts/tools/update_install_module_hash_manifest.py" --target install_sidar.sh --check
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"modül hash manifesti güncel"* ]]
+}
+
+@test "verify_install_module_hashes_if_present emits enriched diagnostics when modules drift" {
+  local root
+  root="$(repo_root)"
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+
+  # Mimic the SCRIPT_DIR layout that install_sidar.sh would inspect.
+  mkdir -p "$tmpdir/scripts/install_modules/utils"
+  # Use a placeholder content so the SHA256 will not match the embedded value.
+  printf '%s\n' "# drift placeholder" > "$tmpdir/scripts/install_modules/utils/ollama_models.sh"
+
+  # Drop an embedded-style manifest line referencing the drifted file.
+  cat > "$tmpdir/MODULE_HASHES.txt" <<'EOF'
+deadbeef00000000000000000000000000000000000000000000000000000000  scripts/install_modules/utils/ollama_models.sh
+EOF
+
+  run bash -c '
+    set -Eeuo pipefail
+    cd "$1"
+    export SIDAR_INSTALL_TEST_MODE=1
+    export SIDAR_REPO_BRANCH="drift-test-branch"
+    export SIDAR_BOOTSTRAP_CLONE_REF="drift-test-branch"
+    set --
+    # Source install_sidar.sh from the real repo, but force SCRIPT_DIR to the tmp
+    # tree so verify_install_module_hashes_if_present operates on the drifted file.
+    source "$2/install_sidar.sh"
+    SCRIPT_DIR="$1"
+    fail() { printf "FAIL_OUT::%s\n" "$*" >&2; exit 1; }
+    verify_install_module_hashes_if_present
+  ' _ "$tmpdir" "$root"
+
+  rm -rf "$tmpdir"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"FAIL_OUT::"* ]]
+  [[ "$output" == *"Kurulum modül hash doğrulaması başarısız"* ]]
+  [[ "$output" == *"hash_drift="* ]]
+  [[ "$output" == *"missing="* ]]
+  [[ "$output" == *"drift-test-branch"* ]]
+  [[ "$output" == *"scripts/sync_install_module_hashes.sh"* ]]
+  [[ "$output" == *"ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1"* ]]
+}
+
 @test "ensure_postgres_databases_exist fails closed on psql password authentication errors" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

@@ -554,6 +554,47 @@ cd ~/Sidar
 ./install_sidar.sh
 ```
 
+### Sorun giderme (kurulum modül hash uyuşmazlığı)
+
+`install_sidar.sh` çalıştırıldığında aşağıdakine benzer bir hata alıyorsanız:
+
+```
+Hash uyuşmazlığı: scripts/install_modules/utils/ollama_models.sh (beklenen=..., mevcut=...)
+Kurulum modül hash doğrulaması başarısız (1 hata; hash_drift=1, missing=0).
+```
+
+Bu hata defense-in-depth gereği `install_sidar.sh` içinde gömülü olan `EMBEDDED_MODULE_HASHES_MANIFEST`
+ile `scripts/install_modules/` altındaki gerçek modül dosyalarının SHA-256 değerlerinin
+eşleşmediğini gösterir. Genellikle bir modül güncellendiği halde kök installer içindeki
+gömülü manifest güncellenmeden release/merge edildiğinde oluşur (manifest drift).
+
+Profile göre düzeltme yolları:
+
+- **Geliştirici** (repo üzerinde commit hakkı olan):
+
+  ```bash
+  ./scripts/sync_install_module_hashes.sh   # manifesti yeniden üretir, diff özetini gösterir
+  bash -n install_sidar.sh                  # script söz dizimi sağlığını doğrular
+  git add install_sidar.sh && git commit -m "fix: refresh embedded module hash manifest"
+  ```
+
+  CI'da aynı tespit `uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check`
+  komutuyla otomatik yapılır; PR drift olduğunda fail eder.
+
+- **Son kullanıcı** (sadece çalıştırmak isteyen): Hata mesajı, hangi branch ve `repo_url`
+  ile karşılaştırma yapıldığını birlikte bildirir (`repo_url=... | repo_branch=... | bootstrap_branch=...`).
+  Önerilen yol, GitHub release/installer güncelleninceye kadar beklemek veya repoyu klonlayıp
+  güncel kopyadan kurulum yapmaktır.
+
+- **Risk kabulü** (yalnızca izole/geçici ortamda): Doğrulamayı bilinçli atlamak için
+  `ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh` kullanılabilir. Bu yöntem
+  güvenlik garantisini düşürür, bu nedenle production akışları için önerilmez.
+
+Ollama varsayılan coding modeli `qwen2.5-coder:7b`, kurulum içinde
+`scripts/install_modules/utils/ollama_models.sh` tarafından yönetilir; `CODING_MODEL`
+ortam değişkeni boş bırakılırsa bu varsayılan kullanılır ve mevcut modeller Ollama
+`/api/tags` üzerinden ad bazlı (`model` veya `model:latest`) eşleştirilir.
+
 ---
 
 ## Kullanım

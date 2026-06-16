@@ -518,6 +518,20 @@ load_install_phase_modules() {
     done
 }
 
+describe_install_module_hash_source() {
+    local repo_branch="${SIDAR_REPO_BRANCH:-main}"
+    local bootstrap_branch="${SIDAR_BOOTSTRAP_CLONE_REF:-$repo_branch}"
+    local repo_url="${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}"
+    local current_branch=""
+
+    if command -v git >/dev/null 2>&1 && [[ -d "${SCRIPT_DIR}/.git" ]]; then
+        current_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    fi
+
+    printf 'repo_url=%s | repo_branch=%s | bootstrap_branch=%s | local_branch=%s' \
+        "$repo_url" "$repo_branch" "$bootstrap_branch" "${current_branch:-bilinmiyor}"
+}
+
 verify_install_module_hashes_if_present() {
     local hash_manifest="${SCRIPT_DIR}/MODULE_HASHES.txt"
     local embedded_manifest_file=""
@@ -526,6 +540,11 @@ verify_install_module_hashes_if_present() {
     local target=""
     local actual=""
     local failures=0
+    local missing_count=0
+    local mismatch_count=0
+    local manifest_source="MODULE_HASHES.txt"
+    local -a mismatch_paths=()
+    local -a missing_paths=()
 
     if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${INSTALL_REMOTE_MODULE_HASH_BYPASS:-0}" == "1" ]]; then
         info "Test modu file:// fallback modül doğrulaması atlandı; indirilen modül listesi dosya varlığıyla doğrulanacak."
@@ -536,10 +555,11 @@ verify_install_module_hashes_if_present() {
         embedded_manifest_file="$(mktemp "${TMPDIR:-/tmp}/sidar_module_hashes.XXXXXX")"
         printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" > "$embedded_manifest_file"
         hash_manifest="$embedded_manifest_file"
+        manifest_source="install_sidar.sh içinde gömülü EMBEDDED_MODULE_HASHES_MANIFEST"
     fi
 
     [[ -f "$hash_manifest" ]] || return 0
-    info "Kurulum modül hash manifesti bulundu, SHA256 doğrulaması yapılıyor: $hash_manifest"
+    info "Kurulum modül hash manifesti bulundu, SHA256 doğrulaması yapılıyor: ${manifest_source}"
 
     while IFS=' ' read -r expected rel_path; do
         [[ -n "${expected:-}" && -n "${rel_path:-}" ]] || continue
@@ -549,21 +569,49 @@ verify_install_module_hashes_if_present() {
         fi
         if [[ ! -f "$target" ]]; then
             warn "Hash doğrulama atlandı (dosya yok): ${rel_path}"
+            missing_paths+=("$rel_path")
+            missing_count=$((missing_count + 1))
             failures=$((failures + 1))
             continue
         fi
         actual="$(compute_sha256 "$target")"
         if [[ "$actual" != "$expected" ]]; then
             warn "Hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
+            mismatch_paths+=("$rel_path")
+            mismatch_count=$((mismatch_count + 1))
             failures=$((failures + 1))
         fi
     done < <(awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}' "$hash_manifest")
 
     if (( failures > 0 )); then
+        local source_context
+        source_context="$(describe_install_module_hash_source)"
+        local drift_summary=""
+        if (( mismatch_count > 0 )); then
+            drift_summary+=$'\n  • Hash drift ('"$mismatch_count"$' dosya): '"${mismatch_paths[*]}"
+        fi
+        if (( missing_count > 0 )); then
+            drift_summary+=$'\n  • Eksik dosya ('"$missing_count"$' dosya): '"${missing_paths[*]}"
+        fi
+        local diagnostic_block
+        diagnostic_block="$(printf 'Manifest kaynağı: %s\n  Karşılaştırma bağlamı: %s%s' \
+            "$manifest_source" "$source_context" "$drift_summary")"
+
         if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
-            warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor."
+            warn "Kurulum modül hash doğrulamasında ${failures} hata bulundu; ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 nedeniyle devam ediliyor.
+  ${diagnostic_block}"
         else
-            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata). Düzeltme için scripts/sync_install_module_hashes.sh çalıştırın veya (risk kabulüyle) ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ile devam edin. Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
+            local hint="Bu hata genellikle scripts/install_modules altındaki bir modül güncellenirken install_sidar.sh içindeki gömülü hash manifesti güncellenmediğinde oluşur."
+            local fix_block="Geliştirici düzeltmesi: ./scripts/sync_install_module_hashes.sh (manifesti yeniden üretir ve değişiklik özetini gösterir)."
+            local user_block="Son kullanıcı düzeltmesi: GitHub üzerinde son release/installer'ın güncel olmasını bekleyin ya da repo'yu klonlayıp aynı sürümden tekrar deneyin."
+            local risk_block="Risk kabulü (yalnızca izole/geçici ortam): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh"
+            fail "Kurulum modül hash doğrulaması başarısız (${failures} hata; hash_drift=${mismatch_count}, missing=${missing_count}).
+  ${hint}
+  ${diagnostic_block}
+  ${fix_block}
+  ${user_block}
+  ${risk_block}
+  Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
         fi
     else
         ok "Kurulum modül hash doğrulaması başarılı."
