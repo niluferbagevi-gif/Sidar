@@ -14,12 +14,24 @@ def _repo_root() -> Path:
 
 
 def _extract_builtin_import_modules() -> set[str]:
+    """Yerleşik rol modüllerini ``agent/roles/__init__.py`` üzerinden AST ile derler.
+
+    Sidar standardı yerleşik rolleri **mutlak (canonical) import** ile yükler;
+    göreli importlar (``from .coder_agent import ...``) registry ile aynı sınıfı iki
+    farklı modül kimliğiyle yükleyebildiği için artık kullanılmaz. Geriye dönük
+    uyum adına eski göreli stil de tespit edilebilir, ancak kontrat sözleşmesi
+    aynı kanonik modül adına çözülür.
+    """
     init_path = _repo_root() / "agent" / "roles" / "__init__.py"
     tree = ast.parse(init_path.read_text(encoding="utf-8"))
     modules: set[str] = set()
     for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module and node.level == 1:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        if node.level == 1:
             modules.add(f"agent.roles.{node.module}")
+        elif node.level == 0 and node.module.startswith("agent.roles."):
+            modules.add(node.module)
     return modules
 
 
@@ -86,6 +98,38 @@ def test_builtin_role_import_lists_are_consistent() -> None:
     from_registry = _extract_registry_builtin_modules()
 
     assert from_init == from_registry
+
+
+def test_builtin_role_init_uses_canonical_absolute_imports() -> None:
+    """``agent/roles/__init__.py`` mutlak (canonical) import kullanmalıdır.
+
+    Göreli ``from .coder_agent import CoderAgent`` ile registry tarafındaki
+    ``importlib.import_module("agent.roles.coder_agent")`` karışık kullanıldığında
+    Python aynı sınıfı iki farklı modül cache'ine yazabilir; ``spec.agent_class
+    is exported_cls`` benzeri kimlik kontrolleri kırılır. Bu test, regresyonu
+    erken yakalamak için ``__init__`` içindeki yerleşik rol importlarını mutlak
+    yola zorlar.
+    """
+    init_path = _repo_root() / "agent" / "roles" / "__init__.py"
+    tree = ast.parse(init_path.read_text(encoding="utf-8"))
+
+    relative_role_imports: list[str] = []
+    absolute_role_imports: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        if node.level >= 1 and any(alias.name.endswith("Agent") for alias in node.names):
+            relative_role_imports.append(node.module)
+        if node.level == 0 and node.module.startswith("agent.roles."):
+            absolute_role_imports.add(node.module)
+
+    assert not relative_role_imports, (
+        "agent/roles/__init__.py içinde göreli import tespit edildi: "
+        f"{relative_role_imports}. Canonical 'from agent.roles.<modul> import ...' kullanın."
+    )
+    assert absolute_role_imports, (
+        "agent/roles/__init__.py canonical 'agent.roles.*' importlarını içermeli."
+    )
 
 
 def test_builtin_role_capabilities_match_expected_contract() -> None:
