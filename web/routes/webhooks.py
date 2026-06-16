@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -9,6 +10,67 @@ from fastapi import Header, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    """Normalize config/env boolean values used by webhook compatibility flags."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
+def _github_webhook_signature_required(cfg: Any) -> bool:
+    """Return whether GitHub webhook signatures must be validated.
+
+    Signature validation remains enabled by default and is always enforced in
+    production. Local/test compatibility can explicitly opt out with
+    ``GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False``.
+    """
+    env_name = str(
+        getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
+    ).strip().lower()
+    if env_name == "production":
+        return True
+    return _coerce_bool(getattr(cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", None), default=True)
+
+
+def _validate_github_webhook_signature(
+    *,
+    payload_body: bytes,
+    cfg: Any,
+    signature_header: str,
+    verify_hmac_signature: Callable[..., None],
+    logger: Any,
+) -> None:
+    """Apply the GitHub webhook signature contract in one testable place."""
+    secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
+    if not secret_value:
+        logger.warning(
+            "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
+            "Üretim ortamında mutlaka ayarlayın."
+        )
+        return
+
+    if not _github_webhook_signature_required(cfg):
+        logger.warning(
+            "GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False — GitHub webhook imza doğrulaması "
+            "yalnızca local/test uyumluluğu için atlanıyor."
+        )
+        return
+
+    verify_hmac_signature(
+        payload_body,
+        secret_value,
+        signature_header,
+        label="GitHub webhook",
+    )
 
 
 def build_webhooks_router(
@@ -43,20 +105,13 @@ def build_webhooks_router(
     ) -> Any:
         """GitHub'dan gelen webhook tetiklemelerini karşılar."""
         payload_body = await request.body()
-        secret = getattr(cfg, "GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
-
-        if not secret:
-            logger.warning(
-                "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
-                "Üretim ortamında mutlaka ayarlayın."
-            )
-        if secret:
-            verify_hmac_signature(
-                payload_body,
-                secret.decode("utf-8"),
-                x_hub_signature_256,
-                label="GitHub webhook",
-            )
+        _validate_github_webhook_signature(
+            payload_body=payload_body,
+            cfg=cfg,
+            signature_header=x_hub_signature_256,
+            verify_hmac_signature=verify_hmac_signature,
+            logger=logger,
+        )
 
         try:
             data = json.loads(payload_body.decode("utf-8"))

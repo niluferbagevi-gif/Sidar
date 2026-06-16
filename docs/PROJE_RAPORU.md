@@ -1264,7 +1264,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `GITHUB_TOKEN` / `GITHUB_REPO` / `GITHUB_WEBHOOK_SECRET` | `""` / `""` / `""` | GitHub repo erişimi, varsayılan repo ve webhook doğrulama ayarları |
+| `GITHUB_TOKEN` / `GITHUB_REPO` / `GITHUB_WEBHOOK_SECRET` / `GITHUB_WEBHOOK_REQUIRE_SIGNATURE` | `""` / `""` / `""` / `true` | GitHub repo erişimi, varsayılan repo ve webhook doğrulama ayarları; imza zorunluluğu production profilinde her zaman etkin kalır |
 | `SLACK_TOKEN` / `SLACK_WEBHOOK_URL` / `SLACK_DEFAULT_CHANNEL` | `""` / `""` / `""` | Slack API veya webhook tabanlı bildirim ayarları |
 | `JIRA_URL` / `JIRA_TOKEN` / `JIRA_EMAIL` / `JIRA_DEFAULT_PROJECT` | `""` / `""` / `""` / `""` | Jira entegrasyonu ve varsayılan proje bilgileri |
 | `TEAMS_WEBHOOK_URL` | `""` | Microsoft Teams webhook bildirimi |
@@ -1305,7 +1305,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `ENABLE_AUTONOMOUS_CRON` / `AUTONOMOUS_CRON_INTERVAL_SECONDS` / `AUTONOMOUS_CRON_PROMPT` | `false` / `900` / varsayılan otonom prompt | Proaktif cron tetikleyicisinin açılması, periyodu ve sistem promptu |
 | `ENABLE_NIGHTLY_MEMORY_PRUNING` / `NIGHTLY_MEMORY_INTERVAL_SECONDS` / `NIGHTLY_MEMORY_IDLE_SECONDS` / `NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS` / `NIGHTLY_MEMORY_SESSION_MIN_MESSAGES` / `NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS` | `false` / `86400` / `1800` / `2` / `12` / `2` | Idle-gece döngüsü ile konuşma özetleme, RAG pruning ve hafıza konsolidasyonu ayarları |
 | `ENABLE_DISTRIBUTED_AGENT_LOCKS` / `DISTRIBUTED_AGENT_LOCK_REQUIRED` / `DISTRIBUTED_AGENT_LOCK_TTL_SECONDS` / `DISTRIBUTED_AGENT_LOCK_TIMEOUT_MS` | `true` / `false` / `1800` / `250` | Kubernetes/çoklu pod ortamında shared ajan bakım işlerini Redis lease ile tekilleştirir; production'da required mod Redis yoksa fail-open yarışını engeller |
-| `ENABLE_EVENT_WEBHOOKS` / `AUTONOMY_WEBHOOK_SECRET` / `ENABLE_SWARM_FEDERATION` / `SWARM_FEDERATION_SHARED_SECRET` | `true` / `""` / `true` / `""` | Otonom webhook ve dış swarm federation güvenlik ayarları |
+| `ENABLE_EVENT_WEBHOOKS` / `AUTONOMY_WEBHOOK_SECRET` / `ENABLE_SWARM_FEDERATION` / `SWARM_FEDERATION_SHARED_SECRET` | `true` / `""` / `true` / `""` | Otonom webhook dispatch ve dış swarm federation güvenlik ayarları; GitHub imza doğrulaması `GITHUB_WEBHOOK_REQUIRE_SIGNATURE` ile ayrı yönetilir |
 | `ENABLE_GRAPH_RAG` / `GRAPH_RAG_MAX_FILES` | `true` / `5000` | GraphRAG indeksleme aktivasyonu ve tarama üst sınırı |
 | `ENABLE_RAG_ENTITY_EXTRACTION` / `RAG_ENTITY_MAX_PER_DOC` | `true` / `24` | RAG belgelerinden kampanya/marka/hedef kitle/dil/kanal entity çıkarımı ve ilişkisel bellek limiti |
 
