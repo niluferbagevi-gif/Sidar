@@ -157,9 +157,10 @@ jobs:
       - name: Verify installer module hash manifest integrity
         if: success() && github.event_name == 'pull_request'
         run: |
-          cp install_sidar.sh /tmp/install_sidar.sh.before
-          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh
-          diff -u /tmp/install_sidar.sh.before install_sidar.sh
+          if ! uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check; then
+            echo "::error::install_sidar.sh içindeki gömülü modül hash manifesti güncel değil. Çözüm: ./scripts/sync_install_module_hashes.sh çalıştırıp commit edin."
+            exit 1
+          fi
 
       - name: Run installer shell gates
         run: |
