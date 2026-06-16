@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -21,6 +22,65 @@ class AutonomyWakeRequest(BaseModel):
 
 _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    """Normalize config/env boolean values used by webhook compatibility flags."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
+def _autonomy_webhook_secret(cfg: Any) -> str:
+    """Resolve the autonomy webhook secret, including the SIDAR_ legacy alias."""
+    return str(
+        getattr(cfg, "AUTONOMY_WEBHOOK_SECRET", "")
+        or getattr(cfg, "SIDAR_AUTONOMY_WEBHOOK_SECRET", "")
+        or ""
+    )
+
+
+def _autonomy_webhook_signature_required(cfg: Any) -> bool:
+    """Return whether autonomy webhook signatures must be validated.
+
+    Signature validation remains enabled by default and is always enforced in
+    production. Local/test compatibility can explicitly opt out with
+    ``AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE=False``.
+    """
+    env_name = str(
+        getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
+    ).strip().lower()
+    if env_name == "production":
+        return True
+    return _coerce_bool(getattr(cfg, "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", None), default=True)
+
+
+def _validate_autonomy_webhook_signature(
+    *,
+    payload_body: bytes,
+    cfg: Any,
+    signature_header: str,
+    verify_hmac_signature: Callable[..., None],
+) -> None:
+    """Apply the autonomy webhook signature contract in one testable place."""
+    secret_value = _autonomy_webhook_secret(cfg)
+    if not secret_value:
+        return
+    if not _autonomy_webhook_signature_required(cfg):
+        return
+    verify_hmac_signature(
+        payload_body,
+        secret_value,
+        signature_header,
+        label="Autonomy webhook",
+    )
 
 
 def configure_autonomy_dependencies(deps_factory: Callable[[], Any]) -> None:
@@ -55,11 +115,11 @@ async def autonomy_webhook(
         raise HTTPException(status_code=503, detail="Event webhook özelliği devre dışı.")
 
     payload_body = await request.body()
-    deps.verify_hmac_signature(
-        payload_body,
-        str(getattr(deps.cfg, "AUTONOMY_WEBHOOK_SECRET", "") or ""),
-        x_sidar_signature,
-        label="Autonomy webhook",
+    _validate_autonomy_webhook_signature(
+        payload_body=payload_body,
+        cfg=deps.cfg,
+        signature_header=x_sidar_signature,
+        verify_hmac_signature=deps.verify_hmac_signature,
     )
 
     try:
