@@ -13,6 +13,8 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from web.security import extract_ws_header_token as default_extract_ws_header_token
+
 
 def build_ws_chat_router(deps_factory: Callable[[], Any]) -> APIRouter:
     router = APIRouter()
@@ -106,7 +108,10 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
     # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
     # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token, accept_subprotocol = deps.extract_ws_header_token(proto_header)
+    extract_ws_header_token = getattr(
+        deps, "extract_ws_header_token", default_extract_ws_header_token
+    )
+    header_token, accept_subprotocol = extract_ws_header_token(proto_header)
 
     if accept_subprotocol:
         await websocket.accept(subprotocol=accept_subprotocol)

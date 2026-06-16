@@ -30,6 +30,14 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
 
     assert token == "opaque.jwt-token_123"
     assert protocol == security.SIDAR_WS_CHAT_PROTOCOL
+    assert protocol != token
+
+
+def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -> None:
+    token, protocol = security.extract_ws_header_token("raw-token-1")
+
+    assert token == "raw-token-1"
+    assert protocol is None
 
 
 def test_extract_ws_header_token_supports_voice_and_hitl_fixed_protocols() -> None:
@@ -44,6 +52,13 @@ def test_extract_ws_header_token_supports_voice_and_hitl_fixed_protocols() -> No
     assert voice_protocol == security.SIDAR_WS_VOICE_PROTOCOL
     assert hitl_token == "hitl-token"
     assert hitl_protocol == security.SIDAR_WS_HITL_PROTOCOL
+
+
+def test_extract_ws_header_token_ignores_invalid_token_but_accepts_fixed_protocol() -> None:
+    token, protocol = security.extract_ws_header_token("sidar.chat.v1, bad token with spaces")
+
+    assert token == ""
+    assert protocol == security.SIDAR_WS_CHAT_PROTOCOL
 
 
 def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -> None:

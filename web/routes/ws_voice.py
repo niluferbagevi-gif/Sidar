@@ -11,6 +11,13 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from web.security import (
+    SIDAR_WS_VOICE_PROTOCOL,
+)
+from web.security import (
+    extract_ws_header_token as default_extract_ws_header_token,
+)
+
 
 def build_ws_voice_router(deps_factory: Callable[[], Any]) -> APIRouter:
     router = APIRouter()
@@ -32,8 +39,11 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
     - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
     """
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
-    header_token, accept_subprotocol = deps.extract_ws_header_token(
-        proto_header, deps.ws_voice_protocol
+    extract_ws_header_token = getattr(
+        deps, "extract_ws_header_token", default_extract_ws_header_token
+    )
+    header_token, accept_subprotocol = extract_ws_header_token(
+        proto_header, getattr(deps, "ws_voice_protocol", SIDAR_WS_VOICE_PROTOCOL)
     )
 
     if accept_subprotocol:
@@ -378,5 +388,3 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                     await active_response_task
         else:
             deps.logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
-
-

@@ -72,3 +72,24 @@ async def test_websocket_chat_requires_auth_before_non_auth_action() -> None:
 
     assert ws.accepted == [None]
     assert ws.closed == [(1008, "Authentication required")]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_uses_default_header_token_extractor_when_dependency_missing() -> None:
+    ws = _Ws(['{"action":"message","message":"hello"}'])
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=SimpleNamespace(set_active_user=lambda *_: None))
+
+    async def _close(websocket, reason: str) -> None:
+        await websocket.close(code=1008, reason=reason)
+
+    deps = SimpleNamespace(
+        resolve_agent_instance=_resolve_agent,
+        ws_close_policy_violation=_close,
+    )
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert ws.accepted == [None]
+    assert ws.closed == [(1008, "Authentication required")]

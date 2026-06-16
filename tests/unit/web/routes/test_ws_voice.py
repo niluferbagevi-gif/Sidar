@@ -64,8 +64,11 @@ class _VoicePipeline:
 
 
 def _deps(**overrides) -> SimpleNamespace:
+    async def _set_active_user(*_args):
+        return None
+
     async def _resolve_agent_instance():
-        return SimpleNamespace(llm=object(), memory=SimpleNamespace(set_active_user=lambda *_: None))
+        return SimpleNamespace(llm=object(), memory=SimpleNamespace(set_active_user=_set_active_user))
 
     async def _close(websocket, reason: str) -> None:
         await websocket.close(code=1008, reason=reason)
@@ -123,3 +126,32 @@ async def test_websocket_voice_rejects_binary_before_auth(monkeypatch) -> None:
 
     assert ws.accepted == [None]
     assert ws.closed == [(1008, "Authentication required")]
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_uses_default_header_token_extractor_without_echo(
+    monkeypatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=_MultimodalPipeline)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=_VoicePipeline)
+        return original_import(name, *args, **kwargs)
+
+    async def _resolve_user(_agent, token: str):
+        assert token == "voice-token"
+        return SimpleNamespace(id="u1", username="ada")
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    ws = _Ws(
+        headers={"sec-websocket-protocol": "voice-token"},
+        messages=[{"type": "websocket.disconnect"}],
+    )
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_resolve_user))
+
+    assert ws.accepted == [None]
+    assert {"auth_ok": True} in ws.sent

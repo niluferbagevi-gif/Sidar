@@ -4836,7 +4836,7 @@ async def test_websocket_chat_rejects_invalid_header_token(monkeypatch):
 
     ws = _Ws()
     await web_server.websocket_chat(ws)
-    assert ws.accepted == "bad-token"
+    assert ws.accepted is None
     assert ws.closed == {"code": 1008, "reason": "Invalid or expired token"}
 
 
@@ -6248,7 +6248,7 @@ async def test_websocket_voice_rejects_invalid_header_token(monkeypatch):
     ws = _Ws()
     await web_server.websocket_voice(ws)
 
-    assert ws.accepted == "bad-token"
+    assert ws.accepted is None
     assert closed["reason"] == "Invalid or expired token"
 
 
