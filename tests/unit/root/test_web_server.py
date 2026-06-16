@@ -2795,6 +2795,11 @@ async def test_websocket_chat_handles_anyio_closedresource_with_room_cleanup(mon
 @pytest.mark.asyncio
 async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch):
     user = SimpleNamespace(id="u1", username="ada", role="developer")
+    # ``extract_ws_header_token`` artık ham token'ı subprotocol olarak echo
+    # etmez (bkz. ``test_ws_chat_protocol_token_parser_keeps_legacy_header_without_echo``).
+    # Bu test'in amacı rate-limit + room mention validasyonunu doğrulamak; auth
+    # header'ı modern canonical biçimde gönderiyoruz ki ``ws.accept`` kanonik
+    # subprotocol ile yanıtlasın ve token istemciye geri yansımasın.
     ws = _ChatWebSocket(
         [
             web_server.json.dumps(
@@ -2803,7 +2808,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
             web_server.json.dumps({"action": "message", "message": "@sidar   "}),
             web_server.json.dumps({"action": "message", "message": "hello"}),
         ],
-        headers={"sec-websocket-protocol": "token-1"},
+        headers={"sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, token-1"},
     )
 
     participant = web_server._CollaborationParticipant(
@@ -2855,7 +2860,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
 
     await web_server.websocket_chat(ws)
 
-    assert ws.accepted == ["token-1"]
+    assert ws.accepted == [web_security.SIDAR_WS_CHAT_PROTOCOL]
     assert any(event.get("type") == "room_error" for event in broadcast_events)
     assert any("Hız Sınırı" in payload.get("chunk", "") for payload in ws.sent)
 
