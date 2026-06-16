@@ -134,7 +134,7 @@ jobs:
           uv run python - <<'PY_CHECK'
           from pathlib import Path
 
-          manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8").strip("\\n")
+          manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8").strip("\n")
           lines = Path('install_sidar.sh').read_text(encoding='utf-8').splitlines()
 
           marker = "cat <<'SIDAR_INSTALL_MANIFEST_EOF' > \"$manifest_path\""
@@ -146,7 +146,7 @@ jobs:
           if end_idx is None:
               raise SystemExit('install_sidar.sh içinde manifest heredoc bitişi bulunamadı.')
 
-          heredoc = "\\n".join(lines[start_idx + 1:end_idx]).strip("\\n")
+          heredoc = "\n".join(lines[start_idx + 1:end_idx]).strip("\n")
           if manifest != heredoc:
               raise SystemExit(
                   'Manifest uyumsuzluğu: .sidar_manifest.txt ile install_sidar.sh heredoc hash satırları birebir aynı değil.'
