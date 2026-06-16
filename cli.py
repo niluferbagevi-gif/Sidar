@@ -152,7 +152,10 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
         gpu_info = str(getattr(agent.cfg, "GPU_INFO", "") or "").strip()
         use_gpu_env = os.getenv("USE_GPU", "").strip().lower()
         if use_gpu_env in {"0", "false", "no", "off"}:
-            print("  GPU             : ℹ CPU modu (USE_GPU=false)")
+            if gpu_info:
+                print(f"  GPU             : ✗ {gpu_info} (CPU modu, USE_GPU=false)")
+            else:
+                print("  GPU             : ℹ CPU modu (USE_GPU=false)")
         elif gpu_info.lower() == "cuda bulunamadı":
             print("  GPU             : ✗ GPU bulunamadı (CPU modunda çalışıyor)")
         elif gpu_info:

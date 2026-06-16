@@ -274,6 +274,7 @@ async def test_interactive_loop_prints_rag_action_hints(monkeypatch, capsys):
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeypatch, capsys):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    monkeypatch.setenv("USE_GPU", "false")
     agent = _InteractiveAgent(
         provider="ollama",
         use_gpu=False,
@@ -288,6 +289,7 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
     await cli._interactive_loop_async(agent)
     output = capsys.readouterr().out
     assert "GPU             : ✗ RTX" in output
+    assert "CPU modu, USE_GPU=false" in output
     assert "coder-test" in output
     assert "Hazır değil" in output
     assert "duckduckgo-search kurulu değil" in output
