@@ -198,9 +198,9 @@ def test_builtin_role_classes_keep_documented_agent_contracts() -> None:
 
     assert set(documented_classes) == expected_classes
     for class_name, docstring in documented_classes.items():
-        assert (
-            len(docstring.split()) >= 6
-        ), f"{class_name} needs a meaningful role contract docstring"
+        assert len(docstring.split()) >= 6, (
+            f"{class_name} needs a meaningful role contract docstring"
+        )
 
 
 def test_agents_documentation_covers_specialized_roles_and_interactions() -> None:
@@ -433,10 +433,14 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["dependencies"]
     assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["optional-dependencies"]["dev"]
 
+    # Runtime concatenation is intentional: it keeps the forbidden tokens from
+    # appearing verbatim inside this test source, so external grep-based
+    # scanners don't false-positive on the contract file. Ruff's formatter
+    # collapses adjacent string literals, so ``+`` is used instead.
     forbidden_terms = [
-        "Lot" "us",
-        "qwen2.5-coder:" "3b",
-        "python -m " "pip install",
+        "Lot" + "us",
+        "qwen2.5-coder:" + "3b",
+        "python -m " + "pip install",
     ]
     for rel_path, text in text_by_file.items():
         for term in forbidden_terms:

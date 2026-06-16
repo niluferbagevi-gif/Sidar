@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import inspect
 import json
 import re
 import secrets
@@ -26,9 +27,7 @@ def build_ws_chat_router(deps_factory: Callable[[], Any]) -> APIRouter:
     return router
 
 
-async def ws_stream_agent_text_response(
-    websocket: WebSocket, agent: Any, prompt: str
-) -> None:
+async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt: str) -> None:
     """Agent text çıktısını voice/chat benzeri websocket istemcisine aktar."""
     tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
     thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
@@ -141,9 +140,21 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             await websocket.send_json({"auth_ok": True})
 
     async def _cancel_task_and_wait(task: asyncio.Task[Any] | None) -> None:
+        """Çalışan bir alt görevi iptal eder ve mümkünse temizliğini bekler.
+
+        Tipi ``asyncio.Task`` olan gerçek nesneler ``cancel()`` çağrısının ardından
+        ``await`` ile drenajlanır (``CancelledError`` sessizce yutulur). WebSocket
+        akışındaki sözleşme yalnızca ``done()`` / ``cancel()`` arayüzünü zorunlu
+        kıldığı için test sahteleri ve ileride bağlanabilecek custom task benzeri
+        nesneler awaitable olmayabilir; bu durumda ``await`` yerine sadece iptal
+        sinyali yeterli sayılır ve ``TypeError`` riski engellenmek için erken
+        dönülür.
+        """
         if task is None or task.done():
             return
         task.cancel()
+        if not inspect.isawaitable(task):
+            return
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
@@ -223,14 +234,14 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             if ctx_token is not None:
                 deps.reset_current_metrics_user_id(ctx_token)
 
-    async def generate_room_response(
-        room: Any, *, actor_name: str, msg: str
-    ) -> None:
+    async def generate_room_response(room: Any, *, actor_name: str, msg: str) -> None:
         sub_id = None
         status_task = None
         stop_status = asyncio.Event()
         request_id = secrets.token_hex(6)
-        collaboration_prompt = deps.build_collaboration_prompt(room, actor_name=actor_name, command=msg)
+        collaboration_prompt = deps.build_collaboration_prompt(
+            room, actor_name=actor_name, command=msg
+        )
         ctx_token = deps.set_current_metrics_user_id(ws_user_id) if ws_user_id else None
         try:
             event_bus = deps.get_agent_event_bus()
@@ -353,7 +364,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 if not auth_token:
                     await deps.ws_close_policy_violation(websocket, "Authentication token missing")
                     return
-                ws_user = await deps.await_if_needed(deps.resolve_user_from_token(agent, auth_token))
+                ws_user = await deps.await_if_needed(
+                    deps.resolve_user_from_token(agent, auth_token)
+                )
                 if not ws_user:
                     await deps.ws_close_policy_violation(websocket, "Invalid or expired token")
                     return
@@ -406,7 +419,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 continue
 
             client_ip = websocket.client.host if websocket.client else "unknown"
-            if await deps.redis_is_rate_limited("chat_ws", client_ip, deps.rate_limit, deps.rate_window):
+            if await deps.redis_is_rate_limited(
+                "chat_ws", client_ip, deps.rate_limit, deps.rate_window
+            ):
                 await websocket.send_json(
                     {
                         "chunk": "[Hız Sınırı] Çok fazla istek. Lütfen bir dakika bekleyin.",
