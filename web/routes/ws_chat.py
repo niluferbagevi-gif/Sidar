@@ -140,6 +140,13 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         with contextlib.suppress(Exception):
             await websocket.send_json({"auth_ok": True})
 
+    async def _cancel_task_and_wait(task: asyncio.Task[Any] | None) -> None:
+        if task is None or task.done():
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
     async def generate_response(msg: str) -> None:
         sub_id = None
         status_task = None
@@ -408,8 +415,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 )
                 continue
 
-            if active_task and not active_task.done():
-                active_task.cancel()
+            await _cancel_task_and_wait(active_task)
 
             if joined_room_id:
                 room_entry = deps.collaboration_rooms.get(joined_room_id)
@@ -480,8 +486,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                             },
                         )
                         continue
-                    if room.active_task and not room.active_task.done():
-                        room.active_task.cancel()
+                    await _cancel_task_and_wait(room.active_task)
                     room.active_task = asyncio.create_task(
                         generate_room_response(room, actor_name=display_name, msg=command)
                     )
@@ -489,19 +494,24 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 continue
 
             active_task = asyncio.create_task(generate_response(user_message))
+            await asyncio.sleep(0)
 
     except WebSocketDisconnect:
         deps.logger.info("İstemci WebSocket bağlantısını kesti.")
-        if active_task and not active_task.done():
-            active_task.cancel()
+        await _cancel_task_and_wait(active_task)
+        if joined_room_id:
+            room = deps.collaboration_rooms.get(joined_room_id)
+            await _cancel_task_and_wait(getattr(room, "active_task", None))
         await deps.leave_collaboration_room(websocket)
     except Exception as _ws_exc:
         # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
         # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
         if deps.anyio_closed is not None and isinstance(_ws_exc, deps.anyio_closed):
             deps.logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_task and not active_task.done():
-                active_task.cancel()
+            await _cancel_task_and_wait(active_task)
+            if joined_room_id:
+                room = deps.collaboration_rooms.get(joined_room_id)
+                await _cancel_task_and_wait(getattr(room, "active_task", None))
             await deps.leave_collaboration_room(websocket)
         else:
             deps.logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
