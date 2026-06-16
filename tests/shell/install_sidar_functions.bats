@@ -1093,15 +1093,17 @@ EOF
 
   run bash -c '
     set -Eeuo pipefail
-    cd "$1"
+    drift_tmpdir="$1"
+    repo_root="$2"
+    cd "$drift_tmpdir"
     export SIDAR_INSTALL_TEST_MODE=1
     export SIDAR_REPO_BRANCH="drift-test-branch"
     export SIDAR_BOOTSTRAP_CLONE_REF="drift-test-branch"
     set --
     # Source install_sidar.sh from the real repo, but force SCRIPT_DIR to the tmp
     # tree so verify_install_module_hashes_if_present operates on the drifted file.
-    source "$2/install_sidar.sh"
-    SCRIPT_DIR="$1"
+    source "$repo_root/install_sidar.sh"
+    SCRIPT_DIR="$drift_tmpdir"
     fail() { printf "FAIL_OUT::%s\n" "$*" >&2; exit 1; }
     verify_install_module_hashes_if_present
   ' _ "$tmpdir" "$root"
