@@ -334,7 +334,7 @@ def test_extract_ready_segments_skips_empty_parts_from_split(monkeypatch):
         def split(_text):
             return ["İlk", "   ", "Son"]
 
-    monkeypatch.setattr("core.voice.re.compile", lambda _pattern: _FakeBoundary())
+    monkeypatch.setattr("core.voice._SENTENCE_BOUNDARY_RE", _FakeBoundary())
     segs, remainder = p.extract_ready_segments("dummy")
     assert segs == ["İlk"]
     assert remainder == "Son"

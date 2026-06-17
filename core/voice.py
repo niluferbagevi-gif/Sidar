@@ -19,6 +19,7 @@ from typing import Any
 import pyttsx3
 
 logger = logging.getLogger(__name__)
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?。！？\n])\s+")
 
 
 class _BaseTTSAdapter:
@@ -146,8 +147,7 @@ class VoicePipeline:
 
         segments: list[str] = []
         remainder = text
-        boundary = re.compile(r"(?<=[.!?。！？\n])\s+")
-        parts = boundary.split(text)
+        parts = _SENTENCE_BOUNDARY_RE.split(text)
         if len(parts) > 1:
             built = []
             for part in parts[:-1]:
