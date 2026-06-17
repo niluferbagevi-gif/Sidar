@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -1816,9 +1817,14 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     ]
     assert (
         frontend_gate_block.index("resolve_local_frontend_e2e_mode")
+        < frontend_gate_block.index("npm run audit:high")
         < frontend_gate_block.index("npm run lint")
         < frontend_gate_block.index("npm run test:coverage")
     )
+    assert "FRONTEND_NPM_AUDIT_RAN=1" in script
+    assert "FRONTEND_NPM_AUDIT_EXIT_CODE=$?" in script
+    assert "Dependency audit (npm run audit:high)" in script
+    assert r"| Dependency audit | \`npm run audit:high\` |" in script
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "run_frontend_e2e_with_retry()" in script
     assert 'if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then' in script
@@ -1910,6 +1916,25 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
+
+
+def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    package_lock = json.loads(Path("web_ui_react/package-lock.json").read_text(encoding="utf-8"))
+
+    dev_deps = package_json["devDependencies"]
+    locked_root_deps = package_lock["packages"][""]["devDependencies"]
+    locked_packages = package_lock["packages"]
+
+    assert dev_deps["vite"] == "^8.0.16"
+    assert dev_deps["ws"] == "^8.21.0"
+    assert locked_root_deps["vite"] == "^8.0.16"
+    assert locked_root_deps["ws"] == "^8.21.0"
+    assert locked_packages["node_modules/vite"]["version"] == "8.0.16"
+    assert locked_packages["node_modules/ws"]["version"] == "8.21.0"
+    assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"
+    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "1.0.3"
+    assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
     script = _script()
