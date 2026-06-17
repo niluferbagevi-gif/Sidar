@@ -1591,8 +1591,9 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     )
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
-    assert "No active pip-audit vulnerability exceptions." in policy
-    assert "CVE-2025-3000" not in policy
+    # CVE-2025-3000 (torch) için upstream fix yokken dated+scoped istisna
+    # tutulur; scripts/pip_audit_ignore_args.py süresi dolan kayıtları reddeder.
+    assert "CVE-2025-3000\ttorch\t2026-09-17" in policy
 
 
 def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() -> None:

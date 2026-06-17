@@ -120,5 +120,8 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
     assert "CVE-2025-3000" in docs
     assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
-    assert "CVE-2025-3000" not in policy
-    assert "No active pip-audit vulnerability exceptions." in policy
+    # CVE-2025-3000 için upstream fix henüz yok; aktif dated+scoped istisna
+    # security/pip-audit-ignores.tsv içinde tutulur ve süresi dolan kayıtlar
+    # scripts/pip_audit_ignore_args.py tarafından reddedilir.
+    assert "CVE-2025-3000\ttorch\t" in policy
+    assert "expires: 2026-09-17" in docs
