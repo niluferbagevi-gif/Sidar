@@ -74,7 +74,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: false
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -191,8 +192,11 @@ jobs:
           uv run bandit -c pyproject.toml -q -r .
           mkdir -p artifacts/security
           mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
-          if ! uv run --with pip-audit pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json "${pip_audit_ignore_args[@]}"; then
+          if ! uv run --with pip-audit pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json "${pip_audit_ignore_args[@]}" 2>&1 | tee artifacts/security/pip-audit-failure.log; then
             python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30
+            if grep -Eiq 'failed to fetch|request failed|error sending request|tunnel error|timed out|temporary failure|could not resolve|network is unreachable|connect' artifacts/security/pip-audit-failure.log; then
+              echo "::error title=pip-audit network/bootstrap failure::pip-audit could not reach its vulnerability data source; CI remains fail-closed, but this is not a confirmed vulnerability finding."
+            fi
             exit 1
           fi
 
@@ -352,7 +356,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: false
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Dry-run production dependency profile
         run: uv sync --frozen --extra production
@@ -476,7 +481,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: false
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: uv sync --frozen --all-extras

@@ -429,6 +429,51 @@ format_quality_status() {
   fi
 }
 
+is_network_failure_log() {
+  local log_path="$1"
+  [ -f "${log_path}" ] || return 1
+  grep -Eiq \
+    'failed to fetch|request failed|error sending request|tunnel error|timed out|timeout|temporary failure|could not resolve|name or service not known|connection refused|connection reset|network is unreachable|tls|ssl|connect' \
+    "${log_path}"
+}
+
+write_network_failure_artifact() {
+  local tool_name="$1"
+  local log_path="$2"
+  local output_path="$3"
+  local strict_mode="$4"
+  mkdir -p "$(dirname "${output_path}")"
+  python - "${tool_name}" "${log_path}" "${output_path}" "${strict_mode}" <<'PY_NETWORK_ARTIFACT'
+import json
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+tool_name, log_path_raw, output_path_raw, strict_mode = sys.argv[1:5]
+log_path = Path(log_path_raw)
+output_path = Path(output_path_raw)
+excerpt = ""
+if log_path.exists():
+    excerpt = "\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-40:])
+
+artifact = {
+    "success": False,
+    "failure_type": "network",
+    "tool": tool_name,
+    "generated_at": datetime.now(UTC).isoformat(),
+    "strict_mode": strict_mode == "1",
+    "log_path": str(log_path),
+    "log_excerpt": excerpt,
+    "suggested_actions": [
+        "CI uv dependency cache'i etkin tutulmalı ve uv.lock cache anahtarına dahil edilmeli.",
+        "Ağ erişimi olmayan yerel çalıştırmalarda cache dolu bir ortamda tekrar deneyin.",
+        "Güvenlik bulgusu ile ağ/bootstrap hatasını ayırmak için bu artifact'i kontrol edin.",
+    ],
+}
+output_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY_NETWORK_ARTIFACT
+}
+
 print_frontend_quality_summary() {
   echo ""
   echo "🧭 Frontend kalite kapısı özeti"
@@ -908,6 +953,9 @@ run_security_analysis_gates() {
   local pip_audit_artifact_dir="${PIP_AUDIT_ARTIFACT_DIR:-artifacts/security}"
   local pip_audit_raw_report="${pip_audit_artifact_dir}/pip-audit-report.raw.json"
   local pip_audit_failure_artifact="${pip_audit_artifact_dir}/pip-audit-failure.json"
+  local pip_audit_failure_log="${pip_audit_artifact_dir}/pip-audit-failure.log"
+  local pip_audit_network_artifact="${pip_audit_artifact_dir}/pip-audit-network-failure.json"
+  local pip_audit_allow_network_failure_local="${PIP_AUDIT_ALLOW_NETWORK_FAILURE_LOCAL:-1}"
   mkdir -p "${pip_audit_artifact_dir}"
 
   local pip_audit_ignore_args=()
@@ -917,11 +965,14 @@ run_security_analysis_gates() {
     return 1
   fi
 
+  : > "${pip_audit_failure_log}"
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
     rm -f "${pip_audit_raw_report}"
     if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}" \
-      --format json --output "${pip_audit_raw_report}" "${pip_audit_ignore_args[@]}"; then
+      --format json --output "${pip_audit_raw_report}" "${pip_audit_ignore_args[@]}" \
+      2>&1 | tee -a "${pip_audit_failure_log}"; then
       rm -f "${pip_audit_failure_artifact}"
+      rm -f "${pip_audit_network_artifact}"
       return 0
     fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
@@ -936,6 +987,15 @@ run_security_analysis_gates() {
     echo "🧾 pip-audit hata artefaktı yazıldı: ${pip_audit_failure_artifact}"
   else
     echo "⚠️ pip-audit hata artefaktı üretilemedi."
+  fi
+  if is_network_failure_log "${pip_audit_failure_log}"; then
+    write_network_failure_artifact "pip-audit" "${pip_audit_failure_log}" "${pip_audit_network_artifact}" "${IS_CI_ENV}"
+    echo "🌐 pip-audit ağ/bootstrap hatası olarak sınıflandırıldı; artifact: ${pip_audit_network_artifact}"
+    if [ "${IS_CI_ENV}" -ne 1 ] && [ "${pip_audit_allow_network_failure_local}" = "1" ]; then
+      echo "⚠️ Yerel profilde pip-audit ağ hatası kalite kapısını bloke etmeyecek. Gerçek güvenlik bulguları hâlâ fail-closed kalır."
+      echo "   Sıkı yerel kontrol için: PIP_AUDIT_ALLOW_NETWORK_FAILURE_LOCAL=0 bash run_tests.sh"
+      return 0
+    fi
   fi
   BACKEND_EXIT_CODE=1
   return 1
@@ -1177,11 +1237,21 @@ PY
 
   echo "⚠️ Runtime bağımlılıkları eksik (asyncpg/alembic/coverage/pytest eklentileri)."
   echo "ℹ️ Dev + postgres extras uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
-  if ! uv sync --frozen --all-extras; then
+  local dependency_artifact_dir="${DEPENDENCY_BOOTSTRAP_ARTIFACT_DIR:-artifacts/dependency}"
+  local uv_sync_failure_log="${dependency_artifact_dir}/uv-sync-failure.log"
+  local uv_sync_network_artifact="${dependency_artifact_dir}/uv-sync-network-failure.json"
+  mkdir -p "${dependency_artifact_dir}"
+  if ! uv sync --frozen --all-extras 2>&1 | tee "${uv_sync_failure_log}"; then
     echo "❌ Runtime bağımlılıklarının otomatik kurulumu başarısız oldu."
+    if is_network_failure_log "${uv_sync_failure_log}"; then
+      write_network_failure_artifact "uv sync" "${uv_sync_failure_log}" "${uv_sync_network_artifact}" "${IS_CI_ENV}"
+      echo "🌐 uv sync ağ/bootstrap hatası olarak sınıflandırıldı; artifact: ${uv_sync_network_artifact}"
+      echo "   CI için uv cache zorunlu tutulmalı; yerelde cache dolu ortamda veya ağ erişimi düzeldikten sonra tekrar deneyin."
+    fi
     BACKEND_EXIT_CODE=1
     return 1
   fi
+  rm -f "${uv_sync_network_artifact}"
 
   if ! uv run python - <<'PY' >/dev/null 2>&1
 import asyncpg  # noqa: F401
