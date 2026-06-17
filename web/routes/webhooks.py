@@ -76,6 +76,7 @@ def _validate_github_webhook_signature(
 def build_webhooks_router(
     *,
     cfg: Any,
+    cfg_getter: Callable[[], Any] | None = None,
     logger: Any,
     resolve_agent_instance: Callable[[], Awaitable[Any]],
     await_if_needed: Callable[[Any], Awaitable[Any]],
@@ -86,6 +87,9 @@ def build_webhooks_router(
     dispatch_autonomy_trigger: Callable[..., Awaitable[Any] | Any],
 ) -> LegacyExportRouter:
     """Build external webhook routes."""
+
+    def _active_cfg() -> Any:
+        return cfg_getter() if cfg_getter is not None else cfg
 
     router = LegacyExportRouter()
 
@@ -105,9 +109,10 @@ def build_webhooks_router(
     ) -> Any:
         """GitHub'dan gelen webhook tetiklemelerini karşılar."""
         payload_body = await request.body()
+        active_cfg = _active_cfg()
         _validate_github_webhook_signature(
             payload_body=payload_body,
-            cfg=cfg,
+            cfg=active_cfg,
             signature_header=x_hub_signature_256,
             verify_hmac_signature=verify_hmac_signature,
             logger=logger,
@@ -170,7 +175,7 @@ def build_webhooks_router(
                     "veya PR/Issue araçlarımla detayları inceleyebilirim.",
                 )
             )
-            if bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
+            if bool(getattr(active_cfg, "ENABLE_EVENT_WEBHOOKS", True)):
                 with contextlib.suppress(Exception):
                     payload_dict = data if isinstance(data, dict) else {"payload": data}
                     federation_workflow = (

@@ -2718,6 +2718,7 @@ orchestration_router = build_orchestration_router(
 
 webhooks_router = build_webhooks_router(
     cfg=cfg,
+    cfg_getter=lambda: cfg,
     logger=logger,
     resolve_agent_instance=lambda: _resolve_agent_instance(),
     await_if_needed=_await_if_needed,
