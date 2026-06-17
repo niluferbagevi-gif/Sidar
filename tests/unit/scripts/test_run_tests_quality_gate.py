@@ -721,9 +721,11 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "bash scripts/tools/bundle_install_sidar.sh" in ci_workflow
     assert "bash -n dist/install_sidar.sh" in ci_workflow
     assert "name: standalone-install-sidar" in ci_workflow
-    assert "path: dist/install_sidar.sh" in ci_workflow
+    assert "path: |" in ci_workflow
+    assert "dist/install_sidar.sh" in ci_workflow
+    assert "dist/MODULE_HASHES.txt" in ci_workflow
     assert "softprops/action-gh-release@v2" in ci_workflow
-    assert "files: dist/install_sidar.sh" in ci_workflow
+    assert "files: |" in ci_workflow
 
     dynamic_url = "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh"
     release_url = (
