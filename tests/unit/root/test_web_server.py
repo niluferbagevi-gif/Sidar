@@ -3213,6 +3213,11 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
         memory=SimpleNamespace(db=_DB()),
         get_autonomy_activity=lambda limit=20: [{"id": "a1", "limit": limit}],
     )
+
+    async def _fake_operations_db(_deps):
+        return agent.memory.db
+
+    monkeypatch.setattr(web_server.operations_routes, "_resolve_operations_db", _fake_operations_db)
     monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
     user = SimpleNamespace(id="u1", tenant_id="t1")
 
@@ -3368,9 +3373,13 @@ async def test_operations_and_qa_agent_api_bridges(monkeypatch):
                 )
             ]
 
-    monkeypatch.setattr(
-        web_server, "_get_agent_instance", lambda: SimpleNamespace(memory=SimpleNamespace(db=_DB()))
-    )
+    db_agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+
+    async def _fake_operations_db(_deps):
+        return db_agent.memory.db
+
+    monkeypatch.setattr(web_server.operations_routes, "_resolve_operations_db", _fake_operations_db)
+    monkeypatch.setattr(web_server, "_get_agent_instance", lambda: db_agent)
     tasks = await web_server.api_qa_coverage_tasks(_user=user)
     assert b'"tasks"' in tasks.body
     assert b'"src/a.py"' in tasks.body
