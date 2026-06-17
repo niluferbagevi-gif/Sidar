@@ -74,7 +74,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: false
+          # Cache uv's wheel/download store so large wheels like pyarrow do not
+          # have to be refetched on every run; a missed cache turns a
+          # network/tunnel blip into a CI red. The cache key is derived from
+          # uv.lock so a lockfile change naturally invalidates it.
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -191,10 +196,19 @@ jobs:
           uv run bandit -c pyproject.toml -q -r .
           mkdir -p artifacts/security
           mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
-          if ! uv run --with pip-audit pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json "${pip_audit_ignore_args[@]}"; then
-            python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30
-            exit 1
+          stderr_log=artifacts/security/pip-audit-stderr.log
+          : > "${stderr_log}"
+          if uv run --with pip-audit pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json "${pip_audit_ignore_args[@]}" 2> "${stderr_log}"; then
+            exit 0
           fi
+          cat "${stderr_log}" >&2 || true
+          python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30 --stderr-log "${stderr_log}"
+          failure_category=$(python -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); print(json.loads(p.read_text(encoding="utf-8")).get("failure_category","unknown"))' artifacts/security/pip-audit-failure.json 2>/dev/null || echo unknown)
+          echo "pip-audit failure_category=${failure_category}"
+          # CI always treats failures as hard errors; the classification lands
+          # in the uploaded artifact so reviewers can tell a network blip from
+          # a real CVE without reading the raw stderr.
+          exit 1
 
       - name: Upload security audit artifacts
         if: always()

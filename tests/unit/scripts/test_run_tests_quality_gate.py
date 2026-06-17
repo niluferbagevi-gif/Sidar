@@ -1547,6 +1547,51 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     assert "CVE-2025-3000" not in policy
 
 
+def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() -> None:
+    """The quality gate must classify network/tunnel pip-audit failures.
+
+    A real vulnerability finding must still fail the gate, but a transient
+    tunnel/PyPI fetch error should be surfaced as a separate ``network``
+    category in the failure artifact and — when explicitly opted in via
+    ``PIP_AUDIT_ALLOW_NETWORK_FAILURE=1`` — must not red-line the local quality
+    gate. CI keeps the strict default.
+    """
+
+    script = _script()
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    # Stderr is captured per-attempt for forensics and classification.
+    assert "pip-audit-stderr.log" in script
+    assert '2> "${pip_audit_stderr_log}"' in script
+    assert '--stderr-log "${pip_audit_stderr_log}"' in script
+
+    # Classifier output drives the routing decision.
+    assert 'pip_audit_failure_category="unknown"' in script
+    assert '"failure_category"' in script
+    assert "PIP_AUDIT_ALLOW_NETWORK_FAILURE" in script
+
+    # CI mirror: stderr captured, classifier invoked, category surfaced.
+    assert "pip-audit-stderr.log" in ci_workflow
+    assert "--stderr-log" in ci_workflow
+    assert "failure_category=" in ci_workflow
+
+
+def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
+    """Large wheels (pyarrow, etc.) must come from the uv cache on retries."""
+
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    # Find the first setup-uv block in the workflow (the main test job).
+    setup_uv_marker = "uses: astral-sh/setup-uv@v4"
+    first_idx = ci_workflow.find(setup_uv_marker)
+    assert first_idx != -1
+    block = ci_workflow[first_idx : first_idx + 400]
+
+    assert "enable-cache: true" in block
+    assert "cache-dependency-glob" in block
+    assert "uv.lock" in block
+
+
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 

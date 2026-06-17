@@ -10,6 +10,33 @@ from typing import Any
 
 DEFAULT_RERUN_COMMAND = "uv run --with pip-audit pip-audit --skip-editable --timeout {timeout}"
 
+# Substrings (case-insensitive) that mark a pip-audit failure as a transient
+# network/tunnel/PyPI-reachability issue rather than a real vulnerability
+# finding. The list stays narrow on purpose: a generic word like "error" would
+# misclassify a legitimate security failure.
+NETWORK_ERROR_PATTERNS: tuple[str, ...] = (
+    "ConnectionError",
+    "ConnectionResetError",
+    "ConnectionRefusedError",
+    "ReadTimeoutError",
+    "ConnectTimeoutError",
+    "Max retries exceeded",
+    "HTTPSConnectionPool",
+    "HTTPConnectionPool",
+    "Could not fetch",
+    "Could not reach",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "getaddrinfo failed",
+    "Errno -3",
+    "Errno 101",
+    "SSLError",
+    "TLSV1_ALERT",
+    "tunnel",
+    "proxy",
+)
+
 
 def _load_report(path: Path) -> tuple[dict[str, Any], str | None]:
     if not path.exists():
@@ -53,7 +80,9 @@ def _dependency_vulnerabilities(report: dict[str, Any], timeout: str) -> list[di
                     "package": package_name,
                     "installed_version": installed_version,
                     "fix_versions": [str(version) for version in fix_versions],
-                    "aliases": [str(alias) for alias in vuln.get("aliases", []) if isinstance(alias, str)]
+                    "aliases": [
+                        str(alias) for alias in vuln.get("aliases", []) if isinstance(alias, str)
+                    ]
                     if isinstance(vuln.get("aliases", []), list)
                     else [],
                     "description": str(vuln.get("description", "")),
@@ -68,16 +97,62 @@ def _dependency_vulnerabilities(report: dict[str, Any], timeout: str) -> list[di
     return findings
 
 
-def build_artifact(raw_report_path: Path, output_path: Path, *, timeout: str) -> dict[str, Any]:
+def classify_failure(
+    findings: list[dict[str, Any]],
+    stderr_text: str,
+) -> str:
+    """Decide whether the pip-audit failure was a vulnerability or a network blip.
+
+    Returns one of ``"vulnerability"``, ``"network"``, ``"unknown"``. A real
+    vulnerability finding always wins — even if the stderr also mentions a
+    network blip — because the report was actually produced.
+    """
+
+    if findings:
+        return "vulnerability"
+    if stderr_text:
+        lowered = stderr_text.lower()
+        for pattern in NETWORK_ERROR_PATTERNS:
+            if pattern.lower() in lowered:
+                return "network"
+    return "unknown"
+
+
+def _read_stderr_log(path: Path | None) -> str:
+    if path is None:
+        return ""
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def build_artifact(
+    raw_report_path: Path,
+    output_path: Path,
+    *,
+    timeout: str,
+    stderr_log_path: Path | None = None,
+) -> dict[str, Any]:
     report, parse_error = _load_report(raw_report_path)
     findings = _dependency_vulnerabilities(report, timeout)
-    affected_packages = sorted({finding["package"] for finding in findings if finding.get("package")})
+    affected_packages = sorted(
+        {finding["package"] for finding in findings if finding.get("package")}
+    )
+    stderr_text = _read_stderr_log(stderr_log_path)
+    failure_category = classify_failure(findings, stderr_text)
+
+    # Trim the stderr snippet we persist; the raw log stays on disk for forensics.
+    stderr_snippet = stderr_text.strip().splitlines()[-20:] if stderr_text else []
 
     artifact: dict[str, Any] = {
         "success": False,
         "tool": "pip-audit",
         "generated_at": datetime.now(UTC).isoformat(),
         "raw_report_path": str(raw_report_path),
+        "failure_category": failure_category,
         "vulnerability_count": len(findings),
         "affected_packages": affected_packages,
         "vulnerabilities": findings,
@@ -89,9 +164,15 @@ def build_artifact(raw_report_path: Path, output_path: Path, *, timeout: str) ->
     }
     if parse_error:
         artifact["parse_error"] = parse_error
+    if stderr_log_path is not None:
+        artifact["stderr_log_path"] = str(stderr_log_path)
+    if stderr_snippet:
+        artifact["stderr_tail"] = stderr_snippet
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return artifact
 
 
@@ -100,9 +181,21 @@ def main() -> int:
     parser.add_argument("raw_report", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--timeout", default="30")
+    parser.add_argument(
+        "--stderr-log",
+        type=Path,
+        default=None,
+        help="Optional path to the captured pip-audit stderr log, used to "
+        "classify network/tunnel failures vs. real vulnerability findings.",
+    )
     args = parser.parse_args()
 
-    build_artifact(args.raw_report, args.output, timeout=str(args.timeout))
+    build_artifact(
+        args.raw_report,
+        args.output,
+        timeout=str(args.timeout),
+        stderr_log_path=args.stderr_log,
+    )
     return 0
 
 

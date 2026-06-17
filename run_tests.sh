@@ -908,7 +908,9 @@ run_security_analysis_gates() {
   local pip_audit_artifact_dir="${PIP_AUDIT_ARTIFACT_DIR:-artifacts/security}"
   local pip_audit_raw_report="${pip_audit_artifact_dir}/pip-audit-report.raw.json"
   local pip_audit_failure_artifact="${pip_audit_artifact_dir}/pip-audit-failure.json"
+  local pip_audit_stderr_log="${pip_audit_artifact_dir}/pip-audit-stderr.log"
   mkdir -p "${pip_audit_artifact_dir}"
+  : > "${pip_audit_stderr_log}"
 
   local pip_audit_ignore_args=()
   if ! mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py); then
@@ -919,10 +921,17 @@ run_security_analysis_gates() {
 
   while [ "${pip_audit_attempt}" -le "${pip_audit_max_retries}" ]; do
     rm -f "${pip_audit_raw_report}"
+    : > "${pip_audit_stderr_log}"
     if uv run --with pip-audit pip-audit --skip-editable --timeout "${pip_audit_timeout}" \
-      --format json --output "${pip_audit_raw_report}" "${pip_audit_ignore_args[@]}"; then
+      --format json --output "${pip_audit_raw_report}" "${pip_audit_ignore_args[@]}" \
+      2> "${pip_audit_stderr_log}"; then
       rm -f "${pip_audit_failure_artifact}"
       return 0
+    fi
+    if [ -s "${pip_audit_stderr_log}" ]; then
+      echo "--- pip-audit stderr (deneme ${pip_audit_attempt}/${pip_audit_max_retries}) ---"
+      cat "${pip_audit_stderr_log}"
+      echo "--- end ---"
     fi
     if [ "${pip_audit_attempt}" -lt "${pip_audit_max_retries}" ]; then
       echo "⚠️ pip-audit başarısız oldu (deneme ${pip_audit_attempt}/${pip_audit_max_retries}). ${pip_audit_wait_seconds}s sonra yeniden denenecek..."
@@ -932,10 +941,49 @@ run_security_analysis_gates() {
   done
 
   echo "❌ pip-audit güvenlik taraması ${pip_audit_max_retries} denemede başarısız."
-  if python scripts/pip_audit_failure_artifact.py "${pip_audit_raw_report}" "${pip_audit_failure_artifact}" --timeout "${pip_audit_timeout}"; then
+  if python scripts/pip_audit_failure_artifact.py "${pip_audit_raw_report}" "${pip_audit_failure_artifact}" \
+      --timeout "${pip_audit_timeout}" --stderr-log "${pip_audit_stderr_log}"; then
     echo "🧾 pip-audit hata artefaktı yazıldı: ${pip_audit_failure_artifact}"
   else
     echo "⚠️ pip-audit hata artefaktı üretilemedi."
+  fi
+
+  # Ağ kaynaklı hatayı gerçek güvenlik bulgusundan ayır. Yerel kalite kapısında
+  # ağ kesintilerinde sessiz uyarı, CI'da varsayılan olarak sert hata davranışı
+  # uygulanır. Kullanıcı PIP_AUDIT_ALLOW_NETWORK_FAILURE ile davranışı
+  # geçersiz kılabilir.
+  local pip_audit_failure_category="unknown"
+  if [ -f "${pip_audit_failure_artifact}" ]; then
+    pip_audit_failure_category="$(
+      python -c '
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+try:
+    print(json.loads(path.read_text(encoding="utf-8")).get("failure_category", "unknown"))
+except Exception:
+    print("unknown")
+' "${pip_audit_failure_artifact}" 2>/dev/null || echo unknown
+    )"
+  fi
+  local pip_audit_network_default="0"
+  if [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
+    pip_audit_network_default="1"
+  fi
+  local pip_audit_allow_network="${PIP_AUDIT_ALLOW_NETWORK_FAILURE:-${pip_audit_network_default}}"
+
+  if [ "${pip_audit_failure_category}" = "network" ] && [ "${pip_audit_allow_network}" = "1" ]; then
+    echo "⚠️ pip-audit ağ/tünel hatası nedeniyle tamamlanamadı — bu gerçek bir güvenlik bulgusu DEĞİLDİR."
+    echo "    Ayrıntılar: ${pip_audit_stderr_log}"
+    echo "    Strict mod için: PIP_AUDIT_ALLOW_NETWORK_FAILURE=0 ./run_tests.sh"
+    return 0
+  fi
+
+  if [ "${pip_audit_failure_category}" = "network" ]; then
+    echo "❌ pip-audit ağ/tünel hatası strict modda fail edildi (PIP_AUDIT_ALLOW_NETWORK_FAILURE=${pip_audit_allow_network})."
+  elif [ "${pip_audit_failure_category}" = "vulnerability" ]; then
+    echo "❌ pip-audit gerçek güvenlik bulgusu raporladı (failure_category=vulnerability)."
+  else
+    echo "❌ pip-audit hata sınıflandırması belirsiz (failure_category=${pip_audit_failure_category})."
   fi
   BACKEND_EXIT_CODE=1
   return 1
