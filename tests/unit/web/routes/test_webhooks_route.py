@@ -5,8 +5,11 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 from web.routes.webhooks import (
+    _coerce_bool,
+    build_webhooks_router,
     _github_webhook_signature_required,
     _validate_github_webhook_signature,
 )
@@ -110,3 +113,57 @@ def test_validate_github_webhook_signature_preserves_verifier_http_errors() -> N
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Geçersiz imza."
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        (" false ", False),
+        ("enabled", True),
+        ("off", False),
+        ("unknown", True),
+    ],
+)
+def test_coerce_bool_handles_text_values_and_defaults(value: str, expected: bool) -> None:
+    assert _coerce_bool(value, default=True) is expected
+
+
+@pytest.mark.asyncio
+async def test_github_webhook_wraps_non_dict_json_payload() -> None:
+    memory_entries: list[tuple[str, str]] = []
+
+    class _Req:
+        async def body(self) -> bytes:
+            return b'["non-dict"]'
+
+    async def _resolve_agent():
+        return SimpleNamespace(
+            memory=SimpleNamespace(
+                add=lambda role, message: memory_entries.append((role, message))
+            )
+        )
+
+    async def _await_if_needed(value):
+        return value
+
+    router = build_webhooks_router(
+        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", ENABLE_EVENT_WEBHOOKS=False),
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None, info=lambda *_args: None),
+        resolve_agent_instance=_resolve_agent,
+        await_if_needed=_await_if_needed,
+        verify_hmac_signature=lambda *_args, **_kwargs: None,
+        resolve_ci_failure_context=lambda *_args, **_kwargs: None,
+        run_event_driven_federation_workflow=lambda **_kwargs: None,
+        embed_event_driven_federation_payload=lambda payload, _workflow: payload,
+        dispatch_autonomy_trigger=lambda **_kwargs: {"ok": True},
+    )
+
+    response = await router.legacy_exports["github_webhook"](
+        _Req(), x_github_event="push", x_hub_signature_256=""
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 200
+    assert memory_entries
+    assert "dalına yeni kod yükledi" in memory_entries[0][1]

@@ -335,6 +335,48 @@ def test_run_task_routes_non_code_intents(prompt: str, expected_receiver: str) -
     assert prompt in sup.memory_hub.global_notes
 
 
+def test_run_task_qa_intent_delegates_and_routes_p2p_request() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    calls: list[tuple[str, str]] = []
+
+    delegated = DelegationRequest(
+        task_id="qa-task",
+        reply_to="qa",
+        target_agent="coder",
+        payload="qa bulgusunu düzelt",
+        intent="qa",
+    )
+
+    async def _delegate(receiver: str, goal: str, intent: str, **_kwargs):
+        calls.append((receiver, intent))
+        return TaskResult(task_id="qa-task", status="done", summary=delegated)
+
+    async def _route_p2p(request: DelegationRequest, **_kwargs):
+        assert request is delegated
+        return TaskResult(task_id="routed", status="done", summary="qa p2p tamam")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("qa kalite kapısı kontrolü"))
+
+    assert result == "qa p2p tamam"
+    assert calls == [("qa", "qa")]
+    assert ("supervisor", "QA ajanına yönlendiriliyor...") in sup.events.messages
+
+def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    sup.cfg.MAX_TURNS = 0
+
+    async def _delegate(*_args, **_kwargs):
+        raise AssertionError("QA delegation should not run after circuit breaker")
+
+    sup._delegate = _delegate
+
+    result = asyncio.run(sup.run_task("qa kalite kapısı kontrolü"))
+
+    assert result == "[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı (0)."
+
 def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> None:
     sup = _build_supervisor(has_coverage=False)
 

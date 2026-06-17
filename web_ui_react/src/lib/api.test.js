@@ -5,6 +5,9 @@ import {
   TOKEN_STORAGE_MODE_KEY,
   getStoredToken,
   setStoredToken,
+  clearStoredToken,
+  getTokenPrincipal,
+  getCurrentUser,
   buildAuthHeaders,
   fetchJson,
   runPoyrazOperation,
@@ -125,6 +128,16 @@ describe("setStoredToken", () => {
       window.removeEventListener(TOKEN_CHANGE_EVENT, listener);
     }
   });
+
+  it("clearStoredToken removes the active token", () => {
+    setStoredToken("active-token");
+
+    clearStoredToken();
+
+    expect(getStoredToken()).toBe("");
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+  });
+
 });
 
 describe("api.js localStorage checks", () => {
@@ -148,6 +161,30 @@ describe("api.js localStorage checks", () => {
       }
     }
   });
+
+  it("tolerates localStorage access errors", () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new Error("storage denied");
+      },
+    });
+
+    try {
+      expect(getStoredToken()).toBe("");
+      expect(() => setStoredToken("fallback-token")).not.toThrow();
+      expect(getStoredToken()).toBe("fallback-token");
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, "localStorage", originalDescriptor);
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  });
+
 });
 
 describe("buildAuthHeaders", () => {
@@ -182,6 +219,13 @@ describe("buildAuthHeaders", () => {
     expect(extra).toEqual({ "X-Foo": "bar" });
   });
 });
+
+describe("getTokenPrincipal", () => {
+  it("returns null on invalid JWT payloads", () => {
+    expect(getTokenPrincipal("header.not-json.signature")).toBeNull();
+  });
+});
+
 
 describe("fetchJson — başarılı JSON yanıtı", () => {
   it("returns parsed JSON for 200 response", async () => {
@@ -306,6 +350,19 @@ describe("agent API bridge helpers", () => {
       json: async () => ({ success: true }),
     });
   }
+
+
+
+  it("gets the current authenticated user", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await getCurrentUser();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/auth/me",
+      expect.objectContaining({ credentials: "include", headers: {} }),
+    );
+  });
 
   it("posts Poyraz operation payloads to operation endpoints", async () => {
     const fetchMock = mockJsonFetch();
