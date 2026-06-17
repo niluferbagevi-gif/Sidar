@@ -167,14 +167,15 @@ def build_webhooks_router(
 
         if msg:
             logger.info("Webhook işlendi: %s", msg)
-            await await_if_needed(agent.memory.add("user", msg))
-            await await_if_needed(
-                agent.memory.add(
-                    "assistant",
-                    "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' "
-                    "veya PR/Issue araçlarımla detayları inceleyebilirim.",
+            with contextlib.suppress(Exception):
+                await await_if_needed(agent.memory.add("user", msg))
+                await await_if_needed(
+                    agent.memory.add(
+                        "assistant",
+                        "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' "
+                        "veya PR/Issue araçlarımla detayları inceleyebilirim.",
+                    )
                 )
-            )
             if bool(getattr(active_cfg, "ENABLE_EVENT_WEBHOOKS", True)):
                 with contextlib.suppress(Exception):
                     payload_dict = data if isinstance(data, dict) else {"payload": data}

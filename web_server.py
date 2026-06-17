@@ -3258,8 +3258,8 @@ def _build_operations_dependencies() -> SimpleNamespace:
     return SimpleNamespace(
         await_if_needed=_await_if_needed,
         emit_control_room_event=_emit_control_room_event,
-        get_coverage_agent_instance=_get_coverage_agent_instance,
-        get_poyraz_agent_instance=_get_poyraz_agent_instance,
+        get_coverage_agent_instance=lambda: _get_coverage_agent_instance(),
+        get_poyraz_agent_instance=lambda: _get_poyraz_agent_instance(),
         get_request_user=_get_request_user,
         get_user_tenant=_get_user_tenant,
         resolve_agent_instance=_resolve_agent_instance,
@@ -3358,7 +3358,7 @@ def _build_federation_dependencies() -> SimpleNamespace:
         federation_task_result_cls=FederationTaskResult,
         legacy_federation_protocol_v1=LEGACY_FEDERATION_PROTOCOL_V1,
         normalize_federation_protocol=normalize_federation_protocol,
-        verify_hmac_signature=_verify_hmac_signature,
+        verify_hmac_signature=lambda *args, **kwargs: _verify_hmac_signature(*args, **kwargs),
     )
 
 

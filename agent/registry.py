@@ -223,7 +223,14 @@ class AgentCatalog:
 
     @classmethod
     def get(cls, role_name: str) -> AgentSpec | None:
-        return cls._registry.get(role_name)
+        spec = cls._registry.get(role_name)
+        contract = _builtin_contract_by_role(role_name)
+        if spec is not None and spec.is_builtin and contract is not None:
+            role_exports = sys.modules.get("agent.roles")
+            exported_cls = getattr(role_exports, contract.class_name, None) if role_exports else None
+            if isinstance(exported_cls, type) and spec.agent_class is not exported_cls:
+                spec.agent_class = exported_cls
+        return spec
 
     @classmethod
     def find_by_capability(cls, capability: str) -> list[AgentSpec]:
