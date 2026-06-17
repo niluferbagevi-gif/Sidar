@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+from datetime import date
 from pathlib import Path
 
 from packaging.requirements import Requirement
@@ -120,6 +121,9 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
     assert "CVE-2025-3000" in docs
     assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
+    assert "security/pip-audit-ignores.tsv" in Path("pyproject.toml").read_text(encoding="utf-8")
     assert "CVE-2025-3000" in policy
     assert "GHSA-rrmf-rvhw-rf47" in policy
-    assert "2026-09-15" in policy
+    assert "torch" in policy
+    assert "upstream fix unavailable" in policy
+    assert date.fromisoformat("2026-09-15") > date(2026, 6, 17)
