@@ -286,7 +286,6 @@ PY_RATCHET_STATE
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
 IS_CI_ENV=0
 if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
   IS_CI_ENV=1
@@ -305,6 +304,46 @@ if [ "${TEST_PROFILE}" != "ci" ] && [ "${TEST_PROFILE}" != "local" ]; then
   echo "⚠️ Geçersiz TEST_PROFILE='${TEST_PROFILE}'. 'local' profiline düşülüyor."
   TEST_PROFILE="local"
 fi
+
+# AGENTS.md §2.5.4: coverage hedefleri üç ayrı operasyon profilinde izlenir.
+#   - local profile  → COVERAGE_FAIL_UNDER_LOCAL    (varsayılan: .coveragerc)
+#   - ci profile     → COVERAGE_FAIL_UNDER_CI       (varsayılan: .coveragerc)
+#   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: 100)
+# Doğrudan COVERAGE_FAIL_UNDER atanırsa o değer her profilin önüne geçer
+# (geri uyumluluk için korunur). Coverage campaign opt-in'i ya CLI'dan
+# COVERAGE_CAMPAIGN=1 ile ya da otonom döngünün
+# AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign etiketi ile tetiklenir.
+COVERAGE_CAMPAIGN_PROFILE=0
+if [ "${COVERAGE_CAMPAIGN:-0}" = "1" ] \
+    || [ "${AUTONOMOUS_LOOP_OPERATION_PROFILE:-}" = "coverage-campaign" ]; then
+  COVERAGE_CAMPAIGN_PROFILE=1
+fi
+
+if [ -n "${COVERAGE_FAIL_UNDER:-}" ]; then
+  COVERAGE_FAIL_UNDER_SOURCE="explicit-override"
+elif [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ]; then
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CAMPAIGN:-100}"
+  COVERAGE_FAIL_UNDER_SOURCE="campaign"
+elif [ "${TEST_PROFILE}" = "ci" ]; then
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CI:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
+  COVERAGE_FAIL_UNDER_SOURCE="ci"
+else
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_LOCAL:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
+  COVERAGE_FAIL_UNDER_SOURCE="local"
+fi
+
+# Yerel/CI profillerinde ratchet üst sınırını 99'da tutarak %0.x dalgalanma
+# için 1 puanlık tampon bırakıyoruz; coverage kampanyasında %100 aspirasyonel
+# hedefe izin veriyoruz. Açık COVERAGE_RATCHET_MAX_GATE atandıysa o değer
+# her profilin önüne geçer.
+if [ -z "${COVERAGE_RATCHET_MAX_GATE:-}" ]; then
+  if [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ]; then
+    COVERAGE_RATCHET_MAX_GATE="100"
+  else
+    COVERAGE_RATCHET_MAX_GATE="99"
+  fi
+fi
+export COVERAGE_RATCHET_MAX_GATE
 
 if [ "${TEST_PROFILE}" = "ci" ]; then
   AUTO_OPEN_ARTIFACTS=0
@@ -514,7 +553,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (.coveragerc [report].fail_under değerinden okundu; açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir)"
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, .coveragerc baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 

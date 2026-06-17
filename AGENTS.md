@@ -260,16 +260,32 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 #### 2.5.4 Coverage odaklı otonom iyileştirme
 
-- Coverage eşikleri operasyonel olarak ayrıdır: günlük local kalite kapısı
-  `run_tests.sh` / `.coveragerc` / `COVERAGE_FAIL_UNDER` üzerinden stabil eşik
-  kullanır; `.coveragerc` güncel `fail_under` değerinin tek doğruluk
-  kaynağıdır ve `COVERAGE_RATCHET_STEP` varsayılanı `%1` puanlık dengeli
-  basamaklarla bu eşiği yalnızca yukarı taşır. CI zorunlu gate `TEST_PROFILE=ci`
-  ile ayrı profildir; `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom
-  iyileştirme hedefi** olarak izler. `%99.8` altında kalmak, testler ve local
-  gate geçiyorsa CI/local başarısızlığı değil CoverageAgent döngüsünün devam
-  edeceği anlamına gelir. Planlı/manual coverage kampanyaları
-  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile etiketlenmelidir.
+- Coverage eşikleri operasyonel olarak üç ayrı profilde izlenir; aynı eşik
+  değerini her yere bağlamak (`.coveragerc fail_under = 100` gibi) geliştirme
+  hızını gereksiz yere kırar:
+    - **Local profile (`TEST_PROFILE=local`)** — günlük geliştirici kapısı.
+      `.coveragerc [report].fail_under` stabil, ulaşılabilir tabanı tutar;
+      `COVERAGE_FAIL_UNDER_LOCAL` envi ile profil bazında üstüne yazılabilir,
+      `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine
+      yazar.
+    - **CI profile (`TEST_PROFILE=ci`)** — pre-merge/zorunlu kapı.
+      `COVERAGE_FAIL_UNDER_CI` envi local tabanın üzerine sıkı eşik (örn.
+      `%95`) bindirir; `.github/workflows/ci.yml` bu envi ana test job'unda
+      açık olarak verir.
+    - **Coverage campaign profile** — aspirasyonel `%100` hedefi.
+      `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`
+      ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` envi varsayılan
+      `100`'ü override edebilir.
+- `coverage_ratchet.py` `.coveragerc` üzerindeki `fail_under` değerini
+  yalnızca yukarı taşır; `COVERAGE_RATCHET_STEP` varsayılanı `%1`'dir ve
+  local/CI profilleri için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak
+  `99`'dur (1 puanlık tampon), coverage campaign profilinde `100`'e açılır.
+  Açık `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer (geri
+  uyumluluk).
+- `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom iyileştirme
+  hedefi** olarak izler. `%99.8` altında kalmak, testler ve local gate
+  geçiyorsa CI/local başarısızlığı değil CoverageAgent döngüsünün devam
+  edeceği anlamına gelir.
 - `autonomous_loop.sh`, kalite kapısı veya otonom iyileştirme hedefi sağlanmazsa
   `CoverageAgent` ile `coverage.xml` analizini çalıştırır, `scripts/coverage_hotspots.py`
   ile düşük coverage dosyalarını listeler ve gerekiyorsa eksik test önerisi üretir.

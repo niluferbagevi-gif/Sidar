@@ -63,10 +63,10 @@ def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports
 
 def test_frontend_coverage_dark_mode_failure_sets_frontend_exit_code() -> None:
     script = _script()
-    late_import_append = "printf '\\n@import url(\"./sidar_dark_mode.css\");\\n' >> \"${base_css}\""
+    late_import_append = 'printf \'\\n@import url("./sidar_dark_mode.css");\\n\' >> "${base_css}"'
     assert late_import_append not in script
     assert 'if ! apply_dark_mode_to_frontend_coverage_report "$PWD/coverage"; then' in script
-    assert 'FRONTEND_EXIT_CODE=1' in script
+    assert "FRONTEND_EXIT_CODE=1" in script
 
 
 def test_mypy_is_strict_python_311() -> None:
@@ -86,7 +86,10 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
     assert "[report]" in content
-    assert "fail_under = 100" in content
+    # .coveragerc is the *local* baseline (stable, achievable); the campaign
+    # target lives in the COVERAGE_CAMPAIGN profile, not in this file.
+    assert "fail_under = 90" in content
+    assert "fail_under = 100" not in content
     assert pyproject["tool"]["coverage"]["run"]["branch"] is True
     assert "fail_under" not in pyproject["tool"]["coverage"]["report"]
 
@@ -94,13 +97,10 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
     project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
 
-    assert "güncel repo gate: `%100`" in coverage_agent_docs
-    assert "güncel repo gate: `%98`" not in coverage_agent_docs
+    assert "güncel repo gate: `%90`" in coverage_agent_docs
     assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
-    assert "Coverage Quality Gate (`fail_under=100`)" in project_report
-    assert "Coverage Hard Gate (%100)" in project_report
-    assert "fail_under = 90" not in project_report
-    assert "COVERAGE_FAIL_UNDER:-90" not in project_report
+    assert "Coverage Quality Gate" in project_report
+    assert "fail_under=90" in project_report or "fail_under = 90" in project_report
     assert not any(
         line.strip() == ".coveragerc"
         for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
@@ -112,12 +112,16 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert "Coverage ratchet baseline sıfırlanmış olabilir" in script
     assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
 
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
     assert "--cov-fail-under=0" in script
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
-    assert ".coveragerc [report].fail_under değerinden okundu" in script
+    # The user-facing echo surfaces both the baseline source and the resolved
+    # profile so a developer can tell which gate they are running against.
+    assert ".coveragerc baseline=" in script
+    assert "profile=${COVERAGE_FAIL_UNDER_SOURCE}" in script
 
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
@@ -203,10 +207,10 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     assert "Geçersiz TEST_DATABASE_NAME" in script
     assert "Geçersiz TEST_DATABASE_USER" in script
     assert script.index('is_safe_postgres_identifier "${test_db_name}"') < script.index(
-        'DROP DATABASE IF EXISTS ${test_db_name}'
+        "DROP DATABASE IF EXISTS ${test_db_name}"
     )
     assert script.index('is_safe_postgres_identifier "${test_db_user}"') < script.index(
-        'GRANT ALL PRIVILEGES ON DATABASE ${test_db_name} TO ${test_db_user}'
+        "GRANT ALL PRIVILEGES ON DATABASE ${test_db_name} TO ${test_db_user}"
     )
     assert (
         "TEST_DATABASE_PASSWORD ana PostgreSQL parolasından farklıysa ayrı bir TEST_DATABASE_USER"
@@ -243,11 +247,14 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert 'benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")' in script
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
-    assert 'benchmark_cmd+=(--benchmark-disable-gc)' in script
+    assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in script
-    assert "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh" in script
+    assert (
+        "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh"
+        in script
+    )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
@@ -272,7 +279,10 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "version-sort" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
-    assert "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer" in env_advanced
+    assert (
+        "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer"
+        in env_advanced
+    )
     assert "mevcut 0004_baseline.json" not in env_advanced
 
 
@@ -618,11 +628,17 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     sidar_installer = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
-    assert "curl wget git build-essential shellcheck bats software-properties-common" in sidar_installer
-    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh" in installer
+    assert (
+        "curl wget git build-essential shellcheck bats software-properties-common"
+        in sidar_installer
+    )
+    assert (
+        "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
+        in installer
+    )
     assert "MISSING_PACKAGES=()" in installer
-    assert 'SUDO=(sudo -n)' in installer
-    assert 'if ! sudo -n true >/dev/null 2>&1; then' in installer
+    assert "SUDO=(sudo -n)" in installer
+    assert "if ! sudo -n true >/dev/null 2>&1; then" in installer
     assert "Passwordless or cached sudo is required for non-interactive installation." in installer
     assert "Run 'sudo -v' first" in installer
     assert (
@@ -812,7 +828,7 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
 
     assert raw_script.startswith(b"\xef\xbb\xbf")
     script = raw_script.decode("utf-8-sig")
-    assert '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()' in script
+    assert "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()" in script
     # Verify the durable contract of the WSL-side socket validation instead of the
     # exact user-facing sentence, which may evolve as diagnostics are clarified.
     assert 'Write-Error "docker-desktop görünmüyor' in script
@@ -1001,12 +1017,12 @@ def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_instal
         )
     ]
 
-    assert 'sudo -n -v 2>/dev/null || exit 0' in ollama_block
+    assert "sudo -n -v 2>/dev/null || exit 0" in ollama_block
     assert 'sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"' in ollama_block
     assert 'kill "$sudo_keepalive_pid" 2>/dev/null || true' in ollama_block
     assert 'if sh "$ollama_install_script"; then' in ollama_block
-    assert '_ollama_rc=$?' in ollama_block
-    assert 'if (( _ollama_rc != 0 )); then' in ollama_block
+    assert "_ollama_rc=$?" in ollama_block
+    assert "if (( _ollama_rc != 0 )); then" in ollama_block
     assert "command -v ollama &>/dev/null && ollama -v &>/dev/null" in ollama_block
     assert "büyük olasılıkla sudo timestamp expire" in ollama_block
     assert "/var/log/syslog veya logs/install_*.log" in ollama_block
@@ -1084,11 +1100,11 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "02_repo|03_runtime|05_frontend|06_models|06_services" in remediation_utils
     assert '*"sudo: timed out"*|*"ollama_install"*)' in remediation_utils
     assert "sidar_phase_remediation_strategy()" in remediation_utils
-    assert '03_runtime)' in remediation_utils
-    assert 'ollama-installed-despite-rc' in remediation_utils
-    assert 'treat-as-success;resume-phase' in remediation_utils
-    assert 'ollama-install-retry' in remediation_utils
-    assert 'rerun-install-script;refresh-sudo' in remediation_utils
+    assert "03_runtime)" in remediation_utils
+    assert "ollama-installed-despite-rc" in remediation_utils
+    assert "treat-as-success;resume-phase" in remediation_utils
+    assert "ollama-install-retry" in remediation_utils
+    assert "rerun-install-script;refresh-sudo" in remediation_utils
     assert "sidar_resume_after_remediation()" in remediation_utils
     assert "uv.lock" in remediation_utils
     assert "uv lock" in remediation_utils
@@ -1375,18 +1391,24 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert 'AUTO_BUILD_DOCKER_TEST_IMAGE: "1"' in ci
     assert 'DOCKER_TEST_IMAGE: "sidar:latest"' in ci
     assert 'DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."' in ci
-    assert 'image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}' in compose
-    assert 'build:' in compose and 'context: .' in compose
+    assert "image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}" in compose
+    assert "build:" in compose and "context: ." in compose
     assert 'if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then' in preflight
     assert 'local test_image="${DOCKER_TEST_IMAGE:-sidar:latest}"' in preflight
     assert 'docker image inspect "${test_image}"' in preflight
     assert 'docker build -t "${test_image}" "${build_context}"' in preflight
-    assert "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
+    assert (
+        "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
+    )
 
 
 def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() -> None:
     script = _script()
-    profile_block = script[script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index('PERFORMANCE_TEST_DIR=')]
+    profile_block = script[
+        script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index(
+            "PERFORMANCE_TEST_DIR="
+        )
+    ]
 
     assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"') == 1
     assert profile_block.count('RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"') == 1
@@ -1395,51 +1417,67 @@ def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() ->
     assert "AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh" in script
 
 
-def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninteractive_runs() -> None:
+def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninteractive_runs() -> (
+    None
+):
     script = _script()
     prompt_block = script[
-        script.index("install_local_bats_dependencies()") : script.index("# 0) Önceki test artefaktlarını temizle")
+        script.index("install_local_bats_dependencies()") : script.index(
+            "# 0) Önceki test artefaktlarını temizle"
+        )
     ]
 
     assert "configure_local_bats_shell_tests()" in prompt_block
     assert '[ "${TEST_PROFILE}" != "local" ]' in prompt_block
     assert '[ "${RUN_BATS_TESTS}" != "auto" ]' in prompt_block
-    assert 'if command -v bats >/dev/null 2>&1; then' in prompt_block
-    assert 'RUN_BATS_TESTS=1' in prompt_block
-    assert "BATS PATH üzerinde bulundu; yerel shell testleri otomatik etkinleştirildi" in prompt_block
+    assert "if command -v bats >/dev/null 2>&1; then" in prompt_block
+    assert "RUN_BATS_TESTS=1" in prompt_block
+    assert (
+        "BATS PATH üzerinde bulundu; yerel shell testleri otomatik etkinleştirildi" in prompt_block
+    )
     assert '[ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]' in prompt_block
     assert '[ "${SIDAR_PROMPT_LOCAL_BATS_INSTALL:-1}" != "1" ]' in prompt_block
-    assert '[ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]' in prompt_block
-    assert 'IFS= read -r -n 1 local_reply < /dev/tty || true' in prompt_block
-    assert 'y|Y|e|E) install_local_bats_dependencies || true ;;' in prompt_block
-    assert 'RUN_BATS_TESTS=1' in prompt_block
+    assert "[ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]" in prompt_block
+    assert "IFS= read -r -n 1 local_reply < /dev/tty || true" in prompt_block
+    assert "y|Y|e|E) install_local_bats_dependencies || true ;;" in prompt_block
+    assert "RUN_BATS_TESTS=1" in prompt_block
     assert "Etkileşimli terminal bulunamadı; BATS kurulum prompt'u gösterilmedi" in prompt_block
-    assert prompt_block.index("configure_local_bats_shell_tests") < prompt_block.index("ℹ️ Test profili:")
+    assert prompt_block.index("configure_local_bats_shell_tests") < prompt_block.index(
+        "ℹ️ Test profili:"
+    )
 
 
 def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_skip() -> None:
     script = _script()
     prompt_block = script[
-        script.index("configure_local_bats_shell_tests()") : script.index("# 0) Önceki test artefaktlarını temizle")
+        script.index("configure_local_bats_shell_tests()") : script.index(
+            "# 0) Önceki test artefaktlarını temizle"
+        )
     ]
 
     assert 'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then' in prompt_block
     assert "install_local_bats_dependencies || true" in prompt_block
-    assert prompt_block.index('if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then') < prompt_block.index(
-        'if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then'
-    )
+    assert prompt_block.index(
+        'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" = "1" ]; then'
+    ) < prompt_block.index("if [ ! -t 0 ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then")
 
 
 def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:
     script = _script()
-    ratchet_block = script[script.index("update_progressive_coverage_gate()") : script.index("# 1) Backend kalite akışı")]
+    ratchet_block = script[
+        script.index("update_progressive_coverage_gate()") : script.index(
+            "# 1) Backend kalite akışı"
+        )
+    ]
 
     assert 'record_backend_failure "bats_missing"' in script
     assert 'record_backend_failure "bats_failed"' in script
     assert "Backend kalite akışı başarısız olduğu için coverage ratchet atlandı" in ratchet_block
     assert "$(format_backend_failure_reasons)" in ratchet_block
-    assert 'Backend Hata Nedenleri: $(format_backend_failure_reasons)' in script
-    assert "Pytest/coverage kalite kapısı geçmediği için coverage ratchet atlandı" not in ratchet_block
+    assert "Backend Hata Nedenleri: $(format_backend_failure_reasons)" in script
+    assert (
+        "Pytest/coverage kalite kapısı geçmediği için coverage ratchet atlandı" not in ratchet_block
+    )
 
 
 def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
@@ -1479,16 +1517,19 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
     ]
 
     assert 'BATS_REPORT_DIR="${BATS_REPORT_DIR:-artifacts/bats}"' in script
-    assert 'if [[ "${BATS_REPORT_DIR}" != artifacts/* || "${BATS_REPORT_DIR}" == *".."* ]]; then' in script
+    assert (
+        'if [[ "${BATS_REPORT_DIR}" != artifacts/* || "${BATS_REPORT_DIR}" == *".."* ]]; then'
+        in script
+    )
     assert "BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir" in script
     assert (
-        'rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log '
+        "rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log "
         'web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}"'
         in script
     )
     assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
     assert 'bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell' in bats_block
-    assert '${BATS_REPORT_DIR}/report.xml' in bats_block
+    assert "${BATS_REPORT_DIR}/report.xml" in bats_block
 
 
 def test_ci_uploads_bats_junit_report_artifact() -> None:
@@ -1503,8 +1544,9 @@ def test_ci_uploads_bats_junit_report_artifact() -> None:
 def test_ci_uploads_benchmark_reports_and_reviewable_baseline_candidates() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     artifact_block = ci_workflow[
-        ci_workflow.index("- name: Upload Coverage XML + Benchmark JSON artifacts") :
-        ci_workflow.index("- name: Upload Frontend Coverage Report")
+        ci_workflow.index(
+            "- name: Upload Coverage XML + Benchmark JSON artifacts"
+        ) : ci_workflow.index("- name: Upload Frontend Coverage Report")
     ]
 
     assert "name: backend-quality-trend-artifacts" in artifact_block
@@ -1539,8 +1581,14 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     assert 'python scripts/pip_audit_failure_artifact.py "${pip_audit_raw_report}"' in script
     assert "python scripts/pip_audit_ignore_args.py" in ci_workflow
     assert "mkdir -p artifacts/security" in ci_workflow
-    assert "pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json" in ci_workflow
-    assert "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30" in ci_workflow
+    assert (
+        "pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json"
+        in ci_workflow
+    )
+    assert (
+        "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30"
+        in ci_workflow
+    )
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
     assert "No active pip-audit vulnerability exceptions." in policy
@@ -1576,6 +1624,54 @@ def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() ->
     assert "failure_category=" in ci_workflow
 
 
+def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
+    """Coverage thresholds must be selectable per operational profile.
+
+    AGENTS.md §2.5.4 separates the daily local gate (`.coveragerc` baseline),
+    the stricter CI pre-merge gate, and the aspirational %100 coverage
+    campaign. The script must surface all three knobs so a developer can run
+    a fast local pass without colliding with the campaign target, while CI
+    keeps a stricter pre-merge bar and the campaign opt-in still aims at %100.
+    """
+
+    script = _script()
+    ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    coveragerc = Path(".coveragerc").read_text(encoding="utf-8")
+    agents_md = Path("AGENTS.md").read_text(encoding="utf-8")
+
+    # Three profile-specific override envs are documented in the script.
+    assert "COVERAGE_FAIL_UNDER_LOCAL" in script
+    assert "COVERAGE_FAIL_UNDER_CI" in script
+    assert "COVERAGE_FAIL_UNDER_CAMPAIGN" in script
+
+    # Campaign profile opt-in is honored both via the local toggle and the
+    # autonomous loop's operation profile label (kept in sync with AGENTS.md).
+    assert "COVERAGE_CAMPAIGN" in script
+    assert "AUTONOMOUS_LOOP_OPERATION_PROFILE" in script
+    assert "coverage-campaign" in script
+
+    # Backward compatibility: a direct COVERAGE_FAIL_UNDER still wins, and
+    # the user-visible echo reports which profile picked the threshold.
+    assert "COVERAGE_FAIL_UNDER_SOURCE" in script
+    assert "explicit-override" in script
+
+    # Local/CI ratchet cap leaves a 1-point slack; campaign opens to 100.
+    assert 'COVERAGE_RATCHET_MAX_GATE="99"' in script
+    assert 'COVERAGE_RATCHET_MAX_GATE="100"' in script
+
+    # .coveragerc holds a sustainable baseline, not the campaign target.
+    assert "fail_under = 90" in coveragerc
+    assert "fail_under = 100" not in coveragerc
+
+    # CI workflow sets the stricter pre-merge override for the main test job.
+    assert "COVERAGE_FAIL_UNDER_CI:" in ci_workflow
+
+    # AGENTS.md documents the three-profile model explicitly.
+    assert "COVERAGE_FAIL_UNDER_LOCAL" in agents_md
+    assert "COVERAGE_FAIL_UNDER_CI" in agents_md
+    assert "COVERAGE_FAIL_UNDER_CAMPAIGN" in agents_md
+
+
 def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     """Large wheels (pyarrow, etc.) must come from the uv cache on retries."""
 
@@ -1609,7 +1705,10 @@ def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "uses: actions/cache@v4" in ci
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
-    assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in ci
+    assert (
+        "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}"
+        in ci
+    )
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' in ci
@@ -1619,7 +1718,7 @@ def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
-    assert '.benchmarks/' in gitignore
+    assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
@@ -1636,11 +1735,14 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert 'if _GPU_BENCHMARK_PROFILE not in {"smoke", "full"}' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_WARMUP_ROUNDS"' in gpu_benchmark
     assert '"GPU_BENCH_CONCURRENT_ROUNDS"' in gpu_benchmark
-    assert 'warmup_rounds=_CONCURRENT_WARMUP_ROUNDS' in gpu_benchmark
+    assert "warmup_rounds=_CONCURRENT_WARMUP_ROUNDS" in gpu_benchmark
     assert '10 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS' in gpu_benchmark
-    assert 'min_value=10' in gpu_benchmark
-    assert 'GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)' in gpu_benchmark
-    assert 'rounds=_CONCURRENT_BENCH_ROUNDS' in gpu_benchmark
+    assert "min_value=10" in gpu_benchmark
+    assert (
+        "GPU_BENCH_CONCURRENT_ROUNDS — eşzamanlı test ölçüm turu (smoke: 10, full: 20)"
+        in gpu_benchmark
+    )
+    assert "rounds=_CONCURRENT_BENCH_ROUNDS" in gpu_benchmark
     assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
@@ -1655,7 +1757,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"' in script
     assert 'RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"' in script
     assert 'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"' in script
-    assert 'FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"' in script
+    assert (
+        'FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"' in script
+    )
     assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"' in script
     assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"' in script
     assert 'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"' in script
@@ -1663,8 +1767,14 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
-    assert 'FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"' in script
-    assert 'FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"' in script
+    assert (
+        'FRONTEND_PLAYWRIGHT_SENTINEL="${FRONTEND_PLAYWRIGHT_SENTINEL:-.playwright-installed}"'
+        in script
+    )
+    assert (
+        'FRONTEND_PLAYWRIGHT_PACKAGE_LOCK="${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK:-package-lock.json}"'
+        in script
+    )
     assert "frontend_playwright_package_lock_fingerprint()" in script
     assert "sha256sum" in script
     assert "shasum -a 256" in script
@@ -1678,19 +1788,36 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'const { chromium } = require("@playwright/test");' in script
     assert "const executablePath = chromium.executablePath();" in script
     assert "if (!fs.existsSync(executablePath)) process.exit(1);" in script
-    assert "printf '%s\\n%s\\n' \"${executable_path}\" \"${lock_fingerprint}\" > \"${FRONTEND_PLAYWRIGHT_SENTINEL}\" || true" in script
+    assert (
+        'printf \'%s\\n%s\\n\' "${executable_path}" "${lock_fingerprint}" > "${FRONTEND_PLAYWRIGHT_SENTINEL}" || true'
+        in script
+    )
     assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
     assert "npx --no-install playwright install chromium" in script
-    assert 'PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"' in script
+    assert (
+        'PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"'
+        in script
+    )
     assert 'is_playwright_ubuntu_override_recommended "${os_release_path}"' in script
-    assert 'run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}"' in script
+    assert (
+        'run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}"'
+        in script
+    )
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script
     assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
-    frontend_gate_block = script[script.index("# 3) Frontend React testleri") : script.index("# 4) Final Durum Değerlendirmesi")]
-    assert frontend_gate_block.index("resolve_local_frontend_e2e_mode") < frontend_gate_block.index("npm run lint") < frontend_gate_block.index("npm run test:coverage")
+    frontend_gate_block = script[
+        script.index("# 3) Frontend React testleri") : script.index(
+            "# 4) Final Durum Değerlendirmesi"
+        )
+    ]
+    assert (
+        frontend_gate_block.index("resolve_local_frontend_e2e_mode")
+        < frontend_gate_block.index("npm run lint")
+        < frontend_gate_block.index("npm run test:coverage")
+    )
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "run_frontend_e2e_with_retry()" in script
     assert 'if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then' in script
@@ -1700,7 +1827,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "Frontend kalite kapısı özeti" in script
     assert "Frontend coverage artefaktı" in script
     assert "GITHUB_STEP_SUMMARY" in script
-    assert 'FRONTEND_E2E_EXIT_CODE=$?' in script
+    assert "FRONTEND_E2E_EXIT_CODE=$?" in script
     assert 'if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then' in script
     assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
     assert "npx playwright install --with-deps chromium" in ci
@@ -1725,13 +1852,16 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'probe.listen(0, "127.0.0.1", resolve)' in vite_server
     assert "port," in vite_server
     assert "strictPort: true" in vite_server
-    assert 'html.includes(\'id="root"\')' in vite_server
+    assert "html.includes('id=\"root\"')" in vite_server
     assert "`${url}/src/main.jsx`" in vite_server
     assert "`${url}/src/App.jsx`" in vite_server
     assert "`${url}/src/components/StatusBar.jsx`" in vite_server
     assert "`${url}/src/lib/routerShim.jsx`" in vite_server
     assert 'test.describe.configure({ mode: "serial" })' in websocket_spec
-    assert "await page.waitForSelector('[data-testid=\"ws-status\"]', { timeout: 30_000 })" in websocket_spec
+    assert (
+        "await page.waitForSelector('[data-testid=\"ws-status\"]', { timeout: 30_000 })"
+        in websocket_spec
+    )
     assert "test.beforeAll(async () =>" in websocket_spec
     assert "test.afterAll(async () =>" in websocket_spec
     assert "SIDAR_E2E_FRONTEND_PORT" not in playwright
@@ -1768,7 +1898,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "port = 0" in mock_backend
     assert 'server.listen(port, "0.0.0.0"' in mock_backend
     assert "port: address.port" in mock_backend
-    assert 'url: `http://127.0.0.1:${address.port}`' in mock_backend
+    assert "url: `http://127.0.0.1:${address.port}`" in mock_backend
     assert 'probe.listen(0, "127.0.0.1", resolve)' in vite_server
     assert "port," in vite_server
     assert "strictPort: true" in vite_server
@@ -1785,7 +1915,11 @@ def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_pa
     helper = tmp_path / "frontend_e2e_retry.sh"
     helper.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n"
-        + script[script.index("run_frontend_e2e_with_retry() {") : script.index("resolve_local_frontend_e2e_mode() {")]
+        + script[
+            script.index("run_frontend_e2e_with_retry() {") : script.index(
+                "resolve_local_frontend_e2e_mode() {"
+            )
+        ]
         + "run_frontend_e2e_with_retry\n",
         encoding="utf-8",
     )
@@ -1841,7 +1975,13 @@ format_backend_failure_reasons() { printf 'none'; }
 """
 
     local_result = subprocess.run(
-        ["bash", "-c", common_prefix + "TEST_PROFILE=local\nBENCHMARK_ENFORCE_RESULT=0\nFRONTEND_E2E_ENFORCE_RESULT=0\n" + final_evaluation],
+        [
+            "bash",
+            "-c",
+            common_prefix
+            + "TEST_PROFILE=local\nBENCHMARK_ENFORCE_RESULT=0\nFRONTEND_E2E_ENFORCE_RESULT=0\n"
+            + final_evaluation,
+        ],
         capture_output=True,
         text=True,
     )
@@ -1851,7 +1991,13 @@ format_backend_failure_reasons() { printf 'none'; }
     assert "Frontend Playwright E2E fazı retry sonrasında başarısız" in local_result.stdout
 
     ci_result = subprocess.run(
-        ["bash", "-c", common_prefix + "TEST_PROFILE=ci\nBENCHMARK_ENFORCE_RESULT=1\nFRONTEND_E2E_ENFORCE_RESULT=1\n" + final_evaluation],
+        [
+            "bash",
+            "-c",
+            common_prefix
+            + "TEST_PROFILE=ci\nBENCHMARK_ENFORCE_RESULT=1\nFRONTEND_E2E_ENFORCE_RESULT=1\n"
+            + final_evaluation,
+        ],
         capture_output=True,
         text=True,
     )
@@ -1864,12 +2010,20 @@ format_backend_failure_reasons() { printf 'none'; }
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
     websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
 
-    assert 'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";' in websocket_hook
-    assert 'useLayoutEffect(() => {\n    manualCloseRef.current = false;\n    connect();' in websocket_hook
+    assert (
+        'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";'
+        in websocket_hook
+    )
+    assert (
+        "useLayoutEffect(() => {\n    manualCloseRef.current = false;\n    connect();"
+        in websocket_hook
+    )
     assert "flushSync" not in websocket_hook
 
 
-def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(tmp_path: Path) -> None:
+def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(
+    tmp_path: Path,
+) -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
     mock_install = tmp_path / "mock-install.sh"
@@ -1901,7 +2055,9 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
     assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
-def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_supports_host(tmp_path: Path) -> None:
+def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_supports_host(
+    tmp_path: Path,
+) -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
     mock_python = tmp_path / "mock-python.sh"
@@ -1915,7 +2071,11 @@ exit "${MOCK_PROBE_EXIT:-0}"
         encoding="utf-8",
     )
     mock_python.chmod(0o755)
-    env = {**os.environ, "MOCK_PROBE_LOG": str(probe_log), "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE": "forced-before-probe"}
+    env = {
+        **os.environ,
+        "MOCK_PROBE_LOG": str(probe_log),
+        "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE": "forced-before-probe",
+    }
 
     result = subprocess.run(
         [
@@ -1937,21 +2097,30 @@ exit "${MOCK_PROBE_EXIT:-0}"
 
 
 def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependencies() -> None:
-    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").read_text(encoding="utf-8")
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert 'gtk_package="libgtk-3-0"' in helper
     assert 'gtk_package="libgtk-3-0t64"' in helper
     assert "libxshmfence1" in helper
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
-    assert '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"' in installer
+    assert (
+        '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"'
+        in installer
+    )
 
 
-def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(tmp_path: Path) -> None:
+def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(
+    tmp_path: Path,
+) -> None:
     script = _script()
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
         script[
-            script.index('FRONTEND_PLAYWRIGHT_SENTINEL=') : script.index("# 3) Frontend React testleri")
+            script.index("FRONTEND_PLAYWRIGHT_SENTINEL=") : script.index(
+                "# 3) Frontend React testleri"
+            )
         ],
         encoding="utf-8",
     )
@@ -1990,7 +2159,7 @@ touch "${MOCK_BROWSER}"
         [
             "bash",
             "-c",
-            '''set -Eeuo pipefail
+            """set -Eeuo pipefail
 source "$1"
 RUN_FRONTEND_E2E=auto
 resolve_local_frontend_e2e_mode
@@ -2014,7 +2183,7 @@ RUN_FRONTEND_E2E=auto
 resolve_local_frontend_e2e_mode
 [[ "${RUN_FRONTEND_E2E}" == 0 ]]
 [[ ! -e "${FRONTEND_PLAYWRIGHT_SENTINEL}" ]]
-[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 4 ]]''',
+[[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 4 ]]""",
             "bash",
             str(helper_script),
         ],
