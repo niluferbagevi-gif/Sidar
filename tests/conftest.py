@@ -195,6 +195,29 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_root_web_server_database_url(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, tmp_path: Path
+) -> None:
+    """Keep legacy web_server unit tests off developer PostgreSQL instances.
+
+    The root web_server compatibility tests exercise route glue, not PostgreSQL
+    connectivity. They import the production module but should resolve DB-backed
+    helpers through an isolated SQLite database so local ``.env`` PostgreSQL
+    credentials cannot leak into unit-test execution. PostgreSQL smoke and
+    integration tests continue to opt into their own dedicated fixtures.
+    """
+    if not str(request.node.nodeid).startswith("tests/unit/root/"):
+        return
+
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'sidar_root_unit.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with contextlib.suppress(Exception):
+        web_server_module = importlib.import_module("web_server")
+        monkeypatch.setattr(web_server_module.cfg, "DATABASE_URL", database_url, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent local webhook secrets from leaking into signature-optional tests."""
     for key in (
