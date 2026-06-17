@@ -6,9 +6,11 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, get_type_hints
 
 import pytest
 
+import agent.registry as registry_module
 from agent.registry import (
     BUILTIN_ROLE_CONTRACTS,
     BUILTIN_ROLE_MODULES,
@@ -234,15 +236,31 @@ def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() ->
             assert SupervisorAgent._intent(supervisor_prompts[intent]) == intent
 
 
-def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -> None:
+def test_builtin_role_contracts_use_canonical_module_class_identity() -> None:
     import agent.roles as role_exports
 
-    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
+    for contract in BUILTIN_ROLE_CONTRACTS:
+        module = importlib.import_module(contract.module_name)
+        module_cls = getattr(module, contract.class_name)
+        exported_cls = getattr(role_exports, contract.class_name)
+        registered_spec = AgentCatalog.get(contract.role_name)
+
+        assert isinstance(module_cls, type), contract.role_name
+        assert exported_cls is module_cls, contract.role_name
+        assert registered_spec is not None, contract.role_name
+        assert registered_spec.agent_class is module_cls, contract.role_name
+        assert registered_spec.agent_class.__module__ == contract.module_name
+
+
+@pytest.mark.parametrize("contract", BUILTIN_ROLE_CONTRACTS, ids=lambda item: item.role_name)
+def test_builtin_registration_prefers_canonical_class_for_temp_module_import(contract) -> None:
+    import agent.roles as role_exports
+
     original_spec = AgentCatalog.get(contract.role_name)
     assert original_spec is not None
 
-    temp_module_name = "reviewer_agent_under_test"
-    module_path = Path("agent/roles/reviewer_agent.py").resolve()
+    temp_module_name = f"{contract.module_name.rsplit('.', 1)[-1]}_under_test"
+    module_path = Path(*contract.module_name.split(".")).with_suffix(".py").resolve()
     spec = importlib.util.spec_from_file_location(temp_module_name, module_path)
     assert spec is not None
     assert spec.loader is not None
@@ -252,7 +270,7 @@ def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -
         sys.modules[temp_module_name] = module
         spec.loader.exec_module(module)
 
-        temp_cls = module.ReviewerAgent
+        temp_cls = getattr(module, contract.class_name)
         exported_cls = getattr(role_exports, contract.class_name)
         registered_spec = AgentCatalog.get(contract.role_name)
 
@@ -263,6 +281,46 @@ def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -
     finally:
         sys.modules.pop(temp_module_name, None)
         AgentCatalog._registry[contract.role_name] = original_spec
+
+
+def test_agent_catalog_get_repairs_builtin_spec_to_exported_type() -> None:
+    import agent.roles as role_exports
+
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None
+
+    class StaleCoderAgent:
+        pass
+
+    try:
+        AgentCatalog._registry[contract.role_name] = AgentSpec(
+            role_name=contract.role_name,
+            agent_class=StaleCoderAgent,
+            capabilities=list(contract.capabilities),
+            is_builtin=True,
+        )
+
+        repaired_spec = AgentCatalog.get(contract.role_name)
+        exported_cls = getattr(role_exports, contract.class_name)
+        assert repaired_spec is not None
+        assert repaired_spec.agent_class is exported_cls
+        assert isinstance(repaired_spec.agent_class, type)
+    finally:
+        AgentCatalog._registry[contract.role_name] = original_spec
+
+
+def test_registry_public_api_annotations_protect_strict_typing_contract() -> None:
+    resolver_hints = get_type_hints(registry_module._resolve_canonical_builtin_class)
+    get_hints = get_type_hints(AgentCatalog.get)
+    register_hints = get_type_hints(AgentCatalog.register)
+    register_type_hints = get_type_hints(AgentCatalog.register_type)
+
+    assert resolver_hints["agent_class"] == type[Any]
+    assert resolver_hints["return"] == type[Any]
+    assert get_hints["return"] == AgentSpec | None
+    assert register_hints["return"] == registry_module.Callable[[type], type]
+    assert register_type_hints["agent_class"] is type
 
 
 def test_builtin_registration_keeps_temp_class_when_canonical_symbol_is_not_type(
