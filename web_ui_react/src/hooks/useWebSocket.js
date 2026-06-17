@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
+import { TOKEN_CHANGE_EVENT, TOKEN_KEY, getStoredToken } from "../lib/api.js";
 
 const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
@@ -29,9 +29,7 @@ export function useWebSocket(
   const wsRef = useRef(null);
   const joinedRoomRef = useRef("");
   const [status, setStatus] = useState(() =>
-    (typeof localStorage !== "undefined" && localStorage.getItem(TOKEN_KEY)?.trim())
-      ? "disconnected"
-      : "unauthenticated"
+    getStoredToken() ? "disconnected" : "unauthenticated"
   );
   const bufferRef = useRef("");
   const reconnectAttemptRef = useRef(0);
@@ -90,7 +88,7 @@ export function useWebSocket(
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const token = (localStorage.getItem(TOKEN_KEY) || "").trim();
+    const token = getStoredToken();
     if (!token) {
       setStatus("unauthenticated");
       return;

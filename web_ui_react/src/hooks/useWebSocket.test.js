@@ -1,6 +1,11 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebSocket } from "./useWebSocket.js";
-import { setStoredToken, TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
+import {
+  setStoredToken,
+  TOKEN_CHANGE_EVENT,
+  TOKEN_KEY,
+  TOKEN_STORAGE_MODE_KEY,
+} from "../lib/api.js";
 
 // WebSocket mock factory
 function makeWsMock() {
@@ -35,6 +40,12 @@ beforeEach(() => {
   vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => store[key] ?? null);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, val) => { store[key] = val; });
   vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => { delete store[key]; });
+
+  // api.js holds the access token in a module-scoped variable; reset it between
+  // tests, then opt the test fixture into "local" storage mode so the direct
+  // localStorage.setItem(TOKEN_KEY, ...) calls below are honored by getStoredToken().
+  setStoredToken("");
+  localStorage.setItem(TOKEN_STORAGE_MODE_KEY, "local");
 
   // WebSocket global stub
   wsMockInstance = makeWsMock();
