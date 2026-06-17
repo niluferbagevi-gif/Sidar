@@ -49,10 +49,13 @@ Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
   `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, daha önce
   `pip-audit` tarafından raporlanan `torch 2.12.0 / CVE-2025-3000` bulgusu için
   açık uçlu resolver davranışını durdurur.
-- Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir; bu
-  nedenle `security/pip-audit-ignores.tsv` içinde aktif `CVE-2025-3000` istisnası
-  tutulmaz. Yeni bir lock yenilemesi bu CVE'yi yeniden üretirse istisna eklemek
-  yerine önce `<2.12` sınırı ve torch/torchvision eşleşmesi doğrulanmalıdır.
+- Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir.
+  Upstream'de `CVE-2025-3000` için yayımlanmış bir düzeltme bulunmadığından
+  `security/pip-audit-ignores.tsv` içine **dated + scoped** bir istisna eklenmiştir
+  (`expires: 2026-09-17`). İstisna, saldırı yüzeyinin `torch.jit.script` çağrısını
+  gerektirmesi ve repo genelinde (`grep -rn "torch.jit.script" .`) bu API'nin
+  kullanılmaması koşuluyla kabul edilir; bu doğrulama her lock yenilemesinde
+  tekrarlanmalı, doğrulanamazsa istisna kaldırılmalıdır.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`

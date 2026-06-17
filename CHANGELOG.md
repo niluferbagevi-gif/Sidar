@@ -5,6 +5,38 @@
 
 ---
 
+## [Yayımlanmamış] - pip-audit CVE hijyeni
+
+### Güvenlik (Security)
+- **bleach `~=6.1.0` → `>=6.4.0,<7.0.0`:** `GHSA-gj48-438w-jh9v` (formaction URI
+  sanitizer bypass / XSS) ve `GHSA-8rfp-98v4-mmr6` (ZWSP karakteri ile `javascript:`
+  şema bypass'ı) düzeltmeleri uygulandı. `~=6.1.0` PEP 440 gereği `<6.2.0` ile
+  kilitlendiği için patch sınırı `>=6.4.0` olarak genişletildi; `types-bleach`
+  taban sürümü de `>=6.4.0.20260607` seviyesine alındı.
+- **starlette `>=1.0.1,<1.2.0` → `>=1.3.1,<2.0.0`:** `CVE-2026-54282`
+  (`request.url.hostname` üzerinden authority hijack) ve `CVE-2026-54283`
+  (`application/x-www-form-urlencoded` için `max_fields`/`max_part_size`
+  enforce edilmemesinden kaynaklı DoS) düzeltmeleri uygulandı. Starlette 1.2+
+  ile `TestClient` `httpx2` paketine taşındığı için ana bağımlılık listesine
+  `httpx2>=0.1,<1.0` eklendi; `web/routes/` altında `request.url.hostname` ya
+  da `request.url.netloc` kullanılmadığı doğrulandı, `fastapi>=0.136.1,<0.140.0`
+  üst sınırı korundu.
+- **torch CVE-2025-3000 (`torch.jit.script` üzerinden local memory corruption):**
+  Upstream'de yayımlanmış bir düzeltme bulunmuyor; `torch>=2.4.1,<2.12` pini
+  korunarak `security/pip-audit-ignores.tsv` içine `expires: 2026-09-17` dated
+  + scoped istisna eklendi. Saldırı yüzeyinin `torch.jit.script` çağrısı
+  gerektirdiği ve repo genelinde (`grep -rn "torch.jit.script" .`) bu API'nin
+  hiç kullanılmadığı doğrulandı; `scripts/pip_audit_ignore_args.py` süresi
+  dolduğunda kaydı otomatik reddeder.
+
+### Teknik Borç Kapanışı
+- `docs/DEPENDENCY_PROFILE_PLAN.md` ve ilgili regresyon testleri
+  (`tests/unit/scripts/test_run_tests_quality_gate.py`,
+  `tests/unit/test_dependency_profile_plan.py`) aktif dated+scoped CVE
+  istisnasını yansıtacak biçimde senkronize edildi.
+
+---
+
 ## [v5.2.0] - 2026-03-26
 
 ### Düzeltmeler (Fixed)

@@ -1,4 +1,6 @@
 # vuln_id	package	expires	reason
-# No active pip-audit vulnerability exceptions.
-# Add only dated, package-scoped entries after confirming the locked version still
-# requires a temporary risk acceptance.
+# Aktif pip-audit istisnaları yalnızca upstream tarafından düzeltilmemiş, üst
+# sınır + pyproject pini ile mitigate edilen CVE'ler için tutulur.
+# Her giriş dated + paket-scoped olmalı; süresi dolan kayıtlar `_parse_iso_date`
+# tarafından reddedilir.
+CVE-2025-3000	torch	2026-09-17	Upstream fix yok; saldırı yüzeyi torch.jit.script çağrısı gerektirir ve repo genelinde (grep -rn "torch.jit.script") hiçbir kullanım yoktur. torch>=2.4.1,<2.12 pini ile sabitlenmiştir.
