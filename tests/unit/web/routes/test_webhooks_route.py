@@ -9,9 +9,9 @@ from fastapi.responses import JSONResponse
 
 from web.routes.webhooks import (
     _coerce_bool,
-    build_webhooks_router,
     _github_webhook_signature_required,
     _validate_github_webhook_signature,
+    build_webhooks_router,
 )
 
 
