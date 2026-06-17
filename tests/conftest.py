@@ -194,6 +194,22 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent local webhook secrets from leaking into signature-optional tests."""
+    for key in (
+        "GITHUB_WEBHOOK_SECRET",
+        "AUTONOMY_WEBHOOK_SECRET",
+        "SIDAR_GITHUB_WEBHOOK_SECRET",
+        "SIDAR_AUTONOMY_WEBHOOK_SECRET",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    web_server_module = importlib.import_module("web_server")
+    monkeypatch.setattr(web_server_module.cfg, "GITHUB_WEBHOOK_SECRET", "", raising=False)
+    monkeypatch.setattr(web_server_module.cfg, "AUTONOMY_WEBHOOK_SECRET", "", raising=False)
+
+
 _MISSING_SYS_MODULE = object()
 _SENSITIVE_SYS_MODULES = (
     "agent.base_agent",
