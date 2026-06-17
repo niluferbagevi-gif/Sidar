@@ -214,7 +214,9 @@ def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() ->
         "qa": "qa kalite kapısı ci hatası",
     }
 
-    assert BUILTIN_ROLE_MODULES == tuple(contract.module_name for contract in BUILTIN_ROLE_CONTRACTS)
+    assert BUILTIN_ROLE_MODULES == tuple(
+        contract.module_name for contract in BUILTIN_ROLE_CONTRACTS
+    )
 
     for contract in BUILTIN_ROLE_CONTRACTS:
         assert contract.class_name in role_exports.__all__
@@ -437,9 +439,211 @@ def test_import_builtin_roles_logs_non_module_not_found_failures(
     try:
         with caplog.at_level("WARNING", logger="agent.registry"):
             _import_builtin_roles()
+        assert "RuntimeError: kötü XML konfigürasyonu" in caplog.text
     finally:
         _clear_builtin_import_failures()
         AgentCatalog._registry.clear()
         AgentCatalog._registry.update(snapshot)
 
-    assert "RuntimeError: kötü XML konfigürasyonu" in caplog.text
+
+# --- Built-in role contract regression tests -------------------------------
+#
+# The temporary-module import scenario sits on the dynamic-import / static
+# type-checker boundary — the same boundary that produced the recent
+# AgentCatalog mypy regression. The parametrised tests below assert that the
+# canonical-class resolution and the registration APIs stay correct for
+# *every* built-in role, not just one representative.
+
+
+@pytest.mark.parametrize(
+    "contract",
+    BUILTIN_ROLE_CONTRACTS,
+    ids=[contract.role_name for contract in BUILTIN_ROLE_CONTRACTS],
+)
+def test_builtin_role_canonical_identity_survives_temp_module_import(
+    contract,
+) -> None:
+    """Loading a built-in role file under a temp module name must not detach
+    the registered ``agent_class`` from the canonical ``agent.roles.*``
+    export. Python creates a brand-new class object when the same source
+    file is executed under a different module name; AgentCatalog must
+    normalize back to the canonical class so router/supervisor/health
+    checks keep agreeing on class identity.
+    """
+
+    import agent.roles as role_exports
+
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None, contract.role_name
+
+    temp_module_name = f"{contract.role_name}_agent_under_test"
+    module_path = Path(contract.module_name.replace(".", "/") + ".py").resolve()
+    assert module_path.exists(), module_path
+
+    spec = importlib.util.spec_from_file_location(temp_module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+
+    try:
+        sys.modules[temp_module_name] = module
+        spec.loader.exec_module(module)
+
+        temp_cls = getattr(module, contract.class_name)
+        exported_cls = getattr(role_exports, contract.class_name)
+        registered_spec = AgentCatalog.get(contract.role_name)
+
+        # The temp class is a *distinct* class object — that's the whole
+        # point of the scenario.
+        assert temp_cls is not exported_cls
+
+        # ...but the registry must still point at the canonical class, with
+        # the canonical module path.
+        assert registered_spec is not None
+        assert registered_spec.agent_class is exported_cls
+        assert registered_spec.agent_class is not None
+        assert registered_spec.agent_class.__module__ == contract.module_name
+        assert registered_spec.agent_class.__name__ == contract.class_name
+        assert registered_spec.is_builtin is True
+    finally:
+        sys.modules.pop(temp_module_name, None)
+        AgentCatalog._registry[contract.role_name] = original_spec
+
+
+@pytest.mark.parametrize(
+    "contract",
+    BUILTIN_ROLE_CONTRACTS,
+    ids=[contract.role_name for contract in BUILTIN_ROLE_CONTRACTS],
+)
+def test_builtin_contract_sync_normalizes_each_role_to_canonical_class(
+    contract,
+) -> None:
+    """``_sync_builtin_contract_registry`` is the lower-level mechanism the
+    bootstrap relies on. Each contract must round-trip cleanly through it,
+    even when an unrelated module cache is provided, so a stub injected by
+    one role's import path cannot poison another role's canonical
+    resolution.
+    """
+
+    snapshot = dict(AgentCatalog._registry)
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None
+    canonical_module = importlib.import_module(contract.module_name)
+    canonical_cls = getattr(canonical_module, contract.class_name)
+    assert isinstance(canonical_cls, type)
+
+    try:
+        # Seed the role with a deliberately non-canonical class so we can
+        # observe the sync repointing it.
+        class _DriftingPlaceholder:
+            pass
+
+        AgentCatalog._registry[contract.role_name] = AgentSpec(
+            role_name=contract.role_name,
+            agent_class=_DriftingPlaceholder,
+            capabilities=list(contract.capabilities),
+            is_builtin=True,
+        )
+
+        _sync_builtin_contract_registry({contract.module_name: canonical_module})
+
+        synced_spec = AgentCatalog.get(contract.role_name)
+        assert synced_spec is not None
+        assert synced_spec.agent_class is canonical_cls
+        assert synced_spec.is_builtin is True
+        # Capability set from the contract must persist through the sync.
+        assert set(contract.capabilities).issubset(set(synced_spec.capabilities or []))
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
+def test_register_type_annotations_pin_strict_typing_contract() -> None:
+    """Strict typing regression guard.
+
+    The recent AgentCatalog mypy bug landed at the dynamic-import / static
+    type-checker boundary. If a future refactor relaxes a key annotation
+    (e.g. drops ``agent_class: type`` to ``Any`` to silence a checker),
+    the dynamic-import scenarios above become silently unsafe. Pin the
+    annotations explicitly here so an accidental relaxation lights up.
+    """
+    import typing
+
+    register_type_hints = typing.get_type_hints(AgentCatalog.register_type)
+    assert register_type_hints["role_name"] is str
+    assert register_type_hints["agent_class"] is type
+    assert register_type_hints["is_builtin"] is bool
+    assert register_type_hints["version"] is str
+    assert register_type_hints["description"] is str
+    # Optional list[str] for capabilities.
+    capabilities_hint = register_type_hints["capabilities"]
+    assert capabilities_hint == (list[str] | None)
+    assert register_type_hints["return"] is type(None)
+
+    register_hints = typing.get_type_hints(AgentCatalog.register)
+    assert register_hints["is_builtin"] is bool
+    assert register_hints["version"] is str
+    assert register_hints["capabilities"] == (list[str] | None)
+    # ``register`` is a decorator factory: return type must be the
+    # ``type -> type`` callable family, never a bare ``Any``.
+    register_return = register_hints["return"]
+    register_return_str = str(register_return)
+    assert "Callable" in register_return_str
+    assert "type" in register_return_str
+
+    get_hints = typing.get_type_hints(AgentCatalog.get)
+    assert get_hints["role_name"] is str
+    # AgentSpec | None — explicit Optional return is required so callers
+    # have to handle the "unknown role" branch.
+    assert get_hints["return"] == (AgentSpec | None)
+
+
+def test_agent_spec_dataclass_field_types_remain_strict() -> None:
+    """``AgentSpec.agent_class`` is the lone slot the dynamic-import scenario
+    writes into; keeping it ``type[Any] | None`` (not ``Any``) is what lets
+    mypy catch a misrouted resolver. Pin the rest of the dataclass too so
+    the contract surface stays explicit.
+    """
+    import typing
+    from typing import Any
+
+    hints = typing.get_type_hints(AgentSpec)
+    assert hints["role_name"] is str
+    assert hints["agent_class"] == (type[Any] | None)
+    assert hints["capabilities"] == list[str]
+    assert hints["description"] is str
+    assert hints["version"] is str
+    assert hints["is_builtin"] is bool
+
+
+def test_get_returns_none_for_unknown_role_with_typed_contract() -> None:
+    """``AgentCatalog.get`` must return ``None`` for unknown roles, not raise.
+
+    Paired with the type-hint regression above this nails the documented
+    behavior: the caller is forced to handle the ``Optional`` branch.
+    """
+    assert AgentCatalog.get("definitely-not-a-registered-role") is None
+
+
+def test_register_type_rejects_non_class_agent_class_via_create() -> None:
+    """The annotation says ``agent_class: type``; Python doesn't enforce it
+    at runtime, but the failure must surface clearly through ``create``
+    rather than silently mis-route. This catches a regression where a
+    fallback path lets a non-type slip through unnoticed.
+    """
+    role_name = "non_class_agent_class_test"
+    AgentCatalog.unregister(role_name)
+    try:
+        # The annotation lies if you pass a non-type, but the runtime cost
+        # has to land on the caller — exposing it via create is the
+        # contract the dynamic-import boundary relies on.
+        AgentCatalog._registry[role_name] = AgentSpec(
+            role_name=role_name,
+            agent_class=None,
+            capabilities=["smoke"],
+            is_builtin=False,
+        )
+        with pytest.raises(TypeError):
+            AgentCatalog.create(role_name)
+    finally:
+        AgentCatalog.unregister(role_name)
