@@ -2548,7 +2548,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
             web_server.json.dumps({"action": "message", "message": "@sidar   "}),
             web_server.json.dumps({"action": "message", "message": "hello"}),
         ],
-        headers={"sec-websocket-protocol": "token-1"},
+        headers={"sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, token-1"},
     )
 
     participant = web_server._CollaborationParticipant(
@@ -2600,7 +2600,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
 
     await web_server.websocket_chat(ws)
 
-    assert ws.accepted == ["token-1"]
+    assert ws.accepted == [web_security.SIDAR_WS_CHAT_PROTOCOL]
     assert any(event.get("type") == "room_error" for event in broadcast_events)
     assert any("Hız Sınırı" in payload.get("chunk", "") for payload in ws.sent)
 
