@@ -147,6 +147,14 @@ def _resolve_canonical_builtin_class(
         )
         return agent_class
 
+    if not isinstance(canonical_class, type):
+        logger.debug(
+            "Builtin role canonical sembolü bir sınıf değil; geçici sınıf korunuyor: %s.%s",
+            contract.module_name,
+            contract.class_name,
+        )
+        return agent_class
+
     logger.debug(
         "AgentCatalog: '%s' için geçici modül sınıfı canonical sınıfa normalize edildi (%s -> %s).",
         role_name,
@@ -302,6 +310,14 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
             )
             if contract.module_name not in _BUILTIN_IMPORT_FAILURES:
                 _BUILTIN_IMPORT_FAILURES[contract.module_name] = _format_import_failure(exc)
+            continue
+
+        if not isinstance(agent_cls, type):
+            logger.debug(
+                "Builtin role canonical sync'i atlandı; sembol bir sınıf değil: %s.%s",
+                contract.module_name,
+                contract.class_name,
+            )
             continue
 
         if role_exports is not None:
