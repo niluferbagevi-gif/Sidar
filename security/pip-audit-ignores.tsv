@@ -1,4 +1,2 @@
 # vuln_id	package	expires	reason
-# No active pip-audit vulnerability exceptions.
-# Add only dated, package-scoped entries after confirming the locked version still
-# requires a temporary risk acceptance.
+GHSA-rrmf-rvhw-rf47	torch	2026-09-15	CVE-2025-3000: upstream fix unavailable; torch.jit.script is not used in production code. Re-evaluate in 2026-Q3.

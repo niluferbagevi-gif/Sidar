@@ -43,9 +43,9 @@ dependencies = [
   "psutil~=6.0.0",
   # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi>=0.136.1,<0.140.0",
-  # Starlette 1.2+ TestClient requires the separate httpx2 package.
-  "starlette>=1.0.1,<1.2.0",
-  "python-multipart~=0.0.9",
+  # Starlette 1.3.1+ includes fixes for current request parsing and URL validation CVEs.
+  "starlette>=1.3.1,<1.4.0",
+  "python-multipart>=0.0.31,<0.1.0",
   "uvicorn[standard]~=0.30.6",
   "anyio>=4.0.0",
   # ── Veritabanı ─────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ dependencies = [
   "tiktoken~=0.12.0",
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.12.3",
-  "bleach~=6.1.0",
+  "bleach>=6.4.0,<7.0.0",
   "nemoguardrails>=0.13.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
@@ -94,7 +94,7 @@ dependencies = [
   "pyright>=1.1.409,<2.0.0",
   "pre-commit>=4.0.0,<5.0.0",
   "shellcheck-py>=0.10.0.1,<0.11.0",
-  "types-bleach>=6.1.0.20240311",
+  "types-bleach>=6.4.0.20260607",
   "defusedxml>=0.7.1",
   "types-defusedxml",
   "types-requests",
@@ -228,7 +228,7 @@ dev = [
   "pyright>=1.1.409,<2.0.0",
   "pre-commit>=4.0.0,<5.0.0",
   "shellcheck-py>=0.10.0.1,<0.11.0",
-  "types-bleach>=6.1.0.20240311",
+  "types-bleach>=6.4.0.20260607",
   "defusedxml>=0.7.1",
   "types-defusedxml",
   "types-requests",

@@ -703,11 +703,11 @@ def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> No
 
     assert "0.136.1" in dependency_specifiers["fastapi"]
     assert "0.129.2" not in dependency_specifiers["fastapi"]
-    assert "1.0.1" in dependency_specifiers["starlette"]
-    assert "0.50.0" not in dependency_specifiers["starlette"]
+    assert "1.3.1" in dependency_specifiers["starlette"]
+    assert "1.1.0" not in dependency_specifiers["starlette"]
     assert Version(locked_packages["fastapi"]) in dependency_specifiers["fastapi"]
     assert Version(locked_packages["starlette"]) in dependency_specifiers["starlette"]
-    assert Version("1.2.0") not in dependency_specifiers["starlette"]
+    assert Version("1.1.0") not in dependency_specifiers["starlette"]
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
@@ -1591,8 +1591,9 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     )
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
-    assert "No active pip-audit vulnerability exceptions." in policy
-    assert "CVE-2025-3000" not in policy
+    assert "GHSA-rrmf-rvhw-rf47" in policy
+    assert "CVE-2025-3000" in policy
+    assert "2026-09-15" in policy
 
 
 def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() -> None:
