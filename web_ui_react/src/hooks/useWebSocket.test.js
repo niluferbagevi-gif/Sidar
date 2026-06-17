@@ -42,6 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setStoredToken("");
   vi.restoreAllMocks();
 });
 
