@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,7 @@ from agent.registry import (
     _clear_builtin_import_failures,
     _format_import_failure,
     _import_builtin_roles,
+    _sync_builtin_contract_registry,
 )
 
 
@@ -260,6 +262,58 @@ def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -
         assert registered_spec.agent_class.__module__ == contract.module_name
     finally:
         sys.modules.pop(temp_module_name, None)
+        AgentCatalog._registry[contract.role_name] = original_spec
+
+
+def test_builtin_registration_keeps_temp_class_when_canonical_symbol_is_not_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None
+
+    class TempReviewerAgent:
+        pass
+
+    def _fake_import_module(module_name: str):
+        assert module_name == contract.module_name
+        return SimpleNamespace(**{contract.class_name: "not-a-class"})
+
+    monkeypatch.setattr("importlib.import_module", _fake_import_module)
+    role_exports = sys.modules.get("agent.roles")
+    original_export = getattr(role_exports, contract.class_name, None) if role_exports else None
+    if role_exports is not None:
+        monkeypatch.setattr(role_exports, contract.class_name, "not-a-class")
+
+    try:
+        AgentCatalog.register_type(
+            role_name=contract.role_name,
+            agent_class=TempReviewerAgent,
+            capabilities=list(contract.capabilities),
+            is_builtin=True,
+        )
+        registered_spec = AgentCatalog.get(contract.role_name)
+        assert registered_spec is not None
+        assert registered_spec.agent_class is TempReviewerAgent
+    finally:
+        if role_exports is not None and original_export is not None:
+            monkeypatch.setattr(role_exports, contract.class_name, original_export)
+        AgentCatalog._registry[contract.role_name] = original_spec
+
+
+def test_builtin_contract_sync_skips_non_class_symbols() -> None:
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
+    original_spec = AgentCatalog.get(contract.role_name)
+    assert original_spec is not None
+
+    try:
+        _sync_builtin_contract_registry(
+            {contract.module_name: SimpleNamespace(**{contract.class_name: "not-a-class"})}
+        )
+        synced_spec = AgentCatalog.get(contract.role_name)
+        assert synced_spec is not None
+        assert synced_spec.agent_class is original_spec.agent_class
+    finally:
         AgentCatalog._registry[contract.role_name] = original_spec
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
+import { getStoredToken, TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
 
 const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
@@ -7,6 +7,12 @@ const WS_URL = () =>
 const RECONNECT_BASE_DELAY_MS = 800;
 const RECONNECT_MAX_DELAY_MS = 20_000;
 const RECONNECT_JITTER_MS = 600;
+
+function readWebSocketToken() {
+  const storedToken = getStoredToken().trim();
+  if (storedToken) return storedToken;
+  return (typeof localStorage !== "undefined" && localStorage.getItem(TOKEN_KEY)?.trim()) || "";
+}
 
 export function useWebSocket(
   _sessionId,
@@ -29,7 +35,7 @@ export function useWebSocket(
   const wsRef = useRef(null);
   const joinedRoomRef = useRef("");
   const [status, setStatus] = useState(() =>
-    (typeof localStorage !== "undefined" && localStorage.getItem(TOKEN_KEY)?.trim())
+    readWebSocketToken()
       ? "disconnected"
       : "unauthenticated"
   );
@@ -90,7 +96,7 @@ export function useWebSocket(
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const token = (localStorage.getItem(TOKEN_KEY) || "").trim();
+    const token = readWebSocketToken();
     if (!token) {
       setStatus("unauthenticated");
       return;
