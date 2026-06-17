@@ -1,4 +1,12 @@
 # vuln_id	package	expires	reason
-# No active pip-audit vulnerability exceptions.
 # Add only dated, package-scoped entries after confirming the locked version still
 # requires a temporary risk acceptance.
+# ---
+# CVE-2025-3000: torch.jit.script local memory corruption. PyTorch upstream has
+# not published a fix_versions advisory yet; torch~=2.11.x is the highest CPU
+# wheel resolvable under our pin (<2.12) and ahead of the next coordinated audit
+# we accept the risk because (a) torch is only exercised via sentence-transformer
+# embedding paths in our managed RAG runtime — no untrusted user input ever
+# reaches `torch.jit.script`, and (b) the rag extra is opt-in. Re-check at the
+# next quarterly dependency sweep and lift if upstream publishes a fix.
+CVE-2025-3000	torch	2026-09-17	No upstream fix; torch.jit.script not exposed to untrusted input in Sidar RAG paths. Re-evaluate Q3 2026.

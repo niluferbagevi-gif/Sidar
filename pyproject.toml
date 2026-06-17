@@ -43,9 +43,12 @@ dependencies = [
   "psutil~=6.0.0",
   # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi>=0.136.1,<0.140.0",
-  # Starlette 1.2+ TestClient requires the separate httpx2 package.
-  "starlette>=1.0.1,<1.2.0",
-  "python-multipart~=0.0.9",
+  # Starlette 1.3.x kapatır: CVE-2026-54282 (host spoofing via request path) ve
+  # CVE-2026-54283 (urlencoded form parser limit bypass). TestClient httpx2'ye
+  # taşındığı için aşağıdaki `httpx2` bağımlılığı testleri çalışır halde tutar.
+  "starlette>=1.3.1,<2.0.0",
+  "httpx2>=2.0.0,<3.0.0",
+  "python-multipart>=0.0.18,<0.1.0",
   "uvicorn[standard]~=0.30.6",
   "anyio>=4.0.0",
   # ── Veritabanı ─────────────────────────────────────────────────────────
@@ -62,7 +65,9 @@ dependencies = [
   "tiktoken~=0.12.0",
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.12.3",
-  "bleach~=6.1.0",
+  # bleach 6.4.0 kapatır: GHSA-gj48-438w-jh9v (formaction javascript: URI bypass)
+  # ve GHSA-8rfp-98v4-mmr6 (Unicode-rezervli protokol bypass).
+  "bleach>=6.4.0,<7.0.0",
   "nemoguardrails>=0.13.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
@@ -268,6 +273,7 @@ fakeredis = "test-double"
 fastapi = "runtime"
 freezegun = "test-double"
 httpx = "runtime"
+httpx2 = "dev"
 hypothesis = "dev"
 "langchain-community" = "runtime"
 "langchain-core" = "runtime"
@@ -452,16 +458,11 @@ extra_css = "assets/dark_mode.css"
 [tool.uv]
 index-strategy = "first-index"
 
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
-]
-torchvision = [
-  { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
-]
-torchaudio = [
-  { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
-]
+# NOT: macOS arm64 torch tekerleri PyPI üzerinden zaten yayımlanıyor; eski
+# `tool.uv.sources` Darwin pinning'i ağ izolasyonlu CI/build kutularını
+# `download.pytorch.org` rotası gerektirdiği için kilitliyordu. Darwin resolution
+# artık PyPI'ye düşer; `pytorch-cpu` index'i CUDA-dışı opsiyonel kullanım için
+# explicit olarak tanımlı kalır.
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
