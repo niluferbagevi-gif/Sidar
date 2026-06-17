@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -267,6 +268,44 @@ class AgentCatalog:
         return False
 
 
+
+def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) -> None:
+    """Synchronize built-in specs with canonical module classes.
+
+    Built-in modules may already be present in ``sys.modules`` when this bootstrap
+    runs, so their decorators will not necessarily execute again. Re-reading each
+    successfully imported contract class and registering it programmatically keeps
+    ``AgentCatalog`` aligned with the canonical module object and the
+    ``agent.roles`` package exports, even after test stubs or reloads.
+    """
+    role_exports = sys.modules.get("agent.roles")
+    for contract in BUILTIN_ROLE_CONTRACTS:
+        if contract.module_name in _BUILTIN_IMPORT_FAILURES:
+            continue
+        try:
+            module = (module_cache or {}).get(contract.module_name)
+            if module is None:
+                module = importlib.import_module(contract.module_name)
+            agent_cls = getattr(module, contract.class_name)
+        except Exception as exc:  # pragma: no cover - defensive fallback for optional deps/stubs
+            logger.debug(
+                "Builtin role canonical sync'i atlandı: %s",
+                contract.module_name,
+                exc_info=True,
+            )
+            if contract.module_name not in _BUILTIN_IMPORT_FAILURES:
+                _BUILTIN_IMPORT_FAILURES[contract.module_name] = _format_import_failure(exc)
+            continue
+
+        if role_exports is not None:
+            setattr(role_exports, contract.class_name, agent_cls)
+        AgentCatalog.register_type(
+            role_name=contract.role_name,
+            agent_class=agent_cls,
+            capabilities=list(contract.capabilities),
+            is_builtin=True,
+        )
+
 def _has_builtin_specs() -> bool:
     """Katalogda en az bir yerleşik ajan kaydı olup olmadığını döndürür."""
     return any(spec.is_builtin for spec in AgentCatalog.list_all())
@@ -348,15 +387,18 @@ def _import_builtin_roles() -> None:
         )
 
     failures: list[tuple[str, Exception]] = []
+    imported_modules: dict[str, Any] = {}
     _clear_builtin_import_failures()
 
     for module_name in builtin_role_modules:
         try:
-            importlib.import_module(module_name)
+            imported_modules[module_name] = importlib.import_module(module_name)
         except Exception as exc:
             failures.append((module_name, exc))
             _BUILTIN_IMPORT_FAILURES[module_name] = _format_import_failure(exc)
             logger.debug("Builtin role import'u atlandı: %s", module_name, exc_info=True)
+
+    _sync_builtin_contract_registry(imported_modules)
 
     if failures and not _has_builtin_specs():
         first_module, first_exc = failures[0]
