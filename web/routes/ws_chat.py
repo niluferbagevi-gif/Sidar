@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import inspect
 import json
 import re
 import secrets
@@ -140,12 +141,13 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         with contextlib.suppress(Exception):
             await websocket.send_json({"auth_ok": True})
 
-    async def _cancel_task_and_wait(task: asyncio.Task[Any] | None) -> None:
+    async def _cancel_task_and_wait(task: Any | None) -> None:
         if task is None or task.done():
             return
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        if inspect.isawaitable(task):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def generate_response(msg: str) -> None:
         sub_id = None
