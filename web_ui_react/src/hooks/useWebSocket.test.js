@@ -1,6 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebSocket } from "./useWebSocket.js";
-import { setStoredToken, TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
+import { clearStoredToken, setStoredToken, TOKEN_CHANGE_EVENT, TOKEN_KEY } from "../lib/api.js";
 
 // WebSocket mock factory
 function makeWsMock() {
@@ -30,6 +30,7 @@ let wsMockInstance = null;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  clearStoredToken();
   // localStorage stub
   const store = {};
   vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => store[key] ?? null);

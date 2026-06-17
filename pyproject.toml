@@ -424,8 +424,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Coverage gate threshold is intentionally owned by .coveragerc [report].fail_under.
-# run_tests.sh reads that value and applies it once at the final combined report.
+# Local coverage gate baseline is intentionally owned by .coveragerc [report].fail_under.
+# run_tests.sh maps that baseline into COVERAGE_PROFILE-specific final gates.
 show_missing = true
 skip_covered = true
 precision = 2
