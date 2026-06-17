@@ -285,8 +285,7 @@ PY_RATCHET_STATE
 }
 
 DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1
-
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
+EXPLICIT_COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-}"
 IS_CI_ENV=0
 if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
   IS_CI_ENV=1
@@ -304,6 +303,53 @@ fi
 if [ "${TEST_PROFILE}" != "ci" ] && [ "${TEST_PROFILE}" != "local" ]; then
   echo "⚠️ Geçersiz TEST_PROFILE='${TEST_PROFILE}'. 'local' profiline düşülüyor."
   TEST_PROFILE="local"
+fi
+
+max_coverage_gate() {
+  python - "$1" "$2" <<'PY_MAX_COVERAGE_GATE'
+import sys
+
+left = float(sys.argv[1])
+right = float(sys.argv[2])
+print(f"{max(left, right):g}")
+PY_MAX_COVERAGE_GATE
+}
+
+resolve_coverage_profile() {
+  if [ -n "${COVERAGE_PROFILE:-}" ]; then
+    printf '%s' "${COVERAGE_PROFILE}"
+    return 0
+  fi
+  if [ "${AUTONOMOUS_LOOP_OPERATION_PROFILE:-}" = "coverage-campaign" ]; then
+    printf 'coverage-campaign'
+    return 0
+  fi
+  printf '%s' "${TEST_PROFILE}"
+}
+
+COVERAGE_PROFILE="$(resolve_coverage_profile)"
+case "${COVERAGE_PROFILE}" in
+  local|ci|release|coverage-campaign) ;;
+  *)
+    echo "⚠️ Geçersiz COVERAGE_PROFILE='${COVERAGE_PROFILE}'. 'local' profiline düşülüyor."
+    COVERAGE_PROFILE="local"
+    ;;
+esac
+
+LOCAL_COVERAGE_FAIL_UNDER="${LOCAL_COVERAGE_FAIL_UNDER:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
+CI_COVERAGE_FAIL_UNDER="$(max_coverage_gate "${DEFAULT_COVERAGE_FAIL_UNDER}" "${CI_COVERAGE_FAIL_UNDER:-95}")"
+RELEASE_COVERAGE_FAIL_UNDER="$(max_coverage_gate "${CI_COVERAGE_FAIL_UNDER}" "${RELEASE_COVERAGE_FAIL_UNDER:-98}")"
+COVERAGE_CAMPAIGN_FAIL_UNDER="${COVERAGE_CAMPAIGN_FAIL_UNDER:-100}"
+
+if [ -n "${EXPLICIT_COVERAGE_FAIL_UNDER}" ]; then
+  COVERAGE_FAIL_UNDER="${EXPLICIT_COVERAGE_FAIL_UNDER}"
+else
+  case "${COVERAGE_PROFILE}" in
+    ci) COVERAGE_FAIL_UNDER="${CI_COVERAGE_FAIL_UNDER}" ;;
+    release) COVERAGE_FAIL_UNDER="${RELEASE_COVERAGE_FAIL_UNDER}" ;;
+    coverage-campaign) COVERAGE_FAIL_UNDER="${COVERAGE_CAMPAIGN_FAIL_UNDER}" ;;
+    *) COVERAGE_FAIL_UNDER="${LOCAL_COVERAGE_FAIL_UNDER}" ;;
+  esac
 fi
 
 if [ "${TEST_PROFILE}" = "ci" ]; then
@@ -559,7 +605,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (.coveragerc [report].fail_under değerinden okundu; açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir)"
+echo "ℹ️ Coverage quality gate profili: ${COVERAGE_PROFILE} (eşik=${COVERAGE_FAIL_UNDER}; local=${LOCAL_COVERAGE_FAIL_UNDER}, ci=${CI_COVERAGE_FAIL_UNDER}, release=${RELEASE_COVERAGE_FAIL_UNDER}, campaign=${COVERAGE_CAMPAIGN_FAIL_UNDER}; açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir)"
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 
@@ -1538,6 +1584,10 @@ enforce_combined_coverage_gate() {
 update_progressive_coverage_gate() {
   if [ "${COVERAGE_RATCHET_ENABLED:-1}" != "1" ]; then
     echo "ℹ️ Coverage ratcheting devre dışı (COVERAGE_RATCHET_ENABLED=${COVERAGE_RATCHET_ENABLED:-0})."
+    return 0
+  fi
+  if [ "${COVERAGE_PROFILE}" != "local" ]; then
+    echo "ℹ️ Coverage ratchet yalnız local profil baseline'ını günceller; aktif profil ${COVERAGE_PROFILE} olduğu için atlandı."
     return 0
   fi
 

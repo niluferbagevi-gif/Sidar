@@ -251,6 +251,7 @@ jobs:
         env:
           RUN_BENCHMARKS: "required"
           RUN_FRONTEND_E2E: "1"
+          COVERAGE_PROFILE: "ci"
           FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"

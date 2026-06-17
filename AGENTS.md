@@ -261,15 +261,18 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 #### 2.5.4 Coverage odaklı otonom iyileştirme
 
 - Coverage eşikleri operasyonel olarak ayrıdır: günlük local kalite kapısı
-  `run_tests.sh` / `.coveragerc` / `COVERAGE_FAIL_UNDER` üzerinden stabil eşik
-  kullanır; `.coveragerc` güncel `fail_under` değerinin tek doğruluk
+  `run_tests.sh` / `.coveragerc` / `COVERAGE_PROFILE=local` üzerinden stabil ve
+  ulaşılabilir eşiği kullanır; `.coveragerc` local baseline'ın tek doğruluk
   kaynağıdır ve `COVERAGE_RATCHET_STEP` varsayılanı `%1` puanlık dengeli
-  basamaklarla bu eşiği yalnızca yukarı taşır. CI zorunlu gate `TEST_PROFILE=ci`
-  ile ayrı profildir; `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom
-  iyileştirme hedefi** olarak izler. `%99.8` altında kalmak, testler ve local
-  gate geçiyorsa CI/local başarısızlığı değil CoverageAgent döngüsünün devam
-  edeceği anlamına gelir. Planlı/manual coverage kampanyaları
-  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile etiketlenmelidir.
+  basamaklarla yalnızca local baseline'ı yukarı taşır. CI zorunlu gate
+  `TEST_PROFILE=ci` / `COVERAGE_PROFILE=ci` ile daha sıkı profildir; release
+  kapıları `COVERAGE_PROFILE=release`, planlı/manual %100 coverage kampanyaları
+  ise `COVERAGE_PROFILE=coverage-campaign` veya
+  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile çalıştırılmalıdır.
+  `COVERAGE_FAIL_UNDER` her profili bilinçli override etmek için kullanılabilir.
+  `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom iyileştirme
+  hedefi** olarak izler. `%99.8` altında kalmak, testler ve local gate geçiyorsa
+  CI/local başarısızlığı değil CoverageAgent döngüsünün devam edeceği anlamına gelir.
 - `autonomous_loop.sh`, kalite kapısı veya otonom iyileştirme hedefi sağlanmazsa
   `CoverageAgent` ile `coverage.xml` analizini çalıştırır, `scripts/coverage_hotspots.py`
   ile düşük coverage dosyalarını listeler ve gerekiyorsa eksik test önerisi üretir.
