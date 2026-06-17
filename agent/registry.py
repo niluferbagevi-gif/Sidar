@@ -13,7 +13,7 @@ import logging
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def _resolve_canonical_builtin_class(
 
     try:
         module = importlib.import_module(contract.module_name)
-        canonical_class = getattr(module, contract.class_name)
+        canonical_class = cast(type[Any], getattr(module, contract.class_name))
     except Exception as exc:  # pragma: no cover - defensive fallback for optional deps
         _BUILTIN_IMPORT_FAILURES[contract.module_name] = _format_import_failure(exc)
         logger.debug(
