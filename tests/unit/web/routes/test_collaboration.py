@@ -36,10 +36,13 @@ def test_collaboration_model_normalization_serialization_and_prompt(tmp_path: Pa
     assert collaboration.normalize_room_id("") == "workspace:default"
     assert collaboration.normalize_collaboration_role("ADMIN") == "admin"
     assert collaboration.normalize_collaboration_role("guest") == "user"
-    assert collaboration.collaboration_write_scopes_for_role("user", "team:one", base_dir=tmp_path) == []
-    assert collaboration.collaboration_write_scopes_for_role("admin", "team:one", base_dir=tmp_path) == [
-        str(tmp_path.resolve())
-    ]
+    assert (
+        collaboration.collaboration_write_scopes_for_role("user", "team:one", base_dir=tmp_path)
+        == []
+    )
+    assert collaboration.collaboration_write_scopes_for_role(
+        "admin", "team:one", base_dir=tmp_path
+    ) == [str(tmp_path.resolve())]
     assert collaboration.collaboration_command_requires_write("please edit file")
     assert not collaboration.collaboration_command_requires_write("sadece oku")
 
@@ -60,7 +63,9 @@ def test_collaboration_model_normalization_serialization_and_prompt(tmp_path: Pa
             "content": "hello",
         },
     )
-    prompt = collaboration.build_collaboration_prompt(room, actor_name="Ada", command="@sidar özetle")
+    prompt = collaboration.build_collaboration_prompt(
+        room, actor_name="Ada", command="@sidar özetle"
+    )
     assert "room_id=team:one" in prompt
     assert "Ada<user>" in prompt
     assert "hello" in prompt
@@ -123,9 +128,7 @@ async def test_join_leave_broadcast_and_emit_control_room_event(tmp_path: Path) 
     assert room.participants
 
     failing_ws = _WebSocket(fail=True)
-    room.participants[999] = collaboration.CollaborationParticipant(
-        failing_ws, "u-2", "lin", "Lin"
-    )
+    room.participants[999] = collaboration.CollaborationParticipant(failing_ws, "u-2", "lin", "Lin")
     await collaboration.broadcast_room_payload(room, {"type": "presence"})
     assert 999 not in room.participants
 

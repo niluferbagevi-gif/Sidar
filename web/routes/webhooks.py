@@ -33,9 +33,9 @@ def _github_webhook_signature_required(cfg: Any) -> bool:
     production. Local/test compatibility can explicitly opt out with
     ``GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False``.
     """
-    env_name = str(
-        getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
-    ).strip().lower()
+    env_name = (
+        str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
+    )
     if env_name == "production":
         return True
     return _coerce_bool(getattr(cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", None), default=True)

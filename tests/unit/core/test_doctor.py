@@ -1657,9 +1657,12 @@ def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key
 
 
 def test_redact_exception_text_without_database_password_keeps_safe_text() -> None:
-    assert doctor._redact_exception_text(
-        RuntimeError("connection refused"), database_url="postgresql://localhost/sidar"
-    ) == "connection refused"
+    assert (
+        doctor._redact_exception_text(
+            RuntimeError("connection refused"), database_url="postgresql://localhost/sidar"
+        )
+        == "connection refused"
+    )
 
 
 def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, tmp_path) -> None:
@@ -1715,7 +1718,9 @@ def test_graphrag_ready_handles_failed_store_probe(monkeypatch, tmp_path) -> Non
             "entity_memory_empty": False,
         },
     )
-    monkeypatch.setattr(doctor, "_query_entity_graph_counts_from_store", lambda _rag_dir: {"ok": False})
+    monkeypatch.setattr(
+        doctor, "_query_entity_graph_counts_from_store", lambda _rag_dir: {"ok": False}
+    )
 
     check = doctor.check_graphrag_entity_memory_ready()
 
@@ -1748,7 +1753,9 @@ def test_rag_readiness_aggregate_reports_warn_and_keeps_scalar_auto_fix(monkeypa
     assert check.details["auto_fix"] == "seed"
 
 
-def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(monkeypatch) -> None:
+def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(
+    monkeypatch,
+) -> None:
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")

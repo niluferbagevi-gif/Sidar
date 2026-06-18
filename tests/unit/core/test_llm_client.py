@@ -4270,7 +4270,9 @@ async def test_llm_client_chat_stream_awaits_inner_coroutine_response(
 
 
 @pytest.mark.asyncio
-async def test_ollama_client_chat_omits_num_ctx_when_disabled(mock_config, respx_mock_router) -> None:
+async def test_ollama_client_chat_omits_num_ctx_when_disabled(
+    mock_config, respx_mock_router
+) -> None:
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",

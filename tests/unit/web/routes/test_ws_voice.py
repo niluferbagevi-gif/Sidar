@@ -68,7 +68,9 @@ def _deps(**overrides) -> SimpleNamespace:
         return None
 
     async def _resolve_agent_instance():
-        return SimpleNamespace(llm=object(), memory=SimpleNamespace(set_active_user=_set_active_user))
+        return SimpleNamespace(
+            llm=object(), memory=SimpleNamespace(set_active_user=_set_active_user)
+        )
 
     async def _close(websocket, reason: str) -> None:
         await websocket.close(code=1008, reason=reason)

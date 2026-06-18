@@ -23,7 +23,9 @@ def _parse_iso_date(raw: str, *, line_number: int) -> date:
     try:
         return date.fromisoformat(raw)
     except ValueError as exc:
-        raise ValueError(f"line {line_number}: invalid expires date {raw!r}; use YYYY-MM-DD") from exc
+        raise ValueError(
+            f"line {line_number}: invalid expires date {raw!r}; use YYYY-MM-DD"
+        ) from exc
 
 
 def parse_policy(path: Path, *, today: date | None = None) -> list[PipAuditIgnore]:
@@ -53,7 +55,9 @@ def parse_policy(path: Path, *, today: date | None = None) -> list[PipAuditIgnor
         if expires < effective_today:
             expired.append(f"{vuln_id} ({package}) expired on {expires.isoformat()}")
             continue
-        ignores.append(PipAuditIgnore(vuln_id=vuln_id, package=package, expires=expires, reason=reason))
+        ignores.append(
+            PipAuditIgnore(vuln_id=vuln_id, package=package, expires=expires, reason=reason)
+        )
 
     if expired:
         raise RuntimeError("Expired pip-audit ignore policy entries: " + "; ".join(expired))

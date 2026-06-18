@@ -160,7 +160,9 @@ def serialize_collaboration_room(room: CollaborationRoom) -> dict[str, Any]:
     }
 
 
-def append_room_message(room: CollaborationRoom, payload: dict[str, Any], *, limit: int = 200) -> None:
+def append_room_message(
+    room: CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
+) -> None:
     room.messages.append(payload)
     if len(room.messages) > limit:
         room.messages = room.messages[-limit:]

@@ -2051,7 +2051,6 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
 
-
 def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
     package_lock = json.loads(Path("web_ui_react/package-lock.json").read_text(encoding="utf-8"))
@@ -2069,6 +2068,7 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"
     assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "1.0.3"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
+
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
     script = _script()

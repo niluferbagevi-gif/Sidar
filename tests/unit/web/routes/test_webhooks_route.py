@@ -23,7 +23,9 @@ class _Logger:
         self.warnings.append(message % args if args else message)
 
 
-def test_github_webhook_signature_required_defaults_to_secure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_github_webhook_signature_required_defaults_to_secure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("SIDAR_ENV", raising=False)
 
     assert _github_webhook_signature_required(SimpleNamespace()) is True
@@ -35,13 +37,13 @@ def test_github_webhook_signature_required_defaults_to_secure(monkeypatch: pytes
     )
 
 
-def test_github_webhook_signature_required_forces_production(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_github_webhook_signature_required_forces_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     assert (
-        _github_webhook_signature_required(
-            SimpleNamespace(GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False)
-        )
+        _github_webhook_signature_required(SimpleNamespace(GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False))
         is True
     )
 
@@ -139,9 +141,7 @@ async def test_github_webhook_wraps_non_dict_json_payload() -> None:
 
     async def _resolve_agent():
         return SimpleNamespace(
-            memory=SimpleNamespace(
-                add=lambda role, message: memory_entries.append((role, message))
-            )
+            memory=SimpleNamespace(add=lambda role, message: memory_entries.append((role, message)))
         )
 
     async def _await_if_needed(value):

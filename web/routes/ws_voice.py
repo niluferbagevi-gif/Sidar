@@ -73,7 +73,9 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         except Exception as exc:
             voice_init_error = f"Voice Disabled: {exc.__class__.__name__}"
             deps.logger.warning("Voice pipeline başlatılamadı, voice devre dışı: %s", exc)
-    max_voice_bytes = int(getattr(deps.cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
+    max_voice_bytes = int(
+        getattr(deps.cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024
+    )
 
     audio_buffer = bytearray()
     ws_user_id = ""
@@ -291,7 +293,9 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                 if not auth_token:
                     await deps.ws_close_policy_violation(websocket, "Authentication token missing")
                     return
-                ws_user = await deps.await_if_needed(deps.resolve_user_from_token(agent, auth_token))
+                ws_user = await deps.await_if_needed(
+                    deps.resolve_user_from_token(agent, auth_token)
+                )
                 if not ws_user:
                     await deps.ws_close_policy_violation(websocket, "Invalid or expired token")
                     return
@@ -382,7 +386,9 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                 await active_response_task
     except Exception as exc:
         if deps.anyio_closed is not None and isinstance(exc, deps.anyio_closed):
-            deps.logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
+            deps.logger.info(
+                "İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError)."
+            )
             if active_response_task and not active_response_task.done():  # pragma: no cover
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await active_response_task

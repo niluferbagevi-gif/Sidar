@@ -364,6 +364,7 @@ def test_run_task_qa_intent_delegates_and_routes_p2p_request() -> None:
     assert calls == [("qa", "qa")]
     assert ("supervisor", "QA ajanına yönlendiriliyor...") in sup.events.messages
 
+
 def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
     sup = _build_supervisor(max_qa_retries=2)
     sup.cfg.MAX_TURNS = 0
@@ -376,6 +377,7 @@ def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
     result = asyncio.run(sup.run_task("qa kalite kapısı kontrolü"))
 
     assert result == "[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı (0)."
+
 
 def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> None:
     sup = _build_supervisor(has_coverage=False)

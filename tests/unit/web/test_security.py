@@ -101,7 +101,10 @@ async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> Non
     )
 
     assert fallback.id == "db"
-    assert await security.resolve_user_from_token(agent, "missing", config=_Config, logger_obj=logger) is None
+    assert (
+        await security.resolve_user_from_token(agent, "missing", config=_Config, logger_obj=logger)
+        is None
+    )
 
 
 @pytest.mark.asyncio

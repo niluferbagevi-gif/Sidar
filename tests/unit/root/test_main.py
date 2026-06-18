@@ -7256,7 +7256,7 @@ async def test_health_response_hides_agent_exception_detail_in_production(monkey
 
     assert response.status_code == 503
     assert b'"health_check_failed"' in response.body
-    assert b'postgresql://sidar:secret' not in response.body
+    assert b"postgresql://sidar:secret" not in response.body
     assert b'"detail"' not in response.body
 
 
@@ -7280,7 +7280,7 @@ async def test_health_response_hides_dependency_exception_detail_in_production(m
 
     assert response.status_code == 503
     assert b'"dependency_health_failed"' in response.body
-    assert b'redis://:secret' not in response.body
+    assert b"redis://:secret" not in response.body
     assert b'"detail"' not in response.body
 
 

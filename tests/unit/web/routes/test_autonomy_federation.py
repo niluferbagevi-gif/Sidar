@@ -12,7 +12,9 @@ from web.routes import autonomy, federation
 
 class _Request:
     def __init__(self, payload: dict[str, Any] | bytes) -> None:
-        self._payload = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+        self._payload = (
+            payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+        )
 
     async def body(self) -> bytes:
         return self._payload

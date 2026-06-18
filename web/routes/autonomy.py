@@ -54,9 +54,9 @@ def _autonomy_webhook_signature_required(cfg: Any) -> bool:
     production. Local/test compatibility can explicitly opt out with
     ``AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE=False``.
     """
-    env_name = str(
-        getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
-    ).strip().lower()
+    env_name = (
+        str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
+    )
     if env_name == "production":
         return True
     return _coerce_bool(getattr(cfg, "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", None), default=True)
@@ -148,7 +148,9 @@ async def autonomy_webhook(
         "ci_failure": "true" if ci_context else "false",
     }
     if federation_workflow:
-        dispatch_payload = deps.embed_event_driven_federation_payload(payload_dict, federation_workflow)
+        dispatch_payload = deps.embed_event_driven_federation_payload(
+            payload_dict, federation_workflow
+        )
         dispatch_meta.update(
             {
                 "event_driven_federation": "true",

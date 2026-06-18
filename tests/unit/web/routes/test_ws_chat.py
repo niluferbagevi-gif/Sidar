@@ -8,7 +8,9 @@ from web.routes import ws_chat
 
 
 class _Ws:
-    def __init__(self, messages: list[str] | None = None, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, messages: list[str] | None = None, headers: dict[str, str] | None = None
+    ) -> None:
         self.headers = headers or {}
         self.client = SimpleNamespace(host="127.0.0.1")
         self.sent: list[dict[str, object]] = []

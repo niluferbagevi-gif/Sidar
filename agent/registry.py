@@ -235,7 +235,9 @@ class AgentCatalog:
         contract = _builtin_contract_by_role(role_name)
         if spec is not None and spec.is_builtin and contract is not None:
             role_exports = sys.modules.get("agent.roles")
-            exported_cls = getattr(role_exports, contract.class_name, None) if role_exports else None
+            exported_cls = (
+                getattr(role_exports, contract.class_name, None) if role_exports else None
+            )
             if isinstance(exported_cls, type) and spec.agent_class is not exported_cls:
                 spec.agent_class = exported_cls
         return spec
@@ -283,7 +285,6 @@ class AgentCatalog:
         return False
 
 
-
 def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) -> None:
     """Synchronize built-in specs with canonical module classes.
 
@@ -328,6 +329,7 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
             capabilities=list(contract.capabilities),
             is_builtin=True,
         )
+
 
 def _has_builtin_specs() -> bool:
     """Katalogda en az bir yerleşik ajan kaydı olup olmadığını döndürür."""

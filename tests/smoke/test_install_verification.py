@@ -83,9 +83,9 @@ def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
         if start is not None and line.strip() == "SIDAR_MODULE_HASHES_EOF":
             end = idx
             break
-    assert start is not None and end is not None, (
-        f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
-    )
+    assert (
+        start is not None and end is not None
+    ), f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
     return "\n".join(lines[start:end])
 
 
@@ -119,9 +119,7 @@ def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
     subprocess.run([*git, "config", "user.name", "smoke"], check=True)
     subprocess.run([*git, "config", "commit.gpgsign", "false"], check=True)
     subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run(
-        [*git, "commit", "-q", "-m", "synthetic bootstrap origin"], check=True
-    )
+    subprocess.run([*git, "commit", "-q", "-m", "synthetic bootstrap origin"], check=True)
     return "main"
 
 

@@ -283,7 +283,9 @@ def test_reload_environment_notifies_registered_callbacks(monkeypatch):
     monkeypatch.setattr(
         config.Config, "_log_dotenv_load_status", staticmethod(lambda *args, **kwargs: None)
     )
-    monkeypatch.setattr(config.Config, "get_missing_critical_runtime_keys", staticmethod(lambda: []))
+    monkeypatch.setattr(
+        config.Config, "get_missing_critical_runtime_keys", staticmethod(lambda: [])
+    )
 
     config.register_config_reload_callback(calls.append)
     config.register_config_reload_callback(calls.append)
@@ -943,9 +945,7 @@ def test_check_hardware_non_cuda_and_generic_exception(monkeypatch):
     assert info2.gpu_name == "Tespit Edilemedi"
 
 
-def test_check_hardware_wsl_cuda_guidance_uses_current_pytorch_strategy(
-    monkeypatch, caplog
-):
+def test_check_hardware_wsl_cuda_guidance_uses_current_pytorch_strategy(monkeypatch, caplog):
     monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setattr(config, "_is_wsl2", lambda: True)
     fake_torch = types.SimpleNamespace(

@@ -2016,9 +2016,12 @@ async def test_remaining_ast_quality_gate_branch_paths():
     assert CoverageAgent._uses_direct_mock_creation(unrelated_import) is False
 
     unrelated_call = ast.parse("assert len(module)").body[0]
-    assert CoverageAgent._is_import_only_assertion(
-        unrelated_call, module_aliases={"module"}, target_module="pkg.mod"
-    ) is False
+    assert (
+        CoverageAgent._is_import_only_assertion(
+            unrelated_call, module_aliases={"module"}, target_module="pkg.mod"
+        )
+        is False
+    )
 
     context_manager_candidate = (
         "from contextlib import nullcontext\n"

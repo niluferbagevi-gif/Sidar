@@ -104,7 +104,5 @@ def create_app(
         lifespan=lifespan or _noop_lifespan,
     )
     if register_handlers:
-        register_exception_handlers(
-            application, expose_exception_details=expose_exception_details
-        )
+        register_exception_handlers(application, expose_exception_details=expose_exception_details)
     return application

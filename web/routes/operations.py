@@ -224,7 +224,9 @@ def serialize_coverage_task(record: Any) -> dict[str, Any]:
     }
 
 
-@router.get("/api/operations/campaigns", summary="Operasyon Kampanyalarını Listele", tags=["Operations"])
+@router.get(
+    "/api/operations/campaigns", summary="Operasyon Kampanyalarını Listele", tags=["Operations"]
+)
 async def api_operations_list_campaigns(
     status: str = "",
     limit: int = 50,
@@ -238,10 +240,14 @@ async def api_operations_list_campaigns(
         )
     except Exception:
         return _database_unavailable_response()
-    return JSONResponse({"success": True, "campaigns": [serialize_campaign(item) for item in campaigns]})
+    return JSONResponse(
+        {"success": True, "campaigns": [serialize_campaign(item) for item in campaigns]}
+    )
 
 
-@router.post("/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"])
+@router.post(
+    "/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"]
+)
 async def api_operations_create_campaign(
     req: CampaignCreateRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -313,7 +319,9 @@ async def api_operations_list_assets(
         )
     except Exception:
         return _database_unavailable_response()
-    return JSONResponse({"success": True, "assets": [serialize_content_asset(item) for item in assets]})
+    return JSONResponse(
+        {"success": True, "assets": [serialize_content_asset(item) for item in assets]}
+    )
 
 
 @router.post(
@@ -362,7 +370,10 @@ async def api_operations_list_checklists(
     except Exception:
         return _database_unavailable_response()
     return JSONResponse(
-        {"success": True, "checklists": [serialize_operation_checklist(item) for item in checklists]}
+        {
+            "success": True,
+            "checklists": [serialize_operation_checklist(item) for item in checklists],
+        }
     )
 
 
@@ -414,7 +425,9 @@ async def _run_poyraz_tool(req: Any, _user: Any, tool_name: str, payload: dict[s
     return raw_result, result
 
 
-@router.post("/api/operations/poyraz/run", summary="Poyraz operasyon aracını çalıştır", tags=["Operations"])
+@router.post(
+    "/api/operations/poyraz/run", summary="Poyraz operasyon aracını çalıştır", tags=["Operations"]
+)
 async def api_operations_poyraz_run(
     req: PoyrazToolRunRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -438,17 +451,23 @@ async def api_operations_poyraz_run(
     if "owner_user_id" not in payload:
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
     _raw_result, result = await _run_poyraz_tool(req, _user, tool_name, payload)
-    return JSONResponse({"success": bool(result.get("success", True)), "tool": tool_name, "result": result})
+    return JSONResponse(
+        {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
+    )
 
 
-async def _run_named_poyraz_request(req: Any, _user: Any, tool_name: str, started: str, completed: str) -> JSONResponse:
+async def _run_named_poyraz_request(
+    req: Any, _user: Any, tool_name: str, started: str, completed: str
+) -> JSONResponse:
     deps = _deps()
     payload = req.model_dump()
     payload.pop("room_id", None)
     payload["tenant_id"] = deps.get_user_tenant(_user)
     if tool_name == "plan_service_operations":
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await deps.emit_control_room_event(req.room_id, kind="tool_call", source="poyraz", content=started)
+    await deps.emit_control_room_event(
+        req.room_id, kind="tool_call", source="poyraz", content=started
+    )
     poyraz = await deps.await_if_needed(deps.get_poyraz_agent_instance())
     raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
     result = decode_agent_tool_result(raw_result)
@@ -457,24 +476,36 @@ async def _run_named_poyraz_request(req: Any, _user: Any, tool_name: str, starte
         kind="status",
         source="poyraz",
         content=completed,
-        payload={"success": bool(result.get("success", True))} if tool_name == "plan_service_operations" else None,
+        payload={"success": bool(result.get("success", True))}
+        if tool_name == "plan_service_operations"
+        else None,
     )
     if tool_name == "plan_service_operations":
         return JSONResponse({"success": bool(result.get("success", True)), "result": result})
-    return JSONResponse({"success": True, "output": result.get("output", raw_result), "result": result})
+    return JSONResponse(
+        {"success": True, "output": result.get("output", raw_result), "result": result}
+    )
 
 
-@router.post("/api/operations/landing-page", summary="Poyraz landing page taslağı üret", tags=["Operations"])
+@router.post(
+    "/api/operations/landing-page", summary="Poyraz landing page taslağı üret", tags=["Operations"]
+)
 async def api_operations_generate_landing_page(
     req: LandingPageDraftRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     return await _run_named_poyraz_request(
-        req, _user, "build_landing_page", "Landing page üretimi başlatıldı.", "Landing page üretimi tamamlandı."
+        req,
+        _user,
+        "build_landing_page",
+        "Landing page üretimi başlatıldı.",
+        "Landing page üretimi tamamlandı.",
     )
 
 
-@router.post("/api/operations/campaign-copy", summary="Poyraz kampanya kopyası üret", tags=["Operations"])
+@router.post(
+    "/api/operations/campaign-copy", summary="Poyraz kampanya kopyası üret", tags=["Operations"]
+)
 async def api_operations_generate_campaign_copy(
     req: CampaignCopyGenerateRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -488,7 +519,11 @@ async def api_operations_generate_campaign_copy(
     )
 
 
-@router.post("/api/operations/service-plan", summary="Poyraz servis operasyon planı üret", tags=["Operations"])
+@router.post(
+    "/api/operations/service-plan",
+    summary="Poyraz servis operasyon planı üret",
+    tags=["Operations"],
+)
 async def api_operations_plan_service(
     req: ServiceOperationsPlanRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -502,7 +537,9 @@ async def api_operations_plan_service(
     )
 
 
-@router.get("/api/qa/coverage/tasks", summary="Coverage görev geçmişini listele", tags=["QA", "Coverage"])
+@router.get(
+    "/api/qa/coverage/tasks", summary="Coverage görev geçmişini listele", tags=["QA", "Coverage"]
+)
 async def api_qa_coverage_tasks(
     status: str = "",
     limit: int = 50,
@@ -516,10 +553,14 @@ async def api_qa_coverage_tasks(
         )
     except Exception:
         return _database_unavailable_response()
-    return JSONResponse({"success": True, "tasks": [serialize_coverage_task(item) for item in tasks]})
+    return JSONResponse(
+        {"success": True, "tasks": [serialize_coverage_task(item) for item in tasks]}
+    )
 
 
-@router.post("/api/qa/coverage/analyze", summary="Coverage raporunu analiz et", tags=["QA", "Coverage"])
+@router.post(
+    "/api/qa/coverage/analyze", summary="Coverage raporunu analiz et", tags=["QA", "Coverage"]
+)
 async def api_qa_coverage_analyze(
     req: CoverageAnalyzeRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -531,15 +572,23 @@ async def api_qa_coverage_analyze(
     await deps.emit_control_room_event(
         req.room_id, kind="tool_call", source="coverage", content="Coverage analizi başlatıldı."
     )
-    raw_result = await coverage_agent._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))
+    raw_result = await coverage_agent._tool_analyze_coverage_report(
+        json.dumps(payload, ensure_ascii=False)
+    )
     result = decode_agent_tool_result(raw_result)
     await deps.emit_control_room_event(
         req.room_id, kind="status", source="coverage", content="Coverage analizi tamamlandı."
     )
-    return JSONResponse({"success": True, "analysis": result, "tenant_id": deps.get_user_tenant(_user)})
+    return JSONResponse(
+        {"success": True, "analysis": result, "tenant_id": deps.get_user_tenant(_user)}
+    )
 
 
-@router.post("/api/qa/coverage/generate", summary="Coverage bulgusu için test adayı üret", tags=["QA", "Coverage"])
+@router.post(
+    "/api/qa/coverage/generate",
+    summary="Coverage bulgusu için test adayı üret",
+    tags=["QA", "Coverage"],
+)
 async def api_qa_coverage_generate(
     req: CoverageGenerateRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -554,7 +603,9 @@ async def api_qa_coverage_generate(
         source="coverage",
         content="Coverage test adayı üretimi başlatıldı.",
     )
-    raw_candidate = await coverage_agent._tool_generate_missing_tests(json.dumps(payload, ensure_ascii=False))
+    raw_candidate = await coverage_agent._tool_generate_missing_tests(
+        json.dumps(payload, ensure_ascii=False)
+    )
     rejection_reason = coverage_agent._candidate_rejection_reason(
         str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
     )
@@ -577,7 +628,11 @@ async def api_qa_coverage_generate(
     )
 
 
-@router.post("/api/qa/coverage/batch", summary="CoverageAgent otonom batch iyileştirme çalıştır", tags=["QA", "Coverage"])
+@router.post(
+    "/api/qa/coverage/batch",
+    summary="CoverageAgent otonom batch iyileştirme çalıştır",
+    tags=["QA", "Coverage"],
+)
 async def api_qa_coverage_batch(
     req: CoverageBatchRequest,
     _user: Any = Depends(_get_request_user_proxy),
@@ -605,5 +660,9 @@ async def api_qa_coverage_batch(
         payload={"success": bool(result.get("success", False)), "status": result.get("status", "")},
     )
     return JSONResponse(
-        {"success": bool(result.get("success", False)), "result": result, "tenant_id": deps.get_user_tenant(_user)}
+        {
+            "success": bool(result.get("success", False)),
+            "result": result,
+            "tenant_id": deps.get_user_tenant(_user),
+        }
     )

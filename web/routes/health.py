@@ -31,6 +31,7 @@ def build_health_router(
 
     status_endpoint: Callable[[], Awaitable[Any]] | None = None
     if status_response is not None:
+
         @router.get("/status", include_in_schema=False)
         async def status() -> Any:
             return await status_response()

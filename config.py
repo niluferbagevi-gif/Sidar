@@ -735,8 +735,7 @@ PYTORCH_RECOMMENDED_CUDA_INDEX_URL: str = (
     f"https://download.pytorch.org/whl/{PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG}"
 )
 PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND: str = (
-    "uv pip install torch torchvision "
-    f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
+    "uv pip install torch torchvision " f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
 )
 
 
@@ -1992,9 +1991,7 @@ def _restore_reload_registry_from_previous_module() -> (
     return callbacks, previous_instance
 
 
-_config_reload_callbacks, _last_notified_instance = (
-    _restore_reload_registry_from_previous_module()
-)
+_config_reload_callbacks, _last_notified_instance = _restore_reload_registry_from_previous_module()
 
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:

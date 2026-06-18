@@ -891,9 +891,11 @@ class OpenAIClient(BaseLLMClient):
 
     @staticmethod
     def _is_test_profile(config: Any) -> bool:
-        env_name = str(
-            getattr(config, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or ""
-        ).strip().lower()
+        env_name = (
+            str(getattr(config, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "")
+            .strip()
+            .lower()
+        )
         return env_name in {"test", "testing"} or bool(os.getenv("PYTEST_CURRENT_TEST"))
 
     @classmethod

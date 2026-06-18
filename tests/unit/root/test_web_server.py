@@ -2682,9 +2682,7 @@ async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(
 
     ws = _ChatWebSocket(
         [web_server.json.dumps({"message": "hello"})],
-        headers={
-            "sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, good-token"
-        },
+        headers={"sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, good-token"},
     )
     await web_server.websocket_chat(ws)
 
@@ -7287,9 +7285,7 @@ async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(
             return []
 
     class _Ws:
-        headers = {
-            "sec-websocket-protocol": f"{web_security.SIDAR_WS_HITL_PROTOCOL}, good-token"
-        }
+        headers = {"sec-websocket-protocol": f"{web_security.SIDAR_WS_HITL_PROTOCOL}, good-token"}
 
         def __init__(self):
             self.accepted_subprotocols = []
@@ -7901,7 +7897,7 @@ async def test_health_response_hides_agent_exception_detail_in_production(monkey
 
     assert response.status_code == 503
     assert b'"health_check_failed"' in response.body
-    assert b'postgresql://sidar:secret' not in response.body
+    assert b"postgresql://sidar:secret" not in response.body
     assert b'"detail"' not in response.body
 
 
@@ -7925,7 +7921,7 @@ async def test_health_response_hides_dependency_exception_detail_in_production(m
 
     assert response.status_code == 503
     assert b'"dependency_health_failed"' in response.body
-    assert b'redis://:secret' not in response.body
+    assert b"redis://:secret" not in response.body
     assert b'"detail"' not in response.body
 
 
