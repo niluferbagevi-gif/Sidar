@@ -967,13 +967,15 @@ remote_script_checksum_hint() {
 
     cat <<EOF
 ${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
+Bu kök neden deterministiktir: ortam değişkeni sağlanmadan auto-heal/retry aynı duvara çarpar (no-retry;manual-fix-required).
 Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):
   tmp=\$(mktemp)
   curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o "\$tmp"
-  less "\$tmp"
+  less "\$tmp"                    # betiği gözden geçir
   export ${checksum_var}=\$(sha256sum "\$tmp" | awk '{print \$1}')
   rm -f "\$tmp"
-Alternatif: risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
+  ./install_sidar.sh
+Alternatif (sadece bilinçli test/izole ortam): risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
 EOF
 }
 

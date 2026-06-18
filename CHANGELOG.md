@@ -5,6 +5,22 @@
 
 ---
 
+## [v5.2.0-post1] - 2026-06-18
+
+> Post-release patch notu: `install_sidar.sh` Ollama/uv kurulum betiği SHA-256 doğrulama akışı için auto-heal davranış düzeltmesi. Paket sürümü `5.2.0` olarak korundu (lock dosyası bütünlüğünü kırmamak için); değişiklik yalnız kurulum/remediation katmanını etkiler.
+
+### Düzeltmeler (Fixed)
+- **Auto-heal yanlış sınıflandırması (uzak betik checksum metadata eksikliği):** `install_sidar.sh` Ollama/uv kurulum betiğini SHA-256 olmadan indirmeyi reddettiğinde (`download_verified_script` → `fail`), `scripts/install_modules/utils/install_remediation.sh:283` `*"ollama_install"*` pattern'ine takılıp transient sayıyordu ve auto-heal 3 kez aynı duvara çarpıyordu. Artık `sidar_is_deterministic_failure_signal` ve `sidar_is_remote_script_checksum_missing` checksum-missing kök nedenini deterministik olarak işaretliyor, retry bütçesi 1'e iniyor ve operatöre TOFU yönergesi ile birlikte (`OLLAMA_INSTALL_SHA256` / `UV_INSTALL_SHA256` ve betik URL'i) `remote-script-checksum-missing` raporu yazılıyor.
+
+### İyileştirmeler (Improved)
+- **`sidar_emit_remediation_guidance` faz kapsamı genişledi:** Daha önce yalnız `04_workspace` için checksum-missing rehberini basıyordu; artık `03_runtime` (Ollama) dahil tüm fazlarda otomatik tespit ediyor, ilgili betik URL'ini ve değişken adını rehberle birlikte üretiyor.
+- **`remote_script_checksum_hint` mesajı netleşti:** Operatöre auto-heal'in retry yapmayacağı, kök nedenin deterministik olduğu ve TOFU akışının nasıl koşulacağı tek adımda gösteriliyor.
+
+### Teknik Borç Kapanışı
+- Yeni regresyon testleri: `tests/unit/scripts/test_run_tests_quality_gate.py` içine `test_install_sidar_remote_script_checksum_missing_is_classified_deterministic`, `test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_missing`, `test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase`, `test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall` eklendi; mevcut transient ollama_install retry akışı (`sudo: timed out`) ve test budgesi (`3/2/1/1/transient`) korunuyor.
+
+---
+
 ## [v5.2.0] - 2026-03-26
 
 ### Düzeltmeler (Fixed)

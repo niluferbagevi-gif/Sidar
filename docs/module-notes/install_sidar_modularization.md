@@ -102,6 +102,24 @@ vermeden değiştiğinde yeni kurulumları yine kıracağı için bilinçli rele
 kararı gerektirir. Air-gapped kurulumlarda tercih edilen yol, uzak betik yerine
 `offline_packages/manifest.json` tarafından doğrulanan offline bundle kullanmaktır.
 
+### Auto-heal: uzak betik checksum metadata eksikliği deterministik kabul edilir
+
+`UV_INSTALL_SHA256` veya `OLLAMA_INSTALL_SHA256` tanımlı değilse `install_sidar.sh`
+fail-fast durur. Bu hata; `scripts/install_modules/utils/install_remediation.sh`
+içindeki `sidar_is_remote_script_checksum_missing` yardımcısı tarafından
+**deterministik** olarak sınıflandırılır:
+
+- `sidar_is_deterministic_failure_signal` 0 döner → retry bütçesi 1'e iner.
+- `sidar_phase_remediation_strategy` (her fazda) `remote-script-checksum-missing`
+  raporu yazıp `no-retry;manual-fix-required;missing-var=<DEĞİŞKEN>` aksiyonunu
+  kaydeder ve resume planlamaz.
+- `sidar_emit_remediation_guidance` operatöre eksik değişkene göre ilgili TOFU
+  akışını (ilgili `*_SHA256` ve betik URL'i) hatırlatır.
+
+Eski transient ollama_install akışı (örn. `sudo: timed out`) korunur: ollama
+çalışırsa "treat-as-success", aksi halde "rerun-install-script;refresh-sudo"
+stratejisi devreye girer.
+
 ## WSL2 Docker uyumluluğu
 
 WSL2 ortamında Docker tabanlı akışların sağlıklı çalışması için Docker Desktop içinde

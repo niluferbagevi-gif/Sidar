@@ -1177,6 +1177,140 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
     assert "action=rerun-install-script;refresh-sudo" in result.stdout
 
 
+def test_install_sidar_remote_script_checksum_missing_is_classified_deterministic() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            source ./scripts/install_modules/utils/install_remediation.sh
+            ollama_reason='ollama_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için OLLAMA_INSTALL_SHA256 değişkenini ayarlayın.'
+            uv_reason='uv_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için UV_INSTALL_SHA256 değişkenini ayarlayın.'
+            sidar_retry_budget_for_failure 03_runtime 'fail' "$ollama_reason"
+            sidar_retry_budget_for_failure 04_workspace 'fail' "$uv_reason"
+            if sidar_is_deterministic_failure_signal 'fail' "$ollama_reason"; then
+                echo deterministic
+            else
+                echo transient
+            fi
+            if sidar_is_deterministic_failure_signal 'fail' "$uv_reason"; then
+                echo deterministic
+            else
+                echo transient
+            fi
+            if sidar_is_remote_script_checksum_missing 'fail' "$ollama_reason"; then
+                echo missing
+            else
+                echo present
+            fi
+            sidar_detect_missing_checksum_var 'fail' "$ollama_reason"
+            sidar_detect_missing_checksum_var 'fail' "$uv_reason"
+            """,
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "1",
+        "1",
+        "deterministic",
+        "deterministic",
+        "missing",
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+    ]
+
+
+def test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_missing(
+    tmp_path: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            ollama_reason='ollama_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için OLLAMA_INSTALL_SHA256 değişkenini ayarlayın.'
+            if sidar_phase_remediation_strategy 03_runtime 'fail' "$ollama_reason"; then
+                echo retry-scheduled
+                exit 1
+            else
+                echo no-retry
+            fi
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "no-retry" in result.stdout
+    assert "reason=remote-script-checksum-missing" in result.stdout
+    assert "action=no-retry;manual-fix-required" in result.stdout
+    assert "missing-var=OLLAMA_INSTALL_SHA256" in result.stdout
+
+
+def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '[warn] %s\n' "$*" >&2; }
+            source ./scripts/install_modules/utils/install_remediation.sh
+            ollama_reason='ollama_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için OLLAMA_INSTALL_SHA256 değişkenini ayarlayın.'
+            uv_reason='uv_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için UV_INSTALL_SHA256 değişkenini ayarlayın.'
+            if sidar_emit_remediation_guidance 03_runtime 'fail' "$ollama_reason"; then
+                echo ollama-guidance-emitted
+            else
+                echo ollama-guidance-skipped
+            fi
+            if sidar_emit_remediation_guidance 04_workspace 'fail' "$uv_reason"; then
+                echo uv-guidance-emitted
+            else
+                echo uv-guidance-skipped
+            fi
+            """,
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert "ollama-guidance-emitted" in result.stdout
+    assert "uv-guidance-emitted" in result.stdout
+    combined = result.stdout + result.stderr
+    assert "OLLAMA_INSTALL_SHA256" in combined
+    assert "UV_INSTALL_SHA256" in combined
+    assert "https://ollama.com/install.sh" in combined
+    assert "https://astral.sh/uv/install.sh" in combined
+    assert "TOFU" in combined or "tofu" in combined.lower()
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" in combined
+
+
+def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    assert "no-retry;manual-fix-required" in script
+    assert "deterministiktir" in script
+    assert "auto-heal/retry aynı duvara çarpar" in script
+
+
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")

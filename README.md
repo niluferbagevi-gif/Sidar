@@ -418,6 +418,12 @@ Doğrulamayı bilinçli olarak atlamak gerekiyorsa yalnız geçici ve izole orta
 kurumsal dağıtımlarda tercih edilen yol, `offline_packages/manifest.json` içindeki
 SHA-256 doğrulamasına bağlı bundle akışıdır.
 
+> **Auto-heal davranışı:** `OLLAMA_INSTALL_SHA256` veya `UV_INSTALL_SHA256` eksikse
+> bu kök neden **deterministik** olarak işaretlenir; auto-heal retry yapmaz, doğrudan
+> `remote-script-checksum-missing` raporu yazıp operatöre TOFU adımlarını gösterir.
+> Detay: `docs/module-notes/install_sidar_modularization.md` ve
+> `artifacts/install/remediation/*.log`.
+
 
 ### Paket Varlıkları, Offline Bundle ve Release Kalite Kapıları
 

@@ -60,6 +60,13 @@ sidar_is_deterministic_failure_signal() {
     local signal="${failed_cmd} ${reason}"
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    # Eksik checksum / supply-chain doğrulama hataları deterministiktir:
+    # ortam değişkeni sağlanmadan retry aynı duvara çarpar.
+    case "$normalized" in
+        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
+            return 0
+            ;;
+    esac
     case "$normalized" in
         *"sudo: timed out"*|*"ollama_install"*)
             return 1
@@ -71,6 +78,40 @@ sidar_is_deterministic_failure_signal() {
             return 1
             ;;
     esac
+}
+
+sidar_is_remote_script_checksum_missing() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"supply-chain doğrulamasını korumak"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidar_detect_missing_checksum_var() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    case "$signal" in
+        *"OLLAMA_INSTALL_SHA256"*|*"ollama_install checksum"*|*"ollama_install"*"checksum"*)
+            echo "OLLAMA_INSTALL_SHA256"
+            return 0
+            ;;
+        *"UV_INSTALL_SHA256"*|*"uv_install checksum"*|*"uv_install"*"checksum"*)
+            echo "UV_INSTALL_SHA256"
+            return 0
+            ;;
+    esac
+    echo ""
+    return 1
 }
 
 sidar_retry_budget_for_failure() {
@@ -278,6 +319,17 @@ sidar_phase_remediation_strategy() {
     local failed_cmd="$2"
     local reason="$3"
 
+    # Tüm fazlarda geçerli: uzak betik checksum metadata eksikse self-heal
+    # uygulanamaz; retry aynı duvara çarpar. Fail-fast davran ve operatöre yönlendir.
+    if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
+        local missing_var=""
+        missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
+        local action="no-retry;manual-fix-required"
+        [[ -n "$missing_var" ]] && action="${action};missing-var=${missing_var}"
+        sidar_write_remediation_report "$phase" "remote-script-checksum-missing" "$action"
+        return 1
+    fi
+
     case "$phase" in
         03_runtime)
             if [[ "$failed_cmd $reason" == *"ollama_install"* || "$failed_cmd $reason" == *"sudo: timed out"* ]]; then
@@ -313,9 +365,28 @@ sidar_emit_remediation_guidance() {
     local failed_cmd="$2"
     local reason="$3"
 
-    if [[ "$phase" == "04_workspace" && "$failed_cmd $reason" == *"checksum değeri tanımlı değil"* ]]; then
-        warn "Auto-heal: workspace hatası uzak betik checksum metadata eksikliğine bağlı. Bu durum self-heal ile güvenli biçimde onarılamaz."
-        warn "Çözüm: ilgili *_SHA256 değişkenini tanımlayın (önerilen) veya yalnız bilinçli test amaçlı ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
+    if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
+        local missing_var=""
+        local script_url=""
+        missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
+        case "$missing_var" in
+            OLLAMA_INSTALL_SHA256) script_url="https://ollama.com/install.sh" ;;
+            UV_INSTALL_SHA256) script_url="https://astral.sh/uv/install.sh" ;;
+            *) script_url="<ilgili uzak betik URL'i>" ;;
+        esac
+        warn "Auto-heal: ${phase} fazı uzak betik checksum metadata eksikliği nedeniyle durdu. Bu durum self-heal ile güvenli biçimde onarılamaz (retry aynı duvara çarpar)."
+        warn "Çözüm (önerilen TOFU akışı): betiği indir, gözden geçir ve aynı içerikten SHA-256 üret:"
+        if [[ -n "$missing_var" && "$script_url" != "<"* ]]; then
+            warn "  tmp=\$(mktemp)"
+            warn "  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o \"\$tmp\""
+            warn "  less \"\$tmp\"                    # betiği gözden geçir"
+            warn "  export ${missing_var}=\$(sha256sum \"\$tmp\" | awk '{print \$1}')"
+            warn "  rm -f \"\$tmp\""
+            warn "  ./install_sidar.sh"
+        else
+            warn "  İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
+        fi
+        warn "Alternatif (sadece bilinçli test amaçlı): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh"
         return 0
     fi
 
@@ -384,7 +455,10 @@ sidar_handle_install_failure() {
     if sidar_phase_remediation_strategy "$phase" "$failed_cmd" "$reason"; then
         sidar_resume_after_remediation "$phase" $((attempt + 1))
     fi
-    sidar_emit_remediation_guidance "$phase" "$failed_cmd" "$reason" || true
+    if sidar_emit_remediation_guidance "$phase" "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "operator-guidance-emitted" "manual-fix-required;no-resume"
+        return 1
+    fi
     warn "Auto-heal: ${phase} fazı için uygulanabilir bir self-heal stratejisi bulunamadı; kök neden manuel çözülmeli."
     sidar_write_remediation_report "$phase" "no-remediation-strategy" "manual-fix-required;no-resume"
 
