@@ -987,6 +987,118 @@ EOF
   [[ "$output" == *"retry limiti aşıldı"* ]]
 }
 
+@test "remediation guidance suggests --skip-ollama only for ollama_install label" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    sidar_emit_remediation_guidance 03_runtime "ollama_install" "checksum değeri tanımlı değil"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--skip-ollama"* ]]
+}
+
+@test "remediation guidance does NOT suggest --skip-ollama for uv_install" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    sidar_emit_remediation_guidance 04_workspace "uv_install" "checksum değeri tanımlı değil"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"--skip-ollama"* ]]
+}
+
+@test "remote_script_checksum_hint includes copy-paste recipe and restart instruction" {
+  run_installer_function '
+    msg="$(remote_script_checksum_hint https://ollama.com/install.sh ollama_install)"
+    printf "%s" "$msg"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OLLAMA_INSTALL_SHA256"* ]]
+  [[ "$output" == *"yeniden başlatın"* ]]
+  [[ "$output" == *"./install_sidar.sh --skip-ollama"* ]]
+  [[ "$output" == *"ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1"* ]]
+}
+
+@test "remote_script_checksum_hint omits --skip-ollama for uv_install label" {
+  run_installer_function '
+    msg="$(remote_script_checksum_hint https://astral.sh/uv/install.sh uv_install)"
+    printf "%s" "$msg"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"UV_INSTALL_SHA256"* ]]
+  [[ "$output" != *"--skip-ollama"* ]]
+}
+
+@test "download_verified_script fails fast on missing checksum under NO_INTERACTION" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    curl() {
+      # last arg is output path
+      local out=""
+      while (($#)); do
+        if [[ "$1" == "-o" ]]; then shift; out="$1"; fi
+        shift
+      done
+      printf "fake-installer-body" > "$out"
+    }
+    NO_INTERACTION=true
+    OFFLINE_MODE=false
+    ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0
+    if download_verified_script "https://ollama.com/install.sh" "" "ollama_install" 2>&1; then
+      exit 1
+    fi
+    exit 0
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OLLAMA_INSTALL_SHA256"* ]]
+  [[ "$output" == *"yeniden başlatın"* ]]
+}
+
+@test "download_verified_script honors ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 with hash echo" {
+  run_installer_function '
+    curl() {
+      local out=""
+      while (($#)); do
+        if [[ "$1" == "-o" ]]; then shift; out="$1"; fi
+        shift
+      done
+      printf "fake-installer-body" > "$out"
+    }
+    NO_INTERACTION=true
+    OFFLINE_MODE=false
+    ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1
+    download_verified_script "https://ollama.com/install.sh" "" "ollama_install"
+    [[ -n "${DOWNLOADED_SCRIPT_FILE:-}" ]]
+    rm -f "$DOWNLOADED_SCRIPT_FILE"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)"* ]]
+  [[ "$output" == *"Gelen SHA-256:"* ]]
+}
+
+@test "--skip-ollama flag short-circuits the Ollama install block" {
+  run_installer_function '
+    SKIP_OLLAMA=true
+    # Stub out the real subcommands so this is hermetic.
+    ollama() { return 1; }
+    sudo() { return 0; }
+    resolve_ollama_version_url() { printf "http://stub/api/version"; }
+    wait_for_ollama_api_ready() { return 0; }
+
+    # Re-source ollama install block only as far as the early-return.
+    install_ollama_runtime() {
+      if [[ "${SKIP_OLLAMA:-false}" == true ]]; then
+        warn "Ollama kurulumu --skip-ollama bayrağı ile atlandı."
+        return 0
+      fi
+      fail "control reached past --skip-ollama short circuit"
+    }
+    install_ollama_runtime
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--skip-ollama"* ]]
+  [[ "$output" == *"atlandı"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {

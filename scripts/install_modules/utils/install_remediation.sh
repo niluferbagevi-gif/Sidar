@@ -333,13 +333,18 @@ sidar_emit_remediation_guidance() {
                     hint_label="ollama_install"
                 fi
                 warn "Auto-heal: ${phase} hatası uzak betik (${hint_label}) checksum metadata eksikliğine bağlı. Bu durum self-heal ile güvenli biçimde onarılamaz."
-                warn "Çözüm: ${hint_var} değişkenini şu adımlarla üretip dışa aktarın:"
+                warn "Çözüm: ${hint_var} değişkenini şu adımlarla üretip dışa aktarın, sonra ./install_sidar.sh komutunu yeniden başlatın:"
                 warn "  tmp=\$(mktemp)"
                 warn "  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' '${hint_url}' -o \"\$tmp\""
                 warn "  less \"\$tmp\"   # betiği inceleyin"
                 warn "  export ${hint_var}=\$(sha256sum \"\$tmp\" | awk '{print \$1}')"
                 warn "  rm -f \"\$tmp\""
-                warn "Alternatif (yalnız bilinçli test amaçlı): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1"
+                warn "Alternatifler:"
+                warn "  • İnteraktif modda Sidar size hash'i gösterip TOFU onayı için sorar (TTY gerekli)."
+                warn "  • Risk kabulüyle: ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh"
+                if [[ "$hint_label" == "ollama_install" ]]; then
+                    warn "  • Ollama'yı tamamen atlamak için: ./install_sidar.sh --skip-ollama (yalnızca .env içinde AI_PROVIDER=gemini veya openai ayarlıysa)"
+                fi
                 sidar_write_remediation_report "$phase" "${hint_label}-checksum-missing" "user-action-required;${hint_var}"
                 return 0
                 ;;

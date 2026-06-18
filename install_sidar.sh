@@ -277,7 +277,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
-bd1b45f426cfd0950837a052b1561fee4dd18109adc78b089f69635912146c73  scripts/install_modules/utils/install_remediation.sh
+3da4f66a61e55b6d440ec9887f65f0ce97e22f35b40fd32987769af2ce7c0d47  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
@@ -964,16 +964,27 @@ remote_script_checksum_hint() {
     local script_url="$1"
     local script_label="$2"
     local checksum_var="${script_label^^}_SHA256"
+    local extra_skip_hint=""
+
+    if [[ "$script_label" == "ollama_install" ]]; then
+        extra_skip_hint=$'\n  • Veya Ollama\'yı tamamen atlamak için: ./install_sidar.sh --skip-ollama\n    (yalnızca .env içinde AI_PROVIDER=gemini veya openai ayarlıysa)'
+    fi
 
     cat <<EOF
 ${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
-Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):
+
+Aşağıdaki komutları aynen kopyalayıp çalıştırın; betiği gözle inceleyip hash'i aynı içerikten üretin, sonra ./install_sidar.sh komutunu yeniden başlatın:
+
   tmp=\$(mktemp)
   curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o "\$tmp"
-  less "\$tmp"
+  less "\$tmp"   # betiği gözden geçirin
   export ${checksum_var}=\$(sha256sum "\$tmp" | awk '{print \$1}')
   rm -f "\$tmp"
-Alternatif: risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
+  ./install_sidar.sh   # değişken aynı kabuk oturumunda iken yeniden başlatın
+
+Alternatifler:
+  • İnteraktif modda betiği yeniden başlattığınızda, ${checksum_var} yoksa Sidar size hash'i gösterip TOFU onayı için sorar (etkileşimli terminal gerekli).
+  • Risk kabulüyle: ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh${extra_skip_hint}
 EOF
 }
 
@@ -1000,13 +1011,37 @@ download_verified_script() {
     actual_sha=$(compute_sha256 "$script_file")
 
     if [[ -z "$expected_sha" ]]; then
-        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1). Gelen SHA-256: ${actual_sha}"
+        elif [[ "${NO_INTERACTION:-false}" == true ]]; then
             local checksum_hint
             checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
             rm -f "$script_file"
             fail "$checksum_hint"
+        else
+            local checksum_var="${script_label^^}_SHA256"
+            warn "${script_label} için ${checksum_var} tanımlı değil. İndirilen betiğin SHA-256 hash'i hesaplandı."
+            info "Kaynak    : ${script_url}"
+            info "Yerel kopya: ${script_file}"
+            info "SHA-256   : ${actual_sha}"
+            info "Devam etmeden önce betiği başka bir terminalde 'less ${script_file}' ile inceleyebilirsiniz."
+            local tofu_reply=""
+            tofu_reply="$(prompt_yes_no_with_timeout_default_no "Bu hash'i kabul edip kuruluma devam etmek istiyor musunuz? [e/H] (TOFU): ")"
+            case "$(printf '%s' "$tofu_reply" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+                e|evet|y|yes)
+                    warn "${script_label} TOFU onayı verildi (oturum süresince): ${checksum_var}=${actual_sha}"
+                    export "${checksum_var}=${actual_sha}"
+                    expected_sha="$actual_sha"
+                    ok "${script_label} checksum TOFU oturumu için kabul edildi."
+                    ;;
+                *)
+                    local checksum_hint
+                    checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
+                    rm -f "$script_file"
+                    fail "$checksum_hint"
+                    ;;
+            esac
         fi
-        warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
     elif [[ "$actual_sha" != "$expected_sha" ]]; then
         rm -f "$script_file"
         fail "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
@@ -2178,6 +2213,7 @@ UPGRADE_LOCK=false
 ALLOW_FULL_ACCESS=false
 FORCE_CPU=false
 SKIP_MODELS=false
+SKIP_OLLAMA=false
 DOWNLOAD_MODELS=true
 FORCE_REACT_BUILD=true
 INSTALL_KUBERNETES=false
@@ -2245,6 +2281,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --skip-smoke-test  Do not run smoke tests at the end of installation
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
+  --skip-ollama  Skip Ollama runtime install entirely (use only when AI_PROVIDER=gemini/openai is configured)
   --download-models  Download Ollama models by default
   --build-ui  Rebuild the React Web UI even when cache exists
   --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
@@ -2305,6 +2342,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
+  --skip-ollama  Ollama runtime kurulumunu tamamen atla (yalnızca .env içinde AI_PROVIDER=gemini/openai ayarlıysa kullanın)
   --download-models  Ollama modellerini varsayılan olarak indir
   --build-ui  React Web UI yeniden build et (cache olsa bile)
   --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
@@ -2361,6 +2399,7 @@ for arg in "$@"; do
         --silent) SILENT_MODE=true ;;
         --auto) AUTO_INSTALL=true ;;
         --skip-models) SKIP_MODELS=true ;;
+        --skip-ollama) SKIP_OLLAMA=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
@@ -3360,6 +3399,12 @@ ensure_prerequisites() {
     fi
 
     # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
+    if [[ "${SKIP_OLLAMA:-false}" == true ]]; then
+        warn "Ollama kurulumu --skip-ollama bayrağı ile atlandı."
+        info "Not: .env içinde AI_PROVIDER=gemini veya openai ayarlı olmalı; aksi halde uygulama varsayılan provider olarak Ollama'yı bekler."
+        return 0
+    fi
+
     if ! ollama -v &>/dev/null; then
         warn "Ollama bulunamadı veya kurulumu bozuk. İndiriliyor..."
         if command -v sudo &>/dev/null; then
