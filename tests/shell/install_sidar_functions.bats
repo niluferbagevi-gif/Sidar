@@ -1076,28 +1076,25 @@ EOF
   [[ "$output" == *"Gelen SHA-256:"* ]]
 }
 
-@test "--skip-ollama flag short-circuits the Ollama install block" {
+@test "sidar_install_ollama_runtime short-circuits when SKIP_OLLAMA=true" {
   run_installer_function '
+    declare -F sidar_install_ollama_runtime >/dev/null || exit 91
     SKIP_OLLAMA=true
-    # Stub out the real subcommands so this is hermetic.
-    ollama() { return 1; }
-    sudo() { return 0; }
-    resolve_ollama_version_url() { printf "http://stub/api/version"; }
-    wait_for_ollama_api_ready() { return 0; }
-
-    # Re-source ollama install block only as far as the early-return.
-    install_ollama_runtime() {
-      if [[ "${SKIP_OLLAMA:-false}" == true ]]; then
-        warn "Ollama kurulumu --skip-ollama bayrağı ile atlandı."
-        return 0
-      fi
-      fail "control reached past --skip-ollama short circuit"
-    }
-    install_ollama_runtime
+    # Stub out anything that might fire after the early-return so a regression
+    # would still observe an effect (calls go through real binaries on PATH).
+    ollama() { fail "ollama binary called despite --skip-ollama"; }
+    sidar_install_ollama_runtime
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"--skip-ollama"* ]]
   [[ "$output" == *"atlandı"* ]]
+}
+
+@test "sidar_install_ollama_runtime is sourced via INSTALL_UTILITY_MODULES" {
+  run_installer_function '
+    declare -F sidar_install_ollama_runtime >/dev/null
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {

@@ -243,6 +243,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
+    "utils/ollama_runtime.sh"
     "utils/playwright_ubuntu_override.sh"
 )
 
@@ -279,6 +280,7 @@ de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/instal
 ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
 3da4f66a61e55b6d440ec9887f65f0ce97e22f35b40fd32987769af2ce7c0d47  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
+eb0a1e5eb91b02f25bfeb7c57423ef0c8b7801210e94e9ece6ae26ecfee168dd  scripts/install_modules/utils/ollama_runtime.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -638,6 +640,7 @@ sidar_source_install_utils \
     "db_credentials.sh" \
     "env_utils.sh" \
     "ollama_models.sh" \
+    "ollama_runtime.sh" \
     "playwright_ubuntu_override.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
@@ -3398,91 +3401,9 @@ ensure_prerequisites() {
         warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
-    # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
-    if [[ "${SKIP_OLLAMA:-false}" == true ]]; then
-        warn "Ollama kurulumu --skip-ollama bayrağı ile atlandı."
-        info "Not: .env içinde AI_PROVIDER=gemini veya openai ayarlı olmalı; aksi halde uygulama varsayılan provider olarak Ollama'yı bekler."
-        return 0
-    fi
-
-    if ! ollama -v &>/dev/null; then
-        warn "Ollama bulunamadı veya kurulumu bozuk. İndiriliyor..."
-        if command -v sudo &>/dev/null; then
-            # Eski bozuk dosya kalıntılarını temizle
-            sudo rm -f /usr/local/bin/ollama
-            info "Ollama kurulumu başlatılıyor..."
-            local ollama_install_script=""
-            if [[ "$OFFLINE_MODE" == true ]]; then
-                ollama_install_script="$(resolve_offline_package_file "ollama/install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
-                [[ -n "$ollama_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
-            else
-                DOWNLOADED_SCRIPT_FILE=""
-                download_verified_script \
-                    "https://ollama.com/install.sh" \
-                    "${OLLAMA_INSTALL_SHA256:-}" \
-                    "ollama_install"
-                validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
-                ollama_install_script="$DOWNLOADED_SCRIPT_FILE"
-            fi
-
-            info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
-            if [[ "$NO_INTERACTION" == true ]]; then
-                sudo -n -v || fail "Ollama kurulumu için sudo yetkisi gerekli. --ci/--no-interaction modunda şifresiz sudo veya önceden doğrulanmış sudo oturumu beklenir."
-            else
-                sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
-            fi
-
-            local sudo_keepalive_pid=""
-            (
-                while true; do
-                    sudo -n -v 2>/dev/null || exit 0
-                    sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"
-                done
-            ) &
-            sudo_keepalive_pid=$!
-            info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
-
-            local _ollama_rc=0
-            if sh "$ollama_install_script"; then
-                _ollama_rc=0
-            else
-                _ollama_rc=$?
-            fi
-
-            if [[ -n "$sudo_keepalive_pid" ]]; then
-                kill "$sudo_keepalive_pid" 2>/dev/null || true
-                wait "$sudo_keepalive_pid" 2>/dev/null || true
-            fi
-            [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-
-            if (( _ollama_rc != 0 )); then
-                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
-                    warn "Ollama install.sh rc=${_ollama_rc} döndü (büyük olasılıkla sudo timestamp expire); ancak 'ollama -v' yanıt veriyor, kurulum tamamlanmış kabul ediliyor."
-                else
-                    fail "Ollama kurulumu başarısız (rc=${_ollama_rc}). /var/log/syslog veya logs/install_*.log dosyalarını kontrol edin."
-                fi
-            fi
-            ok "Ollama başarıyla kuruldu."
-        else
-            warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
-        fi
-    else
-        ok "Ollama zaten kurulu."
-    fi
-
-    # Servisin anlık olarak yanıt verip vermediğini kontrol et
-    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    local ollama_healthcheck_wait_seconds="${OLLAMA_API_HEALTHCHECK_MAX_WAIT_SECONDS:-30}"
-    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum ${ollama_healthcheck_wait_seconds} saniye)..."
-    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" "$ollama_healthcheck_wait_seconds" 1; then
-        ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
-    else
-        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
-        info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
-        info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
-    fi
+    # Ollama (varsayılan AI provider) — kurulum + healthcheck mantığı
+    # scripts/install_modules/utils/ollama_runtime.sh içinde modülarize edildi.
+    sidar_install_ollama_runtime
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
