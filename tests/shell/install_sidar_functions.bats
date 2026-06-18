@@ -1043,9 +1043,10 @@ EOF
     NO_INTERACTION=true
     OFFLINE_MODE=false
     ALLOW_UNVERIFIED_REMOTE_SCRIPTS=0
-    if download_verified_script "https://ollama.com/install.sh" "" "ollama_install" 2>&1; then
-      exit 1
-    fi
+    # fail() calls exit, so run download_verified_script in a subshell to isolate.
+    rc=0
+    ( download_verified_script "https://ollama.com/install.sh" "" "ollama_install" ) || rc=$?
+    [[ "$rc" -ne 0 ]] || exit 1
     exit 0
   '
   [ "$status" -eq 0 ]
