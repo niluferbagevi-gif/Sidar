@@ -243,6 +243,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
+    "utils/ollama_runtime.sh"
     "utils/playwright_ubuntu_override.sh"
 )
 
@@ -277,8 +278,9 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
-5981bb2bed51643da6c090fb670189f02fdf1b46a99d2168eafba28ef07496fe  scripts/install_modules/utils/install_remediation.sh
+3da4f66a61e55b6d440ec9887f65f0ce97e22f35b40fd32987769af2ce7c0d47  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
+eb0a1e5eb91b02f25bfeb7c57423ef0c8b7801210e94e9ece6ae26ecfee168dd  scripts/install_modules/utils/ollama_runtime.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
 1150690f265ff3811d04470de58990946ca271bf037b761e5478a3a93b446616  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -638,6 +640,7 @@ sidar_source_install_utils \
     "db_credentials.sh" \
     "env_utils.sh" \
     "ollama_models.sh" \
+    "ollama_runtime.sh" \
     "playwright_ubuntu_override.sh"
 load_install_phase_modules
 # END_BUNDLE_MODULES
@@ -964,16 +967,27 @@ remote_script_checksum_hint() {
     local script_url="$1"
     local script_label="$2"
     local checksum_var="${script_label^^}_SHA256"
+    local extra_skip_hint=""
+
+    if [[ "$script_label" == "ollama_install" ]]; then
+        extra_skip_hint=$'\n  • Veya Ollama\'yı tamamen atlamak için: ./install_sidar.sh --skip-ollama\n    (yalnızca .env içinde AI_PROVIDER=gemini veya openai ayarlıysa)'
+    fi
 
     cat <<EOF
 ${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
-Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):
+
+Aşağıdaki komutları aynen kopyalayıp çalıştırın; betiği gözle inceleyip hash'i aynı içerikten üretin, sonra ./install_sidar.sh komutunu yeniden başlatın:
+
   tmp=\$(mktemp)
   curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o "\$tmp"
-  less "\$tmp"
+  less "\$tmp"   # betiği gözden geçirin
   export ${checksum_var}=\$(sha256sum "\$tmp" | awk '{print \$1}')
   rm -f "\$tmp"
-Alternatif: risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
+  ./install_sidar.sh   # değişken aynı kabuk oturumunda iken yeniden başlatın
+
+Alternatifler:
+  • İnteraktif modda betiği yeniden başlattığınızda, ${checksum_var} yoksa Sidar size hash'i gösterip TOFU onayı için sorar (etkileşimli terminal gerekli).
+  • Risk kabulüyle: ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh${extra_skip_hint}
 EOF
 }
 
@@ -1000,13 +1014,37 @@ download_verified_script() {
     actual_sha=$(compute_sha256 "$script_file")
 
     if [[ -z "$expected_sha" ]]; then
-        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" == "1" ]]; then
+            warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1). Gelen SHA-256: ${actual_sha}"
+        elif [[ "${NO_INTERACTION:-false}" == true ]]; then
             local checksum_hint
             checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
             rm -f "$script_file"
             fail "$checksum_hint"
+        else
+            local checksum_var="${script_label^^}_SHA256"
+            warn "${script_label} için ${checksum_var} tanımlı değil. İndirilen betiğin SHA-256 hash'i hesaplandı."
+            info "Kaynak    : ${script_url}"
+            info "Yerel kopya: ${script_file}"
+            info "SHA-256   : ${actual_sha}"
+            info "Devam etmeden önce betiği başka bir terminalde 'less ${script_file}' ile inceleyebilirsiniz."
+            local tofu_reply=""
+            tofu_reply="$(prompt_yes_no_with_timeout_default_no "Bu hash'i kabul edip kuruluma devam etmek istiyor musunuz? [e/H] (TOFU): ")"
+            case "$(printf '%s' "$tofu_reply" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+                e|evet|y|yes)
+                    warn "${script_label} TOFU onayı verildi (oturum süresince): ${checksum_var}=${actual_sha}"
+                    export "${checksum_var}=${actual_sha}"
+                    expected_sha="$actual_sha"
+                    ok "${script_label} checksum TOFU oturumu için kabul edildi."
+                    ;;
+                *)
+                    local checksum_hint
+                    checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
+                    rm -f "$script_file"
+                    fail "$checksum_hint"
+                    ;;
+            esac
         fi
-        warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
     elif [[ "$actual_sha" != "$expected_sha" ]]; then
         rm -f "$script_file"
         fail "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
@@ -2178,6 +2216,10 @@ UPGRADE_LOCK=false
 ALLOW_FULL_ACCESS=false
 FORCE_CPU=false
 SKIP_MODELS=false
+# Consumed by sidar_install_ollama_runtime in scripts/install_modules/utils/ollama_runtime.sh
+# after the util is sourced. Exporting makes the cross-file dependency explicit
+# and silences shellcheck SC2034 for the bare assignment.
+export SKIP_OLLAMA=false
 DOWNLOAD_MODELS=true
 FORCE_REACT_BUILD=true
 INSTALL_KUBERNETES=false
@@ -2245,6 +2287,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --skip-smoke-test  Do not run smoke tests at the end of installation
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
+  --skip-ollama  Skip Ollama runtime install entirely (use only when AI_PROVIDER=gemini/openai is configured)
   --download-models  Download Ollama models by default
   --build-ui  Rebuild the React Web UI even when cache exists
   --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
@@ -2305,6 +2348,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
+  --skip-ollama  Ollama runtime kurulumunu tamamen atla (yalnızca .env içinde AI_PROVIDER=gemini/openai ayarlıysa kullanın)
   --download-models  Ollama modellerini varsayılan olarak indir
   --build-ui  React Web UI yeniden build et (cache olsa bile)
   --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
@@ -2361,6 +2405,7 @@ for arg in "$@"; do
         --silent) SILENT_MODE=true ;;
         --auto) AUTO_INSTALL=true ;;
         --skip-models) SKIP_MODELS=true ;;
+        --skip-ollama) export SKIP_OLLAMA=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
@@ -3359,85 +3404,9 @@ ensure_prerequisites() {
         warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
-    # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
-    if ! ollama -v &>/dev/null; then
-        warn "Ollama bulunamadı veya kurulumu bozuk. İndiriliyor..."
-        if command -v sudo &>/dev/null; then
-            # Eski bozuk dosya kalıntılarını temizle
-            sudo rm -f /usr/local/bin/ollama
-            info "Ollama kurulumu başlatılıyor..."
-            local ollama_install_script=""
-            if [[ "$OFFLINE_MODE" == true ]]; then
-                ollama_install_script="$(resolve_offline_package_file "ollama/install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
-                [[ -n "$ollama_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
-            else
-                DOWNLOADED_SCRIPT_FILE=""
-                download_verified_script \
-                    "https://ollama.com/install.sh" \
-                    "${OLLAMA_INSTALL_SHA256:-}" \
-                    "ollama_install"
-                validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
-                ollama_install_script="$DOWNLOADED_SCRIPT_FILE"
-            fi
-
-            info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
-            if [[ "$NO_INTERACTION" == true ]]; then
-                sudo -n -v || fail "Ollama kurulumu için sudo yetkisi gerekli. --ci/--no-interaction modunda şifresiz sudo veya önceden doğrulanmış sudo oturumu beklenir."
-            else
-                sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
-            fi
-
-            local sudo_keepalive_pid=""
-            (
-                while true; do
-                    sudo -n -v 2>/dev/null || exit 0
-                    sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"
-                done
-            ) &
-            sudo_keepalive_pid=$!
-            info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
-
-            local _ollama_rc=0
-            if sh "$ollama_install_script"; then
-                _ollama_rc=0
-            else
-                _ollama_rc=$?
-            fi
-
-            if [[ -n "$sudo_keepalive_pid" ]]; then
-                kill "$sudo_keepalive_pid" 2>/dev/null || true
-                wait "$sudo_keepalive_pid" 2>/dev/null || true
-            fi
-            [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-
-            if (( _ollama_rc != 0 )); then
-                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
-                    warn "Ollama install.sh rc=${_ollama_rc} döndü (büyük olasılıkla sudo timestamp expire); ancak 'ollama -v' yanıt veriyor, kurulum tamamlanmış kabul ediliyor."
-                else
-                    fail "Ollama kurulumu başarısız (rc=${_ollama_rc}). /var/log/syslog veya logs/install_*.log dosyalarını kontrol edin."
-                fi
-            fi
-            ok "Ollama başarıyla kuruldu."
-        else
-            warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
-        fi
-    else
-        ok "Ollama zaten kurulu."
-    fi
-
-    # Servisin anlık olarak yanıt verip vermediğini kontrol et
-    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    local ollama_healthcheck_wait_seconds="${OLLAMA_API_HEALTHCHECK_MAX_WAIT_SECONDS:-30}"
-    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum ${ollama_healthcheck_wait_seconds} saniye)..."
-    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" "$ollama_healthcheck_wait_seconds" 1; then
-        ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
-    else
-        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
-        info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
-        info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
-    fi
+    # Ollama (varsayılan AI provider) — kurulum + healthcheck mantığı
+    # scripts/install_modules/utils/ollama_runtime.sh içinde modülarize edildi.
+    sidar_install_ollama_runtime
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────

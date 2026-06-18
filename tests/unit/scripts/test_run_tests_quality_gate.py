@@ -1177,6 +1177,141 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
     assert "action=rerun-install-script;refresh-sudo" in result.stdout
 
 
+def test_install_sidar_runtime_treats_missing_ollama_checksum_as_fail_fast(tmp_path: Path) -> None:
+    """03_runtime fazında OLLAMA_INSTALL_SHA256 eksikse auto-heal fail-fast vermeli.
+
+    Önceki davranış: `sidar_phase_remediation_strategy` `ollama_install` desenini
+    koşulsuz transient sayıp resume tetikliyordu; checksum eksikliği gibi
+    deterministik bir hata da 3 retry harcayıp guidance basmadan teslim oluyordu.
+    Bu test, checksum eksikliği sinyalinin deterministic listesine eklenip,
+    03_runtime kolunda ollama_install dalından önce ayırt edilip fail-fast
+    döndürdüğünü ve action raporunun kontratı sağladığını doğrular. Sudo timeout
+    transient kalmaya devam etmeli.
+    """
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\\n' "$*" >&2; }
+            warn() { printf '%s\\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+
+            # 1) deterministic signal sınıflandırması
+            if sidar_is_deterministic_failure_signal 'ollama_install' \
+                'ollama_install checksum değeri tanımlı değil'; then
+                echo deterministic
+            else
+                echo transient
+            fi
+
+            # 2) retry budget: checksum=1 (deterministic), sudo timeout=3 (transient)
+            sidar_retry_budget_for_failure 03_runtime 'ollama_install' \
+                'checksum değeri tanımlı değil'
+            sidar_retry_budget_for_failure 03_runtime 'ollama_install' 'sudo: timed out'
+
+            # 3) phase strategy: 03_runtime checksum → fail-fast (return 1)
+            if sidar_phase_remediation_strategy 03_runtime 'ollama_install' \
+                'checksum değeri tanımlı değil'; then
+                echo strategy_resume
+            else
+                echo strategy_fail_fast
+            fi
+
+            # 4) action report kontratı
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f \
+                -name '*_03_runtime.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    lines = result.stdout.splitlines()
+    assert lines[0] == "deterministic"
+    assert lines[1] == "1"
+    assert lines[2] == "3"
+    assert lines[3] == "strategy_fail_fast"
+
+    report_body = "\n".join(lines[4:])
+    assert "reason=ollama-install-checksum-missing" in report_body
+    assert "action=fail-fast;no-resume;requires-OLLAMA_INSTALL_SHA256" in report_body
+
+
+def test_install_sidar_runtime_checksum_failure_emits_operator_guidance(
+    tmp_path: Path,
+) -> None:
+    """sidar_emit_remediation_guidance, operatöre dört çıkış yolunu net göstermeli.
+
+    03_runtime fazı için OLLAMA_INSTALL_SHA256 + ollama.com URL + --skip-ollama
+    önerisi; 04_workspace fazı için UV_INSTALL_SHA256 + astral.sh URL ve
+    --skip-ollama sızıntısı olmaması. Restart yönergesi her iki fazda da geçmeli
+    ki kullanıcı export sonrası ./install_sidar.sh komutunu tekrar başlatsın.
+    """
+    result_runtime = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\\n' "$*" >&2; }
+            warn() { printf '%s\\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_emit_remediation_guidance 03_runtime 'ollama_install' \
+                'checksum değeri tanımlı değil' 2>&1
+            """,
+            "bash",
+            str(tmp_path / "runtime"),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+    runtime_out = result_runtime.stdout
+    assert "OLLAMA_INSTALL_SHA256" in runtime_out
+    assert "https://ollama.com/install.sh" in runtime_out
+    assert "yeniden başlatın" in runtime_out
+    assert "./install_sidar.sh --skip-ollama" in runtime_out
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1" in runtime_out
+
+    result_workspace = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\\n' "$*" >&2; }
+            warn() { printf '%s\\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_emit_remediation_guidance 04_workspace 'uv_install' \
+                'checksum değeri tanımlı değil' 2>&1
+            """,
+            "bash",
+            str(tmp_path / "workspace"),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+    workspace_out = result_workspace.stdout
+    assert "UV_INSTALL_SHA256" in workspace_out
+    assert "https://astral.sh/uv/install.sh" in workspace_out
+    assert "yeniden başlatın" in workspace_out
+    # uv ile alakası olmadığı için --skip-ollama önerisi 04_workspace'te sızmamalı
+    assert "--skip-ollama" not in workspace_out
+
+
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")

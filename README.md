@@ -388,6 +388,13 @@ OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 > betiği inceleyip aynı içerikten hash üretmeli veya risk kabulüyle doğrulamayı
 > açıkça devre dışı bırakmalıdır.
 
+> Ollama'sız akış: WSL2 + NVIDIA RTX laptop veya bulut LLM senaryolarında
+> `.env` içinde `AI_PROVIDER=gemini|openai|anthropic` ayarlayıp
+> `./install_sidar.sh --skip-ollama` ile çalıştırabilirsiniz. Ollama runtime
+> kurulumu, healthcheck ve model indirme adımları tamamen atlanır. Ayrıntı:
+> [Sorun giderme (Ollama / uv checksum fail-fast)](#sorun-giderme-ollama--uv-checksum-fail-fast)
+> · Seçenek 3.
+
 #### Ollama/uv uzak betik hash doğrulaması
 
 Yeni Ubuntu/WSL kurulumunda sistemde `ollama` veya `uv` yoksa, doğrulanmamış uzak
@@ -603,6 +610,68 @@ Ne yapmalısınız:
 
   Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen scriptlere
   karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır.
+
+### Sorun giderme (Ollama / uv checksum fail-fast)
+
+`./install_sidar.sh` aşağıdakine benzer bir hatayla durursa, supply-chain
+doğrulama gate'i çalışmış demektir — `ollama.com/install.sh` (veya
+`astral.sh/uv/install.sh`) için beklenen SHA-256 ortam değişkeni tanımlı değil:
+
+```text
+❌  ollama_install checksum değeri tanımlı değil. Supply-chain doğrulamasını
+korumak için OLLAMA_INSTALL_SHA256 değişkenini ayarlayın.
+```
+
+Bu deterministik bir hatadır; auto-heal mantığı 03_runtime fazında bu sinyali
+algılayıp retry harcamadan fail-fast verir ve aşağıdaki yolları öneren bir
+guidance bloğu basar. Dört seçeneğiniz var:
+
+#### Seçenek 1 (önerilen): SHA-256'yı üretip kuruluma devam et
+
+```bash
+tmp=$(mktemp)
+curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  https://ollama.com/install.sh -o "$tmp"
+less "$tmp"   # betiği inceleyin
+export OLLAMA_INSTALL_SHA256=$(sha256sum "$tmp" | awk '{print $1}')
+rm -f "$tmp"
+./install_sidar.sh   # değişken aynı kabuk oturumunda iken yeniden başlatın
+```
+
+Aynı reçete `uv` için de geçerli: `https://astral.sh/uv/install.sh` indirip
+`UV_INSTALL_SHA256` değişkenini export edin.
+
+#### Seçenek 2 (interaktif TOFU): Sidar size hash'i göstersin
+
+Etkileşimli terminalde `./install_sidar.sh` (yani `--ci`/`--no-interaction`
+verilmediğinde), eksik bir checksum durumunda Sidar indirilen betiğin SHA-256
+değerini hesaplayıp gösterir ve onay ister (varsayılan = red). Onayladığınız
+hash o oturum süresince export edilir. Otomasyona kalıcı aktarım istiyorsanız
+Seçenek 1'i kullanın.
+
+#### Seçenek 3: Ollama'yı tamamen atla (WSL2 + NVIDIA / bulut LLM senaryosu)
+
+Eğer LLM çağrılarını bulut sağlayıcı üzerinden yapacaksanız (Gemini, OpenAI,
+Anthropic), Ollama runtime'ı kurmaya gerek yoktur. `.env` içinde `AI_PROVIDER`
+değerini ayarlayın ve `--skip-ollama` ile çalıştırın:
+
+```bash
+echo 'AI_PROVIDER=gemini' >> .env   # veya openai, anthropic
+./install_sidar.sh --skip-ollama
+```
+
+Bu modda Ollama binary kurulumu, `ollama serve` healthcheck'i ve model indirme
+adımları otomatik atlanır. WSL2 + NVIDIA RTX laptop senaryolarında bu, kurulum
+süresini önemli ölçüde kısaltır ve VRAM'i bulut LLM'ler için boş bırakır.
+
+#### Seçenek 4 (yalnız geçici/test): Doğrulamayı bilinçli devre dışı bırak
+
+```bash
+ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
+```
+
+Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen kurulum
+betiklerine karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır.
 
 ---
 
