@@ -2216,7 +2216,10 @@ UPGRADE_LOCK=false
 ALLOW_FULL_ACCESS=false
 FORCE_CPU=false
 SKIP_MODELS=false
-SKIP_OLLAMA=false
+# Consumed by sidar_install_ollama_runtime in scripts/install_modules/utils/ollama_runtime.sh
+# after the util is sourced. Exporting makes the cross-file dependency explicit
+# and silences shellcheck SC2034 for the bare assignment.
+export SKIP_OLLAMA=false
 DOWNLOAD_MODELS=true
 FORCE_REACT_BUILD=true
 INSTALL_KUBERNETES=false
@@ -2402,7 +2405,7 @@ for arg in "$@"; do
         --silent) SILENT_MODE=true ;;
         --auto) AUTO_INSTALL=true ;;
         --skip-models) SKIP_MODELS=true ;;
-        --skip-ollama) SKIP_OLLAMA=true ;;
+        --skip-ollama) export SKIP_OLLAMA=true ;;
         --download-models) DOWNLOAD_MODELS=true ;;
         --build-ui) FORCE_REACT_BUILD=true ;;
         --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
