@@ -908,6 +908,85 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "deterministic signal flags missing OLLAMA_INSTALL_SHA256 checksum" {
+  run_installer_function '
+    if sidar_is_deterministic_failure_signal "ollama_install" "ollama_install checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için OLLAMA_INSTALL_SHA256 değişkenini ayarlayın."; then
+      exit 0
+    fi
+    exit 1
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "deterministic signal still treats sudo timeout as transient" {
+  run_installer_function '
+    if sidar_is_deterministic_failure_signal "ollama_install" "sudo: timed out reading password"; then
+      exit 1
+    fi
+    exit 0
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "auto-heal runtime strategy fails fast on missing ollama checksum" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    if sidar_phase_remediation_strategy 03_runtime "ollama_install" "checksum değeri tanımlı değil"; then
+      exit 1
+    fi
+    exit 0
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "auto-heal runtime strategy still resumes on transient sudo timeout" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    command() { return 1; }
+    if sidar_phase_remediation_strategy 03_runtime "ollama_install" "sudo: timed out"; then
+      exit 0
+    fi
+    exit 1
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "remediation guidance emits OLLAMA_INSTALL_SHA256 hint for 03_runtime" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    sidar_emit_remediation_guidance 03_runtime "ollama_install" "checksum değeri tanımlı değil"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OLLAMA_INSTALL_SHA256"* ]]
+  [[ "$output" == *"ollama.com/install.sh"* ]]
+}
+
+@test "remediation guidance keeps UV_INSTALL_SHA256 hint for 04_workspace" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    sidar_emit_remediation_guidance 04_workspace "uv_install" "checksum değeri tanımlı değil"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"UV_INSTALL_SHA256"* ]]
+  [[ "$output" == *"astral.sh/uv/install.sh"* ]]
+}
+
+@test "retry-budget exhaustion still emits checksum guidance to the operator" {
+  run_installer_function '
+    SCRIPT_DIR="$(mktemp -d)"
+    SIDAR_CURRENT_INSTALL_PHASE=03_runtime
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=3
+    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_DETERMINISTIC=1
+    if sidar_handle_install_failure 1 1007 "ollama_install" "checksum değeri tanımlı değil"; then
+      exit 1
+    fi
+    exit 0
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OLLAMA_INSTALL_SHA256"* ]]
+  [[ "$output" == *"retry limiti aşıldı"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {

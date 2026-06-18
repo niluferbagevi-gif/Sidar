@@ -61,6 +61,9 @@ sidar_is_deterministic_failure_signal() {
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
+        *"checksum değeri tanımlı değil"*|*"checksum doğrulaması başarısız"*|*"allow_unverified_remote_scripts"*)
+            return 0
+            ;;
         *"sudo: timed out"*|*"ollama_install"*)
             return 1
             ;;
@@ -280,6 +283,10 @@ sidar_phase_remediation_strategy() {
 
     case "$phase" in
         03_runtime)
+            if [[ "$failed_cmd $reason" == *"checksum değeri tanımlı değil"* || "$failed_cmd $reason" == *"checksum doğrulaması başarısız"* ]]; then
+                sidar_write_remediation_report "$phase" "ollama-install-checksum-missing" "fail-fast;no-resume;requires-OLLAMA_INSTALL_SHA256"
+                return 1
+            fi
             if [[ "$failed_cmd $reason" == *"ollama_install"* || "$failed_cmd $reason" == *"sudo: timed out"* ]]; then
                 if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
                     sidar_write_remediation_report "$phase" "ollama-installed-despite-rc" "treat-as-success;resume-phase"
@@ -312,11 +319,31 @@ sidar_emit_remediation_guidance() {
     local phase="$1"
     local failed_cmd="$2"
     local reason="$3"
+    local signal="$failed_cmd $reason"
 
-    if [[ "$phase" == "04_workspace" && "$failed_cmd $reason" == *"checksum değeri tanımlı değil"* ]]; then
-        warn "Auto-heal: workspace hatası uzak betik checksum metadata eksikliğine bağlı. Bu durum self-heal ile güvenli biçimde onarılamaz."
-        warn "Çözüm: ilgili *_SHA256 değişkenini tanımlayın (önerilen) veya yalnız bilinçli test amaçlı ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın."
-        return 0
+    if [[ "$signal" == *"checksum değeri tanımlı değil"* || "$signal" == *"checksum doğrulaması başarısız"* ]]; then
+        case "$phase" in
+            03_runtime|04_workspace)
+                local hint_var="UV_INSTALL_SHA256"
+                local hint_url="https://astral.sh/uv/install.sh"
+                local hint_label="uv_install"
+                if [[ "$phase" == "03_runtime" || "$signal" == *"ollama"* ]]; then
+                    hint_var="OLLAMA_INSTALL_SHA256"
+                    hint_url="https://ollama.com/install.sh"
+                    hint_label="ollama_install"
+                fi
+                warn "Auto-heal: ${phase} hatası uzak betik (${hint_label}) checksum metadata eksikliğine bağlı. Bu durum self-heal ile güvenli biçimde onarılamaz."
+                warn "Çözüm: ${hint_var} değişkenini şu adımlarla üretip dışa aktarın:"
+                warn "  tmp=\$(mktemp)"
+                warn "  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' '${hint_url}' -o \"\$tmp\""
+                warn "  less \"\$tmp\"   # betiği inceleyin"
+                warn "  export ${hint_var}=\$(sha256sum \"\$tmp\" | awk '{print \$1}')"
+                warn "  rm -f \"\$tmp\""
+                warn "Alternatif (yalnız bilinçli test amaçlı): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1"
+                sidar_write_remediation_report "$phase" "${hint_label}-checksum-missing" "user-action-required;${hint_var}"
+                return 0
+                ;;
+        esac
     fi
 
     return 1
@@ -377,6 +404,7 @@ sidar_handle_install_failure() {
     if (( attempt >= max_attempts )); then
         warn "Auto-heal: ${phase} fazı için retry limiti aşıldı (${attempt}/${max_attempts})."
         sidar_write_remediation_report "$phase" "retry-budget-exhausted" "no-resume;max-attempts=${max_attempts}"
+        sidar_emit_remediation_guidance "$phase" "$failed_cmd" "$reason" || true
         return 1
     fi
 
