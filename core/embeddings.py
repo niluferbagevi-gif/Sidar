@@ -145,7 +145,7 @@ def _load_sentence_transformer_class() -> type[Any]:
     """Resolve the SentenceTransformer class at the last responsible moment."""
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer
+    return cast("type[Any]", SentenceTransformer)
 
 
 def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
