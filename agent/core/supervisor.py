@@ -217,10 +217,14 @@ class SupervisorAgent(BaseAgent):
         return int(getattr(getattr(self, "cfg", None), "MAX_QA_RETRIES", self.MAX_QA_RETRIES))
 
     def _max_turns(self) -> int:
-        return max(
-            1,
-            int(getattr(getattr(self, "cfg", None), "MAX_TURNS", self.MAX_TURNS) or self.MAX_TURNS),
-        )
+        raw_value = getattr(getattr(self, "cfg", None), "MAX_TURNS", self.MAX_TURNS)
+        if raw_value is None:
+            return self.MAX_TURNS
+        try:
+            max_turns = int(raw_value)
+        except (TypeError, ValueError):
+            return self.MAX_TURNS
+        return max(0, max_turns)
 
     @staticmethod
     def _validate_p2p_request(request: DelegationRequest) -> str | None:
@@ -339,7 +343,13 @@ class SupervisorAgent(BaseAgent):
         max_turns: int | None = None,
     ) -> TaskResult:
         """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
-        turn_limit = max(1, int(max_turns if max_turns is not None else self._max_turns()))
+        if max_turns is None:
+            turn_limit = self._max_turns()
+        else:
+            try:
+                turn_limit = max(0, int(max_turns))
+            except (TypeError, ValueError):
+                turn_limit = self._max_turns()
         hop = 0
         qa_retries = 0
         current = request
