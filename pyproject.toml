@@ -398,7 +398,7 @@ log_cli = false
 log_cli_level = "INFO"
 log_file = "tests/pytest.log"
 log_file_level = "DEBUG"
-addopts = "--cov=agent --cov=core --cov=managers --cov=plugins --cov=web --cov-report=term-missing --cov-report=html --cov-report=xml"
+addopts = "-ra"
 
 [tool.coverage.run]
 branch = true

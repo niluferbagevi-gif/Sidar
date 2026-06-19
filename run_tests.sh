@@ -1313,12 +1313,27 @@ PY
   fi
 
   # -c pyproject.toml ile marker/addopts ayarlarının kök dizinden bağımsız şekilde
-  # her çağrıda kesin yüklenmesi garanti edilir.
-  # Coverage rapor formatları pyproject.toml addopts üzerinden merkezi yönetilir.
+  # her çağrıda kesin yüklenmesi garanti edilir. Doğrudan/tekil pytest debug
+  # çağrıları yanıltıcı coverage gate hatası üretmesin diye coverage seçenekleri
+  # pyproject addopts yerine yalnız bu kalite kapısı içinde açıkça verilir.
   # Faz bazlı pytest-cov raporları .coveragerc fail_under değerini kullanarak
   # erken başarısız olmasın diye burada 0 ile nötrlenir; asıl kalite kapısı
   # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
-  local base_pytest_cmd=(env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml --cov-fail-under=0)
+  local coverage_pytest_opts=(
+    --cov=agent
+    --cov=core
+    --cov=managers
+    --cov=plugins
+    --cov=web
+    --cov-report=term-missing
+    --cov-report=html
+    --cov-report=xml
+  )
+  local base_pytest_cmd=(
+    env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
+    "${coverage_pytest_opts[@]}"
+    --cov-fail-under=0
+  )
 
   local enable_gpu_tests="${ENABLE_GPU_TESTS:-auto}"
   if [ "${enable_gpu_tests}" = "auto" ]; then
