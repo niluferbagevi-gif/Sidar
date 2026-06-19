@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from web.routes.hitl import build_hitl_router
 from web.routes.metrics import _resolve_web_server_helper, build_metrics_router
@@ -16,7 +15,7 @@ async def _async_value(value: Any) -> Any:
     return value
 
 
-def test_hitl_pending_accepts_synchronous_store_result() -> None:
+def test_hitl_pending_accepts_synchronous_store_result(make_test_client: Any) -> None:
     item = SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})
     router = build_hitl_router(
         get_request_user=lambda: None,
@@ -29,7 +28,9 @@ def test_hitl_pending_accepts_synchronous_store_result() -> None:
         get_hitl_gate=lambda: SimpleNamespace(timeout=10),
     )
 
-    response = TestClient(FastAPI(routes=router.routes)).get("/api/hitl/pending")
+    app = FastAPI()
+    app.include_router(router)
+    response = make_test_client(app).get("/api/hitl/pending")
 
     assert response.status_code == 200
     assert response.json() == {"pending": [{"request_id": "req-1"}], "count": 1}
@@ -77,7 +78,7 @@ def test_metrics_helper_returns_default_when_legacy_module_lacks_attribute(
     assert _resolve_web_server_helper("missing_helper", default) is default
 
 
-def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_provider() -> None:
+def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_provider(make_test_client: Any) -> None:
     class _Memory:
         active_user_id = "previous-user"
         active_username = ""
@@ -107,7 +108,9 @@ def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_p
         logger=SimpleNamespace(debug=lambda *_args: None),
     )
 
-    response = TestClient(FastAPI(routes=router.routes)).get("/metrics")
+    app = FastAPI()
+    app.include_router(router)
+    response = make_test_client(app).get("/metrics")
 
     assert response.status_code == 200
     assert response.json()["sessions_total"] == 2

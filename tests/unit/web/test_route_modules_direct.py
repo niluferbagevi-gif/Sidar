@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from web.routes.agent import build_agent_router
 from web.routes.auth_admin import build_auth_admin_router
@@ -42,7 +41,7 @@ class _PluginInstallReq:
     plugin_id: str
 
 
-def test_agent_router_catalog_endpoint_direct() -> None:
+def test_agent_router_catalog_endpoint_direct(make_test_client) -> None:
     router = build_agent_router(
         require_admin_user=_admin_user,
         register_plugin_agent=lambda **_: {"ok": True},
@@ -58,7 +57,7 @@ def test_agent_router_catalog_endpoint_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).get("/api/plugin-marketplace/catalog")
+    res = make_test_client(app).get("/api/plugin-marketplace/catalog")
     assert res.status_code == 200
     assert res.json()["items"][0]["id"] == "p1"
 
@@ -98,7 +97,7 @@ class _PolicyReq:
     effect: str
 
 
-def test_auth_admin_router_register_direct() -> None:
+def test_auth_admin_router_register_direct(make_test_client) -> None:
     db = SimpleNamespace(
         register_user=lambda **_: SimpleNamespace(id="1", username="alice", role="user"),
         authenticate_user=lambda **_: None,
@@ -127,12 +126,12 @@ def test_auth_admin_router_register_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).post("/auth/register", json={"username": "alice", "password": "123456"})
+    res = make_test_client(app).post("/auth/register", json={"username": "alice", "password": "123456"})
     assert res.status_code == 200
     assert res.json()["access_token"] == "tkn"
 
 
-def test_auth_admin_router_json_posts_read_request_body_direct() -> None:
+def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client) -> None:
     prompt = SimpleNamespace(id="p1", role_name="system", prompt_text="hello", is_active=1)
     policy = SimpleNamespace(id="a1", user_id="u1", tenant_id="default")
 
@@ -171,7 +170,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    client = TestClient(app)
+    client = make_test_client(app)
 
     upsert_prompt = client.post(
         "/admin/prompts", json={"role_name": "system", "prompt_text": "hello"}
@@ -197,7 +196,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct() -> None:
     assert upsert_policy.json() == {"success": True, "items": [{"id": "a1", "user_id": "u1"}]}
 
 
-def test_hitl_router_pending_direct() -> None:
+def test_hitl_router_pending_direct(make_test_client) -> None:
     store = SimpleNamespace(pending=lambda: _async_value([]))
     router = build_hitl_router(
         get_request_user=_admin_user,
@@ -213,12 +212,12 @@ def test_hitl_router_pending_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).get("/api/hitl/pending")
+    res = make_test_client(app).get("/api/hitl/pending")
     assert res.status_code == 200
     assert res.json()["count"] == 0
 
 
-def test_metrics_router_json_direct() -> None:
+def test_metrics_router_json_direct(make_test_client) -> None:
     class _Memory:
         def get_all_sessions(self):
             return []
@@ -247,7 +246,7 @@ def test_metrics_router_json_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).get("/metrics")
+    res = make_test_client(app).get("/metrics")
     assert res.status_code == 200
     assert res.json()["version"] == "x"
 
@@ -277,7 +276,7 @@ def test_orchestration_router_requires_request_model() -> None:
         )
 
 
-def test_orchestration_router_clear_direct() -> None:
+def test_orchestration_router_clear_direct(make_test_client) -> None:
     agent = SimpleNamespace(memory=SimpleNamespace(clear=lambda: None))
     router = build_orchestration_router(
         require_admin_user=_admin_user,
@@ -292,12 +291,12 @@ def test_orchestration_router_clear_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).post("/clear")
+    res = make_test_client(app).post("/clear")
     assert res.status_code == 200
     assert res.json()["result"] is True
 
 
-def test_project_ops_router_git_info_direct(tmp_path) -> None:
+def test_project_ops_router_git_info_direct(tmp_path, make_test_client) -> None:
     agent = SimpleNamespace(memory=SimpleNamespace(db=None))
     router = build_project_ops_router(
         get_request_user=_admin_user,
@@ -309,12 +308,12 @@ def test_project_ops_router_git_info_direct(tmp_path) -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).get("/git-info")
+    res = make_test_client(app).get("/git-info")
     assert res.status_code == 200
     assert "branch" in res.json()
 
 
-def test_rag_router_search_direct() -> None:
+def test_rag_router_search_direct(make_test_client) -> None:
     docs = SimpleNamespace(search=lambda *_: (True, [{"id": "d1"}]))
     agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
     router = build_rag_router(
@@ -326,7 +325,7 @@ def test_rag_router_search_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = TestClient(app).get("/rag/search?q=test")
+    res = make_test_client(app).get("/rag/search?q=test")
     assert res.status_code == 200
     assert res.json()["success"] is True
 
@@ -344,7 +343,7 @@ def test_agent_parse_payload_supports_modern_and_passthrough_models() -> None:
     assert _parse_payload(_AgentRegisterReq, marker) is marker
 
 
-def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.MonkeyPatch, make_test_client) -> None:
     def _unexpected_web_server_helper(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("Agent router must use its injected dependencies")
 
@@ -387,7 +386,7 @@ def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.Monk
     )
     app = FastAPI()
     app.include_router(router)
-    client = TestClient(app)
+    client = make_test_client(app)
 
     response = client.post(
         "/api/agents/register",
@@ -418,7 +417,7 @@ def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.Monk
     assert client.delete("/api/plugin-marketplace/install/p1").json() == {"removed": "p1"}
 
 
-def test_agent_router_file_upload_validation_direct() -> None:
+def test_agent_router_file_upload_validation_direct(make_test_client) -> None:
     router = build_agent_router(
         require_admin_user=_admin_user,
         register_plugin_agent=lambda **_: {},
@@ -434,7 +433,7 @@ def test_agent_router_file_upload_validation_direct() -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    client = TestClient(app)
+    client = make_test_client(app)
 
     empty = client.post("/api/agents/register-file", files={"file": ("empty.py", b"")})
     assert empty.status_code == 400
@@ -451,6 +450,7 @@ def test_agent_router_file_upload_validation_direct() -> None:
 
 def test_metrics_router_prometheus_llm_and_context_restore_direct(
     monkeypatch: pytest.MonkeyPatch,
+    make_test_client,
 ) -> None:
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
 
@@ -512,7 +512,7 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
     )
     app = FastAPI()
     app.include_router(router)
-    client = TestClient(app)
+    client = make_test_client(app)
 
     prometheus_response = client.get("/metrics", headers={"Accept": "text/plain"})
     assert prometheus_response.status_code == 200
@@ -528,6 +528,7 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
 
 def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     monkeypatch: pytest.MonkeyPatch,
+    make_test_client,
 ) -> None:
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
     monkeypatch.setitem(sys.modules, "prometheus_client", None)
@@ -558,12 +559,12 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     )
     app = FastAPI()
     app.include_router(router)
-    response = TestClient(app).get("/metrics", headers={"Accept": "text/plain"})
+    response = make_test_client(app).get("/metrics", headers={"Accept": "text/plain"})
     assert response.status_code == 200
     assert response.json()["version"] == "fallback"
 
 
-def test_frontend_static_router_injects_config_without_head_tag(tmp_path: Path) -> None:
+def test_frontend_static_router_injects_config_without_head_tag(tmp_path: Path, make_test_client) -> None:
     from web.routes.static import build_frontend_router
 
     (tmp_path / "index.html").write_text("<body>SPA</body>", encoding="utf-8")
@@ -571,7 +572,7 @@ def test_frontend_static_router_injects_config_without_head_tag(tmp_path: Path) 
     app = FastAPI()
     app.include_router(router)
 
-    res = TestClient(app).get("/")
+    res = make_test_client(app).get("/")
 
     assert res.status_code == 200
     assert res.text.startswith("<script>window.__SIDAR_CONFIG__")

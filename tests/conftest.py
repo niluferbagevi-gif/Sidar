@@ -300,6 +300,17 @@ async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
 
 
 @pytest.fixture
+def make_test_client() -> Callable[..., Any]:
+    """Create FastAPI/Starlette TestClient instances through one test helper."""
+    from fastapi.testclient import TestClient
+
+    def _make_test_client(app: Any, **kwargs: Any) -> Any:
+        return TestClient(app, **kwargs)
+
+    return _make_test_client
+
+
+@pytest.fixture
 def mock_config() -> Callable[..., Any]:
     return make_test_config
 

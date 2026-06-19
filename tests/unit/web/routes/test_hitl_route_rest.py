@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 import core.hitl as hitl_core
 from web.routes.hitl import build_hitl_router
@@ -17,6 +16,7 @@ async def _await_if_needed(value: Any) -> Any:
 
 def test_hitl_rest_routes_create_list_respond_and_report_missing(
     monkeypatch: Any,
+    make_test_client: Any,
 ) -> None:
     stored: list[Any] = []
     notifications: list[str] = []
@@ -55,7 +55,7 @@ def test_hitl_rest_routes_create_list_respond_and_report_missing(
             get_hitl_gate=_Gate,
         )
     )
-    client = TestClient(app)
+    client = make_test_client(app)
 
     created = client.post(
         "/api/hitl/request",
@@ -75,7 +75,7 @@ def test_hitl_rest_routes_create_list_respond_and_report_missing(
     assert client.post("/api/hitl/respond/missing", json={"approved": False}).status_code == 404
 
 
-def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client() -> None:
+def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client(make_test_client: Any) -> None:
     item = SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})
     clients: set[Any] = set()
     app = FastAPI()
@@ -92,7 +92,7 @@ def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client() ->
         )
     )
 
-    with TestClient(app).websocket_connect("/ws/hitl") as websocket:
+    with make_test_client(app).websocket_connect("/ws/hitl") as websocket:
         assert websocket.receive_json() == {
             "type": "hitl_snapshot",
             "pending": [{"request_id": "req-1"}],

@@ -4,12 +4,11 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
 
 from web.routes.health import build_health_router
 
 
-def test_health_router_distinguishes_liveness_and_readiness() -> None:
+def test_health_router_distinguishes_liveness_and_readiness(make_test_client) -> None:
     readiness_flags: list[bool] = []
 
     async def _health_response(readiness: bool) -> Any:
@@ -18,7 +17,7 @@ def test_health_router_distinguishes_liveness_and_readiness() -> None:
 
     app = FastAPI()
     app.include_router(build_health_router(_health_response))
-    client = TestClient(app)
+    client = make_test_client(app)
 
     assert client.get("/health").json() == {"ready": False}
     assert client.get("/healthz").status_code == 200
@@ -28,7 +27,7 @@ def test_health_router_distinguishes_liveness_and_readiness() -> None:
     assert readiness_flags == [False, False, True]
 
 
-def test_health_router_can_expose_legacy_status_endpoint() -> None:
+def test_health_router_can_expose_legacy_status_endpoint(make_test_client) -> None:
     async def _health_response(readiness: bool) -> Any:
         return JSONResponse({"ready": readiness})
 
@@ -38,7 +37,7 @@ def test_health_router_can_expose_legacy_status_endpoint() -> None:
     app = FastAPI()
     router = build_health_router(_health_response, _status_response)
     app.include_router(router)
-    client = TestClient(app)
+    client = make_test_client(app)
 
     assert router.legacy_exports["status"].__name__ == "status"
     assert client.get("/status").json() == {"status": "ok", "legacy": True}

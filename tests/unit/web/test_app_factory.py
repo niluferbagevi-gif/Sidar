@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 
 from sidar_version import PRODUCT_VERSION
 from web.app_factory import create_app, register_exception_handlers
 
 
-def test_create_app_registers_metadata_and_json_http_exception_handler() -> None:
+def test_create_app_registers_metadata_and_json_http_exception_handler(make_test_client) -> None:
     app = create_app()
 
     @app.get("/boom")
     async def boom() -> None:
         raise HTTPException(status_code=418, detail={"error": "teapot", "code": "E_TEAPOT"})
 
-    response = TestClient(app, raise_server_exceptions=False).get("/boom")
+    response = make_test_client(app, raise_server_exceptions=False).get("/boom")
 
     assert app.title == "Sidar Web UI & REST API"
     assert app.version == PRODUCT_VERSION
@@ -28,7 +27,7 @@ def test_create_app_allows_central_version_override() -> None:
     assert app.version == "9.8.7"
 
 
-def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch) -> None:
+def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch, make_test_client) -> None:
     monkeypatch.setenv("SIDAR_ENV", "production")
     app = create_app()
 
@@ -36,13 +35,13 @@ def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch) 
     async def secret_boom() -> None:
         raise RuntimeError("dsn=postgresql://sidar:secret@example/internal")
 
-    response = TestClient(app, raise_server_exceptions=False).get("/secret-boom")
+    response = make_test_client(app, raise_server_exceptions=False).get("/secret-boom")
 
     assert response.status_code == 500
     assert response.json() == {"success": False, "error": "İç sunucu hatası"}
 
 
-def test_create_app_keeps_unhandled_exception_detail_in_development(monkeypatch) -> None:
+def test_create_app_keeps_unhandled_exception_detail_in_development(monkeypatch, make_test_client) -> None:
     monkeypatch.setenv("SIDAR_ENV", "development")
     app = create_app()
 
@@ -50,7 +49,7 @@ def test_create_app_keeps_unhandled_exception_detail_in_development(monkeypatch)
     async def debug_boom() -> None:
         raise RuntimeError("debug detail")
 
-    response = TestClient(app, raise_server_exceptions=False).get("/debug-boom")
+    response = make_test_client(app, raise_server_exceptions=False).get("/debug-boom")
 
     assert response.status_code == 500
     assert response.json() == {
@@ -67,7 +66,7 @@ def test_register_exception_handlers_is_noop_without_exception_handler() -> None
     register_exception_handlers(NoExceptionHandler())  # type: ignore[arg-type]
 
 
-def test_register_routers_includes_routes_and_collects_legacy_exports() -> None:
+def test_register_routers_includes_routes_and_collects_legacy_exports(make_test_client) -> None:
     from fastapi import APIRouter
 
     from web.app_factory import register_routers
@@ -82,7 +81,7 @@ def test_register_routers_includes_routes_and_collects_legacy_exports() -> None:
     router.legacy_exports = {"factory_ping": factory_ping}  # type: ignore[attr-defined]
 
     exports = register_routers(app, [router])
-    response = TestClient(app).get("/factory-ping")
+    response = make_test_client(app).get("/factory-ping")
 
     assert response.json() == {"ok": True}
     assert exports == {"factory_ping": factory_ping}
