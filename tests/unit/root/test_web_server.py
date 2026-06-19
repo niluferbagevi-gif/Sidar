@@ -22,6 +22,7 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
 
 import web_server
 from web import security as web_security
+from web.routes import webhooks as webhook_routes
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
 
@@ -3657,6 +3658,10 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
             memory_calls.append((role, content))
 
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
     async def _resolve_agent():
@@ -3690,6 +3695,61 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
         _Req(b"{"), x_github_event="push", x_hub_signature_256=""
     )
     assert bad_json.status_code == 400
+
+
+def test_github_webhook_signature_validation_contract():
+    calls = []
+    logger = SimpleNamespace(warning=lambda *args, **kwargs: calls.append(("warning", args)))
+
+    def _verify(*args, **kwargs):
+        calls.append(("verify", args, kwargs))
+
+    webhook_routes._validate_github_webhook_signature(
+        payload_body=b"{}",
+        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", SIDAR_ENV="production"),
+        signature_header="",
+        verify_hmac_signature=_verify,
+        logger=logger,
+    )
+    assert not any(call[0] == "verify" for call in calls)
+
+    calls.clear()
+    webhook_routes._validate_github_webhook_signature(
+        payload_body=b"{}",
+        cfg=SimpleNamespace(
+            GITHUB_WEBHOOK_SECRET="sekret",
+            GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False,
+            SIDAR_ENV="test",
+        ),
+        signature_header="",
+        verify_hmac_signature=_verify,
+        logger=logger,
+    )
+    assert not any(call[0] == "verify" for call in calls)
+
+    calls.clear()
+    webhook_routes._validate_github_webhook_signature(
+        payload_body=b"{}",
+        cfg=SimpleNamespace(
+            GITHUB_WEBHOOK_SECRET="sekret",
+            GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False,
+            SIDAR_ENV="production",
+        ),
+        signature_header="sha256=bad",
+        verify_hmac_signature=_verify,
+        logger=logger,
+    )
+    assert any(call[0] == "verify" for call in calls)
+
+    with pytest.raises(HTTPException) as exc_info:
+        webhook_routes._validate_github_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="sekret", SIDAR_ENV="test"),
+            signature_header="sha256=bad",
+            verify_hmac_signature=web_server._verify_hmac_signature,
+            logger=logger,
+        )
+    assert exc_info.value.status_code == 401
 
 
 def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
