@@ -37,6 +37,14 @@ def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
     store.store_dir = tmp_path
     store.index_file = tmp_path / "index.json"
     store._index = {}
+    # Keep the __new__-based test stub aligned with DocumentStore.__init__
+    # for pgvector branch coverage without starting real vector backends.
+    store.pg_engine = None
+    store._pgvector_available = False
+    store._pg_embedding_model = None
+    store._pg_table = "rag_embeddings"
+    store._pg_embedding_dim = 384
+    store._pg_embedding_model_name = "all-MiniLM-L6-v2"
     return store
 
 
