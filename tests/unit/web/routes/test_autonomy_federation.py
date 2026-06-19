@@ -21,7 +21,7 @@ class _Request:
 
 
 @pytest.mark.asyncio
-async def test_autonomy_webhook_dispatches_general_event() -> None:
+async def test_autonomy_webhook_dispatches_general_event(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 
     async def _dispatch(**kwargs):
@@ -31,7 +31,13 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
     async def _await_if_needed(value):
         return await value if hasattr(value, "__await__") else value
 
-    autonomy.configure_autonomy_dependencies(
+    # `_deps_factory` is a module-level global; assigning via
+    # `configure_autonomy_dependencies(...)` would leak into later tests (e.g.
+    # `tests/unit/root/test_web_server.py::test_autonomy_webhook_ci_and_federation_paths`).
+    # Route the swap through monkeypatch so pytest restores the original after teardown.
+    monkeypatch.setattr(
+        autonomy,
+        "_deps_factory",
         lambda: SimpleNamespace(
             cfg=SimpleNamespace(ENABLE_EVENT_WEBHOOKS=True, AUTONOMY_WEBHOOK_SECRET=""),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
@@ -41,7 +47,7 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
             dispatch_autonomy_trigger=_dispatch,
             await_if_needed=_await_if_needed,
             resolve_agent_instance=lambda: None,
-        )
+        ),
     )
 
     response = await autonomy.autonomy_webhook("jira", _Request({"event_name": "issue_created"}))
@@ -85,14 +91,16 @@ class _Result:
 
 
 @pytest.mark.asyncio
-async def test_federation_execute_builds_autonomy_payload() -> None:
+async def test_federation_execute_builds_autonomy_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 
     async def _dispatch(**kwargs):
         calls.append(kwargs)
         return {"trigger_id": "tr1", "summary": "done"}
 
-    federation.configure_federation_dependencies(
+    monkeypatch.setattr(
+        federation,
+        "_deps_factory",
         lambda: SimpleNamespace(
             cfg=SimpleNamespace(ENABLE_SWARM_FEDERATION=True, SWARM_FEDERATION_SHARED_SECRET=""),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
@@ -103,7 +111,7 @@ async def test_federation_execute_builds_autonomy_payload() -> None:
             dispatch_autonomy_trigger=_dispatch,
             action_feedback_cls=None,
             derive_correlation_id=lambda *parts: "corr",
-        )
+        ),
     )
 
     response = await federation.swarm_federation_execute(

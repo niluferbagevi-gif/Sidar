@@ -391,6 +391,10 @@ filterwarnings = [
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
   "ignore:invalid escape sequence '\\\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",
   "ignore:invalid escape sequence.*:DeprecationWarning:sentence_transformers.*",
+  # Starlette 1.3.x asks the testclient to migrate to httpx2; until httpx2 is added
+  # to the lockfile and verified end-to-end, allow fastapi/starlette TestClient
+  # imports to coexist with httpx without erroring out the suite.
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"
