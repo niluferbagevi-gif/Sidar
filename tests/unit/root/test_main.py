@@ -2915,6 +2915,12 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
             "event_name": kwargs["event_name"],
         },
     )
+    # web.routes.autonomy keeps its dependency factory at module scope; reset it
+    # after monkeypatching web_server so this root-level alias test cannot inherit
+    # a factory configured by lower-level route tests in the same pytest process.
+    web_server.autonomy_routes.configure_autonomy_dependencies(
+        web_server._build_autonomy_dependencies
+    )
     wake = await web_server.autonomy_wake(
         web_server._AutonomyWakeRequest(prompt=" çalış ", source="user")
     )
