@@ -4,7 +4,12 @@
 # It replaces the old integrity hash with the new one as reported by npm.
 
 set -euo pipefail
-LOCK_FILE="web_ui_react/package-lock.json"
+
+# Determine repository root relative to this script
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCK_FILE="$REPO_ROOT/web_ui_react/package-lock.json"
+
 OLD_HASH="sha512-+Obn2l8+gT9EqYNZdc6rgWMSjucp4h+9Vv3k2uj3oAtFZDD2LdkQYzDBIhCnWfE0J/u4UfnrNHEjmQfKGx2dww=="
 NEW_HASH="sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="
 
