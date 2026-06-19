@@ -1,0 +1,6 @@
+{
+  "name": "sidar",
+  "version": "5.2.0",
+  "description": "Sidar AI root package placeholder to satisfy npm ci",
+  "private": true
+}
