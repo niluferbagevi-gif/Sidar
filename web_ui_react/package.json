@@ -20,7 +20,8 @@
     "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "preinstall": "bash ../scripts/patch_ws_integrity.sh"
   },
   "dependencies": {
     "react": "^18.3.1",
