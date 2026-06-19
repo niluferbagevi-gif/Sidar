@@ -1354,6 +1354,23 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     assert pg_doc_id in pg_bm25_msg
 
 
+async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store.cfg = SimpleNamespace(DATABASE_URL="postgresql://user:pass@localhost/db")
+    store._pg_table = "rag_embeddings;DROP_TABLE_docs"
+    store._pgvector_available = True
+
+    def _unexpected_dependency_check(_module_name: str) -> bool:
+        raise AssertionError("invalid PGVECTOR_TABLE should be rejected before imports or SQL")
+
+    store._check_import = _unexpected_dependency_check  # type: ignore[method-assign]
+
+    store._init_pgvector()
+
+    assert store._pgvector_available is False
+
+
+
 async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_error() -> None:
     msg = rag._pgvector_failure_action_message(
         RuntimeError('password authentication failed for user "sidar"; DETAIL: raw driver text')

@@ -57,6 +57,13 @@ logger = logging.getLogger(__name__)
 list = builtins.list
 _DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str], "DocumentStore"] = {}
 _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
+_PGVECTOR_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _is_valid_pgvector_identifier(identifier: str) -> bool:
+    """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
+
+    return bool(_PGVECTOR_IDENTIFIER_RE.fullmatch(identifier))
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
@@ -564,6 +571,18 @@ class DocumentStore:
         if not db_url.startswith("postgresql"):
             logger.warning(
                 _pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL"))
+            )
+            return
+
+        if not _is_valid_pgvector_identifier(self._pg_table):
+            self._pgvector_available = False
+            logger.warning(
+                _pgvector_failure_action_message(
+                    ValueError(
+                        "invalid PGVECTOR_TABLE; expected pattern "
+                        r"^[A-Za-z_][A-Za-z0-9_]*$"
+                    )
+                )
             )
             return
 
