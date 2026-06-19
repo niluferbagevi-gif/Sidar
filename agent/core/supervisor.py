@@ -217,10 +217,19 @@ class SupervisorAgent(BaseAgent):
         return int(getattr(getattr(self, "cfg", None), "MAX_QA_RETRIES", self.MAX_QA_RETRIES))
 
     def _max_turns(self) -> int:
-        return max(
-            1,
-            int(getattr(getattr(self, "cfg", None), "MAX_TURNS", self.MAX_TURNS) or self.MAX_TURNS),
-        )
+        # MAX_TURNS=0 is a deliberate sentinel ("circuit breaker fires immediately"); do
+        # not clamp with max(1, ...) or fall back via `or self.MAX_TURNS`.
+        cfg = getattr(self, "cfg", None)
+        raw = getattr(cfg, "MAX_TURNS", None) if cfg is not None else None
+        if raw is None:
+            return int(self.MAX_TURNS)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return int(self.MAX_TURNS)
+        if value < 0:
+            return 0
+        return value
 
     @staticmethod
     def _validate_p2p_request(request: DelegationRequest) -> str | None:
