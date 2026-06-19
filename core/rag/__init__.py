@@ -2038,9 +2038,13 @@ class DocumentStore:
         if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
             return []
         try:
+            vectors = self._pgvector_embed_texts([query])
+            if not vectors:
+                return []
+
             from sqlalchemy import text
 
-            qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
+            qvec = self._format_vector_for_sql(vectors[0])
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 select_sql = """

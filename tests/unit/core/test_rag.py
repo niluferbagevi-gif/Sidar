@@ -3188,6 +3188,18 @@ async def test_require_chroma_collection_raises_when_collection_missing(
     assert store._require_chroma_collection() is sentinel
 
 
+async def test_fetch_pgvector_returns_empty_when_query_embedding_empty(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = True
+    store.pg_engine = SimpleNamespace(
+        begin=lambda: (_ for _ in ()).throw(AssertionError("SQL should not run"))
+    )
+    store._pgvector_embed_texts = lambda _texts: []  # type: ignore[method-assign]
+
+    assert store._fetch_pgvector("query", top_k=2, session_id="s1") == []
+
+
+
 async def test_pgvector_embed_texts_uses_tolist_when_vectors_support_it(
     tmp_path: Path,
 ) -> None:
