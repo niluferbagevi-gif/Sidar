@@ -30,7 +30,7 @@ def test_webhooks_router_registers_github_webhook_legacy_export() -> None:
     app.include_router(router)
 
     assert "github_webhook" in router.legacy_exports
-    assert any(route.path == "/api/webhook" for route in app.routes)
+    assert str(app.url_path_for("github_webhook")) == "/api/webhook"
 
 
 @pytest.mark.asyncio
