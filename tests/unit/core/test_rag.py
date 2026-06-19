@@ -37,8 +37,9 @@ def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
     store.store_dir = tmp_path
     store.index_file = tmp_path / "index.json"
     store._index = {}
-    # Keep the __new__-based test stub aligned with DocumentStore.__init__
-    # for pgvector branch coverage without starting real vector backends.
+    # DocumentStore invariant fields normally created by __init__. Keep this
+    # __new__-based stub aligned when pgvector/backend attributes are added.
+    # Tests can cover pgvector branches without starting real vector backends.
     store.pg_engine = None
     store._pgvector_available = False
     store._pg_embedding_model = None

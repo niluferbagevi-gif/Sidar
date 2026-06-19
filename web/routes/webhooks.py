@@ -4,12 +4,14 @@ import contextlib
 import json
 import os
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import Header, Request
+from fastapi import Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
+
+GithubSignatureValidationResult = Literal["secret_missing", "disabled_by_flag", "verified"]
 
 
 def _coerce_bool(value: Any, *, default: bool) -> bool:
@@ -48,22 +50,31 @@ def _validate_github_webhook_signature(
     signature_header: str,
     verify_hmac_signature: Callable[..., None],
     logger: Any,
-) -> None:
+) -> GithubSignatureValidationResult:
     """Apply the GitHub webhook signature contract in one testable place."""
+    signature_required = _github_webhook_signature_required(cfg)
+    env_name = (
+        str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
+    )
     secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
     if not secret_value:
+        if env_name == "production":
+            raise HTTPException(
+                status_code=401,
+                detail="GitHub webhook secret yapılandırılmadığı için imza doğrulanamadı.",
+            )
         logger.warning(
             "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
             "Üretim ortamında mutlaka ayarlayın."
         )
-        return
+        return "secret_missing"
 
-    if not _github_webhook_signature_required(cfg):
+    if not signature_required:
         logger.warning(
             "GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False — GitHub webhook imza doğrulaması "
             "yalnızca local/test uyumluluğu için atlanıyor."
         )
-        return
+        return "disabled_by_flag"
 
     verify_hmac_signature(
         payload_body,
@@ -71,6 +82,7 @@ def _validate_github_webhook_signature(
         signature_header,
         label="GitHub webhook",
     )
+    return "verified"
 
 
 def build_webhooks_router(

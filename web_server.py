@@ -2740,23 +2740,40 @@ orchestration_router = build_orchestration_router(
     serialize_swarm_result=_serialize_swarm_result,
 )
 
+
+def _build_webhook_dependencies() -> SimpleNamespace:
+    return SimpleNamespace(
+        await_if_needed=_await_if_needed,
+        cfg=cfg,
+        cfg_getter=lambda: cfg,
+        dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+        embed_event_driven_federation_payload=(
+            lambda payload, workflow: _embed_event_driven_federation_payload(payload, workflow)
+        ),
+        logger=logger,
+        resolve_agent_instance=lambda: _resolve_agent_instance(),
+        resolve_ci_failure_context=lambda event_name, payload: _resolve_ci_failure_context(
+            event_name, payload
+        ),
+        run_event_driven_federation_workflow=(
+            lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
+        ),
+        verify_hmac_signature=lambda *args, **kwargs: _verify_hmac_signature(*args, **kwargs),
+    )
+
+
+_webhook_deps = _build_webhook_dependencies()
 webhooks_router = build_webhooks_router(
-    cfg=cfg,
-    cfg_getter=lambda: cfg,
-    logger=logger,
-    resolve_agent_instance=lambda: _resolve_agent_instance(),
-    await_if_needed=_await_if_needed,
-    verify_hmac_signature=lambda *args, **kwargs: _verify_hmac_signature(*args, **kwargs),
-    resolve_ci_failure_context=lambda event_name, payload: _resolve_ci_failure_context(
-        event_name, payload
-    ),
-    run_event_driven_federation_workflow=(
-        lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
-    ),
-    embed_event_driven_federation_payload=(
-        lambda payload, workflow: _embed_event_driven_federation_payload(payload, workflow)
-    ),
-    dispatch_autonomy_trigger=lambda **kwargs: _dispatch_autonomy_trigger(**kwargs),
+    cfg=_webhook_deps.cfg,
+    cfg_getter=_webhook_deps.cfg_getter,
+    logger=_webhook_deps.logger,
+    resolve_agent_instance=_webhook_deps.resolve_agent_instance,
+    await_if_needed=_webhook_deps.await_if_needed,
+    verify_hmac_signature=_webhook_deps.verify_hmac_signature,
+    resolve_ci_failure_context=_webhook_deps.resolve_ci_failure_context,
+    run_event_driven_federation_workflow=_webhook_deps.run_event_driven_federation_workflow,
+    embed_event_driven_federation_payload=_webhook_deps.embed_event_driven_federation_payload,
+    dispatch_autonomy_trigger=_webhook_deps.dispatch_autonomy_trigger,
 )
 
 _legacy_route_exports = _app_factory.register_routers(

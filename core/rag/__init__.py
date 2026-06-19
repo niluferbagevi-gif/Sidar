@@ -565,6 +565,11 @@ class DocumentStore:
     def _format_vector_for_sql(values: builtins.list[float]) -> str:
         return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
+
+    def _pgvector_table_name(self) -> str:
+        """Return the pgvector table invariant with a safe legacy-stub fallback."""
+        return str(getattr(self, "_pg_table", "rag_embeddings") or "rag_embeddings")
+
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
         db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
@@ -574,7 +579,8 @@ class DocumentStore:
             )
             return
 
-        if not _is_valid_pgvector_identifier(self._pg_table):
+        pg_table = self._pgvector_table_name()
+        if not _is_valid_pgvector_identifier(pg_table):
             self._pgvector_available = False
             logger.warning(
                 _pgvector_failure_action_message(
@@ -600,7 +606,7 @@ class DocumentStore:
             with engine.begin() as conn:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 create_table_sql = f"""
-                    CREATE TABLE IF NOT EXISTS {self._pg_table} (
+                    CREATE TABLE IF NOT EXISTS {pg_table} (
                         doc_id TEXT NOT NULL,
                         parent_id TEXT NOT NULL,
                         session_id TEXT NOT NULL,
@@ -615,17 +621,17 @@ class DocumentStore:
                 conn.execute(text(create_table_sql))  # nosec B608
                 conn.execute(
                     text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"
+                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)"
                     )
                 )
                 conn.execute(
                     text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"
+                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_parent ON {pg_table}(parent_id)"
                     )
                 )
                 conn.execute(
                     text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_embedding_hnsw ON {self._pg_table} USING hnsw (embedding vector_cosine_ops)"
+                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING hnsw (embedding vector_cosine_ops)"
                     )
                 )
 
@@ -637,7 +643,7 @@ class DocumentStore:
             self._log_backend_init_status_once(
                 "pgvector_init_success",
                 "pgvector backend başlatıldı: table=%s model=%s",
-                self._pg_table,
+                pg_table,
                 self._pg_embedding_model_name,
             )
         except Exception as exc:
@@ -683,6 +689,7 @@ class DocumentStore:
         try:
             from sqlalchemy import text
 
+            pg_table = self._pgvector_table_name()
             vectors = self._pgvector_embed_texts(chunks)
             if not vectors:
                 return
@@ -691,7 +698,7 @@ class DocumentStore:
             with engine.begin() as conn:
                 conn.execute(
                     text(
-                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
+                        f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
                     ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
@@ -721,7 +728,7 @@ class DocumentStore:
                             source = EXCLUDED.source,
                             chunk_content = EXCLUDED.chunk_content,
                             embedding = EXCLUDED.embedding
-                    """.replace("__TABLE__", self._pg_table)  # nosec B608
+                    """.replace("__TABLE__", pg_table)  # nosec B608
                 conn.execute(text(upsert_sql), rows)
         except Exception as exc:
             logger.error("pgvector belge ekleme hatası: %s", exc)
@@ -732,11 +739,12 @@ class DocumentStore:
         try:
             from sqlalchemy import text
 
+            pg_table = self._pgvector_table_name()
             engine = self._require_pg_engine()
             with engine.begin() as conn:
                 conn.execute(
                     text(
-                        f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
+                        f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
                     ),
                     {"parent_id": parent_id, "session_id": session_id},
                 )
@@ -2044,6 +2052,7 @@ class DocumentStore:
 
             from sqlalchemy import text
 
+            pg_table = self._pgvector_table_name()
             qvec = self._format_vector_for_sql(vectors[0])
             engine = self._require_pg_engine()
             with engine.begin() as conn:
@@ -2054,7 +2063,7 @@ class DocumentStore:
                         WHERE session_id = :session_id
                         ORDER BY embedding <=> CAST(:qvec AS vector) ASC
                         LIMIT :lim
-                    """.replace("__TABLE__", self._pg_table)  # nosec B608
+                    """.replace("__TABLE__", pg_table)  # nosec B608
                 rows = conn.execute(
                     text(select_sql),
                     {
