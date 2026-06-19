@@ -9,7 +9,7 @@ import sys
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import unquote, urlsplit
@@ -777,11 +777,12 @@ def mock_chromadb(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
 
 @pytest.fixture
 def mock_sentence_transformers(monkeypatch: pytest.MonkeyPatch) -> Callable[[type], None]:
-    """sentence_transformers bağımlılığını gerçek modül üstünden patch eder."""
+    """sentence_transformers bağımlılığını torch/triton import etmeden fake modülle patch eder."""
 
     def _install(sentence_transformer_cls: type) -> None:
-        sentence_transformers = pytest.importorskip("sentence_transformers")
-        monkeypatch.setattr(sentence_transformers, "SentenceTransformer", sentence_transformer_cls)
+        fake_module = ModuleType("sentence_transformers")
+        fake_module.SentenceTransformer = sentence_transformer_cls
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
 
     return _install
 
