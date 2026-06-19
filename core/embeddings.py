@@ -141,9 +141,16 @@ def embed_texts_for_semantic_cache(
         return []
 
 
+def _load_sentence_transformer_class() -> type[Any]:
+    """Resolve the SentenceTransformer class at the last responsible moment."""
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer
+
+
 def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
     """Load and cache SentenceTransformer models for the current process."""
-    from sentence_transformers import SentenceTransformer
+    SentenceTransformer = _load_sentence_transformer_class()
 
     device = sentence_transformer_device_from_config(cfg)
     local_files_only = sentence_transformer_local_files_only(cfg, model_name)

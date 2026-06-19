@@ -788,6 +788,20 @@ def mock_sentence_transformers(monkeypatch: pytest.MonkeyPatch) -> Callable[[typ
 
 
 @pytest.fixture
+def mock_sentence_transformer_class(monkeypatch: pytest.MonkeyPatch) -> Callable[[type], None]:
+    """core.embeddings içindeki SentenceTransformer class resolver'ını fake sınıfa yönlendirir."""
+
+    def _install(sentence_transformer_cls: type) -> None:
+        from core import embeddings
+
+        embeddings.clear_model_cache()
+        monkeypatch.setattr(
+            embeddings, "_load_sentence_transformer_class", lambda: sentence_transformer_cls
+        )
+
+    return _install
+
+@pytest.fixture
 def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """requests bağımlılığını gerçek modül üstünden patch eder."""
 
