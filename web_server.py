@@ -721,6 +721,30 @@ async def _collect_agent_response(agent: SidarAgent, prompt: str) -> str:
     return "".join(chunks).strip()
 
 
+def _autonomy_service_actor(trigger_source: str) -> tuple[str, str]:
+    """Return the explicit service actor used by userless autonomy triggers."""
+    configured_user = str(
+        getattr(cfg, "AUTONOMY_SERVICE_USER_ID", "")
+        or getattr(cfg, "SYSTEM_USER_ID", "")
+        or "system:autonomy"
+    ).strip()
+    service_user_id = configured_user or "system:autonomy"
+    source_label = str(trigger_source or "external").strip() or "external"
+    return service_user_id, f"autonomy:{source_label}"
+
+
+async def _prepare_autonomy_memory_context(agent: Any, trigger_source: str) -> None:
+    """Bind a service user before system webhook/cron/federation memory operations."""
+    memory = getattr(agent, "memory", None)
+    set_active_user = getattr(memory, "set_active_user", None)
+    if not callable(set_active_user):
+        return
+    service_user_id, service_username = _autonomy_service_actor(trigger_source)
+    maybe_result = set_active_user(service_user_id, service_username)
+    if inspect.isawaitable(maybe_result):
+        await maybe_result
+
+
 async def _dispatch_autonomy_trigger(
     *,
     trigger_source: str,
@@ -730,6 +754,7 @@ async def _dispatch_autonomy_trigger(
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
     agent = await _resolve_agent_instance()
+    await _prepare_autonomy_memory_context(agent, trigger_source)
     trigger = ExternalTrigger(
         trigger_id=f"trigger-{secrets.token_hex(6)}",
         source=trigger_source,

@@ -655,6 +655,45 @@ async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_autonomy_trigger_sets_service_memory_context(monkeypatch):
+    calls = {"active_user": None}
+
+    class _Memory:
+        async def set_active_user(self, user_id, username):
+            calls["active_user"] = (user_id, username)
+
+    class _Agent:
+        memory = _Memory()
+
+        async def handle_external_trigger(self, trigger):
+            return {
+                "trigger_id": trigger.trigger_id,
+                "source": trigger.source,
+                "event_name": trigger.event_name,
+                "summary": "ok",
+                "status": "success",
+                "meta": {},
+            }
+
+    async def _resolve_agent():
+        return _Agent()
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(
+        web_server.cfg, "AUTONOMY_SERVICE_USER_ID", "system:autonomy-test", raising=False
+    )
+
+    result = await web_server._dispatch_autonomy_trigger(
+        trigger_source="webhook:github",
+        event_name="workflow_run",
+        payload={"run_id": "42"},
+    )
+
+    assert result["status"] == "success"
+    assert calls["active_user"] == ("system:autonomy-test", "autonomy:webhook:github")
+
+
+@pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_without_handler_uses_action_feedback_prompt(monkeypatch):
     captured = {"prompt": None}
 
