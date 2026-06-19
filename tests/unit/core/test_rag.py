@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import contextlib
 import importlib
 import json
@@ -1253,7 +1254,6 @@ async def test_document_store_add_document_from_url_handles_httpx_transport_erro
 async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     monkeypatch: pytest.MonkeyPatch,
     mock_chromadb,
-    mock_sentence_transformers,
     tmp_path: Path,
 ) -> None:
     # Chroma runtime failure (import hatası değil): PersistentClient patlasa da BM25 devam etmeli.
@@ -1295,8 +1295,33 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     def _broken_create_engine(*_args: object, **_kwargs: object):
         raise RuntimeError("pg-runtime")
 
-    mock_sentence_transformers(_SentenceTransformer)
-    _SentenceTransformer("mini")
+    blocked_ml_imports = {"sentence_transformers", "torch", "transformers", "triton"}
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+
+    def _guard_real_ml_imports(
+        name: str,
+        globals_: dict[str, object] | None = None,
+        locals_: dict[str, object] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name.split(".", 1)[0] in blocked_ml_imports:
+            raise AssertionError(f"unexpected ML dependency import: {name}")
+        return original_import(name, globals_, locals_, fromlist, level)
+
+    def _guard_import_module(name: str, package: str | None = None) -> object:
+        if name.split(".", 1)[0] in blocked_ml_imports:
+            raise AssertionError(f"unexpected ML dependency import: {name}")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(builtins, "__import__", _guard_real_ml_imports)
+    monkeypatch.setattr(importlib, "import_module", _guard_import_module)
+    monkeypatch.setattr(
+        rag,
+        "get_sentence_transformer_model",
+        lambda *_args, **_kwargs: _SentenceTransformer("mini"),
+    )
     monkeypatch.setitem(sys.modules, "pgvector", SimpleNamespace(__name__="pgvector"))
     monkeypatch.setitem(
         sys.modules,
