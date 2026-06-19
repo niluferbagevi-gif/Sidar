@@ -470,6 +470,11 @@ def test_update_summary_report_close_repr_and_del(monkeypatch):
     monkeypatch.setattr(manager2, "check_ollama", lambda: True)
     monkeypatch.setattr(
         manager2,
+        "get_agent_catalog_health",
+        lambda: {"status": "healthy", "degraded": False},
+    )
+    monkeypatch.setattr(
+        manager2,
         "get_gpu_info",
         lambda: {
             "available": True,
