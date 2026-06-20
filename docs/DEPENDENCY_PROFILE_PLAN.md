@@ -82,9 +82,9 @@ ayrı bir PR olarak ele alınmalı ve aşağıdaki dosyaları aynı değişiklik
 
 | Alan | Mevcut sözleşme | Ayrı PR hedefi | Gerekli doğrulama |
 |---|---|---|---|
-| `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras --extra dev` kullanır. | Production image için `uv sync --frozen --extra production` denemesini ayrı stage/arg ile tanıt; dev araçlarını kaldırmadan önce dry-run sonuçlarını raporla. | Image build dry-run, web boot smoke, OpenAPI metadata smoke, import smoke. |
+| `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras` kullanır (dev extra, `[project.optional-dependencies]` üzerinden `--all-extras` kapsamında gelir). | Production image için `uv sync --frozen --extra production` denemesini ayrı stage/arg ile tanıt; dev araçlarını kaldırmadan önce dry-run sonuçlarını raporla. | Image build dry-run, web boot smoke, OpenAPI metadata smoke, import smoke. |
 | `install_sidar.sh` | Yerel/CI paritesi için `uv sync --frozen --all-extras` ana kurulum akışıdır. | `--dependency-profile=all|production` veya eşdeğer env override tasarla; varsayılan `all` kalmalı. | Online/offline installer smoke, `--ci` bundle smoke, pyright/self-heal dev bağımlılığı kontrolü. |
-| `scripts/install_modules/utils/python_env.sh` | Modüler installer yolu `uv sync --frozen --all-extras --extra dev` ile dev araçlarını garanti eder. | Profile-aware sync arg builder ekle; production seçilse bile dev-only kontrollerin bilinçli atlandığını raporla. | Shellcheck, installer module tests, production profile dry-run. |
+| `scripts/install_modules/utils/python_env.sh` | Modüler installer yolu `uv sync --frozen --all-extras` ile dev araçlarını garanti eder (dev extra bu kapsamda gelir). | Profile-aware sync arg builder ekle; production seçilse bile dev-only kontrollerin bilinçli atlandığını raporla. | Shellcheck, installer module tests, production profile dry-run. |
 | Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
 
 Ayrı PR kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı, `production-profile-dry-run`
