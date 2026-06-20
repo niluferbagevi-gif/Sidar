@@ -131,6 +131,35 @@ async def test_websocket_voice_rejects_binary_before_auth(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_rejects_oversized_binary_after_auth(monkeypatch) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=_MultimodalPipeline)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=_VoicePipeline)
+        return original_import(name, *args, **kwargs)
+
+    async def _resolve_user(_agent, token: str):
+        assert token == "voice-token"
+        return SimpleNamespace(id="u1", username="ada")
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    ws = _Ws(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"123456789"},
+        ]
+    )
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_resolve_user))
+
+    assert {"auth_ok": True} in ws.sent
+    assert ws.closed == [(1008, "Voice payload too large")]
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_uses_default_header_token_extractor_without_echo(
     monkeypatch,
 ) -> None:
