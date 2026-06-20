@@ -126,7 +126,9 @@ def test_auth_admin_router_register_direct(make_test_client) -> None:
     )
     app = FastAPI()
     app.include_router(router)
-    res = make_test_client(app).post("/auth/register", json={"username": "alice", "password": "123456"})
+    res = make_test_client(app).post(
+        "/auth/register", json={"username": "alice", "password": "123456"}
+    )
     assert res.status_code == 200
     assert res.json()["access_token"] == "tkn"
 
@@ -343,7 +345,9 @@ def test_agent_parse_payload_supports_modern_and_passthrough_models() -> None:
     assert _parse_payload(_AgentRegisterReq, marker) is marker
 
 
-def test_agent_router_json_posts_and_file_upload_direct(monkeypatch: pytest.MonkeyPatch, make_test_client) -> None:
+def test_agent_router_json_posts_and_file_upload_direct(
+    monkeypatch: pytest.MonkeyPatch, make_test_client
+) -> None:
     def _unexpected_web_server_helper(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("Agent router must use its injected dependencies")
 
@@ -564,7 +568,9 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     assert response.json()["version"] == "fallback"
 
 
-def test_frontend_static_router_injects_config_without_head_tag(tmp_path: Path, make_test_client) -> None:
+def test_frontend_static_router_injects_config_without_head_tag(
+    tmp_path: Path, make_test_client
+) -> None:
     from web.routes.static import build_frontend_router
 
     (tmp_path / "index.html").write_text("<body>SPA</body>", encoding="utf-8")

@@ -831,6 +831,7 @@ def mock_sentence_transformer_class(monkeypatch: pytest.MonkeyPatch) -> Callable
 
     return _install
 
+
 @pytest.fixture
 def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """requests bağımlılığını gerçek modül üstünden patch eder."""
