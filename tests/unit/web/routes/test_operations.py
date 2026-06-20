@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from web.routes import operations
 
@@ -94,6 +95,41 @@ async def test_operations_router_lists_campaigns_with_configured_dependencies() 
     assert b'"budget":2.5' in response.body
 
 
+def test_allowed_poyraz_rest_tools_contract_excludes_direct_publish_tools() -> None:
+    assert operations.ALLOWED_POYRAZ_REST_TOOLS == frozenset(
+        {
+            "build_landing_page",
+            "generate_campaign_copy",
+            "create_marketing_campaign",
+            "store_content_asset",
+            "create_operation_checklist",
+            "plan_service_operations",
+            "ingest_video_insights",
+        }
+    )
+    assert "publish_social" not in operations.ALLOWED_POYRAZ_REST_TOOLS
+    assert "publish_instagram_post" not in operations.ALLOWED_POYRAZ_REST_TOOLS
+    assert "send_whatsapp_message" not in operations.ALLOWED_POYRAZ_REST_TOOLS
+
+
+@pytest.mark.asyncio
+async def test_get_request_user_proxy_delegates_to_configured_dependencies() -> None:
+    request = object()
+    user = SimpleNamespace(id="u-proxy")
+    calls: list[object] = []
+
+    async def _get_request_user(req: object) -> object:
+        calls.append(req)
+        return user
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(get_request_user=_get_request_user)
+    )
+
+    assert await operations._get_request_user_proxy(request) is user
+    assert calls == [request]
+
+
 def test_operations_serializers_normalize_optional_campaign_id() -> None:
     payload = operations.serialize_operation_checklist(
         SimpleNamespace(id="5", campaign_id=None, items_json=None)
@@ -121,6 +157,26 @@ async def test_operations_router_returns_controlled_db_error_when_agent_resoluti
         "error": "database_unavailable",
         "message": "Veritabanı geçici olarak kullanılamıyor.",
     }
+
+
+def test_decode_agent_tool_result_returns_dict_results_directly() -> None:
+    raw = {"success": True}
+
+    assert operations.decode_agent_tool_result(raw) is raw
+
+
+@pytest.mark.asyncio
+async def test_poyraz_run_rejects_tools_outside_rest_allowlist() -> None:
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(get_user_tenant=lambda _user: "tenant-route")
+    )
+    req = operations.PoyrazToolRunRequest(tool_name="publish_social", payload={})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await operations.api_operations_poyraz_run(req, _user=SimpleNamespace(id="u1"))
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Bu Poyraz aracı REST operasyon köprüsünde desteklenmiyor."
 
 
 def test_decode_agent_tool_result_wraps_json_non_dict_payloads() -> None:

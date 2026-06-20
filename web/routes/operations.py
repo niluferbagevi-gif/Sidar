@@ -110,6 +110,19 @@ class CoverageBatchRequest(BaseModel):
     room_id: str = Field(default="qa:coverage", max_length=120)
 
 
+ALLOWED_POYRAZ_REST_TOOLS = frozenset(
+    {
+        "build_landing_page",
+        "generate_campaign_copy",
+        "create_marketing_campaign",
+        "store_content_asset",
+        "create_operation_checklist",
+        "plan_service_operations",
+        "ingest_video_insights",
+    }
+)
+
+
 _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
 
@@ -433,17 +446,8 @@ async def api_operations_poyraz_run(
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
     deps = _deps()
-    allowed_tools = {
-        "build_landing_page",
-        "generate_campaign_copy",
-        "create_marketing_campaign",
-        "store_content_asset",
-        "create_operation_checklist",
-        "plan_service_operations",
-        "ingest_video_insights",
-    }
     tool_name = req.tool_name.strip()
-    if tool_name not in allowed_tools:
+    if tool_name not in ALLOWED_POYRAZ_REST_TOOLS:
         raise HTTPException(
             status_code=400, detail="Bu Poyraz aracı REST operasyon köprüsünde desteklenmiyor."
         )
