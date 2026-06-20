@@ -618,6 +618,62 @@ def test_lora_trainer_check_peft_uses_cached_value():
     trainer._peft_available = False
     assert trainer._check_peft() is False
 
+def _install_minimal_lora_training_stubs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, object]]:
+    model_calls: list[dict[str, object]] = []
+
+    class FakeTokenizer:
+        eos_token = "<eos>"
+        pad_token = "pad"
+
+        @staticmethod
+        def from_pretrained(*_args: object, **_kwargs: object) -> "FakeTokenizer":
+            return FakeTokenizer()
+
+        def __call__(self, _text: str, **_kwargs: object) -> dict[str, list[int]]:
+            return {"input_ids": [1]}
+
+        def save_pretrained(self, out: str) -> None:
+            Path(out, "tok.txt").write_text("ok", encoding="utf-8")
+
+    class FakeModel:
+        @staticmethod
+        def from_pretrained(*_args: object, **kwargs: object) -> "FakeModel":
+            model_calls.append(dict(kwargs))
+            return FakeModel()
+
+        def print_trainable_parameters(self) -> None:
+            return None
+
+        def save_pretrained(self, out: str) -> None:
+            Path(out, "model.txt").write_text("ok", encoding="utf-8")
+
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.AutoModelForCausalLM = FakeModel
+    fake_transformers.AutoTokenizer = FakeTokenizer
+    fake_transformers.TrainingArguments = lambda **kwargs: kwargs
+    fake_transformers.Trainer = lambda **_kwargs: types.SimpleNamespace(
+        train=lambda: types.SimpleNamespace(training_loss=0.1, global_step=1)
+    )
+    fake_transformers.DataCollatorForSeq2Seq = lambda *_args, **_kwargs: None
+
+    fake_peft = types.ModuleType("peft")
+    fake_peft.TaskType = types.SimpleNamespace(CAUSAL_LM="causal")
+    fake_peft.LoraConfig = lambda **kwargs: kwargs
+    fake_peft.get_peft_model = lambda model, _conf: model
+
+    fake_datasets = types.ModuleType("datasets")
+    fake_datasets.load_dataset = lambda *_args, **_kwargs: types.SimpleNamespace(
+        column_names=["prompt", "completion"],
+        map=lambda fn, remove_columns=None: [fn({"prompt": "p", "completion": "c"})],
+    )
+
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setitem(sys.modules, "peft", fake_peft)
+    monkeypatch.setitem(sys.modules, "datasets", fake_datasets)
+    return model_calls
+
 
 def test_lora_run_training_happy_path_with_fake_modules(monkeypatch, tmp_path):
     cfg = DummyConfig()
@@ -760,6 +816,72 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
     )
 
     assert trainer._run_training("x")["success"] is True
+
+
+def test_lora_run_training_4bit_importerror_logs_warning_and_disables_quantization(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = DummyConfig()
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-importerror")
+    cfg.LORA_USE_4BIT = True
+    trainer = al.LoRATrainer(config=cfg)
+    model_calls = _install_minimal_lora_training_stubs(monkeypatch)
+    monkeypatch.setattr(
+        trainer,
+        "_build_4bit_quantization_config",
+        lambda: (_ for _ in ()).throw(ImportError("bitsandbytes missing")),
+    )
+
+    with caplog.at_level("WARNING", logger="core.active_learning"):
+        result = trainer._run_training("dataset.jsonl")
+
+    assert result["success"] is True
+    assert model_calls
+    assert "quantization_config" not in model_calls[0]
+    assert "4-bit bağımlılıkları yüklenemedi" in caplog.text
+    assert "bitsandbytes missing" in caplog.text
+
+
+def test_lora_run_training_4bit_optional_runtime_error_logs_warning_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = DummyConfig()
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-runtime-fallback")
+    cfg.LORA_USE_4BIT = True
+    trainer = al.LoRATrainer(config=cfg)
+    model_calls = _install_minimal_lora_training_stubs(monkeypatch)
+    monkeypatch.setattr(
+        trainer,
+        "_build_4bit_quantization_config",
+        lambda: (_ for _ in ()).throw(RuntimeError("bitsandbytes cuda runtime unavailable")),
+    )
+
+    with caplog.at_level("WARNING", logger="core.active_learning"):
+        result = trainer._run_training("dataset.jsonl")
+
+    assert result["success"] is True
+    assert model_calls
+    assert "quantization_config" not in model_calls[0]
+    assert "4-bit hızlandırma başlatılamadı" in caplog.text
+    assert "bitsandbytes cuda runtime unavailable" in caplog.text
+
+
+def test_lora_run_training_4bit_non_optional_runtime_error_is_reraised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cfg = DummyConfig()
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-runtime-raise")
+    cfg.LORA_USE_4BIT = True
+    trainer = al.LoRATrainer(config=cfg)
+    _install_minimal_lora_training_stubs(monkeypatch)
+    monkeypatch.setattr(
+        trainer,
+        "_build_4bit_quantization_config",
+        lambda: (_ for _ in ()).throw(RuntimeError("model config is invalid")),
+    )
+
+    with pytest.raises(RuntimeError, match="model config is invalid"):
+        trainer._run_training("dataset.jsonl")
 
 
 def test_lora_4bit_runtime_error_filter_preserves_model_errors() -> None:
