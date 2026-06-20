@@ -1897,6 +1897,11 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
             npm run test:coverage
             FRONTEND_COVERAGE_EXIT_CODE=$?
             FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+            if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -eq 0 ] && [ ! -f "coverage/index.html" ]; then
+              echo "❌ Frontend coverage testi geçti ancak HTML artefaktı üretilemedi: web_ui_react/coverage/index.html"
+              FRONTEND_COVERAGE_EXIT_CODE=1
+              FRONTEND_EXIT_CODE=1
+            fi
             if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
               if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
                 FRONTEND_E2E_RAN=1
