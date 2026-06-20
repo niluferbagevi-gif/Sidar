@@ -9,8 +9,30 @@ from fastapi import HTTPException
 from web.routes.autonomy import (
     _autonomy_webhook_secret,
     _autonomy_webhook_signature_required,
+    _coerce_bool,
     _validate_autonomy_webhook_signature,
 )
+
+
+@pytest.mark.parametrize(
+    ("value", "default", "expected"),
+    [
+        (None, True, True),
+        (None, False, False),
+        (True, False, True),
+        (False, True, False),
+        ("enabled", False, True),
+        ("yes", False, True),
+        ("disabled", True, False),
+        ("off", True, False),
+        ("garbage", True, True),
+        ("garbage", False, False),
+    ],
+)
+def test_coerce_bool_handles_known_values_and_unknown_defaults(
+    value: object, default: bool, expected: bool
+) -> None:
+    assert _coerce_bool(value, default=default) is expected
 
 
 def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
