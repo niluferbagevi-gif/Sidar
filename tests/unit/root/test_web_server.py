@@ -3595,6 +3595,7 @@ async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monke
 @pytest.mark.asyncio
 async def test_swarm_federation_execute_success(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
 
     async def _dispatch_ok(**kwargs):
@@ -3629,6 +3630,7 @@ async def test_swarm_federation_execute_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_swarm_federation_feedback_success(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
 
     async def _dispatch_ok(**kwargs):
