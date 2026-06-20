@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 from pathlib import Path
@@ -318,6 +319,118 @@ def test_builtin_contract_sync_skips_non_class_symbols() -> None:
     finally:
         AgentCatalog._registry[contract.role_name] = original_spec
 
+
+def test_agent_catalog_health_reports_non_builtin_builtin_role() -> None:
+    snapshot = dict(AgentCatalog._registry)
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
+
+    try:
+        AgentCatalog._registry[contract.role_name] = AgentSpec(
+            role_name=contract.role_name,
+            agent_class=_DummyAgent,
+            capabilities=list(contract.capabilities),
+            description="built-in contract registered as plugin by mistake",
+            version="0.0.0",
+            is_builtin=False,
+        )
+
+        health = AgentCatalog.health_summary()
+
+        assert health["status"] == "degraded"
+        assert health["degraded"] is True
+        assert contract.role_name in health["non_builtin_builtin_roles"]
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
+def test_import_builtin_roles_warns_when_literal_import_list_drifts_from_contract(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import agent.registry as registry_module
+    import agent.roles as role_exports
+
+    snapshot = dict(AgentCatalog._registry)
+    export_snapshot = {
+        contract.class_name: getattr(role_exports, contract.class_name)
+        for contract in BUILTIN_ROLE_CONTRACTS
+    }
+    original_contract_modules = registry_module.BUILTIN_ROLE_MODULES
+    imported_modules: list[str] = []
+
+    def _fake_import_module(module_name: str) -> SimpleNamespace:
+        imported_modules.append(module_name)
+        contract = next(
+            item for item in BUILTIN_ROLE_CONTRACTS if item.module_name == module_name
+        )
+        fake_class = type(contract.class_name, (), {"__module__": contract.module_name})
+        return SimpleNamespace(**{contract.class_name: fake_class})
+
+    monkeypatch.setattr(
+        registry_module,
+        "BUILTIN_ROLE_MODULES",
+        original_contract_modules + ("agent.roles.experimental_agent",),
+    )
+    monkeypatch.setattr("importlib.import_module", _fake_import_module)
+
+    try:
+        with caplog.at_level("WARNING", logger="agent.registry"):
+            _import_builtin_roles()
+    finally:
+        _clear_builtin_import_failures()
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+        for class_name, original_export in export_snapshot.items():
+            monkeypatch.setattr(role_exports, class_name, original_export)
+
+    assert imported_modules == list(original_contract_modules)
+    assert "Yerleşik ajan rol kontratı ile import listesi uyumsuz" in caplog.text
+    assert "agent.roles.experimental_agent" in caplog.text
+
+
+def test_builtin_role_contract_static_exports_match_import_bootstrap_literal() -> None:
+    registry_tree = ast.parse(Path("agent/registry.py").read_text())
+    roles_init_tree = ast.parse(Path("agent/roles/__init__.py").read_text())
+
+    import_list_modules: tuple[str, ...] | None = None
+    for node in ast.walk(registry_tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "_import_builtin_roles":
+            continue
+        for stmt in ast.walk(node):
+            if (
+                isinstance(stmt, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "builtin_role_modules"
+                    for target in stmt.targets
+                )
+                and isinstance(stmt.value, ast.Tuple)
+            ):
+                import_list_modules = tuple(
+                    item.value for item in stmt.value.elts if isinstance(item, ast.Constant)
+                )
+                break
+
+    exported_imports = {
+        alias.name
+        for node in roles_init_tree.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    all_exports: set[str] = set()
+    for node in roles_init_tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            and isinstance(node.value, ast.List)
+        ):
+            all_exports = {
+                item.value for item in node.value.elts if isinstance(item, ast.Constant)
+            }
+            break
+
+    assert import_list_modules == BUILTIN_ROLE_MODULES
+    assert exported_imports == {contract.class_name for contract in BUILTIN_ROLE_CONTRACTS}
+    assert all_exports == exported_imports
 
 def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
     snapshot = dict(AgentCatalog._registry)

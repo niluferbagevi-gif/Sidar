@@ -248,7 +248,6 @@ def test_validate_p2p_request_reports_missing_fields(
     assert expected_missing in missing
 
 
-
 @pytest.mark.parametrize(
     ("configured_max_turns", "expected"),
     [
