@@ -4,8 +4,17 @@ import { ChatPanel } from "./components/ChatPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, getTokenPrincipal, isAdminPrincipal, setStoredToken } from "./lib/api.js";
 
+function MissingLazyPanel({ exportName }) {
+  return <div className="panel__hint">Panel bileşeni yüklenemedi: {exportName}</div>;
+}
+
 function lazyNamed(loader, exportName) {
-  return lazy(() => loader().then((module) => ({ default: module[exportName] })));
+  return lazy(() =>
+    loader().then((module) => {
+      const Component = module?.[exportName];
+      return { default: Component || (() => <MissingLazyPanel exportName={exportName} />) };
+    }),
+  );
 }
 
 const P2PDialoguePanel = lazyNamed(() => import("./components/P2PDialoguePanel.jsx"), "P2PDialoguePanel");
@@ -15,6 +24,13 @@ const PromptAdminPanel = lazyNamed(() => import("./components/PromptAdminPanel.j
 const PluginMarketplacePanel = lazyNamed(() => import("./components/PluginMarketplacePanel.jsx"), "PluginMarketplacePanel");
 const AgentManagerPanel = lazyNamed(() => import("./components/AgentManagerPanel.jsx"), "AgentManagerPanel");
 const TenantAdminPanel = lazyNamed(() => import("./components/TenantAdminPanel.jsx"), "TenantAdminPanel");
+
+const ADMIN_ROUTES = [
+  { path: "/admin/prompts", Panel: PromptAdminPanel },
+  { path: "/admin/plugins", Panel: PluginMarketplacePanel },
+  { path: "/admin/agents", Panel: AgentManagerPanel },
+  { path: "/admin/tenants", Panel: TenantAdminPanel },
+];
 
 function withLazyPanel(node) {
   return withPanelErrorBoundary(<Suspense fallback={<div className="panel__hint">Panel yükleniyor...</div>}>{node}</Suspense>);
@@ -102,10 +118,9 @@ export default function App() {
           <Route path="/p2p" element={withLazyPanel(<P2PDialoguePanel />)} />
           <Route path="/swarm" element={withLazyPanel(<SwarmFlowPanel />)} />
           <Route path="/ops-qa" element={withLazyPanel(<OperationsQaPanel />)} />
-          <Route path="/admin/prompts" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<PromptAdminPanel />)}</AdminRoute>} />
-          <Route path="/admin/plugins" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<PluginMarketplacePanel />)}</AdminRoute>} />
-          <Route path="/admin/agents" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<AgentManagerPanel />)}</AdminRoute>} />
-          <Route path="/admin/tenants" element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<TenantAdminPanel />)}</AdminRoute>} />
+          {ADMIN_ROUTES.map(({ path, Panel }) => (
+            <Route key={path} path={path} element={<AdminRoute isAdmin={isAdmin}>{withLazyPanel(<Panel />)}</AdminRoute>} />
+          ))}
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
       </main>
