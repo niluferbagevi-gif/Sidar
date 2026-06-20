@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.2.0-post2] - 2026-06-20
+
+### Güvenlik
+- **GHSA-4xgf-cpjx-pc3j (pydantic-settings 2.14.1):** Bağımlılık `>=2.14.2` taban sınırına çekildi.
+  Sidar `secrets_dir`/`secrets_nested_subdir` yüzeyini kullanmıyor; risk teorik, bulgu yine de kapatıldı.
+- **GHSA-f4xh-w4cj-qxq8 (langsmith 0.8.5):** Transitive `langsmith` paketine `>=0.8.18` floor eklendi.
+  `TracingMiddleware` Sidar'da instance edilmediği için runtime etkisi yok; audit gate temizlendi.
+
+---
+
 ## [v5.2.0-post1] - 2026-06-18
 
 > Post-release patch notu: `install_sidar.sh` Ollama/uv kurulum betiği SHA-256 doğrulama akışı için auto-heal davranış düzeltmesi. Paket sürümü `5.2.0` olarak korundu (lock dosyası bütünlüğünü kırmamak için); değişiklik yalnız kurulum/remediation katmanını etkiler.
