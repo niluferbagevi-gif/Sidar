@@ -3386,7 +3386,7 @@ def _build_autonomy_dependencies() -> SimpleNamespace:
         run_event_driven_federation_workflow=(
             lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
         ),
-        verify_hmac_signature=_verify_hmac_signature,
+        verify_hmac_signature=lambda *args, **kwargs: _verify_hmac_signature(*args, **kwargs),
     )
 
 
