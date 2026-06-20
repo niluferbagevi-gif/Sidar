@@ -248,6 +248,62 @@ def test_validate_p2p_request_reports_missing_fields(
     assert expected_missing in missing
 
 
+
+@pytest.mark.parametrize(
+    ("configured_max_turns", "expected"),
+    [
+        (None, 10),
+        ("abc", 10),
+        (-5, 0),
+    ],
+)
+def test_max_turns_handles_none_invalid_and_negative_values(
+    configured_max_turns: object, expected: int
+) -> None:
+    sup = _build_supervisor()
+    sup.cfg.MAX_TURNS = configured_max_turns
+
+    assert sup._max_turns() == expected
+
+
+@pytest.mark.parametrize(
+    ("route_max_turns", "expected_status", "expected_summary", "expected_delegate_calls"),
+    [
+        (None, "done", "delegated", 1),
+        ("invalid", "done", "delegated", 1),
+        (0, "failed", "maksimum tur limiti", 0),
+    ],
+)
+def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
+    route_max_turns: object,
+    expected_status: str,
+    expected_summary: str,
+    expected_delegate_calls: int,
+) -> None:
+    sup = _build_supervisor()
+    calls: list[dict[str, object]] = []
+
+    async def _delegate(
+        receiver: str, goal: str, intent: str, **kwargs: object
+    ) -> TaskResult:
+        calls.append({"receiver": receiver, "goal": goal, "intent": intent, **kwargs})
+        return TaskResult(task_id="delegated", status="done", summary="delegated")
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="kod üret",
+        intent="p2p",
+    )
+
+    result = asyncio.run(sup._route_p2p(req, max_hops=1, max_turns=route_max_turns))
+
+    assert result.status == expected_status
+    assert expected_summary in str(result.summary)
+    assert len(calls) == expected_delegate_calls
+
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
     sup = _build_supervisor(max_qa_retries=0)
 
