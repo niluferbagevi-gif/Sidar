@@ -225,12 +225,14 @@ def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
         "AUTONOMY_WEBHOOK_SECRET",
         "SIDAR_GITHUB_WEBHOOK_SECRET",
         "SIDAR_AUTONOMY_WEBHOOK_SECRET",
+        "SWARM_FEDERATION_SHARED_SECRET",
     ):
         monkeypatch.delenv(key, raising=False)
 
     web_server_module = importlib.import_module("web_server")
     monkeypatch.setattr(web_server_module.cfg, "GITHUB_WEBHOOK_SECRET", "", raising=False)
     monkeypatch.setattr(web_server_module.cfg, "AUTONOMY_WEBHOOK_SECRET", "", raising=False)
+    monkeypatch.setattr(web_server_module.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
 
 
 def _reset_web_route_dependency_factories() -> None:
