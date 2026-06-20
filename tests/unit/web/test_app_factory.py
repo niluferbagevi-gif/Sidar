@@ -1,9 +1,34 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import HTTPException
 
 from sidar_version import PRODUCT_VERSION
-from web.app_factory import create_app, register_exception_handlers
+from web.app_factory import (
+    _expose_exception_details,
+    _noop_lifespan,
+    create_app,
+    register_exception_handlers,
+)
+
+
+@pytest.mark.asyncio
+async def test_noop_lifespan_async_context_manager_yields_none() -> None:
+    app = create_app(register_handlers=False)
+
+    async with _noop_lifespan(app) as yielded:
+        assert yielded is None
+
+
+def test_expose_exception_details_follows_environment(monkeypatch) -> None:
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    assert _expose_exception_details() is True
+
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    assert _expose_exception_details() is True
+
+    monkeypatch.setenv("SIDAR_ENV", " production ")
+    assert _expose_exception_details() is False
 
 
 def test_create_app_registers_metadata_and_json_http_exception_handler(make_test_client) -> None:
@@ -19,6 +44,19 @@ def test_create_app_registers_metadata_and_json_http_exception_handler(make_test
     assert app.version == PRODUCT_VERSION
     assert response.status_code == 418
     assert response.json() == {"success": False, "error": "teapot", "code": "E_TEAPOT"}
+
+
+def test_create_app_json_http_exception_handler_handles_string_detail(make_test_client) -> None:
+    app = create_app()
+
+    @app.get("/plain-boom")
+    async def plain_boom() -> None:
+        raise HTTPException(status_code=400, detail="plain error")
+
+    response = make_test_client(app, raise_server_exceptions=False).get("/plain-boom")
+
+    assert response.status_code == 400
+    assert response.json() == {"success": False, "error": "plain error"}
 
 
 def test_create_app_allows_central_version_override() -> None:
