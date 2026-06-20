@@ -69,6 +69,29 @@ def test_task_router_falls_back_to_first_registered_agent(isolated_catalog: dict
     assert fallback.role_name == "only_one"
 
 
+def test_task_router_falls_back_to_first_capability_candidate_when_preferred_role_missing(
+    isolated_catalog: dict,
+) -> None:
+    _register("alpha", "code_generation")
+    _register("beta", "code_generation")
+
+    routed = TaskRouter().route("code")
+
+    assert routed is not None
+    assert routed.role_name == "alpha"
+
+
+def test_task_router_preferred_role_absent_uses_catalog_candidate_order(
+    isolated_catalog: dict,
+) -> None:
+    _register("beta", "code_generation")
+    _register("alpha", "code_generation")
+
+    routed = TaskRouter().route("code")
+
+    assert routed is not None
+    assert routed.role_name == "beta"
+
 def test_task_router_returns_none_when_catalog_is_empty(isolated_catalog: dict) -> None:
     router = TaskRouter()
     assert router.route("anything") is None
