@@ -226,10 +226,11 @@ def _make_pipeline(provider="openai", enabled=True):
 
 @pytest.mark.asyncio
 async def test_pipeline_disabled_returns_error():
-    pipeline, _ = _make_pipeline(enabled=False)
+    pipeline, llm = _make_pipeline(enabled=False)
     result = await pipeline.mockup_to_code(image_bytes=b"x", mime_type="image/png")
     assert result["success"] is False
     assert "devre dışı" in result["reason"]
+    llm.chat.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -325,9 +326,10 @@ async def test_pipeline_analyze_from_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_disabled():
-    pipeline, _ = _make_pipeline(enabled=False)
+    pipeline, llm = _make_pipeline(enabled=False)
     result = await pipeline.analyze(image_bytes=b"x", mime_type="image/png")
     assert result["success"] is False
+    llm.chat.assert_not_called()
 
 
 @pytest.mark.asyncio

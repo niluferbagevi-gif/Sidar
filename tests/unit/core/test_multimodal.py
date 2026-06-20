@@ -445,6 +445,31 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
     assert run(pipeline.transcribe_bytes(b"abc"))["success"] is False
 
 
+def test_pipeline_disabled_short_circuits_media_io(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
+    pipeline.enabled = False
+
+    async def _unexpected_local_media(**_kwargs):
+        raise AssertionError("disabled pipeline must not touch local media")
+
+    monkeypatch.setattr(pipeline, "_analyze_local_media", _unexpected_local_media)
+    monkeypatch.setattr(
+        multimodal,
+        "is_remote_media_source",
+        lambda _source: (_ for _ in ()).throw(
+            AssertionError("disabled pipeline must not inspect sources")
+        ),
+    )
+
+    local = run(pipeline.analyze_media(media_path=str(tmp_path / "missing.mp4")))
+    remote = run(pipeline.analyze_media_source(media_source="https://example.test/video.mp4"))
+    transcript = run(pipeline.transcribe_bytes(b"audio"))
+
+    assert local == {"success": False, "reason": "ENABLE_MULTIMODAL devre dışı"}
+    assert remote == {"success": False, "reason": "ENABLE_MULTIMODAL devre dışı"}
+    assert transcript == {"success": False, "reason": "ENABLE_MULTIMODAL devre dışı"}
+
+
 def test_pipeline_transcribe_bytes_limits():
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), TinyLimitConfig())
     assert run(pipeline.transcribe_bytes(b""))["success"] is False

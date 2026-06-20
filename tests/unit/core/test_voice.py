@@ -300,6 +300,24 @@ def test_pipeline_init_respects_voice_enabled_flag():
     assert p.voice_disabled_reason == "VOICE_ENABLED devre dışı."
 
 
+@pytest.mark.asyncio
+async def test_synthesize_text_disabled_by_feature_flag_skips_adapter_call():
+    p = _make_pipeline(voice_enabled=False)
+    calls: list[str] = []
+
+    async def _unexpected_synthesize(text: str, *, voice: str = "") -> dict:
+        calls.append(text)
+        raise AssertionError("disabled voice pipeline must not call TTS adapter")
+
+    p.adapter.synthesize = _unexpected_synthesize  # type: ignore[assignment]
+
+    result = await p.synthesize_text("Merhaba")
+
+    assert result["success"] is False
+    assert result["reason"] == "VOICE_ENABLED devre dışı."
+    assert calls == []
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # VoicePipeline.extract_ready_segments
 # ──────────────────────────────────────────────────────────────────────────────
