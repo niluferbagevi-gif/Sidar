@@ -18,7 +18,7 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 
 ### Mevcut kalite geçidi ile hizalama (zorunlu not)
 
-- Repo’daki günlük/CI global kalite geçidinin doğruluk kaynağı `.coveragerc` içindeki güncel `fail_under` değeridir; bu revizyonda değer `%100`'dür.
+- Repo’daki günlük/CI global kalite geçidinin doğruluk kaynağı `.coveragerc` içindeki güncel `fail_under` değeridir; bu revizyonda değer `%90`'dır.
 - `run_tests.sh`, açık `COVERAGE_FAIL_UNDER` verilmemişse `.coveragerc` değerini okur ve başarılı test koşusundan sonra `COVERAGE_RATCHET_STEP` varsayılanı `%1` puan olacak şekilde gate’i yalnızca yukarı ratchet eder.
 - Otonom CoverageAgent koşularında tek denemelik kapsam ayrıca mikro limitlerle korunur: varsayılan `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3`, `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`, `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25` ve `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10`.
 - Coverage gate eşiği için tek teknik doğruluk kaynağı `.coveragerc` dosyasıdır; `pyproject.toml` içinde ayrı bir `fail_under` tutulmaz. `run_tests.sh` bu değeri okur ve yalnız final birleşik raporda uygular; açık `COVERAGE_FAIL_UNDER` sadece bilinçli geçici override olarak kullanılmalıdır.
