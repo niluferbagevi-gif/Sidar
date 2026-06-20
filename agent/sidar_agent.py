@@ -739,6 +739,27 @@ class SidarAgent:
             )
             return result
 
+        allowed_paths = {
+            str(path).strip().lstrip("./")
+            for path in list(remediation_loop.get("scope_paths") or [])
+            if str(path).strip()
+        }
+        operation_paths = [
+            str(item.get("path") or "").strip().lstrip("./")
+            for item in operations
+            if str(item.get("path") or "").strip()
+        ]
+        out_of_scope_paths = sorted(
+            {path for path in operation_paths if allowed_paths and path not in allowed_paths}
+        )
+        if out_of_scope_paths:
+            result["status"] = "blocked"
+            result["summary"] = (
+                "Self-heal planı kapsam dışı dosya değiştirmeye çalıştığı için engellendi: "
+                f"{', '.join(out_of_scope_paths[:5])}"
+            )
+            return result
+
         backups: dict[str, str] = {}
         applied: list[str] = []
         try:

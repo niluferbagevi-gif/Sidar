@@ -1892,6 +1892,70 @@ async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(
     assert "yedekleme" in reverted["summary"]
 
 
+async def test_execute_self_heal_plan_blocks_out_of_scope_patch_before_file_io(
+    sidar_agent_factory, tmp_path: Path
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
+    code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.code = code
+
+    result = await agent._execute_self_heal_plan(
+        remediation_loop={"scope_paths": ["src/allowed.py"], "validation_commands": ["pytest -q"]},
+        plan={
+            "operations": [
+                {"path": "src/outside.py", "target": "old", "replacement": "new"},
+            ],
+            "validation_commands": ["pytest -q"],
+        },
+    )
+
+    assert result["status"] == "blocked"
+    assert result["operations_applied"] == []
+    assert result["validation_results"] == []
+    assert "kapsam dışı dosya" in result["summary"]
+    assert "src/outside.py" in result["summary"]
+    code.read_file.assert_not_called()
+    code.patch_file.assert_not_called()
+    code.run_shell_in_sandbox.assert_not_called()
+
+
+async def test_execute_self_heal_plan_rolls_back_when_validation_fails(
+    sidar_agent_factory, tmp_path: Path
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, BASE_DIR=str(tmp_path))
+    restored: dict[str, str] = {}
+    code = create_autospec(CodeManager, instance=True, spec_set=True)
+    code.read_file.return_value = (True, "old content")
+    code.patch_file.return_value = (True, "patched")
+
+    def _restore_file(path: str, content: str, *_args: object) -> tuple[bool, str]:
+        restored[path] = content
+        return True, "restored"
+
+    code.write_file.side_effect = _restore_file
+    code.run_shell_in_sandbox.return_value = (False, "tests failed")
+    agent.code = code
+
+    result = await agent._execute_self_heal_plan(
+        remediation_loop={"scope_paths": ["src/allowed.py"]},
+        plan={
+            "operations": [
+                {"path": "src/allowed.py", "target": "old", "replacement": "new"},
+            ],
+            "validation_commands": ["pytest tests/unit -q"],
+        },
+    )
+
+    assert result["status"] == "reverted"
+    assert result["reverted"] is True
+    assert result["operations_applied"] == ["src/allowed.py"]
+    assert result["validation_results"] == [
+        {"command": "pytest tests/unit -q", "ok": False, "output": "tests failed"}
+    ]
+    assert restored == {"src/allowed.py": "old content"}
+
 async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(
         trigger_id="tid", source="crm", event_name="sync", payload={}, meta={}
