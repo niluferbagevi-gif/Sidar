@@ -233,6 +233,34 @@ def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_server_module.cfg, "AUTONOMY_WEBHOOK_SECRET", "", raising=False)
 
 
+def _reset_web_route_dependency_factories() -> None:
+    """Restore module-scoped web route dependency factories to production builders."""
+    with contextlib.suppress(Exception):
+        web_server_module = importlib.import_module("web_server")
+        web_server_module.federation_routes.configure_federation_dependencies(
+            web_server_module._build_federation_dependencies
+        )
+        web_server_module.autonomy_routes.configure_autonomy_dependencies(
+            web_server_module._build_autonomy_dependencies
+        )
+
+
+@pytest.fixture(autouse=True)
+def _reset_route_dependency_factories() -> Generator[None, None, None]:
+    """Keep module-scoped web route dependency factories isolated between tests.
+
+    ``web.routes.federation`` and ``web.routes.autonomy`` keep their dependency
+    factories in module-level globals so route-level tests can install small
+    stubs without constructing the full root ``web_server`` module.  Without a
+    suite-wide reset, a later root-level alias test that runs in the same pytest
+    worker can inherit those stubs and bypass monkeypatched ``web_server``
+    dependencies, which makes xdist ordering affect HMAC/signature behavior.
+    """
+    _reset_web_route_dependency_factories()
+    yield
+    _reset_web_route_dependency_factories()
+
+
 _MISSING_SYS_MODULE = object()
 _SENSITIVE_SYS_MODULES = (
     "agent.base_agent",
