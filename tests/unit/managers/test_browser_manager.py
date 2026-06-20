@@ -1090,6 +1090,47 @@ def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
     assert result["multimodal_analysis"]["success"] is True
 
 
+def test_analyze_visual_drift_real_screenshot_triggers_multimodal_at_threshold_margin(
+    manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image_module = pytest.importorskip("PIL.Image")
+    sess = _session("playwright")
+    sess.session_id = "v-real"
+    manager._sessions["v-real"] = sess
+
+    baseline = manager.artifact_dir / "baseline-real.png"
+    current = manager.artifact_dir / "current-real.png"
+    baseline_img = image_module.new("RGB", (10, 10), "black")
+    current_img = image_module.new("RGB", (10, 10), "black")
+    current_img.putpixel((0, 0), (255, 255, 255))
+    baseline_img.save(baseline)
+    current_img.save(current)
+
+    monkeypatch.setattr(manager, "capture_screenshot", lambda *_a, **_k: (True, str(current)))
+    calls: list[tuple[str, str]] = []
+
+    async def _mm(path: str, prompt: str):
+        calls.append((path, prompt))
+        return {"success": True, "analysis": "layout drift borderline"}
+
+    monkeypatch.setattr(manager, "_analyze_screenshot_with_multimodal", _mm)
+
+    result = asyncio.run(
+        manager.analyze_visual_drift(
+            "v-real", baseline_path=str(baseline), run_multimodal_analysis=True
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["reason"] == "pixel_diff"
+    assert result["drift_score"] == 0.01
+    assert result["multimodal_check"]["triggered"] is True
+    assert result["multimodal_analysis"]["analysis"] == "layout drift borderline"
+    assert len(calls) == 1
+    assert calls[0][0] == str(current)
+    assert "UI regresyon" in calls[0][1]
+
+
 def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
