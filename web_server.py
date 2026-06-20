@@ -3307,20 +3307,79 @@ def _build_operations_dependencies() -> SimpleNamespace:
     )
 
 
-api_operations_list_campaigns = operations_routes.api_operations_list_campaigns
-api_operations_create_campaign = operations_routes.api_operations_create_campaign
-api_operations_list_assets = operations_routes.api_operations_list_assets
-api_operations_add_asset = operations_routes.api_operations_add_asset
-api_operations_list_checklists = operations_routes.api_operations_list_checklists
-api_operations_add_checklist = operations_routes.api_operations_add_checklist
-api_operations_poyraz_run = operations_routes.api_operations_poyraz_run
-api_operations_generate_landing_page = operations_routes.api_operations_generate_landing_page
-api_operations_generate_campaign_copy = operations_routes.api_operations_generate_campaign_copy
-api_operations_plan_service = operations_routes.api_operations_plan_service
-api_qa_coverage_tasks = operations_routes.api_qa_coverage_tasks
-api_qa_coverage_analyze = operations_routes.api_qa_coverage_analyze
-api_qa_coverage_generate = operations_routes.api_qa_coverage_generate
-api_qa_coverage_batch = operations_routes.api_qa_coverage_batch
+def _reset_operations_route_dependencies() -> None:
+    """Keep direct web_server route calls isolated from route-module test overrides."""
+    operations_routes.configure_operations_dependencies(_build_operations_dependencies)
+
+
+async def api_operations_list_campaigns(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_list_campaigns(*args, **kwargs)
+
+
+async def api_operations_create_campaign(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_create_campaign(*args, **kwargs)
+
+
+async def api_operations_list_assets(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_list_assets(*args, **kwargs)
+
+
+async def api_operations_add_asset(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_add_asset(*args, **kwargs)
+
+
+async def api_operations_list_checklists(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_list_checklists(*args, **kwargs)
+
+
+async def api_operations_add_checklist(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_add_checklist(*args, **kwargs)
+
+
+async def api_operations_poyraz_run(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_poyraz_run(*args, **kwargs)
+
+
+async def api_operations_generate_landing_page(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_generate_landing_page(*args, **kwargs)
+
+
+async def api_operations_generate_campaign_copy(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_generate_campaign_copy(*args, **kwargs)
+
+
+async def api_operations_plan_service(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_operations_plan_service(*args, **kwargs)
+
+
+async def api_qa_coverage_tasks(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_qa_coverage_tasks(*args, **kwargs)
+
+
+async def api_qa_coverage_analyze(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_qa_coverage_analyze(*args, **kwargs)
+
+
+async def api_qa_coverage_generate(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_qa_coverage_generate(*args, **kwargs)
+
+
+async def api_qa_coverage_batch(*args: Any, **kwargs: Any) -> Any:
+    _reset_operations_route_dependencies()
+    return await operations_routes.api_qa_coverage_batch(*args, **kwargs)
 
 
 def _get_teams_manager() -> Any:
