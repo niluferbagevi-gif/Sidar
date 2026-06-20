@@ -100,16 +100,16 @@ describe("App", () => {
     renderApp("/chat");
 
     await user.click(screen.getByRole("link", { name: "P2P Diyalog" }));
-    expect(screen.getByText("P2P Mock")).toBeInTheDocument();
+    expect(await screen.findByText("P2P Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Swarm Akışı" }));
-    expect(screen.getByText("Swarm Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Swarm Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Poyraz & Coverage" }));
-    expect(screen.getByText("Ops QA Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Ops QA Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Tenant Admin" }));
-    expect(screen.getByText("Tenant Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Tenant Mock")).toBeInTheDocument();
   });
 
   it("catch-all rotasında bilinmeyen adresleri /chat'e yönlendirir", async () => {
@@ -136,13 +136,13 @@ describe("App", () => {
     renderApp("/chat");
 
     await user.click(screen.getByRole("link", { name: "Prompt Admin" }));
-    expect(screen.getByText("Prompt Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Prompt Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Plugin Marketplace" }));
-    expect(screen.getByText("Plugin Marketplace Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Plugin Marketplace Mock")).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Agent Manager" }));
-    expect(screen.getByText("Agent Manager Mock")).toBeInTheDocument();
+    expect(await screen.findByText("Agent Manager Mock")).toBeInTheDocument();
   });
 
   it("admin olmayan oturumlarda admin navigasyonunu gizler ve doğrudan girişte guard gösterir", () => {
