@@ -6604,7 +6604,11 @@ prepare_docker_for_migrations() {
             info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
         fi
         info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            fail "Etkileşimsiz kurulumda Docker daemon zorunludur. Migrasyon/compose adımları eksik kalmaması için kurulum durduruldu."
+        fi
         MIGRATION_DOCKER_POLICY="disabled"
+        warn "Docker daemon doğrulanamadığı için migrasyon akışı güvenli modda devre dışı bırakıldı. Kurulumu tamamlamak için daemon hazırken betiği tekrar çalıştırın."
         return
     fi
 
