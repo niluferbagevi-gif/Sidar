@@ -138,3 +138,15 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "torch" in policy
     assert "upstream fix unavailable" in policy
     assert date.fromisoformat("2026-09-15") > date(2026, 6, 17)
+
+
+def test_production_profile_excludes_dev_quality_tools() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    production_dependencies = set(pyproject["project"]["optional-dependencies"]["production"])
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert production_dependencies == {"sidar[postgres,telemetry]"}
+    assert "production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar" in docs
+    assert "P2 structural hardening" in docs
+    for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
+        assert not any(dep.startswith(package_prefix) for dep in production_dependencies)

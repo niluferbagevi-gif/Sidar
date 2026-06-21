@@ -31,6 +31,11 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "agent/self_heal/executor.py",
         "agent/roles/coverage/analyzer.py",
         "core/llm/providers/ollama.py",
+        "core/llm/openai.py",
+        "core/llm/anthropic.py",
+        "core/llm/gemini.py",
+        "core/llm/ollama.py",
+        "core/llm/litellm.py",
         "core/doctor/checks/gpu.py",
         "agent/roles/reviewer/judge.py",
         "core/ci_remediation/validation.py",
@@ -63,3 +68,17 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
     assert callable(rag_facade.build_embedding_function)
     assert callable(self_heal_executor.execute_self_heal_plan)
+
+
+def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "core/llm/{openai,anthropic,gemini,ollama,litellm}.py" in plan
+    assert "core/llm/openai.py" in plan
+    assert "core/llm/anthropic.py" in plan
+    assert "core/llm/gemini.py" in plan
+    assert "core/llm/ollama.py" in plan
+    assert "core/llm/litellm.py" in plan
+    assert "managers/browser/playwright.py" in plan
+    assert "managers/browser/selenium.py" in plan
+    assert "P2 Playwright/Selenium adapter" in plan

@@ -84,9 +84,10 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
    `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
 3. **Docker/installer koordinasyonu:** Production Dockerfile, installer ve deploy runbook'ları yeni profile
    göre güncellenmeden varsayılan production install akışı değiştirilmez.
-4. **Production varsayılanlarını daraltma:** Dev/test araçları Faz 1'de `dev` extra'ya taşındı; Dockerfile,
-   installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra production
-   profile yönlendirilir.
+4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
+   extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar.
+   Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
+   production profile yönlendirilir.
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
