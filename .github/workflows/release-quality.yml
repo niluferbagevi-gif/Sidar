@@ -106,3 +106,52 @@ jobs:
         with:
           name: sidar-docker-sbom-and-signature
           path: artifacts/sbom/
+
+  benchmark-coverage-trend:
+    name: Benchmark and coverage trend gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Restore benchmark coverage trend history
+        uses: actions/cache@v4
+        with:
+          path: artifacts/benchmark-coverage-trend/history.json
+          key: benchmark-coverage-trend-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-coverage-trend-${{ runner.os }}-py311-${{ github.ref_name }}-
+            benchmark-coverage-trend-${{ runner.os }}-py311-main-
+            benchmark-coverage-trend-${{ runner.os }}-py311-
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+      - name: Generate benchmark and coverage artifacts
+        run: |
+          mkdir -p artifacts/benchmark-coverage-trend
+          uv run pytest -q tests/performance/test_benchmark.py \
+            -k "format_table" \
+            --benchmark-json=artifacts/benchmark-coverage-trend/benchmark.json \
+            --benchmark-min-rounds=5 \
+            --cov=scripts \
+            --cov-report=xml:artifacts/benchmark-coverage-trend/coverage.xml \
+            --cov-fail-under=0
+      - name: Check benchmark coverage trend
+        run: |
+          uv run python scripts/ci/check_benchmark_coverage_trend.py \
+            --benchmark-json artifacts/benchmark-coverage-trend/benchmark.json \
+            --coverage-xml artifacts/benchmark-coverage-trend/coverage.xml \
+            --history-json artifacts/benchmark-coverage-trend/history.json \
+            --window 10 \
+            --max-regression-pct 15
+      - name: Upload benchmark coverage trend artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-coverage-trend
+          path: artifacts/benchmark-coverage-trend/
+          if-no-files-found: warn
+          retention-days: 30

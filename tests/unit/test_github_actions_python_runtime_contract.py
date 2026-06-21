@@ -78,3 +78,16 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert '--benchmark-compare="${compare_file}"' in workflow
     assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in workflow
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
+
+
+def test_release_quality_runs_benchmark_coverage_trend_gate():
+    workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
+
+    assert "benchmark-coverage-trend:" in workflow
+    assert "Restore benchmark coverage trend history" in workflow
+    assert "artifacts/benchmark-coverage-trend/history.json" in workflow
+    assert "scripts/ci/check_benchmark_coverage_trend.py" in workflow
+    assert "--benchmark-json artifacts/benchmark-coverage-trend/benchmark.json" in workflow
+    assert "--coverage-xml artifacts/benchmark-coverage-trend/coverage.xml" in workflow
+    assert "--history-json artifacts/benchmark-coverage-trend/history.json" in workflow
+    assert "--max-regression-pct 15" in workflow
