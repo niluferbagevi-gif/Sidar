@@ -4,6 +4,87 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}" || exit 1
 
+RUN_TESTS_STAGE="${RUN_TESTS_STAGE:-all}"
+print_usage() {
+  cat <<'USAGE'
+Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]
+
+Stage examples:
+  bash run_tests.sh --stage static
+  bash run_tests.sh --stage unit
+  bash run_tests.sh --stage integration,smoke
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --stage)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "❌ --stage için değer gerekli." >&2
+        print_usage >&2
+        exit 2
+      fi
+      RUN_TESTS_STAGE="$2"
+      shift 2
+      ;;
+    --stage=*)
+      RUN_TESTS_STAGE="${1#--stage=}"
+      shift
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "❌ Bilinmeyen argüman: $1" >&2
+      print_usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+normalize_test_stages() {
+  local raw="${RUN_TESTS_STAGE:-all}"
+  raw="${raw// /}"
+  raw="${raw,,}"
+  if [ -z "${raw}" ]; then
+    raw="all"
+  fi
+  local normalized=","
+  local item
+  IFS=',' read -ra _stage_items <<< "${raw}"
+  for item in "${_stage_items[@]}"; do
+    case "${item}" in
+      all|static|unit|integration|smoke|e2e|backend|frontend|bats)
+        normalized+="${item},"
+        ;;
+      "")
+        ;;
+      *)
+        echo "❌ Geçersiz --stage değeri: ${item}" >&2
+        print_usage >&2
+        exit 2
+        ;;
+    esac
+  done
+  RUN_TESTS_STAGE="${normalized}"
+}
+
+normalize_test_stages
+
+stage_all_selected() {
+  [[ "${RUN_TESTS_STAGE}" == *,all,* ]]
+}
+
+stage_selected() {
+  local stage="$1"
+  stage_all_selected || [[ "${RUN_TESTS_STAGE}" == *,"${stage}",* ]]
+}
+
+backend_infra_required_for_stage() {
+  stage_all_selected || stage_selected backend || stage_selected integration || stage_selected smoke || stage_selected e2e
+}
+
 BATS_REPORT_DIR="${BATS_REPORT_DIR:-artifacts/bats}"
 if [[ "${BATS_REPORT_DIR}" != artifacts/* || "${BATS_REPORT_DIR}" == *".."* ]]; then
   echo "❌ BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir: ${BATS_REPORT_DIR}"
@@ -374,6 +455,27 @@ else
   # Fazları çalıştır ve raporla; yerelde açık opt-in yoksa final çıkışı bloke etme.
   BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"
   FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-0}"
+fi
+
+SIDAR_RUN_BACKEND_PYTEST=1
+if ! stage_all_selected; then
+  RUN_STATIC_ANALYSIS=0
+  RUN_BATS_TESTS=0
+  RUN_FRONTEND_E2E=0
+  RUN_BENCHMARKS=0
+  SIDAR_RUN_BACKEND_PYTEST=0
+  if stage_selected static; then
+    RUN_STATIC_ANALYSIS=1
+  fi
+  if stage_selected backend || stage_selected unit || stage_selected integration || stage_selected smoke || stage_selected e2e; then
+    SIDAR_RUN_BACKEND_PYTEST=1
+  fi
+  if stage_selected bats; then
+    RUN_BATS_TESTS=1
+  fi
+  if stage_selected frontend; then
+    RUN_FRONTEND_E2E=1
+  fi
 fi
 
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
@@ -1380,11 +1482,31 @@ PY
     base_pytest_cmd+=(--ignore="${PERFORMANCE_TEST_DIR}")
   fi
 
+  local run_unit_phase=0
+  local phase2_dirs=()
+  if stage_selected backend || stage_selected unit; then
+    run_unit_phase=1
+  fi
+  if stage_selected backend || stage_selected integration; then
+    phase2_dirs+=(tests/integration)
+  fi
+  if stage_selected backend || stage_selected smoke; then
+    phase2_dirs+=(tests/smoke)
+  fi
+  if stage_selected backend || stage_selected e2e; then
+    phase2_dirs+=(tests/e2e)
+  fi
+
   # Aşama 1: Unit testler (yüksek paralellik)
-  local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
-  echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
-  "${phase1_cmd[@]}"
-  local phase1_exit=$?
+  local phase1_exit=0
+  if [ "${run_unit_phase}" -eq 1 ]; then
+    local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
+    echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
+    "${phase1_cmd[@]}"
+    phase1_exit=$?
+  else
+    echo "ℹ️ Aşama 1 (Unit) atlandı (--stage=${RUN_TESTS_STAGE})."
+  fi
 
   # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
   local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
@@ -1402,12 +1524,21 @@ PY
     fi
     filtered_phase2_cmd+=("${arg}")
   done
-  # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
-  # tek başına fail-under kalite barajına tabi tutulmaz.
-  phase2_cmd=("${filtered_phase2_cmd[@]}" --cov-append -n "${phase2_workers}" tests/integration tests/smoke tests/e2e)
-  echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
-  "${phase2_cmd[@]}"
-  local phase2_exit=$?
+  local phase2_exit=0
+  if [ "${#phase2_dirs[@]}" -gt 0 ]; then
+    local phase2_cov_args=()
+    if [ "${run_unit_phase}" -eq 1 ]; then
+      # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
+      # tek başına fail-under kalite barajına tabi tutulmaz.
+      phase2_cov_args+=(--cov-append)
+    fi
+    phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")
+    echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
+    "${phase2_cmd[@]}"
+    phase2_exit=$?
+  else
+    echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."
+  fi
 
   if [ "${phase1_exit}" -ne 0 ] || [ "${phase2_exit}" -ne 0 ]; then
     record_backend_failure "pytest_failed"
@@ -1615,13 +1746,33 @@ PY_RATCHET_GATE
 #    Faz-1: Ollama model senkronizasyonu (otonom ajan beyni)
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
-if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
-  run_pytest_coverage_report
-  run_bats_shell_tests
-  update_progressive_coverage_gate
+if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then
+  if backend_infra_required_for_stage; then
+    if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
+      run_pytest_coverage_report
+      run_bats_shell_tests
+      update_progressive_coverage_gate
+    else
+      echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
+      BACKEND_EXIT_CODE=1
+    fi
+  elif ensure_uv_available && ensure_runtime_dependencies && run_static_analysis_gates; then
+    echo "ℹ️ Unit-only stage: Docker/DB/Ollama önkoşulları atlandı."
+    run_pytest_coverage_report
+    update_progressive_coverage_gate
+  else
+    echo "❌ Backend testleri atlandı: unit-only önkoşul adımlarından biri başarısız."
+    BACKEND_EXIT_CODE=1
+  fi
+elif stage_selected static; then
+  if ensure_uv_available && ensure_runtime_dependencies && run_static_analysis_gates; then
+    echo "✅ Static stage tamamlandı."
+  else
+    echo "❌ Static stage başarısız."
+    BACKEND_EXIT_CODE=1
+  fi
 else
-  echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
-  BACKEND_EXIT_CODE=1
+  echo "ℹ️ Backend pytest/static kalite akışı atlandı (--stage=${RUN_TESTS_STAGE})."
 fi
 
 # Güvenlik kapıları pytest yürütümünü bloke etmez; sonuç final çıkışta değerlendirilir.
