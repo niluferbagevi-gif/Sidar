@@ -16,6 +16,10 @@ jobs:
       AUTH_BENCH_P95_BUDGET_MS: "950"
       AUTH_BENCH_P99_BUDGET_MS: "1200"
       BENCHMARK_CPU_AFFINITY: "0"
+      BENCHMARK_COMPARE_REQUIRED: "1"
+      BENCHMARK_ENFORCE_COMPARE: "1"
+      BENCHMARK_COMPARE_NAME: "baseline"
+      BENCHMARK_COMPARE_FAIL: "mean:10%"
 
     steps:
       - name: Checkout
@@ -31,6 +35,17 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Restore auth benchmark baseline cache
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks
+          key: auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
+            auth-benchmark-baseline-${{ runner.os }}-py311-main-
+            auth-benchmark-baseline-${{ runner.os }}-py311-master-
+            auth-benchmark-baseline-${{ runner.os }}-py311-
+
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
@@ -45,7 +60,19 @@ jobs:
       - name: Run auth benchmark suite with isolated CPU pinning
         run: |
           mkdir -p artifacts/auth-benchmark
-          CMD='uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=5'
+          mkdir -p .benchmarks
+          compare_file="$(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+          compare_args=()
+          if [[ -n "${compare_file}" ]]; then
+            compare_args+=(--benchmark-compare="${compare_file}")
+            if [[ "${BENCHMARK_ENFORCE_COMPARE}" == "1" ]]; then
+              compare_args+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+            fi
+          elif [[ "${BENCHMARK_COMPARE_REQUIRED}" == "1" ]]; then
+            echo "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks altında ${BENCHMARK_COMPARE_NAME} baseline bulunamadı."
+            exit 1
+          fi
+          CMD="uv run pytest -q tests/performance/test_benchmark.py -k \"password_hash_cpu_cost or password_verify_cpu_cost\" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=5 --benchmark-save=${BENCHMARK_COMPARE_NAME} ${compare_args[*]}"
           if command -v taskset >/dev/null 2>&1; then
             taskset -c "${BENCHMARK_CPU_AFFINITY}" bash -lc "${CMD}"
           else

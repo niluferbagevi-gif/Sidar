@@ -66,3 +66,15 @@ def test_weekly_mutation_workflow_uses_balanced_mutmut_parallelism():
     assert "mutmut run --max-children 4" in workflow
     assert "MUTMUT_MAX_CHILDREN" not in workflow
     assert "os.cpu_count" not in workflow
+
+
+def test_nightly_auth_benchmark_requires_cached_baseline_compare():
+    workflow = (WORKFLOW_DIR / "nightly-auth-benchmark.yml").read_text()
+
+    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in workflow
+    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in workflow
+    assert "Restore auth benchmark baseline cache" in workflow
+    assert "auth-benchmark-baseline-${{ runner.os }}-py311-" in workflow
+    assert '--benchmark-compare="${compare_file}"' in workflow
+    assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in workflow
+    assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
