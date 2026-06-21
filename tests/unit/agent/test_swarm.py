@@ -87,6 +87,14 @@ def test_task_router_fallbacks_to_first_agent_when_capability_missing(monkeypatc
     assert TaskRouter().route("not-mapped") == only
 
 
+def test_task_router_falls_back_to_first_candidate_when_preferred_role_missing(monkeypatch):
+    helper = AgentSpec(role_name="helper", capabilities=["code_generation"])
+    fake_catalog = _FakeCatalog([helper])
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: fake_catalog))
+
+    assert TaskRouter().route("code") == helper
+
+
 def test_task_router_route_by_role_supports_legacy_catalog_without_get(monkeypatch):
     qa = AgentSpec(role_name="qa", capabilities=["test_generation"])
     fake_catalog = _LegacyOnlyCatalog([qa])
