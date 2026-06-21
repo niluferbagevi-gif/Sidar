@@ -5,6 +5,7 @@ export const TOKEN_STORAGE_MODE_KEY = "sidar_token_storage_mode";
 let inMemoryToken = "";
 
 function getBrowserStorage(kind = "localStorage") {
+  /* c8 ignore next -- Defensive SSR guard for runtimes without globalThis. */
   if (typeof globalThis === "undefined") return null;
   try {
     return globalThis[kind] || null;
