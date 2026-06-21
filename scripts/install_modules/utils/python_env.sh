@@ -87,8 +87,11 @@ install_python_deps() {
     UV_CMD=(uv)
 
     # INSTALL_DEV standardı: dev araçları kurulumun varsayılan parçasıdır.
-    # uv'de bu sözleşmeyi --extra dev + --all-extras ile zorunlu tutuyoruz.
-    local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
+    # `dev` extra zaten [project.optional-dependencies] altında olduğu için
+    # --all-extras tek başına bu sözleşmeyi karşılar; uv >=0.5 --all-extras
+    # ile --extra <ad> bayraklarını mutually exclusive kabul ettiğinden ikisini
+    # birlikte kullanmıyoruz.
+    local -a SYNC_ARGS=(--frozen --all-extras)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -103,13 +106,13 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
     if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras --extra dev başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
-        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras --extra dev' akışını temiz bir ortamda tekrar çalıştırın."
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras' akışını temiz bir ortamda tekrar çalıştırın."
     fi
 
     ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
@@ -134,7 +137,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras --extra dev' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
 }
 
 select_pytorch_cuda_wheel_tag() {
