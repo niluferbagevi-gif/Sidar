@@ -46,3 +46,20 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "`/ws/chat` router factory" in plan
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
+
+
+def test_phase_one_refactor_boundaries_are_importable() -> None:
+    import agent.self_heal.executor as self_heal_executor
+    import core.db.auth as db_auth
+    import core.db.coverage as db_coverage
+    import core.db.marketing as db_marketing
+    import core.db.models as db_models
+    import core.db.session as db_session
+    import core.rag.facade as rag_facade
+
+    assert db_auth.UserRecord is db_models.UserRecord
+    assert db_session.SessionRecord is db_models.SessionRecord
+    assert db_marketing.MarketingCampaignRecord is db_models.MarketingCampaignRecord
+    assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
+    assert callable(rag_facade.build_embedding_function)
+    assert callable(self_heal_executor.execute_self_heal_plan)

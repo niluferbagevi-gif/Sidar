@@ -13,12 +13,12 @@ embedding compatibility helpers through `core.rag.embeddings_wrapper`.
 
 ## Database
 
-`core.db` is currently a module file, so a `core/db/` package cannot be introduced in
-the same migration without changing Python import resolution and moving the facade.
-The first safe extraction therefore uses `core.db_components`: dialect normalization
-lives in `dialect.py`, while Alembic execution lives in `migrations.py`. Pool and async
-pool extraction should follow in this transition namespace before a dedicated facade
-migration converts `core.db` into a package.
+`core.db` is now a package facade (`core/db/__init__.py`) after the Phase 1 package
+conversion. Legacy `from core.db import ...` imports remain supported while new code
+can target domain boundaries such as `core.db.auth`, `core.db.coverage`,
+`core.db.marketing`, `core.db.session`, and `core.db.models`. The existing
+`core.db_components` transition namespace still owns low-level dialect and migration
+helpers until pool/repository code is moved in later slices.
 
 ## Code manager
 
@@ -29,10 +29,10 @@ framing and URI handling in `lsp.py`, platform-specific LSP executable discovery
 
 ## Follow-up slices
 
-1. Extract RAG indexing orchestration and document-store query execution after their
+1. Move DB repository/pool lifecycle code from `core/db/__init__.py` into the new
+   domain modules after their facade import contracts are stable.
+2. Extract RAG indexing orchestration and document-store query execution after their
    backend injection points have stable import-contract tests.
-2. Move PostgreSQL pool lifecycle and async pool adapters into `core.db_components`
-   before converting `core.db` from a file facade to a package facade.
 3. Move the remaining `CodeManager` subprocess orchestration behind `managers.code.runner`.
-4. Split `agent.sidar_agent` only after its self-heal, nightly workflow, and distributed
-   lock boundaries are covered by explicit facade tests.
+4. Continue splitting `agent.sidar_agent` now that self-heal execution has an
+   `agent.self_heal.executor` boundary.

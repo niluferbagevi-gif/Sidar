@@ -1191,7 +1191,7 @@ class Database:
         import importlib.util as _importlib_util
         import logging as _log
 
-        definitions_path = Path(__file__).resolve().parents[1] / "agent" / "definitions.py"
+        definitions_path = Path(__file__).resolve().parents[2] / "agent" / "definitions.py"
         spec = _importlib_util.spec_from_file_location("sidar_agent_definitions", definitions_path)
         default_prompt = ""
         if spec and spec.loader:
