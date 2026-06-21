@@ -248,7 +248,7 @@ def check_dependency_profile_plan_sync(
     plan_lower = plan_text.lower()
 
     pyproject_markers = {
-        "legacy_full_install_note": "legacy tam kurulum" in pyproject_lower,
+        "phase1_runtime_dependency_note": "faz 1 runtime yüzeyi" in pyproject_lower,
         "owner_doc_points_to_plan": owner_doc == normalized_plan_path,
         "uv_all_extras_standard": current_install_standard == "uv sync --all-extras",
         "production_profile_declared": "production" in profiles,
@@ -257,7 +257,7 @@ def check_dependency_profile_plan_sync(
     }
     plan_markers = {
         "mentions_pyproject": "pyproject.toml" in plan_lower,
-        "mentions_legacy_full_surface": "legacy" in plan_lower and "tam" in plan_lower,
+        "mentions_phase1_dev_split": "faz 1" in plan_lower and "dev split" in plan_lower,
         "mentions_uv_all_extras_standard": "uv sync --all-extras" in plan_text,
         "mentions_production_minimal": "production-minimal" in plan_lower,
         "mentions_tool_plan_table": "[tool.sidar.dependency_profile_plan]" in plan_text,

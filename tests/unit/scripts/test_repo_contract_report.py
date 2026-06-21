@@ -62,7 +62,7 @@ def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
     assert status.status == "ok"
     assert status.missing_pyproject_markers == []
     assert status.missing_plan_markers == []
-    assert status.pyproject_markers["legacy_full_install_note"] is True
+    assert status.pyproject_markers["phase1_runtime_dependency_note"] is True
     assert status.pyproject_markers["planned_profile_groups_declared"] is True
     assert status.plan_markers["mentions_tool_plan_table"] is True
     assert status.plan_markers["mentions_planned_profile_groups"] is True
@@ -87,7 +87,7 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
     status = report.check_dependency_profile_plan_sync(pyproject, plan)
 
     assert status.status == "drift"
-    assert "legacy_full_install_note" in status.missing_pyproject_markers
+    assert "phase1_runtime_dependency_note" in status.missing_pyproject_markers
     assert "production_profile_declared" in status.missing_pyproject_markers
     assert "preserves_all_extras_standard" in status.missing_pyproject_markers
     assert "planned_profile_groups_declared" in status.missing_pyproject_markers

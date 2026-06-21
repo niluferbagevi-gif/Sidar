@@ -8,13 +8,12 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 
 ## Mevcut durum
 
-- Ana `dependencies` listesi bugün runtime paketleri ile pytest/ruff/mypy/bandit/safety gibi
-  geliştirme ve test araçlarını birlikte içerir; bu liste `pyproject.toml` yorumuyla uyumlu
-  olarak legacy tam kurulum yüzeyi kabul edilir.
-- `dev` extra aynı araçların önemli bir bölümünü ayrıca taşır; bu, eski kurulum davranışları ve
-  `uv sync --all-extras` standardı nedeniyle geriye dönük uyumluluk sağlar.
-- Bu PR, dependency çözümünü veya installer/CI komutlarını değiştirmez; yalnız plan ve izleme
-  metadata'sı ekler.
+- Ana `dependencies` listesi Faz 1 itibarıyla production-minimal geçişin runtime yüzeyidir;
+  pytest/ruff/mypy/bandit/safety gibi geliştirme ve test araçları runtime listesinden çıkarılmıştır.
+- `dev` extra bu araçları taşır; `all` extra da `dev` profilini içerdiği için yerel geliştirme ve
+  CI için `uv sync --all-extras` standardı geriye dönük uyumlu kalır.
+- Dockerfile/installer production varsayılanları bu PR'da değiştirilmez; production image/runbook
+  geçişi ayrı koordinasyon adımı olarak izlenir.
 
 ## Hedef profiller
 
@@ -23,7 +22,7 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 | `runtime` | Sidar çekirdeğinin minimum import/runtime bağımlılıkları | config, FastAPI, DB base, HTTP client, güvenlik, temel RAG olmayan core paketler | Ana `dependencies` uzun vadede buna indirgenir. |
 | `dev` | Test/lint/type/security kalite araçları | `pytest`, `pytest-*`, `ruff`, `mypy`, `pyright`, `bandit`, `safety`, type stubs, test doubles | CI ve local kalite kapıları bu profile bağlı kalır. |
 | `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
-| `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | Docker/installer ile birlikte tanıtılmalıdır. |
+| `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | Faz 1 itibarıyla `sidar[postgres,telemetry]` extra olarak tanımlıdır; Docker/installer varsayılanına geçiş ayrı doğrulanır. |
 
 ### Planlanan ayrıştırma grupları
 
@@ -34,12 +33,13 @@ check ve planlama metadata'sıdır; `uv sync --all-extras` geliştirme standard�
 
 ## Envanter taslağı
 
-Bu tablo, **Envanter** fazının başlangıç sınıflandırmasıdır; install/lock davranışını
-değiştirmez ve ana `dependencies` listesinden paket taşımaz. Amaç, sonraki PR'larda
-CI dry-run, Docker image ve installer/runbook değişiklikleriyle birlikte hangi paketin
-hangi profile aday olduğunu açıkça izlemektir.
-Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
-`[tool.sidar.dependency_inventory.labels]` altında tutulur; izin verilen etiketler
+Bu tablo, **Envanter + Faz 1 dev split** sınıflandırmasıdır; runtime/dev install davranışını
+`uv sync --all-extras` açısından değiştirmez. Ana runtime
+listesinden dev/test araçları çıkarılmış olsa da bu paketler `dev` extra içinde korunur.
+Amaç, sonraki PR'larda CI dry-run, Docker image ve installer/runbook değişiklikleriyle birlikte
+hangi paketin hangi profile aday olduğunu açıkça izlemektir.
+Ana runtime dependencies ve `dev` extra adayları için makine-okunur etiketler `pyproject.toml`
+içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin verilen etiketler
 `runtime`, `dev`, `provider`, `integration`, `test-double` ve `security-tool` değerleridir.
 
 | Sınıf | Aday paketler / extras | Geçiş notu |
@@ -51,7 +51,7 @@ Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
 | `runtime-ops-telemetry` | `requests`, `tenacity`, `opentelemetry-*`; `telemetry` extra: `prometheus-client`, `opentelemetry-*` | Operasyonel HTTP retry ve tracing/exporter paketleri; production profilinde telemetry seçimiyle doğrulanmalı. |
 | `optional-provider` | `gemini`, `anthropic`, `openai`, `litellm`, `lora`, `gpu`, `voice` extras | Model sağlayıcıları ve ağır ML/GPU/STT yüzeyi varsayılan production-minimal profile zorunlu olmamalı. |
 | `optional-integration` | `PyGithub`, `duckduckgo-search`, `pillow`, `pyttsx3`; extras: `sandbox`, `gui`, `slack`, `browser`, `tools`, `aws`, `jira`, `teams` | Dış servis, browser, GUI ve sandbox entegrasyonları kullanım bazlı extras olarak kalmalı. |
-| `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Bugün ana listede bilinçli olarak korunur; production split tamamlanana kadar `uv sync --all-extras` standardını bozmak için taşınmaz. |
+| `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. |
 
 ## Güvenlik odaklı çözümleme sınırları
 
@@ -67,21 +67,26 @@ Her ana dependency için makine-okunur etiketler `pyproject.toml` içindeki
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
   yeniden çalıştırılmalıdır.
+- `uv.lock` Faz 1'de Linux deployment/CI hedefiyle sınırlanmıştır (`[tool.uv].environments = ["sys_platform == 'linux'"]`).
+  Bu sınır, production-minimal lock çözümünden macOS/Windows GUI bağımlılıklarını ve platforma özel PyObjC/Win32
+  paketlerini çıkarır; macOS/Windows installer desteği ayrı profile matrisiyle geri eklenmelidir.
 - Bu sınır kaldırılmadan önce RAG embedding, Whisper/STT, CPU-only ve GPU/CUDA smoke
   profilleri birlikte doğrulanmalıdır.
 
 ## Aşamalı geçiş
 
-1. **Envanter:** Ana `dependencies` içindeki paketleri `runtime`, `dev`, optional integration ve provider
-   sınıflarına etiketle. Bu aşamada lock veya install davranışı değişmez.
+1. **Envanter + Faz 1 dev split:** Ana `dependencies` içindeki runtime paketleri ile `dev` extra içindeki
+   kalite araçlarını `runtime`, `dev`, optional integration ve provider sınıflarına etiketle. Dev/test
+   araçları ana runtime listesinden çıkarılmıştır; `uv sync --all-extras` davranışı korunur.
 2. **CI dry-run:** Yeni profil komutlarını ayrı non-blocking job olarak dene; örn. production image için
    `uv sync --frozen --extra production` ancak ana gate yine `uv sync --all-extras` kalır.
    İlk takip işi `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ıdır;
    `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
 3. **Docker/installer koordinasyonu:** Production Dockerfile, installer ve deploy runbook'ları yeni profile
-   göre güncellenmeden ana `dependencies` daraltılmaz.
-4. **Ana liste daraltma:** Sadece dry-run ve installer doğrulaması geçtikten sonra dev/test araçları ana
-   `dependencies` listesinden `dev` extra'ya taşınır.
+   göre güncellenmeden varsayılan production install akışı değiştirilmez.
+4. **Production varsayılanlarını daraltma:** Dev/test araçları Faz 1'de `dev` extra'ya taşındı; Dockerfile,
+   installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra production
+   profile yönlendirilir.
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
@@ -98,7 +103,8 @@ ayrı bir PR olarak ele alınmalı ve aşağıdaki dosyaları aynı değişiklik
 | Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
 
 Ayrı PR kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı, `production-profile-dry-run`
-job'ı non-blocking kalmalı ve Docker/installer değişiklikleri geçmeden ana `dependencies` listesi daraltılmamalıdır.
+job'ı non-blocking kalmalı ve Docker/installer production varsayılanları production profile'a ancak smoke/dry-run
+sonuçları raporlandıktan sonra geçirilmelidir.
 
 ## Kabul kriterleri
 

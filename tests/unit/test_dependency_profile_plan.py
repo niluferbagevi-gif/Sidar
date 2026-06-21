@@ -13,9 +13,10 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     docs = Path(plan["owner_doc"]).read_text(encoding="utf-8")
 
     assert plan["current_install_standard"] == "uv sync --all-extras"
-    assert plan["status"] == "planned"
+    assert plan["status"] == "phase-1-dev-split"
     profile_names = {item["name"] for item in plan["profiles"]}
     assert {"runtime", "dev", "all", "production"} <= profile_names
+    assert "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
@@ -46,11 +47,11 @@ def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
         "safety",
     ):
         assert representative_package in docs
-    assert "install/lock davranışını" in docs
-    assert "ana `dependencies` listesinden paket taşımaz" in docs
+    assert "runtime/dev install davranışını" in docs
+    assert "Ana runtime dependencies ve `dev` extra adayları" in docs.replace("\n", " ")
 
 
-def test_dependency_inventory_labels_every_main_dependency() -> None:
+def test_dependency_inventory_labels_main_and_dev_extra_dependencies() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     inventory = pyproject["tool"]["sidar"]["dependency_inventory"]
     labels = inventory["labels"]
@@ -58,8 +59,14 @@ def test_dependency_inventory_labels_every_main_dependency() -> None:
     dependency_names = {
         Requirement(dependency).name for dependency in pyproject["project"]["dependencies"]
     }
+    dev_dependency_names = {
+        Requirement(dependency).name
+        for dependency in pyproject["project"]["optional-dependencies"]["dev"]
+        if not dependency.startswith("sidar[")
+    }
 
-    assert set(labels) == dependency_names
+    assert dependency_names <= set(labels)
+    assert dev_dependency_names <= set(labels)
     assert set(labels.values()) <= allowed_labels
     for required_label in (
         "runtime",
@@ -72,6 +79,7 @@ def test_dependency_inventory_labels_every_main_dependency() -> None:
         assert required_label in labels.values()
     assert inventory["status"] == "inventory-only"
     assert inventory["owner_doc"] == "docs/DEPENDENCY_PROFILE_PLAN.md"
+    assert pyproject["tool"]["uv"]["environments"] == ["sys_platform == 'linux'"]
 
 
 def test_ci_has_non_blocking_production_profile_dry_run() -> None:
@@ -99,15 +107,17 @@ def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() ->
     assert "Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez" in docs
     assert "`--dependency-profile=all|production`" in docs
     assert "varsayılan `all` kalmalı" in docs
-    assert "ana `dependencies` listesi daraltılmamalıdır" in docs
+    assert "varsayılan production install akışı değiştirilmez" in docs
 
 
-def test_dependency_profile_plan_does_not_prematurely_remove_dev_tools_from_current_deps() -> None:
+def test_dependency_profile_plan_moves_dev_tools_to_dev_extra_not_runtime_deps() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     dependencies = set(pyproject["project"]["dependencies"])
+    dev_dependencies = set(pyproject["project"]["optional-dependencies"]["dev"])
 
     for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
-        assert any(dep.startswith(package_prefix) for dep in dependencies)
+        assert not any(dep.startswith(package_prefix) for dep in dependencies)
+        assert any(dep.startswith(package_prefix) for dep in dev_dependencies)
 
 
 def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
@@ -121,6 +131,7 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
     assert "CVE-2025-3000" in docs
     assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
+    assert "sys_platform == 'linux'" in docs
     assert "security/pip-audit-ignores.tsv" in Path("pyproject.toml").read_text(encoding="utf-8")
     assert "CVE-2025-3000" in policy
     assert "GHSA-rrmf-rvhw-rf47" in policy
