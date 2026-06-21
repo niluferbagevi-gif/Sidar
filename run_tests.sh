@@ -490,6 +490,10 @@ PERFORMANCE_TEST_DIR="${PERFORMANCE_TEST_DIR:-tests/performance}"
 BENCHMARK_BASELINE_NAME="${BENCHMARK_BASELINE_NAME:-baseline}"
 BENCHMARK_COMPARE_NAME="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME}}"
 BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"
+# Lokal auto-promote için: kullanıcının BENCHMARK_COMPARE_REQUIRED'ı açıkça set
+# edip etmediğini default ataması ezmeden önce yakala. Boş ise auto-promote
+# tetiklenebilir; dolu ise (0 ya da 1) kullanıcı tercihi korunur.
+BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"
 if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
@@ -501,6 +505,10 @@ else
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
 fi
+# Lokal modda baseline tespit edilirse "required" kapısının otomatik 1'e
+# yükseltilmesini açar (CI'da workflow zaten bu mantığı uyguluyor; lokal parite).
+# Kullanıcı 0 vererek opt-out edebilir; 1 default davranıştır.
+BENCHMARK_LOCAL_AUTO_PROMOTE="${BENCHMARK_LOCAL_AUTO_PROMOTE:-1}"
 BENCHMARK_DISABLE_GC="${BENCHMARK_DISABLE_GC:-1}"
 BENCHMARK_WARMUP="${BENCHMARK_WARMUP:-on}"
 BENCHMARK_WARMUP_ITERATIONS="${BENCHMARK_WARMUP_ITERATIONS:-100000}"
@@ -1795,6 +1803,30 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
+
+  # Pre-run baseline tespiti: çalışma öncesi `.benchmarks/` altında karşılaştırma
+  # hedefi varsa kayda al. Bu hem lokal auto-promote için hem de "yeni baseline
+  # seed edildi" post-run ipucunu üretmek için kullanılır.
+  BENCHMARK_BASELINE_EXISTED_PRE_RUN=0
+  if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+    BENCHMARK_BASELINE_EXISTED_PRE_RUN=1
+  fi
+
+  # Lokal auto-promote: CI workflow `BENCHMARK_COMPARE_REQUIRED` değerini
+  # baseline cache restore sonucuna göre dinamik olarak set eder. Lokalde de
+  # aynı parite: baseline pre-run mevcutsa ve kullanıcı değişkeni explicit
+  # set etmediyse, "required" kapısını 1'e yükselt. Bu, baseline dosyasının
+  # yanlışlıkla silindiği durumda erken uyarı verir.
+  if [ "${TEST_PROFILE}" != "ci" ] \
+    && [ "${BENCHMARK_LOCAL_AUTO_PROMOTE}" = "1" ] \
+    && [ -z "${BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE}" ] \
+    && [ "${BENCHMARK_COMPARE_REQUIRED}" = "0" ] \
+    && [ "${BENCHMARK_BASELINE_EXISTED_PRE_RUN}" = "1" ]; then
+    BENCHMARK_COMPARE_REQUIRED=1
+    echo "ℹ️ Lokal baseline tespit edildi (${BENCHMARK_COMPARE_FILE}); BENCHMARK_COMPARE_REQUIRED=1 otomatik olarak yükseltildi."
+    echo "ℹ️ Auto-promote davranışını kapatmak için: BENCHMARK_LOCAL_AUTO_PROMOTE=0 veya BENCHMARK_COMPARE_REQUIRED=0 (explicit) kullanın."
+  fi
+
   benchmark_cmd=(
     env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
     --benchmark-save="${BENCHMARK_BASELINE_NAME}"
@@ -1807,7 +1839,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
 
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
-    if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+    if [ "${BENCHMARK_BASELINE_EXISTED_PRE_RUN}" = "1" ]; then
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
       if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
         echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
@@ -1843,6 +1875,22 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   elif [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
     echo "⚠️ Benchmark testleri geçti ancak JSON raporu bulunamadı: ${BENCHMARK_JSON_OUTPUT}"
     BENCHMARK_EXIT_CODE=1
+  fi
+
+  # Post-run "yeni baseline seed edildi" ipucu (lokal modda): pre-run baseline
+  # yoktu, koşu başarıyla tamamlandı ve yeni baseline dosyası şimdi mevcut.
+  # Kullanıcıya sonraki koşularda otomatik karşılaştırma + sıkı kapı açma
+  # seçeneklerini açıkça bildir. CI tarafı bu ipucunu workflow step summary
+  # üzerinden zaten yayımlıyor; lokal parite için stdout'a basıyoruz.
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] \
+    && [ "${TEST_PROFILE}" != "ci" ] \
+    && [ "${BENCHMARK_BASELINE_EXISTED_PRE_RUN}" = "0" ]; then
+    if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+      echo "✅ Benchmark baseline ilk kez kaydedildi: ${BENCHMARK_COMPARE_FILE}"
+      echo "ℹ️ Sonraki yerel koşuda baseline otomatik bulunacak; auto-promote ile BENCHMARK_COMPARE_REQUIRED=1 yükseltilir ve rapor modunda karşılaştırma yapılır."
+      echo "ℹ️ Sıkı regresyon kapısı için: BENCHMARK_ENFORCE_COMPARE=1 ./run_tests.sh"
+      echo "ℹ️ Auto-promote davranışını kapatmak için: BENCHMARK_LOCAL_AUTO_PROMOTE=0 ./run_tests.sh"
+    fi
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_TREND_COMPARE}" = "1" ]; then

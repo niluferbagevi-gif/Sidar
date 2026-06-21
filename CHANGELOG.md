@@ -5,6 +5,18 @@
 
 ---
 
+## [v5.2.0-post3] - 2026-06-21
+
+### İyileştirmeler (Improved)
+- **Lokal benchmark baseline auto-promote (CI workflow paritesi):** `run_tests.sh` performans fazı artık yerel modda pre-run `.benchmarks/` baseline tespit ederse `BENCHMARK_COMPARE_REQUIRED`'ı otomatik 1'e yükseltir. Davranış CI workflow'unun (`.github/workflows/ci.yml`) "Resolve benchmark baseline gate mode" adımıyla aynı: baseline cache/artefakt üzerinden geldiğinde required kapısı dinamik açılır. Kullanıcı değişkeni explicit set ettiyse (0 veya 1) auto-promote bypass edilir; tamamen kapatmak için `BENCHMARK_LOCAL_AUTO_PROMOTE=0`. Bu, yerelde baseline dosyasının yanlışlıkla silindiği durumda sessiz geçişi engeller.
+- **Post-run "yeni baseline seed edildi" ipucu:** İlk yerel benchmark koşusu baseline kaydettiğinde stdout'a `BENCHMARK_ENFORCE_COMPARE=1` ile sıkı kapı açma komutu yazılır. Bu, CI'daki step summary annotation'ının lokal karşılığı; kullanıcı sonraki adımı görmeden iş tamamlanmaz.
+
+### Teknik Borç Kapanışı
+- Yeni regresyon testleri: `tests/unit/scripts/test_run_tests_quality_gate.py` içine `test_run_tests_local_auto_promotes_compare_required_when_baseline_pre_exists` ve `test_run_tests_post_run_hint_when_local_baseline_newly_seeded` eklendi. `test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline` `.env.advanced.example` üzerindeki `BENCHMARK_LOCAL_AUTO_PROMOTE=1` doküman zorunluluğunu ek olarak doğruluyor.
+- `.env.advanced.example` ve `README.md` auto-promote davranışını ve opt-out yolunu (`BENCHMARK_LOCAL_AUTO_PROMOTE=0`) açıkça dokümante ediyor.
+
+---
+
 ## [v5.2.0-post2] - 2026-06-20
 
 ### Güvenlik

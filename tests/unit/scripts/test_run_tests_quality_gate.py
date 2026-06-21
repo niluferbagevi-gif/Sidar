@@ -260,6 +260,65 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
 
 
+def test_run_tests_local_auto_promotes_compare_required_when_baseline_pre_exists() -> None:
+    """Lokal akış pre-run baseline tespit edilirse REQUIRED kapısını otomatik 1'e yükseltir.
+
+    CI workflow (`.github/workflows/ci.yml`) baseline cache restore sonucuna göre
+    `BENCHMARK_COMPARE_REQUIRED` env var'ı dinamik set ediyor; lokal parite için
+    `run_tests.sh` aynı yükseltmeyi yapmalı. Kullanıcı değişkeni explicit set
+    etmediyse devreye girer ve baseline yanlışlıkla silindiğinde erken hata
+    üretir.
+    """
+    script = _script()
+
+    # Kullanıcı override sentinel'i default ataması ezmeden önce yakalanmalı:
+    # benchmark default bloğundaki TEST_PROFILE ci kontrolünden ÖNCE gelmeli.
+    assert (
+        'BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"'
+        in script
+    )
+    user_override_idx = script.index(
+        'BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"'
+    )
+    benchmark_default_idx = script.index(
+        'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
+    )
+    assert user_override_idx < benchmark_default_idx
+
+    # Auto-promote opt-out: default 1, 0 ile devre dışı.
+    assert 'BENCHMARK_LOCAL_AUTO_PROMOTE="${BENCHMARK_LOCAL_AUTO_PROMOTE:-1}"' in script
+
+    # Pre-run baseline tespiti sinyali ve auto-promote koşulu.
+    assert "BENCHMARK_BASELINE_EXISTED_PRE_RUN=0" in script
+    assert "BENCHMARK_BASELINE_EXISTED_PRE_RUN=1" in script
+    assert '[ "${TEST_PROFILE}" != "ci" ]' in script
+    assert '[ "${BENCHMARK_LOCAL_AUTO_PROMOTE}" = "1" ]' in script
+    assert '[ -z "${BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE}" ]' in script
+    assert '[ "${BENCHMARK_BASELINE_EXISTED_PRE_RUN}" = "1" ]' in script
+    assert "BENCHMARK_COMPARE_REQUIRED=1 otomatik olarak yükseltildi" in script
+    assert "BENCHMARK_LOCAL_AUTO_PROMOTE=0" in script
+
+
+def test_run_tests_post_run_hint_when_local_baseline_newly_seeded() -> None:
+    """Lokal ilk koşuda yeni baseline seed edildiyse stdout'a sonraki adım ipucu yazılır.
+
+    Bu, CI'daki workflow step summary'sinin lokal karşılığı: kullanıcı sıkı kapı
+    açma komutunu görmeden işi tamamlamamalı.
+    """
+    script = _script()
+
+    assert "Benchmark baseline ilk kez kaydedildi" in script
+    assert "auto-promote ile BENCHMARK_COMPARE_REQUIRED=1 yükseltilir" in script
+    assert "Sıkı regresyon kapısı için: BENCHMARK_ENFORCE_COMPARE=1 ./run_tests.sh" in script
+
+    # Post-run koşulu doğru şekilde lokal + pre-run yok + başarılı çıkış gerektirmeli.
+    post_run_idx = script.index("Benchmark baseline ilk kez kaydedildi")
+    post_run_window = script[max(0, post_run_idx - 600) : post_run_idx]
+    assert '[ "${BENCHMARK_EXIT_CODE}" -eq 0 ]' in post_run_window
+    assert '[ "${TEST_PROFILE}" != "ci" ]' in post_run_window
+    assert '[ "${BENCHMARK_BASELINE_EXISTED_PRE_RUN}" = "0" ]' in post_run_window
+
+
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
 
@@ -310,6 +369,10 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert 'ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"' in install_script
     assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in install_script
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in install_script
+
+    # Lokal auto-promote davranışı .env.advanced.example üzerinde dokümante edilmeli.
+    assert "BENCHMARK_LOCAL_AUTO_PROMOTE=1" in env_advanced
+    assert "auto-promote" in env_advanced.lower()
 
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
