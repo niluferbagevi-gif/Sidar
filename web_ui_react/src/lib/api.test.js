@@ -221,8 +221,39 @@ describe("buildAuthHeaders", () => {
 });
 
 describe("getTokenPrincipal", () => {
+  const makeJwt = (payload) => {
+    const encodedPayload = btoa(JSON.stringify(payload))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+    return `e30.${encodedPayload}.sig`;
+  };
+
   it("returns null on invalid JWT payloads", () => {
     expect(getTokenPrincipal("header.not-json.signature")).toBeNull();
+  });
+
+  it("parses sub, username, role, tenant_id and exp from a valid JWT payload", () => {
+    const payload = { sub: "42", username: "demo", role: "Admin", tenant_id: "t1", exp: 999 };
+
+    expect(getTokenPrincipal(makeJwt(payload))).toEqual({
+      id: "42",
+      username: "demo",
+      role: "admin",
+      tenant_id: "t1",
+      exp: 999,
+    });
+  });
+
+  it("falls back to payload id and default user metadata when optional claims are missing", () => {
+    expect(getTokenPrincipal(makeJwt({ id: "99" }))).toMatchObject({
+      id: "99",
+      username: "",
+      role: "user",
+      tenant_id: "default",
+      exp: 0,
+    });
+    expect(getTokenPrincipal(makeJwt({}))).toMatchObject({ id: "", role: "user" });
   });
 });
 
