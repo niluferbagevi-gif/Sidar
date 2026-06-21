@@ -2593,3 +2593,54 @@ async def test_connect_postgresql_injected_factory_failure_skips_asyncpg_reimpor
     assert db.degraded_mode is True
     assert "havuzu kullanılamıyor" in db.degraded_reason
     await db.close()
+
+
+def test_auth_hash_slo_invalid_env_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(core_db._AUTH_HASH_SLO_MS_ENV, "not-an-int")
+
+    assert core_db._auth_hash_slo_ms() == 120
+
+
+def test_hash_password_records_error_latency_when_hashing_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records: list[tuple[str, str]] = []
+    monkeypatch.setattr(core_db, "_current_pbkdf2_iterations", lambda: 700000)
+    monkeypatch.setattr(
+        core_db,
+        "_pbkdf2_sha256",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("hash failed")),
+    )
+    monkeypatch.setattr(
+        core_db,
+        "_record_auth_hash_latency",
+        lambda operation, status, _duration_s: records.append((operation, status)),
+    )
+
+    with pytest.raises(RuntimeError, match="hash failed"):
+        core_db._hash_password("pw", salt="fixed")
+
+    assert records == [("hash", "error")]
+
+
+def test_verify_password_records_error_latency_when_digest_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        core_db,
+        "_pbkdf2_sha256",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("verify failed")),
+    )
+    monkeypatch.setattr(
+        core_db,
+        "_record_auth_hash_latency",
+        lambda operation, status, _duration_s: records.append((operation, status)),
+    )
+
+    with pytest.raises(RuntimeError, match="verify failed"):
+        core_db._verify_password("pw", "pbkdf2_sha256$700000$salt$digest")
+
+    assert records == [("verify", "error")]

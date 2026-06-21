@@ -178,3 +178,57 @@ def test_detect_gpu_skips_wsl_log_outside_wsl(monkeypatch: pytest.MonkeyPatch) -
 
     assert _detect(logger).gpu_name == "CUDA Bulunamadı"
     assert not any("WSL2 ortamı" in message for message in logger.info_messages)
+
+
+@pytest.mark.parametrize(
+    ("vram_mb", "expected"),
+    [
+        (16 * 1024, 3),
+        (8 * 1024, 2),
+        (8 * 1024 - 1, 1),
+    ],
+)
+def test_resolve_adaptive_gpu_pool_size_vram_thresholds(
+    vram_mb: int, expected: int
+) -> None:
+    info = HardwareInfo(
+        has_cuda=True,
+        gpu_name="threshold-gpu",
+        gpu_count=1,
+        cpu_count=16,
+        gpu_vram_mb=vram_mb,
+    )
+
+    assert (
+        config_gpu_detect.resolve_adaptive_gpu_pool_size(
+            info, get_int_env=lambda *_args: 0, logger=_Logger()
+        )
+        == expected
+    )
+
+
+def test_detect_gpu_sets_zero_vram_when_device_properties_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config_gpu_detect, "is_wsl2", lambda: False)
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            cuda=SimpleNamespace(
+                is_available=lambda: True,
+                device_count=lambda: 1,
+                get_device_name=lambda _index: "Fallback GPU",
+                get_device_properties=lambda _index: (_ for _ in ()).throw(
+                    RuntimeError("properties unavailable")
+                ),
+            ),
+            version=SimpleNamespace(cuda="12.2"),
+        ),
+    )
+
+    info = _detect(_Logger())
+
+    assert info.has_cuda is True
+    assert info.gpu_name == "Fallback GPU"
+    assert info.gpu_vram_mb == 0

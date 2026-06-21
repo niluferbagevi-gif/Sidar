@@ -4325,3 +4325,38 @@ async def test_ollama_client_chat_omits_num_ctx_when_disabled(
 
     payload = json.loads(route.calls.last.request.content.decode("utf-8"))
     assert "num_ctx" not in payload["options"]
+
+
+def test_ollama_gpu_pool_size_clamps_explicit_runtime_limit() -> None:
+    cfg = _make_config(USE_GPU=True, OLLAMA_GPU_REQUEST_POOL_SIZE=99)
+
+    assert llm_client._ollama_gpu_pool_size(cfg) == 16
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_releases_gpu_limiter_after_consumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _make_config(
+        USE_GPU=True,
+        OLLAMA_GPU_REQUEST_POOL_SIZE=1,
+        ENABLE_LLM_TRACING=False,
+        ENABLE_SEMANTIC_CACHE=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    key = (client.base_url, 1)
+    llm_client._OLLAMA_GPU_LIMITERS.pop(key, None)
+
+    async def _fake_stream(*_args: Any, **_kwargs: Any):
+        yield "chunk"
+
+    monkeypatch.setattr(client, "_stream_response", _fake_stream)
+
+    stream = await client.chat([{"role": "user", "content": "hi"}], stream=True)
+    limiter = llm_client._OLLAMA_GPU_LIMITERS[key]
+    assert limiter.locked() is True
+
+    assert [chunk async for chunk in stream] == ["chunk"]
+    assert limiter.locked() is False
+
+    llm_client._OLLAMA_GPU_LIMITERS.pop(key, None)
