@@ -891,6 +891,14 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > yerelde flake-soft-fail olarak değerlendirilir; sıkı yerel faz doğrulaması `BENCHMARK_ENFORCE_RESULT=1` ile
 > açılabilir. Benchmark komutu ayrıca GC'yi kapatır ve
 > kalibrasyon warmup'ını etkinleştirir.
+> Lokal auto-promote (`BENCHMARK_LOCAL_AUTO_PROMOTE=1` varsayılan): yerel koşuda
+> pre-run `.benchmarks/` baseline tespit edilirse `BENCHMARK_COMPARE_REQUIRED`
+> otomatik `1` yapılır (CI workflow paritetiği). Bu, kullanıcı tarafında baseline
+> dosyasının yanlışlıkla silindiği durumda sessiz geçişi engeller. Auto-promote
+> yalnız kullanıcı `BENCHMARK_COMPARE_REQUIRED`'ı explicit set etmediyse devreye
+> girer; `BENCHMARK_LOCAL_AUTO_PROMOTE=0` ile tamamen kapatılabilir. İlk yerel
+> koşuda baseline yeni seed edildiğinde post-run ipucu (`BENCHMARK_ENFORCE_COMPARE=1`
+> için tek satırlık çağrı) stdout'a yazılır.
 > Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
 > `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
 > Gecikme hassas akışlar için

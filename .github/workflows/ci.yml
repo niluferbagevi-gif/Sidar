@@ -240,7 +240,7 @@ jobs:
         run: >-
           uv run pytest -q --no-cov
           tests/smoke/test_install_verification.py
-          tests/smoke/test_repo_phase_coverage_dark_mode_assets.py
+          tests/smoke/test_repo_phase_dark_mode_assets.py
 
       - name: Run ShellCheck for installer and install modules
         run: |

@@ -65,7 +65,9 @@ def test_create_app_allows_central_version_override() -> None:
     assert app.version == "9.8.7"
 
 
-def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch, make_test_client) -> None:
+def test_create_app_hides_unhandled_exception_detail_in_production(
+    monkeypatch, make_test_client
+) -> None:
     monkeypatch.setenv("SIDAR_ENV", "production")
     app = create_app()
 
@@ -79,7 +81,9 @@ def test_create_app_hides_unhandled_exception_detail_in_production(monkeypatch, 
     assert response.json() == {"success": False, "error": "İç sunucu hatası"}
 
 
-def test_create_app_keeps_unhandled_exception_detail_in_development(monkeypatch, make_test_client) -> None:
+def test_create_app_keeps_unhandled_exception_detail_in_development(
+    monkeypatch, make_test_client
+) -> None:
     monkeypatch.setenv("SIDAR_ENV", "development")
     app = create_app()
 
