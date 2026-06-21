@@ -1,4 +1,8 @@
 services:
+  # Image pull policy intentionally managed by install_sidar.sh via
+  # docker compose pull / --last / --fresh flags to preserve offline installs.
+  # Keep compose services pull_policy-free unless a service-specific exception is required.
+
   # Not: Development'ta varsayılan bind-mount kullanılır.
   # Production'ta host permission/chown sorunlarını azaltmak için aşağıdaki
   # env değişkenlerini named volume ile override edin:
