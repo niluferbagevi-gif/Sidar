@@ -333,6 +333,8 @@ websockets = "runtime"
 current_install_standard = "uv sync --all-extras"
 status = "planned"
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
+preserve_all_extras_standard = true
+planned_profile_groups = ["base", "web", "rag", "multimodal", "dev", "test", "gpu"]
 summary = "Runtime/dev/test dependency split will be introduced only with coordinated CI, Docker and installer changes."
 
 [[tool.sidar.dependency_profile_plan.profiles]]

@@ -63,7 +63,9 @@ def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
     assert status.missing_pyproject_markers == []
     assert status.missing_plan_markers == []
     assert status.pyproject_markers["legacy_full_install_note"] is True
+    assert status.pyproject_markers["planned_profile_groups_declared"] is True
     assert status.plan_markers["mentions_tool_plan_table"] is True
+    assert status.plan_markers["mentions_planned_profile_groups"] is True
 
 
 def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: Path) -> None:
@@ -74,6 +76,8 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
         "[tool.sidar.dependency_profile_plan]\n"
         "current_install_standard = \"uv sync --all-extras\"\n"
         "owner_doc = \"docs/DEPENDENCY_PROFILE_PLAN.md\"\n"
+        "preserve_all_extras_standard = false\n"
+        "planned_profile_groups = [\"base\", \"web\"]\n"
         "[[tool.sidar.dependency_profile_plan.profiles]]\n"
         "name = \"runtime\"\n",
         encoding="utf-8",
@@ -85,5 +89,8 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
     assert status.status == "drift"
     assert "legacy_full_install_note" in status.missing_pyproject_markers
     assert "production_profile_declared" in status.missing_pyproject_markers
+    assert "preserves_all_extras_standard" in status.missing_pyproject_markers
+    assert "planned_profile_groups_declared" in status.missing_pyproject_markers
     assert "mentions_production_minimal" in status.missing_plan_markers
+    assert "mentions_planned_profile_groups" in status.missing_plan_markers
     assert "mentions_tool_plan_table" in status.missing_plan_markers

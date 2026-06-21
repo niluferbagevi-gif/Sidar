@@ -25,6 +25,13 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 | `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
 | `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | Docker/installer ile birlikte tanıtılmalıdır. |
 
+### Planlanan ayrıştırma grupları
+
+`pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan].planned_profile_groups`
+alanı, mevcut install davranışını değiştirmeden uzun vadeli ayrıştırma hedeflerini listeler:
+`base`, `web`, `rag`, `multimodal`, `dev`, `test` ve `gpu`. Bu alan yalnızca drift
+check ve planlama metadata'sıdır; `uv sync --all-extras` geliştirme standardı korunur.
+
 ## Envanter taslağı
 
 Bu tablo, **Envanter** fazının başlangıç sınıflandırmasıdır; install/lock davranışını

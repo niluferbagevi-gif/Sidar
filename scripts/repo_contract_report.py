@@ -235,6 +235,12 @@ def check_dependency_profile_plan_sync(
         for item in list(plan_table.get("profiles") or [])
         if isinstance(item, dict)
     }
+    planned_profile_groups = {
+        str(item).strip()
+        for item in list(plan_table.get("planned_profile_groups") or [])
+        if str(item).strip()
+    }
+    required_profile_groups = {"base", "web", "rag", "multimodal", "dev", "test", "gpu"}
     owner_doc = str(plan_table.get("owner_doc") or "").strip()
     current_install_standard = str(plan_table.get("current_install_standard") or "").strip()
     normalized_plan_path = _repo_relative(plan_path)
@@ -246,6 +252,8 @@ def check_dependency_profile_plan_sync(
         "owner_doc_points_to_plan": owner_doc == normalized_plan_path,
         "uv_all_extras_standard": current_install_standard == "uv sync --all-extras",
         "production_profile_declared": "production" in profiles,
+        "preserves_all_extras_standard": bool(plan_table.get("preserve_all_extras_standard")),
+        "planned_profile_groups_declared": required_profile_groups.issubset(planned_profile_groups),
     }
     plan_markers = {
         "mentions_pyproject": "pyproject.toml" in plan_lower,
@@ -253,6 +261,10 @@ def check_dependency_profile_plan_sync(
         "mentions_uv_all_extras_standard": "uv sync --all-extras" in plan_text,
         "mentions_production_minimal": "production-minimal" in plan_lower,
         "mentions_tool_plan_table": "[tool.sidar.dependency_profile_plan]" in plan_text,
+        "mentions_planned_profile_groups": all(
+            group in plan_lower
+            for group in ("base", "web", "rag", "multimodal", "dev", "test", "gpu")
+        ),
     }
     missing_pyproject_markers = [
         name for name, present in pyproject_markers.items() if not present
