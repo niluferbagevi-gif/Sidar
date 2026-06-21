@@ -3,11 +3,14 @@
 Bu doküman, `pyproject.toml` içindeki mevcut bağımlılık yüzeyini bozmadan uzun vadede
 production-minimal paket profiline geçiş planını tanımlar. Mevcut repo standardı korunur:
 `uv sync --all-extras` local geliştirme, CI ve ekip paritesi için geçerli ana kurulum komutudur.
+Bu doküman ile `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan]` metadata'sı
+birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığını denetler.
 
 ## Mevcut durum
 
 - Ana `dependencies` listesi bugün runtime paketleri ile pytest/ruff/mypy/bandit/safety gibi
-  geliştirme ve test araçlarını birlikte içerir.
+  geliştirme ve test araçlarını birlikte içerir; bu liste `pyproject.toml` yorumuyla uyumlu
+  olarak legacy tam kurulum yüzeyi kabul edilir.
 - `dev` extra aynı araçların önemli bir bölümünü ayrıca taşır; bu, eski kurulum davranışları ve
   `uv sync --all-extras` standardı nedeniyle geriye dönük uyumluluk sağlar.
 - Bu PR, dependency çözümünü veya installer/CI komutlarını değiştirmez; yalnız plan ve izleme

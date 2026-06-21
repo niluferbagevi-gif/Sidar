@@ -12,6 +12,7 @@ import ast
 import json
 import logging
 import re
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ LOW_HARDWARE_MODEL_PATTERN = re.compile(
 )
 DEFAULT_WORD_PATTERN = re.compile(r"\b(default|varsayılan|standard|standart)\b", re.IGNORECASE)
 PIP_INSTALL_PATTERN = re.compile(r"(?:^|\s)(?:python\S*\s+-m\s+)?pip\s+install\b")
-UV_PIP_INSTALL_PATTERN = re.compile(r"(?:^|\s)uv\s+pip\s+install\b")
+UV_PIP_INSTALL_PATTERN = re.compile(r"(?:^|[\s`])uv\s+pip\s+install\b")
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,17 @@ class RoleContractStatus:
     present_in_bootstrap_imports: bool
     documented_in_agents: bool
     checklist: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class DependencyProfilePlanStatus:
+    status: str
+    pyproject_path: str
+    plan_path: str
+    pyproject_markers: dict[str, bool]
+    plan_markers: dict[str, bool]
+    missing_pyproject_markers: list[str]
+    missing_plan_markers: list[str]
 
 
 def _repo_relative(path: Path) -> str:
@@ -203,6 +215,60 @@ def scan_repo_standards(
     return violations
 
 
+
+def check_dependency_profile_plan_sync(
+    pyproject_path: Path = REPO_ROOT / "pyproject.toml",
+    plan_path: Path = REPO_ROOT / "docs/DEPENDENCY_PROFILE_PLAN.md",
+) -> DependencyProfilePlanStatus:
+    """Verify dependency profile plan docs stay synchronized with pyproject metadata."""
+
+    pyproject_text = _read_text(pyproject_path)
+    plan_text = _read_text(plan_path)
+    pyproject_data = tomllib.loads(pyproject_text)
+    plan_table = (
+        pyproject_data.get("tool", {})
+        .get("sidar", {})
+        .get("dependency_profile_plan", {})
+    )
+    profiles = {
+        str(item.get("name") or "").strip()
+        for item in list(plan_table.get("profiles") or [])
+        if isinstance(item, dict)
+    }
+    owner_doc = str(plan_table.get("owner_doc") or "").strip()
+    current_install_standard = str(plan_table.get("current_install_standard") or "").strip()
+    normalized_plan_path = _repo_relative(plan_path)
+    pyproject_lower = pyproject_text.lower()
+    plan_lower = plan_text.lower()
+
+    pyproject_markers = {
+        "legacy_full_install_note": "legacy tam kurulum" in pyproject_lower,
+        "owner_doc_points_to_plan": owner_doc == normalized_plan_path,
+        "uv_all_extras_standard": current_install_standard == "uv sync --all-extras",
+        "production_profile_declared": "production" in profiles,
+    }
+    plan_markers = {
+        "mentions_pyproject": "pyproject.toml" in plan_lower,
+        "mentions_legacy_full_surface": "legacy" in plan_lower and "tam" in plan_lower,
+        "mentions_uv_all_extras_standard": "uv sync --all-extras" in plan_text,
+        "mentions_production_minimal": "production-minimal" in plan_lower,
+        "mentions_tool_plan_table": "[tool.sidar.dependency_profile_plan]" in plan_text,
+    }
+    missing_pyproject_markers = [
+        name for name, present in pyproject_markers.items() if not present
+    ]
+    missing_plan_markers = [name for name, present in plan_markers.items() if not present]
+    return DependencyProfilePlanStatus(
+        status="ok" if not missing_pyproject_markers and not missing_plan_markers else "drift",
+        pyproject_path=_repo_relative(pyproject_path),
+        plan_path=_repo_relative(plan_path),
+        pyproject_markers=pyproject_markers,
+        plan_markers=plan_markers,
+        missing_pyproject_markers=missing_pyproject_markers,
+        missing_plan_markers=missing_plan_markers,
+    )
+
+
 def build_report(
     *, standards_paths: list[Path] | None = None, legacy_product_names: list[str] | None = None
 ) -> dict[str, Any]:
@@ -210,12 +276,22 @@ def build_report(
         standards_paths or [], legacy_product_names=legacy_product_names or []
     )
     role_report = build_role_contract_report()
+    dependency_profile_plan = check_dependency_profile_plan_sync()
+    has_drift = (
+        bool(violations)
+        or role_report["status"] != "ok"
+        or dependency_profile_plan.status != "ok"
+    )
     return {
-        "status": "fail" if violations or role_report["status"] != "ok" else "ok",
+        "status": "fail" if has_drift else "ok",
         "role_contracts": role_report,
         "repo_standards": {
             "status": "fail" if violations else "ok",
             "violations": [asdict(item) for item in violations],
+        },
+        "docs_drift": {
+            "status": "fail" if dependency_profile_plan.status != "ok" else "ok",
+            "dependency_profile_plan": asdict(dependency_profile_plan),
         },
     }
 
@@ -249,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"status={report['status']}")
         print(f"role_contracts={report['role_contracts']['status']}")
         print(f"repo_standards={report['repo_standards']['status']}")
+        print(f"docs_drift={report['docs_drift']['status']}")
     return 1 if args.fail_on_violation and report["status"] != "ok" else 0
 
 

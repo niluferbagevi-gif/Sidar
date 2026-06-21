@@ -54,3 +54,36 @@ def test_build_report_marks_selected_standards_violations_as_fail(tmp_path: Path
     assert built["status"] == "fail"
     assert built["role_contracts"]["status"] == "ok"
     assert built["repo_standards"]["violations"][0]["code"] == "direct-pip-install"
+
+
+def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
+    status = report.check_dependency_profile_plan_sync()
+
+    assert status.status == "ok"
+    assert status.missing_pyproject_markers == []
+    assert status.missing_plan_markers == []
+    assert status.pyproject_markers["legacy_full_install_note"] is True
+    assert status.plan_markers["mentions_tool_plan_table"] is True
+
+
+def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: Path) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    plan = tmp_path / "docs" / "DEPENDENCY_PROFILE_PLAN.md"
+    plan.parent.mkdir()
+    pyproject.write_text(
+        "[tool.sidar.dependency_profile_plan]\n"
+        "current_install_standard = \"uv sync --all-extras\"\n"
+        "owner_doc = \"docs/DEPENDENCY_PROFILE_PLAN.md\"\n"
+        "[[tool.sidar.dependency_profile_plan.profiles]]\n"
+        "name = \"runtime\"\n",
+        encoding="utf-8",
+    )
+    plan.write_text("# Plan\nUse uv sync only.\n", encoding="utf-8")
+
+    status = report.check_dependency_profile_plan_sync(pyproject, plan)
+
+    assert status.status == "drift"
+    assert "legacy_full_install_note" in status.missing_pyproject_markers
+    assert "production_profile_declared" in status.missing_pyproject_markers
+    assert "mentions_production_minimal" in status.missing_plan_markers
+    assert "mentions_tool_plan_table" in status.missing_plan_markers
