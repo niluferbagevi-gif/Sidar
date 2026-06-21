@@ -5,7 +5,14 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from plugins.manifest import EXTERNAL_SERVICE_PLUGIN_IDS, PLUGIN_MANIFESTS, PluginManifest
+import pytest
+
+from plugins.manifest import (
+    EXTERNAL_SERVICE_PLUGIN_IDS,
+    PLUGIN_MANIFESTS,
+    PluginManifest,
+    get_plugin_manifest,
+)
 
 VALID_SIDE_EFFECT_LEVELS = {
     "none",
@@ -50,6 +57,14 @@ def test_plugin_manifests_match_importable_role_classes() -> None:
         plugin_class = getattr(module, manifest.class_name)
         assert isinstance(plugin_class, type)
         assert getattr(plugin_class, "ROLE_NAME", manifest.role_name) == manifest.role_name
+
+
+def test_get_plugin_manifest_returns_metadata_and_raises_for_unknown_id() -> None:
+    """Public manifest lookup returns registered plugins and preserves dict-style errors."""
+
+    assert get_plugin_manifest("upload").plugin_id == "upload"
+    with pytest.raises(KeyError):
+        get_plugin_manifest("yok_boyle_plugin")
 
 
 def test_all_plugin_agent_modules_are_listed_in_manifest() -> None:
