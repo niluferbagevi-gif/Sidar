@@ -1956,6 +1956,7 @@ async def test_execute_self_heal_plan_rolls_back_when_validation_fails(
     ]
     assert restored == {"src/allowed.py": "old content"}
 
+
 async def test_build_trigger_prompt_prefers_federation_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(
         trigger_id="tid", source="crm", event_name="sync", payload={}, meta={}

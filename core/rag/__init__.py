@@ -565,7 +565,6 @@ class DocumentStore:
     def _format_vector_for_sql(values: builtins.list[float]) -> str:
         return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
-
     def _pgvector_table_name(self) -> str:
         """Return the pgvector table invariant with a safe legacy-stub fallback."""
         return str(getattr(self, "_pg_table", "rag_embeddings") or "rag_embeddings")
@@ -585,8 +584,7 @@ class DocumentStore:
             logger.warning(
                 _pgvector_failure_action_message(
                     ValueError(
-                        "invalid PGVECTOR_TABLE; expected pattern "
-                        r"^[A-Za-z_][A-Za-z0-9_]*$"
+                        "invalid PGVECTOR_TABLE; expected pattern " r"^[A-Za-z_][A-Za-z0-9_]*$"
                     )
                 )
             )

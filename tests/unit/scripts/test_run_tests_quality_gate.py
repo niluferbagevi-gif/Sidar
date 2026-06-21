@@ -273,10 +273,7 @@ def test_run_tests_local_auto_promotes_compare_required_when_baseline_pre_exists
 
     # Kullanıcı override sentinel'i default ataması ezmeden önce yakalanmalı:
     # benchmark default bloğundaki TEST_PROFILE ci kontrolünden ÖNCE gelmeli.
-    assert (
-        'BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"'
-        in script
-    )
+    assert 'BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"' in script
     user_override_idx = script.index(
         'BENCHMARK_COMPARE_REQUIRED_USER_OVERRIDE="${BENCHMARK_COMPARE_REQUIRED+set}"'
     )
@@ -2441,14 +2438,20 @@ def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
 def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
     script = _script()
 
-    assert "Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]" in script
+    assert (
+        "Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]"
+        in script
+    )
     assert "normalize_test_stages()" in script
     assert "stage_all_selected()" in script
     assert "stage_selected()" in script
     assert "backend_infra_required_for_stage()" in script
     assert "SIDAR_RUN_BACKEND_PYTEST=0" in script
-    assert "if stage_selected backend || stage_selected unit || stage_selected integration || stage_selected smoke || stage_selected e2e; then" in script
-    assert 'elif stage_selected static; then' in script
+    assert (
+        "if stage_selected backend || stage_selected unit || stage_selected integration || stage_selected smoke || stage_selected e2e; then"
+        in script
+    )
+    assert "elif stage_selected static; then" in script
     assert "Unit-only stage: Docker/DB/Ollama önkoşulları atlandı." in script
 
 
@@ -2460,5 +2463,10 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
     assert "phase2_dirs+=(tests/smoke)" in script
     assert "phase2_dirs+=(tests/e2e)" in script
     assert 'echo "ℹ️ Aşama 1 (Unit) atlandı (--stage=${RUN_TESTS_STAGE})."' in script
-    assert 'echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."' in script
-    assert 'phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")' in script
+    assert (
+        'echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."' in script
+    )
+    assert (
+        'phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")'
+        in script
+    )

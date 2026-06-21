@@ -1379,7 +1379,6 @@ async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -
     assert store._pgvector_available is False
 
 
-
 async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_error() -> None:
     msg = rag._pgvector_failure_action_message(
         RuntimeError('password authentication failed for user "sidar"; DETAIL: raw driver text')
@@ -3206,7 +3205,6 @@ async def test_fetch_pgvector_returns_empty_when_query_embedding_empty(tmp_path:
     store._pgvector_embed_texts = lambda _texts: []  # type: ignore[method-assign]
 
     assert store._fetch_pgvector("query", top_k=2, session_id="s1") == []
-
 
 
 async def test_pgvector_embed_texts_uses_tolist_when_vectors_support_it(

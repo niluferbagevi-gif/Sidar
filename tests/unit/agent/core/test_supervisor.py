@@ -282,9 +282,7 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
     sup = _build_supervisor()
     calls: list[dict[str, object]] = []
 
-    async def _delegate(
-        receiver: str, goal: str, intent: str, **kwargs: object
-    ) -> TaskResult:
+    async def _delegate(receiver: str, goal: str, intent: str, **kwargs: object) -> TaskResult:
         calls.append({"receiver": receiver, "goal": goal, "intent": intent, **kwargs})
         return TaskResult(task_id="delegated", status="done", summary="delegated")
 
@@ -302,6 +300,7 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
     assert result.status == expected_status
     assert expected_summary in str(result.summary)
     assert len(calls) == expected_delegate_calls
+
 
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
     sup = _build_supervisor(max_qa_retries=0)
