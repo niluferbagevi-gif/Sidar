@@ -9,4 +9,4 @@ extra_css = assets/dark_mode.css
 # aspirational target lives in the coverage-campaign profile
 # (COVERAGE_CAMPAIGN=1 / AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign),
 # and CI uses its own stricter override via COVERAGE_FAIL_UNDER_CI.
-fail_under = 99
+fail_under = 90
