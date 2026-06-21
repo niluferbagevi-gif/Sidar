@@ -9,7 +9,7 @@
 | Bileşen | Açıklama |
 |---------|----------|
 | `get_bool_env / get_int_env / get_float_env / get_list_env` | Type-safe ortam değişkeni okuma yardımcıları |
-| `HardwareInfo` (dataclass) | CUDA/WSL2 donanım tespiti sonuçlarını tutar |
+| `HardwareInfo` (core re-export) | `core.config_gpu_detect.HardwareInfo` kanonik dataclass'ını yeniden dışa açar; CUDA/WSL2 donanım tespiti sonuçlarını tutar |
 | `Config` (sınıf) | Tüm sistem parametrelerini sınıf attribute olarak toplar |
 | `validate_critical_settings()` | Sağlayıcı anahtarları, şifreleme anahtarı ve kritik ayar doğrulamaları |
 

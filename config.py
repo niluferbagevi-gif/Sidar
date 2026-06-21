@@ -11,7 +11,6 @@ import sys
 import warnings
 from collections.abc import Callable
 from copy import deepcopy
-from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -21,7 +20,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
-from core.config_gpu_detect import normalize_gpu_memory_fractions, resolve_adaptive_gpu_pool_size
+from core.config_gpu_detect import (
+    HardwareInfo,
+    normalize_gpu_memory_fractions,
+    resolve_adaptive_gpu_pool_size,
+)
 from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
@@ -737,19 +740,6 @@ PYTORCH_RECOMMENDED_CUDA_INDEX_URL: str = (
 PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND: str = (
     "uv pip install torch torchvision " f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
 )
-
-
-@dataclass
-class HardwareInfo:
-    """Başlangıçta tespit edilen donanım bilgilerini tutar."""
-
-    has_cuda: bool
-    gpu_name: str
-    gpu_count: int = 0
-    cpu_count: int = 0
-    cuda_version: str = "N/A"
-    driver_version: str = "N/A"
-    gpu_vram_mb: int = 0
 
 
 def _is_wsl2() -> bool:
