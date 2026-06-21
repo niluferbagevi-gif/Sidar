@@ -177,6 +177,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 ### GPU eşzamanlılık benchmark notu
 
+- Runtime tarafında `OLLAMA_GPU_REQUEST_POOL_SIZE` boş bırakılırsa Sidar, tespit edilen
+  GPU sayısı, VRAM ve CPU kapasitesine göre Ollama GPU isteklerini sınırlayan adaptive
+  bir semaphore seçer. Düşük VRAM/WSL2 contention görülen hostlarda bu değer `1-2`
+  aralığına manuel sabitlenerek concurrent throughput p95/p99 dalgalanması azaltılabilir.
 - Aşağıdaki testler, gerçek paralellik doğrulaması için `OLLAMA_NUM_PARALLEL` değerinin
   `GPU_BENCH_CONCURRENCY` kadar (genellikle `4`) olmasını bekler:
   - `test_gpu_concurrent_throughput`

@@ -1007,6 +1007,42 @@ async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(
 
 
 @pytest.mark.asyncio
+async def test_ollama_client_gpu_limiter_serializes_concurrent_requests(
+    mock_config, respx_mock_router
+) -> None:
+    llm_client._OLLAMA_GPU_LIMITERS.clear()
+    cfg = mock_config(
+        CODING_MODEL="m1",
+        OLLAMA_URL="http://x/api",
+        USE_GPU=True,
+        OLLAMA_GPU_REQUEST_POOL_SIZE=1,
+        OLLAMA_TIMEOUT=30,
+        ENABLE_TRACING=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    active = 0
+    max_active = 0
+
+    async def _handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    respx_mock_router.post("http://x/api/chat").mock(side_effect=_handler)
+
+    first, second = await asyncio.gather(
+        client.chat([{"role": "user", "content": "Merhaba"}], stream=False, json_mode=False),
+        client.chat([{"role": "user", "content": "Selam"}], stream=False, json_mode=False),
+    )
+
+    assert (first, second) == ("ok", "ok")
+    assert max_active == 1
+
+
+@pytest.mark.asyncio
 async def test_ollama_client_chat_sends_bounded_num_batch_when_configured(
     mock_config, respx_mock_router
 ) -> None:

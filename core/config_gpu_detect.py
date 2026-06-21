@@ -22,6 +22,7 @@ class HardwareInfo:
     cpu_count: int = 0
     cuda_version: str = "N/A"
     driver_version: str = "N/A"
+    gpu_vram_mb: int = 0
 
 
 def is_wsl2() -> bool:
@@ -79,6 +80,42 @@ def normalize_gpu_memory_fractions(
     }
 
 
+def resolve_adaptive_gpu_pool_size(
+    info: HardwareInfo,
+    *,
+    get_int_env: Any,
+    logger: Any,
+    env_key: str = "OLLAMA_GPU_REQUEST_POOL_SIZE",
+) -> int:
+    """Resolve a safe local-LLM GPU request pool size from hardware and optional env."""
+    explicit = int(get_int_env(env_key, 0) or 0)
+    if explicit > 0:
+        return max(1, min(explicit, 16))
+    if not info.has_cuda or info.gpu_count <= 0:
+        return 1
+
+    vram_mb = max(0, int(getattr(info, "gpu_vram_mb", 0) or 0))
+    if vram_mb >= 24 * 1024:
+        per_gpu = 4
+    elif vram_mb >= 16 * 1024:
+        per_gpu = 3
+    elif vram_mb >= 8 * 1024:
+        per_gpu = 2
+    else:
+        per_gpu = 1
+
+    cpu_cap = max(1, int(getattr(info, "cpu_count", 1) or 1) // 2)
+    pool_size = max(1, min(per_gpu * max(1, int(info.gpu_count)), cpu_cap, 8))
+    logger.info(
+        "🎮 Adaptive GPU request pool size: %d (gpu_count=%d, vram_mb=%d, cpu_cap=%d)",
+        pool_size,
+        info.gpu_count,
+        vram_mb,
+        cpu_cap,
+    )
+    return pool_size
+
+
 def detect_gpu(
     *, get_bool_env: Any, get_int_env: Any, get_float_env: Any, logger: Any
 ) -> HardwareInfo:
@@ -104,6 +141,11 @@ def detect_gpu(
             info.gpu_count = torch.cuda.device_count()
             info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
+            try:
+                props = torch.cuda.get_device_properties(0)
+                info.gpu_vram_mb = int(getattr(props, "total_memory", 0) or 0) // (1024 * 1024)
+            except Exception:
+                info.gpu_vram_mb = 0
             logger.info(
                 "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
                 info.gpu_name,

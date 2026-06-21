@@ -58,6 +58,44 @@ def test_normalize_gpu_memory_fractions_covers_default_safe_and_scaled_budgets()
     assert scaled["total"] == 0.8
 
 
+def test_resolve_adaptive_gpu_pool_size_uses_env_and_hardware_budget() -> None:
+    logger = _Logger()
+    info = HardwareInfo(
+        has_cuda=True,
+        gpu_name="Ada",
+        gpu_count=1,
+        cpu_count=12,
+        gpu_vram_mb=24 * 1024,
+    )
+
+    assert (
+        config_gpu_detect.resolve_adaptive_gpu_pool_size(
+            info,
+            get_int_env=lambda *_args: 0,
+            logger=logger,
+        )
+        == 4
+    )
+    assert logger.info_messages
+
+    assert (
+        config_gpu_detect.resolve_adaptive_gpu_pool_size(
+            info,
+            get_int_env=lambda *_args: 20,
+            logger=_Logger(),
+        )
+        == 16
+    )
+    assert (
+        config_gpu_detect.resolve_adaptive_gpu_pool_size(
+            HardwareInfo(has_cuda=False, gpu_name="cpu"),
+            get_int_env=lambda *_args: 0,
+            logger=_Logger(),
+        )
+        == 1
+    )
+
+
 def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -72,6 +110,7 @@ def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
             is_available=lambda: True,
             device_count=lambda: 2,
             get_device_name=lambda _index: "Test GPU",
+            get_device_properties=lambda _index: SimpleNamespace(total_memory=12 * 1024**3),
         ),
         version=SimpleNamespace(cuda="12.1"),
     )
@@ -82,11 +121,13 @@ def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
         available.gpu_count,
         available.gpu_name,
         available.cuda_version,
+        available.gpu_vram_mb,
     ) == (
         True,
         2,
         "Test GPU",
         "12.1",
+        12288,
     )
 
     torch.cuda.is_available = lambda: False

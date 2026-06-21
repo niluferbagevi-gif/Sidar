@@ -21,7 +21,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
-from core.config_gpu_detect import normalize_gpu_memory_fractions
+from core.config_gpu_detect import normalize_gpu_memory_fractions, resolve_adaptive_gpu_pool_size
 from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
@@ -749,6 +749,7 @@ class HardwareInfo:
     cpu_count: int = 0
     cuda_version: str = "N/A"
     driver_version: str = "N/A"
+    gpu_vram_mb: int = 0
 
 
 def _is_wsl2() -> bool:
@@ -789,6 +790,11 @@ def check_hardware() -> HardwareInfo:
             info.gpu_count = torch.cuda.device_count()
             info.gpu_name = torch.cuda.get_device_name(0)
             info.cuda_version = torch.version.cuda or "N/A"
+            try:
+                props = torch.cuda.get_device_properties(0)
+                info.gpu_vram_mb = int(getattr(props, "total_memory", 0) or 0) // (1024 * 1024)
+            except Exception:
+                info.gpu_vram_mb = 0
             _log_first_load_info(
                 "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, Torch CUDA build %s)",
                 info.gpu_name,
@@ -1010,6 +1016,7 @@ class Config:
     CUDA_VERSION: str = "N/A"
     DRIVER_VERSION: str = "N/A"
     GPU_VRAM_MB: int = 0
+    OLLAMA_GPU_REQUEST_POOL_SIZE: int = get_int_env("OLLAMA_GPU_REQUEST_POOL_SIZE", 0)
 
     _hardware_loaded: bool = False
 
@@ -1527,6 +1534,12 @@ class Config:
         cls.CPU_COUNT = hw.cpu_count or (os.cpu_count() or 1)
         cls.CUDA_VERSION = hw.cuda_version
         cls.DRIVER_VERSION = hw.driver_version
+        cls.GPU_VRAM_MB = int(getattr(hw, "gpu_vram_mb", 0) or 0)
+        cls.OLLAMA_GPU_REQUEST_POOL_SIZE = resolve_adaptive_gpu_pool_size(
+            hw,
+            get_int_env=get_int_env,
+            logger=logger,
+        )
         cls._autoselect_ollama_coding_ctx_window()
         cls._hardware_loaded = True
 
@@ -1547,7 +1560,8 @@ class Config:
         except Exception:
             vram_mb = 0
 
-        cls.GPU_VRAM_MB = max(0, int(vram_mb))
+        if vram_mb > 0:
+            cls.GPU_VRAM_MB = max(0, int(vram_mb))
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
         elif cls.GPU_VRAM_MB >= 8192:

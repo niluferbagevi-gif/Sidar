@@ -1777,6 +1777,7 @@ def test_dotenv_key_source_report_and_debug_log(monkeypatch, tmp_path, caplog):
 def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     monkeypatch.setattr(config.Config, "_hardware_loaded", False)
     monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "OLLAMA_GPU_REQUEST_POOL_SIZE", 0)
     monkeypatch.setattr(
         config,
         "check_hardware",
@@ -1787,8 +1788,10 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
             cpu_count=12,
             cuda_version="12.4",
             driver_version="555.1",
+            gpu_vram_mb=24 * 1024,
         ),
     )
+    monkeypatch.delenv("OLLAMA_GPU_REQUEST_POOL_SIZE", raising=False)
 
     config.Config._ensure_hardware_info_loaded()
 
@@ -1798,6 +1801,8 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.CPU_COUNT == 12
     assert config.Config.CUDA_VERSION == "12.4"
     assert config.Config.DRIVER_VERSION == "555.1"
+    assert config.Config.GPU_VRAM_MB == 24 * 1024
+    assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
 
 
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):

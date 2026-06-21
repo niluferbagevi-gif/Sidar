@@ -56,6 +56,8 @@ DEFAULT_COST_PER_TOKEN_USD = 2e-6
 OLLAMA_NUM_BATCH_DEFAULT = 2048
 OLLAMA_NUM_BATCH_MAX = 4096
 OLLAMA_NUM_BATCH_AUTO_MIN = 2048
+_OLLAMA_GPU_LIMITERS: dict[tuple[str, int], asyncio.Semaphore] = {}
+_OLLAMA_GPU_LIMITERS_LOCK = asyncio.Lock()
 MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
     "gpt-4o": 5e-6,
     "gpt-4o-mini": 2e-6,
@@ -75,6 +77,40 @@ SIDAR_TOOL_JSON_INSTRUCTION: str = (
 
 def _setting(config: Any, key: str, default: Any) -> Any:
     return getattr(config, key, default)
+
+
+def _ollama_gpu_pool_size(config: Any) -> int:
+    if not bool(_setting(config, "USE_GPU", False)):
+        return 0
+    configured = int(_setting(config, "OLLAMA_GPU_REQUEST_POOL_SIZE", 0) or 0)
+    if configured > 0:
+        return max(1, min(configured, 16))
+    return 1
+
+
+async def _ollama_gpu_limiter(base_url: str, pool_size: int) -> asyncio.Semaphore | None:
+    if pool_size <= 0:
+        return None
+    key = (base_url, pool_size)
+    limiter = _OLLAMA_GPU_LIMITERS.get(key)
+    if limiter is not None:
+        return limiter
+    async with _OLLAMA_GPU_LIMITERS_LOCK:
+        limiter = _OLLAMA_GPU_LIMITERS.get(key)
+        if limiter is None:
+            limiter = asyncio.Semaphore(pool_size)
+            _OLLAMA_GPU_LIMITERS[key] = limiter
+        return limiter
+
+
+async def _release_limiter_after_stream(
+    stream: AsyncIterator[str], limiter: asyncio.Semaphore
+) -> AsyncGenerator[str, None]:
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        limiter.release()
 
 
 def _prepare_span_scope(config: Any, span_name: str, stream: bool) -> tuple[Any, Any | None]:
@@ -577,14 +613,30 @@ class OllamaClient(BaseLLMClient):
         with span_scope as scoped_span:
             span = scoped_span or stream_span
             started_at = time.monotonic()
+            gpu_limiter = await _ollama_gpu_limiter(
+                self.base_url, _ollama_gpu_pool_size(self.config)
+            )
+            gpu_limiter_acquired = False
+            gpu_limiter_released_by_stream = False
             if span is not None:
                 span.set_attribute("sidar.llm.provider", "ollama")
                 span.set_attribute("sidar.llm.model", target_model)
                 span.set_attribute("sidar.llm.stream", stream)
+                if gpu_limiter is not None:
+                    span.set_attribute(
+                        "sidar.llm.gpu_pool_size", _ollama_gpu_pool_size(self.config)
+                    )
             try:
+                if gpu_limiter is not None:
+                    await gpu_limiter.acquire()
+                    gpu_limiter_acquired = True
                 if stream:
                     stream_iter = self._stream_response(url, payload, req_timeout=timeout)
-                    return _trace_stream_metrics(stream_iter, span, started_at)
+                    traced_stream = _trace_stream_metrics(stream_iter, span, started_at)
+                    if gpu_limiter is not None:
+                        gpu_limiter_released_by_stream = True
+                        return _release_limiter_after_stream(traced_stream, gpu_limiter)
+                    return traced_stream
 
                 async def _do_request() -> dict[str, Any]:
                     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -641,6 +693,13 @@ class OllamaClient(BaseLLMClient):
                     raise LLMAPIError("ollama", guidance, retryable=False) from exc
                 logger.error("Ollama hata: %s", exc)
                 raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
+            finally:
+                if (
+                    gpu_limiter is not None
+                    and gpu_limiter_acquired
+                    and not gpu_limiter_released_by_stream
+                ):
+                    gpu_limiter.release()
 
     async def _stream_response(
         self,
