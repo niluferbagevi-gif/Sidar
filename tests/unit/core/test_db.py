@@ -231,8 +231,48 @@ def test_helper_functions_basic_contracts() -> None:
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
 
 
-def test_verify_password_accepts_legacy_120k_hash_format() -> None:
+def test_pbkdf2_iterations_env_uses_secure_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
+    assert core_db._current_pbkdf2_iterations() == 700000
+
+    monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "100")
+    assert core_db._current_pbkdf2_iterations() == core_db._PBKDF2_MIN_ITERATIONS
+
+    monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "not-an-int")
+    assert core_db._current_pbkdf2_iterations() == core_db._PBKDF2_MIN_ITERATIONS
+
+
+def test_hash_password_uses_configured_iterations_and_records_latency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, float, int]] = []
+
+    class Collector:
+        def record_auth_hash_latency(
+            self, operation: str, status: str, duration_s: float, *, slo_ms: int = 120
+        ) -> None:
+            calls.append((operation, status, duration_s, slo_ms))
+
+    monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
+    monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "150")
+    monkeypatch.setattr(core_db, "_pbkdf2_sha256", lambda *_args: "digest")
+    monkeypatch.setattr("core.agent_metrics.get_agent_metrics_collector", lambda: Collector())
+
+    encoded = _hash_password("abc123", salt="fixedsalt")
+
+    assert encoded == "pbkdf2_sha256$700000$fixedsalt$digest"
+    assert calls
+    assert calls[-1][0] == "hash"
+    assert calls[-1][1] == "ok"
+    assert calls[-1][3] == 150
+
+
+def test_verify_password_accepts_legacy_120k_hash_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     salt = "legacysalt"
+    current_digest = hashlib.pbkdf2_hmac("sha256", b"abc123", salt.encode("utf-8"), 600000).hex()
+    assert _verify_password("abc123", f"pbkdf2_sha256${salt}${current_digest}")
+
     digest = hashlib.pbkdf2_hmac("sha256", b"abc123", salt.encode("utf-8"), 120000).hex()
     encoded = f"pbkdf2_sha256${salt}${digest}"
     assert _verify_password("abc123", encoded)

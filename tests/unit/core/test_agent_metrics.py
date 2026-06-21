@@ -118,6 +118,30 @@ def test_render_prometheus_renders_delegation_and_step_metrics() -> None:
     )
 
 
+def test_render_prometheus_renders_auth_hash_latency_and_slo_warnings() -> None:
+    collector = AgentMetricsCollector()
+
+    collector.record_auth_hash_latency("verify", "ok", 0.121, slo_ms=120)
+    collector.record_auth_hash_latency("hash", "mismatch", 0.02, slo_ms=120)
+
+    text = collector.render_prometheus()
+
+    assert "# HELP sidar_auth_password_hash_duration_seconds" in text
+    assert (
+        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",le="0.12"} 0'
+        in text
+    )
+    assert (
+        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",le="0.15"} 1'
+        in text
+    )
+    assert 'sidar_auth_password_hash_total{operation="hash",status="mismatch"} 1' in text
+    assert (
+        'sidar_auth_password_hash_slo_warnings_total{operation="verify",status="ok",slo_ms="120"} 1'
+        in text
+    )
+
+
 def test_get_agent_metrics_collector_returns_singleton_instance() -> None:
     agent_metrics._COLLECTOR = None
 

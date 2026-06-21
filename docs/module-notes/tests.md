@@ -138,6 +138,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `.benchmarks/` çıktıları kalıcı kaynak dosya değil CI cache/artifact state'i olarak yönetilir;
   donanım/runner profili değiştiğinde cache seed koşusunun artifact'i ayrıca review edilmelidir.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
+  PBKDF2 maliyeti nedeniyle bilerek pahalıdır. `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
+  ortam bazında yükseltilebilir; değer güvenli minimumun altındaysa runtime minimuma
+  clamp eder. `SIDAR_AUTH_HASH_SLO_MS` varsayılan `120` ms auth hash/verify SLO uyarı
+  eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
+  p95/p99 alarm kuralları üretilebilir.
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
   kullanın (ör. `baseline_v5_2_0`).
