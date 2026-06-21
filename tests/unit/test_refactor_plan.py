@@ -13,6 +13,12 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "managers/code_manager.py",
         "agent/sidar_agent.py",
         "agent/roles/coverage_agent.py",
+        "core/llm_client.py",
+        "core/doctor.py",
+        "agent/roles/reviewer_agent.py",
+        "core/ci_remediation.py",
+        "managers/browser_manager.py",
+        "agent/swarm.py",
     ):
         assert target in plan
 
@@ -24,6 +30,12 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "managers/code/patcher.py",
         "agent/self_heal/executor.py",
         "agent/roles/coverage/analyzer.py",
+        "core/llm/providers/ollama.py",
+        "core/doctor/checks/gpu.py",
+        "agent/roles/reviewer/judge.py",
+        "core/ci_remediation/validation.py",
+        "managers/browser/visual_drift.py",
+        "agent/swarm/handoff.py",
     ):
         assert module in plan
 
