@@ -26,6 +26,7 @@ def _extract_usage_tokens(*args: Any, **kwargs: Any) -> Any:
 def _extract_gemini_usage_tokens(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._extract_gemini_usage_tokens(*args, **kwargs)
 
+
 async def _ensure_json_text_async(text: str, provider: str) -> str:
     return await llm_facade._ensure_json_text_async(text, provider)
 
@@ -63,6 +64,7 @@ def _trace_stream_metrics(
 ) -> AsyncGenerator[str, None]:
     return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
 
+
 class OpenAIClient(BaseLLMClient):
     """OpenAI Chat Completions istemcisi (opsiyonel sağlayıcı)."""
 
@@ -85,8 +87,7 @@ class OpenAIClient(BaseLLMClient):
             {
                 "tool": "final_answer",
                 "argument": (
-                    "[HATA] Test OpenAI API anahtarı algılandı; gerçek OpenAI isteği "
-                    "gönderilmedi."
+                    "[HATA] Test OpenAI API anahtarı algılandı; gerçek OpenAI isteği gönderilmedi."
                 ),
                 "thought": f"Dummy key guard ({api_key[:7]}...)",
             }

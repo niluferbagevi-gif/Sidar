@@ -23,6 +23,7 @@ def _extract_usage_tokens(*args: Any, **kwargs: Any) -> Any:
 def _extract_gemini_usage_tokens(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._extract_gemini_usage_tokens(*args, **kwargs)
 
+
 async def _ensure_json_text_async(text: str, provider: str) -> str:
     return await llm_facade._ensure_json_text_async(text, provider)
 
@@ -59,6 +60,7 @@ def _trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
     return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
+
 
 class GeminiClient(BaseLLMClient):
     """Gemini sağlayıcısı istemcisi."""

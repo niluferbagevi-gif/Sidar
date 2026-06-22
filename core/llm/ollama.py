@@ -35,7 +35,6 @@ def _extract_gemini_usage_tokens(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._extract_gemini_usage_tokens(*args, **kwargs)
 
 
-
 def _ollama_gpu_limiter(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._ollama_gpu_limiter(*args, **kwargs)
 
@@ -86,6 +85,7 @@ def _trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
     return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
+
 
 class OllamaClient(BaseLLMClient):
     """Ollama sağlayıcısı istemcisi."""
