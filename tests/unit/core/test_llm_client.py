@@ -4366,3 +4366,28 @@ async def test_ollama_stream_releases_gpu_limiter_after_consumption(
     assert limiter.locked() is False
 
     llm_client._OLLAMA_GPU_LIMITERS.pop(key, None)
+
+
+@pytest.mark.asyncio
+async def test_ollama_stream_without_gpu_limiter_returns_traced_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _make_config(
+        USE_GPU=False,
+        OLLAMA_GPU_REQUEST_POOL_SIZE=0,
+        ENABLE_LLM_TRACING=False,
+        ENABLE_SEMANTIC_CACHE=False,
+    )
+    client = llm_client.OllamaClient(cfg)
+    key = (client.base_url, 0)
+    llm_client._OLLAMA_GPU_LIMITERS.pop(key, None)
+
+    async def _fake_stream(*_args: Any, **_kwargs: Any):
+        yield "chunk-cpu"
+
+    monkeypatch.setattr(client, "_stream_response", _fake_stream)
+
+    stream = await client.chat([{"role": "user", "content": "hi"}], stream=True)
+
+    assert [chunk async for chunk in stream] == ["chunk-cpu"]
+    assert key not in llm_client._OLLAMA_GPU_LIMITERS
