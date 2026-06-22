@@ -75,7 +75,9 @@ def test_hitl_rest_routes_create_list_respond_and_report_missing(
     assert client.post("/api/hitl/respond/missing", json={"approved": False}).status_code == 404
 
 
-def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client(make_test_client: Any) -> None:
+def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client(
+    make_test_client: Any,
+) -> None:
     item = SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})
     clients: set[Any] = set()
     app = FastAPI()

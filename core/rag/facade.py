@@ -18,6 +18,7 @@ from core.embeddings import sentence_transformer_local_files_only
 
 logger = logging.getLogger(__name__)
 
+
 def embed_texts_for_semantic_cache(
     texts: builtins.list[str], cfg: Config | None = None
 ) -> builtins.list[builtins.list[float]]:
