@@ -24,12 +24,12 @@ def _extract_usage_tokens(*args: Any, **kwargs: Any) -> Any:
 def _extract_gemini_usage_tokens(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._extract_gemini_usage_tokens(*args, **kwargs)
 
-def _ensure_json_text_async(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._ensure_json_text_async(*args, **kwargs)
+async def _ensure_json_text_async(text: str, provider: str) -> str:
+    return await llm_facade._ensure_json_text_async(text, provider)
 
 
-def _fallback_stream(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._fallback_stream(*args, **kwargs)
+def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
+    return llm_facade._fallback_stream(msg)
 
 
 def _prepare_span_scope(*args: Any, **kwargs: Any) -> Any:
@@ -44,12 +44,22 @@ def _retry_with_backoff(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._retry_with_backoff(*args, **kwargs)
 
 
-def _track_stream_completion(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._track_stream_completion(*args, **kwargs)
+def _track_stream_completion(
+    stream_iter: AsyncIterator[str],
+    *,
+    provider: str,
+    model: str,
+    started_at: float,
+) -> AsyncIterator[str]:
+    return llm_facade._track_stream_completion(
+        stream_iter, provider=provider, model=model, started_at=started_at
+    )
 
 
-def _trace_stream_metrics(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._trace_stream_metrics(*args, **kwargs)
+def _trace_stream_metrics(
+    stream_iter: AsyncIterator[str], span: Any, started_at: float
+) -> AsyncGenerator[str, None]:
+    return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
 
 class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""

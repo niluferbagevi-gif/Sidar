@@ -53,8 +53,18 @@ from core.db.auth import (
 from core.db.auth import (
     _record_auth_hash_latency as _record_auth_hash_latency,
 )
-from core.db.coverage import CoverageFindingRecord, CoverageTaskRecord
-from core.db.session import MessageRecord, SessionRecord
+from core.db.coverage import (
+    CoverageFindingRecord as CoverageFindingRecord,
+)
+from core.db.coverage import (
+    CoverageTaskRecord as CoverageTaskRecord,
+)
+from core.db.session import (
+    MessageRecord as MessageRecord,
+)
+from core.db.session import (
+    SessionRecord as SessionRecord,
+)
 from core.db_components.dialect import (
     ASYNCPG_COMMAND_TAG_COUNT_RE as _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE,
 )
