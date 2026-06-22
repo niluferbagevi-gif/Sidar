@@ -6,14 +6,14 @@ import types
 import pytest
 
 
-def _import_module_with_stubs():
+def _import_module_with_stubs(monkeypatch):
     fake_config = types.ModuleType("config")
 
     class _Config:  # pragma: no cover - simple stub
         pass
 
     fake_config.Config = _Config
-    sys.modules["config"] = fake_config
+    monkeypatch.setitem(sys.modules, "config", fake_config)
 
     fake_core_db = types.ModuleType("core.db")
 
@@ -21,7 +21,10 @@ def _import_module_with_stubs():
         pass
 
     fake_core_db.Database = _Database
-    sys.modules["core.db"] = fake_core_db
+    monkeypatch.setitem(sys.modules, "core.db", fake_core_db)
+
+    if "scripts.load_test_db_pool" in sys.modules:
+        monkeypatch.delitem(sys.modules, "scripts.load_test_db_pool")
 
     return importlib.import_module("scripts.load_test_db_pool")
 
@@ -71,16 +74,16 @@ class _FakeDb:
         self.closed = True
 
 
-def test_run_once_returns_latency_ms_for_successful_query():
-    module = _import_module_with_stubs()
+def test_run_once_returns_latency_ms_for_successful_query(monkeypatch):
+    module = _import_module_with_stubs(monkeypatch)
     db = _FakeDb()
     latency = asyncio.run(module._run_once(db, acquire_timeout_s=0.5))
     assert latency is not None
     assert latency >= 0
 
 
-def test_run_once_returns_none_on_query_failure():
-    module = _import_module_with_stubs()
+def test_run_once_returns_none_on_query_failure(monkeypatch):
+    module = _import_module_with_stubs(monkeypatch)
     db = _FakeDb()
     db._pg_pool = _FakePool(should_fail=True)
     latency = asyncio.run(module._run_once(db, acquire_timeout_s=0.5))
@@ -88,7 +91,7 @@ def test_run_once_returns_none_on_query_failure():
 
 
 def test_run_load_test_rejects_non_postgres_and_closes_db(monkeypatch):
-    module = _import_module_with_stubs()
+    module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="sqlite")
 
     monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
@@ -109,7 +112,7 @@ def test_run_load_test_rejects_non_postgres_and_closes_db(monkeypatch):
 
 
 def test_run_load_test_prints_fail_when_all_requests_fail(monkeypatch, capsys):
-    module = _import_module_with_stubs()
+    module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="postgresql")
     fake_db._pg_pool = _FakePool(should_fail=True)
     monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
@@ -132,7 +135,7 @@ def test_run_load_test_prints_fail_when_all_requests_fail(monkeypatch, capsys):
 
 
 def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
-    module = _import_module_with_stubs()
+    module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="postgresql")
     monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
 
@@ -175,7 +178,7 @@ def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
     ],
 )
 def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
-    module = _import_module_with_stubs()
+    module = _import_module_with_stubs(monkeypatch)
     monkeypatch.setattr(sys, "argv", argv)
 
     with pytest.raises(SystemExit, match=expected_msg):
@@ -183,7 +186,7 @@ def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
 
 
 def test_main_runs_load_test_with_parsed_args(monkeypatch):
-    module = _import_module_with_stubs()
+    module = _import_module_with_stubs(monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
