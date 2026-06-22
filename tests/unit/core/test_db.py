@@ -255,7 +255,7 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
 
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "150")
-    monkeypatch.setattr(core_db, "_pbkdf2_sha256", lambda *_args: "digest")
+    monkeypatch.setattr("core.db.auth._pbkdf2_sha256", lambda *_args: "digest")
     monkeypatch.setattr("core.agent_metrics.get_agent_metrics_collector", lambda: Collector())
 
     encoded = _hash_password("abc123", salt="fixedsalt")
@@ -2607,15 +2607,13 @@ def test_hash_password_records_error_latency_when_hashing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[tuple[str, str]] = []
-    monkeypatch.setattr(core_db, "_current_pbkdf2_iterations", lambda: 700000)
+    monkeypatch.setattr("core.db.auth._current_pbkdf2_iterations", lambda: 700000)
     monkeypatch.setattr(
-        core_db,
-        "_pbkdf2_sha256",
+        "core.db.auth._pbkdf2_sha256",
         lambda *_args: (_ for _ in ()).throw(RuntimeError("hash failed")),
     )
     monkeypatch.setattr(
-        core_db,
-        "_record_auth_hash_latency",
+        "core.db.auth._record_auth_hash_latency",
         lambda operation, status, _duration_s: records.append((operation, status)),
     )
 
@@ -2630,13 +2628,11 @@ def test_verify_password_records_error_latency_when_digest_fails(
 ) -> None:
     records: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        core_db,
-        "_pbkdf2_sha256",
+        "core.db.auth._pbkdf2_sha256",
         lambda *_args: (_ for _ in ()).throw(RuntimeError("verify failed")),
     )
     monkeypatch.setattr(
-        core_db,
-        "_record_auth_hash_latency",
+        "core.db.auth._record_auth_hash_latency",
         lambda operation, status, _duration_s: records.append((operation, status)),
     )
 
