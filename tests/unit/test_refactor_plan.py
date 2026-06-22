@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 
@@ -54,6 +55,11 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
+    # Guard this boundary smoke test against stale fake modules left by
+    # earlier tests in the same worker: importing submodules requires
+    # ``core.db`` to be the real package, not a plain ModuleType stub.
+    sys.modules.pop("core.db", None)
+
     import agent.self_heal.executor as self_heal_executor
     import core.db.auth as db_auth
     import core.db.coverage as db_coverage
