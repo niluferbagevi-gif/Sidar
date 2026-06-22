@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.jsx --report-unused-disable-directives",
     "audit": "npm audit --audit-level=moderate",
-    "audit:high": "npm audit --audit-level=high",
+    "audit:high": "node ../scripts/npm_audit_safe.js --level=high --retries=2",
     "audit:moderate": "npm audit --audit-level=moderate",
     "test": "vitest",
     "test:run": "vitest run",

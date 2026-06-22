@@ -1976,133 +1976,6 @@ run_frontend_e2e_with_retry() {
   return "${e2e_exit_code}"
 }
 
-classify_frontend_npm_audit_failure() {
-  local audit_json_path="$1"
-  local audit_stderr_path="$2"
-  python - "${audit_json_path}" "${audit_stderr_path}" <<'PY_NPM_AUDIT_CLASSIFIER'
-import json
-import pathlib
-import sys
-
-json_path = pathlib.Path(sys.argv[1])
-stderr_path = pathlib.Path(sys.argv[2])
-raw_json = json_path.read_text(encoding="utf-8", errors="replace") if json_path.exists() else ""
-stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
-combined = f"{raw_json}\n{stderr}".lower()
-network_markers = (
-    "audit endpoint returned an error",
-    "request to https://registry.npmjs.org",
-    "eai_again",
-    "econnreset",
-    "enotfound",
-    "etimedout",
-    "network",
-    "socket hang up",
-    "timeout",
-    "tunneling socket could not be established",
-)
-
-try:
-    payload = json.loads(raw_json) if raw_json.strip() else {}
-except json.JSONDecodeError:
-    payload = {}
-
-vulnerabilities = payload.get("vulnerabilities")
-metadata = payload.get("metadata", {})
-if isinstance(vulnerabilities, dict) and vulnerabilities:
-    print("vulnerability")
-elif isinstance(metadata, dict) and metadata.get("vulnerabilities"):
-    counts = metadata.get("vulnerabilities") or {}
-    if any(int(counts.get(level, 0) or 0) > 0 for level in ("high", "critical")):
-        print("vulnerability")
-    else:
-        print("unknown")
-elif any(marker in combined for marker in network_markers):
-    print("network")
-else:
-    print("unknown")
-PY_NPM_AUDIT_CLASSIFIER
-}
-
-run_frontend_npm_audit_with_network_tolerance() {
-  local npm_audit_level="${FRONTEND_NPM_AUDIT_LEVEL:-high}"
-  local npm_audit_max_retries="${FRONTEND_NPM_AUDIT_MAX_RETRIES:-2}"
-  local npm_audit_wait_seconds="${FRONTEND_NPM_AUDIT_RETRY_WAIT_SECONDS:-5}"
-  local npm_audit_artifact_dir="${FRONTEND_NPM_AUDIT_ARTIFACT_DIR:-../artifacts/frontend-security}"
-  local npm_audit_raw_report="${npm_audit_artifact_dir}/npm-audit-report.raw.json"
-  local npm_audit_stderr_log="${npm_audit_artifact_dir}/npm-audit-stderr.log"
-  local npm_audit_failure_artifact="${npm_audit_artifact_dir}/npm-audit-failure.json"
-  local npm_audit_attempt=1
-  mkdir -p "${npm_audit_artifact_dir}"
-
-  while [ "${npm_audit_attempt}" -le "${npm_audit_max_retries}" ]; do
-    rm -f "${npm_audit_raw_report}"
-    : > "${npm_audit_stderr_log}"
-    local npm_audit_exit_code=0
-    npm audit --audit-level="${npm_audit_level}" --json \
-      > "${npm_audit_raw_report}" 2> "${npm_audit_stderr_log}"
-    npm_audit_exit_code=$?
-    if [ "${npm_audit_exit_code}" -eq 0 ]; then
-      rm -f "${npm_audit_failure_artifact}"
-      return 0
-    fi
-
-    local npm_audit_category
-    npm_audit_category="$(classify_frontend_npm_audit_failure "${npm_audit_raw_report}" "${npm_audit_stderr_log}")"
-    if [ "${npm_audit_category}" = "network" ] && [ "${npm_audit_attempt}" -lt "${npm_audit_max_retries}" ]; then
-      echo "⚠️ npm audit ağ hatası aldı (deneme ${npm_audit_attempt}/${npm_audit_max_retries}). ${npm_audit_wait_seconds}s sonra yeniden denenecek..."
-      sleep "${npm_audit_wait_seconds}"
-      npm_audit_attempt=$((npm_audit_attempt + 1))
-      continue
-    fi
-
-    python - "${npm_audit_failure_artifact}" "${npm_audit_category}" "${npm_audit_exit_code}" "${npm_audit_raw_report}" "${npm_audit_stderr_log}" <<'PY_NPM_AUDIT_ARTIFACT'
-import json
-import pathlib
-import sys
-
-artifact, category, exit_code, raw_report, stderr_log = sys.argv[1:]
-path = pathlib.Path(artifact)
-path.write_text(
-    json.dumps(
-        {
-            "tool": "npm audit",
-            "failure_category": category,
-            "exit_code": int(exit_code),
-            "raw_report": raw_report,
-            "stderr_log": stderr_log,
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-    + "\n",
-    encoding="utf-8",
-)
-PY_NPM_AUDIT_ARTIFACT
-
-    local npm_audit_network_default="0"
-    if [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
-      npm_audit_network_default="1"
-    fi
-    local npm_audit_allow_network="${FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE:-${npm_audit_network_default}}"
-    if [ "${npm_audit_category}" = "network" ] && [ "${npm_audit_allow_network}" = "1" ]; then
-      echo "⚠️ npm audit ağ/registry hatası nedeniyle tamamlanamadı — bu gerçek bir güvenlik bulgusu DEĞİLDİR."
-      echo "    Ayrıntılar: ${npm_audit_stderr_log}"
-      echo "    Strict mod için: FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 ./run_tests.sh"
-      return 0
-    fi
-    if [ "${npm_audit_category}" = "network" ]; then
-      echo "❌ npm audit ağ/registry hatası strict modda fail edildi (FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=${npm_audit_allow_network})."
-    elif [ "${npm_audit_category}" = "vulnerability" ]; then
-      echo "❌ npm audit gerçek high/critical güvenlik bulgusu raporladı."
-    else
-      echo "❌ npm audit hata sınıflandırması belirsiz (failure_category=${npm_audit_category})."
-    fi
-    echo "🧾 npm audit hata artefaktı yazıldı: ${npm_audit_failure_artifact}"
-    return "${npm_audit_exit_code}"
-  done
-}
-
 resolve_local_frontend_e2e_mode() {
   if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
     return 0
@@ -2158,7 +2031,7 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         resolve_local_frontend_e2e_mode
         echo "🔐 Frontend dependency audit kalite kapısı çalıştırılıyor: npm run audit:high"
         FRONTEND_NPM_AUDIT_RAN=1
-        run_frontend_npm_audit_with_network_tolerance
+        npm run audit:high
         FRONTEND_NPM_AUDIT_EXIT_CODE=$?
         if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then
           FRONTEND_EXIT_CODE=${FRONTEND_NPM_AUDIT_EXIT_CODE}

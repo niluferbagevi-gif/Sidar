@@ -2058,26 +2058,27 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     """Frontend audit must not cascade-skip lint/coverage on local registry outages."""
 
     script = _script()
+    package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
+    npm_audit_safe = Path("scripts/npm_audit_safe.js").read_text(encoding="utf-8")
     frontend_gate_block = script[
         script.index("# 3) Frontend React testleri") : script.index(
             "# 4) Final Durum Değerlendirmesi"
         )
     ]
 
-    assert "run_frontend_npm_audit_with_network_tolerance()" in script
-    assert "classify_frontend_npm_audit_failure()" in script
-    assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in script
-    assert 'FRONTEND_NPM_AUDIT_MAX_RETRIES:-2' in script
-    assert 'npm audit --audit-level="${npm_audit_level}" --json' in script
-    assert "npm-audit-report.raw.json" in script
-    assert "npm-audit-stderr.log" in script
-    assert "npm-audit-failure.json" in script
-    assert "audit endpoint returned an error" in script
-    assert '"failure_category": category' in script
-    assert 'npm_audit_network_default="1"' in script
-    assert 'npm_audit_network_default="0"' in script
+    assert '"audit:high": "node ../scripts/npm_audit_safe.js --level=high --retries=2"' in package_json
+    assert "function classifyAuditFailure" in npm_audit_safe
+    assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in npm_audit_safe
+    assert "FRONTEND_NPM_AUDIT_MAX_RETRIES" in npm_audit_safe
+    assert 'spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"]' in npm_audit_safe
+    assert "npm-audit-report.raw.json" in npm_audit_safe
+    assert "npm-audit-stderr.log" in npm_audit_safe
+    assert "npm-audit-failure.json" in npm_audit_safe
+    assert "audit endpoint returned an error" in npm_audit_safe
+    assert "failure_category: category" in npm_audit_safe
+    assert "options.allowNetworkFailure = !process.env.CI && !process.env.GITHUB_ACTIONS" in npm_audit_safe
     assert (
-        frontend_gate_block.index("run_frontend_npm_audit_with_network_tolerance")
+        frontend_gate_block.index("npm run audit:high")
         < frontend_gate_block.index("npm run lint")
         < frontend_gate_block.index("npm run test:coverage")
     )
