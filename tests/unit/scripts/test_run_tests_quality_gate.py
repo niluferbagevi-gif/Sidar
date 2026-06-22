@@ -2054,6 +2054,35 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
 
+def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None:
+    """Frontend audit must not cascade-skip lint/coverage on local registry outages."""
+
+    script = _script()
+    frontend_gate_block = script[
+        script.index("# 3) Frontend React testleri") : script.index(
+            "# 4) Final Durum Değerlendirmesi"
+        )
+    ]
+
+    assert "run_frontend_npm_audit_with_network_tolerance()" in script
+    assert "classify_frontend_npm_audit_failure()" in script
+    assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in script
+    assert 'FRONTEND_NPM_AUDIT_MAX_RETRIES:-2' in script
+    assert 'npm audit --audit-level="${npm_audit_level}" --json' in script
+    assert "npm-audit-report.raw.json" in script
+    assert "npm-audit-stderr.log" in script
+    assert "npm-audit-failure.json" in script
+    assert "audit endpoint returned an error" in script
+    assert '"failure_category": category' in script
+    assert 'npm_audit_network_default="1"' in script
+    assert 'npm_audit_network_default="0"' in script
+    assert (
+        frontend_gate_block.index("run_frontend_npm_audit_with_network_tolerance")
+        < frontend_gate_block.index("npm run lint")
+        < frontend_gate_block.index("npm run test:coverage")
+    )
+
+
 def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
     package_lock = json.loads(Path("web_ui_react/package-lock.json").read_text(encoding="utf-8"))
