@@ -188,9 +188,7 @@ def test_detect_gpu_skips_wsl_log_outside_wsl(monkeypatch: pytest.MonkeyPatch) -
         (8 * 1024 - 1, 1),
     ],
 )
-def test_resolve_adaptive_gpu_pool_size_vram_thresholds(
-    vram_mb: int, expected: int
-) -> None:
+def test_resolve_adaptive_gpu_pool_size_vram_thresholds(vram_mb: int, expected: int) -> None:
     info = HardwareInfo(
         has_cuda=True,
         gpu_name="threshold-gpu",

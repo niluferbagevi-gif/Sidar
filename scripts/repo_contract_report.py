@@ -18,9 +18,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LOW_HARDWARE_MODEL_PATTERN = re.compile(
-    r"qwen2\.5-coder:(?:0\.5b|1\.5b|3b)", re.IGNORECASE
-)
+LOW_HARDWARE_MODEL_PATTERN = re.compile(r"qwen2\.5-coder:(?:0\.5b|1\.5b|3b)", re.IGNORECASE)
 DEFAULT_WORD_PATTERN = re.compile(r"\b(default|varsayılan|standard|standart)\b", re.IGNORECASE)
 PIP_INSTALL_PATTERN = re.compile(r"(?:^|\s)(?:python\S*\s+-m\s+)?pip\s+install\b")
 UV_PIP_INSTALL_PATTERN = re.compile(r"(?:^|[\s`])uv\s+pip\s+install\b")
@@ -78,7 +76,9 @@ def _extract_roles_init_exports(path: Path = REPO_ROOT / "agent/roles/__init__.p
     for node in tree.body:
         if not (
             isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+            )
             and isinstance(node.value, ast.List)
         ):
             continue
@@ -215,7 +215,6 @@ def scan_repo_standards(
     return violations
 
 
-
 def check_dependency_profile_plan_sync(
     pyproject_path: Path = REPO_ROOT / "pyproject.toml",
     plan_path: Path = REPO_ROOT / "docs/DEPENDENCY_PROFILE_PLAN.md",
@@ -225,11 +224,7 @@ def check_dependency_profile_plan_sync(
     pyproject_text = _read_text(pyproject_path)
     plan_text = _read_text(plan_path)
     pyproject_data = tomllib.loads(pyproject_text)
-    plan_table = (
-        pyproject_data.get("tool", {})
-        .get("sidar", {})
-        .get("dependency_profile_plan", {})
-    )
+    plan_table = pyproject_data.get("tool", {}).get("sidar", {}).get("dependency_profile_plan", {})
     profiles = {
         str(item.get("name") or "").strip()
         for item in list(plan_table.get("profiles") or [])
@@ -266,9 +261,7 @@ def check_dependency_profile_plan_sync(
             for group in ("base", "web", "rag", "multimodal", "dev", "test", "gpu")
         ),
     }
-    missing_pyproject_markers = [
-        name for name, present in pyproject_markers.items() if not present
-    ]
+    missing_pyproject_markers = [name for name, present in pyproject_markers.items() if not present]
     missing_plan_markers = [name for name, present in plan_markers.items() if not present]
     return DependencyProfilePlanStatus(
         status="ok" if not missing_pyproject_markers and not missing_plan_markers else "drift",
@@ -290,9 +283,7 @@ def build_report(
     role_report = build_role_contract_report()
     dependency_profile_plan = check_dependency_profile_plan_sync()
     has_drift = (
-        bool(violations)
-        or role_report["status"] != "ok"
-        or dependency_profile_plan.status != "ok"
+        bool(violations) or role_report["status"] != "ok" or dependency_profile_plan.status != "ok"
     )
     return {
         "status": "fail" if has_drift else "ok",

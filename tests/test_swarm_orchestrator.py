@@ -92,6 +92,7 @@ def test_task_router_preferred_role_absent_uses_catalog_candidate_order(
     assert routed is not None
     assert routed.role_name == "beta"
 
+
 def test_task_router_returns_none_when_catalog_is_empty(isolated_catalog: dict) -> None:
     router = TaskRouter()
     assert router.route("anything") is None

@@ -16,7 +16,9 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     assert plan["status"] == "phase-1-dev-split"
     profile_names = {item["name"] for item in plan["profiles"]}
     assert {"runtime", "dev", "all", "production"} <= profile_names
-    assert "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
+    assert (
+        "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
+    )
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
@@ -146,7 +148,9 @@ def test_production_profile_excludes_dev_quality_tools() -> None:
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert production_dependencies == {"sidar[postgres,telemetry]"}
-    assert "production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar" in docs
+    assert (
+        "production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar" in docs
+    )
     assert "P2 structural hardening" in docs
     for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
         assert not any(dep.startswith(package_prefix) for dep in production_dependencies)
