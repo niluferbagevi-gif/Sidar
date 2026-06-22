@@ -18,6 +18,7 @@ import jwt
 import pytest
 
 import core.db as core_db
+import core.db.auth as db_auth
 from core.db import (
     Database,
     _expires_in,
@@ -255,10 +256,10 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
 
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "150")
-    monkeypatch.setattr(core_db, "_pbkdf2_sha256", lambda *_args: "digest")
+    monkeypatch.setattr(db_auth, "_pbkdf2_sha256", lambda *_args: "digest")
     monkeypatch.setattr("core.agent_metrics.get_agent_metrics_collector", lambda: Collector())
 
-    encoded = _hash_password("abc123", salt="fixedsalt")
+    encoded = db_auth._hash_password("abc123", salt="fixedsalt")
 
     assert encoded == "pbkdf2_sha256$700000$fixedsalt$digest"
     assert calls
@@ -2607,20 +2608,20 @@ def test_hash_password_records_error_latency_when_hashing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[tuple[str, str]] = []
-    monkeypatch.setattr(core_db, "_current_pbkdf2_iterations", lambda: 700000)
+    monkeypatch.setattr(db_auth, "_current_pbkdf2_iterations", lambda: 700000)
     monkeypatch.setattr(
-        core_db,
+        db_auth,
         "_pbkdf2_sha256",
         lambda *_args: (_ for _ in ()).throw(RuntimeError("hash failed")),
     )
     monkeypatch.setattr(
-        core_db,
+        db_auth,
         "_record_auth_hash_latency",
         lambda operation, status, _duration_s: records.append((operation, status)),
     )
 
     with pytest.raises(RuntimeError, match="hash failed"):
-        core_db._hash_password("pw", salt="fixed")
+        db_auth._hash_password("pw", salt="fixed")
 
     assert records == [("hash", "error")]
 
@@ -2630,17 +2631,17 @@ def test_verify_password_records_error_latency_when_digest_fails(
 ) -> None:
     records: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        core_db,
+        db_auth,
         "_pbkdf2_sha256",
         lambda *_args: (_ for _ in ()).throw(RuntimeError("verify failed")),
     )
     monkeypatch.setattr(
-        core_db,
+        db_auth,
         "_record_auth_hash_latency",
         lambda operation, status, _duration_s: records.append((operation, status)),
     )
 
     with pytest.raises(RuntimeError, match="verify failed"):
-        core_db._verify_password("pw", "pbkdf2_sha256$700000$salt$digest")
+        db_auth._verify_password("pw", "pbkdf2_sha256$700000$salt$digest")
 
     assert records == [("verify", "error")]

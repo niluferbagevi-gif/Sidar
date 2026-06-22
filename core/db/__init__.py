@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import importlib
 import inspect
 import logging
-import os
 import random
-import secrets
 import sqlite3
-import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -23,6 +19,42 @@ from typing import Any, TypeVar, cast
 import jwt
 
 from config import Config
+from core.db.auth import (
+    _AUTH_HASH_SLO_MS_ENV as _AUTH_HASH_SLO_MS_ENV,
+)
+from core.db.auth import (
+    _PBKDF2_ALGORITHM as _PBKDF2_ALGORITHM,
+)
+from core.db.auth import (
+    _PBKDF2_ITERATIONS_ENV as _PBKDF2_ITERATIONS_ENV,
+)
+from core.db.auth import (
+    _PBKDF2_LEGACY_ITERATIONS as _PBKDF2_LEGACY_ITERATIONS,
+)
+from core.db.auth import (
+    _PBKDF2_MIN_ITERATIONS as _PBKDF2_MIN_ITERATIONS,
+)
+from core.db.auth import (
+    AuthTokenRecord,
+    UserRecord,
+    _expires_in,
+    _hash_password,
+    _verify_password,
+)
+from core.db.auth import (
+    _auth_hash_slo_ms as _auth_hash_slo_ms,
+)
+from core.db.auth import (
+    _current_pbkdf2_iterations as _current_pbkdf2_iterations,
+)
+from core.db.auth import (
+    _pbkdf2_sha256 as _pbkdf2_sha256,
+)
+from core.db.auth import (
+    _record_auth_hash_latency as _record_auth_hash_latency,
+)
+from core.db.coverage import CoverageFindingRecord, CoverageTaskRecord
+from core.db.session import MessageRecord, SessionRecord
 from core.db_components.dialect import (
     ASYNCPG_COMMAND_TAG_COUNT_RE as _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE,
 )
@@ -161,42 +193,6 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
 
 
 @dataclass
-class UserRecord:
-    id: str
-    username: str
-    role: str
-    created_at: str
-    tenant_id: str = "default"
-
-
-@dataclass
-class AuthTokenRecord:
-    token: str
-    user_id: str
-    expires_at: str
-    created_at: str
-
-
-@dataclass
-class SessionRecord:
-    id: str
-    user_id: str
-    title: str
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class MessageRecord:
-    id: int
-    session_id: str
-    role: str
-    content: str
-    tokens_used: int
-    created_at: str
-
-
-@dataclass
 class AccessPolicyRecord:
     id: int
     user_id: str
@@ -274,33 +270,6 @@ class OperationChecklistRecord:
     updated_at: str
 
 
-@dataclass
-class CoverageTaskRecord:
-    id: int
-    tenant_id: str
-    requester_role: str
-    command: str
-    pytest_output: str
-    status: str
-    target_path: str
-    suggested_test_path: str
-    review_payload_json: str
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class CoverageFindingRecord:
-    id: int
-    task_id: int
-    finding_type: str
-    target_path: str
-    summary: str
-    severity: str
-    details_json: str
-    created_at: str
-
-
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -315,135 +284,6 @@ def _parse_iso_datetime(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
-
-
-_PBKDF2_ALGORITHM = "pbkdf2_sha256"
-_PBKDF2_MIN_ITERATIONS = 600000
-_PBKDF2_LEGACY_ITERATIONS = 120000
-_PBKDF2_ITERATIONS_ENV = "SIDAR_PBKDF2_ITERATIONS"
-_AUTH_HASH_SLO_MS_ENV = "SIDAR_AUTH_HASH_SLO_MS"
-
-
-def _current_pbkdf2_iterations() -> int:
-    """Return the configured PBKDF2 work factor without allowing insecure downgrades."""
-    raw_value = os.getenv(_PBKDF2_ITERATIONS_ENV, "").strip()
-    if not raw_value:
-        return _PBKDF2_MIN_ITERATIONS
-    try:
-        configured = int(raw_value)
-    except ValueError:
-        logger.warning(
-            "%s geçersiz (%r); PBKDF2 varsayılanı %s kullanılacak.",
-            _PBKDF2_ITERATIONS_ENV,
-            raw_value,
-            _PBKDF2_MIN_ITERATIONS,
-        )
-        return _PBKDF2_MIN_ITERATIONS
-    if configured < _PBKDF2_MIN_ITERATIONS:
-        logger.warning(
-            "%s=%s güvenli minimum %s altında; minimum değer kullanılacak.",
-            _PBKDF2_ITERATIONS_ENV,
-            configured,
-            _PBKDF2_MIN_ITERATIONS,
-        )
-        return _PBKDF2_MIN_ITERATIONS
-    return configured
-
-
-def _auth_hash_slo_ms() -> int:
-    raw_value = os.getenv(_AUTH_HASH_SLO_MS_ENV, "").strip()
-    if not raw_value:
-        return 120
-    try:
-        configured = int(raw_value)
-    except ValueError:
-        logger.warning(
-            "%s geçersiz (%r); auth hash SLO varsayılanı 120 ms kullanılacak.",
-            _AUTH_HASH_SLO_MS_ENV,
-            raw_value,
-        )
-        return 120
-    return max(configured, 1)
-
-
-def _record_auth_hash_latency(operation: str, status: str, duration_s: float) -> None:
-    from core.agent_metrics import get_agent_metrics_collector
-
-    collector = get_agent_metrics_collector()
-    collector.record_auth_hash_latency(
-        operation,
-        status,
-        duration_s,
-        slo_ms=_auth_hash_slo_ms(),
-    )
-
-
-def _pbkdf2_sha256(password: str, salt: str, iterations: int) -> str:
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
-    )
-    return digest.hex()
-
-
-def _hash_password(password: str, salt: str | None = None) -> str:
-    real_salt = salt or secrets.token_hex(16)
-    # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
-    iterations = _current_pbkdf2_iterations()
-    started = time.perf_counter()
-    status = "ok"
-    try:
-        digest_hex = _pbkdf2_sha256(password, real_salt, iterations)
-        return f"{_PBKDF2_ALGORITHM}${iterations}${real_salt}${digest_hex}"
-    except Exception:
-        status = "error"
-        raise
-    finally:
-        _record_auth_hash_latency("hash", status, time.perf_counter() - started)
-
-
-def _verify_password(password: str, encoded: str) -> bool:
-    started = time.perf_counter()
-    status = "invalid"
-    parts = encoded.split("$")
-    try:
-        if len(parts) == 4:
-            algorithm, iterations_text, salt, expected_hex = parts
-            if algorithm != _PBKDF2_ALGORITHM:
-                return False
-            try:
-                iterations = int(iterations_text)
-            except ValueError:
-                return False
-            actual_hex = _pbkdf2_sha256(password, salt, iterations)
-            is_valid = secrets.compare_digest(actual_hex, expected_hex)
-            status = "ok" if is_valid else "mismatch"
-            return is_valid
-
-        if len(parts) == 3:
-            algorithm, salt, expected_hex = parts
-            if algorithm != _PBKDF2_ALGORITHM:
-                return False
-            configured_hex = _pbkdf2_sha256(password, salt, _current_pbkdf2_iterations())
-            current_hex = _pbkdf2_sha256(password, salt, _PBKDF2_MIN_ITERATIONS)
-            legacy_hex = _pbkdf2_sha256(password, salt, _PBKDF2_LEGACY_ITERATIONS)
-            is_valid = (
-                secrets.compare_digest(configured_hex, expected_hex)
-                or secrets.compare_digest(current_hex, expected_hex)
-                or secrets.compare_digest(legacy_hex, expected_hex)
-            )
-            status = "ok" if is_valid else "mismatch"
-            return is_valid
-
-        return False
-    except Exception:
-        status = "error"
-        raise
-    finally:
-        _record_auth_hash_latency("verify", status, time.perf_counter() - started)
-
-
-def _expires_in(days: int = 7) -> str:
-    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 def _quote_sql_identifier(identifier: str) -> str:
