@@ -278,6 +278,9 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "uv run pytest tests/performance/ --benchmark-save=baseline" in notes
     assert "commit_info.dirty" in notes
     assert "version-sort" in notes
+    assert "2026-06-22 performans değerlendirmesinde 13 benchmark" in notes
+    assert "BENCHMARK_COMPARE_REQUIRED=1" in notes
+    assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
     assert (

@@ -144,6 +144,14 @@ tek seferlik/geçici dosya adlarını referans almaz.
   eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
   p95/p99 alarm kuralları üretilebilir.
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
+- 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı;
+  `test_format_table_handles_large_dataset_quickly` yaklaşık `3.6 ms`,
+  `test_user_authentication_password_verify_cpu_cost[postgresql]` yaklaşık `66.8 ms`,
+  `test_gpu_concurrent_throughput` yaklaşık `6.87 s` ve
+  `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler
+  tek başına yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline
+  seed gözlemi olarak ele alınmalı ve sonraki koşularda `BENCHMARK_COMPARE_REQUIRED=1`
+  + `BENCHMARK_ENFORCE_COMPARE=1` ile otomatik regresyon karşılaştırmasına geçirilmelidir.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
   kullanın (ör. `baseline_v5_2_0`).
 
