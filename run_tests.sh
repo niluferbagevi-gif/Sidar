@@ -1806,8 +1806,10 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     benchmark_cmd+=(--benchmark-disable-gc)
   fi
 
+  benchmark_compare_target_found=0
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
     if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+      benchmark_compare_target_found=1
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
       if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
         echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
@@ -1840,6 +1842,14 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
     echo "✅ Benchmark JSON raporu oluşturuldu: ${BENCHMARK_JSON_OUTPUT}"
+    if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ] && [ "${benchmark_compare_target_found}" = "0" ]; then
+      if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+        echo "✅ Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}"
+        echo "ℹ️ Sonraki benchmark koşusunda --benchmark-compare=${BENCHMARK_COMPARE_SELECTOR} otomatik kullanılacak."
+      else
+        echo "⚠️ Benchmark JSON üretildi ancak .benchmarks altında '${BENCHMARK_COMPARE_NAME}' baseline kaydı doğrulanamadı."
+      fi
+    fi
   elif [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
     echo "⚠️ Benchmark testleri geçti ancak JSON raporu bulunamadı: ${BENCHMARK_JSON_OUTPUT}"
     BENCHMARK_EXIT_CODE=1

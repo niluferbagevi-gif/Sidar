@@ -258,6 +258,14 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+    assert "benchmark_compare_target_found=0" in script
+    assert "benchmark_compare_target_found=1" in script
+    assert "Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}" in script
+    assert "Sonraki benchmark koşusunda --benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}" in script
+    assert (
+        "Benchmark JSON üretildi ancak .benchmarks altında '${BENCHMARK_COMPARE_NAME}' baseline kaydı doğrulanamadı"
+        in script
+    )
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
