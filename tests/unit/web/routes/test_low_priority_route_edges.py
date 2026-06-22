@@ -78,7 +78,9 @@ def test_metrics_helper_returns_default_when_legacy_module_lacks_attribute(
     assert _resolve_web_server_helper("missing_helper", default) is default
 
 
-def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_provider(make_test_client: Any) -> None:
+def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_provider(
+    make_test_client: Any,
+) -> None:
     class _Memory:
         active_user_id = "previous-user"
         active_username = ""

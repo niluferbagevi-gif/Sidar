@@ -33,7 +33,12 @@ EXPECTED_PLUGIN_MODULES = {
 def test_every_plugin_manifest_declares_required_metadata() -> None:
     """Every plugin exposes capability, side-effect, auth, dry-run, and fixture metadata."""
 
-    assert set(PLUGIN_MANIFESTS) == {"aws_management", "crypto_price", "slack_notifications", "upload"}
+    assert set(PLUGIN_MANIFESTS) == {
+        "aws_management",
+        "crypto_price",
+        "slack_notifications",
+        "upload",
+    }
     for plugin_id, manifest in PLUGIN_MANIFESTS.items():
         assert isinstance(manifest, PluginManifest)
         assert manifest.plugin_id == plugin_id
@@ -41,7 +46,9 @@ def test_every_plugin_manifest_declares_required_metadata() -> None:
         assert manifest.module.startswith("plugins.")
         assert manifest.class_name.endswith("Agent")
         assert manifest.capabilities
-        assert all(capability.strip() == capability and capability for capability in manifest.capabilities)
+        assert all(
+            capability.strip() == capability and capability for capability in manifest.capabilities
+        )
         assert manifest.side_effect_level in VALID_SIDE_EFFECT_LEVELS
         assert isinstance(manifest.requires_auth, bool)
         assert isinstance(manifest.supports_dry_run, bool)
@@ -70,7 +77,10 @@ def test_get_plugin_manifest_returns_metadata_and_raises_for_unknown_id() -> Non
 def test_all_plugin_agent_modules_are_listed_in_manifest() -> None:
     """New plugin agent modules must add a manifest entry before landing."""
 
-    manifest_modules = {manifest.module.rsplit(".", 1)[-1]: manifest.class_name for manifest in PLUGIN_MANIFESTS.values()}
+    manifest_modules = {
+        manifest.module.rsplit(".", 1)[-1]: manifest.class_name
+        for manifest in PLUGIN_MANIFESTS.values()
+    }
     assert manifest_modules == EXPECTED_PLUGIN_MODULES
 
 

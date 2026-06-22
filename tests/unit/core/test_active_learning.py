@@ -618,6 +618,7 @@ def test_lora_trainer_check_peft_uses_cached_value():
     trainer._peft_available = False
     assert trainer._check_peft() is False
 
+
 def _install_minimal_lora_training_stubs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> list[dict[str, object]]:
