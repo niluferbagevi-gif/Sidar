@@ -74,12 +74,12 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
     plan.parent.mkdir()
     pyproject.write_text(
         "[tool.sidar.dependency_profile_plan]\n"
-        "current_install_standard = \"uv sync --all-extras\"\n"
-        "owner_doc = \"docs/DEPENDENCY_PROFILE_PLAN.md\"\n"
+        'current_install_standard = "uv sync --all-extras"\n'
+        'owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"\n'
         "preserve_all_extras_standard = false\n"
-        "planned_profile_groups = [\"base\", \"web\"]\n"
+        'planned_profile_groups = ["base", "web"]\n'
         "[[tool.sidar.dependency_profile_plan.profiles]]\n"
-        "name = \"runtime\"\n",
+        'name = "runtime"\n',
         encoding="utf-8",
     )
     plan.write_text("# Plan\nUse uv sync only.\n", encoding="utf-8")

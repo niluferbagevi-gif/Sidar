@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 from web.routes import ws_voice
 
 
-def test_build_ws_voice_router_dispatches_to_websocket_voice(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_ws_voice_router_dispatches_to_websocket_voice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     called: dict[str, object] = {}
 
     async def fake_voice(websocket, deps):

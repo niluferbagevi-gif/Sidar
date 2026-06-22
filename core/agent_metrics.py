@@ -15,7 +15,19 @@ from typing import Any
 # Histogram bucket sınırları (saniye cinsinden)
 # ---------------------------------------------------------------------------
 _BUCKETS: list[float] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, math.inf]
-_AUTH_HASH_BUCKETS: list[float] = [0.025, 0.05, 0.075, 0.1, 0.12, 0.15, 0.2, 0.3, 0.5, 1.0, math.inf]
+_AUTH_HASH_BUCKETS: list[float] = [
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.12,
+    0.15,
+    0.2,
+    0.3,
+    0.5,
+    1.0,
+    math.inf,
+]
 
 
 class _DelegationHistogram:

@@ -360,9 +360,7 @@ def test_import_builtin_roles_warns_when_literal_import_list_drifts_from_contrac
 
     def _fake_import_module(module_name: str) -> SimpleNamespace:
         imported_modules.append(module_name)
-        contract = next(
-            item for item in BUILTIN_ROLE_CONTRACTS if item.module_name == module_name
-        )
+        contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.module_name == module_name)
         fake_class = type(contract.class_name, (), {"__module__": contract.module_name})
         return SimpleNamespace(**{contract.class_name: fake_class})
 
@@ -420,17 +418,18 @@ def test_builtin_role_contract_static_exports_match_import_bootstrap_literal() -
     for node in roles_init_tree.body:
         if (
             isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+            )
             and isinstance(node.value, ast.List)
         ):
-            all_exports = {
-                item.value for item in node.value.elts if isinstance(item, ast.Constant)
-            }
+            all_exports = {item.value for item in node.value.elts if isinstance(item, ast.Constant)}
             break
 
     assert import_list_modules == BUILTIN_ROLE_MODULES
     assert exported_imports == {contract.class_name for contract in BUILTIN_ROLE_CONTRACTS}
     assert all_exports == exported_imports
+
 
 def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
     snapshot = dict(AgentCatalog._registry)
