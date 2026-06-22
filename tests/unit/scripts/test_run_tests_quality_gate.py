@@ -1802,9 +1802,15 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert "COVERAGE_FAIL_UNDER_SOURCE" in script
     assert "explicit-override" in script
 
-    # Local/CI ratchet cap leaves a 1-point slack; campaign opens to 100.
+    # Local/CI ratchet cap leaves a 1-point slack by default; campaign and
+    # explicit strict-local opt-in open to 100.
     assert 'COVERAGE_RATCHET_MAX_GATE="99"' in script
     assert 'COVERAGE_RATCHET_MAX_GATE="100"' in script
+    assert "COVERAGE_STRICT_LOCAL_RATCHET" in script
+    assert (
+        '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]'
+        in script
+    )
 
     # .coveragerc holds a sustainable baseline, not the campaign target.
     assert "fail_under = 90" in coveragerc

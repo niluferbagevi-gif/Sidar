@@ -103,6 +103,12 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Örneğin gate `%99` ise bir sonraki koşu doğrudan `%100` olmak zorunda değildir: `%99.x` ölçüm
   gate'i geçer ancak ratchet `%99` seviyesinde kalır. Gate yalnız ölçüm `%100` seviyesine ulaştığında
   `%100` olur.
+- Varsayılan local/CI ratchet üst sınırı `%99` olarak kalır; bu, günlük geliştirme akışında tek satırlık
+  coverage dalgalanmalarının tüm kalite kapısını kırmaması için bilinçli tampondur. `%100` gate'i
+  zorlamak istediğiniz olgun/stabil yerel runnerlarda `COVERAGE_STRICT_LOCAL_RATCHET=1` kullanın veya
+  daha açık kontrol için `COVERAGE_RATCHET_MAX_GATE=100` verin. Coverage campaign akışı
+  (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
+  `%100` olarak açar.
 
 ## Performance benchmark baseline yönetimi
 

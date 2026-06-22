@@ -413,12 +413,12 @@ else
   COVERAGE_FAIL_UNDER_SOURCE="local"
 fi
 
-# Yerel/CI profillerinde ratchet üst sınırını 99'da tutarak %0.x dalgalanma
-# için 1 puanlık tampon bırakıyoruz; coverage kampanyasında %100 aspirasyonel
-# hedefe izin veriyoruz. Açık COVERAGE_RATCHET_MAX_GATE atandıysa o değer
-# her profilin önüne geçer.
+# Yerel/CI profillerinde ratchet üst sınırını varsayılan 99'da tutarak %0.x
+# dalgalanma için 1 puanlık tampon bırakıyoruz; coverage kampanyasında veya
+# bilinçli strict-local opt-in'de %100 aspirasyonel hedefe izin veriyoruz.
+# Açık COVERAGE_RATCHET_MAX_GATE atandıysa o değer her profilin önüne geçer.
 if [ -z "${COVERAGE_RATCHET_MAX_GATE:-}" ]; then
-  if [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ]; then
+  if [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]; then
     COVERAGE_RATCHET_MAX_GATE="100"
   else
     COVERAGE_RATCHET_MAX_GATE="99"
