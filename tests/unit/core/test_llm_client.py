@@ -4333,6 +4333,12 @@ def test_ollama_gpu_pool_size_clamps_explicit_runtime_limit() -> None:
     assert llm_client._ollama_gpu_pool_size(cfg) == 16
 
 
+def test_ollama_gpu_pool_size_defaults_to_single_slot_when_gpu_enabled() -> None:
+    cfg = _make_config(USE_GPU=True, OLLAMA_GPU_REQUEST_POOL_SIZE=0)
+
+    assert llm_client._ollama_gpu_pool_size(cfg) == 1
+
+
 @pytest.mark.asyncio
 async def test_ollama_stream_releases_gpu_limiter_after_consumption(
     monkeypatch: pytest.MonkeyPatch,
