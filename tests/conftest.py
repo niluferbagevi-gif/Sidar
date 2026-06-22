@@ -267,15 +267,60 @@ _MISSING_SYS_MODULE = object()
 _SENSITIVE_SYS_MODULES = (
     "agent.base_agent",
     "chromadb.utils.embedding_functions",
+    "core.db",
+    "core.doctor",
+    "core.llm_client",
     "torch",
 )
 _SENSITIVE_SYS_MODULE_ATTRIBUTES = {
     "agent.base_agent": ("BaseAgent",),
 }
+_CRITICAL_SYS_MODULE_CONTRACTS = {
+    "core.db": ("Database", "UserRecord", "SessionRecord"),
+    "core.doctor": ("DoctorCheck", "run_doctor_report", "check_database_env"),
+    "core.llm_client": ("BaseLLMClient", "LLMAPIError", "LLMClient"),
+}
+
+
+def _critical_sys_module_pollution_errors(
+    snapshot: dict[str, object], *, allow_pending_monkeypatch: bool = False
+) -> list[str]:
+    """Return critical module-table mutations that escaped fixture cleanup.
+
+    Some tests intentionally replace import-heavy runtime modules with lightweight
+    stubs. Those mutations must be scoped with ``monkeypatch`` or restored before
+    the test exits; otherwise later tests in the same xdist worker can import a
+    fake ``core.db``/``core.llm_client`` and fail nondeterministically.
+    """
+
+    errors: list[str] = []
+    for name, required_attrs in _CRITICAL_SYS_MODULE_CONTRACTS.items():
+        original = snapshot.get(name, _MISSING_SYS_MODULE)
+        current = sys.modules.get(name, _MISSING_SYS_MODULE)
+        if current is _MISSING_SYS_MODULE:
+            continue
+        missing_attrs = [attr for attr in required_attrs if not hasattr(current, attr)]
+        replaced = original is not _MISSING_SYS_MODULE and current is not original
+        if allow_pending_monkeypatch and (missing_attrs or replaced):
+            # This autouse fixture finalizes before pytest's monkeypatch fixture in
+            # tests that requested monkeypatch directly.  In that case the fake
+            # module is still visible here but will be undone immediately after
+            # this fixture finalizer.  We still restore from our own snapshot
+            # below, so cross-test pollution is prevented without false failures.
+            continue
+        if missing_attrs or replaced:
+            module_file = getattr(current, "__file__", "")
+            module_path = getattr(current, "__path__", "")
+            errors.append(
+                f"{name} polluted in sys.modules"
+                f" (replaced={replaced}, missing_attrs={missing_attrs},"
+                f" file={module_file!r}, path={module_path!r})"
+            )
+    return errors
 
 
 @pytest.fixture(autouse=True)
-def _restore_polluted_sys_modules() -> Generator[None, None, None]:
+def _restore_polluted_sys_modules(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Restore process-global modules and reload-sensitive class identities."""
 
     snapshot = {name: sys.modules.get(name, _MISSING_SYS_MODULE) for name in _SENSITIVE_SYS_MODULES}
@@ -287,6 +332,9 @@ def _restore_polluted_sys_modules() -> Generator[None, None, None]:
         if (module := snapshot.get(name, _MISSING_SYS_MODULE)) is not _MISSING_SYS_MODULE
     }
     yield
+    pollution_errors = _critical_sys_module_pollution_errors(
+        snapshot, allow_pending_monkeypatch="monkeypatch" in request.fixturenames
+    )
     for name, original in snapshot.items():
         if original is _MISSING_SYS_MODULE:
             sys.modules.pop(name, None)
@@ -302,6 +350,12 @@ def _restore_polluted_sys_modules() -> Generator[None, None, None]:
                     delattr(module, attribute)
             else:
                 setattr(module, attribute, original)
+    if pollution_errors:
+        pytest.fail(
+            "Test polluted critical sys.modules entries; use monkeypatch.setitem/delitem "
+            "or restore the original module before teardown: " + "; ".join(pollution_errors),
+            pytrace=False,
+        )
 
 
 @pytest_asyncio.fixture(autouse=True)
