@@ -47,20 +47,22 @@ const bootstrapApiMock = ({ activityItems = [], pending = [] } = {}) => async (u
   throw new Error(`Beklenmeyen çağrı: ${url}`);
 };
 
-it("covers exported helper fallback branches in the main SwarmFlowPanel spec", () => {
-  expect(prettifyRole("")).toBe("Unknown");
-  expect(prettifyRole("multi_word-role")).toBe("Multi Word Role");
-  expect(clampText("   ")).toBe("Açıklama bekleniyor.");
-  expect(prettifyReason("")).toBe("");
-  expect(toDetailEntries(null)).toEqual([]);
-  expect(toDetailEntries({ key: ["a", "b"] })[0].value).toBe("a · b");
-  expect(inferTelemetryActor({ content: "", kind: "status" }, [])).toBe("system");
-  expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
-  expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
-  expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
-  expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
-  expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
-  expect(inferHitlActionFromNode()).toBe("graph_review");
+describe("SwarmFlowPanel helper exports", () => {
+  it("covers exported helper fallback branches in the main SwarmFlowPanel spec", () => {
+    expect(prettifyRole("")).toBe("Unknown");
+    expect(prettifyRole("multi_word-role")).toBe("Multi Word Role");
+    expect(clampText("   ")).toBe("Açıklama bekleniyor.");
+    expect(prettifyReason("")).toBe("");
+    expect(toDetailEntries(null)).toEqual([]);
+    expect(toDetailEntries({ key: ["a", "b"] })[0].value).toBe("a · b");
+    expect(inferTelemetryActor({ content: "", kind: "status" }, [])).toBe("system");
+    expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
+    expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
+    expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
+    expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
+    expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
+    expect(inferHitlActionFromNode()).toBe("graph_review");
+  });
 });
 
 describe("SwarmFlowPanel", () => {
@@ -1078,90 +1080,97 @@ describe("SwarmFlowPanel", () => {
 
 });
 
-it("shows global error banner when autonomy activity fetch fails", async () => {
-  fetchJson.mockImplementation(async (url) => {
-    if (url === "/api/autonomy/activity?limit=8") {
-      throw new Error("activity unavailable");
-    }
-    if (url === "/api/hitl/pending") {
-      return { pending: [] };
-    }
-    throw new Error(`Beklenmeyen çağrı: ${url}`);
+describe("SwarmFlowPanel error and pending approval fallbacks", () => {
+  beforeEach(() => {
+    fetchJson.mockReset();
+    telemetryState.events = [];
   });
 
-  render(<SwarmFlowPanel />);
+  it("shows global error banner when autonomy activity fetch fails", async () => {
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        throw new Error("activity unavailable");
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
 
-  expect(await screen.findByText("activity unavailable")).toBeInTheDocument();
-  expect(await screen.findByText(/Autonomy aktivitesi alınamadı/)).toBeInTheDocument();
-});
+    render(<SwarmFlowPanel />);
 
-it("logs approval response errors when HITL decision endpoint fails", async () => {
-  const user = userEvent.setup();
-  fetchJson.mockImplementation(async (url, options) => {
-    if (url === "/api/autonomy/activity?limit=8") {
-      return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
-    }
-    if (url === "/api/hitl/pending") {
-      return {
-        pending: [{ request_id: "hitl-err", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
-      };
-    }
-    if (url === "/api/hitl/respond/hitl-err" && options?.method === "POST") {
-      throw new Error("decision endpoint failed");
-    }
-    throw new Error(`Beklenmeyen çağrı: ${url}`);
+    expect(await screen.findByText("activity unavailable")).toBeInTheDocument();
+    expect(await screen.findByText(/Autonomy aktivitesi alınamadı/)).toBeInTheDocument();
   });
 
-  render(<SwarmFlowPanel />);
-  expect(await screen.findByText(/karar bekliyor/)).toBeInTheDocument();
+  it("logs approval response errors when HITL decision endpoint fails", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return {
+          pending: [{ request_id: "hitl-err", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
+        };
+      }
+      if (url === "/api/hitl/respond/hitl-err" && options?.method === "POST") {
+        throw new Error("decision endpoint failed");
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
 
-  await user.click(screen.getByRole("button", { name: "Approve" }));
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText(/karar bekliyor/)).toBeInTheDocument();
 
-  expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
-  expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
-});
+    await user.click(screen.getByRole("button", { name: "Approve" }));
 
-it("disables reject action while approval response is in-flight", async () => {
-  const user = userEvent.setup();
-  let resolveDecision;
-  fetchJson.mockImplementation((url, options) => {
-    if (url === "/api/autonomy/activity?limit=8") {
-      return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
-    }
-    if (url === "/api/hitl/pending") {
-      return Promise.resolve({
-        pending: [{ request_id: "hitl-busy", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
-      });
-    }
-    if (url === "/api/hitl/respond/hitl-busy" && options?.method === "POST") {
-      return new Promise((resolve) => {
-        resolveDecision = resolve;
-      });
-    }
-    throw new Error(`Beklenmeyen çağrı: ${url}`);
+    expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
+    expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
   });
 
-  render(<SwarmFlowPanel />);
-  const rejectButton = await screen.findByRole("button", { name: "Reject" });
-  await user.click(rejectButton);
-  expect(rejectButton).toBeDisabled();
+  it("disables reject action while approval response is in-flight", async () => {
+    const user = userEvent.setup();
+    let resolveDecision;
+    fetchJson.mockImplementation((url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
+      }
+      if (url === "/api/hitl/pending") {
+        return Promise.resolve({
+          pending: [{ request_id: "hitl-busy", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
+        });
+      }
+      if (url === "/api/hitl/respond/hitl-busy" && options?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveDecision = resolve;
+        });
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
 
-  resolveDecision({ request_id: "hitl-busy", decision: "rejected" });
-  expect(await screen.findByText(/HITL kararı işlendi: hitl-busy → rejected/)).toBeInTheDocument();
-});
+    render(<SwarmFlowPanel />);
+    const rejectButton = await screen.findByRole("button", { name: "Reject" });
+    await user.click(rejectButton);
+    expect(rejectButton).toBeDisabled();
 
-it("renders pending approval rows with fallback key/id fields", async () => {
-  fetchJson.mockImplementation(async (url) => {
-    if (url === "/api/autonomy/activity?limit=8") {
-      return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
-    }
-    if (url === "/api/hitl/pending") {
-      return { pending: [{}] };
-    }
-    throw new Error(`Beklenmeyen çağrı: ${url}`);
+    resolveDecision({ request_id: "hitl-busy", decision: "rejected" });
+    expect(await screen.findByText(/HITL kararı işlendi: hitl-busy → rejected/)).toBeInTheDocument();
   });
 
-  render(<SwarmFlowPanel />);
-  expect(await screen.findByText("manual")).toBeInTheDocument();
-  expect(screen.getByText("Açıklama yok.")).toBeInTheDocument();
+  it("renders pending approval rows with fallback key/id fields", async () => {
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [{}] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("manual")).toBeInTheDocument();
+    expect(screen.getByText("Açıklama yok.")).toBeInTheDocument();
+  });
 });
