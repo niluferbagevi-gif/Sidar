@@ -26,7 +26,7 @@ from core.config_secrets import DEFAULT_WEAK_SECRET_VALUES, is_weak_secret
 from core.rag.readiness import build_readiness_report
 from sidar_assets.paths import migrations_path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
 
 
@@ -1556,21 +1556,36 @@ def run_doctor_report(
     output_path: str | Path = DEFAULT_OUTPUT,
     include_model_smoke: bool = True,
 ) -> dict[str, Any]:
+    from core.doctor.checks.database import (
+        check_database_connectivity as database_connectivity_check,
+    )
+    from core.doctor.checks.database import check_database_env as database_env_check
+    from core.doctor.checks.database import check_pgvector_ready as pgvector_ready_check
+    from core.doctor.checks.gpu import check_gpu as gpu_check
+    from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
+    from core.doctor.checks.rag import (
+        check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
+    )
+    from core.doctor.checks.rag import check_rag_index_ready as rag_index_ready_check
+    from core.doctor.checks.redis import check_redis as redis_check
+    from core.doctor.checks.security import check_environment_profile as environment_profile_check
+
     checks = [
         check_uv(),
         check_prometheus_runtime(),
-        check_environment_profile(),
-        check_gpu_memory_config(),
-        check_database_env(),
-        check_database_connectivity(),
-        check_pgvector_ready(),
-        check_rag_index_ready(),
-        check_graphrag_entity_memory_ready(),
+        environment_profile_check(),
+        gpu_memory_config_check(),
+        database_env_check(),
+        database_connectivity_check(),
+        pgvector_ready_check(),
+        rag_index_ready_check(),
+        graphrag_entity_memory_ready_check(),
         check_migrations(),
         check_agent_catalog(),
         check_supervisor_routing(),
         check_websocket_routes(),
-        check_gpu(),
+        redis_check(),
+        gpu_check(),
         check_model(smoke=include_model_smoke),
     ]
     statuses = [check.status for check in checks]
