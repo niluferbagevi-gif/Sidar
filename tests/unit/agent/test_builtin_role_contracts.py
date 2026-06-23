@@ -386,7 +386,7 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert "uv run alembic upgrade head" in text_by_file["README.md"]
 
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["dependencies"]
+    assert "pyright>=1.1.409,<2.0.0" not in pyproject["project"]["dependencies"]
     assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["optional-dependencies"]["dev"]
 
     forbidden_terms = [

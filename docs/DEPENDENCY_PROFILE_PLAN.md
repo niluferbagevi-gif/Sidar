@@ -9,7 +9,7 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 ## Mevcut durum
 
 - Ana `dependencies` listesi Faz 1 itibarıyla production-minimal geçişin runtime yüzeyidir;
-  pytest/ruff/mypy/bandit/safety gibi geliştirme ve test araçları runtime listesinden çıkarılmıştır.
+  pytest/ruff/mypy/pyright/bandit/safety gibi geliştirme, LSP ve test araçları runtime listesinden çıkarılmıştır.
 - `dev` extra bu araçları taşır; `all` extra da `dev` profilini içerdiği için yerel geliştirme ve
   CI için `uv sync --all-extras` standardı geriye dönük uyumlu kalır.
 - Dockerfile/installer production varsayılanları bu PR'da değiştirilmez; production image/runbook
@@ -53,7 +53,7 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 | `runtime-ops-telemetry` | `requests`, `tenacity`, `opentelemetry-*`; `telemetry` extra: `prometheus-client`, `opentelemetry-*` | Operasyonel HTTP retry ve tracing/exporter paketleri; production profilinde telemetry seçimiyle doğrulanmalı. |
 | `optional-provider` | `gemini`, `anthropic`, `openai`, `litellm`, `lora`, `gpu`, `voice` extras | Model sağlayıcıları ve ağır ML/GPU/STT yüzeyi varsayılan production-minimal profile zorunlu olmamalı. |
 | `optional-integration` | `PyGithub`, `duckduckgo-search`, `pillow`, `pyttsx3`; extras: `sandbox`, `gui`, `slack`, `browser`, `tools`, `aws`, `jira`, `teams` | Dış servis, browser, GUI ve sandbox entegrasyonları kullanım bazlı extras olarak kalmalı. |
-| `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. |
+| `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. Pyright LSP reviewer diagnostics için dev/all veya `uv tool install pyright` yoluyla sağlanır, production profile'a girmez. |
 
 
 ## HTTP client migration policy (`httpx` → `httpx2`)
@@ -119,7 +119,7 @@ olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini 
 3. **Docker/installer koordinasyonu:** Production Dockerfile, installer ve deploy runbook'ları yeni profile
    göre güncellenmeden varsayılan production install akışı değiştirilmez.
 4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
-   extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar.
+   extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
    Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
    production profile yönlendirilir.
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration

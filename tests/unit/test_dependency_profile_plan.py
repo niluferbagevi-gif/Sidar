@@ -132,7 +132,7 @@ def test_dependency_profile_plan_moves_dev_tools_to_dev_extra_not_runtime_deps()
     dependencies = set(pyproject["project"]["dependencies"])
     dev_dependencies = set(pyproject["project"]["optional-dependencies"]["dev"])
 
-    for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
+    for package_prefix in ("pytest", "ruff", "mypy", "pyright", "bandit", "safety"):
         assert not any(dep.startswith(package_prefix) for dep in dependencies)
         assert any(dep.startswith(package_prefix) for dep in dev_dependencies)
 
@@ -167,8 +167,9 @@ def test_production_profile_excludes_dev_quality_tools() -> None:
 
     assert production_dependencies == {"sidar[postgres,telemetry]"}
     assert (
-        "production profili `sidar[postgres,telemetry]` ile dev araçlarını dışarıda tutar" in docs
+        "production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar"
+        in docs
     )
     assert "P2 structural hardening" in docs
-    for package_prefix in ("pytest", "ruff", "mypy", "bandit", "safety"):
+    for package_prefix in ("pytest", "ruff", "mypy", "pyright", "bandit", "safety"):
         assert not any(dep.startswith(package_prefix) for dep in production_dependencies)
