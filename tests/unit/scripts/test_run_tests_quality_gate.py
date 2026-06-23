@@ -127,9 +127,13 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
     script = _script()
+    notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
     assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
     assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
+    assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
+    assert "Aşama 1 unit fazı artık pytest-xdist mevcutsa" in notes
+    assert "Unit ağırlığı" in notes
 
 
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
@@ -2455,6 +2459,7 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
     script = _script()
 
     assert "local run_unit_phase=0" in script
+    assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
     assert "phase2_dirs+=(tests/integration)" in script
     assert "phase2_dirs+=(tests/smoke)" in script
     assert "phase2_dirs+=(tests/e2e)" in script

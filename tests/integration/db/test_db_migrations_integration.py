@@ -176,6 +176,56 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
         await db.close()
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_db_facade_session_metrics_and_audit_modules_interoperate(sqlite_db: Database):
+    """Extracted session, metrics and audit helpers keep the core.db facade coherent."""
+    user = await sqlite_db.create_user(
+        "facade-integration-user",
+        password="pw",
+        tenant_id="tenant-integration",
+    )
+    session = await sqlite_db.create_session(user.id, "Refactor guard")
+    await sqlite_db.add_message(session.id, "user", "hello", tokens_used=3)
+    await sqlite_db.replace_session_messages(
+        session.id,
+        [
+            {"role": "user", "content": "rewritten", "tokens_used": 5},
+            {"role": "assistant", "content": "ack", "tokens_used": 7},
+        ],
+    )
+
+    await sqlite_db.upsert_user_quota(user.id, daily_token_limit=12, daily_request_limit=2)
+    await sqlite_db.record_provider_usage_daily(user.id, "OpenAI", tokens_used=5, requests_inc=1)
+    await sqlite_db.record_provider_usage_daily(user.id, "openai", tokens_used=7, requests_inc=1)
+    await sqlite_db.record_audit_log(
+        user_id=user.id,
+        tenant_id="tenant-integration",
+        action="SESSION_UPDATE",
+        resource=session.id,
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+
+    sessions = await sqlite_db.list_sessions(user.id)
+    messages = await sqlite_db.get_session_messages(session.id)
+    quota = await sqlite_db.get_user_quota_status(user.id, "openai")
+    audit_logs = await sqlite_db.list_audit_logs(user_id=user.id, limit=5)
+
+    assert [item.id for item in sessions] == [session.id]
+    assert [(item.role, item.content, item.tokens_used) for item in messages] == [
+        ("user", "rewritten", 0),
+        ("assistant", "ack", 0),
+    ]
+    assert quota["tokens_used"] == 12
+    assert quota["requests_used"] == 2
+    assert quota["token_limit_exceeded"] is True
+    assert quota["request_limit_exceeded"] is True
+    assert len(audit_logs) == 1
+    assert audit_logs[0].action == "session_update"
+    assert audit_logs[0].resource == session.id
+
+
 def _packaged_alembic_config(database_url: str) -> Config:
     """Build an Alembic config that exercises packaged sidar_assets migrations."""
     from sidar_assets.paths import migrations_path

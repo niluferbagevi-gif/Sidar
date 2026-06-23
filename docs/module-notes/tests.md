@@ -13,6 +13,14 @@ tek seferlik/geçici dosya adlarını referans almaz.
   - `tests/smoke`: **2**
   - `tests/e2e`: **1**
   - `tests/performance`: **1**
+- 2026-06-23 kalite çıktısı bazında test adedi dağılımı: backend unit **3605**, backend
+  integration/smoke/e2e **73**, frontend Vitest **496**; toplam **4174** test. Unit ağırlığı
+  yaklaşık **%86** olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
+  ve `core/db/__init__.py` gibi facade taşımalarında en az bir integration sahnesi de eklenir.
+- `run_tests.sh` Aşama 1 unit fazı artık pytest-xdist mevcutsa `PYTEST_WORKERS` ve
+  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
+  ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
+  paralel değil" tespiti güncel script için geçerli değildir.
 
 ## Mimari kural: anti-fragmentation
 
