@@ -87,7 +87,9 @@ from core.utils.network_validation import (
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
+from web import bootstrap as web_bootstrap
 from web import security as web_security
+from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
 from web.middleware.cors import configure_loopback_cors
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
@@ -2442,19 +2444,13 @@ WEB_DIR = REACT_DIST_DIR
 
 
 def _make_static_files(directory: Path) -> Any:
-    """FastAPI StaticFiles nesnesini dist dizini eksik olsa bile güvenli üret."""
-    try:
-        return StaticFiles(directory=directory, check_dir=False)
-    except TypeError:
-        return StaticFiles(directory=directory)
+    """Legacy wrapper for frontend bootstrap tests/imports."""
+    return _make_static_files_with_staticfiles(directory, StaticFiles)
 
 
 def _mount_frontend_static_routes(target_app: FastAPI, web_dir: Path) -> None:
-    """Frontend statik dosya rotalarını uygular."""
-    target_app.mount("/static", _make_static_files(web_dir), name="static")
-    assets_dir = web_dir / "assets"
-    if assets_dir.exists():
-        target_app.mount("/assets", _make_static_files(assets_dir), name="assets")
+    """Legacy wrapper for frontend static route mounting."""
+    web_bootstrap.mount_frontend_static_routes(target_app, web_dir)
 
 
 # React build çıktısı /static altında servis edilir.
@@ -3482,25 +3478,11 @@ _app_factory.register_routers(app, [federation_router])
 # ─────────────────────────────────────────────
 
 
-@app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
-async def spa_fallback(full_path: str) -> Any:
-    normalized = (full_path or "").strip()
-    if not normalized:
-        maybe_response = await _await_if_needed(index())
-        return maybe_response
-    first_segment = normalized.split("/", 1)[0].lower()
-    if first_segment in {"api", "vendor", "static", "assets", "ws", "webhook"}:
-        return Response(status_code=404)
-    if "." in Path(normalized).name:
-        return Response(status_code=404)
-    maybe_response = await _await_if_needed(index())
-    response = maybe_response
-    if getattr(response, "status_code", None) == 500:
-        return HTMLResponse(
-            "<h1>SİDAR arayüzü için SPA fallback etkin.</h1>",
-            status_code=200,
-        )
-    return response
+spa_fallback = web_bootstrap.build_spa_fallback_handler(
+    index=lambda: index(),
+    await_value=_await_if_needed,
+)
+app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)(spa_fallback)
 
 
 # ─────────────────────────────────────────────
