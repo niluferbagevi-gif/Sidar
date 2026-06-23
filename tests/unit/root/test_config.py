@@ -89,6 +89,18 @@ def test_database_url_defaults_to_ipv4_loopback(monkeypatch):
     )
 
 
+def test_database_url_derivation_falls_back_for_invalid_component_port(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
+    monkeypatch.setenv("POSTGRES_HOST", "db.local")
+    monkeypatch.setenv("POSTGRES_PORT", "not-a-port")
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    assert config.get_database_url() == "postgresql+asyncpg://sidar:secret@db.local:5432/sidar"
+
+
 def test_database_urls_prefer_explicit_values(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///tmp/sidar.db")
     monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql+asyncpg://x:y@pg:5432/z")

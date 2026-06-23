@@ -13,11 +13,11 @@ from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core import config_dotenv
+from core import config_dotenv, config_postgres
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_gpu_detect import (
@@ -358,35 +358,17 @@ def get_external_bool_env(key: str, default: bool = False) -> bool:
 
 def build_postgres_dsn(*, host: str | None = None) -> str:
     """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
-    user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
-    password = os.getenv("POSTGRES_PASSWORD", "sidar")
-    resolved_host = (
-        host if host is not None else os.getenv("POSTGRES_HOST") or "127.0.0.1"
-    ).strip() or "127.0.0.1"
-    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
-    database = os.getenv("POSTGRES_DB", "sidar").strip() or "sidar"
-
-    quoted_user = quote(user, safe="")
-    quoted_password = quote(password, safe="")
-    quoted_database = quote(database, safe="")
-    return f"postgresql+asyncpg://{quoted_user}:{quoted_password}@{resolved_host}:{port}/{quoted_database}"
+    return config_postgres.build_postgres_dsn(host=host, getenv=os.getenv)
 
 
 def get_database_url() -> str:
     """Resolve DATABASE_URL, deriving it from POSTGRES_* variables when absent."""
-    explicit_url = os.getenv("DATABASE_URL", "").strip()
-    if explicit_url:
-        return explicit_url
-    return build_postgres_dsn()
+    return config_postgres.get_database_url(getenv=os.getenv)
 
 
 def get_container_database_url() -> str:
     """Resolve the container DSN from SIDAR_CONTAINER_DATABASE_URL or POSTGRES_* values."""
-    explicit_url = os.getenv("SIDAR_CONTAINER_DATABASE_URL", "").strip()
-    if explicit_url:
-        return explicit_url
-    container_host = os.getenv("POSTGRES_CONTAINER_HOST", "postgres")
-    return build_postgres_dsn(host=container_host)
+    return config_postgres.get_container_database_url(getenv=os.getenv)
 
 
 def get_web_scrape_max_chars(default: int = 12000) -> int:
@@ -487,14 +469,10 @@ def get_db_pool_size_default() -> int:
     - üst sınır = POSTGRES_MAX_CONNECTIONS - DB_POOL_CONNECTION_RESERVE (varsayılan 10)
     - global tavan = DB_POOL_SIZE_HARD_CAP (varsayılan 50)
     """
-    cpu_count = max(1, int(os.cpu_count() or 1))
-    per_core = max(1, get_int_env("DB_POOL_SIZE_PER_CORE", 2))
-    postgres_max_connections = max(1, get_int_env("POSTGRES_MAX_CONNECTIONS", 100))
-    reserve = max(0, get_int_env("DB_POOL_CONNECTION_RESERVE", 10))
-    hard_cap = max(1, get_int_env("DB_POOL_SIZE_HARD_CAP", 50))
-
-    max_by_postgres = max(1, postgres_max_connections - reserve)
-    return max(2, min(cpu_count * per_core, max_by_postgres, hard_cap))
+    return config_postgres.get_db_pool_size_default(
+        get_int_env=get_int_env,
+        cpu_count=os.cpu_count(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
