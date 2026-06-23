@@ -10,6 +10,7 @@ import os
 import sys
 import warnings
 from collections.abc import Callable
+from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -241,6 +242,28 @@ _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS
 ENV_PATH = base_env_path
 
 
+@dataclass(frozen=True)
+class OllamaBatchPolicy:
+    """Central Ollama num_batch bounds used by config and runtime clients."""
+
+    default: int = 2048
+    maximum: int = 4096
+    auto_min: int = 2048
+
+    def clamp(self, value: int) -> int:
+        """Clamp explicit num_batch values to the supported maximum."""
+        return min(self.maximum, value)
+
+    def auto_batch_for_context(self, num_ctx: int) -> int:
+        """Resolve automatic num_batch for large Ollama context windows."""
+        if num_ctx <= self.auto_min:
+            return 0
+        return min(self.maximum, num_ctx)
+
+
+OLLAMA_BATCH_POLICY = OllamaBatchPolicy()
+
+
 class LLMClientSettings(BaseSettings):
     """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
 
@@ -269,7 +292,7 @@ class LLMClientSettings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434/api"
     OLLAMA_TIMEOUT: int = 600
     OLLAMA_KEEP_ALIVE: str = "30m"
-    OLLAMA_NUM_BATCH: int = 2048
+    OLLAMA_NUM_BATCH: int = OLLAMA_BATCH_POLICY.default
     OLLAMA_CODING_NUM_CTX: int = 8192
     OLLAMA_CONTEXT_MAX_CHARS: int = 12000
     OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000

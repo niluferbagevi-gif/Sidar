@@ -21,6 +21,7 @@ import httpx
 from opentelemetry import trace
 
 import core.utils.token_counter as token_counter
+from config import OLLAMA_BATCH_POLICY
 from core.cache.semantic_cache import SemanticCacheManager
 from core.cache_metrics import record_cache_skip
 from core.dlp import mask_messages as _dlp_mask_messages
@@ -51,9 +52,9 @@ SIDAR_TOOL_JSON_SCHEMA: dict[str, Any] = {
 }
 
 DEFAULT_COST_PER_TOKEN_USD = 2e-6
-OLLAMA_NUM_BATCH_DEFAULT = 2048
-OLLAMA_NUM_BATCH_MAX = 4096
-OLLAMA_NUM_BATCH_AUTO_MIN = 2048
+OLLAMA_NUM_BATCH_DEFAULT = OLLAMA_BATCH_POLICY.default
+OLLAMA_NUM_BATCH_MAX = OLLAMA_BATCH_POLICY.maximum
+OLLAMA_NUM_BATCH_AUTO_MIN = OLLAMA_BATCH_POLICY.auto_min
 _OLLAMA_GPU_LIMITERS: dict[tuple[str, int], asyncio.Semaphore] = {}
 _OLLAMA_GPU_LIMITERS_LOCK = asyncio.Lock()
 MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {

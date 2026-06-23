@@ -12,10 +12,9 @@ from typing import Any, cast
 import httpx
 
 import core.llm_client as llm_facade
+from config import OLLAMA_BATCH_POLICY
 from core.llm_client import (
-    OLLAMA_NUM_BATCH_AUTO_MIN,
     OLLAMA_NUM_BATCH_DEFAULT,
-    OLLAMA_NUM_BATCH_MAX,
     SIDAR_TOOL_JSON_SCHEMA,
     BaseLLMClient,
     LLMAPIError,
@@ -189,9 +188,9 @@ class OllamaClient(BaseLLMClient):
         configured_num_batch = int(
             _setting(self.config, "OLLAMA_NUM_BATCH", OLLAMA_NUM_BATCH_DEFAULT)
         )
-        ollama_num_batch = min(OLLAMA_NUM_BATCH_MAX, configured_num_batch)
-        if ollama_num_batch <= 0 and ollama_coding_num_ctx > OLLAMA_NUM_BATCH_AUTO_MIN:
-            ollama_num_batch = min(OLLAMA_NUM_BATCH_MAX, ollama_coding_num_ctx)
+        ollama_num_batch = OLLAMA_BATCH_POLICY.clamp(configured_num_batch)
+        if ollama_num_batch <= 0:
+            ollama_num_batch = OLLAMA_BATCH_POLICY.auto_batch_for_context(ollama_coding_num_ctx)
         if ollama_num_batch > 0:
             options["num_batch"] = ollama_num_batch
         if bool(_setting(self.config, "USE_GPU", False)):

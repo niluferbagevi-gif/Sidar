@@ -169,6 +169,17 @@ def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(m
     assert settings.OLLAMA_NUM_BATCH == 2048
 
 
+def test_ollama_batch_policy_centralizes_runtime_bounds():
+    policy = config.OllamaBatchPolicy()
+
+    assert policy.default == 2048
+    assert policy.maximum == 4096
+    assert policy.auto_min == 2048
+    assert policy.clamp(8192) == 4096
+    assert policy.auto_batch_for_context(2048) == 0
+    assert policy.auto_batch_for_context(8192) == 4096
+
+
 def test_get_int_float_and_list_env_parsing(monkeypatch):
     monkeypatch.setenv("INT_OK", "42")
     monkeypatch.setenv("INT_BAD", "abc")
