@@ -177,6 +177,7 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
     assert "REQUIRE_GPU=false" in env_test_example
     assert "USE_GPU=false" in env_prod_example
     assert "REQUIRE_GPU=false" in env_prod_example
+    assert "GPU_MIXED_PRECISION=true" in env_prod_example
     assert "USE_GPU=false" in env_development_example
     assert "REQUIRE_GPU=false" in env_development_example
 

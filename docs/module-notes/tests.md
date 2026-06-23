@@ -195,8 +195,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
   Varsayılan timeout `0` ile geriye dönük uyumlu bekleme davranışı korunur; timeout açıldığında
   doygun GPU pool istekleri retryable 429 semantiğiyle fail-fast döner.
 - `test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean değeri VRAM stres regresyonları için
-  iyi bir referans noktasıdır; gerçek gate baseline compare + GPU trend raporuyla işletilmeli, tek
-  koşu sonucu doğrudan global sabite çevrilmemelidir.
+  iyi bir referans noktasıdır; production GPU profillerinde `GPU_MIXED_PRECISION=true` varsayılanı
+  FP16 ile VRAM tepe değerini düşürmek için sabit tutulur. Gerçek gate baseline compare + GPU trend
+  raporuyla işletilmeli, tek koşu sonucu doğrudan global sabite çevrilmemelidir.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
   kullanın (ör. `baseline_v5_2_0`).
 

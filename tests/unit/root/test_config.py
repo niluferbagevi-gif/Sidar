@@ -52,6 +52,14 @@ def test_require_gpu_defaults_to_false_for_cpu_only_bootstrap() -> None:
     assert "CPU-only hosts should boot without failing critical validation" in source
 
 
+def test_gpu_mixed_precision_defaults_to_true_only_for_production(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    assert config.gpu_mixed_precision_default() is True
+
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    assert config.gpu_mixed_precision_default() is False
+
+
 def test_database_urls_are_derived_from_postgres_parts(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)

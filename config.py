@@ -315,6 +315,12 @@ def is_valid_http_url(value: str | None) -> bool:
 # ═══════════════════════════════════════════════════════════════
 
 
+def gpu_mixed_precision_default() -> bool:
+    """Return the profile-aware FP16 default for GPU-backed production workloads."""
+
+    return os.getenv("SIDAR_ENV", "").strip().lower() == "production"
+
+
 def get_bool_env(key: str, default: bool = False) -> bool:
     """Return a strict boolean environment value.
 
@@ -897,8 +903,10 @@ class Config:
         "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35))
     )
 
-    # FP16 / mixed precision  →  embedding modellerinde bellek tasarrufu
-    GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", False)
+    # FP16 / mixed precision  →  production GPU profillerinde VRAM tasarrufu için varsayılan açık
+    GPU_MIXED_PRECISION: bool = get_bool_env(
+        "GPU_MIXED_PRECISION", gpu_mixed_precision_default()
+    )
 
     # ─── Uygulama ────────────────────────────────────────────
     MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)

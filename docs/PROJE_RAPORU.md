@@ -1302,7 +1302,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 |----------|-----------|----------|
 | `USE_GPU` / `GPU_DEVICE` / `MULTI_GPU` | `false` (`.env.example`) / `0` / `false` | GPU kullanımı, cihaz seçimi ve çoklu GPU modu |
 | `GPU_MEMORY_FRACTION` / `LLM_GPU_MEMORY_FRACTION` / `RAG_GPU_MEMORY_FRACTION` | `0.8` / `0.8` / `0.3` | Yerel LLM ve RAG için VRAM bütçe ayarları |
-| `GPU_MIXED_PRECISION` | `false` | FP16/mixed precision ile VRAM optimizasyonu |
+| `GPU_MIXED_PRECISION` | `true` (production) / `false` (development) | FP16/mixed precision ile VRAM optimizasyonu |
 | `DOCKER_PYTHON_IMAGE` / `DOCKER_EXEC_TIMEOUT` / `DOCKER_REQUIRED` | `python:3.11-alpine` / `10` / `false` | Kod çalıştırma sandbox'ının temel Docker davranışı |
 | `DOCKER_RUNTIME` / `DOCKER_ALLOWED_RUNTIMES` / `DOCKER_MICROVM_MODE` | `""` / `,runc,runsc,kata-runtime` / `off` | Zero-trust sandbox runtime ve mikro-VM hazırlık seçenekleri |
 | `DOCKER_MEM_LIMIT` / `SIDAR_DOCKER_NETWORK_DISABLED` / `SIDAR_DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları |
