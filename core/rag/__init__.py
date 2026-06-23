@@ -33,6 +33,7 @@ from typing import Any
 import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
+import core.rag.backends as _rag_backends
 from config import Config
 from core.db import postgres_failure_diagnosis
 from core.embeddings import (
@@ -1932,21 +1933,25 @@ class DocumentStore:
 
 # Backend compatibility mixins historically subclassed DocumentStore. Keep that
 # contract while backend implementation lives in focused helper modules.
-bm25_backend.BM25BackendMixin = type(
+_compat_bm25_mixin = type(
     "BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__}
 )
-keyword_backend.KeywordBackendMixin = type(
+_compat_keyword_mixin = type(
     "KeywordBackendMixin", (DocumentStore,), {"__module__": keyword_backend.__name__}
 )
-pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
-pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+setattr(bm25_backend, "BM25BackendMixin", _compat_bm25_mixin)  # noqa: B010
+setattr(keyword_backend, "KeywordBackendMixin", _compat_keyword_mixin)  # noqa: B010
+setattr(  # noqa: B010
+    pgvector_backend, "pgvector_failure_action_message", _pgvector_failure_action_message
+)
+setattr(  # noqa: B010
+    pgvector_backend, "_pgvector_failure_action_message", _pgvector_failure_action_message
+)
 try:
-    import core.rag.backends as _rag_backends
-
-    _rag_backends.BM25BackendMixin = bm25_backend.BM25BackendMixin
-    _rag_backends.KeywordBackendMixin = keyword_backend.KeywordBackendMixin
-except Exception:  # pragma: no cover - defensive compatibility hook
-    pass
+    setattr(_rag_backends, "BM25BackendMixin", _compat_bm25_mixin)  # noqa: B010
+    setattr(_rag_backends, "KeywordBackendMixin", _compat_keyword_mixin)  # noqa: B010
+except Exception as exc:  # pragma: no cover - defensive compatibility hook
+    logger.debug("RAG backend compatibility mixins could not be installed: %s", exc)
 
 
 def get_shared_document_store(
