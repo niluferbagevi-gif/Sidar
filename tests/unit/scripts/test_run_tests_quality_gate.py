@@ -278,6 +278,7 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
+    env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
     assert 'os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "15.0")' in benchmark_test
     assert "format_table_mean_ms" in benchmark_test
@@ -286,6 +287,8 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
     assert "warmup_rounds=5" in benchmark_test
     assert "rounds=25" in benchmark_test
+    assert "SIDAR_BENCHMARK_POSTGRES_URL=postgresql+asyncpg://" in env_test_example
+    assert "yalnız SQLite varyantını koşturur" in env_test_example
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
