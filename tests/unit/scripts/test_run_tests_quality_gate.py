@@ -292,6 +292,7 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
@@ -307,8 +308,11 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
+    assert "### İlk yerel kurulum: benchmark baseline bootstrap" in readme
     assert "yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0`" in readme
-    assert "RUN_BENCHMARKS=required ./run_tests.sh" in readme
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in readme
+    assert "İlk yerel benchmark koşusunda `.benchmarks` baseline yoksa" in agents
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in agents
     assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
     assert "BENCHMARK_ENFORCE_COMPARE=1" in readme
     assert (

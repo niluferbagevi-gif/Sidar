@@ -298,6 +298,22 @@ uv sync --frozen --all-extras
 > geliştirme araçlarını varsayılan akıştan çıkarmaz. Yerel coding modeli standardı Ollama üzerinde
 > `qwen2.5-coder:7b` olarak hedeflenir.
 
+### İlk yerel kurulum: benchmark baseline bootstrap
+
+Temiz checkout veya yeni makinede `.benchmarks` baseline cache'i henüz yoksa ilk yerel
+quality-gate koşusu baseline üretmelidir. Yerel profil varsayılanı
+`BENCHMARK_COMPARE_REQUIRED=0` olduğu için aşağıdaki komut ilk baseline'ı karşılaştırmasız
+seed eder ve sonraki koşularda `--benchmark-compare` otomatik devreye girer:
+
+```bash
+BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh
+```
+
+CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
+`BENCHMARK_COMPARE_REQUIRED=1` ile baseline yokluğu fail-closed kalmalıdır.
+Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
+`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
+çalıştırın.
 
 ### Modüler Kurulum Fazları ve Doctor
 

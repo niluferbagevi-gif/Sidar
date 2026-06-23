@@ -648,6 +648,7 @@ döndürebilir. Bu durumda önce bağımlılıkları `uv` ile kurun:
 
 - `uv sync --all-extras` — geliştirme/test/CI paritesi için önerilen tam kurulum.
 - Yalnız test/tooling araçları yeterliyse `uv sync --extra dev` kullanılabilir.
+- İlk yerel benchmark koşusunda `.benchmarks` baseline yoksa `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh` ile baseline seed edin; CI profilinde `BENCHMARK_COMPARE_REQUIRED=1` fail-closed kalmalıdır.
 
 Doğrulama komutları `python ...` yerine `uv run python ...` ile çalıştırılmalıdır;
 böylece komutlar uv ortamından bağımsız bir global Python yorumlayıcısına düşmez.
