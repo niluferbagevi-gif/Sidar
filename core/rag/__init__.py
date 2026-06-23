@@ -1951,7 +1951,7 @@ try:
     setattr(_rag_backends, "BM25BackendMixin", _compat_bm25_mixin)  # noqa: B010
     setattr(_rag_backends, "KeywordBackendMixin", _compat_keyword_mixin)  # noqa: B010
 except Exception as exc:  # pragma: no cover - defensive compatibility hook
-    logger.debug("RAG backend compatibility mixins could not be installed: %s", exc)
+    logger.debug("RAG backends re-export uyumluluk hookı atlandı: %s", exc)
 
 
 def get_shared_document_store(
