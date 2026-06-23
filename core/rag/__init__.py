@@ -398,9 +398,16 @@ class DocumentStore:
 
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
-        pgvector_backend.get_sentence_transformer_model = get_sentence_transformer_model
-        pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
-        pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+        # pgvector backend modülüne dış bağımlılıkları enjekte et.
+        setattr(  # noqa: B010
+            pgvector_backend, "get_sentence_transformer_model", get_sentence_transformer_model
+        )
+        setattr(  # noqa: B010
+            pgvector_backend, "pgvector_failure_action_message", _pgvector_failure_action_message
+        )
+        setattr(  # noqa: B010
+            pgvector_backend, "_pgvector_failure_action_message", _pgvector_failure_action_message
+        )
         pgvector_backend.init_pgvector(self)
 
     def _pgvector_embed_texts(
