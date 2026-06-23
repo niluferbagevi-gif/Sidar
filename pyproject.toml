@@ -35,6 +35,8 @@ dependencies = [
   "packaging~=24.1",
   "python-dotenv==1.2.2",
   "pyyaml~=6.0.2",
+  # HTTP client policy: production imports use httpx only. httpx2 is retained as a
+  # migration-candidate until docs/DEPENDENCY_PROFILE_PLAN.md gates an adapter-based rollout.
   "httpx>=0.27.0,<0.29.0",
   "httpx2>=2.4.0,<3.0.0",
   "pydantic>=2.8.2,<3.0.0",
@@ -231,7 +233,7 @@ dev = [
 
 [tool.sidar.dependency_inventory]
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
-allowed_labels = ["runtime", "dev", "provider", "integration", "test-double", "security-tool"]
+allowed_labels = ["runtime", "dev", "provider", "integration", "test-double", "security-tool", "migration-candidate"]
 status = "inventory-only"
 summary = "Main dependency labels for the planned runtime/dev/production split; labels do not change install behavior."
 
@@ -239,6 +241,7 @@ summary = "Main dependency labels for the planned runtime/dev/production split; 
 aiosqlite = "runtime"
 alembic = "runtime"
 anyio = "runtime"
+"argon2-cffi" = "runtime"
 bandit = "security-tool"
 beautifulsoup4 = "runtime"
 bleach = "runtime"
@@ -251,7 +254,7 @@ fakeredis = "test-double"
 fastapi = "runtime"
 freezegun = "test-double"
 httpx = "runtime"
-httpx2 = "runtime"
+httpx2 = "migration-candidate"
 hypothesis = "dev"
 "langchain-community" = "runtime"
 "langchain-core" = "runtime"

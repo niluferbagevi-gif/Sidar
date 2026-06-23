@@ -40,11 +40,13 @@ Amaç, sonraki PR'larda CI dry-run, Docker image ve installer/runbook değişikl
 hangi paketin hangi profile aday olduğunu açıkça izlemektir.
 Ana runtime dependencies ve `dev` extra adayları için makine-okunur etiketler `pyproject.toml`
 içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin verilen etiketler
-`runtime`, `dev`, `provider`, `integration`, `test-double` ve `security-tool` değerleridir.
+`runtime`, `dev`, `provider`, `integration`, `test-double`, `security-tool` ve
+`migration-candidate` değerleridir.
 
 | Sınıf | Aday paketler / extras | Geçiş notu |
 |---|---|---|
 | `runtime-core` | `packaging`, `python-dotenv`, `pyyaml`, `httpx`, `pydantic`, `pydantic-settings`, `cachetools`, `redis`, `psutil` | Ana import/config/cache ve HTTP istemci yüzeyi; uzun vadeli `runtime` profilinin çekirdeği. |
+| `migration-candidate` | `httpx2` | Gelecek HTTP client major geçişi için lock altında tutulur; production kodu doğrudan import edemez, önce adapter/RFC kapısı gerekir. |
 | `runtime-web` | `fastapi`, `starlette`, `python-multipart`, `uvicorn[standard]`, `anyio`, `websockets`, `bleach`, `PyJWT`, `cryptography` | Web/API boot, auth ve websocket runtime; production profilinin Web parçası. |
 | `runtime-db` | `aiosqlite`, `SQLAlchemy`, `alembic`; `postgres` extra: `asyncpg`, `psycopg2-binary`, `pgvector` | SQLite fallback ana listede kalır; PostgreSQL deploy hedefi `production` profilinde `postgres` extra ile gelir. |
 | `runtime-rag-content` | `tiktoken`, `rank-bm25`, `beautifulsoup4`, `nemoguardrails`, `chromadb`, `langchain-*`, `posthog`, `sentence-transformers`; `rag` extra: `torch`, `torchvision` | RAG/content yüzeyi halen ana listede; üretim-minimal split sırasında RAG olmayan Web/API image'dan ayrılması değerlendirilir. |
@@ -52,6 +54,32 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 | `optional-provider` | `gemini`, `anthropic`, `openai`, `litellm`, `lora`, `gpu`, `voice` extras | Model sağlayıcıları ve ağır ML/GPU/STT yüzeyi varsayılan production-minimal profile zorunlu olmamalı. |
 | `optional-integration` | `PyGithub`, `duckduckgo-search`, `pillow`, `pyttsx3`; extras: `sandbox`, `gui`, `slack`, `browser`, `tools`, `aws`, `jira`, `teams` | Dış servis, browser, GUI ve sandbox entegrasyonları kullanım bazlı extras olarak kalmalı. |
 | `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. |
+
+
+## HTTP client migration policy (`httpx` → `httpx2`)
+
+Mevcut kod tabanında production ve test modülleri doğrudan `httpx` API'sini kullanır;
+`httpx2` henüz hiçbir runtime modülün import yüzeyi değildir. Bu nedenle `httpx2`,
+`pyproject.toml` içinde `migration-candidate` etiketiyle tutulur ve runtime sahipliği
+`httpx` üzerinde kalır.
+
+Geçiş kapıları:
+
+1. **Adapter PR:** `core/http_client.py` benzeri tek bir facade eklenmeden production
+   modüllerinde `import httpx2` yapılmaz. Facade; timeout, streaming, retryable hata
+   sınıfları, OpenTelemetry instrumentation ve test-double davranışını `httpx` ile
+   aynı sözleşmede sunmalıdır.
+2. **Dual-run smoke:** LLM provider çağrıları, RAG URL ingest, integration manager'lar
+   ve web/API test client kullanımları `SIDAR_HTTP_CLIENT_BACKEND=httpx|httpx2` ile
+   aynı test matrisinden geçmeden varsayılan backend değiştirilemez.
+3. **Lock ve telemetry onayı:** `uv lock --upgrade-package httpx --upgrade-package httpx2`
+   sonrası `opentelemetry-instrumentation-httpx` uyumluluğu doğrulanmalı; httpx2 için
+   eşdeğer instrumentation yoksa adapter span'leri uygulama içinde üretmelidir.
+4. **Final cleanup:** `httpx2` production backend olduktan sonra eski `httpx` bağımlılığı
+   yalnız test/compat ihtiyacı varsa extra'ya taşınır; aksi halde runtime listesinden çıkarılır.
+
+Bu politika, iki HTTP client paketinin aynı anda bulunmasını bilinçli bir geçiş durumu
+olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini engeller.
 
 ## Güvenlik odaklı çözümleme sınırları
 
