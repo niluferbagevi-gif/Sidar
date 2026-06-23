@@ -298,10 +298,16 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
+    assert "yerel profil de varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed" in readme
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in readme
+    assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
+    assert "BENCHMARK_ENFORCE_COMPARE=1" in readme
     assert (
         "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer"
         in env_advanced
     )
+    assert "Yeni makine/boş cache bootstrap istisnasında ilk baseline" in env_advanced
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in env_advanced
     assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
 

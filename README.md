@@ -877,19 +877,22 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > ile sabitler.
 > Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
-> ilk koşu `--benchmark-save=baseline` ile baseline üretir ve `--benchmark-compare` eklemeden
-> tamamlanır; baseline yokluğunu fail etmek isteyen sıkı CI hatları
-> `BENCHMARK_COMPARE_REQUIRED=1` kullanabilir. Yeni `*_baseline.json` artifact'ini commit etmeden
+> yerel profil de varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed durur.
+> Yeni makine veya boş cache/bootstrap istisnasında ilk baseline'ı üretmek için tek seferlik
+> `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh` çalıştırın; bu koşu
+> `--benchmark-save=baseline` ile `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.
+> Sonraki koşularda `./run_tests.sh` otomatik olarak version-sort ile en güncel `*_baseline.json`
+> kaydını `--benchmark-compare` hedefi yapar. Yeni `*_baseline.json` artifact'ini commit etmeden
 > önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
-> kalite kapısı takipli `*_baseline.json` kayıtları içinden version-sort ile en güncel eşleşmeyi kullanır.
+> `.benchmarks/` çıktıları kaynak dosya değil, CI cache/artifact veya yerel bootstrap state'i olarak yönetilir.
 > Baseline bulunduğunda `pytest-benchmark` karşılaştırması her profilde raporlanır. Sabit runner
 > kullanan CI profilinde `BENCHMARK_ENFORCE_COMPARE=1` varsayılanıyla
-> `--benchmark-compare-fail=mean:10%` hard-fail kapısı uygulanır. WSL2/laptop jitter'ına açık yerel
-> profilde varsayılan `BENCHMARK_ENFORCE_COMPARE=0` yalnız rapor üretir; sabit bir yerel profilde kapı
-> istenirse `BENCHMARK_ENFORCE_COMPARE=1` ile açılır ve varsayılan eşik `mean:15%` olur. Eşik
-> `BENCHMARK_COMPARE_FAIL` ile açıkça override edilebilir. Benchmark fazının genel çıkışı da CI'da hard-fail,
-> yerelde flake-soft-fail olarak değerlendirilir; sıkı yerel faz doğrulaması `BENCHMARK_ENFORCE_RESULT=1` ile
-> açılabilir. Benchmark komutu ayrıca GC'yi kapatır ve
+> `--benchmark-compare-fail=mean:10%` hard-fail kapısı uygulanır. Yerel profilde de varsayılan
+> `BENCHMARK_ENFORCE_COMPARE=1` ile kapı açıktır ve eşik `mean:15%` olur; geçici rapor-only
+> karşılaştırma gerektiğinde `BENCHMARK_ENFORCE_COMPARE=0` verin. Eşik `BENCHMARK_COMPARE_FAIL`
+> ile açıkça override edilebilir. Benchmark fazının genel çıkışı CI ve yerelde varsayılan
+> `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only araştırma için
+> `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir. Benchmark komutu ayrıca GC'yi kapatır ve
 > kalibrasyon warmup'ını etkinleştirir.
 > Ana CI hattı inceleme için `benchmark.json`, `history.json` ve yeni `.benchmarks/` baseline adaylarını
 > `backend-quality-trend-artifacts` artifact'i içinde birlikte yayınlar.
