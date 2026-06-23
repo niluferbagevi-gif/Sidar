@@ -355,10 +355,43 @@ def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypat
         BrokerTaskResult=object(),
         is_delegation_request=lambda _v: False,
     )
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
     monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
     monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
 
-    assert swarm._contracts_module() is broken
+    assert swarm._contracts_module(force_refresh=True) is broken
+
+
+def test_contracts_module_caches_successful_health_check(monkeypatch):
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object,
+        BrokerTaskResult=object,
+        is_delegation_request=lambda _v: False,
+    )
+    calls = {"import": 0, "health": 0}
+
+    def _import_module(_name):
+        calls["import"] += 1
+        return module
+
+    def _healthy(_module):
+        calls["health"] += 1
+        return True
+
+    monkeypatch.setattr(swarm.importlib, "import_module", _import_module)
+    monkeypatch.setattr(swarm, "_is_contracts_module_healthy", _healthy)
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
+
+    assert swarm._contracts_module() is module
+    assert swarm._contracts_module() is module
+    assert calls == {"import": 1, "health": 1}
 
 
 def test_task_router_catalog_prefers_local_when_live_catalog_invalid(monkeypatch):
@@ -751,11 +784,12 @@ def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch)
     class _Spec:
         loader = _Loader()
 
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
     monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
     monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
     monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
 
-    repaired = swarm._contracts_module()
+    repaired = swarm._contracts_module(force_refresh=True)
     assert callable(repaired.TaskEnvelope)
     assert "agent.core.contracts" in sys.modules
 

@@ -79,18 +79,28 @@ def _is_contracts_module_healthy(module: ModuleType) -> bool:
     return callable(checker)
 
 
-def _contracts_module() -> ModuleType:
+_CONTRACTS_MODULE_CACHE: ModuleType | None = None
+
+
+def _contracts_module(*, force_refresh: bool = False) -> ModuleType:
+    global _CONTRACTS_MODULE_CACHE
+    if _CONTRACTS_MODULE_CACHE is not None and not force_refresh:
+        return _CONTRACTS_MODULE_CACHE
+
     module = importlib.import_module("agent.core.contracts")
     if _is_contracts_module_healthy(module):
+        _CONTRACTS_MODULE_CACHE = module
         return module
 
     module_path = Path(__file__).resolve().parent / "core" / "contracts.py"
     spec = importlib.util.spec_from_file_location("agent.core.contracts", module_path)
     if spec is None or spec.loader is None:
+        _CONTRACTS_MODULE_CACHE = module
         return module
     repaired = importlib.util.module_from_spec(spec)
     sys.modules["agent.core.contracts"] = repaired
     spec.loader.exec_module(repaired)
+    _CONTRACTS_MODULE_CACHE = repaired
     return repaired
 
 
