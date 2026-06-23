@@ -6,7 +6,7 @@ import importlib.util
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ async def list_prompts(
                 """,
                 (role,),
             )
-            return cur.fetchall()
+            return cast(list[sqlite3.Row], cur.fetchall())
         cur = db._sqlite_conn.execute(
             f"""
             SELECT {PROMPT_REGISTRY_COLUMNS}
@@ -88,7 +88,7 @@ async def list_prompts(
             ORDER BY role_name ASC, version DESC
             """
         )
-        return cur.fetchall()
+        return cast(list[sqlite3.Row], cur.fetchall())
 
     rows = await db._run_sqlite_op(_run, write=False)
     return [_prompt_record(prompt_record_cls, row, sqlite_bool=True) for row in rows]
@@ -129,7 +129,7 @@ async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[
             """,
             (role,),
         )
-        return db._sqlite_fetchone(cur)
+        return cast(sqlite3.Row | None, db._sqlite_fetchone(cur))
 
     row = await db._run_sqlite_op(_run)
     if not row:
@@ -212,7 +212,7 @@ async def upsert_prompt(
         )
         fetched = db._sqlite_fetchone(out)
         assert fetched is not None
-        return fetched
+        return cast(sqlite3.Row, fetched)
 
     inserted = await db._run_sqlite_op(_run)
     return _prompt_record(prompt_record_cls, inserted, sqlite_bool=True)
