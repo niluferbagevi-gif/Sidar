@@ -32,7 +32,7 @@ import sys
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -66,6 +66,15 @@ from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
+from agent.core.contracts import (
+    LEGACY_FEDERATION_PROTOCOL_V1,
+    ActionFeedback,
+    ExternalTrigger,
+    FederationTaskEnvelope,
+    FederationTaskResult,
+    derive_correlation_id,
+    normalize_federation_protocol,
+)
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
@@ -122,96 +131,6 @@ from web.security import (
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
-
-try:
-    from agent.core.contracts import (
-        LEGACY_FEDERATION_PROTOCOL_V1,
-        ActionFeedback,
-        ExternalTrigger,
-        FederationTaskEnvelope,
-        FederationTaskResult,
-        derive_correlation_id,
-        normalize_federation_protocol,
-    )
-except Exception:  # pragma: no cover - testlerde modül enjeksiyonu bozulduğunda güvenli fallback
-    LEGACY_FEDERATION_PROTOCOL_V1 = "v1"
-
-    @dataclass
-    class ActionFeedback:  # type: ignore[no-redef]
-        feedback_id: str
-        source_system: str
-        source_agent: str
-        action_name: str
-        status: str
-        summary: str
-        related_task_id: str = ""
-        related_trigger_id: str = ""
-        details: dict[str, Any] = None  # type: ignore[assignment]
-        meta: dict[str, str] = None  # type: ignore[assignment]
-        correlation_id: str | None = None
-        protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
-
-        def to_prompt(self) -> str:
-            return str(self.summary or "")
-
-    @dataclass
-    class ExternalTrigger:  # type: ignore[no-redef]
-        trigger_id: str
-        source: str
-        event_name: str
-        payload: dict[str, Any]
-        meta: dict[str, str] = None  # type: ignore[assignment]
-        protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
-        correlation_id: str | None = None
-
-        def to_prompt(self) -> str:
-            return json.dumps(self.payload, ensure_ascii=False)
-
-    @dataclass
-    class FederationTaskEnvelope:  # type: ignore[no-redef]
-        task_id: str
-        source_system: str
-        source_agent: str
-        target_system: str
-        target_agent: str
-        goal: str
-        intent: str = "mixed"
-        parent_task_id: str | None = None
-        context: dict[str, str] = None  # type: ignore[assignment]
-        inputs: list[str] = None  # type: ignore[assignment]
-        protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
-        meta: dict[str, str] = None  # type: ignore[assignment]
-        correlation_id: str | None = None
-
-    @dataclass
-    class FederationTaskResult:  # type: ignore[no-redef]
-        task_id: str
-        source_system: str
-        source_agent: str
-        target_system: str
-        target_agent: str
-        status: str
-        summary: str
-        protocol: str = LEGACY_FEDERATION_PROTOCOL_V1
-        evidence: list[str] = None  # type: ignore[assignment]
-        next_actions: list[str] = None  # type: ignore[assignment]
-        meta: dict[str, str] = None  # type: ignore[assignment]
-        correlation_id: str | None = None
-
-        def to_task_result(self) -> Any:
-            return SimpleNamespace(
-                task_id=self.task_id,
-                status=self.status,
-                summary=self.summary,
-                evidence=list(self.evidence or []),
-                next_actions=list(self.next_actions or []),
-            )
-
-    def normalize_federation_protocol(protocol: str | None) -> str:  # type: ignore[misc, unused-ignore]
-        return (protocol or LEGACY_FEDERATION_PROTOCOL_V1).strip() or LEGACY_FEDERATION_PROTOCOL_V1
-
-    def derive_correlation_id(*_args: Any, **_kwargs: Any) -> str:  # type: ignore[misc, unused-ignore]
-        return secrets.token_hex(8)
 
 
 logger = logging.getLogger(__name__)

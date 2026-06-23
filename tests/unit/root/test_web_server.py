@@ -21,10 +21,28 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
 import web_server
+from agent.core import contracts as agent_contracts
 from web import security as web_security
 from web.routes import webhooks as webhook_routes
 
 _DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
+
+
+def test_web_server_uses_canonical_agent_contracts_only():
+    """Web server federation routes should fail fast if canonical contracts break."""
+    assert web_server.ActionFeedback is agent_contracts.ActionFeedback
+    assert web_server.ExternalTrigger is agent_contracts.ExternalTrigger
+    assert web_server.FederationTaskEnvelope is agent_contracts.FederationTaskEnvelope
+    assert web_server.FederationTaskResult is agent_contracts.FederationTaskResult
+    assert web_server.derive_correlation_id is agent_contracts.derive_correlation_id
+    assert (
+        web_server.normalize_federation_protocol
+        is agent_contracts.normalize_federation_protocol
+    )
+
+    source = Path("web_server.py").read_text(encoding="utf-8")
+    assert "except Exception:  # pragma: no cover" not in source
+    assert "class ActionFeedback:  # type: ignore[no-redef]" not in source
 
 
 def _test_client(*args, **kwargs):
