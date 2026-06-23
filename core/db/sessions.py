@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, TypeVar, cast
+
+T = TypeVar("T")
 
 
 def _parse_asyncpg_affected_rows(command_tag: str) -> int:
@@ -15,7 +18,7 @@ def _parse_asyncpg_affected_rows(command_tag: str) -> int:
         return 0
 
 
-def _session_record(record_cls: type[Any], row: Any) -> Any:
+def _session_record(record_cls: Callable[..., T], row: Any) -> T:
     return record_cls(
         id=str(row["id"]),
         user_id=str(row["user_id"]),
@@ -25,7 +28,9 @@ def _session_record(record_cls: type[Any], row: Any) -> Any:
     )
 
 
-async def list_sessions(db: Any, record_cls: type[Any], user_id: str) -> list[Any]:
+async def list_sessions(
+    db: Any, record_cls: Callable[..., T], user_id: str
+) -> list[T]:
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -72,8 +77,12 @@ async def count_sessions_total(db: Any) -> int:
 
 
 async def load_session(
-    db: Any, record_cls: type[Any], sqlite_fetchone: Any, session_id: str, user_id: str | None = None
-) -> Any | None:
+    db: Any,
+    record_cls: Callable[..., T],
+    sqlite_fetchone: Any,
+    session_id: str,
+    user_id: str | None = None,
+) -> T | None:
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -165,7 +174,13 @@ async def delete_session(db: Any, session_id: str, user_id: str | None = None) -
     return cast(bool, await db._run_sqlite_op(_run))
 
 
-async def create_session(db: Any, record_cls: type[Any], new_entity_id: Any, user_id: str, title: str) -> Any:
+async def create_session(
+    db: Any,
+    record_cls: Callable[..., T],
+    new_entity_id: Any,
+    user_id: str,
+    title: str,
+) -> T:
     session_id = new_entity_id()
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
@@ -193,12 +208,23 @@ async def create_session(db: Any, record_cls: type[Any], new_entity_id: Any, use
             db._sqlite_conn.commit()
 
         await db._run_sqlite_op(_run)
-    return record_cls(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
+    return record_cls(
+        id=session_id,
+        user_id=user_id,
+        title=title,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 async def add_message(
-    db: Any, record_cls: type[Any], session_id: str, role: str, content: str, tokens_used: int = 0
-) -> Any:
+    db: Any,
+    record_cls: Callable[..., T],
+    session_id: str,
+    role: str,
+    content: str,
+    tokens_used: int = 0,
+) -> T:
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     tokens = max(0, int(tokens_used or 0))

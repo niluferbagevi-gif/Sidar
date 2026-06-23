@@ -2798,19 +2798,13 @@ class Database:
         return await db_metrics.get_admin_stats(self, _sqlite_fetchone)
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
-        return cast(
-            SessionRecord,
-            await db_sessions.create_session(self, SessionRecord, _new_entity_id, user_id, title),
-        )
+        return await db_sessions.create_session(self, SessionRecord, _new_entity_id, user_id, title)
 
     async def add_message(
         self, session_id: str, role: str, content: str, tokens_used: int = 0
     ) -> MessageRecord:
-        return cast(
-            MessageRecord,
-            await db_sessions.add_message(
-                self, MessageRecord, session_id, role, content, tokens_used
-            ),
+        return await db_sessions.add_message(
+            self, MessageRecord, session_id, role, content, tokens_used
         )
 
     async def add_messages_bulk(self, items: list[dict[str, object]]) -> int:
