@@ -177,9 +177,8 @@ tek seferlik/geçici dosya adlarını referans almaz.
   otomatik regresyon karşılaştırması çalışır; GPU concurrent throughput gibi metriklerde `mean` sapması
   `%20+` seviyesine ulaşmadan önce yerel `mean:15%` / CI `mean:10%` kapıları regresyonu yakalar.
 - `test_format_table_handles_large_dataset_quickly` CPU-bound ve deterministic olduğu için baseline
-  gözlemine ek olarak hard cap ile korunur: taşınabilir varsayılan
-  `SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0`, stabil hızlı runner hedefi ise `5.0 ms` seviyesidir.
-  Daha yavaş runner istisnası gerekiyorsa bu değer açıkça yükseltilmeli ve PR'da benchmark JSON ile
+  gözlemine ek olarak hard cap ile korunur: sıkılaştırılmış varsayılan
+  `SIDAR_FORMAT_TABLE_MAX_MEAN_MS=5.0` seviyesidir. Daha yavaş runner istisnası gerekiyorsa bu değer açıkça yükseltilmeli ve PR'da benchmark JSON ile
   gerekçelendirilmelidir.
 - Auth password hash benchmark'larında sqlite/postgres farkını regresyon olarak yorumlamayın:
   Argon2id/PBKDF2 benzeri parola hash iş faktörü bilinçli maliyettir ve postgres'in yaklaşık `%15` daha yavaş

@@ -75,8 +75,19 @@ def format_table(files: Iterable[FileCoverage]) -> str:
         "| File | Coverage | Missed | Covered |",
         "|---|---:|---:|---:|",
     ]
+    append = lines.append
+    suffix_cache: dict[tuple[int, int], str] = {}
     for rec in files:
-        lines.append(f"| {rec.path} | {rec.coverage_pct:.2f}% | {rec.missed} | {rec.covered} |")
+        covered = rec.covered
+        missed = rec.missed
+        suffix_key = (covered, missed)
+        suffix = suffix_cache.get(suffix_key)
+        if suffix is None:
+            total = covered + missed
+            coverage_pct = "100.00" if total == 0 else f"{(covered / total) * 100:.2f}"
+            suffix = f" | {coverage_pct}% | {missed} | {covered} |"
+            suffix_cache[suffix_key] = suffix
+        append("| " + rec.path + suffix)
     return "\n".join(lines)
 
 

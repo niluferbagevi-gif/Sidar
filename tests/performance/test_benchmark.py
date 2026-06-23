@@ -16,7 +16,7 @@ from scripts.coverage_hotspots import FileCoverage, format_table
 pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
-_FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "15.0") or "15.0")
+_FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "5.0") or "5.0")
 
 
 def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
