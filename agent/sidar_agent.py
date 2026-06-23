@@ -27,8 +27,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
 
 from agent.bootstrap import log_sidar_agent_startup
 from agent.core.contracts_fallback import (
-    FallbackActionFeedback,
-    FallbackFederationTaskEnvelope,
+    bind_fallback_contracts,
     default_derive_correlation_id,
 )
 from agent.self_heal.executor import (
@@ -83,15 +82,10 @@ derive_correlation_id = getattr(
 )
 
 
-class _FallbackFederationTaskEnvelope(FallbackFederationTaskEnvelope):
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(derive_correlation_id=derive_correlation_id, **kwargs)
-
-
-class _FallbackActionFeedback(FallbackActionFeedback):
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(derive_correlation_id=derive_correlation_id, **kwargs)
-
+(
+    _FallbackFederationTaskEnvelope,
+    _FallbackActionFeedback,
+) = bind_fallback_contracts(derive_correlation_id)
 
 FederationTaskEnvelope = getattr(
     agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope

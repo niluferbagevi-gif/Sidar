@@ -102,3 +102,24 @@ class FallbackActionFeedback:
             f"details={json.dumps(self.details, ensure_ascii=False, sort_keys=True)}\n"
             f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
         )
+
+def bind_fallback_contracts(
+    derive_correlation_id: DeriveCorrelationId,
+) -> tuple[type[FallbackFederationTaskEnvelope], type[FallbackActionFeedback]]:
+    """Return fallback contract types bound to the active correlation resolver."""
+
+    class BoundFallbackFederationTaskEnvelope(FallbackFederationTaskEnvelope):
+        """FederationTaskEnvelope fallback using the provided correlation resolver."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(derive_correlation_id=derive_correlation_id, **kwargs)
+
+    class BoundFallbackActionFeedback(FallbackActionFeedback):
+        """ActionFeedback fallback using the provided correlation resolver."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(derive_correlation_id=derive_correlation_id, **kwargs)
+
+    BoundFallbackFederationTaskEnvelope.__name__ = "FallbackFederationTaskEnvelope"
+    BoundFallbackActionFeedback.__name__ = "FallbackActionFeedback"
+    return BoundFallbackFederationTaskEnvelope, BoundFallbackActionFeedback
