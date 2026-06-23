@@ -495,9 +495,9 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
 else
-  BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"
-  # Baseline artık seed edildi; yerel profil de baseline yokluğunu ve regresyon karşılaştırmasını hard-fail yapar.
-  # Yeni makine ilk bootstrap için BENCHMARK_COMPARE_REQUIRED=0, rapor-only karşılaştırma için BENCHMARK_ENFORCE_COMPARE=0 verin.
+  BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
+  # Yerel profil ilk kurulumda baseline seed edebilsin diye karşılaştırma zorunluluğu varsayılan kapalıdır.
+  # Sıkı yerel regresyon kapısı için BENCHMARK_COMPARE_REQUIRED=1, rapor-only karşılaştırma için BENCHMARK_ENFORCE_COMPARE=0 verin.
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
 fi

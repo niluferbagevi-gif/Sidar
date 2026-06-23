@@ -227,13 +227,17 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enforces_benchmark_compare_and_requires_baseline_by_default() -> None:
+def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
-    assert script.count('BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"') >= 2
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
+    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
     assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
         'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
+    )
+    assert script.index('else', script.index('BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"')) < script.index(
+        'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"'
     )
     assert script.count('BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"') >= 2
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
@@ -300,7 +304,7 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
-    assert "yerel profil ilk koşuda otomatik bootstrap yapar" in readme
+    assert "yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0`" in readme
     assert "RUN_BENCHMARKS=required ./run_tests.sh" in readme
     assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
     assert "BENCHMARK_ENFORCE_COMPARE=1" in readme
@@ -309,7 +313,7 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
         in env_advanced
     )
     assert "Yerel boş cache ilk koşusunda RUN_BENCHMARKS=required ./run_tests.sh baseline seed eder" in env_advanced
-    assert "yerel ilk koşu ise baseline yoksa otomatik bootstrap yapar" in env_advanced
+    assert "yerel profil varsayılanı BENCHMARK_COMPARE_REQUIRED=0" in env_advanced
     assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
 

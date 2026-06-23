@@ -877,7 +877,7 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > ile sabitler.
 > Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
-> CI profili varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed durur; yerel profil ilk koşuda otomatik bootstrap yapar.
+> CI profili varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed durur; yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0` olduğu için ilk koşuda otomatik bootstrap yapar.
 > Yeni makine veya boş cache/bootstrap durumunda ilk baseline'ı üretmek için
 > `RUN_BENCHMARKS=required ./run_tests.sh` çalıştırın; bu koşu
 > `--benchmark-save=baseline` ile `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.

@@ -132,8 +132,8 @@ tek seferlik/geçici dosya adlarını referans almaz.
   varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%`, yerel profilde ise varsayılan
   `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:15%` ile açıktır. İlk baseline artık
   `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildiği için
-  `BENCHMARK_COMPARE_REQUIRED=1` CI ve yerel profilde varsayılandır; CI baseline yokluğunda fail-closed kalır,
-  yerel yeni makine/bootstrap koşusunda ise ilk `RUN_BENCHMARKS=required ./run_tests.sh` otomatik karşılaştırmasız seed eder. Mevcut baseline ile geçici rapor-only karşılaştırma gerektiğinde
+  `BENCHMARK_COMPARE_REQUIRED=1` CI profilinde varsayılandır; yerel profilde varsayılan `BENCHMARK_COMPARE_REQUIRED=0` olduğu için
+  yeni makine/bootstrap koşusunda ilk `RUN_BENCHMARKS=required ./run_tests.sh` otomatik karşılaştırmasız seed eder. Mevcut baseline ile geçici rapor-only karşılaştırma gerektiğinde
   `BENCHMARK_ENFORCE_COMPARE=0` açıkça verilmelidir.
   Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde override edilebilir. Benchmark fazının genel sonucu CI
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
@@ -151,7 +151,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `BENCHMARK_COMPARE_FAIL=mean:10%` değerleriyle baseline eksikliği veya `mean` üzerinde `%10`
   regresyon hard-fail üretir. Cache boşsa ilk koşu seed baseline moduna alınır
   (`BENCHMARK_COMPARE_REQUIRED=0`) ve sonraki başarılı koşular için `.benchmarks/` cache/artifact
-  adayı üretir. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` artık otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
+  adayı üretir. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
   `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh`. Sonraki sıkı doğrulama
   komutu: `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
