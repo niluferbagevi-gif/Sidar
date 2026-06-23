@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.parse
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -69,8 +70,9 @@ _BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 list = builtins.list
-_DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str], "DocumentStore"] = {}
+_DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str, str], "DocumentStore"] = {}
 _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
+EmbeddingFunctionBuilder = Callable[..., Any]
 
 
 def build_embedding_function(
@@ -133,6 +135,7 @@ class DocumentStore:
         mixed_precision: bool = False,
         cfg: Config | None = None,
         initialize_vector: bool = True,
+        embedding_function_builder: EmbeddingFunctionBuilder | None = None,
     ) -> None:
         self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
@@ -152,6 +155,7 @@ class DocumentStore:
         self._use_gpu = use_gpu
         self._gpu_device = gpu_device
         self._mixed_precision = mixed_precision
+        self._embedding_function_builder = embedding_function_builder or build_embedding_function
 
         # ChromaDB delete+upsert atomikliği için lock
         self._write_lock = threading.Lock()
@@ -371,7 +375,9 @@ class DocumentStore:
 
     def _init_chroma(self) -> None:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
-        chroma_backend.init_chroma(self, build_embedding_function=_build_embedding_function)
+        chroma_backend.init_chroma(
+            self, build_embedding_function=self._embedding_function_builder
+        )
 
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
@@ -1938,12 +1944,14 @@ def get_shared_document_store(
     store_dir: Path | str,
     cfg: Config,
     initialize_vector: bool,
+    embedding_function_builder: EmbeddingFunctionBuilder | None = None,
 ) -> DocumentStore:
     """Process içi aynı RAG store'u tekrar kullanarak model init maliyetini düşür."""
     key = (
         str(Path(store_dir).resolve()),
         bool(initialize_vector),
         str(getattr(cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower(),
+        str(id(embedding_function_builder)) if embedding_function_builder is not None else "default",
     )
     with _DOCUMENT_STORE_SINGLETONS_LOCK:
         store = _DOCUMENT_STORE_SINGLETONS.get(key)
@@ -1958,6 +1966,7 @@ def get_shared_document_store(
                 mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
                 cfg=cfg,
                 initialize_vector=initialize_vector,
+                embedding_function_builder=embedding_function_builder,
             )
             _DOCUMENT_STORE_SINGLETONS[key] = store
         return store

@@ -342,6 +342,60 @@ async def test_embed_texts_for_semantic_cache_empty() -> None:
     assert rag.embed_texts_for_semantic_cache([]) == []
 
 
+async def test_document_store_accepts_injected_embedding_function_builder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    injected_builder = object()
+    captured: dict[str, object] = {}
+    store = rag.DocumentStore.__new__(rag.DocumentStore)
+    store._embedding_function_builder = injected_builder
+
+    def _fake_init_chroma(_store, *, build_embedding_function):
+        captured["store"] = _store
+        captured["builder"] = build_embedding_function
+
+    monkeypatch.setattr(rag.chroma_backend, "init_chroma", _fake_init_chroma)
+
+    rag.DocumentStore._init_chroma(store)
+
+    assert captured == {"store": store, "builder": injected_builder}
+
+
+async def test_shared_document_store_keys_custom_embedding_builders(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        RAG_VECTOR_BACKEND="chroma",
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=1000,
+        RAG_CHUNK_OVERLAP=200,
+        USE_GPU=False,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+    )
+
+    def builder_one(**_kwargs):
+        return "one"
+
+    def builder_two(**_kwargs):
+        return "two"
+
+    store_one = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+        embedding_function_builder=builder_one,
+    )
+    store_two = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+        embedding_function_builder=builder_two,
+    )
+
+    assert store_one is not store_two
+    assert store_one._embedding_function_builder is builder_one
+    assert store_two._embedding_function_builder is builder_two
+
+
 async def test_public_build_embedding_function_delegates_to_internal_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
