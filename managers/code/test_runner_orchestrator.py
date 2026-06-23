@@ -7,7 +7,7 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from managers.code.docker import sanitize_docker_image, to_int
 
@@ -46,7 +46,7 @@ def build_pytest_preflight_command(manager: Any, command: str) -> str:
 def build_shell_preflight_command(manager: Any, command: str) -> str:
     """Wrap sandbox shell commands with PATH and uv/pytest preflight."""
     if manager._command_invokes_pytest(command):
-        return manager._build_pytest_preflight_command(command)
+        return cast(str, manager._build_pytest_preflight_command(command))
 
     preflight = [
         "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
