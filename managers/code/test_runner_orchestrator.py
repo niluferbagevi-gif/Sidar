@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 import shlex
 import shutil
-import subprocess
+
+# Docker argv is built without shell=True.
+import subprocess  # nosec B404
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from managers.code.docker import sanitize_docker_image, to_int
 
@@ -46,7 +48,7 @@ def build_pytest_preflight_command(manager: Any, command: str) -> str:
 def build_shell_preflight_command(manager: Any, command: str) -> str:
     """Wrap sandbox shell commands with PATH and uv/pytest preflight."""
     if manager._command_invokes_pytest(command):
-        return manager._build_pytest_preflight_command(command)
+        return cast(str, manager._build_pytest_preflight_command(command))
 
     preflight = [
         "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
@@ -138,7 +140,10 @@ def run_shell_in_sandbox(
     except FileNotFoundError:
         return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
     except subprocess.TimeoutExpired:
-        return False, f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu."
+        return (
+            False,
+            f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu.",
+        )
     except Exception as exc:
         return False, f"Sandbox komutu hatası: {exc}"
 
@@ -257,9 +262,13 @@ def normalize_pytest_command(command: str) -> str:
     return normalized
 
 
-def run_pytest_and_collect(manager: Any, command: str = "pytest -q", cwd: str | None = None) -> dict[str, Any]:
+def run_pytest_and_collect(
+    manager: Any, command: str = "pytest -q", cwd: str | None = None
+) -> dict[str, Any]:
     normalized = normalize_pytest_command(command)
-    if not re.match(r"^(pytest|python\s+-m\s+pytest|uv\s+run\s+pytest)\b", normalized, re.IGNORECASE):
+    if not re.match(
+        r"^(pytest|python\s+-m\s+pytest|uv\s+run\s+pytest)\b", normalized, re.IGNORECASE
+    ):
         return {
             "success": False,
             "command": normalized,
@@ -267,7 +276,9 @@ def run_pytest_and_collect(manager: Any, command: str = "pytest -q", cwd: str | 
             "analysis": analyze_pytest_output(""),
         }
     sandbox_command = manager._build_pytest_preflight_command(normalized)
-    ok, output = manager.run_shell_in_sandbox(sandbox_command, cwd=cwd, image=manager.docker_test_image)
+    ok, output = manager.run_shell_in_sandbox(
+        sandbox_command, cwd=cwd, image=manager.docker_test_image
+    )
     return {
         "success": ok,
         "command": normalized,

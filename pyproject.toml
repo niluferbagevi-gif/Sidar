@@ -541,6 +541,9 @@ select = [
 ]
 ignore = [
   "E501",
+  # Legacy async paths intentionally use pathlib behind short synchronous checks;
+  # keep the broader ASYNC rules while the codebase migrates these hotspots.
+  "ASYNC240",
   # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
   # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik
   # tests/unit/agent/test_builtin_role_contracts.py ile korunur.

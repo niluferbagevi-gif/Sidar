@@ -5,7 +5,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from managers.code.patcher import apply_exact_block_patch
 
@@ -99,20 +99,28 @@ def write_generated_test(
         if normalized in current:
             return True, f"Test içeriği zaten mevcut: {path}"
         separator = "\n\n" if current.strip() else ""
-        return manager.write_file(
-            str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True
+        return cast(
+            tuple[bool, str],
+            manager.write_file(
+                str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True
+            ),
         )
-    return manager.write_file(str(target), f"{normalized.rstrip()}\n", validate=True)
+    return cast(
+        tuple[bool, str],
+        manager.write_file(str(target), f"{normalized.rstrip()}\n", validate=True),
+    )
 
 
-def patch_file(manager: Any, path: str, target_block: str, replacement_block: str) -> tuple[bool, str]:
+def patch_file(
+    manager: Any, path: str, target_block: str, replacement_block: str
+) -> tuple[bool, str]:
     ok, content = manager.read_file(path, line_numbers=False)
     if not ok:
         return False, content
     ok, patched_or_error = apply_exact_block_patch(content, target_block, replacement_block)
     if not ok:
         return False, patched_or_error
-    return manager.write_file(path, patched_or_error, validate=True)
+    return cast(tuple[bool, str], manager.write_file(path, patched_or_error, validate=True))
 
 
 def glob_search(manager: Any, pattern: str, base_path: str = ".") -> tuple[bool, str]:
@@ -155,7 +163,11 @@ def grep_files(
             if "**" in file_glob or "/" in file_glob:
                 files_to_search = [f for f in target.rglob(file_glob) if f.is_file()]
             else:
-                files_to_search = [f for f in target.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, file_glob)]
+                files_to_search = [
+                    f
+                    for f in target.rglob("*")
+                    if f.is_file() and fnmatch.fnmatch(f.name, file_glob)
+                ]
         else:
             return False, f"Yol bulunamadı: {path}"
         results: list[str] = []
@@ -166,7 +178,8 @@ def grep_files(
                 continue
             try:
                 lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-            except Exception:
+            except Exception as exc:
+                logger.debug("Arama sırasında dosya okunamadı (%s): %s", fp, exc)
                 continue
             file_matches: list[str] = []
             for idx, line in enumerate(lines):
@@ -174,7 +187,9 @@ def grep_files(
                     match_count += 1
                     start = max(0, idx - context)
                     end = min(len(lines), idx + context + 1)
-                    ctx_lines = [f"{line_no + 1:4d}: {lines[line_no]}" for line_no in range(start, end)]
+                    ctx_lines = [
+                        f"{line_no + 1:4d}: {lines[line_no]}" for line_no in range(start, end)
+                    ]
                     file_matches.append("\n".join(ctx_lines))
             if file_matches:
                 files_with_matches += 1

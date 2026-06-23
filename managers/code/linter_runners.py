@@ -6,7 +6,9 @@ import ast
 import json
 import logging
 import shutil
-import subprocess
+
+# Commands are fixed tool invocations, not shell input.
+import subprocess  # nosec B404
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
