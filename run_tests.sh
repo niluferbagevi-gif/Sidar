@@ -495,9 +495,9 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
 else
-  BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
-  # Stabil baseline bulunduğunda yerel profil de regresyon karşılaştırmasını hard-fail yapar.
-  # İlk baseline bootstrap için BENCHMARK_COMPARE_REQUIRED=0 korunur; rapor-only gerekirse BENCHMARK_ENFORCE_COMPARE=0 verin.
+  BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"
+  # Baseline artık seed edildi; yerel profil de baseline yokluğunu ve regresyon karşılaştırmasını hard-fail yapar.
+  # Yeni makine ilk bootstrap için BENCHMARK_COMPARE_REQUIRED=0, rapor-only karşılaştırma için BENCHMARK_ENFORCE_COMPARE=0 verin.
   BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
 fi
@@ -1821,7 +1821,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
-      echo "ℹ️ Lokal bootstrap: BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh"
+      echo "ℹ️ İlk makine/bootstrap istisnası: BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh"
       echo "ℹ️ Sıkı karşılaştırma: BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh"
       echo "ℹ️ CI, .benchmarks baseline'ını repo commit'i yerine GitHub Actions cache/artifact üzerinden seed/restore eder."
       if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then

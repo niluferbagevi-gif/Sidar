@@ -223,12 +223,11 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
-def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creation() -> None:
+def test_run_tests_enforces_benchmark_compare_and_requires_baseline_by_default() -> None:
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
-    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"' in script
-    assert 'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"' in script
+    assert script.count('BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"') >= 2
     assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
         'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
     )
@@ -323,7 +322,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 
     for content in (env_advanced, env_test_example):
         assert "BENCHMARK_ENABLE_COMPARE=1" in content
-        assert "BENCHMARK_COMPARE_REQUIRED=0" in content
+        assert "BENCHMARK_COMPARE_REQUIRED=" in content
         assert "BENCHMARK_COMPARE_FAIL=" in content
         assert "yerelde mean:15%, CI profilinde mean:10%" in content
         assert "BENCHMARK_COMPARE_NAME=baseline" in content

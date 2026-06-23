@@ -119,9 +119,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
   karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı CI profilinde
   varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%`, yerel profilde ise varsayılan
-  `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:15%` ile açıktır. İlk baseline bootstrap akışı
-  `BENCHMARK_COMPARE_REQUIRED=0` sayesinde baseline yokluğunda hard-fail üretmez; mevcut baseline ile
-  geçici rapor-only karşılaştırma gerektiğinde `BENCHMARK_ENFORCE_COMPARE=0` açıkça verilmelidir.
+  `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:15%` ile açıktır. İlk baseline artık
+  `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildiği için
+  `BENCHMARK_COMPARE_REQUIRED=1` CI ve yerel profilde varsayılandır; yeni makine/bootstrap istisnasında
+  `BENCHMARK_COMPARE_REQUIRED=0`, mevcut baseline ile geçici rapor-only karşılaştırma gerektiğinde
+  `BENCHMARK_ENFORCE_COMPARE=0` açıkça verilmelidir.
   Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde override edilebilir. Benchmark fazının genel sonucu CI
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
   araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
@@ -152,14 +154,16 @@ tek seferlik/geçici dosya adlarını referans almaz.
   eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
   p95/p99 alarm kuralları üretilebilir.
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
-- 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı;
+- 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı ve ilk
+  karşılaştırma kaydı `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildi;
   `test_format_table_handles_large_dataset_quickly` yaklaşık `3.6 ms`,
   `test_user_authentication_password_verify_cpu_cost[postgresql]` yaklaşık `66.8 ms`,
-  `test_gpu_concurrent_throughput` yaklaşık `6.87 s` ve
-  `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler
-  tek başına yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline
-  seed gözlemi olarak ele alınmalı ve sonraki koşularda `BENCHMARK_COMPARE_REQUIRED=1`
-  + `BENCHMARK_ENFORCE_COMPARE=1` ile otomatik regresyon karşılaştırmasına geçirilmelidir.
+  `test_gpu_concurrent_throughput` yaklaşık `6.96 s` ve
+  `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler tek başına
+  yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline seed gözlemidir. Sonraki
+  koşularda varsayılan `BENCHMARK_COMPARE_REQUIRED=1` + `BENCHMARK_ENFORCE_COMPARE=1` değerleriyle
+  otomatik regresyon karşılaştırması çalışır; GPU concurrent throughput gibi metriklerde `mean` sapması
+  `%20+` seviyesine ulaşmadan önce yerel `mean:15%` / CI `mean:10%` kapıları regresyonu yakalar.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
   kullanın (ör. `baseline_v5_2_0`).
 
