@@ -42,7 +42,8 @@ _ARGON2ID_SALT_BYTES = 16
 _ARGON2ID_MEMORY_COST_ENV = "SIDAR_ARGON2ID_MEMORY_COST_KIB"
 _ARGON2ID_TIME_COST_ENV = "SIDAR_ARGON2ID_TIME_COST"
 _ARGON2ID_PARALLELISM_ENV = "SIDAR_ARGON2ID_PARALLELISM"
-_PASSWORD_HASH_ALGORITHM_ENV = "SIDAR_PASSWORD_HASH_ALGORITHM"
+# Environment variable name, not a secret.
+_PASSWORD_HASH_ALGORITHM_ENV = "SIDAR_PASSWORD_HASH_ALGORITHM"  # nosec B105
 _PBKDF2_ALGORITHM = "pbkdf2_sha256"
 _PBKDF2_MIN_ITERATIONS = 600000
 _PBKDF2_LEGACY_ITERATIONS = 120000
@@ -60,7 +61,12 @@ def _read_int_env_with_floor(env_key: str, default: int, minimum: int) -> int:
         logger.warning("%s geçersiz (%r); varsayılan %s kullanılacak.", env_key, raw_value, default)
         return default
     if configured < minimum:
-        logger.warning("%s=%s güvenli minimum %s altında; minimum değer kullanılacak.", env_key, configured, minimum)
+        logger.warning(
+            "%s=%s güvenli minimum %s altında; minimum değer kullanılacak.",
+            env_key,
+            configured,
+            minimum,
+        )
         return minimum
     return configured
 

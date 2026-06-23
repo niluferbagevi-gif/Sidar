@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def keyword_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
@@ -22,8 +22,7 @@ def keyword_search(store: Any, query: str, top_k: int, session_id: str) -> tuple
         title_lower = meta["title"].lower()
         tags_lower = " ".join(meta.get("tags", [])).lower()
         score = sum(
-            text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3
-            for kw in keywords
+            text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3 for kw in keywords
         )
         if score > 0:
             scored.append((doc_id, score))
@@ -48,7 +47,10 @@ def keyword_search(store: Any, query: str, top_k: int, session_id: str) -> tuple
             }
         )
 
-    return store._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi")
+    return cast(
+        tuple[bool, str],
+        store._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi"),
+    )
 
 
 class KeywordBackendMixin:

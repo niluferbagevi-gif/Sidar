@@ -28,7 +28,7 @@ import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import bleach as _bleach
 from opentelemetry import trace as _otel_trace
@@ -375,9 +375,7 @@ class DocumentStore:
 
     def _init_chroma(self) -> None:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
-        chroma_backend.init_chroma(
-            self, build_embedding_function=self._embedding_function_builder
-        )
+        chroma_backend.init_chroma(self, build_embedding_function=self._embedding_function_builder)
 
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
@@ -397,9 +395,13 @@ class DocumentStore:
 
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
-        pgvector_backend.get_sentence_transformer_model = get_sentence_transformer_model
-        pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
-        pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+        cast(Any, pgvector_backend).get_sentence_transformer_model = get_sentence_transformer_model
+        cast(
+            Any, pgvector_backend
+        ).pgvector_failure_action_message = _pgvector_failure_action_message
+        cast(
+            Any, pgvector_backend
+        )._pgvector_failure_action_message = _pgvector_failure_action_message
         pgvector_backend.init_pgvector(self)
 
     def _pgvector_embed_texts(
@@ -1924,19 +1926,21 @@ class DocumentStore:
 
 # Backend compatibility mixins historically subclassed DocumentStore. Keep that
 # contract while backend implementation lives in focused helper modules.
-bm25_backend.BM25BackendMixin = type("BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__})
-keyword_backend.KeywordBackendMixin = type(
+cast(Any, bm25_backend).BM25BackendMixin = type(
+    "BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__}
+)
+cast(Any, keyword_backend).KeywordBackendMixin = type(
     "KeywordBackendMixin", (DocumentStore,), {"__module__": keyword_backend.__name__}
 )
-pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
-pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+cast(Any, pgvector_backend).pgvector_failure_action_message = _pgvector_failure_action_message
+cast(Any, pgvector_backend)._pgvector_failure_action_message = _pgvector_failure_action_message
 try:
     import core.rag.backends as _rag_backends
 
-    _rag_backends.BM25BackendMixin = bm25_backend.BM25BackendMixin
-    _rag_backends.KeywordBackendMixin = keyword_backend.KeywordBackendMixin
-except Exception:  # pragma: no cover - defensive compatibility hook
-    pass
+    cast(Any, _rag_backends).BM25BackendMixin = bm25_backend.BM25BackendMixin
+    cast(Any, _rag_backends).KeywordBackendMixin = keyword_backend.KeywordBackendMixin
+except Exception as exc:  # pragma: no cover - defensive compatibility hook
+    logger.debug("RAG backend compatibility aliases could not be published: %s", exc)
 
 
 def get_shared_document_store(
@@ -1951,7 +1955,9 @@ def get_shared_document_store(
         str(Path(store_dir).resolve()),
         bool(initialize_vector),
         str(getattr(cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower(),
-        str(id(embedding_function_builder)) if embedding_function_builder is not None else "default",
+        str(id(embedding_function_builder))
+        if embedding_function_builder is not None
+        else "default",
     )
     with _DOCUMENT_STORE_SINGLETONS_LOCK:
         store = _DOCUMENT_STORE_SINGLETONS.get(key)

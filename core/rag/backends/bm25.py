@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,9 @@ def fetch_bm25(store: Any, query: str, top_k: int, session_id: str) -> list[dict
 
 def bm25_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
     results = fetch_bm25(store, query, top_k, session_id)
-    return store._format_results_from_struct(results, query, source_name="BM25")
+    return cast(
+        tuple[bool, str], store._format_results_from_struct(results, query, source_name="BM25")
+    )
 
 
 class BM25BackendMixin:

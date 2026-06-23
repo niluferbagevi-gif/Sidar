@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,9 @@ def fetch_chroma(store: Any, query: str, top_k: int, session_id: str) -> list[di
         1, int(getattr(store.cfg, "RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER", 1) or 1)
     )
     default_multiplier = 2
-    multiplier = local_multiplier if getattr(store, "_is_local_llm_provider", False) else default_multiplier
+    multiplier = (
+        local_multiplier if getattr(store, "_is_local_llm_provider", False) else default_multiplier
+    )
     n_results = min(top_k * multiplier, max(collection_size, 1))
 
     results = collection.query(
@@ -98,8 +100,11 @@ def fetch_chroma(store: Any, query: str, top_k: int, session_id: str) -> list[di
 
 def chroma_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
     results = fetch_chroma(store, query, top_k, session_id)
-    return store._format_results_from_struct(
-        results, query, source_name="Vektör Arama (ChromaDB + Chunking)"
+    return cast(
+        tuple[bool, str],
+        store._format_results_from_struct(
+            results, query, source_name="Vektör Arama (ChromaDB + Chunking)"
+        ),
     )
 
 
