@@ -39,6 +39,10 @@ from core.embeddings import (
     sentence_transformer_local_files_only,
 )
 
+from .backends import bm25 as bm25_backend
+from .backends import chroma as chroma_backend
+from .backends import keyword as keyword_backend
+from .backends import pgvector as pgvector_backend
 from .facade import (
     _build_embedding_function as _build_embedding_function,
 )
@@ -67,7 +71,6 @@ logger = logging.getLogger(__name__)
 list = builtins.list
 _DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str], "DocumentStore"] = {}
 _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
-_PGVECTOR_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def build_embedding_function(
@@ -88,8 +91,7 @@ def build_embedding_function(
 
 def _is_valid_pgvector_identifier(identifier: str) -> bool:
     """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
-
-    return bool(_PGVECTOR_IDENTIFIER_RE.fullmatch(identifier))
+    return pgvector_backend.is_valid_pgvector_identifier(identifier)
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
@@ -369,202 +371,35 @@ class DocumentStore:
 
     def _init_chroma(self) -> None:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
-        # PostHog telemetri kütüphanesinin capture() API uyuşmazlığını
-        # tetiklememesi için ChromaDB telemetrisini ortam değişkeniyle kapat.
-        os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
-
-        try:
-            import chromadb
-            from chromadb.config import Settings
-
-            # Embedding modeli başlatılırken HF runtime değişkenlerini sızdırmadan uygula.
-            with self._scoped_hf_runtime_env():
-                # Veritabanını data/rag/chroma_db içinde tut
-                db_path = self.store_dir / "chroma_db"
-                self.chroma_client = chromadb.PersistentClient(
-                    path=str(db_path),
-                    settings=Settings(anonymized_telemetry=False),
-                )
-
-                # GPU-farkında embedding fonksiyonu
-                embedding_fn = _build_embedding_function(
-                    use_gpu=self._use_gpu,
-                    gpu_device=self._gpu_device,
-                    mixed_precision=self._mixed_precision,
-                    cfg=self.cfg,
-                )
-
-            create_kwargs: dict[str, Any] = {"metadata": {"hnsw:space": "cosine"}}
-            if embedding_fn is not None:
-                create_kwargs["embedding_function"] = embedding_fn
-
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="sidar_knowledge_base",
-                **create_kwargs,
-            )
-
-            device_info = f"cuda:{self._gpu_device}" if self._use_gpu and embedding_fn else "cpu"
-            logger.info(
-                "ChromaDB vektör veritabanı başlatıldı. Embedding device: %s",
-                device_info,
-            )
-        except Exception as exc:
-            logger.error("ChromaDB başlatma hatası: %s", exc)
-            self._chroma_available = False
+        chroma_backend.init_chroma(self, build_embedding_function=_build_embedding_function)
 
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
-        import sqlite3
-
-        try:
-            db_path = self.store_dir / "bm25_fts.db"
-            self.fts_conn = sqlite3.connect(db_path, check_same_thread=False)
-            self.fts_conn.row_factory = sqlite3.Row
-            with self._write_lock:
-                # FTS5 eklentisi ile sanal tablo oluştur (Türkçe karakter destekli)
-                self.fts_conn.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS bm25_index USING fts5(
-                        doc_id UNINDEXED,
-                        session_id UNINDEXED,
-                        content,
-                        tokenize='unicode61 remove_diacritics 1'
-                    );
-                """)
-                # Eski verileri migrate et (FTS5 boşsa ve önceden eklenmiş belgeler varsa)
-                cursor = self.fts_conn.execute("SELECT count(*) as c FROM bm25_index")
-                if cursor.fetchone()["c"] == 0 and self._index:
-                    logger.info("Mevcut belgeler SQLite FTS5 disk motoruna aktarılıyor...")
-                    for doc_id, meta in self._index.items():
-                        doc_file = self.store_dir / f"{doc_id}.txt"
-                        try:
-                            content = doc_file.read_text(encoding="utf-8")
-                            session_id = meta.get("session_id", "global")
-                            self.fts_conn.execute(
-                                "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
-                                (doc_id, session_id, content),
-                            )
-                        except Exception as exc:
-                            logger.debug("Doküman FTS'e migrate edilemedi (%s): %s", doc_id, exc)
-                self.fts_conn.commit()
-            self._log_backend_init_status_once(
-                "bm25_fts_init_success",
-                "SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.",
-            )
-        except Exception as exc:
-            logger.error("FTS5 başlatma hatası: %s", exc)
-            self._bm25_available = False
+        bm25_backend.init_fts(self)
 
     @staticmethod
     def _normalize_pg_url(url: str) -> str:
-        return url.replace("+asyncpg", "")
+        return pgvector_backend.normalize_pg_url(url)
 
     @staticmethod
     def _format_vector_for_sql(values: builtins.list[float]) -> str:
-        return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
+        return pgvector_backend.format_vector_for_sql(values)
 
     def _pgvector_table_name(self) -> str:
         """Return the pgvector table invariant with a safe legacy-stub fallback."""
-        return str(getattr(self, "_pg_table", "rag_embeddings") or "rag_embeddings")
+        return pgvector_backend.pgvector_table_name(self)
 
     def _init_pgvector(self) -> None:
         """PostgreSQL + pgvector tablosunu başlatır."""
-        db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
-        if not db_url.startswith("postgresql"):
-            logger.warning(
-                _pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL"))
-            )
-            return
-
-        pg_table = self._pgvector_table_name()
-        if not _is_valid_pgvector_identifier(pg_table):
-            self._pgvector_available = False
-            logger.warning(
-                _pgvector_failure_action_message(
-                    ValueError(
-                        "invalid PGVECTOR_TABLE; expected pattern " r"^[A-Za-z_][A-Za-z0-9_]*$"
-                    )
-                )
-            )
-            return
-
-        if not self._check_import("sqlalchemy") or not self._check_import("pgvector"):
-            logger.warning(
-                _pgvector_failure_action_message(RuntimeError("pgvector dependencies missing"))
-            )
-            return
-
-        try:
-            from sqlalchemy import create_engine, text
-
-            self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
-            engine = self._require_pg_engine()
-            with engine.begin() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                create_table_sql = f"""
-                    CREATE TABLE IF NOT EXISTS {pg_table} (
-                        doc_id TEXT NOT NULL,
-                        parent_id TEXT NOT NULL,
-                        session_id TEXT NOT NULL,
-                        chunk_index INTEGER NOT NULL,
-                        title TEXT,
-                        source TEXT,
-                        chunk_content TEXT,
-                        embedding vector({self._pg_embedding_dim}),
-                        PRIMARY KEY (doc_id, chunk_index)
-                    )
-                """
-                conn.execute(text(create_table_sql))  # nosec B608
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)"
-                    )
-                )
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_parent ON {pg_table}(parent_id)"
-                    )
-                )
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING hnsw (embedding vector_cosine_ops)"
-                    )
-                )
-
-            self._pg_embedding_model = get_sentence_transformer_model(
-                self._pg_embedding_model_name, self.cfg
-            )
-            self._pg_embedding_device = "cuda" if bool(getattr(self, "_use_gpu", False)) else "cpu"
-            self._pgvector_available = True
-            self._log_backend_init_status_once(
-                "pgvector_init_success",
-                "pgvector backend başlatıldı: table=%s model=%s",
-                pg_table,
-                self._pg_embedding_model_name,
-            )
-        except Exception as exc:
-            logger.warning(_pgvector_failure_action_message(exc))
-            logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
-            self._pgvector_available = False
+        pgvector_backend.get_sentence_transformer_model = get_sentence_transformer_model
+        pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
+        pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+        pgvector_backend.init_pgvector(self)
 
     def _pgvector_embed_texts(
         self, texts: builtins.list[str]
     ) -> builtins.list[builtins.list[float]]:
-        if not self._pg_embedding_model or not texts:
-            return []
-        try:
-            try:
-                vectors = self._pg_embedding_model.encode(
-                    texts, normalize_embeddings=True, show_progress_bar=False
-                )
-            except TypeError:
-                vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
-            if hasattr(vectors, "tolist"):
-                raw_vectors = vectors.tolist()
-                return [list(map(float, row)) for row in raw_vectors]
-            return [list(map(float, v)) for v in vectors]
-        except Exception as exc:
-            logger.warning("pgvector embedding üretilemedi: %s", exc)
-            return []
+        return pgvector_backend.pgvector_embed_texts(self, texts)
 
     def _upsert_pgvector_chunks(
         self,
@@ -575,76 +410,12 @@ class DocumentStore:
         source: str,
         chunks: builtins.list[str],
     ) -> None:
-        if (
-            not getattr(self, "_pgvector_available", False)
-            or not getattr(self, "pg_engine", None)
-            or not chunks
-        ):
-            return
-        try:
-            from sqlalchemy import text
-
-            pg_table = self._pgvector_table_name()
-            vectors = self._pgvector_embed_texts(chunks)
-            if not vectors:
-                return
-
-            engine = self._require_pg_engine()
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
-                    ),
-                    {"parent_id": parent_id, "session_id": session_id},
-                )
-                rows = [
-                    {
-                        "doc_id": doc_id,
-                        "parent_id": parent_id,
-                        "session_id": session_id,
-                        "chunk_index": idx,
-                        "title": title,
-                        "source": source,
-                        "chunk_content": chunk,
-                        "embedding": self._format_vector_for_sql(vec),
-                    }
-                    for idx, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False))
-                ]
-                upsert_sql = """
-                        INSERT INTO __TABLE__
-                        (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
-                        VALUES
-                        (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source, :chunk_content, CAST(:embedding AS vector))
-                        ON CONFLICT (doc_id, chunk_index)
-                        DO UPDATE SET
-                            parent_id = EXCLUDED.parent_id,
-                            session_id = EXCLUDED.session_id,
-                            title = EXCLUDED.title,
-                            source = EXCLUDED.source,
-                            chunk_content = EXCLUDED.chunk_content,
-                            embedding = EXCLUDED.embedding
-                    """.replace("__TABLE__", pg_table)  # nosec B608
-                conn.execute(text(upsert_sql), rows)
-        except Exception as exc:
-            logger.error("pgvector belge ekleme hatası: %s", exc)
+        pgvector_backend.upsert_pgvector_chunks(
+            self, doc_id, parent_id, session_id, title, source, chunks
+        )
 
     def _delete_pgvector_parent(self, parent_id: str, session_id: str) -> None:
-        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
-            return
-        try:
-            from sqlalchemy import text
-
-            pg_table = self._pgvector_table_name()
-            engine = self._require_pg_engine()
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608
-                    ),
-                    {"parent_id": parent_id, "session_id": session_id},
-                )
-        except Exception as exc:
-            logger.error("pgvector silme hatası: %s", exc)
+        pgvector_backend.delete_pgvector_parent(self, parent_id, session_id)
 
     def _load_index(self) -> dict[str, dict[str, Any]]:
         if self.index_file.exists():
@@ -1938,255 +1709,34 @@ class DocumentStore:
         )
 
     def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
-        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
-            return []
-        try:
-            vectors = self._pgvector_embed_texts([query])
-            if not vectors:
-                return []
-
-            from sqlalchemy import text
-
-            pg_table = self._pgvector_table_name()
-            qvec = self._format_vector_for_sql(vectors[0])
-            engine = self._require_pg_engine()
-            with engine.begin() as conn:
-                select_sql = """
-                        SELECT doc_id, parent_id, title, source, chunk_content,
-                               (embedding <=> CAST(:qvec AS vector)) AS distance
-                        FROM __TABLE__
-                        WHERE session_id = :session_id
-                        ORDER BY embedding <=> CAST(:qvec AS vector) ASC
-                        LIMIT :lim
-                    """.replace("__TABLE__", pg_table)  # nosec B608
-                rows = conn.execute(
-                    text(select_sql),
-                    {
-                        "qvec": qvec,
-                        "session_id": session_id,
-                        "lim": max(
-                            top_k * (2 if getattr(self, "_is_local_llm_provider", False) else 3),
-                            top_k,
-                        ),
-                    },
-                ).fetchall()
-
-            found_docs, seen_parents = [], set()
-            for row in rows:
-                parent_id = row.parent_id
-                if parent_id in seen_parents:
-                    continue
-                seen_parents.add(parent_id)
-                found_docs.append(
-                    {
-                        "id": parent_id,
-                        "title": row.title or "?",
-                        "source": row.source or "",
-                        "snippet": row.chunk_content or "",
-                        "score": max(0.0, 1.0 - float(row.distance)),
-                    }
-                )
-                if len(found_docs) >= top_k:
-                    break
-            return found_docs
-        except Exception as exc:
-            logger.warning("pgvector arama hatası: %s", exc)
-            return []
+        return pgvector_backend.fetch_pgvector(self, query, top_k, session_id)
 
     def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
-        results = self._fetch_pgvector(query, top_k, session_id)
-        return self._format_results_from_struct(
-            results, query, source_name="Vektör Arama (pgvector)"
-        )
+        return pgvector_backend.pgvector_search(self, query, top_k, session_id)
 
     def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
-        collection = self._require_chroma_collection()
-        try:
-            collection_size = collection.count()
-        except Exception:
-            collection_size = top_k * 2
-
-        local_multiplier = max(
-            1, int(getattr(self.cfg, "RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER", 1) or 1)
-        )
-        default_multiplier = 2
-        multiplier = (
-            local_multiplier
-            if getattr(self, "_is_local_llm_provider", False)
-            else default_multiplier
-        )
-        n_results = min(top_k * multiplier, max(collection_size, 1))
-
-        # Filtreleme ChromaDB düzeyinde Where parametresiyle yapılıyor
-        results = collection.query(
-            query_texts=[query], n_results=n_results, where={"session_id": session_id}
-        )
-
-        ids = results.get("ids") or []
-        if not ids or not ids[0]:
-            return []
-
-        documents = results.get("documents") or [[]]
-        metadatas = results.get("metadatas") or [[]]
-        doc_ids = ids[0]
-        doc_chunks = documents[0] if documents else []
-        doc_metas = metadatas[0] if metadatas else []
-
-        found_docs: list[dict[str, Any]] = []
-        seen_parents: set[str] = set()
-        for i, chunk_content in enumerate(doc_chunks):
-            raw_meta = doc_metas[i] if i < len(doc_metas) else {}
-            meta = raw_meta if isinstance(raw_meta, dict) else {}
-            parent_id = str(meta.get("parent_id") or (doc_ids[i] if i < len(doc_ids) else "") or "")
-            if not parent_id:
-                continue
-            if parent_id in seen_parents and len(seen_parents) >= top_k:  # pragma: no cover
-                continue
-            seen_parents.add(parent_id)
-            found_docs.append(
-                {
-                    "id": parent_id,
-                    "title": str(meta.get("title", "?") or "?"),
-                    "source": str(meta.get("source", "") or ""),
-                    "snippet": str(chunk_content or ""),
-                    "score": 1.0,
-                }
-            )
-            if len(found_docs) >= top_k:
-                break
-        return found_docs
+        return chroma_backend.fetch_chroma(self, query, top_k, session_id)
 
     def _chroma_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
-        results = self._fetch_chroma(query, top_k, session_id)
-        return self._format_results_from_struct(
-            results, query, source_name="Vektör Arama (ChromaDB + Chunking)"
-        )
+        return chroma_backend.chroma_search(self, query, top_k, session_id)
 
     def _update_bm25_cache_on_add(self, doc_id: str, content: str) -> None:
-        """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet.
-        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
-        """
-        if not self._bm25_available:
-            return
-        session_id = self._index.get(doc_id, {}).get("session_id", "global")
-        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
-        self.fts_conn.execute(
-            "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
-            (doc_id, session_id, content),
-        )
-        self.fts_conn.commit()
+        """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet."""
+        bm25_backend.update_bm25_cache_on_add(self, doc_id, content)
 
     def _update_bm25_cache_on_delete(self, doc_id: str) -> None:
-        """Silinen belgeyi SQLite FTS5'ten kaldır.
-        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
-        """
-        if not self._bm25_available:
-            return
-        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
-        self.fts_conn.commit()
+        """Silinen belgeyi SQLite FTS5'ten kaldır."""
+        bm25_backend.update_bm25_cache_on_delete(self, doc_id)
 
     def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
         """Diskteki FTS5 veritabanından milisaniyelik BM25 araması yap."""
-        if not self._bm25_available:
-            return []
-
-        words = [w for w in query.replace('"', "").replace("'", "").split() if w.isalnum()]
-        if not words:
-            return []
-
-        # Kelimelerden herhangi birini içerenleri bul (OR mantığı)
-        match_query = " OR ".join(words)
-
-        sql = """
-            SELECT doc_id, bm25(bm25_index) as score
-            FROM bm25_index
-            WHERE bm25_index MATCH ? AND session_id = ?
-            ORDER BY score
-            LIMIT ?
-        """
-
-        try:
-            with self._write_lock:
-                cursor = self.fts_conn.execute(sql, (match_query, session_id, top_k))
-                rows = cursor.fetchall()
-        except Exception as exc:
-            logger.warning("FTS5 Arama Hatası: %s", exc)
-            return []
-
-        results = []
-        for row in rows:
-            doc_id = row["doc_id"]
-            # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı). Bunu pozitife çeviriyoruz.
-            score = abs(row["score"])
-
-            meta = self._index.get(doc_id, {})
-            doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                content = ""
-            snippet = self._extract_snippet(content, query)
-            results.append(
-                {
-                    "id": doc_id,
-                    "title": meta.get("title", "?"),
-                    "source": meta.get("source", ""),
-                    "snippet": snippet,
-                    "score": score,
-                }
-            )
-        return results
+        return bm25_backend.fetch_bm25(self, query, top_k, session_id)
 
     def _bm25_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
-        results = self._fetch_bm25(query, top_k, session_id)
-        return self._format_results_from_struct(results, query, source_name="BM25")
+        return bm25_backend.bm25_search(self, query, top_k, session_id)
 
     def _keyword_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
-        keywords = query.lower().split()
-        scored = []
-
-        for doc_id, meta in list(self._index.items()):
-            if meta.get("session_id", "global") != session_id:
-                continue
-
-            doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                text = doc_file.read_text(encoding="utf-8").lower()
-            except FileNotFoundError:
-                text = ""
-
-            title_lower = meta["title"].lower()
-            tags_lower = " ".join(meta.get("tags", [])).lower()
-
-            score = sum(
-                text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3
-                for kw in keywords
-            )
-            if score > 0:
-                scored.append((doc_id, score))
-
-        ranked = sorted(scored, key=lambda x: x[1], reverse=True)[:top_k]
-
-        results = []
-        for doc_id, score in ranked:
-            doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                content = ""
-            meta = self._index.get(doc_id, {})
-            snippet = self._extract_snippet(content, query)
-            results.append(
-                {
-                    "id": doc_id,
-                    "title": meta.get("title", "?"),
-                    "source": meta.get("source", ""),
-                    "snippet": snippet,
-                    "score": score,
-                }
-            )
-
-        return self._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi")
+        return keyword_backend.keyword_search(self, query, top_k, session_id)
 
     def _format_results_from_struct(
         self, results: list[dict[str, Any]], query: str, source_name: str
@@ -2364,6 +1914,23 @@ class DocumentStore:
             engines.append("GraphRAG (hazır)")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+
+
+# Backend compatibility mixins historically subclassed DocumentStore. Keep that
+# contract while backend implementation lives in focused helper modules.
+bm25_backend.BM25BackendMixin = type("BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__})
+keyword_backend.KeywordBackendMixin = type(
+    "KeywordBackendMixin", (DocumentStore,), {"__module__": keyword_backend.__name__}
+)
+pgvector_backend.pgvector_failure_action_message = _pgvector_failure_action_message
+pgvector_backend._pgvector_failure_action_message = _pgvector_failure_action_message
+try:
+    import core.rag.backends as _rag_backends
+
+    _rag_backends.BM25BackendMixin = bm25_backend.BM25BackendMixin
+    _rag_backends.KeywordBackendMixin = keyword_backend.KeywordBackendMixin
+except Exception:  # pragma: no cover - defensive compatibility hook
+    pass
 
 
 def get_shared_document_store(
