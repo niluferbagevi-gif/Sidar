@@ -26,6 +26,18 @@ async def test_spa_fallback_serves_index_for_history_paths_and_empty_path():
 
 
 @pytest.mark.asyncio
+async def test_spa_fallback_uses_default_await_helper_for_sync_index():
+    def index():
+        return HTMLResponse("sync ok")
+
+    fallback = build_spa_fallback_handler(index=index)
+    response = await fallback("dashboard")
+
+    assert response.status_code == 200
+    assert response.body == b"sync ok"
+
+
+@pytest.mark.asyncio
 async def test_spa_fallback_does_not_mask_backend_or_asset_paths():
     async def index():  # pragma: no cover - must not be called for rejected paths
         raise AssertionError("index should not be called")
