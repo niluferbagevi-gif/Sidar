@@ -148,6 +148,23 @@ def test_prefixed_env_helpers_prefer_sidar_namespace(monkeypatch):
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "fallback") == "prefixed"
 
 
+def test_localized_log_message_uses_sidar_locale(monkeypatch):
+    monkeypatch.setenv("SIDAR_LOCALE", "en_US.UTF-8")
+    assert config.get_sidar_locale() == "en"
+    assert config.localized_log_message("env_loaded") == "✅ Environment variables loaded: %s"
+    assert config.localized_log_message("ollama_ok") == "✅ Ollama connection successful."
+
+    monkeypatch.setenv("SIDAR_LOCALE", "tr_TR.UTF-8")
+    assert config.get_sidar_locale() == "tr"
+    assert config.localized_log_message("env_loaded") == "✅ Ortam değişkenleri yüklendi: %s"
+
+
+def test_config_log_messages_default_to_turkish(monkeypatch):
+    monkeypatch.delenv("SIDAR_LOCALE", raising=False)
+    assert config.get_sidar_locale() == "tr"
+    assert config.localized_log_message("config_loaded") == "✅ %s v%s yapılandırması yüklendi."
+
+
 def test_prefixed_bool_env_is_strict(monkeypatch):
     monkeypatch.setenv("LEGACY_BOOL", "true")
     assert config.get_bool_prefixed_env("SIDAR_BOOL", "LEGACY_BOOL", False) is True

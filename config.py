@@ -57,6 +57,66 @@ _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 _FIRST_CONFIG_LOAD_LOGGED = False
 logger = logging.getLogger("Sidar.Config")
 
+_LOG_MESSAGES: dict[str, dict[str, str]] = {
+    "log_file_unavailable": {
+        "tr": "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
+        "en": "⚠️ Cannot write to log file (%s). Continuing with console logging only.",
+    },
+    "config_reload_suppressed": {
+        "tr": "Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s",
+        "en": "Config reloaded; info log suppressed for the same fingerprint: %s",
+    },
+    "env_loaded": {
+        "tr": "✅ Ortam değişkenleri yüklendi: %s",
+        "en": "✅ Environment variables loaded: %s",
+    },
+    "provider_updated": {
+        "tr": "✅ AI Sağlayıcı güncellendi: %s",
+        "en": "✅ AI provider updated: %s",
+    },
+    "invalid_provider": {
+        "tr": "❌ Geçersiz sağlayıcı modu: %s  Geçerliler: %s",
+        "en": "❌ Invalid provider mode: %s  Valid values: %s",
+    },
+    "ollama_ok": {
+        "tr": "✅ Ollama bağlantısı başarılı.",
+        "en": "✅ Ollama connection successful.",
+    },
+    "ollama_status": {
+        "tr": "⚠️  Ollama yanıt kodu: %d",
+        "en": "⚠️  Ollama response status: %d",
+    },
+    "ollama_unreachable": {
+        "tr": "⚠️  Ollama'ya ulaşılamadı (%s)\n    'ollama serve' çalıştırıldığından emin olun.",
+        "en": "⚠️  Ollama is unreachable (%s)\n    Make sure 'ollama serve' is running.",
+    },
+    "otel_active": {
+        "tr": "✅ OpenTelemetry aktif: %s",
+        "en": "✅ OpenTelemetry active: %s",
+    },
+    "otel_failed": {
+        "tr": "OpenTelemetry başlatılamadı: %s",
+        "en": "OpenTelemetry could not be started: %s",
+    },
+    "config_loaded": {
+        "tr": "✅ %s v%s yapılandırması yüklendi.",
+        "en": "✅ %s v%s configuration loaded.",
+    },
+}
+
+
+def get_sidar_locale() -> str:
+    """Resolve the runtime log locale from SIDAR_LOCALE."""
+    raw_locale = os.getenv("SIDAR_LOCALE", "tr").strip().lower()
+    normalized = raw_locale.split(".", 1)[0].replace("_", "-").split("-", 1)[0]
+    return "en" if normalized == "en" else "tr"
+
+
+def localized_log_message(key: str) -> str:
+    """Return a localized log format string for the active Sidar locale."""
+    messages = _LOG_MESSAGES[key]
+    return messages.get(get_sidar_locale(), messages["tr"])
+
 
 def _log_first_load_info(message: str, *args: Any) -> None:
     """Log as INFO only on first config load cycle, DEBUG on later reloads."""
@@ -578,7 +638,7 @@ try:
     _root_logger.addHandler(_file_handler)
 except (PermissionError, OSError) as exc:
     _root_logger.warning(
-        "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
+        localized_log_message("log_file_unavailable"),
         exc,
     )
 
@@ -594,7 +654,7 @@ def _log_once_env(
     token = fingerprint or "1"
     if current == token:
         logger.debug(
-            "Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s", flag
+            localized_log_message("config_reload_suppressed"), flag
         )
         return
     os.environ[flag] = token
@@ -605,7 +665,7 @@ if ENV_PATH.exists() and not _SKIP_DEFAULT_DOTENV:
     _log_once_env(
         "SIDAR_ENV_LOGGED",
         logger.info,
-        "✅ Ortam değişkenleri yüklendi: %s",
+        localized_log_message("env_loaded"),
         ENV_PATH,
         fingerprint=str(ENV_PATH.resolve()),
     )
@@ -1526,10 +1586,10 @@ class Config:
         m_lower = normalize_ai_provider(mode)
         if m_lower in mode_map:
             cls.AI_PROVIDER = mode_map[m_lower]
-            logger.info("✅ AI Sağlayıcı güncellendi: %s", cls.AI_PROVIDER.upper())
+            logger.info(localized_log_message("provider_updated"), cls.AI_PROVIDER.upper())
         else:
             logger.error(
-                "❌ Geçersiz sağlayıcı modu: %s  Geçerliler: %s",
+                localized_log_message("invalid_provider"),
                 mode,
                 list(mode_map.keys()),
             )
@@ -1653,14 +1713,13 @@ class Config:
                     r = client.get(tags_url)
                 if r.status_code == 200:
                     _log_once_env(
-                        "SIDAR_OLLAMA_OK_LOGGED", logger.info, "✅ Ollama bağlantısı başarılı."
+                        "SIDAR_OLLAMA_OK_LOGGED", logger.info, localized_log_message("ollama_ok")
                     )
                 else:
-                    logger.warning("⚠️  Ollama yanıt kodu: %d", r.status_code)
+                    logger.warning(localized_log_message("ollama_status"), r.status_code)
             except Exception:
                 logger.warning(
-                    "⚠️  Ollama'ya ulaşılamadı (%s)\n"
-                    "    'ollama serve' çalıştırıldığından emin olun.",
+                    localized_log_message("ollama_unreachable"),
                     cls.OLLAMA_URL,
                 )
 
@@ -1795,10 +1854,10 @@ class Config:
                     with contextlib.suppress(Exception):
                         httpx_instrumentor_cls().instrument()
 
-            log.info("✅ OpenTelemetry aktif: %s", cls.OTEL_EXPORTER_ENDPOINT)
+            log.info(localized_log_message("otel_active"), cls.OTEL_EXPORTER_ENDPOINT)
             return True
         except Exception as exc:
-            log.warning("OpenTelemetry başlatılamadı: %s", exc)
+            log.warning(localized_log_message("otel_failed"), exc)
             return False
 
     @classmethod
@@ -1985,7 +2044,7 @@ _config_banner_log = logger.debug if get_bool_env("SIDAR_CONFIG_QUIET", False) e
 _log_once_env(
     "SIDAR_CONFIG_BANNER_LOGGED",
     _config_banner_log,
-    "✅ %s v%s yapılandırması yüklendi.",
+    localized_log_message("config_loaded"),
     Config.PROJECT_NAME,
     Config.VERSION,
     fingerprint=f"{Config.PROJECT_NAME}:{Config.VERSION}:{ENV_PATH.resolve()}",
