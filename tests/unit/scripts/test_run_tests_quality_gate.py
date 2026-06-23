@@ -232,8 +232,7 @@ def test_run_tests_enforces_ci_benchmark_compare_but_allows_local_baseline_creat
     assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
         'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
     )
-    assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"' in script
-    assert 'BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"' in script
+    assert script.count('BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"') >= 2
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"' in script
@@ -1913,10 +1912,11 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert (
         'FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"' in script
     )
-    assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"' in script
-    assert 'BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"' in script
-    assert 'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"' in script
-    assert 'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-0}"' in script
+    assert script.count('BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"') >= 2
+    assert 'ENFORCE_FRONTEND_E2E' in script
+    assert script.count(
+        'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-${ENFORCE_FRONTEND_E2E:-1}}"'
+    ) >= 2
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script

@@ -88,9 +88,10 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - `run_tests.sh`, etkin Playwright E2E fazı Playwright retry'ları sonrasında başarısız olduğunda varsayılan olarak
   bir kez stage retry yapar. Canonical ayar `FRONTEND_E2E_RETRY_ON_FAIL=1`, kısa uyumluluk alias'ı
   `RETRY_ON_FAIL=1` değeridir; namespaced ayar verilirse önceliklidir.
-- CI profilinde retry sonrası E2E başarısızlığı `FRONTEND_E2E_ENFORCE_RESULT=1` varsayılanıyla hard-fail kalır.
-  WSL2/laptop cold-start ve host jitter'ına açık yerel profilde varsayılan `0`, sonucu görünür bir flake-soft-fail
-  uyarısı olarak raporlar. Sabit yerel runner üzerinde CI paritesi için değeri açıkça `1` yapın.
+- Retry sonrası E2E başarısızlığı artık CI ve yerel profilde varsayılan `FRONTEND_E2E_ENFORCE_RESULT=1`
+  (`ENFORCE_FRONTEND_E2E=1` kısa alias'ı desteklenir) ile hard-fail üretir. Geçici flake
+  araştırmasında rapor-only davranış için `FRONTEND_E2E_ENFORCE_RESULT=0` verilebilir; bu değer kalıcı
+  yerel varsayılan yapılmamalıdır.
 - Vitest unit/coverage sonucu ayrı tutulur ve her profilde zorunlu kalite kapısı olmaya devam eder; E2E soft-fail
   sınıflandırması frontend unit veya coverage hatalarını maskelemez.
 
@@ -116,13 +117,14 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Repo kalite kapısının standart etiketi `baseline` değeridir. `bash run_tests.sh`,
   `.benchmarks` altındaki restore/seed edilmiş `*_baseline.json` dosyalarını version-sort ile sıralar ve
   bir sonraki koşuda en güncel kaydı karşılaştırma hedefi olarak kullanır. Baseline bulunduğunda
-  karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı sabit
-  runner kullanan CI profilinde varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%` ile açıktır.
-  WSL2/laptop P-state, Docker servisleri ve model keep-alive jitter'ı görülebilen yerel profilde
-  `BENCHMARK_ENFORCE_COMPARE=0` varsayılanıyla hard-fail uygulanmaz; sabit yerel profilde bilinçli
-  opt-in ile açıldığında varsayılan eşik `mean:15%` olur. Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü
-  biçimde override edilebilir. Benchmark fazının genel sonucu CI profilinde varsayılan hard-fail, yerelde
-  flake-soft-fail olarak raporlanır; sabit yerel runner doğrulaması için `BENCHMARK_ENFORCE_RESULT=1` kullanılır.
+  karşılaştırma her profilde raporlanır. Profil-duyarlı `--benchmark-compare-fail` kalite kapısı CI profilinde
+  varsayılan `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:10%`, yerel profilde ise varsayılan
+  `BENCHMARK_ENFORCE_COMPARE=1` ve `mean:15%` ile açıktır. İlk baseline bootstrap akışı
+  `BENCHMARK_COMPARE_REQUIRED=0` sayesinde baseline yokluğunda hard-fail üretmez; mevcut baseline ile
+  geçici rapor-only karşılaştırma gerektiğinde `BENCHMARK_ENFORCE_COMPARE=0` açıkça verilmelidir.
+  Eşik `BENCHMARK_COMPARE_FAIL` ile kontrollü biçimde override edilebilir. Benchmark fazının genel sonucu CI
+  ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
+  araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`

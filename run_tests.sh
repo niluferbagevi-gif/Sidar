@@ -449,12 +449,12 @@ FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"
 FRONTEND_E2E_NPM_SCRIPT="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
 if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"
-  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-1}"
+  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-${ENFORCE_FRONTEND_E2E:-1}}"
 else
-  # WSL2/laptop ortamında benchmark ve tarayıcı E2E fazları host jitter'ına açıktır.
-  # Fazları çalıştır ve raporla; yerelde açık opt-in yoksa final çıkışı bloke etme.
-  BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-0}"
-  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-0}"
+  # Playwright smoke senaryoları stabil hale geldi; çalıştığı anda sonucu kalite kapısını kırar.
+  # Geçici yerel flake araştırması için FRONTEND_E2E_ENFORCE_RESULT=0 veya ENFORCE_FRONTEND_E2E=0 verilebilir.
+  BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"
+  FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-${ENFORCE_FRONTEND_E2E:-1}}"
 fi
 
 SIDAR_RUN_BACKEND_PYTEST=1
@@ -496,9 +496,9 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"
 else
   BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"
-  # WSL2/laptop GPU P-state, Docker servisleri ve host yükü jitter üretebilir.
-  # Yerelde baseline farkını raporla ancak açık opt-in yoksa hard-fail üretme.
-  BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-0}"
+  # Stabil baseline bulunduğunda yerel profil de regresyon karşılaştırmasını hard-fail yapar.
+  # İlk baseline bootstrap için BENCHMARK_COMPARE_REQUIRED=0 korunur; rapor-only gerekirse BENCHMARK_ENFORCE_COMPARE=0 verin.
+  BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"
   BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:15%}"
 fi
 BENCHMARK_DISABLE_GC="${BENCHMARK_DISABLE_GC:-1}"
@@ -1816,7 +1816,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
         benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
       else
         echo "⚠️ Benchmark karşılaştırması rapor modunda (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
-        echo "ℹ️ Yerelde regresyon hard-fail kapısı için BENCHMARK_ENFORCE_COMPARE=1 kullanın."
+        echo "ℹ️ Varsayılan sıkı kapıyı geçici rapor moduna almak için BENCHMARK_ENFORCE_COMPARE=0 kullanın."
       fi
     else
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
@@ -2110,16 +2110,16 @@ if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
   if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then
     FINAL_EXIT_CODE=1
   else
-    echo "⚠️ Benchmark fazı başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
-    echo "   Sıkı yerel doğrulama için: BENCHMARK_ENFORCE_RESULT=1 bash run_tests.sh"
+    echo "⚠️ Benchmark fazı başarısız ancak BENCHMARK_ENFORCE_RESULT=0 ile rapor modunda; final çıkış kodu bloke edilmeyecek."
+    echo "   Varsayılan sıkı kapıya dönmek için: BENCHMARK_ENFORCE_RESULT=1 bash run_tests.sh"
   fi
 fi
 if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
   if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then
     FINAL_EXIT_CODE=1
   else
-    echo "⚠️ Frontend Playwright E2E fazı retry sonrasında başarısız ancak TEST_PROFILE=${TEST_PROFILE} için flake-soft-fail modunda; final çıkış kodu bloke edilmeyecek."
-    echo "   Sıkı yerel doğrulama için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
+    echo "⚠️ Frontend Playwright E2E fazı retry sonrasında başarısız ancak FRONTEND_E2E_ENFORCE_RESULT=0 ile rapor modunda; final çıkış kodu bloke edilmeyecek."
+    echo "   Varsayılan sıkı kapıya dönmek için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
   fi
 fi
 
