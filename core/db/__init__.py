@@ -19,6 +19,9 @@ from typing import Any, TypeVar, cast
 import jwt
 
 from config import Config
+from core.db import audit_log as db_audit_log
+from core.db import metrics as db_metrics
+from core.db import sessions as db_sessions
 from core.db.auth import (
     _AUTH_HASH_SLO_MS_ENV as _AUTH_HASH_SLO_MS_ENV,
 )
@@ -1418,175 +1421,23 @@ class Database:
         return await self.create_user(username=username, role=role)
 
     async def list_sessions(self, user_id: str) -> list[SessionRecord]:
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, user_id, title, created_at, updated_at
-                    FROM sessions
-                    WHERE user_id=$1
-                    ORDER BY updated_at DESC
-                    """,
-                    user_id,
-                )
-            return [
-                SessionRecord(
-                    id=str(r["id"]),
-                    user_id=str(r["user_id"]),
-                    title=str(r["title"]),
-                    created_at=str(r["created_at"]),
-                    updated_at=str(r["updated_at"]),
-                )
-                for r in rows
-            ]
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> list[sqlite3.Row]:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
-                (user_id,),
-            )
-            return cur.fetchall()
-
-        rows = await self._run_sqlite_op(_run, write=False)
-        return [
-            SessionRecord(
-                id=str(r["id"]),
-                user_id=str(r["user_id"]),
-                title=str(r["title"]),
-                created_at=str(r["created_at"]),
-                updated_at=str(r["updated_at"]),
-            )
-            for r in rows
-        ]
+        return await db_sessions.list_sessions(self, SessionRecord, user_id)
 
     async def count_sessions_total(self) -> int:
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                value = await conn.fetchval("SELECT COUNT(*) FROM sessions")
-            return int(value or 0)
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> int:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute("SELECT COUNT(*) FROM sessions")
-            row = cur.fetchone()
-            return int(row[0]) if row else 0
-
-        return await self._run_sqlite_op(_run, write=False)
+        return await db_sessions.count_sessions_total(self)
 
     async def load_session(
         self, session_id: str, user_id: str | None = None
     ) -> SessionRecord | None:
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                if user_id:
-                    row = await conn.fetchrow(
-                        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1 AND user_id=$2",
-                        session_id,
-                        user_id,
-                    )
-                else:
-                    row = await conn.fetchrow(
-                        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1",
-                        session_id,
-                    )
-            if not row:
-                return None
-            return SessionRecord(
-                id=str(row["id"]),
-                user_id=str(row["user_id"]),
-                title=str(row["title"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row | None:
-            assert self._sqlite_conn is not None
-            if user_id:
-                cur = self._sqlite_conn.execute(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=? AND user_id=?",
-                    (session_id, user_id),
-                )
-            else:
-                cur = self._sqlite_conn.execute(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=?",
-                    (session_id,),
-                )
-            return _sqlite_fetchone(cur)
-
-        row = await self._run_sqlite_op(_run)
-        if not row:
-            return None
-        return SessionRecord(
-            id=str(row["id"]),
-            user_id=str(row["user_id"]),
-            title=str(row["title"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+        return await db_sessions.load_session(
+            self, SessionRecord, _sqlite_fetchone, session_id, user_id
         )
 
     async def update_session_title(self, session_id: str, title: str) -> bool:
-        now_dt = datetime.now(UTC)
-        now = now_dt.isoformat()
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE sessions SET title=$1, updated_at=$2 WHERE id=$3",
-                    title,
-                    now_dt,
-                    session_id,
-                )
-            return _parse_asyncpg_affected_rows(result) > 0
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> bool:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                "UPDATE sessions SET title=?, updated_at=? WHERE id=?",
-                (title, now, session_id),
-            )
-            self._sqlite_conn.commit()
-            return cur.rowcount > 0
-
-        return await self._run_sqlite_op(_run)
+        return await db_sessions.update_session_title(self, session_id, title)
 
     async def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                if user_id:
-                    result = await conn.execute(
-                        "DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id
-                    )
-                else:
-                    result = await conn.execute("DELETE FROM sessions WHERE id=$1", session_id)
-            return _parse_asyncpg_affected_rows(result) > 0
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> bool:
-            assert self._sqlite_conn is not None
-            if user_id:
-                cur = self._sqlite_conn.execute(
-                    "DELETE FROM sessions WHERE id=? AND user_id=?", (session_id, user_id)
-                )
-            else:
-                cur = self._sqlite_conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
-            self._sqlite_conn.commit()
-            return cur.rowcount > 0
-
-        return await self._run_sqlite_op(_run)
+        return await db_sessions.delete_session(self, session_id, user_id)
 
     async def create_user(
         self,
@@ -2035,48 +1886,19 @@ class Database:
         allowed: bool,
         timestamp: str | None = None,
     ) -> None:
-        event_time = (timestamp or _utc_now_iso()).strip() or _utc_now_iso()
-        event_time_dt = _parse_iso_datetime(event_time)
-        tenant = (tenant_id or "default").strip() or "default"
-        user = (user_id or "").strip()
-        act = (action or "").strip().lower()
-        res = (resource or "").strip()
-        ip = (ip_address or "unknown").strip() or "unknown"
-        if not act or not res:
-            raise ValueError("action and resource are required")
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
-                    user,
-                    tenant,
-                    act,
-                    res,
-                    ip,
-                    bool(allowed),
-                    event_time_dt,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user, tenant, act, res, ip, int(bool(allowed)), event_time),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_audit_log.record_audit_log(
+            self,
+            record_cls=AuditLogRecord,
+            parse_iso_datetime=_parse_iso_datetime,
+            utc_now_iso=_utc_now_iso,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            action=action,
+            resource=resource,
+            ip_address=ip_address,
+            allowed=allowed,
+            timestamp=timestamp,
+        )
 
     async def list_audit_logs(
         self,
@@ -2084,78 +1906,9 @@ class Database:
         user_id: str | None = None,
         limit: int = 100,
     ) -> list[AuditLogRecord]:
-        max_items = max(1, min(int(limit or 100), 1000))
-        normalized_user = (user_id or "").strip() or None
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            query = (
-                "SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp "
-                "FROM audit_logs"
-            )
-            args: tuple[Any, ...]
-            if normalized_user is not None:
-                query += " WHERE user_id=$1 ORDER BY timestamp DESC LIMIT $2"
-                args = (normalized_user, max_items)
-            else:
-                query += " ORDER BY timestamp DESC LIMIT $1"
-                args = (max_items,)
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(query, *args)
-            return [
-                AuditLogRecord(
-                    id=int(r["id"]),
-                    user_id=str(r["user_id"]),
-                    tenant_id=str(r["tenant_id"]),
-                    action=str(r["action"]),
-                    resource=str(r["resource"]),
-                    ip_address=str(r["ip_address"]),
-                    allowed=bool(r["allowed"]),
-                    timestamp=str(r["timestamp"]),
-                )
-                for r in rows
-            ]
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> list[sqlite3.Row]:
-            assert self._sqlite_conn is not None
-            if normalized_user is not None:
-                cur = self._sqlite_conn.execute(
-                    """
-                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
-                    FROM audit_logs
-                    WHERE user_id=?
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                    """,
-                    (normalized_user, max_items),
-                )
-            else:
-                cur = self._sqlite_conn.execute(
-                    """
-                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
-                    FROM audit_logs
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                    """,
-                    (max_items,),
-                )
-            return cur.fetchall()
-
-        rows = await self._run_sqlite_op(_run, write=False)
-        return [
-            AuditLogRecord(
-                id=int(r["id"]),
-                user_id=str(r["user_id"]),
-                tenant_id=str(r["tenant_id"]),
-                action=str(r["action"]),
-                resource=str(r["resource"]),
-                ip_address=str(r["ip_address"]),
-                allowed=bool(r["allowed"]),
-                timestamp=str(r["timestamp"]),
-            )
-            for r in rows
-        ]
+        return await db_audit_log.list_audit_logs(
+            self, record_cls=AuditLogRecord, user_id=user_id, limit=limit
+        )
 
     async def upsert_marketing_campaign(
         self,
@@ -3030,419 +2783,45 @@ class Database:
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
     ) -> None:
-        provider_name = (provider or "unknown").lower().strip() or "unknown"
-        today = datetime.now(UTC).date().isoformat()
-        req = max(0, int(requests_inc or 0))
-        toks = max(0, int(tokens_used or 0))
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
-                    VALUES ($1, $2, $3::date, $4, $5)
-                    ON CONFLICT (user_id, provider, usage_date)
-                    DO UPDATE SET requests_used=provider_usage_daily.requests_used + EXCLUDED.requests_used,
-                                  tokens_used=provider_usage_daily.tokens_used + EXCLUDED.tokens_used
-                    """,
-                    user_id,
-                    provider_name,
-                    today,
-                    req,
-                    toks,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, provider, usage_date)
-                DO UPDATE SET requests_used=requests_used + excluded.requests_used,
-                              tokens_used=tokens_used + excluded.tokens_used
-                """,
-                (user_id, provider_name, today, req, toks),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_metrics.record_provider_usage_daily(
+            self, user_id, provider, tokens_used, requests_inc
+        )
 
     async def get_user_quota_status(self, user_id: str, provider: str) -> dict[str, int | bool]:
-        provider_name = (provider or "unknown").lower().strip() or "unknown"
-        today = datetime.now(UTC).date().isoformat()
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                quota = await conn.fetchrow(
-                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=$1",
-                    user_id,
-                )
-                usage = await conn.fetchrow(
-                    """
-                    SELECT requests_used, tokens_used
-                    FROM provider_usage_daily
-                    WHERE user_id=$1 AND provider=$2 AND usage_date=$3::date
-                    """,
-                    user_id,
-                    provider_name,
-                    today,
-                )
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
-        else:
-            assert self._sqlite_conn is not None
-
-            def _run() -> tuple[sqlite3.Row | None, sqlite3.Row | None]:
-                assert self._sqlite_conn is not None
-                q = _sqlite_fetchone(
-                    self._sqlite_conn.execute(
-                        "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
-                        (user_id,),
-                    )
-                )
-                u = _sqlite_fetchone(
-                    self._sqlite_conn.execute(
-                        "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
-                        (user_id, provider_name, today),
-                    )
-                )
-                return q, u
-
-            quota, usage = await self._run_sqlite_op(_run)
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
-
-        return {
-            "daily_token_limit": q_tokens,
-            "daily_request_limit": q_reqs,
-            "tokens_used": u_tokens,
-            "requests_used": u_reqs,
-            "token_limit_exceeded": q_tokens > 0 and u_tokens >= q_tokens,
-            "request_limit_exceeded": q_reqs > 0 and u_reqs >= q_reqs,
-        }
+        return await db_metrics.get_user_quota_status(self, user_id, provider, _sqlite_fetchone)
 
     async def list_users_with_quotas(self) -> list[dict[str, Any]]:
         """Tüm kullanıcıları kota bilgileriyle birlikte döndürür."""
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT u.id, u.username, u.role, u.created_at,
-                           COALESCE(q.daily_token_limit, 0) AS daily_token_limit,
-                           COALESCE(q.daily_request_limit, 0) AS daily_request_limit
-                    FROM users u
-                    LEFT JOIN user_quotas q ON q.user_id = u.id
-                    ORDER BY u.created_at ASC
-                    """
-                )
-                return [
-                    {
-                        "id": str(row["id"]),
-                        "username": str(row["username"]),
-                        "role": str(row["role"]),
-                        "created_at": str(row["created_at"]),
-                        "daily_token_limit": int(row["daily_token_limit"] or 0),
-                        "daily_request_limit": int(row["daily_request_limit"] or 0),
-                    }
-                    for row in rows
-                ]
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> list[dict[str, Any]]:
-            assert self._sqlite_conn is not None
-            rows = self._sqlite_conn.execute(
-                """
-                SELECT u.id, u.username, u.role, u.created_at,
-                       COALESCE(q.daily_token_limit, 0) AS daily_token_limit,
-                       COALESCE(q.daily_request_limit, 0) AS daily_request_limit
-                FROM users u
-                LEFT JOIN user_quotas q ON q.user_id = u.id
-                ORDER BY u.created_at ASC
-                """
-            ).fetchall()
-            return [
-                {
-                    "id": str(row["id"]),
-                    "username": str(row["username"]),
-                    "role": str(row["role"]),
-                    "created_at": str(row["created_at"]),
-                    "daily_token_limit": int(row["daily_token_limit"] or 0),
-                    "daily_request_limit": int(row["daily_request_limit"] or 0),
-                }
-                for row in rows
-            ]
-
-        return await self._run_sqlite_op(_run)
+        return await db_metrics.list_users_with_quotas(self)
 
     async def get_admin_stats(self) -> dict[str, Any]:
-        users = await self.list_users_with_quotas()
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                totals = await conn.fetchrow(
-                    """
-                    SELECT
-                        COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
-                        COALESCE(SUM(requests_used), 0) AS total_api_requests
-                    FROM provider_usage_daily
-                    """
-                )
-        else:
-            assert self._sqlite_conn is not None
-
-            def _run_totals() -> sqlite3.Row:
-                assert self._sqlite_conn is not None
-                row = _sqlite_fetchone(
-                    self._sqlite_conn.execute(
-                        """
-                        SELECT
-                            COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
-                            COALESCE(SUM(requests_used), 0) AS total_api_requests
-                        FROM provider_usage_daily
-                        """
-                    )
-                )
-                assert row is not None
-                return row
-
-            totals = await self._run_sqlite_op(_run_totals)
-
-        return {
-            "total_users": len(users),
-            "total_tokens_used": int(totals["total_tokens_used"] or 0),
-            "total_api_requests": int(totals["total_api_requests"] or 0),
-            "users": users,
-        }
+        return await db_metrics.get_admin_stats(self, _sqlite_fetchone)
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
-        session_id = _new_entity_id()
-        now_dt = datetime.now(UTC)
-        now = now_dt.isoformat()
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
-                    session_id,
-                    user_id,
-                    title,
-                    now_dt,
-                    now_dt,
-                )
-            return SessionRecord(
-                id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (session_id, user_id, title, now, now),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
-        return SessionRecord(
-            id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now
-        )
+        return await db_sessions.create_session(self, SessionRecord, _new_entity_id, user_id, title)
 
     async def add_message(
         self, session_id: str, role: str, content: str, tokens_used: int = 0
     ) -> MessageRecord:
-        now_dt = datetime.now(UTC)
-        now = now_dt.isoformat()
-        tokens = max(0, int(tokens_used or 0))
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO messages (session_id, role, content, tokens_used, created_at)
-                    VALUES ($1, $2, $3, $4, $5)
-                    RETURNING id
-                    """,
-                    session_id,
-                    role,
-                    content,
-                    tokens,
-                    now_dt,
-                )
-                msg_id = int(row["id"])
-            return MessageRecord(
-                id=msg_id,
-                session_id=session_id,
-                role=role,
-                content=content,
-                tokens_used=tokens,
-                created_at=now,
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> int:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                (session_id, role, content, tokens, now),
-            )
-            self._sqlite_conn.commit()
-            return int(cur.lastrowid) if cur.lastrowid is not None else 0
-
-        msg_id = await self._run_sqlite_op(_run)
-        return MessageRecord(
-            id=msg_id,
-            session_id=session_id,
-            role=role,
-            content=content,
-            tokens_used=tokens,
-            created_at=now,
+        return await db_sessions.add_message(
+            self, MessageRecord, session_id, role, content, tokens_used
         )
 
     async def add_messages_bulk(self, items: list[dict[str, object]]) -> int:
         """Birden çok mesajı tek transaction içinde yazar ve eklenen satır sayısını döndürür."""
-        prepared: list[tuple[str, str, str, int, datetime, str]] = []
-        for item in items:
-            session_id = str(item.get("session_id", "") or "").strip()
-            role = str(item.get("role", "") or "").strip() or "user"
-            content = str(item.get("content", "") or "")
-            raw_tokens = item.get("tokens_used", 0)
-            if isinstance(raw_tokens, bool):
-                tokens = int(raw_tokens)
-            elif isinstance(raw_tokens, int | float):
-                tokens = int(raw_tokens)
-            elif isinstance(raw_tokens, str):
-                try:
-                    tokens = int(raw_tokens.strip() or "0")
-                except ValueError:
-                    tokens = 0
-            else:
-                tokens = 0
-            tokens = max(0, tokens)
-            if not session_id:
-                continue
-            now_dt = datetime.now(UTC)
-            prepared.append((session_id, role, content, tokens, now_dt, now_dt.isoformat()))
-
-        if not prepared:
-            return 0
-
-        async with self.transaction() as conn:
-            if self._backend == "postgresql":
-                await conn.executemany(
-                    """
-                    INSERT INTO messages (session_id, role, content, tokens_used, created_at)
-                    VALUES ($1, $2, $3, $4, $5)
-                    """,
-                    [(s, r, c, t, dt) for s, r, c, t, dt, _iso in prepared],
-                )
-                return len(prepared)
-
-            def _run() -> int:
-                conn.executemany(
-                    "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                    [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
-                )
-                return len(prepared)
-
-            return await asyncio.to_thread(_run)
+        return await db_sessions.add_messages_bulk(self, items)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
-        return [
-            self._to_message_record(r)
-            for r in await self._fetch_message_rows_by_session_ids([session_id])
-        ]
+        return await db_sessions.get_session_messages(self, session_id)
 
     async def get_messages_for_sessions(
         self, session_ids: list[str]
     ) -> dict[str, list[MessageRecord]]:
         """Birden çok oturumun mesajlarını tek sorguda getirir."""
-        normalized_ids = [
-            str(session_id).strip() for session_id in session_ids if str(session_id).strip()
-        ]
-        if not normalized_ids:
-            return {}
-        rows = await self._fetch_message_rows_by_session_ids(normalized_ids)
-
-        grouped: dict[str, list[MessageRecord]] = {session_id: [] for session_id in normalized_ids}
-        for r in rows:
-            record = self._to_message_record(r)
-            grouped.setdefault(record.session_id, []).append(record)
-        return grouped
+        return await db_sessions.get_messages_for_sessions(self, session_ids)
 
     async def replace_session_messages(
         self, session_id: str, messages: list[dict[str, object]]
     ) -> int:
         """Bir oturumun mesajlarını atomik olarak yenileriyle değiştirir."""
-        normalized_messages = [
-            {
-                "role": str(item.get("role", "") or "").strip() or "assistant",
-                "content": str(item.get("content", "") or "").strip(),
-            }
-            for item in list(messages or [])
-            if str(item.get("content", "") or "").strip()
-        ]
-        now_dt = datetime.now(UTC)
-        now = now_dt.isoformat()
-
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                tx_ctx = conn.transaction()
-                if inspect.isawaitable(tx_ctx):
-                    tx_ctx = await tx_ctx
-                async with tx_ctx:
-                    await conn.execute("DELETE FROM messages WHERE session_id=$1", session_id)
-                    for item in normalized_messages:
-                        await conn.execute(
-                            """
-                            INSERT INTO messages (session_id, role, content, tokens_used, created_at)
-                            VALUES ($1, $2, $3, $4, $5)
-                            """,
-                            session_id,
-                            item["role"],
-                            item["content"],
-                            0,
-                            now_dt,
-                        )
-                    await conn.execute(
-                        "UPDATE sessions SET updated_at=$2 WHERE id=$1",
-                        session_id,
-                        now_dt,
-                    )
-            return len(normalized_messages)
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> int:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
-            for item in normalized_messages:
-                self._sqlite_conn.execute(
-                    "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (session_id, item["role"], item["content"], 0, now),
-                )
-            self._sqlite_conn.execute(
-                "UPDATE sessions SET updated_at=? WHERE id=?",
-                (now, session_id),
-            )
-            self._sqlite_conn.commit()
-            return len(normalized_messages)
-
-        return await self._run_sqlite_op(_run)
+        return await db_sessions.replace_session_messages(self, session_id, messages)
