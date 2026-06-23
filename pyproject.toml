@@ -57,6 +57,7 @@ dependencies = [
   "alembic~=1.14.0",
   # ── Güvenlik / Kimlik doğrulama ────────────────────────────────────────
   "cryptography>=46.0.6",
+  "argon2-cffi>=25.1.0,<26.0.0",
   "PyJWT>=2.12.0",
   # ── HTTP istemcisi ─────────────────────────────────────────────────────
   "requests>=2.32.5",

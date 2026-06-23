@@ -220,9 +220,7 @@ def test_helper_functions_basic_contracts() -> None:
     assert datetime.fromisoformat(exp)
 
     hashed = _hash_password("abc123")
-    assert hashed.startswith("pbkdf2_sha256$")
-    _, iteration_text, _, _ = hashed.split("$", 3)
-    assert int(iteration_text) >= 600000
+    assert hashed.startswith("argon2id$v=19$")
     assert _verify_password("abc123", hashed)
     assert not _verify_password("wrong", hashed)
     assert not _verify_password("abc123", "invalid")
@@ -230,6 +228,39 @@ def test_helper_functions_basic_contracts() -> None:
 
     assert _quote_sql_identifier("schema_versions") == '"schema_versions"'
     assert _json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+
+
+def test_password_hash_algorithm_defaults_to_argon2id_and_allows_pbkdf2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, raising=False)
+    assert core_db._current_password_hash_algorithm() == core_db._ARGON2ID_ALGORITHM
+
+    monkeypatch.setenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, core_db._PBKDF2_ALGORITHM)
+    assert core_db._current_password_hash_algorithm() == core_db._PBKDF2_ALGORITHM
+
+    monkeypatch.setenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, "unknown")
+    assert core_db._current_password_hash_algorithm() == core_db._ARGON2ID_ALGORITHM
+
+
+def test_argon2id_params_env_uses_safe_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(core_db._ARGON2ID_MEMORY_COST_ENV, "20480")
+    monkeypatch.setenv(core_db._ARGON2ID_TIME_COST_ENV, "3")
+    monkeypatch.setenv(core_db._ARGON2ID_PARALLELISM_ENV, "2")
+    assert core_db._current_argon2id_params() == {
+        "memory_cost": 20480,
+        "time_cost": 3,
+        "parallelism": 2,
+    }
+
+    monkeypatch.setenv(core_db._ARGON2ID_MEMORY_COST_ENV, "100")
+    monkeypatch.setenv(core_db._ARGON2ID_TIME_COST_ENV, "0")
+    monkeypatch.setenv(core_db._ARGON2ID_PARALLELISM_ENV, "bad")
+    assert core_db._current_argon2id_params() == {
+        "memory_cost": 7168,
+        "time_cost": 5,
+        "parallelism": 1,
+    }
 
 
 def test_pbkdf2_iterations_env_uses_secure_floor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,6 +285,7 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
         ) -> None:
             calls.append((operation, status, duration_s, slo_ms))
 
+    monkeypatch.setenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "150")
     monkeypatch.setattr(db_auth, "_pbkdf2_sha256", lambda *_args: "digest")
@@ -268,6 +300,38 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
     assert calls[-1][3] == 150
 
 
+def test_hash_password_uses_argon2id_by_default_and_records_latency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, float, int]] = []
+
+    class Collector:
+        def record_auth_hash_latency(
+            self, operation: str, status: str, duration_s: float, *, slo_ms: int = 120
+        ) -> None:
+            calls.append((operation, status, duration_s, slo_ms))
+
+    monkeypatch.delenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, raising=False)
+    monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "125")
+    monkeypatch.setattr(db_auth, "_argon2id_hash", lambda *_args, **_kwargs: "argon2digest")
+    monkeypatch.setattr("core.agent_metrics.get_agent_metrics_collector", lambda: Collector())
+
+    encoded = db_auth._hash_password("abc123", salt="0123456789abcdef0123456789abcdef")
+
+    assert encoded == "argon2id$v=19$m=7168,t=5,p=1$0123456789abcdef0123456789abcdef$argon2digest"
+    assert calls
+    assert calls[-1][0] == "hash"
+    assert calls[-1][1] == "ok"
+    assert calls[-1][3] == 125
+
+
+def test_verify_password_accepts_argon2id_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(db_auth, "_argon2id_hash", lambda *_args, **_kwargs: "argon2digest")
+    encoded = "argon2id$v=19$m=19456,t=2,p=1$0123456789abcdef0123456789abcdef$argon2digest"
+    assert _verify_password("abc123", encoded)
+    assert not _verify_password("wrong", encoded.replace("argon2digest", "other"))
+
+
 def test_verify_password_accepts_legacy_120k_hash_format(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     salt = "legacysalt"
@@ -280,9 +344,11 @@ def test_verify_password_accepts_legacy_120k_hash_format(monkeypatch: pytest.Mon
     assert not _verify_password("wrong", encoded)
 
 
-def test_verify_password_rejects_unknown_algorithm_and_invalid_iterations() -> None:
+def test_verify_password_rejects_unknown_algorithm_and_invalid_parameters() -> None:
     assert _verify_password("abc123", "unknown_algo$600000$salt$deadbeef") is False
     assert _verify_password("abc123", "pbkdf2_sha256$not-a-number$salt$deadbeef") is False
+    assert _verify_password("abc123", "argon2id$v=16$m=19456,t=2,p=1$salt$deadbeef") is False
+    assert _verify_password("abc123", "argon2id$v=19$m=bad,t=2,p=1$salt$deadbeef") is False
 
 
 @pytest.mark.parametrize(
@@ -2608,6 +2674,7 @@ def test_hash_password_records_error_latency_when_hashing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[tuple[str, str]] = []
+    monkeypatch.setenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
     monkeypatch.setattr(db_auth, "_current_pbkdf2_iterations", lambda: 700000)
     monkeypatch.setattr(
         db_auth,

@@ -192,7 +192,7 @@ class AgentMetricsCollector:
 
         # --- sidar_auth_password_hash_duration_seconds (histogram) ---
         lines.append(
-            "# HELP sidar_auth_password_hash_duration_seconds Parola hash/verify PBKDF2 süresi (saniye)"
+            "# HELP sidar_auth_password_hash_duration_seconds Parola hash/verify süresi (saniye)"
         )
         lines.append("# TYPE sidar_auth_password_hash_duration_seconds histogram")
         with self._lock:

@@ -201,7 +201,7 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
     async def _workload(run_id: str) -> int:
         created_users = await asyncio.gather(
             # Benchmark odak noktası oturum+mesaj akışı olduğu için burada
-            # pahalı PBKDF2 parola hash maliyetini devre dışı bırakıyoruz.
+            # pahalı parola hash maliyetini devre dışı bırakıyoruz.
             *[
                 db.create_user(f"user_{run_id}_{idx}", tenant_id=f"tenant-{idx % 4}")
                 for idx in range(users)
@@ -253,7 +253,7 @@ def test_user_registration_password_hash_cpu_cost(
     benchmark,
     benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
 ) -> None:
-    """PBKDF2 maliyetini içeren kullanıcı kayıt akışını benchmark eder."""
+    """Parola hash maliyetini içeren kullanıcı kayıt akışını benchmark eder."""
     db, loop = benchmark_multi_user_db
 
     def _run_once() -> str:
@@ -281,7 +281,7 @@ def test_user_authentication_password_verify_cpu_cost(
     benchmark,
     benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
 ) -> None:
-    """PBKDF2 doğrulama maliyetini ölçmek için login akışını benchmark eder."""
+    """Parola doğrulama maliyetini ölçmek için login akışını benchmark eder."""
     db, loop = benchmark_multi_user_db
     username = f"bench-auth-{uuid4().hex}"
     password = "benchmark-password-123!"

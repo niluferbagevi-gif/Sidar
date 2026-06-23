@@ -122,11 +122,11 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 ### 2.3 Kimlik doğrulama ve token yaşam döngüsü
 
-- Şifre hash: `PBKDF2-HMAC-SHA256` (`pbkdf2_sha256$<salt>$<digest>`)
+- Şifre hash: yeni kayıtlar için `Argon2id` (`argon2id$v=19$m=<kib>,t=<time>,p=<parallelism>$<salt>$<digest>`); legacy PBKDF2 kayıtları doğrulanır.
 - Token üretimi: `secrets.token_urlsafe(48)`
 - Varsayılan token TTL: `7 gün`
 - `get_user_by_token()` sorgusu, `expires_at > now` filtresiyle geçerlilik kontrolü yapar.
-- **Önemli:** PBKDF2 hashleme `password_hash` alanı içindir; `auth_tokens.token` değeri DB'de plain (rastgele üretilmiş bearer token) tutulur.
+- **Önemli:** Parola hashleme `password_hash` alanı içindir; `auth_tokens.token` değeri DB'de plain (rastgele üretilmiş bearer token) tutulur.
 
 ### 2.4 Kota/FinOps yazma-okuma akışı
 

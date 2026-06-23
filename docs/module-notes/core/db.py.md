@@ -7,7 +7,7 @@
 > Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/db.py` çıktısına göre **989** olarak ölçülmüştür.
 
 **Kriptografik Auth Altyapısı:**
-- Parolalar PBKDF2-HMAC (`hashlib.pbkdf2_hmac`) + salt ile hashlenir; düz metin parola saklanmaz.
+- Yeni parolalar Argon2id + salt ile hashlenir; legacy PBKDF2-HMAC kayıtları doğrulanmaya devam eder ve düz metin parola saklanmaz.
 - Auth token üretimi `secrets` ile yapılır (`token_urlsafe` / güvenli karşılaştırma), token yaşam döngüsü DB'de izlenir.
 - Kullanıcı/oturum/mesaj kimlikleri `uuid` tabanlı benzersiz anahtarlarla yönetilir.
 

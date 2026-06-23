@@ -159,7 +159,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `.benchmarks/` çıktıları kalıcı kaynak dosya değil CI cache/artifact state'i olarak yönetilir;
   donanım/runner profili değiştiğinde cache seed koşusunun artifact'i ayrıca review edilmelidir.
 - Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
-  PBKDF2 maliyeti nedeniyle bilerek pahalıdır. `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
+  Parola hash maliyeti nedeniyle bilerek pahalıdır. Argon2id varsayılandır; FIPS/legacy PBKDF2 için `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
   ortam bazında yükseltilebilir; değer güvenli minimumun altındaysa runtime minimuma
   clamp eder. `SIDAR_AUTH_HASH_SLO_MS` varsayılan `120` ms auth hash/verify SLO uyarı
   eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
@@ -182,7 +182,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   Daha yavaş runner istisnası gerekiyorsa bu değer açıkça yükseltilmeli ve PR'da benchmark JSON ile
   gerekçelendirilmelidir.
 - Auth password hash benchmark'larında sqlite/postgres farkını regresyon olarak yorumlamayın:
-  PBKDF2/bcrypt-benzeri iş faktörü bilinçli maliyettir ve postgres'in yaklaşık `%15` daha yavaş
+  Argon2id/PBKDF2 benzeri parola hash iş faktörü bilinçli maliyettir ve postgres'in yaklaşık `%15` daha yavaş
   görünmesi connection/persistence katmanı nedeniyle kabul edilebilir profildir.
 - `test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean değeri VRAM stres regresyonları için
   iyi bir referans noktasıdır; gerçek gate baseline compare + GPU trend raporuyla işletilmeli, tek

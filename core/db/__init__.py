@@ -24,7 +24,25 @@ from core.db import metrics as db_metrics
 from core.db import prompt_registry as db_prompt_registry
 from core.db import sessions as db_sessions
 from core.db.auth import (
+    _ARGON2ID_ALGORITHM as _ARGON2ID_ALGORITHM,
+)
+from core.db.auth import (
+    _ARGON2ID_MEMORY_COST_ENV as _ARGON2ID_MEMORY_COST_ENV,
+)
+from core.db.auth import (
+    _ARGON2ID_MEMORY_COST_KIB as _ARGON2ID_MEMORY_COST_KIB,
+)
+from core.db.auth import (
+    _ARGON2ID_PARALLELISM_ENV as _ARGON2ID_PARALLELISM_ENV,
+)
+from core.db.auth import (
+    _ARGON2ID_TIME_COST_ENV as _ARGON2ID_TIME_COST_ENV,
+)
+from core.db.auth import (
     _AUTH_HASH_SLO_MS_ENV as _AUTH_HASH_SLO_MS_ENV,
+)
+from core.db.auth import (
+    _PASSWORD_HASH_ALGORITHM_ENV as _PASSWORD_HASH_ALGORITHM_ENV,
 )
 from core.db.auth import (
     _PBKDF2_ALGORITHM as _PBKDF2_ALGORITHM,
@@ -47,6 +65,12 @@ from core.db.auth import (
 )
 from core.db.auth import (
     _auth_hash_slo_ms as _auth_hash_slo_ms,
+)
+from core.db.auth import (
+    _current_argon2id_params as _current_argon2id_params,
+)
+from core.db.auth import (
+    _current_password_hash_algorithm as _current_password_hash_algorithm,
 )
 from core.db.auth import (
     _current_pbkdf2_iterations as _current_pbkdf2_iterations,
