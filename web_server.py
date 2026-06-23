@@ -105,6 +105,7 @@ from web.routes import federation as federation_routes
 from web.routes import integrations as integrations_routes
 from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
+from web.routes import operations_models as operations_route_models
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -3056,17 +3057,17 @@ async def api_teams_send(req: _TeamsSendRequest) -> Any:
 
 
 # Operations/Poyraz/Coverage HTTP request models and route handlers live in
-# web.routes.operations; aliases are kept for existing direct unit-test imports.
-_OperationChecklistCreateRequest = operations_routes.OperationChecklistCreateRequest
-_ContentAssetCreateRequest = operations_routes.ContentAssetCreateRequest
-_CampaignCreateRequest = operations_routes.CampaignCreateRequest
-_PoyrazToolRunRequest = operations_routes.PoyrazToolRunRequest
-_LandingPageDraftRequest = operations_routes.LandingPageDraftRequest
-_CampaignCopyGenerateRequest = operations_routes.CampaignCopyGenerateRequest
-_ServiceOperationsPlanRequest = operations_routes.ServiceOperationsPlanRequest
-_CoverageAnalyzeRequest = operations_routes.CoverageAnalyzeRequest
-_CoverageGenerateRequest = operations_routes.CoverageGenerateRequest
-_CoverageBatchRequest = operations_routes.CoverageBatchRequest
+# web.routes.operations_models; aliases are kept for existing direct unit-test imports.
+_OperationChecklistCreateRequest = operations_route_models.OperationChecklistCreateRequest
+_ContentAssetCreateRequest = operations_route_models.ContentAssetCreateRequest
+_CampaignCreateRequest = operations_route_models.CampaignCreateRequest
+_PoyrazToolRunRequest = operations_route_models.PoyrazToolRunRequest
+_LandingPageDraftRequest = operations_route_models.LandingPageDraftRequest
+_CampaignCopyGenerateRequest = operations_route_models.CampaignCopyGenerateRequest
+_ServiceOperationsPlanRequest = operations_route_models.ServiceOperationsPlanRequest
+_CoverageAnalyzeRequest = operations_route_models.CoverageAnalyzeRequest
+_CoverageGenerateRequest = operations_route_models.CoverageGenerateRequest
+_CoverageBatchRequest = operations_route_models.CoverageBatchRequest
 
 _poyraz_agent_instance: Any | None = None
 _coverage_agent_instance: Any | None = None
