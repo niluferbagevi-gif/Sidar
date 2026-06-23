@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 
 def _parse_asyncpg_affected_rows(command_tag: str) -> int:
@@ -47,7 +47,7 @@ async def list_sessions(db: Any, record_cls: type[Any], user_id: str) -> list[An
                 "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
                 (user_id,),
             )
-            return cur.fetchall()
+            return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)
     return [_session_record(record_cls, r) for r in rows]
@@ -68,7 +68,7 @@ async def count_sessions_total(db: Any) -> int:
         row = cur.fetchone()
         return int(row[0]) if row else 0
 
-    return await db._run_sqlite_op(_run, write=False)
+    return cast(int, await db._run_sqlite_op(_run, write=False))
 
 
 async def load_session(
@@ -132,9 +132,9 @@ async def update_session_title(db: Any, session_id: str, title: str) -> bool:
             (title, now, session_id),
         )
         db._sqlite_conn.commit()
-        return cur.rowcount > 0
+        return cast(bool, cur.rowcount > 0)
 
-    return await db._run_sqlite_op(_run)
+    return cast(bool, await db._run_sqlite_op(_run))
 
 
 async def delete_session(db: Any, session_id: str, user_id: str | None = None) -> bool:
@@ -160,9 +160,9 @@ async def delete_session(db: Any, session_id: str, user_id: str | None = None) -
         else:
             cur = db._sqlite_conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         db._sqlite_conn.commit()
-        return cur.rowcount > 0
+        return cast(bool, cur.rowcount > 0)
 
-    return await db._run_sqlite_op(_run)
+    return cast(bool, await db._run_sqlite_op(_run))
 
 
 async def create_session(db: Any, record_cls: type[Any], new_entity_id: Any, user_id: str, title: str) -> Any:
@@ -365,4 +365,4 @@ async def replace_session_messages(db: Any, session_id: str, messages: list[dict
         db._sqlite_conn.commit()
         return len(normalized_messages)
 
-    return await db._run_sqlite_op(_run)
+    return cast(int, await db._run_sqlite_op(_run))

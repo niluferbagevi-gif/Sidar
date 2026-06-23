@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 async def record_audit_log(
@@ -114,7 +114,7 @@ async def list_audit_logs(
                     """,
                     (max_items,),
                 )
-            return cur.fetchall()
+            return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)
 

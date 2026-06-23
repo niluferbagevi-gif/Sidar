@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 
 async def record_provider_usage_daily(
@@ -144,7 +144,7 @@ async def list_users_with_quotas(db: Any) -> list[dict[str, Any]]:
         ).fetchall()
         return [_user_quota_row(row) for row in rows]
 
-    return await db._run_sqlite_op(_run)
+    return cast(list[dict[str, Any]], await db._run_sqlite_op(_run))
 
 
 def _user_quota_row(row: Any) -> dict[str, Any]:

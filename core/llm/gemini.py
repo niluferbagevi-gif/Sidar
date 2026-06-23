@@ -6,7 +6,7 @@ import inspect
 import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import core.llm_client as llm_facade
 from core.llm_client import BaseLLMClient, logger
@@ -102,6 +102,9 @@ class GeminiClient(BaseLLMClient):
             )
             return _fallback_stream(msg) if stream else msg
 
+        active_genai_client = cast(Any, genai_client)
+        active_genai_types = cast(Any, genai_types)
+
         if not str(_setting(self.config, "GEMINI_API_KEY", "")):
             msg = json.dumps(
                 {
@@ -147,12 +150,12 @@ class GeminiClient(BaseLLMClient):
                     config_kwargs["response_mime_type"] = "application/json"
                 if system_text:
                     config_kwargs["system_instruction"] = system_text
-                generate_config = genai_types.GenerateContentConfig(**config_kwargs)
+                generate_config = active_genai_types.GenerateContentConfig(**config_kwargs)
                 contents = history or [{"role": "user", "parts": ["Merhaba"]}]
                 if stream:
 
                     async def _start_stream() -> Any:
-                        call = genai_client.aio.models.generate_content_stream(
+                        call = active_genai_client.aio.models.generate_content_stream(
                             model=model_name,
                             contents=contents,
                             config=generate_config,
@@ -169,7 +172,7 @@ class GeminiClient(BaseLLMClient):
                     return _trace_stream_metrics(stream_iter, span, started_at)
 
                 async def _send_non_stream() -> Any:
-                    call = genai_client.aio.models.generate_content(
+                    call = active_genai_client.aio.models.generate_content(
                         model=model_name,
                         contents=contents,
                         config=generate_config,
