@@ -260,6 +260,8 @@ def test_run_tests_enforces_benchmark_compare_and_requires_baseline_by_default()
     )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
+    assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
+    assert "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak" in script
     assert "benchmark_compare_target_found=0" in script
     assert "benchmark_compare_target_found=1" in script
     assert "Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}" in script
@@ -298,16 +300,16 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
     assert "version-sort" in readme
-    assert "yerel profil de varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed" in readme
-    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in readme
+    assert "yerel profil ilk koşuda otomatik bootstrap yapar" in readme
+    assert "RUN_BENCHMARKS=required ./run_tests.sh" in readme
     assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
     assert "BENCHMARK_ENFORCE_COMPARE=1" in readme
     assert (
         "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer"
         in env_advanced
     )
-    assert "Yeni makine/boş cache bootstrap istisnasında ilk baseline" in env_advanced
-    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in env_advanced
+    assert "Yerel boş cache ilk koşusunda RUN_BENCHMARKS=required ./run_tests.sh baseline seed eder" in env_advanced
+    assert "yerel ilk koşu ise baseline yoksa otomatik bootstrap yapar" in env_advanced
     assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
 

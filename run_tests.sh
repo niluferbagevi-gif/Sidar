@@ -1825,9 +1825,14 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       echo "ℹ️ Sıkı karşılaştırma: BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh"
       echo "ℹ️ CI, .benchmarks baseline'ını repo commit'i yerine GitHub Actions cache/artifact üzerinden seed/restore eder."
       if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
-        echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
-        echo "ℹ️ İlk kurulum/yerel bootstrap için BENCHMARK_COMPARE_REQUIRED=0 kullanın veya önce benchmark baseline üretin."
-        BENCHMARK_EXIT_CODE=1
+        if [ "${IS_CI_ENV}" -eq 1 ]; then
+          echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
+          echo "ℹ️ CI bootstrap için cache/artifact baseline restore edin veya seed job'ında BENCHMARK_COMPARE_REQUIRED=0 kullanın."
+          BENCHMARK_EXIT_CODE=1
+        else
+          echo "⚠️ Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak."
+          echo "ℹ️ Bu koşu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline seed eder; sonraki yerel koşular tekrar sıkı karşılaştırmaya döner."
+        fi
       fi
     fi
   else
