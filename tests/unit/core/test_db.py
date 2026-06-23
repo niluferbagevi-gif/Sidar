@@ -2518,8 +2518,31 @@ async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_pa
     await injected_db._connect_postgresql()
 
     assert injected_db._pg_pool is pool
-    assert calls == [{"dsn": "postgresql://u:p@db.example/db", "min_size": 1, "max_size": 2}]
+    assert calls == [
+        {
+            "dsn": "postgresql://u:p@db.example/db",
+            "min_size": 1,
+            "max_size": 2,
+            "statement_cache_size": 256,
+            "max_cached_statement_lifetime": 300.0,
+        }
+    ]
     await injected_db.close()
+
+
+def test_database_postgresql_pool_tuning_settings_are_clamped(tmp_path) -> None:
+    cfg = DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path))
+    cfg.DB_POOL_SIZE = 4
+    cfg.DB_POOL_MIN_SIZE = 10
+    cfg.DB_STATEMENT_CACHE_SIZE = -1
+    cfg.DB_MAX_CACHED_STATEMENT_LIFETIME = -5
+
+    db = Database(cfg)
+
+    assert db.pool_size == 4
+    assert db.pool_min_size == 4
+    assert db.statement_cache_size == 0
+    assert db.max_cached_statement_lifetime == 0.0
 
 
 @pytest.mark.asyncio

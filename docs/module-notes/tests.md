@@ -184,6 +184,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
 - Auth password hash benchmark'larında sqlite/postgres farkını regresyon olarak yorumlamayın:
   Argon2id/PBKDF2 benzeri parola hash iş faktörü bilinçli maliyettir ve postgres'in yaklaşık `%15` daha yavaş
   görünmesi connection/persistence katmanı nedeniyle kabul edilebilir profildir.
+- PostgreSQL çoklu kullanıcı benchmark'larında `SIDAR_BENCHMARK_DB_POOL_SIZE`,
+  `SIDAR_BENCHMARK_DB_POOL_MIN_SIZE` ve `SIDAR_BENCHMARK_DB_STATEMENT_CACHE_SIZE` değerleri
+  pool warm-up ve asyncpg prepared statement cache davranışını sabitlemek için birlikte
+  değerlendirilmelidir. Varsayılan benchmark profili min_size=max_size ve statement cache 256
+  kullanır; farklı runner profilleri bu değerleri benchmark artifact notuna yazmalıdır.
 - `test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean değeri VRAM stres regresyonları için
   iyi bir referans noktasıdır; gerçek gate baseline compare + GPU trend raporuyla işletilmeli, tek
   koşu sonucu doğrudan global sabite çevrilmemelidir.

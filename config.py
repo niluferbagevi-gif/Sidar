@@ -968,6 +968,11 @@ class Config:
     CONTAINER_DATABASE_URL: str | None = None
     SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
+    DB_POOL_MIN_SIZE: int = get_int_env("DB_POOL_MIN_SIZE", 1)
+    DB_STATEMENT_CACHE_SIZE: int = get_int_env("DB_STATEMENT_CACHE_SIZE", 256)
+    DB_MAX_CACHED_STATEMENT_LIFETIME: float = get_float_env(
+        "DB_MAX_CACHED_STATEMENT_LIFETIME", 300.0
+    )
     DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
     )

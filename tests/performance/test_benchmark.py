@@ -81,10 +81,20 @@ def _postgresql_benchmark_url() -> str | None:
 
 def _make_cfg(base_dir: Path, database_url: str) -> SimpleNamespace:
     benchmark_pool_size = int(os.getenv("SIDAR_BENCHMARK_DB_POOL_SIZE", "5") or "5")
+    benchmark_pool_min_size = int(
+        os.getenv("SIDAR_BENCHMARK_DB_POOL_MIN_SIZE", str(benchmark_pool_size))
+        or str(benchmark_pool_size)
+    )
+    benchmark_statement_cache_size = int(
+        os.getenv("SIDAR_BENCHMARK_DB_STATEMENT_CACHE_SIZE", "256") or "256"
+    )
     return SimpleNamespace(
         DATABASE_URL=database_url,
         BASE_DIR=str(base_dir),
         DB_POOL_SIZE=max(1, benchmark_pool_size),
+        DB_POOL_MIN_SIZE=max(1, min(benchmark_pool_min_size, benchmark_pool_size)),
+        DB_STATEMENT_CACHE_SIZE=max(0, benchmark_statement_cache_size),
+        DB_MAX_CACHED_STATEMENT_LIFETIME=300.0,
         DB_SCHEMA_VERSION_TABLE="schema_versions",
         DB_SCHEMA_TARGET_VERSION=2,
         JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
@@ -138,6 +148,14 @@ async def _warm_postgresql_connection_pool(db: Database) -> None:
             await all_connections_acquired.wait()
 
     await asyncio.gather(*[_ping_connection() for _ in range(max(1, connection_count))])
+
+    get_min_size = getattr(pool, "get_min_size", None)
+    min_size = int(get_min_size()) if callable(get_min_size) else int(getattr(db, "pool_min_size", 1))
+    if min_size < connection_count:
+        raise RuntimeError(
+            "PostgreSQL benchmark pool min_size, max_size değerinden küçük; "
+            "SIDAR_BENCHMARK_DB_POOL_MIN_SIZE ile tam ısıtılmış pool kullanın."
+        )
 
 
 def _benchmark_db_variants() -> list[object]:

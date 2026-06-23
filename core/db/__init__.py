@@ -379,7 +379,17 @@ class Database:
         self.database_url = (
             getattr(self.cfg, "DATABASE_URL", "") or ""
         ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
-        self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
+        self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
+        self.pool_min_size = max(
+            1,
+            min(int(getattr(self.cfg, "DB_POOL_MIN_SIZE", 1) or 1), self.pool_size),
+        )
+        self.statement_cache_size = max(
+            0, int(getattr(self.cfg, "DB_STATEMENT_CACHE_SIZE", 256) or 0)
+        )
+        self.max_cached_statement_lifetime = max(
+            0.0, float(getattr(self.cfg, "DB_MAX_CACHED_STATEMENT_LIFETIME", 300.0) or 0.0)
+        )
         self.schema_version_table = str(
             getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions"
         )
@@ -678,8 +688,10 @@ class Database:
         try:
             self._pg_pool = await pool_factory(
                 dsn=dsn,
-                min_size=1,
-                max_size=max(1, self.pool_size),
+                min_size=self.pool_min_size,
+                max_size=self.pool_size,
+                statement_cache_size=self.statement_cache_size,
+                max_cached_statement_lifetime=self.max_cached_statement_lifetime,
             )
         except Exception as exc:
             pool_error_type = None
