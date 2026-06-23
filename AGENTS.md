@@ -323,6 +323,28 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   `uv run python -m scripts.auto_heal --log artifacts/mypy_errors.log --source mypy`
 - Otonom upload/test/iyileştirme döngüsünü çalıştırmak için: `./autonomous_loop.sh`
 
+
+### 2.5.6 Kademeli dokümantasyon kampanyası
+
+Ruff pydocstyle `D` kuralları açık kalır; ancak legacy yüzeydeki eksik ve stil olarak
+uyumsuz docstring borcu kontrollü kapatılana kadar `pyproject.toml` içinde `D100-D107`
+ve `D200-D417` ailesinden seçili kurallar geçici ignore edilir. Bu ignore'lar kalıcı
+standart değildir; aşağıdaki tarihli kampanyaya bağlıdır:
+
+- **2026-07-15 — Envanter freeze:** `scripts/coverage_hotspots.py` ve kritik ajan/DB/RAG
+  modülleri için public module/class/function docstring eksikleri hotspot listesine
+  dönüştürülür. Yeni dosyalar Google-style docstring olmadan kabul edilmez.
+- **2026-08-15 — Core/agent public API kapısı:** `agent/`, `core/` ve `managers/code/`
+  altında değişen public sınıf/fonksiyonlar için D100-D107 kapsamı PR bazında temizlenir;
+  rol sözleşmeleri `tests/unit/agent/test_builtin_role_contracts.py` ile korunmaya devam eder.
+- **2026-09-30 — Stil borcu kapanışı:** Google pydocstyle uyumsuzlukları (`D200-D417`)
+  için kalan istisnalar azaltılır ve `pyproject.toml` ignore listesi daraltılır. Bu tarihten
+  sonra yeni D200-D417 istisnası yalnız açık TODO, sahip ve expiry tarihiyle eklenebilir.
+
+Operasyonel kural: Yeni veya anlamlı şekilde değiştirilen public API'lerde docstring eklemek
+varsayılandır; ignore listesine yeni kural eklemek yerine ilgili modülde dokümantasyon borcu
+hedeflenmelidir.
+
 ### 2.6 Swarm, Supervisor ve event-driven koordinasyon
 
 Sidar ajanları yalnızca doğrusal `coder -> reviewer -> qa` pipeline'ı olarak çalışmaz.

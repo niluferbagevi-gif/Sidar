@@ -43,10 +43,27 @@ def test_legacy_setup_cfg_has_no_conflicting_python_requires():
 
 
 def test_ruff_enables_pydocstyle_incrementally():
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pyproject_text = (ROOT / "pyproject.toml").read_text()
+    pyproject = tomllib.loads(pyproject_text)
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
     lint_config = pyproject["tool"]["ruff"]["lint"]
     assert "D" in lint_config["select"]
     assert pyproject["tool"]["ruff"]["lint"]["pydocstyle"]["convention"] == "google"
-    for transitional_ignore in ("D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"):
+    for transitional_ignore in (
+        "D100",
+        "D101",
+        "D102",
+        "D103",
+        "D104",
+        "D105",
+        "D106",
+        "D107",
+        "D200",
+        "D417",
+    ):
         assert transitional_ignore in lint_config["ignore"]
+    assert "AGENTS.md §2.5.6" in pyproject_text
+    assert "Kademeli dokümantasyon kampanyası" in agents
+    for milestone in ("2026-07-15", "2026-08-15", "2026-09-30"):
+        assert milestone in agents
