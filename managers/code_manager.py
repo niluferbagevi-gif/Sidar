@@ -20,8 +20,28 @@ import tempfile
 import threading
 import time
 from pathlib import Path, PureWindowsPath
-from typing import Any, cast
+from typing import Any
 
+from managers.code import docker as docker_helpers
+from managers.code.docker import (
+    LEGACY_PROJECT_IMAGE_PREFIXES as _LEGACY_PROJECT_IMAGE_PREFIXES,
+)
+from managers.code.docker import (
+    PROJECT_TEST_IMAGE_CANDIDATES as _PROJECT_TEST_IMAGE_CANDIDATES,
+)
+from managers.code.docker import (
+    build_docker_cli_command,
+    execute_code_with_docker_cli,
+    resolve_sandbox_limits,
+    sanitize_docker_network,
+    sanitize_docker_token,
+)
+from managers.code.docker import (
+    sanitize_docker_image as _sanitize_docker_image,
+)
+from managers.code.docker import (
+    to_int as _to_int,
+)
 from managers.code.lsp import (
     LSPProtocolError,
     decode_lsp_stream,
@@ -29,6 +49,7 @@ from managers.code.lsp import (
     file_uri_to_path,
     path_to_file_uri,
 )
+from managers.code.patcher import apply_exact_block_patch
 from managers.code.platform import candidate_lsp_executable_paths
 from managers.code.pytest_parser import (
     command_invokes_pytest,
@@ -36,6 +57,7 @@ from managers.code.pytest_parser import (
     extract_pytest_args,
 )
 from managers.code.runner import build_sanitized_shell_args
+from managers.code.security_adapter import CodeSecurityAdapter
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 try:
@@ -49,6 +71,14 @@ from .security import SANDBOX, SecurityManager
 logger = logging.getLogger(__name__)
 _OS_NAME = os.name
 _LSPProtocolError = LSPProtocolError
+_encode_lsp_message = encode_lsp_message
+_decode_lsp_stream = decode_lsp_stream
+_DOCKER_MEMORY_RE = docker_helpers.DOCKER_MEMORY_RE
+_DOCKER_CPUS_RE = docker_helpers.DOCKER_CPUS_RE
+_DOCKER_NETWORK_ALLOWED = docker_helpers.DOCKER_NETWORK_ALLOWED
+_DOCKER_IMAGE_RE = docker_helpers.DOCKER_IMAGE_RE
+_sanitize_docker_token = sanitize_docker_token
+_sanitize_docker_network = sanitize_docker_network
 
 
 def _path_to_file_uri(path: Path) -> str:
@@ -61,33 +91,10 @@ def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
     return file_uri_to_path(uri, os_name=_OS_NAME)
 
 
-def _to_int(value: object, default: int) -> int:
-    """object tipindeki potansiyel sayısal değerleri güvenle int'e çevirir."""
-    try:
-        return int(cast("int | float | str | bytes | bytearray", value))
-    except (TypeError, ValueError):
-        return default
-
-
-_DOCKER_MEMORY_RE = re.compile(r"^\d+(\.\d+)?[bkmgBKMG]?$")
-_DOCKER_CPUS_RE = re.compile(r"^\d+(\.\d+)?$")
-_DOCKER_NETWORK_ALLOWED = frozenset({"none", "bridge", "host", "container:default"})
-_DOCKER_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@\-]*$")
-_PROJECT_TEST_IMAGE_CANDIDATES = (
-    "sidar:latest",
-    "sidar-gpu:latest",
-    "sidar-ai:latest",
-    "sidar-ai-gpu:latest",
-)
-_LEGACY_PROJECT_IMAGE_PREFIXES = {"sidar-ai": "sidar", "sidar-ai-gpu": "sidar-gpu"}
-
-
 def _build_sanitized_shell_args(command: str, *, allow_shell_features: bool) -> list[str]:
     """Backwards-compatible facade for sanitized shell argument construction."""
     return build_sanitized_shell_args(
-        command,
-        allow_shell_features=allow_shell_features,
-        find_executable=shutil.which,
+        command, allow_shell_features=allow_shell_features, find_executable=shutil.which
     )
 
 
@@ -98,64 +105,6 @@ def _canonical_project_image_alias(image: str) -> str | None:
 
 def _is_gpu_project_image(image: str) -> bool:
     return is_gpu_project_image(image)
-
-
-def _sanitize_docker_token(
-    value: object, *, pattern: re.Pattern[str], default: str, kind: str
-) -> str:
-    """Docker CLI argümanına eklenecek token'i sterilize eder.
-
-    SAST (Bandit B603): subprocess.run liste argümanı `shell=False` ile çağrılsa da
-    konfigürasyondan gelen değerler önce doğrulanmalı; aksi halde "--privileged"
-    gibi flag-injection denemeleri docker CLI tarafından parse edilebilir.
-    """
-    candidate = str(value if value is not None else "").strip()
-    if not candidate or candidate.startswith("-") or not pattern.fullmatch(candidate):
-        logger.warning(
-            "Güvensiz docker %s değeri reddedildi (%r) → varsayılan %r kullanılacak.",
-            kind,
-            candidate,
-            default,
-        )
-        return default
-    return candidate
-
-
-def _sanitize_docker_network(value: object) -> str:
-    candidate = str(value if value is not None else "").strip().lower()
-    if candidate not in _DOCKER_NETWORK_ALLOWED:
-        logger.warning(
-            "Güvensiz docker network değeri reddedildi (%r) → 'none' kullanılacak.",
-            candidate,
-        )
-        return "none"
-    return candidate
-
-
-def _sanitize_docker_image(value: object) -> str:
-    candidate = str(value if value is not None else "").strip()
-    if (
-        not candidate
-        or candidate.startswith("-")
-        or not _DOCKER_IMAGE_RE.fullmatch(candidate)
-        or any(ch.isspace() for ch in candidate)
-    ):
-        logger.warning(
-            "Güvensiz docker image değeri reddedildi (%r) → 'python:3.11-slim' kullanılacak.",
-            candidate,
-        )
-        return "python:3.11-slim"
-    return candidate
-
-
-def _encode_lsp_message(payload: dict[str, Any]) -> bytes:
-    """Backwards-compatible facade for LSP message framing."""
-    return encode_lsp_message(payload)
-
-
-def _decode_lsp_stream(raw: bytes) -> list[dict[str, Any]]:
-    """Backwards-compatible facade for LSP stream decoding."""
-    return decode_lsp_stream(raw)
 
 
 class CodeManager:
@@ -176,6 +125,7 @@ class CodeManager:
         cfg: Config | None = None,
     ) -> None:
         self.security = security
+        self.security_adapter = CodeSecurityAdapter(security)
         self.base_dir = Path(base_dir).resolve()
         self.cfg = cfg or Config()
         self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", "") or "").strip()
@@ -254,105 +204,17 @@ class CodeManager:
 
     def _resolve_sandbox_limits(self) -> dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
-        limits = dict(SANDBOX_LIMITS)
-        cfg = getattr(self, "cfg", None)
-        cfg_limits = getattr(cfg, "SANDBOX_LIMITS", {}) or {}
-        limits.update(cfg_limits)
-
-        # Bellek limitinde öncelik sırası:
-        # 1) instance cfg.SANDBOX_LIMITS['memory']
-        # 2) DOCKER_MEM_LIMIT
-        # 3) modül/genel SANDBOX_LIMITS['memory']
-        memory = str(
-            cfg_limits.get("memory") or self.docker_mem_limit or limits.get("memory") or "256m"
-        ).strip()
-        cpus = str(limits.get("cpus") or "0.5").strip()
-        pids_limit = _to_int(limits.get("pids_limit", 64), 64)
-        timeout = _to_int(limits.get("timeout", self.docker_exec_timeout or 10), 10)
-        network_mode = str(limits.get("network") or "none").strip().lower()
-
-        nano_cpus = self.docker_nano_cpus
-        if cpus:  # pragma: no cover
-            try:
-                cpu_val = float(cpus)
-                if cpu_val > 0:
-                    nano_cpus = int(cpu_val * 1_000_000_000)
-            except (TypeError, ValueError):
-                logger.warning(
-                    "Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.",
-                    cpus,
-                )
-
-        if pids_limit < 1:
-            pids_limit = 64
-        if timeout < 1:
-            timeout = 10
-
-        return {
-            "memory": memory,
-            "cpus": cpus,
-            "nano_cpus": nano_cpus,
-            "pids_limit": pids_limit,
-            "timeout": timeout,
-            "network_mode": network_mode,
-        }
+        return resolve_sandbox_limits(self, SANDBOX_LIMITS)
 
     def _build_docker_cli_command(self, code: str, limits: dict[str, object]) -> list[str]:
-        """Docker CLI ile sandbox çalıştırma komutunu oluşturur.
-
-        Güvenlik notu (SAST B603): subprocess.run list-argümanlarıyla `shell=False`
-        çalıştırılır, ancak konfigürasyondan gelen değerler docker CLI tarafından
-        flag/argüman olarak yorumlanabilir. Bu yüzden her değer önce sterilize edilir.
-        """
-        safe_memory = _sanitize_docker_token(
-            limits.get("memory"),
-            pattern=_DOCKER_MEMORY_RE,
-            default="256m",
-            kind="memory",
-        )
-        safe_cpus = _sanitize_docker_token(
-            limits.get("cpus"), pattern=_DOCKER_CPUS_RE, default="0.5", kind="cpus"
-        )
-        safe_pids = _to_int(limits.get("pids_limit"), 64)
-        if safe_pids < 1:
-            safe_pids = 64
-        safe_network = _sanitize_docker_network(limits.get("network_mode"))
-        safe_image = _sanitize_docker_image(self.docker_image)
-        return [
-            "docker",
-            "run",
-            "--rm",
-            f"--memory={safe_memory}",
-            f"--cpus={safe_cpus}",
-            f"--pids-limit={safe_pids}",
-            f"--network={safe_network}",
-            "--entrypoint",
-            "python",
-            safe_image,
-            "-c",
-            code,
-        ]
+        """Docker CLI ile sandbox çalıştırma komutunu oluşturur."""
+        return build_docker_cli_command(code, limits, image=self.docker_image)
 
     def _execute_code_with_docker_cli(
         self, code: str, limits: dict[str, object]
     ) -> tuple[bool, str]:
         """Docker SDK başarısız olursa docker CLI ile çalıştırmayı dener."""
-        docker_cmd = self._build_docker_cli_command(code, limits)
-        result = subprocess.run(  # nosec B603
-            docker_cmd,
-            capture_output=True,
-            text=True,
-            timeout=_to_int(limits["timeout"], 10),
-            cwd=str(self.base_dir),
-        )
-        output = (result.stdout + result.stderr).strip()
-        if len(output) > self.max_output_chars:
-            output = output[: self.max_output_chars] + (
-                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
-            )
-        if result.returncode != 0:
-            return False, f"REPL Hatası (Docker CLI Sandbox):\n{output or '(çıktı yok)'}"
-        return True, f"REPL Çıktısı (Docker CLI Sandbox):\n{output or '(kod çalıştı, çıktı yok)'}"
+        return execute_code_with_docker_cli(self, code, limits, run_command=subprocess.run)
 
     def _try_wsl_socket_fallback(self, docker_module: Any) -> bool:
         """Docker Desktop/WSL2 socket yollarını deneyerek istemci başlatır."""
@@ -609,7 +471,7 @@ class CodeManager:
         Returns:
             (başarı, içerik_veya_hata_mesajı)
         """
-        if not self.security.can_read(path):
+        if not self.security_adapter.can_read(path):
             return False, "[OpenClaw] Okuma yetkisi yok veya tehlikeli yol reddedildi."
 
         try:
@@ -652,9 +514,8 @@ class CodeManager:
         Returns:
             (başarı, mesaj)
         """
-        if not self.security.can_write(path):
-            safe = str(self.security.get_safe_write_path(Path(path).name))
-            return False, (f"[OpenClaw] Yazma yetkisi yok: {path}\n  Güvenli alternatif: {safe}")
+        if not self.security_adapter.can_write(path):
+            return False, self.security_adapter.safe_write_denial(path)
 
         # Python dosyaları için sözdizimi kontrolü
         if validate and path.endswith(".py"):
@@ -754,23 +615,10 @@ class CodeManager:
         if not ok:
             return False, content
 
-        count = content.count(target_block)
-
-        if count == 0:
-            return False, (
-                "⚠ Yama uygulanamadı: 'Hedef kod bloğu' dosyada bulunamadı.\n"
-                "Lütfen boşluklara ve girintilere (indentation) dikkat ederek, "
-                "dosyada var olan kodu birebir kopyaladığından emin ol."
-            )
-
-        if count > 1:
-            return False, (
-                f"⚠ Yama uygulanamadı: Hedef kod bloğu dosyada {count} kez geçiyor.\n"
-                "Hangi bloğun değiştirileceği belirsiz. Lütfen daha fazla bağlam (context) ekle."
-            )
-
-        new_content = content.replace(target_block, replacement_block)
-        return self.write_file(path, new_content, validate=True)
+        ok, patched_or_error = apply_exact_block_patch(content, target_block, replacement_block)
+        if not ok:
+            return False, patched_or_error
+        return self.write_file(path, patched_or_error, validate=True)
 
     # ─────────────────────────────────────────────
     #  GÜVENLİ KOD ÇALIŞTIRMA (DOCKER SANDBOX)
@@ -1080,7 +928,7 @@ class CodeManager:
         work_dir = Path(cwd or self.base_dir).resolve()
         if not work_dir.exists() or not work_dir.is_dir():
             return False, f"Geçersiz çalışma dizini: {work_dir}"
-        if not self.security.is_path_under(str(work_dir), self.base_dir):
+        if not self.security_adapter.is_path_under(str(work_dir), self.base_dir):
             return False, f"[OpenClaw] Sandbox çalışma dizini proje kökü dışında: {work_dir}"
 
         docker_bin = shutil.which("docker")
