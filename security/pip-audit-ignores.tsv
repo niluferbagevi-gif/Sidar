@@ -1,4 +1,5 @@
 # vuln_id	package	expires	reason
 # Active, dated exceptions only. Expired entries fail closed via scripts/pip_audit_ignore_args.py.
 # Torch CVE-2025-3000 has no upstream fixed version in the current resolver window.
+# Expiry is enforced by scripts/pip_audit_ignore_args.py in run_tests.sh/CI and unit tests.
 GHSA-rrmf-rvhw-rf47	torch	2026-09-15	CVE-2025-3000: upstream fix unavailable; torch.jit.script is not used in production code. Re-evaluate in 2026-Q3.

@@ -87,14 +87,20 @@ olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini 
   `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, daha önce
   `pip-audit` tarafından raporlanan `torch 2.12.0 / CVE-2025-3000` bulgusu için
   açık uçlu resolver davranışını durdurur.
-- Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir; bu
-  nedenle `security/pip-audit-ignores.tsv` içinde aktif `CVE-2025-3000` istisnası
-  tutulmaz. Yeni bir lock yenilemesi bu CVE'yi yeniden üretirse istisna eklemek
-  yerine önce `<2.12` sınırı ve torch/torchvision eşleşmesi doğrulanmalıdır.
+- Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir;
+  `security/pip-audit-ignores.tsv` içindeki aktif `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
+  istisnası bu lock penceresi için tarihlidir. Yeni bir lock yenilemesi farklı torch/torchvision
+  çözümü üretirse istisnayı uzatmadan önce `<2.12` sınırı ve upstream fix durumu tekrar doğrulanmalıdır.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
   yeniden çalıştırılmalıdır.
+- `security/pip-audit-ignores.tsv` içindeki her istisna `expires` alanı taşır ve
+  `scripts/pip_audit_ignore_args.py` tarafından `run_tests.sh` ile GitHub Actions security audit
+  adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed
+  döner ve kalite kapısını kırar. Mevcut `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000` torch istisnası
+  `2026-09-15` tarihinde sona erer; `tests/unit/scripts/test_pip_audit_ignore_args.py` bu tarihten
+  sonraki günün fail ettiğini doğrulayarak expiry takibini korur.
 - `uv.lock` Faz 1'de Linux deployment/CI hedefiyle sınırlanmıştır (`[tool.uv].environments = ["sys_platform == 'linux'"]`).
   Bu sınır, production-minimal lock çözümünden macOS/Windows GUI bağımlılıklarını ve platforma özel PyObjC/Win32
   paketlerini çıkarır; macOS/Windows installer desteği ayrı profile matrisiyle geri eklenmelidir.

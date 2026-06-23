@@ -150,6 +150,9 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
     assert "sys_platform == 'linux'" in docs
     assert "security/pip-audit-ignores.tsv" in Path("pyproject.toml").read_text(encoding="utf-8")
+    assert "scripts/pip_audit_ignore_args.py" in docs
+    assert "2026-09-15" in docs
+    assert "fail-closed" in docs
     assert "CVE-2025-3000" in policy
     assert "GHSA-rrmf-rvhw-rf47" in policy
     assert "torch" in policy
