@@ -4,10 +4,8 @@ Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL)
 Sürüm: 2.7.0
 """
 
-import ast
 import contextlib
 import fnmatch
-import json
 import logging
 import os
 import re
@@ -23,6 +21,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from managers.code import docker as docker_helpers
+from managers.code import file_io_security, linter_runners, test_runner_orchestrator
 from managers.code.docker import (
     LEGACY_PROJECT_IMAGE_PREFIXES as _LEGACY_PROJECT_IMAGE_PREFIXES,
 )
@@ -49,7 +48,6 @@ from managers.code.lsp import (
     file_uri_to_path,
     path_to_file_uri,
 )
-from managers.code.patcher import apply_exact_block_patch
 from managers.code.platform import candidate_lsp_executable_paths
 from managers.code.pytest_parser import (
     command_invokes_pytest,
@@ -458,119 +456,19 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def read_file(self, path: str, line_numbers: bool = True) -> tuple[bool, str]:
-        """
-        Dosya içeriğini oku. Claude Code gibi satır numaralarıyla gösterir.
-
-        Güvenlik: path traversal (../), tehlikeli kalıplar ve sembolik bağlantı
-        geçişleri security.can_read() ve base_dir doğrulaması ile engellenir.
-
-        Args:
-            path: Okunacak dosya yolu
-            line_numbers: True ise her satır başına satır numarası eklenir (cat -n formatı)
-
-        Returns:
-            (başarı, içerik_veya_hata_mesajı)
-        """
-        if not self.security_adapter.can_read(path):
-            return False, "[OpenClaw] Okuma yetkisi yok veya tehlikeli yol reddedildi."
-
-        try:
-            target = Path(path).resolve()
-            if not target.exists():
-                return False, f"Dosya bulunamadı: {path}"
-            if target.is_dir():
-                return False, f"Belirtilen yol bir dizin: {path}"
-
-            with self._lock:
-                with open(target, encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                self._files_read += 1
-
-            logger.debug("Dosya okundu: %s (%d karakter)", path, len(content))
-
-            if line_numbers:
-                lines = content.splitlines()
-                width = len(str(len(lines)))
-                numbered = "\n".join(
-                    f"{str(i + 1).rjust(width)}\t{line}" for i, line in enumerate(lines)
-                )
-                return True, numbered
-
-            return True, content
-
-        except PermissionError:
-            return False, f"[OpenClaw] Erişim reddedildi: {path}"
-        except Exception as exc:
-            return False, f"Okuma hatası: {exc}"
-
-    # ─────────────────────────────────────────────
-    #  DOSYA YAZMA
-    # ─────────────────────────────────────────────
+        """Dosya içeriğini güvenlik denetimi sonrası okur."""
+        return file_io_security.read_file(self, path, line_numbers=line_numbers)
 
     def write_file(self, path: str, content: str, validate: bool = True) -> tuple[bool, str]:
-        """
-        Dosyaya içerik yaz (Tam üzerine yazma).
-
-        Returns:
-            (başarı, mesaj)
-        """
-        if not self.security_adapter.can_write(path):
-            return False, self.security_adapter.safe_write_denial(path)
-
-        # Python dosyaları için sözdizimi kontrolü
-        if validate and path.endswith(".py"):
-            ok, msg = self.validate_python_syntax(content)
-            if not ok:
-                return False, f"Sözdizimi hatası, dosya kaydedilmedi:\n{msg}"
-
-        try:
-            target = Path(path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-
-            with self._lock:
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(content)
-                self._files_written += 1
-                self._post_process_written_file(target)
-
-            logger.info("Dosya yazıldı: %s", path)
-            return True, f"Dosya başarıyla kaydedildi: {path}"
-
-        except PermissionError:
-            return False, f"[OpenClaw] Yazma erişimi reddedildi: {path}"
-        except Exception as exc:
-            return False, f"Yazma hatası: {exc}"
+        """Dosyaya güvenli biçimde içerik yazar."""
+        return file_io_security.write_file(self, path, content, validate=validate)
 
     @staticmethod
     def _strip_markdown_code_fences(content: str) -> str:
-        text = str(content or "").strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines and lines[0].startswith("```"):  # pragma: no cover
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-        return text
+        return file_io_security.strip_markdown_code_fences(content)
 
     def _post_process_written_file(self, target: Path) -> None:
-        """Otonom ajanların yazdığı kodu kayıttan sonra normalize eder."""
-        if target.suffix != ".py":
-            return
-        ruff_bin = shutil.which("ruff")
-        if not ruff_bin:
-            return
-        try:
-            subprocess.run(  # nosec B603
-                [ruff_bin, "format", str(target)],
-                cwd=str(self.base_dir),
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except Exception as exc:  # pragma: no cover
-            logger.debug("Post-process ruff format atlandı (%s): %s", target, exc)
+        linter_runners.post_process_written_file(target)
 
     def write_generated_test(
         self,
@@ -578,51 +476,16 @@ class CodeManager:
         content: str,
         *,
         append: bool = True,
+        marker: str = "# Generated by CoverageAgent",
     ) -> tuple[bool, str]:
-        """Coverage ajanı için üretilen pytest içeriğini güvenli biçimde yazar.
-
-        - Markdown kod çitlerini temizler.
-        - Varsayılan olarak mevcut test dosyasına ekleme yapar.
-        - Aynı içerik zaten varsa idempotent davranır.
-        """
-        normalized = self._strip_markdown_code_fences(content)
-        if not normalized.strip():
-            return False, "Yazılacak pytest içeriği boş."
-
-        target = Path(path)
-        if append and target.exists():
-            ok, current = self.read_file(str(target), line_numbers=False)
-            if not ok:
-                return False, current
-            if normalized in current:
-                return True, f"Test içeriği zaten mevcut: {path}"
-            separator = "\n\n" if current.strip() else ""
-            return self.write_file(
-                str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True
-            )
-
-        return self.write_file(str(target), f"{normalized.rstrip()}\n", validate=True)
-
-    # ─────────────────────────────────────────────
-    #  AKILLI YAMA (PATCH)
-    # ─────────────────────────────────────────────
+        """Coverage ajanı için üretilen pytest içeriğini güvenli biçimde yazar."""
+        return file_io_security.write_generated_test(
+            self, path, content, append=append, marker=marker
+        )
 
     def patch_file(self, path: str, target_block: str, replacement_block: str) -> tuple[bool, str]:
-        """
-        Dosyadaki belirli bir kod bloğunu yenisiyle değiştirir.
-        """
-        ok, content = self.read_file(path, line_numbers=False)
-        if not ok:
-            return False, content
-
-        ok, patched_or_error = apply_exact_block_patch(content, target_block, replacement_block)
-        if not ok:
-            return False, patched_or_error
-        return self.write_file(path, patched_or_error, validate=True)
-
-    # ─────────────────────────────────────────────
-    #  GÜVENLİ KOD ÇALIŞTIRMA (DOCKER SANDBOX)
-    # ─────────────────────────────────────────────
+        """Dosyada hedef bloğu güvenli biçimde değiştirir."""
+        return file_io_security.patch_file(self, path, target_block, replacement_block)
 
     def execute_code(self, code: str) -> tuple[bool, str]:
         """
@@ -824,33 +687,7 @@ class CodeManager:
 
     def _build_pytest_preflight_command(self, command: str) -> str:
         """Sandbox içinde pytest yoksa proje/image venv veya uv üzerinden bootstrap et."""
-        pytest_args = " ".join(shlex.quote(arg) for arg in self._extract_pytest_args(command))
-        if not pytest_args:
-            pytest_args = "-q"
-        return "\n".join(
-            [
-                "set -eu",
-                "for py in /workspace/.venv/bin/python /app/.venv/bin/python python; do",
-                '  if [ "$py" = python ]; then',
-                "    command -v python >/dev/null 2>&1 || continue",
-                "  else",
-                '    [ -x "$py" ] || continue',
-                "  fi",
-                "  if \"$py\" -c 'import pytest' >/dev/null 2>&1; then",
-                f'    exec "$py" -m pytest {pytest_args}',
-                "  fi",
-                "done",
-                "if command -v uv >/dev/null 2>&1 && [ -f pyproject.toml ]; then",
-                "  uv sync --frozen --all-extras >/tmp/sidar-uv-sync.log 2>&1 && exec uv run pytest "
-                f"{pytest_args}",
-                "  cat /tmp/sidar-uv-sync.log >&2 || true",
-                "fi",
-                "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
-                "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
-                "'ya da uv sync --frozen --all-extras ile .venv hazırlayın.' >&2",
-                "exit 127",
-            ]
-        )
+        return test_runner_orchestrator.build_pytest_preflight_command(self, command)
 
     @staticmethod
     def _command_requires_uv_tooling(command: str) -> bool:
@@ -872,45 +709,7 @@ class CodeManager:
 
     def _build_shell_preflight_command(self, command: str) -> str:
         """Sandbox shell komutları için PATH ve uv/pytest pre-flight koruması ekle."""
-        if self._command_invokes_pytest(command):
-            return self._build_pytest_preflight_command(command)
-
-        preflight = [
-            "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
-        ]
-        if self._command_requires_uv_tooling(command):
-            # Sandbox imajında uv kurulu değilse, mount edilen /workspace altındaki proje
-            # venv'inde, /app altındaki image venv'inde veya yaygın .local/bin yollarında
-            # uv binary'sini deterministik olarak araştır. Bulunursa PATH'e taşı; bulunamazsa
-            # hatayı net bir kurulum talimatıyla yükselt.
-            preflight.extend(
-                [
-                    "if ! command -v uv >/dev/null 2>&1; then",
-                    "  for _uv_candidate in /workspace/.venv/bin/uv /app/.venv/bin/uv "
-                    "/root/.local/bin/uv /home/sidaruser/.local/bin/uv /usr/local/bin/uv /bin/uv; do",
-                    '    if [ -x "$_uv_candidate" ]; then',
-                    '      export PATH="$(dirname "$_uv_candidate"):$PATH"',
-                    "      break",
-                    "    fi",
-                    "  done",
-                    "fi",
-                    "if ! command -v uv >/dev/null 2>&1; then",
-                    "  if command -v python >/dev/null 2>&1; then",
-                    "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || true",
-                    "    if [ -x /usr/local/bin/uv ]; then export PATH=/usr/local/bin:$PATH; fi",
-                    "  fi",
-                    "fi",
-                    "if ! command -v uv >/dev/null 2>&1; then",
-                    "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap başarısız oldu. '"
-                    "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak ayarlayın. '"
-                    "'Bootstrap logu: /tmp/sidar-uv-bootstrap.log' >&2",
-                    "  cat /tmp/sidar-uv-bootstrap.log >&2 || true",
-                    "  exit 127",
-                    "fi",
-                ]
-            )
-        preflight.append(command)
-        return "\n".join(preflight)
+        return test_runner_orchestrator.build_shell_preflight_command(self, command)
 
     def run_shell_in_sandbox(
         self,
@@ -918,215 +717,19 @@ class CodeManager:
         cwd: str | None = None,
         image: str | None = None,
     ) -> tuple[bool, str]:
-        """Kabuk komutunu Docker sandbox içinde shell yetkisine ihtiyaç duymadan çalıştırır."""
-        if not self.security.can_execute():
-            return False, "[OpenClaw] Sandbox komutu çalıştırma yetkisi yok."
-
-        if not command or not command.strip():
-            return False, "⚠ Çalıştırılacak komut belirtilmedi."
-
-        work_dir = Path(cwd or self.base_dir).resolve()
-        if not work_dir.exists() or not work_dir.is_dir():
-            return False, f"Geçersiz çalışma dizini: {work_dir}"
-        if not self.security_adapter.is_path_under(str(work_dir), self.base_dir):
-            return False, f"[OpenClaw] Sandbox çalışma dizini proje kökü dışında: {work_dir}"
-
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
-
-        limits = self._resolve_sandbox_limits()
-        safe_image = _sanitize_docker_image(self._select_shell_sandbox_image(command, image))
-        sandbox_command = self._build_shell_preflight_command(command)
-        docker_cmd = [
-            docker_bin,
-            "run",
-            "--rm",
-            f"--memory={limits['memory']}",
-            f"--cpus={limits['cpus']}",
-            f"--pids-limit={limits['pids_limit']}",
-            f"--network={limits['network_mode']}",
-            "-v",
-            f"{work_dir}:/workspace",
-            "-w",
-            "/workspace",
-            "--entrypoint",
-            "sh",
-        ]
-
-        runtime = self._resolve_runtime()
-        if runtime:
-            docker_cmd.extend(["--runtime", runtime])
-
-        docker_cmd.extend([safe_image, "-lc", sandbox_command])
-
-        try:
-            result = subprocess.run(  # nosec B603
-                docker_cmd,
-                capture_output=True,
-                text=True,
-                timeout=_to_int(limits["timeout"], 10),
-                cwd=str(self.base_dir),
-            )
-        except FileNotFoundError:
-            return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
-        except subprocess.TimeoutExpired:
-            return False, (
-                f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu."
-            )
-        except Exception as exc:
-            return False, f"Sandbox komutu hatası: {exc}"
-
-        output_parts = []
-        if result.stdout.strip():
-            output_parts.append(result.stdout.strip())
-        if result.stderr.strip():
-            output_parts.append(f"[stderr]\n{result.stderr.strip()}")
-
-        combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
-        if len(combined) > self.max_output_chars:
-            combined = combined[: self.max_output_chars] + (
-                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
-            )
-
-        if result.returncode != 0:
-            return False, f"Sandbox komutu başarısız (çıkış kodu: {result.returncode}):\n{combined}"
-        return True, combined
+        """Kabuk komutunu Docker sandbox içinde çalıştırır."""
+        return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
 
     @staticmethod
     def analyze_pytest_output(output: str) -> dict[str, Any]:
-        text = str(output or "")
-        findings: list[dict[str, Any]] = []
-        coverage_targets: list[dict[str, Any]] = []
-        failure_targets: list[dict[str, Any]] = []
-
-        summary_match = re.search(
-            r"(?P<failed>\d+)\s+failed|(?P<passed>\d+)\s+passed|(?P<errors>\d+)\s+error",
-            text.lower(),
-        )
-        summary = summary_match.group(0) if summary_match else ""
-
-        coverage_pattern = re.compile(
-            r"^(?P<path>[A-Za-z0-9_./\\-]+)\s+(?P<stmts>\d+)\s+(?P<miss>\d+)\s+(?P<cover>\d+)%\s+(?P<missing>.+)$",
-            re.MULTILINE,
-        )
-        for match in coverage_pattern.finditer(text):
-            path = match.group("path").strip()
-            if path.upper() == "TOTAL" or path.startswith("tests/"):
-                continue
-            missing = match.group("missing").strip()
-            missing_segments = [item.strip() for item in missing.split(",") if item.strip()]
-            missing_branches = [item for item in missing_segments if "->" in item]
-            missing_lines = [item for item in missing_segments if "->" not in item]
-            finding = {
-                "finding_type": "missing_coverage",
-                "target_path": path,
-                "summary": f"Eksik coverage satırları: {missing}",
-                "missing_lines": missing,
-                "coverage_percent": int(match.group("cover")),
-                "missing_line_ranges": missing_lines,
-                "missing_branch_arcs": missing_branches,
-            }
-            coverage_targets.append(finding)
-            findings.append(finding)
-
-        failure_pattern = re.compile(
-            r"_{3,}\s+(?P<target>[^_\n]+?)\s+_{3,}\n(?P<body>.*?)(?=\n_{3,}|\n=+|\Z)",
-            re.DOTALL,
-        )
-        for match in failure_pattern.finditer(text):
-            target = match.group("target").strip()
-            body = match.group("body").strip()
-            path_match = re.search(r"([A-Za-z0-9_./\\-]+\.py):\d+", body)
-            target_path = path_match.group(1) if path_match else ""
-            finding = {
-                "finding_type": "test_failure",
-                "target_path": target_path,
-                "summary": target,
-                "details": body[:1000],
-            }
-            failure_targets.append(finding)
-            findings.append(finding)
-
-        if not failure_targets and re.search(r"\b\d+\s+failed\b", text.lower()):
-            path_match = re.search(r"([A-Za-z0-9_./\\-]+\.py):\d+", text)
-            failure_targets.append(
-                {
-                    "finding_type": "test_failure",
-                    "target_path": path_match.group(1) if path_match else "",
-                    "summary": "pytest failure detected",
-                    "details": text[:1000],
-                }
-            )
-            findings.append(failure_targets[-1])
-
-        return {
-            "summary": summary,
-            "findings": findings,
-            "coverage_targets": coverage_targets,
-            "failure_targets": failure_targets,
-            "has_failures": bool(failure_targets),
-            "has_coverage_gaps": bool(coverage_targets),
-        }
+        return test_runner_orchestrator.analyze_pytest_output(output)
 
     def run_pytest_and_collect(
         self,
         command: str = "pytest -q",
         cwd: str | None = None,
     ) -> dict[str, Any]:
-        raw_command = (command or "").strip()
-        if not raw_command:
-            raw_command = "pytest -q"
-
-        # LLM/yorum kaynaklı çok satırlı girdilerde yalnızca gerçek pytest satırını seç.
-        # Örn: "Test in comment: ...", markdown bullet'ları veya açıklama metinleri
-        # pytest'e positional argüman olarak gitmemelidir.
-        normalized = ""
-        pytest_cmd_pattern = re.compile(
-            r"(?:^|\s)((?:uv\s+run\s+pytest)|(?:python\s+-m\s+pytest)|pytest)(?:\s+.*)?$",
-            re.IGNORECASE,
-        )
-        for line in raw_command.splitlines():
-            candidate = line.strip()
-            if not candidate:
-                continue
-            if candidate.startswith(("-", "*")):
-                candidate = candidate[1:].strip()
-
-            match = pytest_cmd_pattern.search(candidate)
-            if match:
-                normalized = candidate[match.start(1) :].strip()
-                break
-
-        if not normalized:
-            normalized = raw_command
-
-        # Inline yorumları temizle (tırnak içine gömülü # hariç, basit güvenli yaklaşım).
-        if " #" in normalized:
-            normalized = normalized.split(" #", 1)[0].rstrip()
-
-        if not re.match(
-            r"^(pytest|python\s+-m\s+pytest|uv\s+run\s+pytest)\b",
-            normalized,
-            re.IGNORECASE,
-        ):
-            return {
-                "success": False,
-                "command": normalized,
-                "output": "Yalnızca pytest komutları desteklenir.",
-                "analysis": self.analyze_pytest_output(""),
-            }
-
-        sandbox_command = self._build_pytest_preflight_command(normalized)
-        ok, output = self.run_shell_in_sandbox(
-            sandbox_command, cwd=cwd, image=self.docker_test_image
-        )
-        return {
-            "success": ok,
-            "command": normalized,
-            "output": output,
-            "analysis": self.analyze_pytest_output(output),
-        }
+        return test_runner_orchestrator.run_pytest_and_collect(self, command=command, cwd=cwd)
 
     def run_shell(
         self,
@@ -1445,26 +1048,12 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def validate_python_syntax(self, code: str) -> tuple[bool, str]:
-        """Python sözdizimini doğrula."""
         with self._lock:
             self._syntax_checks += 1
-        try:
-            ast.parse(code)
-            return True, "Sözdizimi geçerli."
-        except SyntaxError as exc:
-            return False, f"Sözdizimi hatası — Satır {exc.lineno}: {exc.msg}"
+        return linter_runners.validate_python_syntax(code)
 
     def validate_json(self, content: str) -> tuple[bool, str]:
-        """JSON sözdizimini doğrula."""
-        try:
-            json.loads(content)
-            return True, "Geçerli JSON."
-        except json.JSONDecodeError as exc:
-            return False, f"JSON hatası — Satır {exc.lineno}: {exc.msg}"
-
-    # ─────────────────────────────────────────────
-    #  LSP (LANGUAGE SERVER PROTOCOL) YARDIMCILARI
-    # ─────────────────────────────────────────────
+        return linter_runners.validate_json(content)
 
     def _detect_language_id(self, path: Path) -> str | None:
         suffix = path.suffix.lower()
