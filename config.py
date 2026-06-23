@@ -10,7 +10,6 @@ import os
 import sys
 import warnings
 from collections.abc import Callable
-from copy import deepcopy
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -18,6 +17,7 @@ from urllib.parse import quote, urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core import config_dotenv
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_gpu_detect import (
@@ -67,26 +67,7 @@ def _log_first_load_info(message: str, *args: Any) -> None:
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
     """Parse simple dotenv assignments for source attribution without logging values."""
-    values: dict[str, str] = {}
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return values
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith("export "):
-            stripped = stripped[len("export ") :]
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, raw_value = stripped.split("=", 1)
-        key = key.strip()
-        if not key or any(char.isspace() for char in key):
-            continue
-        value = raw_value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key] = value
-    return values
+    return config_dotenv.parse_dotenv_source_values(path)
 
 
 def _record_dotenv_key_sources(
@@ -98,31 +79,26 @@ def _record_dotenv_key_sources(
     before_values: dict[str, str | None],
 ) -> None:
     """Track which dotenv file supplied each effective key without storing values."""
-    for key in parsed_values:
-        if key not in os.environ:
-            continue
-        if override or before_values.get(key) is None:
-            if key not in _DOTENV_MANAGED_KEYS:
-                original_value = before_values.get(key)
-                if original_value is not None:
-                    _DOTENV_ORIGINAL_ENV_VALUES[key] = original_value
-            _DOTENV_MANAGED_KEYS.add(key)
-            _DOTENV_KEY_SOURCES[key] = {
-                "label": label,
-                "path": str(path),
-                "override": override,
-            }
+    config_dotenv.record_dotenv_key_sources(
+        environ=os.environ,
+        managed_keys=_DOTENV_MANAGED_KEYS,
+        original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
+        key_sources=_DOTENV_KEY_SOURCES,
+        label=label,
+        path=path,
+        override=override,
+        parsed_values=parsed_values,
+        before_values=before_values,
+    )
 
 
 def _reset_dotenv_managed_environment() -> None:
     """Restore pre-dotenv env values so reloads can observe changed dotenv files."""
-    for key in tuple(_DOTENV_MANAGED_KEYS):
-        original_value = _DOTENV_ORIGINAL_ENV_VALUES.get(key)
-        if original_value is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = original_value
-    _DOTENV_MANAGED_KEYS.clear()
+    config_dotenv.reset_dotenv_managed_environment(
+        environ=os.environ,
+        managed_keys=_DOTENV_MANAGED_KEYS,
+        original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
+    )
 
 
 def _record_dotenv_event(
@@ -135,28 +111,26 @@ def _record_dotenv_event(
     reason: str = "",
 ) -> None:
     """Record dotenv load attempts so runtime checks can explain env precedence."""
-    _DOTENV_LOAD_EVENTS.append(
-        {
-            "label": label,
-            "raw_path": raw_path,
-            "path": str(resolved_path) if resolved_path is not None else "",
-            "loaded": loaded,
-            "override": override,
-            "reason": reason,
-        }
+    config_dotenv.record_dotenv_event(
+        load_events=_DOTENV_LOAD_EVENTS,
+        missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
+        label=label,
+        raw_path=raw_path,
+        resolved_path=resolved_path,
+        loaded=loaded,
+        override=override,
+        reason=reason,
     )
-    if not loaded and reason == "missing" and resolved_path is not None:
-        _DOTENV_MISSING_FILE_NOTICES.append(f"{label}={resolved_path}")
 
 
 def get_dotenv_load_report() -> list[dict[str, Any]]:
     """Return the ordered dotenv load attempts used by this runtime."""
-    return deepcopy(_DOTENV_LOAD_EVENTS)
+    return config_dotenv.clone_dotenv_load_report(_DOTENV_LOAD_EVENTS)
 
 
 def get_dotenv_key_source_report() -> dict[str, dict[str, Any]]:
     """Return dotenv key-to-source metadata without exposing secret values."""
-    return deepcopy(_DOTENV_KEY_SOURCES)
+    return config_dotenv.clone_dotenv_key_source_report(_DOTENV_KEY_SOURCES)
 
 
 # Açık referans: test izolasyon/reload araçlarında dotenv tanılama API'lerini sabit tutar.
@@ -165,10 +139,7 @@ _dotenv_api_exports = (get_dotenv_load_report, get_dotenv_key_source_report)
 
 def _resolve_dotenv_path(raw_path: str) -> Path:
     """Resolve repo-relative, absolute, or user-home dotenv file paths."""
-    dotenv_path = Path(raw_path).expanduser()
-    if not dotenv_path.is_absolute():
-        dotenv_path = BASE_DIR / dotenv_path
-    return dotenv_path
+    return config_dotenv.resolve_dotenv_path(raw_path, base_dir=BASE_DIR)
 
 
 def _load_dotenv_if_exists(
@@ -179,62 +150,24 @@ def _load_dotenv_if_exists(
     record_missing: bool = True,
 ) -> Path | None:
     """Load a dotenv file when it exists and return the resolved path."""
-    cleaned_path = raw_path.strip()
-    if not cleaned_path:
-        _record_dotenv_event(
-            label=label,
-            raw_path=raw_path,
-            resolved_path=None,
-            loaded=False,
-            override=override,
-            reason="empty_path",
-        )
-        return None
-    dotenv_path = _resolve_dotenv_path(cleaned_path)
-    if dotenv_path.exists():
-        parsed_values = _parse_dotenv_source_values(dotenv_path)
-        before_values = {key: os.environ.get(key) for key in parsed_values}
-        # Import at call time so tests/runtime reloads observe the current dotenv loader
-        # instead of a stale function captured by a previous module reload.
-        from dotenv import load_dotenv as current_load_dotenv
-
-        current_load_dotenv(dotenv_path=dotenv_path, override=override)
-        _record_dotenv_event(
-            label=label,
-            raw_path=raw_path,
-            resolved_path=dotenv_path,
-            loaded=True,
-            override=override,
-        )
-        _record_dotenv_key_sources(
-            label=label,
-            path=dotenv_path,
-            override=override,
-            parsed_values=parsed_values,
-            before_values=before_values,
-        )
-        return dotenv_path
-    if record_missing:
-        _record_dotenv_event(
-            label=label,
-            raw_path=raw_path,
-            resolved_path=dotenv_path,
-            loaded=False,
-            override=override,
-            reason="missing",
-        )
-    return None
+    return config_dotenv.load_dotenv_if_exists(
+        raw_path,
+        base_dir=BASE_DIR,
+        environ=os.environ,
+        load_events=_DOTENV_LOAD_EVENTS,
+        missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
+        managed_keys=_DOTENV_MANAGED_KEYS,
+        original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
+        key_sources=_DOTENV_KEY_SOURCES,
+        override=override,
+        label=label,
+        record_missing=record_missing,
+    )
 
 
 def _dotenv_values_for_reload(path: Path) -> dict[str, str]:
     """Read dotenv assignments for reload-time effective env calculation."""
-    from dotenv import dotenv_values
-
-    values: dict[str, str] = {}
-    for key, value in dotenv_values(path).items():
-        if key and value is not None:
-            values[key] = str(value)
-    return values
+    return config_dotenv.dotenv_values_for_reload(path)
 
 
 def _load_dotenv_into_effective_env(
@@ -245,73 +178,30 @@ def _load_dotenv_into_effective_env(
     label: str,
 ) -> Path | None:
     """Record and merge one dotenv file into an in-memory env without mutating os.environ."""
-    cleaned_path = raw_path.strip()
-    if not cleaned_path:
-        _record_dotenv_event(
-            label=label,
-            raw_path=raw_path,
-            resolved_path=None,
-            loaded=False,
-            override=override,
-            reason="empty_path",
-        )
-        return None
-
-    dotenv_path = _resolve_dotenv_path(cleaned_path)
-    if not dotenv_path.exists():
-        _record_dotenv_event(
-            label=label,
-            raw_path=raw_path,
-            resolved_path=dotenv_path,
-            loaded=False,
-            override=override,
-            reason="missing",
-        )
-        return None
-
-    parsed_values = _dotenv_values_for_reload(dotenv_path)
-    before_values = {key: effective_env.get(key) for key in parsed_values}
-    for key, value in parsed_values.items():
-        if override or key not in effective_env:
-            effective_env[key] = value
-
-    _record_dotenv_event(
-        label=label,
-        raw_path=raw_path,
-        resolved_path=dotenv_path,
-        loaded=True,
+    return config_dotenv.load_dotenv_into_effective_env(
+        effective_env,
+        raw_path,
+        base_dir=BASE_DIR,
+        load_events=_DOTENV_LOAD_EVENTS,
+        missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
+        managed_keys=_DOTENV_MANAGED_KEYS,
+        original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
+        key_sources=_DOTENV_KEY_SOURCES,
         override=override,
+        label=label,
     )
-    for key in parsed_values:
-        if key not in effective_env:
-            continue
-        if override or before_values.get(key) is None:
-            if key not in _DOTENV_MANAGED_KEYS:
-                original_value = before_values.get(key)
-                if original_value is not None:
-                    _DOTENV_ORIGINAL_ENV_VALUES[key] = original_value
-            _DOTENV_MANAGED_KEYS.add(key)
-            _DOTENV_KEY_SOURCES[key] = {
-                "label": label,
-                "path": str(dotenv_path),
-                "override": override,
-            }
-    return dotenv_path
 
 
 def _dotenv_reload_baseline_environment() -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
-    effective_env = dict(os.environ)
-    for key in tuple(_DOTENV_MANAGED_KEYS):
-        effective_env.pop(key, None)
-    return effective_env
+    return config_dotenv.dotenv_reload_baseline_environment(
+        environ=os.environ, managed_keys=_DOTENV_MANAGED_KEYS
+    )
 
 
 def _skip_default_dotenv_layers(env: dict[str, str] | None = None) -> bool:
     """Return whether repository-local dotenv layers should be skipped."""
-
-    values = os.environ if env is None else env
-    return values.get("SIDAR_SKIP_DEFAULT_DOTENV", "").strip().lower() in {"1", "true", "yes", "on"}
+    return config_dotenv.skip_default_dotenv_layers(env)
 
 
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
