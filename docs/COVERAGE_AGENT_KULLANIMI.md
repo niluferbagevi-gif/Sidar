@@ -106,6 +106,12 @@ profil vardır:
 yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
 
+> Operasyon notu: `%100.00` ölçüm görüldüğünde bile günlük local/CI ratchet cap `%99`
+> bilinçli olarak korunur. `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)`
+> çıktısı, refactor dönemi için doğru güvenlik tamponudur; `%100` gate yalnız
+> `COVERAGE_CAMPAIGN=1`, `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` veya
+> bilinçli `COVERAGE_STRICT_LOCAL_RATCHET=1` opt-in'i ile denenmelidir.
+
 Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için profillenebilir:
 
 | Profil | Komut | Hedef | Kullanım amacı |

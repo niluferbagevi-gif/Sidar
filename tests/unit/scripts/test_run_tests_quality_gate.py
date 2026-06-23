@@ -1805,6 +1805,10 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert 'COVERAGE_RATCHET_MAX_GATE="99"' in script
     assert 'COVERAGE_RATCHET_MAX_GATE="100"' in script
     assert "COVERAGE_STRICT_LOCAL_RATCHET" in script
+    tests_notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
+    assert "Coverage gate ratcheted: %90 -> %99 (measured=%100.00)" in tests_notes
+    assert "günlük local/CI ratchet cap `%99`" in coverage_agent_docs
     assert (
         '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]'
         in script

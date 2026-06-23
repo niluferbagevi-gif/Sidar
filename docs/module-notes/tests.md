@@ -110,6 +110,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
   daha açık kontrol için `COVERAGE_RATCHET_MAX_GATE=100` verin. Coverage campaign akışı
   (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
   `%100` olarak açar.
+- Ölçüm `%100.00` olsa bile refactor dönemi günlük gate'inde ratchet cap `%99` korunur; örneğin
+  `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
+  otomatik terfi sinyali değildir. `%100` yalnız coverage-campaign/strict-local opt-in ile denenmelidir.
 
 ## Performance benchmark baseline yönetimi
 
