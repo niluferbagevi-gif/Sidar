@@ -178,7 +178,8 @@ def grep_files(
                 continue
             try:
                 lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-            except Exception:
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.debug("grep okuma atlandı %s: %s", fp, exc)
                 continue
             file_matches: list[str] = []
             for idx, line in enumerate(lines):
