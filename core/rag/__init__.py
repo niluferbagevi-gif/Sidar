@@ -375,9 +375,10 @@ class DocumentStore:
 
     def _init_chroma(self) -> None:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
-        chroma_backend.init_chroma(
-            self, build_embedding_function=self._embedding_function_builder
+        embedding_function_builder = getattr(
+            self, "_embedding_function_builder", build_embedding_function
         )
+        chroma_backend.init_chroma(self, build_embedding_function=embedding_function_builder)
 
     def _init_fts(self) -> None:
         """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
@@ -1924,7 +1925,9 @@ class DocumentStore:
 
 # Backend compatibility mixins historically subclassed DocumentStore. Keep that
 # contract while backend implementation lives in focused helper modules.
-bm25_backend.BM25BackendMixin = type("BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__})
+bm25_backend.BM25BackendMixin = type(
+    "BM25BackendMixin", (DocumentStore,), {"__module__": bm25_backend.__name__}
+)
 keyword_backend.KeywordBackendMixin = type(
     "KeywordBackendMixin", (DocumentStore,), {"__module__": keyword_backend.__name__}
 )
@@ -1951,7 +1954,9 @@ def get_shared_document_store(
         str(Path(store_dir).resolve()),
         bool(initialize_vector),
         str(getattr(cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower(),
-        str(id(embedding_function_builder)) if embedding_function_builder is not None else "default",
+        str(id(embedding_function_builder))
+        if embedding_function_builder is not None
+        else "default",
     )
     with _DOCUMENT_STORE_SINGLETONS_LOCK:
         store = _DOCUMENT_STORE_SINGLETONS.get(key)

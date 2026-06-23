@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
 from core.db import postgres_failure_diagnosis
 from core.embeddings import get_sentence_transformer_model
@@ -48,7 +48,9 @@ def init_pgvector(store: Any) -> None:
     """Initialize PostgreSQL + pgvector table."""
     db_url = str(getattr(store.cfg, "DATABASE_URL", "") or "")
     if not db_url.startswith("postgresql"):
-        logger.warning(pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL")))
+        logger.warning(
+            pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL"))
+        )
         return
 
     pg_table = pgvector_table_name(store)
@@ -62,7 +64,9 @@ def init_pgvector(store: Any) -> None:
         return
 
     if not store._check_import("sqlalchemy") or not store._check_import("pgvector"):
-        logger.warning(pgvector_failure_action_message(RuntimeError("pgvector dependencies missing")))
+        logger.warning(
+            pgvector_failure_action_message(RuntimeError("pgvector dependencies missing"))
+        )
         return
 
     try:
@@ -86,8 +90,12 @@ def init_pgvector(store: Any) -> None:
                 )
             """
             conn.execute(text(create_table_sql))  # nosec B608
-            conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)"))
-            conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_parent ON {pg_table}(parent_id)"))
+            conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)")
+            )
+            conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_parent ON {pg_table}(parent_id)")
+            )
             conn.execute(
                 text(
                     f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING hnsw (embedding vector_cosine_ops)"
@@ -111,7 +119,9 @@ def init_pgvector(store: Any) -> None:
         store._pgvector_available = False
 
 
-def pgvector_embed_texts(store: Any, texts: builtins.list[str]) -> builtins.list[builtins.list[float]]:
+def pgvector_embed_texts(
+    store: Any, texts: builtins.list[str]
+) -> builtins.list[builtins.list[float]]:
     if not store._pg_embedding_model or not texts:
         return []
     try:
@@ -139,7 +149,11 @@ def upsert_pgvector_chunks(
     source: str,
     chunks: builtins.list[str],
 ) -> None:
-    if not getattr(store, "_pgvector_available", False) or not getattr(store, "pg_engine", None) or not chunks:
+    if (
+        not getattr(store, "_pgvector_available", False)
+        or not getattr(store, "pg_engine", None)
+        or not chunks
+    ):
         return
     try:
         from sqlalchemy import text
@@ -152,7 +166,9 @@ def upsert_pgvector_chunks(
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(
-                text(f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),  # nosec B608
+                text(
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
+                ),  # nosec B608
                 {"parent_id": parent_id, "session_id": session_id},
             )
             rows = [
@@ -197,7 +213,9 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(
-                text(f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),  # nosec B608
+                text(
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
+                ),  # nosec B608
                 {"parent_id": parent_id, "session_id": session_id},
             )
     except Exception as exc:
@@ -263,7 +281,10 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
 
 def pgvector_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
     results = fetch_pgvector(store, query, top_k, session_id)
-    return store._format_results_from_struct(results, query, source_name="Vektör Arama (pgvector)")
+    return cast(
+        tuple[bool, str],
+        store._format_results_from_struct(results, query, source_name="Vektör Arama (pgvector)"),
+    )
 
 
 # Backwards-compatible exported name.
