@@ -4339,6 +4339,34 @@ def test_ollama_gpu_pool_size_defaults_to_single_slot_when_gpu_enabled() -> None
     assert llm_client._ollama_gpu_pool_size(cfg) == 1
 
 
+def test_ollama_gpu_backpressure_timeout_and_poll_are_clamped() -> None:
+    cfg = _make_config(
+        OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=50,
+        OLLAMA_GPU_BACKPRESSURE_POLL_MS=5000,
+    )
+
+    assert llm_client._ollama_gpu_backpressure_timeout_s(cfg) == pytest.approx(0.05)
+    assert llm_client._ollama_gpu_backpressure_poll_s(cfg) == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
+    cfg = _make_config(
+        OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=1,
+        OLLAMA_GPU_BACKPRESSURE_POLL_MS=1,
+    )
+    limiter = asyncio.Semaphore(1)
+    await limiter.acquire()
+
+    with pytest.raises(llm_client.LLMAPIError) as exc_info:
+        await llm_client._acquire_ollama_gpu_limiter(limiter, cfg)
+
+    assert exc_info.value.provider == "ollama"
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retryable is True
+    limiter.release()
+
+
 @pytest.mark.asyncio
 async def test_ollama_stream_releases_gpu_limiter_after_consumption(
     monkeypatch: pytest.MonkeyPatch,

@@ -43,6 +43,10 @@ def _ollama_gpu_pool_size(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._ollama_gpu_pool_size(*args, **kwargs)
 
 
+def _acquire_ollama_gpu_limiter(*args: Any, **kwargs: Any) -> Any:
+    return llm_facade._acquire_ollama_gpu_limiter(*args, **kwargs)
+
+
 def _release_limiter_after_stream(
     stream: AsyncIterator[str], limiter: Any
 ) -> AsyncGenerator[str, None]:
@@ -215,6 +219,7 @@ class OllamaClient(BaseLLMClient):
             )
             gpu_limiter_acquired = False
             gpu_limiter_released_by_stream = False
+            gpu_limiter_wait_ms = 0.0
             if span is not None:
                 span.set_attribute("sidar.llm.provider", "ollama")
                 span.set_attribute("sidar.llm.model", target_model)
@@ -225,8 +230,22 @@ class OllamaClient(BaseLLMClient):
                     )
             try:
                 if gpu_limiter is not None:
-                    await gpu_limiter.acquire()
+                    gpu_limiter_wait_ms = await _acquire_ollama_gpu_limiter(
+                        gpu_limiter, self.config
+                    )
                     gpu_limiter_acquired = True
+                    if span is not None:
+                        span.set_attribute("sidar.llm.gpu_backpressure_wait_ms", gpu_limiter_wait_ms)
+                    wait_warn_ms = int(
+                        _setting(self.config, "OLLAMA_GPU_BACKPRESSURE_WARN_MS", 250) or 250
+                    )
+                    if wait_warn_ms > 0 and gpu_limiter_wait_ms >= wait_warn_ms:
+                        logger.warning(
+                            "Ollama GPU request pool backpressure waited %.1f ms "
+                            "(pool_size=%s).",
+                            gpu_limiter_wait_ms,
+                            _ollama_gpu_pool_size(self.config),
+                        )
                 if stream:
                     stream_iter = self._stream_response(url, payload, req_timeout=timeout)
                     traced_stream = _trace_stream_metrics(stream_iter, span, started_at)

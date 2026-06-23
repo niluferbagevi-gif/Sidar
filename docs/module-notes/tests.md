@@ -189,6 +189,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   pool warm-up ve asyncpg prepared statement cache davranışını sabitlemek için birlikte
   değerlendirilmelidir. Varsayılan benchmark profili min_size=max_size ve statement cache 256
   kullanır; farklı runner profilleri bu değerleri benchmark artifact notuna yazmalıdır.
+- `test_gpu_concurrent_throughput` için Ollama GPU thread saturation sinyali izlenirken
+  `OLLAMA_GPU_REQUEST_POOL_SIZE`, `OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS`,
+  `OLLAMA_GPU_BACKPRESSURE_POLL_MS` ve `OLLAMA_GPU_BACKPRESSURE_WARN_MS` birlikte raporlanmalıdır.
+  Varsayılan timeout `0` ile geriye dönük uyumlu bekleme davranışı korunur; timeout açıldığında
+  doygun GPU pool istekleri retryable 429 semantiğiyle fail-fast döner.
 - `test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean değeri VRAM stres regresyonları için
   iyi bir referans noktasıdır; gerçek gate baseline compare + GPU trend raporuyla işletilmeli, tek
   koşu sonucu doğrudan global sabite çevrilmemelidir.

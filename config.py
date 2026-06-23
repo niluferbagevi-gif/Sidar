@@ -875,6 +875,11 @@ class Config:
     DRIVER_VERSION: str = "N/A"
     GPU_VRAM_MB: int = 0
     OLLAMA_GPU_REQUEST_POOL_SIZE: int = get_int_env("OLLAMA_GPU_REQUEST_POOL_SIZE", 0)
+    OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS: int = get_int_env(
+        "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 0
+    )
+    OLLAMA_GPU_BACKPRESSURE_POLL_MS: int = get_int_env("OLLAMA_GPU_BACKPRESSURE_POLL_MS", 25)
+    OLLAMA_GPU_BACKPRESSURE_WARN_MS: int = get_int_env("OLLAMA_GPU_BACKPRESSURE_WARN_MS", 250)
 
     _hardware_loaded: bool = False
 

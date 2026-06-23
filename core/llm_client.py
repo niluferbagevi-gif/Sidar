@@ -86,6 +86,30 @@ def _ollama_gpu_pool_size(config: Any) -> int:
     return 1
 
 
+def _ollama_gpu_backpressure_int_setting(config: Any, key: str, default: int) -> int:
+    raw = _setting(config, key, default)
+    if not isinstance(raw, str | int | float | bool):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _ollama_gpu_backpressure_timeout_s(config: Any) -> float:
+    timeout_ms = _ollama_gpu_backpressure_int_setting(
+        config, "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 0
+    )
+    if timeout_ms <= 0:
+        return 0.0
+    return max(0.001, timeout_ms / 1000)
+
+
+def _ollama_gpu_backpressure_poll_s(config: Any) -> float:
+    poll_ms = _ollama_gpu_backpressure_int_setting(config, "OLLAMA_GPU_BACKPRESSURE_POLL_MS", 25)
+    return max(0.001, min(poll_ms / 1000, 1.0))
+
+
 async def _ollama_gpu_limiter(base_url: str, pool_size: int) -> asyncio.Semaphore | None:
     if pool_size <= 0:
         return None
@@ -152,6 +176,37 @@ class LLMAPIError(RuntimeError):
         self.provider = provider
         self.status_code = status_code
         self.retryable = retryable
+
+
+async def _acquire_ollama_gpu_limiter(limiter: asyncio.Semaphore, config: Any) -> float:
+    """Acquire the shared Ollama GPU limiter with optional bounded backpressure.
+
+    Returns the queue wait in milliseconds. A zero timeout keeps the historical
+    behavior: wait until a GPU slot is available.
+    """
+
+    timeout_s = _ollama_gpu_backpressure_timeout_s(config)
+    started_at = time.monotonic()
+    if timeout_s <= 0:
+        await limiter.acquire()
+        return (time.monotonic() - started_at) * 1000
+
+    poll_s = min(_ollama_gpu_backpressure_poll_s(config), timeout_s)
+    deadline = started_at + timeout_s
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LLMAPIError(
+                "ollama",
+                "Ollama GPU request pool saturated; adaptive backpressure timeout exceeded.",
+                status_code=429,
+                retryable=True,
+            )
+        try:
+            await asyncio.wait_for(limiter.acquire(), timeout=min(poll_s, remaining))
+            return (time.monotonic() - started_at) * 1000
+        except TimeoutError:
+            continue
 
 
 def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
