@@ -5,14 +5,11 @@ from __future__ import annotations
 import ast
 import asyncio
 import configparser
-import contextlib
 import fnmatch
-import hashlib
 import inspect
 import json
 import logging
 import re
-import shlex
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +18,9 @@ import defusedxml.ElementTree as ET
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
+from agent.roles.coverage import analyzer as coverage_analyzer
+from agent.roles.coverage import batch_heal as coverage_batch_heal
+from agent.roles.coverage import generator as coverage_generator
 from config import Config
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 
@@ -991,210 +991,36 @@ class CoverageAgent(BaseAgent):
         )
 
     async def _tool_run_pytest(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
-        command = str(payload.get("command", default_cmd) or default_cmd).strip()
-        cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
-        result = await self._call_maybe_async(self.code.run_pytest_and_collect, command, cwd)
-        return json.dumps(result, ensure_ascii=False)
+        return await coverage_analyzer.tool_run_pytest(self, arg)
 
     async def _tool_analyze_pytest_output(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        output = str(payload.get("output", arg) or arg)
-        analysis = await self._call_maybe_async(self.code.analyze_pytest_output, output)
-        return json.dumps(analysis, ensure_ascii=False)
+        return await coverage_analyzer.tool_analyze_pytest_output(self, arg)
 
     async def _tool_analyze_coverage_report(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        coverage_xml_path = str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml")
-        coveragerc_path = str(payload.get("coveragerc", ".coveragerc") or ".coveragerc")
-        terminal_output = str(payload.get("coverage_output", "") or "")
-        limit_val = payload.get("limit")
-        limit = int(limit_val) if limit_val is not None else 25
-        coverage_analysis = self._parse_coverage_xml(coverage_xml_path, limit=limit)
-        terminal_analysis = self._parse_terminal_coverage_output(terminal_output, limit=limit)
-        coveragerc = self._read_coveragerc(coveragerc_path)
-        findings = list(coverage_analysis.get("findings", []) or [])
-        if not findings:
-            findings = list(terminal_analysis.get("findings", []) or [])
-        return json.dumps(
-            {
-                "summary": coverage_analysis.get("summary", ""),
-                "coverage_xml": coverage_analysis,
-                "coverage_terminal": terminal_analysis,
-                "coveragerc": coveragerc,
-                "findings": findings,
-            },
-            ensure_ascii=False,
-        )
+        return await coverage_analyzer.tool_analyze_coverage_report(self, arg)
 
     async def _tool_analyze_test_artifacts(self, arg: str) -> str:
-        """Legacy uyumluluk: coverage/junit artefaktlarını coverage analizi formatına dönüştürür."""
-        text = (arg or "").strip()
-        if text.startswith(("{", "[")):
-            payload = self._parse_payload(text)
-            if "coverage_xml" not in payload:
-                payload["coverage_xml"] = ""
-        else:
-            payload = {"coverage_xml": text}
-        return await self._tool_analyze_coverage_report(json.dumps(payload, ensure_ascii=False))
+        return await coverage_analyzer.tool_analyze_test_artifacts(self, arg)
 
     async def _generate_test_candidate(
         self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]
     ) -> str:
-        read_ok, source_excerpt = (
-            await self._call_maybe_async(self.code.read_file, target_path)
-            if target_path
-            else (False, "")
-        )
-        prompt = (
-            f"Hedef modül: {target_path or 'belirlenemedi'}\n"
-            f"Önerilen test yolu: {self._suggest_test_path(target_path)}\n"
-            f"Pytest özeti: {analysis.get('summary', '')}\n"
-            f"Bulgular: {json.dumps(analysis.get('findings', []), ensure_ascii=False)}\n\n"
-            f"[PYTEST OUTPUT]\n{pytest_output[:4000]}\n\n"
-            f"[KAYNAK DOSYA]\n{source_excerpt[:4000] if read_ok else 'kaynak okunamadı'}"
-        )
-        return await self.call_llm(
-            [{"role": "user", "content": prompt}],
-            system_prompt=self.TEST_GENERATION_PROMPT,
-            temperature=0.1,
+        return await coverage_generator.generate_test_candidate(
+            self, target_path=target_path, pytest_output=pytest_output, analysis=analysis
         )
 
     async def _tool_generate_missing_tests(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        target_path = str(payload.get("target_path", "") or "")
-        pytest_output = str(payload.get("pytest_output", "") or "")
-        analysis = payload.get("analysis")
-        coverage_finding = (
-            payload.get("coverage_finding")
-            if isinstance(payload.get("coverage_finding"), dict)
-            else None
-        )
-        coveragerc_raw = payload.get("coveragerc")
-        coveragerc: dict[str, Any] = coveragerc_raw if isinstance(coveragerc_raw, dict) else {}
-        if coverage_finding and not target_path:
-            target_path = str(coverage_finding.get("target_path", "") or "")
-        if coverage_finding:
-            source_excerpt = ""
-            if target_path:
-                read_ok, source_text = await self._call_maybe_async(
-                    self.code.read_file, target_path
-                )
-                if read_ok:
-                    source_excerpt = str(source_text or "")
-            payload_prompt = self._build_dynamic_pytest_prompt(
-                finding=coverage_finding,
-                coveragerc=coveragerc,
-                source_excerpt=source_excerpt,
-            )
-            llm_candidate_or_idea = await self.call_llm(
-                [{"role": "user", "content": payload_prompt}],
-                system_prompt=self.TEST_GENERATION_PROMPT,
-                temperature=0.1,
-            )
-            cleaned_candidate = self._clean_code_output(str(llm_candidate_or_idea or ""))
-            if self._candidate_rejection_reason(cleaned_candidate, finding=coverage_finding):
-                return self._build_deterministic_test_template(
-                    finding=coverage_finding,
-                    llm_idea=str(llm_candidate_or_idea or ""),
-                )
-            return cleaned_candidate
-        if not isinstance(analysis, dict):
-            analysis = await self._call_maybe_async(self.code.analyze_pytest_output, pytest_output)
-        return await self._generate_test_candidate(
-            target_path=target_path, pytest_output=pytest_output, analysis=analysis
-        )
+        return await coverage_generator.tool_generate_missing_tests(self, arg)
 
     async def _tool_write_missing_tests(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        suggested_test_path = str(payload.get("suggested_test_path", "") or "")
-        generated_test = self._clean_code_output(str(payload.get("generated_test", "") or ""))
-        append = bool(payload.get("append", True))
-        validation_ok, validation_message, validation_details = (
-            self._validate_generated_test_before_write(
-                suggested_test_path=suggested_test_path,
-                generated_test=generated_test,
-                append=append,
-            )
-        )
-        if not validation_ok:
-            return json.dumps(
-                {
-                    "success": False,
-                    "suggested_test_path": suggested_test_path,
-                    "message": validation_message,
-                    "validation": validation_details,
-                },
-                ensure_ascii=False,
-            )
-
-        ok, message = await self._call_maybe_async(
-            self.code.write_generated_test,
-            suggested_test_path,
-            generated_test,
-            append=append,
-        )
-        return json.dumps(
-            {
-                "success": ok,
-                "suggested_test_path": suggested_test_path,
-                "message": message,
-                "validation": {"message": validation_message, **validation_details},
-            },
-            ensure_ascii=False,
-        )
+        return await coverage_generator.tool_write_missing_tests(self, arg)
 
     async def _validate_candidate_with_isolated_pytest(
         self, *, suggested_test_path: str, generated_test: str
     ) -> tuple[bool, str, dict[str, Any]]:
-        """Aday testi geçici dosyada `uv run pytest <test_file>` ile izole doğrular."""
-        base_dir = Path(self.cfg.BASE_DIR)
-        validation_dir = base_dir / "artifacts" / "coverage_candidate_validation"
-        digest = hashlib.sha256(generated_test.encode("utf-8", errors="ignore")).hexdigest()[:12]
-        stem = Path(suggested_test_path or "generated_candidate.py").stem or "generated_candidate"
-        candidate_path = validation_dir / f"{stem}_{digest}.py"
-        details: dict[str, Any] = {
-            "isolated_test_file": str(candidate_path),
-            "isolated_pytest_command": "",
-        }
-        try:
-            validation_dir.mkdir(parents=True, exist_ok=True)
-            candidate_path.write_text(generated_test, encoding="utf-8")
-            try:
-                command_path = candidate_path.relative_to(base_dir)
-            except ValueError:
-                command_path = candidate_path
-            command = f"uv run pytest -q {shlex.quote(str(command_path))}"
-            details["isolated_pytest_command"] = command
-            result = await self._call_maybe_async(
-                self.code.run_pytest_and_collect,
-                command,
-                str(base_dir),
-            )
-        except Exception as exc:  # noqa: BLE001 - doğrulama fail-closed olmalı.
-            details["error"] = str(exc)
-            return False, "generated_candidate_isolated_pytest_error", details
-        finally:
-            with contextlib.suppress(OSError):
-                candidate_path.unlink()
-
-        if not isinstance(result, dict):
-            details["result_type"] = type(result).__name__
-            return False, "generated_candidate_isolated_pytest_invalid_result", details
-        analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
-        has_failures = (
-            bool(analysis.get("has_failures", False)) if isinstance(analysis, dict) else False
+        return await coverage_generator.validate_candidate_with_isolated_pytest(
+            self, suggested_test_path=suggested_test_path, generated_test=generated_test
         )
-        success = bool(result.get("success", not has_failures))
-        details["result"] = {
-            "success": success,
-            "command": str(result.get("command", "") or ""),
-            "output_excerpt": str(result.get("output", "") or "")[:1000],
-        }
-        if not success or has_failures:
-            return False, "generated_candidate_isolated_pytest_failed", details
-        return True, "isolated_pytest_passed", details
 
     async def run_autonomous_coverage_batch(
         self,
@@ -1209,203 +1035,21 @@ class CoverageAgent(BaseAgent):
         max_missing_branches_per_finding: int = 10,
         exclude_files: list[str] | str | None = None,
     ) -> dict[str, Any]:
-        """Coverage bulgularını mikro batch kuyruğunda üretip write_missing_tests ile yazar."""
-        analysis_raw = await self._tool_analyze_coverage_report(
-            json.dumps(
-                {"coverage_xml": coverage_xml, "coveragerc": coveragerc, "limit": limit},
-                ensure_ascii=False,
-            )
-        )
-        analysis = json.loads(analysis_raw)
-        findings = [
-            item for item in list(analysis.get("findings", []) or []) if isinstance(item, dict)
-        ]
-        original_findings_count = len(findings)
-        normalized_exclude_files = self._normalize_exclude_files(exclude_files)
-        excluded_findings: list[dict[str, Any]] = []
-        if normalized_exclude_files:
-            actionable_findings: list[dict[str, Any]] = []
-            for finding in findings:
-                target_path = str(finding.get("target_path", "") or "")
-                if self._is_excluded_coverage_target(target_path, normalized_exclude_files):
-                    excluded_findings.append(
-                        {
-                            "target_path": target_path,
-                            "suggested_test_path": str(
-                                finding.get("suggested_test_path", "") or ""
-                            ),
-                        }
-                    )
-                    logging.info(
-                        "[CoverageAgent] Coverage hedefi exclude listesinde olduğu için "
-                        "otonom kuyruktan çıkarıldı: %s",
-                        target_path,
-                    )
-                    continue
-                actionable_findings.append(finding)
-            findings = actionable_findings
-        batches = self._build_finding_batches(findings, batch_size=batch_size, max_findings=limit)
-        results: list[dict[str, Any]] = []
-
-        for batch_index, batch in enumerate(batches, start=1):
-            for finding_index, finding in enumerate(batch, start=1):
-                suggested_test_path = str(
-                    finding.get("suggested_test_path")
-                    or self._suggest_test_path(str(finding.get("target_path", "") or ""))
-                )
-                scoped_finding = self._cap_autonomous_finding_scope(
-                    finding,
-                    max_missing_lines=max_missing_lines_per_finding,
-                    max_missing_branches=max_missing_branches_per_finding,
-                )
-                generated = await self._tool_generate_missing_tests(
-                    json.dumps(
-                        {
-                            "coverage_finding": scoped_finding,
-                            "coveragerc": analysis.get("coveragerc", {}),
-                        },
-                        ensure_ascii=False,
-                    )
-                )
-                generated = self._clean_code_output(generated)
-                candidate_rejection_reason = self._candidate_rejection_reason(
-                    generated, finding=finding
-                )
-                if candidate_rejection_reason:
-                    results.append(
-                        {
-                            "success": False,
-                            "status": "review_rejected",
-                            "batch_index": batch_index,
-                            "finding_index": finding_index,
-                            "target_path": finding.get("target_path", ""),
-                            "suggested_test_path": suggested_test_path,
-                            "review_reason": candidate_rejection_reason,
-                            "generated_test_candidate": generated,
-                        }
-                    )
-                    continue
-
-                (
-                    isolated_ok,
-                    isolated_reason,
-                    isolated_details,
-                ) = await self._validate_candidate_with_isolated_pytest(
-                    suggested_test_path=suggested_test_path,
-                    generated_test=generated,
-                )
-                if not isolated_ok:
-                    results.append(
-                        {
-                            "success": False,
-                            "status": "review_rejected",
-                            "batch_index": batch_index,
-                            "finding_index": finding_index,
-                            "target_path": finding.get("target_path", ""),
-                            "suggested_test_path": suggested_test_path,
-                            "review_reason": isolated_reason,
-                            "generated_test_candidate": generated,
-                            "validation": isolated_details,
-                        }
-                    )
-                    continue
-
-                approved = True
-                review_reason = "reviewer_gate_not_configured"
-                review_error = ""
-                if reviewer_gate is not None:
-                    gate_finding = {
-                        **finding,
-                        "batch_index": batch_index,
-                        "finding_index": finding_index,
-                        "suggested_test_path": suggested_test_path,
-                    }
-                    try:
-                        approved = bool(await reviewer_gate(generated, gate_finding))
-                    except Exception as exc:  # noqa: BLE001 - reviewer gate hata verirse yazma fail-closed olmalı.
-                        approved = False
-                        review_reason = f"reviewer_gate_exception:{exc.__class__.__name__}"
-                        review_error = str(exc)
-                    else:
-                        review_reason = "approved" if approved else "rejected"
-                if not approved:
-                    rejected_result = {
-                        "success": False,
-                        "status": "review_rejected",
-                        "batch_index": batch_index,
-                        "finding_index": finding_index,
-                        "target_path": finding.get("target_path", ""),
-                        "suggested_test_path": suggested_test_path,
-                        "review_reason": review_reason,
-                        "generated_test_candidate": generated,
-                    }
-                    if review_error:
-                        rejected_result["review_error"] = review_error
-                    results.append(rejected_result)
-                    continue
-
-                write_raw = await self._tool_write_missing_tests(
-                    json.dumps(
-                        {
-                            "suggested_test_path": suggested_test_path,
-                            "generated_test": generated,
-                            "append": append,
-                        },
-                        ensure_ascii=False,
-                    )
-                )
-                write_result = json.loads(write_raw)
-                results.append(
-                    {
-                        "success": bool(write_result.get("success", False)),
-                        "status": "tests_written"
-                        if write_result.get("success")
-                        else "write_failed",
-                        "batch_index": batch_index,
-                        "finding_index": finding_index,
-                        "target_path": finding.get("target_path", ""),
-                        "suggested_test_path": suggested_test_path,
-                        "write_result": write_result,
-                    }
-                )
-
-        status = "batch_completed"
-        if not findings:
-            status = "no_actionable_findings" if excluded_findings else "no_gaps_detected"
-
-        return {
-            "success": any(item.get("success") for item in results) if results else True,
-            "status": status,
-            "summary": analysis.get("summary", ""),
-            "total_findings": len(findings),
-            "original_total_findings": original_findings_count,
-            "excluded_findings_count": len(excluded_findings),
-            "excluded_findings": excluded_findings,
-            "exclude_files": normalized_exclude_files,
-            "batch_count": len(batches),
-            "results": results,
-        }
-
-    async def _tool_autonomous_batch_heal(self, arg: str) -> str:
-        payload = self._parse_payload(arg)
-        exclude_files = self._normalize_exclude_files(
-            payload.get("exclude_files") if "exclude_files" in payload else None
-        )
-        result = await self.run_autonomous_coverage_batch(
-            coverage_xml=str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml"),
-            coveragerc=str(payload.get("coveragerc", ".coveragerc") or ".coveragerc"),
-            limit=int(payload.get("limit", 3) or 3),
-            batch_size=int(payload.get("batch_size", 1) or 1),
-            append=bool(payload.get("append", True)),
-            max_missing_lines_per_finding=int(
-                payload.get("max_missing_lines_per_finding", 25) or 25
-            ),
-            max_missing_branches_per_finding=int(
-                payload.get("max_missing_branches_per_finding", 10) or 10
-            ),
+        return await coverage_batch_heal.run_autonomous_coverage_batch(
+            self,
+            coverage_xml=coverage_xml,
+            coveragerc=coveragerc,
+            limit=limit,
+            batch_size=batch_size,
+            append=append,
+            reviewer_gate=reviewer_gate,
+            max_missing_lines_per_finding=max_missing_lines_per_finding,
+            max_missing_branches_per_finding=max_missing_branches_per_finding,
             exclude_files=exclude_files,
         )
-        return json.dumps(result, ensure_ascii=False)
+
+    async def _tool_autonomous_batch_heal(self, arg: str) -> str:
+        return await coverage_batch_heal.tool_autonomous_batch_heal(self, arg)
 
     async def _record_task(
         self,
