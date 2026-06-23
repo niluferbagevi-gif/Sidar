@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -85,7 +86,10 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
 def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
+    assert "P2 LLM provider adapter modülleri" in plan
     assert "core/llm/{openai,anthropic,gemini,ollama,litellm}.py" in plan
+    assert "provider contract testleriyle korunuyor" in plan
+    assert "core/llm/{router,streaming,cache,facade}.py" in plan
     assert "core/llm/openai.py" in plan
     assert "core/llm/anthropic.py" in plan
     assert "core/llm/gemini.py" in plan
@@ -94,3 +98,14 @@ def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
     assert "managers/browser/playwright.py" in plan
     assert "managers/browser/selenium.py" in plan
     assert "P2 Playwright/Selenium adapter" in plan
+
+
+def test_p2_llm_provider_boundaries_are_importable() -> None:
+    for module_name in (
+        "core.llm.openai",
+        "core.llm.anthropic",
+        "core.llm.gemini",
+        "core.llm.ollama",
+        "core.llm.litellm",
+    ):
+        assert importlib.import_module(module_name) is not None
