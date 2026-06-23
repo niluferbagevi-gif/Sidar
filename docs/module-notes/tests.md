@@ -159,14 +159,26 @@ tek seferlik/geçici dosya adlarını referans almaz.
   GPU TTFT/TPS ve çoklu kullanıcı workload sonuçlarını ayrı ayrı değerlendirin.
 - 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı ve ilk
   karşılaştırma kaydı `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildi;
-  `test_format_table_handles_large_dataset_quickly` yaklaşık `3.6 ms`,
-  `test_user_authentication_password_verify_cpu_cost[postgresql]` yaklaşık `66.8 ms`,
+  `test_format_table_handles_large_dataset_quickly` yaklaşık `3.7 ms`,
+  `test_user_authentication_password_hash_cpu_cost[sqlite]` yaklaşık `65 ms`,
+  `test_user_authentication_password_hash_cpu_cost[postgresql]` yaklaşık `74 ms`,
   `test_gpu_concurrent_throughput` yaklaşık `6.96 s` ve
   `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler tek başına
   yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline seed gözlemidir. Sonraki
   koşularda varsayılan `BENCHMARK_COMPARE_REQUIRED=1` + `BENCHMARK_ENFORCE_COMPARE=1` değerleriyle
   otomatik regresyon karşılaştırması çalışır; GPU concurrent throughput gibi metriklerde `mean` sapması
   `%20+` seviyesine ulaşmadan önce yerel `mean:15%` / CI `mean:10%` kapıları regresyonu yakalar.
+- `test_format_table_handles_large_dataset_quickly` CPU-bound ve deterministic olduğu için baseline
+  gözlemine ek olarak hard cap ile korunur: taşınabilir varsayılan
+  `SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0`, stabil hızlı runner hedefi ise `5.0 ms` seviyesidir.
+  Daha yavaş runner istisnası gerekiyorsa bu değer açıkça yükseltilmeli ve PR'da benchmark JSON ile
+  gerekçelendirilmelidir.
+- Auth password hash benchmark'larında sqlite/postgres farkını regresyon olarak yorumlamayın:
+  PBKDF2/bcrypt-benzeri iş faktörü bilinçli maliyettir ve postgres'in yaklaşık `%15` daha yavaş
+  görünmesi connection/persistence katmanı nedeniyle kabul edilebilir profildir.
+- `test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean değeri VRAM stres regresyonları için
+  iyi bir referans noktasıdır; gerçek gate baseline compare + GPU trend raporuyla işletilmeli, tek
+  koşu sonucu doğrudan global sabite çevrilmemelidir.
 - Sürüm/sprint için ayrı karşılaştırma gerekiyorsa `baseline_<release_tag>` gibi açık bir etiket
   kullanın (ör. `baseline_v5_2_0`).
 

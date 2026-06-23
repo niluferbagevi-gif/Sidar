@@ -269,6 +269,8 @@ def test_run_tests_enforces_benchmark_compare_and_requires_baseline_by_default()
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
 
+    assert 'os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "15.0")' in benchmark_test
+    assert "format_table_mean_ms" in benchmark_test
     assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
     assert 'await conn.execute("SELECT 1")' in benchmark_test
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
@@ -285,6 +287,9 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "commit_info.dirty" in notes
     assert "version-sort" in notes
     assert "2026-06-22 performans değerlendirmesinde 13 benchmark" in notes
+    assert "test_format_table_handles_large_dataset_quickly` yaklaşık `3.7 ms" in notes
+    assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0" in notes
+    assert "test_gpu_vram_peak_under_load` için yaklaşık `2249 ms` mean" in notes
     assert "BENCHMARK_COMPARE_REQUIRED=1" in notes
     assert "BENCHMARK_ENFORCE_COMPARE=1" in notes
     assert "commit_info.dirty" in readme
@@ -293,6 +298,7 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
         "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer"
         in env_advanced
     )
+    assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=15.0" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
 
 

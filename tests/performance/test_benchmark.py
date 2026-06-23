@@ -16,6 +16,8 @@ from scripts.coverage_hotspots import FileCoverage, format_table
 pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
+_FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "15.0") or "15.0")
+
 
 def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
     """Benchmark istatistiklerini extra_info altında normalize eder."""
@@ -50,10 +52,16 @@ def large_dataset_rows() -> list[FileCoverage]:
 
 def test_format_table_handles_large_dataset_quickly(benchmark, large_dataset_rows) -> None:
     output = benchmark(format_table, large_dataset_rows)
+    mean_ms = float(benchmark.stats.get("mean", 0.0) or 0.0) * 1000
+    benchmark.extra_info["format_table_mean_ms"] = round(mean_ms, 3)
 
     assert "| File | Coverage | Missed | Covered |" in output
     assert "module_0/file_00000.py" in output
     assert "module_99/file_09999.py" in output
+    assert mean_ms < _FORMAT_TABLE_MAX_MEAN_MS, (
+        "format_table büyük coverage tablosu için beklenen CPU bütçesini aştı: "
+        f"{mean_ms:.3f} ms >= {_FORMAT_TABLE_MAX_MEAN_MS:.3f} ms"
+    )
 
 
 def _postgresql_benchmark_url() -> str | None:
