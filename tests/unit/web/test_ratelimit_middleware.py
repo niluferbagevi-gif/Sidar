@@ -28,7 +28,8 @@ async def _ok_next(_request: Request):
 
 
 @pytest.mark.asyncio
-async def test_ddos_rate_limit_impl_skips_health_paths() -> None:
+@pytest.mark.parametrize("path", ["/health", "/healthz", "/readyz", "/ui/index.html", "/static/app.css"])
+async def test_ddos_rate_limit_impl_skips_bypass_paths(path: str) -> None:
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -36,12 +37,35 @@ async def test_ddos_rate_limit_impl_skips_health_paths() -> None:
         return True
 
     response = await ddos_rate_limit_middleware_impl(
-        _request("/healthz"),
+        _request(path),
         _ok_next,
         get_client_ip=lambda _request: "127.0.0.1",
         redis_is_rate_limited=_limited,
         max_requests=1,
         window_sec=60,
+    )
+
+    assert response.status_code == 200
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_ddos_rate_limit_impl_honors_custom_bypass_paths() -> None:
+    calls: list[tuple[str, str, int, int]] = []
+
+    async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
+        calls.append((namespace, key, limit, window))
+        return False
+
+    response = await ddos_rate_limit_middleware_impl(
+        _request("/custom-probe"),
+        _ok_next,
+        get_client_ip=lambda _request: "127.0.0.1",
+        redis_is_rate_limited=_limited,
+        max_requests=1,
+        window_sec=60,
+        bypass_paths=("/custom-probe",),
+        bypass_prefixes=(),
     )
 
     assert response.status_code == 200

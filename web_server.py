@@ -2292,6 +2292,8 @@ async def ddos_rate_limit_middleware(
         redis_is_rate_limited=_redis_is_rate_limited,
         max_requests=RATE_LIMIT_MAX_REQUESTS,
         window_sec=RATE_LIMIT_WINDOW_SEC,
+        bypass_paths=("/health", "/healthz", "/readyz"),
+        bypass_prefixes=("/ui/", "/static/"),
     )
 
 

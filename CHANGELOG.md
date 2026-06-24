@@ -876,7 +876,7 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 | Sliding window özetleme | ✅ `apply_summary()` son `keep_last`=4 mesajı korur | `memory.py:apply_summary` |
 | Web UI modülarizasyonu | ✅ 6 ayrı dosya; `StaticFiles` mount aktif | `web_server.py`, `web_ui/` |
 | Bearer Token Auth | ✅ `basic_auth_middleware` + `auth_tokens` doğrulaması | `web_server.py`, `core/db.py` |
-| DDoS rate limit | ✅ `ddos_rate_limit_middleware` 120 istek/60 sn; `/static/` muaf | `web_server.py` |
+| DDoS rate limit | ✅ `ddos_rate_limit_middleware` 120 istek/60 sn; `/health`, `/healthz`, `/readyz`, `/ui/`, `/static/` muaf | `web_server.py`, `web/middleware/ratelimit.py` |
 | LLM istemci yeniden yapılandırma | ✅ `BaseLLMClient` ABC + 3 concrete impl | `llm_client.py` |
 | DuckDuckGo timeout koruması | ✅ `asyncio.wait_for` + doğru except sırası | `web_search.py` |
 | GitHub Issue yönetimi | ✅ list/create/comment/close; 4 metod + 4 ajan aracı | `github_manager.py`, `tooling.py` |
