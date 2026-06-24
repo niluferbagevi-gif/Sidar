@@ -8,6 +8,14 @@ from pathlib import Path
 import pytest
 
 import config
+from core import config_env_helpers, config_validators
+
+
+def test_config_reexports_split_env_helpers_and_validators() -> None:
+    assert config.get_bool_env is config_env_helpers.get_bool_env
+    assert config.get_web_scrape_max_chars is config_env_helpers.get_web_scrape_max_chars
+    assert config.normalize_ai_provider is config_validators.normalize_ai_provider
+    assert config.is_valid_http_url is config_validators.is_valid_http_url
 
 
 def test_get_bool_env_strict_true_false_and_default(monkeypatch):

@@ -14,13 +14,25 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core import config_dotenv, config_postgres
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
+from core.config_env_helpers import (
+    get_bool_env,
+    get_bool_prefixed_env,
+    get_external_bool_env,
+    get_float_env,
+    get_float_prefixed_env,
+    get_int_env,
+    get_int_prefixed_env,
+    get_list_env,
+    get_optional_prefixed_env,
+    get_prefixed_env,
+    get_web_scrape_max_chars,
+)
 from core.config_gpu_detect import (
     HardwareInfo,
     normalize_gpu_memory_fractions,
@@ -29,6 +41,7 @@ from core.config_gpu_detect import (
 from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
+from core.config_validators import is_valid_http_url, normalize_ai_provider
 from sidar_version import PRODUCT_VERSION
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
@@ -377,22 +390,6 @@ _PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 }
 
 
-def normalize_ai_provider(provider: str | None) -> str:
-    """Normalize configured AI provider names for consistent validation and routing."""
-    return (provider or "ollama").strip().lower() or "ollama"
-
-
-def is_valid_http_url(value: str | None) -> bool:
-    """Validate required HTTP(S) endpoint settings without leaking the raw value."""
-    if value is None:
-        return False
-    stripped = value.strip()
-    if not stripped:
-        return False
-    parsed = urlparse(stripped)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
-
-
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
@@ -402,47 +399,6 @@ def gpu_mixed_precision_default() -> bool:
     """Return the profile-aware FP16 default for GPU-backed production workloads."""
 
     return os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-
-
-def get_bool_env(key: str, default: bool = False) -> bool:
-    """Return a strict boolean environment value.
-
-    Sidar feature flags intentionally accept only ``true`` or ``false``
-    (case-insensitive). Numeric and shell-style aliases such as ``1``, ``0``,
-    ``yes`` or ``no`` are rejected so deployments cannot silently drift between
-    incompatible boolean conventions.
-    """
-    raw_val = os.getenv(key)
-    if raw_val is None or not raw_val.strip():
-        return default
-    val = raw_val.strip().lower()
-    if val == "true":
-        return True
-    if val == "false":
-        return False
-    raise ValueError(f"{key} must be either 'true' or 'false' (case-insensitive); got {raw_val!r}.")
-
-
-def get_external_bool_env(key: str, default: bool = False) -> bool:
-    """Return a boolean environment value for third-party library conventions.
-
-    External tools such as HuggingFace commonly document both ``1``/``0`` and
-    ``true``/``false`` style booleans. Keep Sidar feature flags strict via
-    :func:`get_bool_env`, but tolerate these aliases at integration boundaries
-    so externally owned variables cannot crash Sidar during import.
-    """
-    raw_val = os.getenv(key)
-    if raw_val is None or not raw_val.strip():
-        return default
-    val = raw_val.strip().lower()
-    if val in {"1", "true", "yes", "y", "on", "enabled"}:
-        return True
-    if val in {"0", "false", "no", "n", "off", "disabled"}:
-        return False
-    raise ValueError(
-        f"{key} must be a boolean accepted by the external provider "
-        f"('true'/'false', '1'/'0', 'yes'/'no', or 'on'/'off'); got {raw_val!r}."
-    )
 
 
 def build_postgres_dsn(*, host: str | None = None) -> str:
@@ -460,88 +416,6 @@ def get_container_database_url() -> str:
     return config_postgres.get_container_database_url(getenv=os.getenv)
 
 
-def get_web_scrape_max_chars(default: int = 12000) -> int:
-    """Resolve preferred WEB_SCRAPE_MAX_CHARS with deprecated WEB_FETCH fallback."""
-    if os.getenv("WEB_SCRAPE_MAX_CHARS") is not None:
-        return get_int_env("WEB_SCRAPE_MAX_CHARS", default)
-    if os.getenv("WEB_FETCH_MAX_CHARS") is not None:
-        warnings.warn(
-            "WEB_FETCH_MAX_CHARS is deprecated; use WEB_SCRAPE_MAX_CHARS instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return get_int_env("WEB_FETCH_MAX_CHARS", default)
-    return default
-
-
-def get_int_env(key: str, default: int = 0) -> int:
-    try:
-        return int(os.getenv(key, str(default)))
-    except (ValueError, TypeError):
-        return default
-
-
-def get_float_env(key: str, default: float = 0.0) -> float:
-    try:
-        return float(os.getenv(key, str(default)))
-    except (ValueError, TypeError):
-        return default
-
-
-def get_list_env(key: str, default: list[str] | None = None, separator: str = ",") -> list[str]:
-    if default is None:
-        default = []
-    value = os.getenv(key, "")
-    if not value:
-        return default
-    return [item.strip() for item in value.split(separator) if item.strip()]
-
-
-def get_prefixed_env(prefix_key: str, legacy_key: str, default: str = "") -> str:
-    """Read a Sidar-prefixed env var while preserving a legacy fallback."""
-    prefixed_value = os.getenv(prefix_key)
-    if prefixed_value is not None:
-        return prefixed_value
-    return os.getenv(legacy_key, default)
-
-
-def get_optional_prefixed_env(prefix_key: str, legacy_key: str) -> str | None:
-    """Read an optional Sidar-prefixed env var with legacy fallback."""
-    prefixed_value = os.getenv(prefix_key)
-    if prefixed_value is not None:
-        return prefixed_value
-    return os.getenv(legacy_key)
-
-
-def get_int_prefixed_env(prefix_key: str, legacy_key: str, default: int = 0) -> int:
-    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
-    try:
-        return int(raw_value)
-    except (ValueError, TypeError):
-        return default
-
-
-def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.0) -> float:
-    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
-    try:
-        return float(raw_value)
-    except (ValueError, TypeError):
-        return default
-
-
-def get_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool = False) -> bool:
-    raw_value = get_optional_prefixed_env(prefix_key, legacy_key)
-    if raw_value is None or not raw_value.strip():
-        return default
-    val = raw_value.strip().lower()
-    if val == "true":
-        return True
-    if val == "false":
-        return False
-    raise ValueError(
-        f"{prefix_key} / {legacy_key} must be either 'true' or 'false' "
-        f"(case-insensitive); got {raw_value!r}."
-    )
 
 
 def _default_auto_migrate_enabled() -> bool:
@@ -550,14 +424,7 @@ def _default_auto_migrate_enabled() -> bool:
 
 
 def get_db_pool_size_default() -> int:
-    """
-    DB havuz boyutu için çekirdek sayısı + PostgreSQL max_connections temelli varsayılan üretir.
-
-    Formül:
-    - taban hedef = CPU * DB_POOL_SIZE_PER_CORE (varsayılan 2)
-    - üst sınır = POSTGRES_MAX_CONNECTIONS - DB_POOL_CONNECTION_RESERVE (varsayılan 10)
-    - global tavan = DB_POOL_SIZE_HARD_CAP (varsayılan 50)
-    """
+    """Return the profile-aware default PostgreSQL pool size."""
     return config_postgres.get_db_pool_size_default(
         get_int_env=get_int_env,
         cpu_count=os.cpu_count(),
