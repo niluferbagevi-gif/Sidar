@@ -118,6 +118,34 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "Installer manifest and smoke gate" in docs
 
 
+def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
+    template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
+    docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
+
+    assert "Installer manifest checklist" in template
+    assert "scripts/sync_install_manifest.sh" in template
+    assert "scripts/sync_install_module_hashes.sh" in template
+    assert "uv run python scripts/tools/update_core_install_manifest.py --check" in template
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check"
+    ) in template
+    assert "Install manifest synced" in template
+    assert "Installer manifest and smoke gate" in template
+    assert "installer security chain" in template
+    for protected_path in (
+        "/core/memory.py",
+        "/core/multimodal.py",
+        "/install_sidar.sh",
+        "/.sidar_manifest.txt",
+        "/scripts/install_modules/",
+    ):
+        assert protected_path in codeowners
+    assert "PR visibility for core installer files" in docs
+    assert "installer-impacting" in docs
+
+
 def test_release_quality_runs_benchmark_coverage_trend_gate():
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 

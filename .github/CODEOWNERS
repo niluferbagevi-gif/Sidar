@@ -1,0 +1,11 @@
+# Installer security chain: core files and installer manifests must be reviewed
+# with raw installer / manifest drift impact in mind.
+/install_sidar.sh @niluferbagevi-gif
+/.sidar_manifest.txt @niluferbagevi-gif
+/core/memory.py @niluferbagevi-gif
+/core/multimodal.py @niluferbagevi-gif
+/scripts/sync_install_manifest.sh @niluferbagevi-gif
+/scripts/sync_install_module_hashes.sh @niluferbagevi-gif
+/scripts/tools/update_core_install_manifest.py @niluferbagevi-gif
+/scripts/tools/update_install_module_hash_manifest.py @niluferbagevi-gif
+/scripts/install_modules/ @niluferbagevi-gif

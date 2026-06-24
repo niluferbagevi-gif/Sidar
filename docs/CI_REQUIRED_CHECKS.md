@@ -63,3 +63,19 @@ uv run python scripts/tools/update_install_module_hash_manifest.py --target inst
 
 These hooks intentionally run in check mode. If a hook fails, run the sync
 script(s), review the generated manifest changes, and commit them explicitly.
+
+## PR visibility for core installer files
+
+`core/memory.py` and `core/multimodal.py` are part of the installer security
+chain. Any PR touching either file must treat the change as installer-impacting,
+not only as a normal Python unit-test change. The PR template therefore includes
+an installer manifest checklist covering:
+
+- unit/smoke coverage,
+- `scripts/sync_install_manifest.sh`,
+- direct core/module manifest `--check` commands,
+- raw installer smoke verification or the required `Installer manifest and smoke gate`.
+
+`.github/CODEOWNERS` also marks the core installer files, manifest files, sync
+scripts, manifest tools, and `scripts/install_modules/**` as installer-security
+review paths.
