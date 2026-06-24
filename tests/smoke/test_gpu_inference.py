@@ -7,6 +7,8 @@ import os
 import shutil
 import subprocess
 import time
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -112,6 +114,15 @@ def _read_gpu_memory_total_mib() -> int | None:
     return sum(values)
 
 
+def _torch_cuda_major(torch_module: Any) -> str | None:
+    """Torch wheel'ının derlendiği CUDA major sürümünü döndürür."""
+
+    cuda_version = getattr(getattr(torch_module, "version", SimpleNamespace()), "cuda", None)
+    if not cuda_version:
+        return None
+    return str(cuda_version).split(".", maxsplit=1)[0]
+
+
 pytestmark = pytest.mark.skipif(
     not is_gpu_available(),
     reason="Sistemde veya WSL2 katmanında NVIDIA GPU bulunamadı, GPU smoke testi atlanıyor.",
@@ -149,6 +160,27 @@ async def test_real_gpu_inference_smoke() -> None:
 
     assert isinstance(response, str)
     assert len(response.strip()) > 0
+
+
+@pytest.mark.gpu
+def test_torch_cuda_major_is_supported_for_installed_driver() -> None:
+    """CUDA 13 sürücülerde torch cu12/cu13 wheel uyumluluğunu fail-closed doğrular."""
+
+    torch = pytest.importorskip("torch")
+    cuda_major = _torch_cuda_major(torch)
+    assert cuda_major in {"12", "13"}, (
+        "Torch CUDA wheel major sürümü desteklenen aralıkta olmalı; "
+        f"torch.version.cuda={getattr(torch.version, 'cuda', None)!r}"
+    )
+    assert torch.cuda.is_available(), "NVIDIA GPU varken torch.cuda kullanılamıyor."
+
+    device = torch.device("cuda")
+    left = torch.eye(2, device=device)
+    right = torch.ones((2, 2), device=device)
+    result = torch.matmul(left, right)
+
+    assert result.is_cuda
+    assert result.shape == (2, 2)
 
 
 @pytest.mark.gpu
