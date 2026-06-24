@@ -30,7 +30,7 @@ for _submodule in (
 ):
     try:
         setattr(_monolith, _submodule, _importlib.import_module(f"{__name__}.{_submodule}"))
-    except Exception:
+    except Exception:  # nosec B110 - optional submodule imports must not block core.db itself
         # Optional/legacy submodule imports should not block core.db itself; direct
         # imports will surface the concrete error when callers need that module.
         pass
