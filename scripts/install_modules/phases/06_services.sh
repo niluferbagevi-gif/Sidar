@@ -325,12 +325,15 @@ sidar_phase_services_and_validation() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         sync_database_passwords_before_smoke_tests
         run_smoke_tests
+        run_install_integration_api_tests
         run_test_artifact_audit
     else
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         SMOKE_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
+        INTEGRATION_TEST_STATUS="tam_docker_modu_nedeniyle_atlandi"
+        # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         AUDIT_STATUS="tam_docker_modu_nedeniyle_atlandi"
-        info "Tam Docker modu: lokal smoke-test/audit adımları atlanıyor."
+        info "Tam Docker modu: lokal smoke-test/integration/audit adımları atlanıyor."
     fi
 }

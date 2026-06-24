@@ -162,7 +162,7 @@ sidar_t() {
             failed_command) printf '   Failed command: %s' "$1" ;;
             check_log) printf '   Check the log file for cleanup/review: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Installation Starting' ;;
-            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
+            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
             invalid_docker_cli) printf 'Invalid DOCKER_CLI_INSTALL value: %s. Supported: auto|always|never' "$1" ;;
             invalid_mode) printf 'Invalid --mode value: %s. Supported: local|docker' "$1" ;;
             invalid_env) printf 'Invalid --env value: %s. Supported: development|production' "$1" ;;
@@ -185,7 +185,7 @@ sidar_t() {
             failed_command) printf '   Hata veren komut: %s' "$1" ;;
             check_log) printf '   Temizleme/inceleme için log dosyasını kontrol edin: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Kurulum Başlıyor' ;;
-            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
+            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
             invalid_docker_cli) printf "Geçersiz DOCKER_CLI_INSTALL değeri: '%s'. Desteklenen: auto|always|never" "$1" ;;
             invalid_mode) printf "Geçersiz --mode değeri: '%s'. Desteklenen: local|docker" "$1" ;;
             invalid_env) printf "Geçersiz --env değeri: '%s'. Desteklenen: development|production" "$1" ;;
@@ -272,7 +272,7 @@ b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/instal
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/install_modules/phases/06_services.sh
+dff96eaa7db641238d6e2026bc0fa82c4ac692b760fcd8f0a299881ff6c0305d  scripts/install_modules/phases/06_services.sh
 12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
@@ -2188,6 +2188,7 @@ HELM_NAMESPACE="sidar"
 HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="always"
 RUN_AUDIT=true
+RUN_INSTALL_INTEGRATION_TESTS=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 APP_RUNTIME_MODE="ask"
@@ -2214,6 +2215,7 @@ SILENT_MODE=false
 REACT_UI_STATUS="atlandı"
 MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
+INTEGRATION_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
@@ -2230,7 +2232,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -2245,6 +2247,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --values=<file>  Helm values file (for example: helm/sidar/values-prod.yaml)
   --smoke-test  Require tests/smoke at the end of installation
   --skip-smoke-test  Do not run smoke tests at the end of installation
+  --with-integration / --with-integration-tests  Also run tests/integration/api after smoke tests
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
   --download-models  Download Ollama models by default
@@ -2290,7 +2293,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -2305,6 +2308,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)
   --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
+  --with-integration / --with-integration-tests  Smoke sonrası tests/integration/api testlerini de çalıştır
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
   --download-models  Ollama modellerini varsayılan olarak indir
@@ -2385,6 +2389,7 @@ for arg in "$@"; do
         --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
+        --with-integration|--with-integration-tests) RUN_INSTALL_INTEGRATION_TESTS=true ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
@@ -7053,6 +7058,77 @@ wait_for_core_docker_health_before_smoke_tests() {
     done
 }
 
+
+run_install_integration_api_tests() {
+    step "API Entegrasyon Testleri"
+
+    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+        info "--with-integration verilmediği için tests/integration/api çalıştırılmadı."
+        INTEGRATION_TEST_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    local integration_dir="$SCRIPT_DIR/tests/integration/api"
+    local -a pytest_integration_args=("$integration_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
+    local -a pytest_integration_env=()
+    local integration_failure_policy="${INTEGRATION_TEST_FAILURE_POLICY:-fail}"
+
+    if [[ ! -d "$integration_dir" ]]; then
+        warn "API entegrasyon test dizini bulunamadı: $integration_dir"
+        INTEGRATION_TEST_STATUS="dizin_yok"
+        return
+    fi
+
+    if ! wait_for_redis_before_smoke_tests; then
+        warn "Redis hazır olmadığı için API entegrasyon testleri çalıştırılmadı (false-negative önleme)."
+        INTEGRATION_TEST_STATUS="atlandi_redis_hazir_degil"
+        return
+    fi
+    wait_for_core_docker_health_before_smoke_tests
+
+    local env_file="$SCRIPT_DIR/.env"
+    local integration_database_url=""
+    local integration_postgres_password=""
+    local integration_redis_url=""
+    if [[ -f "$env_file" ]]; then
+        integration_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+        integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
+        integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        if [[ -z "$integration_redis_url" ]]; then
+            integration_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        fi
+
+        if [[ -n "$integration_database_url" ]]; then
+            pytest_integration_env+=("DATABASE_URL=$integration_database_url")
+            info "API entegrasyon test DATABASE_URL değeri .env dosyasından yenilendi."
+        fi
+        if [[ -n "$integration_postgres_password" ]]; then
+            pytest_integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")
+        fi
+        if [[ -n "$integration_redis_url" ]]; then
+            pytest_integration_env+=("REDIS_URL=$integration_redis_url")
+        fi
+    fi
+
+    if ! python -c "import pytest" >/dev/null 2>&1; then
+        warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini uv.lock ile tekrar çalıştırın."
+        INTEGRATION_TEST_STATUS="pytest_yok"
+        return
+    fi
+
+    if env "${pytest_integration_env[@]}" uv run pytest "${pytest_integration_args[@]}"; then
+        ok "API entegrasyon testleri başarıyla geçti."
+        INTEGRATION_TEST_STATUS="tamamlandi"
+    else
+        INTEGRATION_TEST_STATUS="hata"
+        if [[ "$integration_failure_policy" == "warn" ]]; then
+            warn "API entegrasyon testlerinde hata var. INTEGRATION_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+        else
+            fail "API entegrasyon testlerinde hata var. Kurulum güvenliği için süreç durduruldu."
+        fi
+    fi
+}
+
 run_test_artifact_audit() {
     step "Test Artifact Denetimi"
 
@@ -7191,6 +7267,13 @@ print_summary() {
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
+    fi
+    if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
+        echo "  API entegrasyon testleri: başarılı (tests/integration/api)."
+    elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
+        echo "  API entegrasyon testleri: hata var. Tekrar için: uv run pytest tests/integration/api --rootdir="$SCRIPT_DIR" -v --no-cov"
+    else
+        echo "  API entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
@@ -7556,6 +7639,7 @@ run_smoke_phase() {
     run_migrations
     seed_rag_metadata_after_migrations
     run_smoke_tests
+    run_install_integration_api_tests
     run_test_artifact_audit
     run_doctor_phase || true
     ok "smoke fazı tamamlandı."

@@ -112,6 +112,7 @@ EOF
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
+    playwright_linux_dependencies_ready() { return 0; }
 
     install_playwright_browsers
 
@@ -592,6 +593,7 @@ ENV
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"Select installer message language"* ]]
+  [[ "$output" == *"--with-integration"* ]]
   [[ "$output" != *"Kullanım:"* ]]
 }
 
@@ -611,6 +613,45 @@ ENV
   [ "$status" -eq 0 ]
   [[ "$output" == *"Kullanım:"* ]]
   [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
+  [[ "$output" == *"--with-integration"* ]]
+}
+
+@test "run_install_integration_api_tests is opt-in and passes service env to pytest" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/tests/integration/api" "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar
+POSTGRES_PASSWORD=secret
+SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" > "$tmpdir/uv.args"
+printf "DATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/uv.env"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    wait_for_redis_before_smoke_tests() { return 0; }
+    wait_for_core_docker_health_before_smoke_tests() { :; }
+
+    RUN_INSTALL_INTEGRATION_TESTS=false
+    run_install_integration_api_tests
+    [[ "$INTEGRATION_TEST_STATUS" == "atlandi_bayrak" ]]
+    [[ ! -e "$tmpdir/uv.args" ]]
+
+    RUN_INSTALL_INTEGRATION_TESTS=true
+    run_install_integration_api_tests
+    [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]
+    grep -q "tests/integration/api" "$tmpdir/uv.args"
+    grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/uv.env"
+    grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/uv.env"
+    grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/uv.env"
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "01_context phase runs environment detection before WSL GPU preflight" {
@@ -823,16 +864,18 @@ EOF
     events=()
     APP_RUNTIME_MODE_SELECTED=local
     sidar_source_install_utils() { events+=("source:$*"); }
+    phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
     run_migrations() { events+=(run_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
+    run_install_integration_api_tests() { events+=(run_install_integration_api_tests); }
     run_test_artifact_audit() { events+=(run_test_artifact_audit); }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models launch_docker_services run_smoke_tests run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -842,18 +885,21 @@ EOF
     events=()
     APP_RUNTIME_MODE_SELECTED=docker
     sidar_source_install_utils() { events+=("source:$*"); }
+    phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
     prepare_docker_for_migrations() { events+=(unexpected_prepare); return 99; }
     run_migrations() { events+=(unexpected_migration); return 99; }
     download_ollama_models() { events+=(unexpected_models); return 99; }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
+    run_install_integration_api_tests() { events+=(unexpected_integration); return 99; }
     run_test_artifact_audit() { events+=(unexpected_audit); return 99; }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh launch_docker_services" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh phase06_docker_daemon_gate_or_fail launch_docker_services" ]]
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$SMOKE_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+    [[ "$INTEGRATION_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$AUDIT_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
   '
   [ "$status" -eq 0 ]
