@@ -4349,6 +4349,47 @@ def test_ollama_gpu_backpressure_timeout_and_poll_are_clamped() -> None:
     assert llm_client._ollama_gpu_backpressure_poll_s(cfg) == pytest.approx(1.0)
 
 
+def test_ollama_gpu_backpressure_int_setting_handles_type_error() -> None:
+    class TypeErrorInt(int):
+        def __int__(self):
+            raise TypeError("cannot coerce")
+
+    cfg = _make_config(OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=TypeErrorInt(10))
+
+    assert llm_client._ollama_gpu_backpressure_int_setting(
+        cfg, "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 25
+    ) == 25
+
+
+@pytest.mark.asyncio
+async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _make_config(
+        OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=100,
+        OLLAMA_GPU_BACKPRESSURE_POLL_MS=1,
+    )
+    limiter = asyncio.Semaphore(1)
+    calls = 0
+    original_wait_for = asyncio.wait_for
+
+    async def flaky_wait_for(awaitable, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            awaitable.close()
+            raise TimeoutError
+        return await original_wait_for(awaitable, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(llm_client.asyncio, "wait_for", flaky_wait_for)
+
+    wait_ms = await llm_client._acquire_ollama_gpu_limiter(limiter, cfg)
+
+    assert calls == 2
+    assert wait_ms >= 0
+    limiter.release()
+
+
 @pytest.mark.asyncio
 async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
     cfg = _make_config(
