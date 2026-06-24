@@ -9,16 +9,15 @@ import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import config as _config_module
 from config import Config
 from core.db import Database, MessageRecord
 
-_config_get_config: Callable[[], Config] | None
-try:
-    from config import get_config as _config_get_config
-except ImportError:  # pragma: no cover - test doubles may only expose Config
-    _config_get_config = None
+_config_get_config = cast(
+    "Callable[[], Config] | None", getattr(_config_module, "get_config", None)
+)
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +150,7 @@ class ConversationMemory:
         current_user_id = (self.active_user_id or "").strip()
         if current_user_id:
             return len(await self.db.list_sessions(current_user_id))
-        return await self.db.count_sessions_total()
+        return int(await self.db.count_sessions_total())
 
     async def create_session(self, title: str = "Yeni Sohbet") -> str:
         await self._ensure_initialized()
@@ -163,7 +162,7 @@ class ConversationMemory:
         self._last_file = None
         self._dirty = False
         logger.info("Yeni oturum oluşturuldu: %s - %s", row.id, row.title)
-        return row.id
+        return str(row.id)
 
     async def load_session(self, session_id: str) -> bool:
         await self._ensure_initialized()
