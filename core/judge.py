@@ -135,8 +135,22 @@ class LLMJudge:
     Değerlendirme sonuçları LLMMetricsCollector'a ve Prometheus'a yazılır.
     """
 
+    config: Any
+    enabled: bool
+    model: str | None
+    provider: str
+    sample_rate: float
+    auto_feedback_enabled: bool
+    auto_feedback_threshold: float
+    response_model: str
+
     def __init__(self) -> None:
-        from config import Config, get_bool_prefixed_env, get_float_prefixed_env, get_prefixed_env
+        from config import Config
+        from core.config_env_helpers import (
+            get_bool_prefixed_env,
+            get_float_prefixed_env,
+            get_prefixed_env,
+        )
 
         self.config = Config()
         self.enabled = get_bool_prefixed_env(
