@@ -297,7 +297,8 @@ EOF
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Cannot install dependencies for ubuntu26.04-x64"* ]]
+  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
+  [[ "$output" != *"Cannot install dependencies for ubuntu26.04-x64"* ]]
   [[ "$output" == *"Ubuntu 26.04 için sabit Chromium apt bağımlılık listesi deneniyor"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
 }

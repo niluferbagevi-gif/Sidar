@@ -3819,7 +3819,7 @@ install_playwright_browsers() {
         local _pw_install_completed=false
         local _pw_python_spec
         local _pw_apt_noise_regex='is already the newest version|0 upgraded.*0 newly.*not upgraded|Reading package|Building dependency|Reading state|Solving dependencies|^$'
-        local _pw_browser_noise_regex="BEWARE: your OS is not officially supported|${_pw_apt_noise_regex}"
+        local _pw_browser_noise_regex="BEWARE: your OS is not officially supported|Cannot install dependencies for ubuntu[0-9]+\.04-x64|${_pw_apt_noise_regex}"
         local _pw_ubuntu_version=""
         if [[ -r "$_pw_os_release_path" ]]; then
             _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
@@ -3873,7 +3873,7 @@ install_playwright_browsers() {
                 warn "Playwright install-deps başarılı döndü ancak kritik Chromium bağımlılıkları doğrulanamadı; sabit apt fallback uygulanacak."
             fi
 
-            cat "$_pw_install_log" >&2
+            grep -vE "$_pw_browser_noise_regex" "$_pw_install_log" >&2 || true
             if ! is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
                 warn "Playwright install-deps başarısız oldu; sabit apt fallback yalnızca Ubuntu 25+ override hostlarında uygulanır."
                 return 1
