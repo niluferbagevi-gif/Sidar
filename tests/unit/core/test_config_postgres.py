@@ -2,7 +2,9 @@ from core import config_postgres
 
 
 def test_read_env_returns_default_when_getter_returns_none():
-    assert config_postgres._read_env(lambda _key, _default: None, "POSTGRES_USER", "sidar") == "sidar"
+    assert (
+        config_postgres._read_env(lambda _key, _default: None, "POSTGRES_USER", "sidar") == "sidar"
+    )
 
 
 def test_normalize_postgres_port_rejects_malformed_and_out_of_range_values():

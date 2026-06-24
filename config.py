@@ -416,8 +416,6 @@ def get_container_database_url() -> str:
     return config_postgres.get_container_database_url(getenv=os.getenv)
 
 
-
-
 def _default_auto_migrate_enabled() -> bool:
     """Enable runtime Alembic auto-migrate outside production by default."""
     return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
@@ -520,9 +518,7 @@ def _log_once_env(
     current = os.environ.get(flag, "")
     token = fingerprint or "1"
     if current == token:
-        logger.debug(
-            localized_log_message("config_reload_suppressed"), flag
-        )
+        logger.debug(localized_log_message("config_reload_suppressed"), flag)
         return
     os.environ[flag] = token
     fn(*args)
@@ -831,9 +827,7 @@ class Config:
     DRIVER_VERSION: str = "N/A"
     GPU_VRAM_MB: int = 0
     OLLAMA_GPU_REQUEST_POOL_SIZE: int = get_int_env("OLLAMA_GPU_REQUEST_POOL_SIZE", 0)
-    OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS: int = get_int_env(
-        "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 0
-    )
+    OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS: int = get_int_env("OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 0)
     OLLAMA_GPU_BACKPRESSURE_POLL_MS: int = get_int_env("OLLAMA_GPU_BACKPRESSURE_POLL_MS", 25)
     OLLAMA_GPU_BACKPRESSURE_WARN_MS: int = get_int_env("OLLAMA_GPU_BACKPRESSURE_WARN_MS", 250)
 
@@ -854,9 +848,7 @@ class Config:
     )
 
     # FP16 / mixed precision  →  production GPU profillerinde VRAM tasarrufu için varsayılan açık
-    GPU_MIXED_PRECISION: bool = get_bool_env(
-        "GPU_MIXED_PRECISION", gpu_mixed_precision_default()
-    )
+    GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", gpu_mixed_precision_default())
 
     # ─── Uygulama ────────────────────────────────────────────
     MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)

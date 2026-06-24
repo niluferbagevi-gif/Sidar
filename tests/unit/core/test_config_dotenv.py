@@ -16,8 +16,14 @@ def test_config_dotenv_parse_and_resolve_paths(tmp_path, monkeypatch):
         "EMPTY": "",
         "PLAIN": "value",
     }
-    assert config_dotenv.resolve_dotenv_path("relative.env", base_dir=tmp_path) == tmp_path / "relative.env"
-    assert config_dotenv.resolve_dotenv_path("~/secret.env", base_dir=tmp_path) == tmp_path / "secret.env"
+    assert (
+        config_dotenv.resolve_dotenv_path("relative.env", base_dir=tmp_path)
+        == tmp_path / "relative.env"
+    )
+    assert (
+        config_dotenv.resolve_dotenv_path("~/secret.env", base_dir=tmp_path)
+        == tmp_path / "secret.env"
+    )
 
 
 def test_config_dotenv_tracking_and_reset_helpers(tmp_path):

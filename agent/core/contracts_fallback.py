@@ -103,6 +103,7 @@ class FallbackActionFeedback:
             f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
         )
 
+
 def bind_fallback_contracts(
     derive_correlation_id: DeriveCorrelationId,
 ) -> tuple[type[FallbackFederationTaskEnvelope], type[FallbackActionFeedback]]:

@@ -234,7 +234,9 @@ class OllamaClient(BaseLLMClient):
                     )
                     gpu_limiter_acquired = True
                     if span is not None:
-                        span.set_attribute("sidar.llm.gpu_backpressure_wait_ms", gpu_limiter_wait_ms)
+                        span.set_attribute(
+                            "sidar.llm.gpu_backpressure_wait_ms", gpu_limiter_wait_ms
+                        )
                     wait_warn_ms = int(
                         _setting(self.config, "OLLAMA_GPU_BACKPRESSURE_WARN_MS", 250) or 250
                     )

@@ -35,7 +35,11 @@ class _Jira:
         return self.available
 
     async def create_issue(self, **kwargs):
-        return self.create_ok, {"key": f"{kwargs['project_key']}-1"}, None if self.create_ok else "create failed"
+        return (
+            self.create_ok,
+            {"key": f"{kwargs['project_key']}-1"},
+            None if self.create_ok else "create failed",
+        )
 
     async def search_issues(self, **_):
         return self.search_ok, [{"key": "SIDAR-1"}], None if self.search_ok else "search failed"
@@ -69,7 +73,9 @@ async def test_integrations_router_legacy_exports_success_paths():
 
     slack_send = await exports["api_slack_send"](SlackSendRequest(text="hello", channel="#general"))
     slack_channels = await exports["api_slack_channels"]()
-    jira_create = await exports["api_jira_create_issue"](JiraCreateRequest(project_key="SIDAR", summary="s"))
+    jira_create = await exports["api_jira_create_issue"](
+        JiraCreateRequest(project_key="SIDAR", summary="s")
+    )
     jira_search = await exports["api_jira_search_issues"](jql="project=SIDAR", max_results=5)
     teams_send = await exports["api_teams_send"](TeamsSendRequest(text="hello", title="t"))
 
@@ -86,7 +92,11 @@ async def test_integrations_router_legacy_exports_success_paths():
     [
         ("api_slack_send", SlackSendRequest(text="hello"), {"slack": _Slack(available=False)}),
         ("api_slack_channels", None, {"slack": _Slack(available=False)}),
-        ("api_jira_create_issue", JiraCreateRequest(project_key="SIDAR", summary="s"), {"jira": _Jira(available=False)}),
+        (
+            "api_jira_create_issue",
+            JiraCreateRequest(project_key="SIDAR", summary="s"),
+            {"jira": _Jira(available=False)},
+        ),
         ("api_jira_search_issues", None, {"jira": _Jira(available=False)}),
         ("api_teams_send", TeamsSendRequest(text="hello"), {"teams": _Teams(available=False)}),
     ],
@@ -111,12 +121,18 @@ async def test_integrations_router_legacy_exports_unavailable_paths(export_name,
     [
         ("api_slack_send", SlackSendRequest(text="hello"), {"slack": _Slack(send_ok=False)}),
         ("api_slack_channels", None, {"slack": _Slack(channels_ok=False)}),
-        ("api_jira_create_issue", JiraCreateRequest(project_key="SIDAR", summary="s"), {"jira": _Jira(create_ok=False)}),
+        (
+            "api_jira_create_issue",
+            JiraCreateRequest(project_key="SIDAR", summary="s"),
+            {"jira": _Jira(create_ok=False)},
+        ),
         ("api_jira_search_issues", None, {"jira": _Jira(search_ok=False)}),
         ("api_teams_send", TeamsSendRequest(text="hello"), {"teams": _Teams(send_ok=False)}),
     ],
 )
-async def test_integrations_router_legacy_exports_upstream_error_paths(export_name, payload, kwargs):
+async def test_integrations_router_legacy_exports_upstream_error_paths(
+    export_name, payload, kwargs
+):
     exports = _exports(**kwargs)
 
     with pytest.raises(HTTPException) as exc_info:

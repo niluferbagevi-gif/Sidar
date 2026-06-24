@@ -158,7 +158,9 @@ async def validate_candidate_with_isolated_pytest(
         details["result_type"] = type(result).__name__
         return False, "generated_candidate_isolated_pytest_invalid_result", details
     analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
-    has_failures = bool(analysis.get("has_failures", False)) if isinstance(analysis, dict) else False
+    has_failures = (
+        bool(analysis.get("has_failures", False)) if isinstance(analysis, dict) else False
+    )
     success = bool(result.get("success", not has_failures))
     details["result"] = {
         "success": success,

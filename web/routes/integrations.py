@@ -29,12 +29,19 @@ class TeamsSendRequest(BaseModel):
     title: str | None = Field(None, description="Mesaj başlığı")
 
 
-def build_integrations_router(*, cfg: Any, slack_cache: dict[str, Any], jira_cache: dict[str, Any], teams_cache: dict[str, Any]) -> LegacyExportRouter:
+def build_integrations_router(
+    *,
+    cfg: Any,
+    slack_cache: dict[str, Any],
+    jira_cache: dict[str, Any],
+    teams_cache: dict[str, Any],
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     async def get_slack_manager() -> Any:
         if slack_cache.get("instance") is None:
             from managers.slack_manager import SlackManager
+
             slack_cache["instance"] = SlackManager(
                 token=getattr(cfg, "SLACK_TOKEN", ""),
                 webhook_url=getattr(cfg, "SLACK_WEBHOOK_URL", ""),
@@ -46,6 +53,7 @@ def build_integrations_router(*, cfg: Any, slack_cache: dict[str, Any], jira_cac
     def get_jira_manager() -> Any:
         if jira_cache.get("instance") is None:
             from managers.jira_manager import JiraManager
+
             jira_cache["instance"] = JiraManager(
                 base_url=getattr(cfg, "JIRA_BASE_URL", ""),
                 email=getattr(cfg, "JIRA_EMAIL", ""),
@@ -57,7 +65,10 @@ def build_integrations_router(*, cfg: Any, slack_cache: dict[str, Any], jira_cac
     def get_teams_manager() -> Any:
         if teams_cache.get("instance") is None:
             from managers.teams_manager import TeamsManager
-            teams_cache["instance"] = TeamsManager(webhook_url=getattr(cfg, "TEAMS_WEBHOOK_URL", ""))
+
+            teams_cache["instance"] = TeamsManager(
+                webhook_url=getattr(cfg, "TEAMS_WEBHOOK_URL", "")
+            )
         return teams_cache["instance"]
 
     @router.post("/api/integrations/slack/send", summary="Slack Mesajı Gönder", tags=["Slack"])
@@ -66,7 +77,9 @@ def build_integrations_router(*, cfg: Any, slack_cache: dict[str, Any], jira_cac
         mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
         if not mgr.is_available():
             raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
-        ok, err = await mgr.send_message(text=req.text, channel=req.channel, thread_ts=req.thread_ts)
+        ok, err = await mgr.send_message(
+            text=req.text, channel=req.channel, thread_ts=req.thread_ts
+        )
         if not ok:
             raise HTTPException(status_code=502, detail=f"Slack hatası: {err}")
         return JSONResponse({"success": True})

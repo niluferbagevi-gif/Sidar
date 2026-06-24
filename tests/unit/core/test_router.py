@@ -188,7 +188,6 @@ def test_router_routes_to_local_when_budget_exceeded(monkeypatch: pytest.MonkeyP
     assert (provider, model) == ("ollama", "llama3")
 
 
-
 def test_router_routes_to_local_when_daily_budget_exactly_reaches_limit() -> None:
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_COMPLEXITY_THRESHOLD=0.2)
     cost_router = CostAwareRouter(cfg)
@@ -201,6 +200,7 @@ def test_router_routes_to_local_when_daily_budget_exactly_reaches_limit() -> Non
     )
 
     assert (provider, model) == ("ollama", "llama3")
+
 
 def test_router_does_not_reset_in_memory_budget_on_reinit() -> None:
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5)
@@ -415,8 +415,9 @@ def test_router_uses_redis_shared_budget_tracker_when_configured(
     assert (provider, model) == ("ollama", "llama3")
 
 
-
-def test_redis_daily_budget_tracker_uses_sanitized_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_redis_daily_budget_tracker_uses_sanitized_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _FakeRedis:
         @classmethod
         def from_url(cls, *_args, **_kwargs):
@@ -448,6 +449,7 @@ def test_configure_budget_tracker_passes_redis_namespace(monkeypatch: pytest.Mon
     )
 
     assert created == {"redis_url": "redis://shared:6379/0", "namespace": "prod-worker"}
+
 
 def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []

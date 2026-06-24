@@ -85,7 +85,6 @@ def test_dependency_inventory_labels_main_and_dev_extra_dependencies() -> None:
     assert pyproject["tool"]["uv"]["environments"] == ["sys_platform == 'linux'"]
 
 
-
 def test_httpx2_dependency_is_documented_as_migration_candidate() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]

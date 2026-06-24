@@ -1093,9 +1093,7 @@ class Database:
     async def list_prompts(self, role_name: str | None = None) -> list[PromptRecord]:
         return cast(
             list[PromptRecord],
-            await db_prompt_registry.list_prompts(
-                self, role_name, prompt_record_cls=PromptRecord
-            ),
+            await db_prompt_registry.list_prompts(self, role_name, prompt_record_cls=PromptRecord),
         )
 
     async def get_active_prompt(self, role_name: str) -> PromptRecord | None:

@@ -29,10 +29,17 @@ def _decode_image_payload(image_base64: str) -> bytes:
     try:
         return base64.b64decode(image_base64, validate=True)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Geçersiz base64 görüntü verisi: {exc}"
+        ) from exc
 
 
-def build_vision_router(*, cfg: Any, resolve_agent_instance: Callable[[], Any], resolve_vision_components: Callable[[], tuple[Any, Any]]) -> LegacyExportRouter:
+def build_vision_router(
+    *,
+    cfg: Any,
+    resolve_agent_instance: Callable[[], Any],
+    resolve_vision_components: Callable[[], tuple[Any, Any]],
+) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
     @router.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])
@@ -42,7 +49,9 @@ def build_vision_router(*, cfg: Any, resolve_agent_instance: Callable[[], Any], 
         pipeline = VisionPipeline(agent.llm, cfg)
         prompt = req.prompt or build_analyze_prompt(req.analysis_type)
         try:
-            result = await pipeline.analyze(image_b64=req.image_base64, mime_type=req.mime_type, prompt=prompt)
+            result = await pipeline.analyze(
+                image_b64=req.image_base64, mime_type=req.mime_type, prompt=prompt
+            )
         except TypeError:
             result = await pipeline.analyze(
                 image_bytes=_decode_image_payload(req.image_base64),
@@ -72,5 +81,8 @@ def build_vision_router(*, cfg: Any, resolve_agent_instance: Callable[[], Any], 
             )
         return JSONResponse({"success": True, "code": code})
 
-    router.legacy_exports = {"api_vision_analyze": api_vision_analyze, "api_vision_mockup": api_vision_mockup}
+    router.legacy_exports = {
+        "api_vision_analyze": api_vision_analyze,
+        "api_vision_mockup": api_vision_mockup,
+    }
     return router

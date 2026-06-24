@@ -237,9 +237,9 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') < script.index(
         'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-1}"'
     )
-    assert script.index('else', script.index('BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"')) < script.index(
-        'BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"'
-    )
+    assert script.index(
+        "else", script.index('BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"')
+    ) < script.index('BENCHMARK_COMPARE_REQUIRED="${BENCHMARK_COMPARE_REQUIRED:-0}"')
     assert script.count('BENCHMARK_ENFORCE_COMPARE="${BENCHMARK_ENFORCE_COMPARE:-1}"') >= 2
     assert 'if [ "${TEST_PROFILE}" = "ci" ]; then' in script
     assert 'BENCHMARK_COMPARE_FAIL="${BENCHMARK_COMPARE_FAIL:-mean:10%}"' in script
@@ -266,7 +266,10 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
     assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
-    assert "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak" in script
+    assert (
+        "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
+        in script
+    )
     assert "benchmark_compare_target_found=0" in script
     assert "benchmark_compare_target_found=1" in script
     assert "Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}" in script
@@ -320,7 +323,10 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
         "restore/seed edilmiş *_baseline.json kayıtları içinden en güncel eşleşmeyi seçer"
         in env_advanced
     )
-    assert "Yerel boş cache ilk koşusunda RUN_BENCHMARKS=required ./run_tests.sh baseline seed eder" in env_advanced
+    assert (
+        "Yerel boş cache ilk koşusunda RUN_BENCHMARKS=required ./run_tests.sh baseline seed eder"
+        in env_advanced
+    )
     assert "yerel profil varsayılanı BENCHMARK_COMPARE_REQUIRED=0" in env_advanced
     assert "SIDAR_FORMAT_TABLE_MAX_MEAN_MS=5.0" in env_advanced
     assert "mevcut 0004_baseline.json" not in env_advanced
@@ -1230,10 +1236,10 @@ def test_install_sidar_download_verified_script_fails_after_http_200_when_checks
         f"printf '%s\\n' \"$*\" >> {curl_log!s}\n"
         "out=''\n"
         "while [[ $# -gt 0 ]]; do\n"
-        "  if [[ \"$1\" == '-o' ]]; then shift; out=\"$1\"; fi\n"
+        '  if [[ "$1" == \'-o\' ]]; then shift; out="$1"; fi\n'
         "  shift || true\n"
         "done\n"
-        "[[ -n \"$out\" ]]\n"
+        '[[ -n "$out" ]]\n'
         f"cat > \"$out\" <<'REMOTE_SCRIPT'\n{downloaded_body}REMOTE_SCRIPT\n"
         "exit 0\n",
         encoding="utf-8",
@@ -1999,10 +2005,13 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         'FRONTEND_E2E_RETRY_ON_FAIL="${FRONTEND_E2E_RETRY_ON_FAIL:-${RETRY_ON_FAIL:-1}}"' in script
     )
     assert script.count('BENCHMARK_ENFORCE_RESULT="${BENCHMARK_ENFORCE_RESULT:-1}"') >= 2
-    assert 'ENFORCE_FRONTEND_E2E' in script
-    assert script.count(
-        'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-${ENFORCE_FRONTEND_E2E:-1}}"'
-    ) >= 2
+    assert "ENFORCE_FRONTEND_E2E" in script
+    assert (
+        script.count(
+            'FRONTEND_E2E_ENFORCE_RESULT="${FRONTEND_E2E_ENFORCE_RESULT:-${ENFORCE_FRONTEND_E2E:-1}}"'
+        )
+        >= 2
+    )
     assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
@@ -2166,17 +2175,24 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
         )
     ]
 
-    assert '"audit:high": "node ../scripts/npm_audit_safe.js --level=high --retries=2"' in package_json
+    assert (
+        '"audit:high": "node ../scripts/npm_audit_safe.js --level=high --retries=2"' in package_json
+    )
     assert "function classifyAuditFailure" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_MAX_RETRIES" in npm_audit_safe
-    assert 'spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"]' in npm_audit_safe
+    assert (
+        'spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"]' in npm_audit_safe
+    )
     assert "npm-audit-report.raw.json" in npm_audit_safe
     assert "npm-audit-stderr.log" in npm_audit_safe
     assert "npm-audit-failure.json" in npm_audit_safe
     assert "audit endpoint returned an error" in npm_audit_safe
     assert "failure_category: category" in npm_audit_safe
-    assert "options.allowNetworkFailure = !process.env.CI && !process.env.GITHUB_ACTIONS" in npm_audit_safe
+    assert (
+        "options.allowNetworkFailure = !process.env.CI && !process.env.GITHUB_ACTIONS"
+        in npm_audit_safe
+    )
     assert (
         frontend_gate_block.index("npm run audit:high")
         < frontend_gate_block.index("npm run lint")

@@ -16,7 +16,10 @@ from managers.code.security_adapter import CodeSecurityAdapter
 def test_docker_helper_sanitizers_and_cli_command_are_fixture_light(tmp_path):
     limits = {"memory": "--bad", "cpus": "0.25", "pids_limit": 0, "network_mode": "bad"}
 
-    assert sanitize_docker_token("128m", pattern=DOCKER_MEMORY_RE, default="256m", kind="memory") == "128m"
+    assert (
+        sanitize_docker_token("128m", pattern=DOCKER_MEMORY_RE, default="256m", kind="memory")
+        == "128m"
+    )
     assert sanitize_docker_token("bad", pattern=DOCKER_CPUS_RE, default="0.5", kind="cpus") == "0.5"
     assert sanitize_docker_network("HOST") == "host"
 

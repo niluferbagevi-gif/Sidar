@@ -61,7 +61,12 @@ def _read_int_env_with_floor(env_key: str, default: int, minimum: int) -> int:
         logger.warning("%s geçersiz (%r); varsayılan %s kullanılacak.", env_key, raw_value, default)
         return default
     if configured < minimum:
-        logger.warning("%s=%s güvenli minimum %s altında; minimum değer kullanılacak.", env_key, configured, minimum)
+        logger.warning(
+            "%s=%s güvenli minimum %s altında; minimum değer kullanılacak.",
+            env_key,
+            configured,
+            minimum,
+        )
         return minimum
     return configured
 

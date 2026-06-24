@@ -35,10 +35,7 @@ def test_web_server_uses_canonical_agent_contracts_only():
     assert web_server.FederationTaskEnvelope is agent_contracts.FederationTaskEnvelope
     assert web_server.FederationTaskResult is agent_contracts.FederationTaskResult
     assert web_server.derive_correlation_id is agent_contracts.derive_correlation_id
-    assert (
-        web_server.normalize_federation_protocol
-        is agent_contracts.normalize_federation_protocol
-    )
+    assert web_server.normalize_federation_protocol is agent_contracts.normalize_federation_protocol
 
     source = Path("web_server.py").read_text(encoding="utf-8")
     assert "except Exception:  # pragma: no cover" not in source

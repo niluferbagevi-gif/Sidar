@@ -3714,4 +3714,3 @@ async def test_pgvector_compat_wrappers_delegate_to_backend() -> None:
 
     legacy_store = rag.DocumentStore.__new__(rag.DocumentStore)
     assert legacy_store._pgvector_table_name() == "rag_embeddings"
-

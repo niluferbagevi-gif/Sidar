@@ -163,7 +163,9 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """GraphRAG/reviewer P2P döngüsü hop limitini aşınca fail-closed sonlanmalıdır."""
 
     cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1, SWARM_TASK_MAX_RETRIES=0)
@@ -175,7 +177,11 @@ async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(monkeypatch: py
     monkeypatch.setattr(
         orchestrator.router,
         "route_by_role",
-        lambda role: reviewer if role == "reviewer" else researcher if role == "researcher" else None,
+        lambda role: reviewer
+        if role == "reviewer"
+        else researcher
+        if role == "researcher"
+        else None,
     )
 
     class _LoopingHandoffAgent:
@@ -201,7 +207,8 @@ async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(monkeypatch: py
             )
 
     monkeypatch.setattr(
-        "agent.swarm.AgentCatalog.create", lambda role_name, **_kwargs: _LoopingHandoffAgent(role_name)
+        "agent.swarm.AgentCatalog.create",
+        lambda role_name, **_kwargs: _LoopingHandoffAgent(role_name),
     )
 
     result = await orchestrator.run(

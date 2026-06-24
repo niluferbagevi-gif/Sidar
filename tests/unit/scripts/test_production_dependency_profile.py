@@ -26,9 +26,7 @@ def test_production_minimal_profile_and_artifacts_are_declared() -> None:
 def test_requirements_exporter_uses_uv_production_no_dev() -> None:
     """The generated requirements flow must be owned by uv and exclude dev extras."""
 
-    exporter = (REPO_ROOT / "scripts/export_production_requirements.sh").read_text(
-        encoding="utf-8"
-    )
+    exporter = (REPO_ROOT / "scripts/export_production_requirements.sh").read_text(encoding="utf-8")
 
     assert "uv export" in exporter
     assert "--extra production" in exporter

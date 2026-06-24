@@ -79,7 +79,9 @@ async def run_autonomous_coverage_batch(
                 )
             )
             generated = agent._clean_code_output(generated)
-            candidate_rejection_reason = agent._candidate_rejection_reason(generated, finding=finding)
+            candidate_rejection_reason = agent._candidate_rejection_reason(
+                generated, finding=finding
+            )
             if candidate_rejection_reason:
                 results.append(
                     {
@@ -95,7 +97,11 @@ async def run_autonomous_coverage_batch(
                 )
                 continue
 
-            isolated_ok, isolated_reason, isolated_details = await agent._validate_candidate_with_isolated_pytest(
+            (
+                isolated_ok,
+                isolated_reason,
+                isolated_details,
+            ) = await agent._validate_candidate_with_isolated_pytest(
                 suggested_test_path=suggested_test_path,
                 generated_test=generated,
             )

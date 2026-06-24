@@ -91,8 +91,12 @@ def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
 
 
 def test_torch_cuda_major_parses_supported_wheel_versions():
-    assert gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda="12.8"))) == "12"
-    assert gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda="13.0"))) == "13"
+    assert (
+        gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda="12.8"))) == "12"
+    )
+    assert (
+        gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda="13.0"))) == "13"
+    )
 
 
 def test_torch_cuda_major_returns_none_for_cpu_wheel():

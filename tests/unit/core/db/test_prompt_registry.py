@@ -19,6 +19,7 @@ async def test_ensure_default_prompt_registry_logs_upsert_failure(monkeypatch, c
         lambda *_args, **_kwargs: SimpleNamespace(loader=Loader()),
     )
     monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+
     async def no_active_prompt(*_args, **_kwargs):
         return None
 

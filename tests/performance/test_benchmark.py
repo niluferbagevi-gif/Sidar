@@ -150,7 +150,9 @@ async def _warm_postgresql_connection_pool(db: Database) -> None:
     await asyncio.gather(*[_ping_connection() for _ in range(max(1, connection_count))])
 
     get_min_size = getattr(pool, "get_min_size", None)
-    min_size = int(get_min_size()) if callable(get_min_size) else int(getattr(db, "pool_min_size", 1))
+    min_size = (
+        int(get_min_size()) if callable(get_min_size) else int(getattr(db, "pool_min_size", 1))
+    )
     if min_size < connection_count:
         raise RuntimeError(
             "PostgreSQL benchmark pool min_size, max_size değerinden küçük; "

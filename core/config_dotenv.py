@@ -105,7 +105,9 @@ def clone_dotenv_load_report(load_events: list[dict[str, Any]]) -> list[dict[str
     return deepcopy(load_events)
 
 
-def clone_dotenv_key_source_report(key_sources: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def clone_dotenv_key_source_report(
+    key_sources: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     """Return a defensive copy of key-to-source metadata."""
     return deepcopy(key_sources)
 

@@ -28,7 +28,9 @@ async def _ok_next(_request: Request):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["/health", "/healthz", "/readyz", "/ui/index.html", "/static/app.css"])
+@pytest.mark.parametrize(
+    "path", ["/health", "/healthz", "/readyz", "/ui/index.html", "/static/app.css"]
+)
 async def test_ddos_rate_limit_impl_skips_bypass_paths(path: str) -> None:
     calls: list[tuple[str, str, int, int]] = []
 

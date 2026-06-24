@@ -4356,9 +4356,12 @@ def test_ollama_gpu_backpressure_int_setting_handles_type_error() -> None:
 
     cfg = _make_config(OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=TypeErrorInt(10))
 
-    assert llm_client._ollama_gpu_backpressure_int_setting(
-        cfg, "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 25
-    ) == 25
+    assert (
+        llm_client._ollama_gpu_backpressure_int_setting(
+            cfg, "OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS", 25
+        )
+        == 25
+    )
 
 
 @pytest.mark.asyncio

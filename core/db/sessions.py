@@ -28,9 +28,7 @@ def _session_record(record_cls: Callable[..., T], row: Any) -> T:
     )
 
 
-async def list_sessions(
-    db: Any, record_cls: Callable[..., T], user_id: str
-) -> list[T]:
+async def list_sessions(db: Any, record_cls: Callable[..., T], user_id: str) -> list[T]:
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -323,7 +321,9 @@ async def get_session_messages(db: Any, session_id: str) -> list[Any]:
 
 
 async def get_messages_for_sessions(db: Any, session_ids: list[str]) -> dict[str, list[Any]]:
-    normalized_ids = [str(session_id).strip() for session_id in session_ids if str(session_id).strip()]
+    normalized_ids = [
+        str(session_id).strip() for session_id in session_ids if str(session_id).strip()
+    ]
     if not normalized_ids:
         return {}
     rows = await db._fetch_message_rows_by_session_ids(normalized_ids)
@@ -335,7 +335,9 @@ async def get_messages_for_sessions(db: Any, session_ids: list[str]) -> dict[str
     return grouped
 
 
-async def replace_session_messages(db: Any, session_id: str, messages: list[dict[str, object]]) -> int:
+async def replace_session_messages(
+    db: Any, session_id: str, messages: list[dict[str, object]]
+) -> int:
     normalized_messages = [
         {
             "role": str(item.get("role", "") or "").strip() or "assistant",

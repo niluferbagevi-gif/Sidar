@@ -52,7 +52,9 @@ async def record_provider_usage_daily(
     await db._run_sqlite_op(_run)
 
 
-async def get_user_quota_status(db: Any, user_id: str, provider: str, sqlite_fetchone: Any) -> dict[str, int | bool]:
+async def get_user_quota_status(
+    db: Any, user_id: str, provider: str, sqlite_fetchone: Any
+) -> dict[str, int | bool]:
     provider_name = (provider or "unknown").lower().strip() or "unknown"
     today = datetime.now(UTC).date().isoformat()
 

@@ -3003,7 +3003,9 @@ async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
         _jira_mgr_cache["instance"] = _jira_mgr_instance
     elif _jira_mgr_cache.get("instance") is None:
         _jira_mgr_cache["instance"] = _get_jira_manager()
-    return await integrations_router.legacy_exports["api_jira_search_issues"](jql=jql, max_results=max_results)
+    return await integrations_router.legacy_exports["api_jira_search_issues"](
+        jql=jql, max_results=max_results
+    )
 
 
 async def api_teams_send(req: _TeamsSendRequest) -> Any:

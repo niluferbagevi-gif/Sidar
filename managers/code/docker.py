@@ -80,7 +80,9 @@ def sanitize_docker_image(value: object) -> str:
     return candidate
 
 
-def resolve_sandbox_limits(owner: DockerSandboxOwner, default_limits: dict[str, object]) -> dict[str, object]:
+def resolve_sandbox_limits(
+    owner: DockerSandboxOwner, default_limits: dict[str, object]
+) -> dict[str, object]:
     """Normalize Docker cgroup limits from config and manager defaults."""
     limits = dict(default_limits)
     cfg = getattr(owner, "cfg", None)

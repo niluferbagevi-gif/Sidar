@@ -66,11 +66,15 @@ async def test_memory_feedback_router_legacy_exports_success_paths():
     stats = await exports["api_feedback_stats"]()
 
     assert upsert.status_code == 200
-    assert entity_memory.upserts == [{"user_id": "u1", "key": "skill", "value": "python", "ttl_days": 7}]
+    assert entity_memory.upserts == [
+        {"user_id": "u1", "key": "skill", "value": "python", "ttl_days": 7}
+    ]
     assert b'"name":"Ada"' in profile.body
     assert b'"success":true' in delete.body
     assert record.status_code == 200
-    assert feedback_store.records == [{"user_id": "u1", "prompt": "p", "response": "r", "rating": 5, "note": ""}]
+    assert feedback_store.records == [
+        {"user_id": "u1", "prompt": "p", "response": "r", "rating": 5, "note": ""}
+    ]
     assert b'"count":1' in stats.body
 
 
