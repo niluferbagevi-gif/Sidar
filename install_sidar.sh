@@ -91,7 +91,7 @@ verify_core_install_manifest() {
     done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
-2b3b979a93dbba2e7e7b5c3643da8e808293271b8bbbeb4a2e5e4d59980bc252  core/memory.py
+10f3b1d976fb42bcb68a05639da08c69e005a6db91acf9158c11029958eec640  core/memory.py
 1fb2f74bbca1546c225f6c7c6831b66f131806c668575acb4c852c03b32fccd2  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
