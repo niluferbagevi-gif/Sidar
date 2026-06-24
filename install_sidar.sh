@@ -5203,6 +5203,24 @@ report_env_api_key_status() {
     done
 }
 
+verify_sidar_keys_file_permissions() {
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
+    local mode=""
+
+    [[ -f "$sidar_keys_file" ]] || return 0
+
+    mode="$(stat -c '%a' "$sidar_keys_file" 2>/dev/null || true)"
+    case "$mode" in
+        600|400)
+            ok "SIDAR_KEYS_FILE izin kontrolü tamamlandı: ${sidar_keys_file} mode=${mode}."
+            ;;
+        *)
+            warn "SIDAR_KEYS_FILE izinleri güvenli değil: ${sidar_keys_file} mode=${mode:-bilinmiyor}."
+            warn "Secret dosyasını yalnız kullanıcı okuyacak şekilde düzeltin: chmod 600 \"${sidar_keys_file}\""
+            ;;
+    esac
+}
+
 validate_runtime_env_loading() {
     local env_file="$SCRIPT_DIR/.env"
 
@@ -7184,6 +7202,7 @@ print_summary() {
         fi
         echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
     fi
+    verify_sidar_keys_file_permissions
     echo ""
     echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
     echo "       source .venv/bin/activate"

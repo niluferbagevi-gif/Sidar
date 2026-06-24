@@ -1201,3 +1201,37 @@ ENV
   '
   [ "$status" -eq 0 ]
 }
+
+@test "verify_sidar_keys_file_permissions accepts 600 and 400 modes" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    printf "OPENAI_API_KEY=test\\n" > "$SIDAR_KEYS_FILE"
+
+    chmod 600 "$SIDAR_KEYS_FILE"
+    verify_sidar_keys_file_permissions
+
+    chmod 400 "$SIDAR_KEYS_FILE"
+    verify_sidar_keys_file_permissions
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mode=600"* ]]
+  [[ "$output" == *"mode=400"* ]]
+  [[ "$output" != *"izinleri güvenli değil"* ]]
+}
+
+@test "verify_sidar_keys_file_permissions warns when secret file is group-readable" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    printf "OPENAI_API_KEY=test\\n" > "$SIDAR_KEYS_FILE"
+    chmod 640 "$SIDAR_KEYS_FILE"
+
+    verify_sidar_keys_file_permissions
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SIDAR_KEYS_FILE izinleri güvenli değil"* ]]
+  [[ "$output" == *"chmod 600"* ]]
+}
