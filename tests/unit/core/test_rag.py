@@ -3702,3 +3702,16 @@ async def test_bm25_vector_preference_hint_supports_each_vector_backend_individu
     store._log_vector_backend_preference_hint()
 
     assert rag.DocumentStore._backend_info_logged["vector_preference_bm25_hint"] is True
+
+
+async def test_pgvector_compat_wrappers_delegate_to_backend() -> None:
+    assert rag._is_valid_pgvector_identifier("rag_embeddings") is True
+    assert rag._is_valid_pgvector_identifier("1bad") is False
+
+    store = rag.DocumentStore.__new__(rag.DocumentStore)
+    store._pg_table = "custom_embeddings"
+    assert store._pgvector_table_name() == "custom_embeddings"
+
+    legacy_store = rag.DocumentStore.__new__(rag.DocumentStore)
+    assert legacy_store._pgvector_table_name() == "rag_embeddings"
+
