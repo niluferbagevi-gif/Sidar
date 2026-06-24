@@ -105,6 +105,7 @@ SIDAR_INSTALL_MANIFEST_EOF
     local target=""
     local failures=0
     local -a mismatched_files=()
+    local mismatch_details=""
 
     while IFS=' ' read -r expected rel_path; do
         [[ -n "${expected:-}" && -n "${rel_path:-}" ]] || continue
@@ -113,6 +114,7 @@ SIDAR_INSTALL_MANIFEST_EOF
             warn "Çekirdek manifest hash doğrulama atlandı (dosya yok): ${rel_path}"
             failures=$((failures + 1))
             mismatched_files+=("${rel_path} (eksik dosya)")
+            mismatch_details+=$'\n'"  • ${rel_path}"$'\n'"    Beklenen: ${expected}"$'\n'"    Mevcut:   <dosya-yok>"
             continue
         fi
         actual="$(compute_sha256 "$target" 2>/dev/null || echo "<sha256-hesaplanamadı>")"
@@ -120,6 +122,7 @@ SIDAR_INSTALL_MANIFEST_EOF
             warn "Çekirdek manifest hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
             failures=$((failures + 1))
             mismatched_files+=("${rel_path}")
+            mismatch_details+=$'\n'"  • ${rel_path}"$'\n'"    Beklenen: ${expected}"$'\n'"    Mevcut:   ${actual}"
         fi
     done < <(awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}' "$manifest_path")
 
@@ -130,6 +133,7 @@ SIDAR_INSTALL_MANIFEST_EOF
         mismatched_csv="${mismatched_files[*]}"
         IFS="$_ifs_old"
     fi
+    [[ -n "$mismatch_details" ]] || mismatch_details=$'\n  • bilinmiyor'
 
     local bootstrap_context=""
     if [[ -n "${SIDAR_BOOTSTRAP_REEXEC_TARGET:-}" ]]; then
@@ -150,6 +154,8 @@ kurulum manifestinden gelir. Doğrulanan çekirdek dosyalar:
   • core/multimodal.py
 
 Uyumsuz çekirdek dosyalar: ${mismatched_csv:-bilinmiyor}
+
+Uyumsuz çekirdek dosya detayları:${mismatch_details}
 ${bootstrap_context}
 
 Çözüm:
@@ -157,6 +163,12 @@ ${bootstrap_context}
      install_sidar.sh içindeki SIDAR_INSTALL_MANIFEST_EOF bloğunu güncelleyin.
   2) Değişikliği commit/PR ile main dalına taşıyın; kullanıcı kurulumu ancak
      çekirdek manifest repo içeriğiyle senkron olduğunda devam eder.
+
+Bu hata genellikle core dosyası değiştiği halde çekirdek manifestin
+güncellenmediği anlamına gelir. Geliştirici çözümü:
+  scripts/sync_install_manifest.sh
+
+Kurulum güvenlik nedeniyle durduruldu.
 
 Not: ALLOW_UNVERIFIED_REMOTE_SCRIPTS yalnız kurulum modülleri için geçici/test
 bypass mekanizmasıdır; çekirdek dosya manifesti için bypass uygulanmaz."

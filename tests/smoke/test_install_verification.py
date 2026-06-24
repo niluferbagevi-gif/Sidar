@@ -315,12 +315,17 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
         "kurulum manifestinden gelir",
         "core/memory.py",
         "Uyumsuz çekirdek dosyalar",
+        "Uyumsuz çekirdek dosya detayları",
+        "Beklenen:",
+        "Mevcut:",
         "Bootstrap durumu:",
         "Clone/re-exec tamamlandı",
         "git clone veya helper modül yükleme hatası değildir",
         "hata clone sonrası çekirdek manifest karşılaştırmasında oluştu",
         "scripts/sync_install_manifest.sh",
         "SIDAR_INSTALL_MANIFEST_EOF",
+        "core dosyası değiştiği halde çekirdek manifestin",
+        "Kurulum güvenlik nedeniyle durduruldu",
         "çekirdek dosya manifesti için bypass uygulanmaz",
     ):
         assert required_marker in combined, (
