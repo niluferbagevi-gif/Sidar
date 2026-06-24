@@ -80,6 +80,7 @@ detect_gpu() {
         GPU_AVAILABLE=true
         if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
+            declare -F persist_run_gpu_stress_dotenv >/dev/null 2>&1 && persist_run_gpu_stress_dotenv
             info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
         fi
         ok "GPU     : $GPU_NAME"

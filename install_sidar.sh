@@ -276,7 +276,7 @@ c3099e83bd59f184198ca6bc4c97b9ef5d52fa728069918cd4a448033e2e215f  scripts/instal
 12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
-ae353d4e064ffe340ec0106a1c9db3c4caeb5f8cd1543f465588d6511c29520a  scripts/install_modules/utils/gpu_utils.sh
+170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
 c16a846a9a6a1f950c65916c65a89efd5480e3454fc5a3d0df7b44786944d452  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
 6447c16f872459e81246de1da72016ec02b1747162179376ec312facf33ca50d  scripts/install_modules/utils/playwright_ubuntu_override.sh
@@ -2624,6 +2624,33 @@ ensure_noninteractive_sudo_ready() {
 }
 
 
+persist_run_gpu_stress_dotenv() {
+    [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
+
+    local target_env_file="${1:-${SCRIPT_DIR}/.env.development}"
+    local example_env_file="${2:-${SCRIPT_DIR}/.env.development.example}"
+    local target_label
+    target_label="$(basename "$target_env_file")"
+
+    if [[ ! -f "$target_env_file" ]]; then
+        if [[ -f "$example_env_file" ]]; then
+            cp "$example_env_file" "$target_env_file"
+            ok "${target_label} dosyası $(basename "$example_env_file") üzerinden RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
+        else
+            mkdir -p "$(dirname "$target_env_file")"
+            : > "$target_env_file"
+            ok "${target_label} dosyası RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
+        fi
+    fi
+
+    if grep -q '^RUN_GPU_STRESS=' "$target_env_file" 2>/dev/null; then
+        sed_inplace 's|^RUN_GPU_STRESS=.*|RUN_GPU_STRESS=1|' "$target_env_file"
+    else
+        printf '\nRUN_GPU_STRESS=1\n' >> "$target_env_file"
+    fi
+    ok "${target_label}: RUN_GPU_STRESS=1 kalıcı hale getirildi."
+}
+
 read_env_value_from_file() {
     local key="$1"
     local file_path="$2"
@@ -3548,6 +3575,7 @@ detect_gpu() {
         GPU_AVAILABLE=true
         if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
+            persist_run_gpu_stress_dotenv
             info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
         fi
         ok "GPU     : $GPU_NAME"
@@ -6948,8 +6976,11 @@ run_smoke_tests() {
     fi
 
     if [[ "${RUN_GPU_STRESS:-0}" == "1" ]]; then
+        persist_run_gpu_stress_dotenv
         info "RUN_GPU_STRESS=1 zaten tanımlı; GPU stres smoke testi zorunlu çalıştırılacak."
     elif [[ "$GPU_AVAILABLE" == true ]]; then
+        export RUN_GPU_STRESS=1
+        persist_run_gpu_stress_dotenv
         pytest_smoke_env+=("RUN_GPU_STRESS=1")
         info "GPU tespit edildiği için smoke testlerde RUN_GPU_STRESS=1 otomatik etkinleştirildi."
     else

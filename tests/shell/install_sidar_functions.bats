@@ -1120,7 +1120,12 @@ case "\$*" in
 esac
 SMI
     chmod +x "$tmpdir/nvidia-smi"
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
     export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
     FORCE_CPU=false
     WSL2=false
     RUN_GPU_STRESS=0
@@ -1128,7 +1133,25 @@ SMI
     [[ "$GPU_AVAILABLE" == "true" ]]
     [[ "$CUDA_VERSION" == "12.9" ]]
     [[ "$GPU_COMPUTE_CAPABILITY" == "8.9" ]]
+    grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
+}
+
+@test "persist_run_gpu_stress_dotenv creates development dotenv from example" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    SCRIPT_DIR="$tmpdir"
+    RUN_GPU_STRESS=1
+    persist_run_gpu_stress_dotenv
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env.development"
+    grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
+  '
+  [ "$status" -eq 0 ]
 }
