@@ -273,7 +273,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 dff96eaa7db641238d6e2026bc0fa82c4ac692b760fcd8f0a299881ff6c0305d  scripts/install_modules/phases/06_services.sh
-e48f4658365d7fff4e0b99d940095ba591f795928d4b55dceb153c3babe28924  scripts/install_modules/phases/07_finish.sh
+04cb6c32d6709e4989d8de7cafe0a74c8af93ff96c1f1aebdc3e1d4198f5e138  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
@@ -2637,6 +2637,7 @@ ensure_noninteractive_sudo_ready() {
 }
 
 
+# shellcheck disable=SC2120 # opsiyonel pozisyonel argümanlar; testler özel dosya yolu geçebilir.
 persist_run_gpu_stress_dotenv() {
     [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
 
@@ -7300,7 +7301,7 @@ print_summary() {
     if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  API entegrasyon testleri: başarılı (tests/integration/api)."
     elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-        echo "  API entegrasyon testleri: hata var. Tekrar için: uv run pytest tests/integration/api --rootdir="$SCRIPT_DIR" -v --no-cov"
+        echo "  API entegrasyon testleri: hata var. Tekrar için: uv run pytest tests/integration/api --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
     else
         echo "  API entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
     fi

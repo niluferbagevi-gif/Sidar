@@ -75,6 +75,7 @@ EOF
         return 0
     fi
 
+    # shellcheck disable=SC2034 # AUTONOMOUS_CRON_STATUS bats testleri ve install özet raporu tarafından okunur.
     AUTONOMOUS_CRON_STATUS="manuel_gerekli"
     warn "Otonom döngü zamanlayıcısı kurulamadı: systemd user timer ve crontab kullanılamıyor. Manuel öneri: ${loop_script}"
 }
