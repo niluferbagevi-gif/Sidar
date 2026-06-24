@@ -260,6 +260,75 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
         )
 
 
+def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Path) -> None:
+    """Core drift must be reported as a core manifest failure, not as module drift."""
+    repo_root = Path(os.getcwd())
+    origin = tmp_path / "origin"
+    branch = _build_synthetic_bootstrap_origin(repo_root, origin)
+
+    tampered = origin / "core/memory.py"
+    tampered.write_text(
+        tampered.read_text(encoding="utf-8") + "\n# smoke-test core drift\n",
+        encoding="utf-8",
+    )
+    git = ["git", "-C", str(origin)]
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper core drift"], check=True)
+
+    host = tmp_path / "host"
+    host.mkdir()
+    standalone = host / "install_sidar.sh"
+    shutil.copy2(repo_root / "install_sidar.sh", standalone)
+    standalone.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "HOME": str(host),
+        "PWD": str(host),
+        "SIDAR_INSTALL_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+        "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
+        "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
+        "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
+        "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
+        "SIDAR_BOOTSTRAP_CLONE_REF": branch,
+        "SIDAR_REPO_BRANCH": branch,
+    }
+    env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
+
+    result = subprocess.run(
+        ["bash", str(standalone)],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        "Tampered çekirdek dosya drift testi başarısız olmalıydı (exit=0); "
+        f"çekirdek manifest gate kullanıcıyı koruyamadı.\n--- combined ---\n{combined}"
+    )
+    assert "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi" in combined
+    for required_marker in (
+        "kurulum modül manifestinden (scripts/install_modules) değil",
+        "kurulum manifestinden gelir",
+        "core/memory.py",
+        "Uyumsuz çekirdek dosyalar",
+        "scripts/sync_install_manifest.sh",
+        "SIDAR_INSTALL_MANIFEST_EOF",
+        "çekirdek dosya manifesti için bypass uygulanmaz",
+    ):
+        assert required_marker in combined, (
+            f"Çekirdek drift hata mesajında beklenen bilgi yok: {required_marker!r}.\n"
+            f"--- combined ---\n{combined}"
+        )
+    assert "Kurulum modül hash doğrulaması başarısız" not in combined, (
+        "Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n"
+        f"--- combined ---\n{combined}"
+    )
+
+
 def test_bundled_install_sidar_manifest_matches() -> None:
     repo_root = Path(os.getcwd())
     bundle_script = repo_root / "scripts" / "tools" / "bundle_install_sidar.sh"

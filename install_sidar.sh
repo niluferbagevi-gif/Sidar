@@ -100,7 +100,54 @@ SIDAR_INSTALL_MANIFEST_EOF
         return 0
     fi
 
-    fail "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi."
+    local expected=""
+    local actual=""
+    local target=""
+    local failures=0
+    local -a mismatched_files=()
+
+    while IFS=' ' read -r expected rel_path; do
+        [[ -n "${expected:-}" && -n "${rel_path:-}" ]] || continue
+        target="${SCRIPT_DIR}/${rel_path}"
+        if [[ ! -f "$target" ]]; then
+            warn "Çekirdek manifest hash doğrulama atlandı (dosya yok): ${rel_path}"
+            failures=$((failures + 1))
+            mismatched_files+=("${rel_path} (eksik dosya)")
+            continue
+        fi
+        actual="$(compute_sha256 "$target" 2>/dev/null || echo "<sha256-hesaplanamadı>")"
+        if [[ "$actual" != "$expected" ]]; then
+            warn "Çekirdek manifest hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
+            failures=$((failures + 1))
+            mismatched_files+=("${rel_path}")
+        fi
+    done < <(awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}' "$manifest_path")
+
+    local mismatched_csv=""
+    if (( ${#mismatched_files[@]} > 0 )); then
+        local _ifs_old="$IFS"
+        IFS=', '
+        mismatched_csv="${mismatched_files[*]}"
+        IFS="$_ifs_old"
+    fi
+
+    fail "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi (${failures} hata).
+
+Bu hata kurulum modül manifestinden (scripts/install_modules) değil, çekirdek
+kurulum manifestinden gelir. Doğrulanan çekirdek dosyalar:
+  • core/memory.py
+  • core/multimodal.py
+
+Uyumsuz çekirdek dosyalar: ${mismatched_csv:-bilinmiyor}
+
+Çözüm:
+  1) Repo'da scripts/sync_install_manifest.sh çalıştırıp .sidar_manifest.txt ve
+     install_sidar.sh içindeki SIDAR_INSTALL_MANIFEST_EOF bloğunu güncelleyin.
+  2) Değişikliği commit/PR ile main dalına taşıyın; kullanıcı kurulumu ancak
+     çekirdek manifest repo içeriğiyle senkron olduğunda devam eder.
+
+Not: ALLOW_UNVERIFIED_REMOTE_SCRIPTS yalnız kurulum modülleri için geçici/test
+bypass mekanizmasıdır; çekirdek dosya manifesti için bypass uygulanmaz."
 }
 
 # Resume çağrılarında önceki çalışma dizinini koru (örn. one-shot fetch sonrası
