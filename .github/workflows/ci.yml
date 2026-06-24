@@ -352,6 +352,50 @@ jobs:
       - name: Check .env.example ↔ config.py parity
         run: bash scripts/check_env_parity.sh
 
+  installer-smoke:
+    # Branch protection should mark this job name as required. It runs on every
+    # PR/push so installer drift cannot merge unnoticed when any of these
+    # release-critical paths change: install_sidar.sh, .sidar_manifest.txt,
+    # core/memory.py, core/multimodal.py, scripts/install_modules/**,
+    # scripts/sync_install_manifest.sh, scripts/tools/update_core_install_manifest.py,
+    # scripts/tools/update_install_module_hash_manifest.py.
+    name: Installer manifest and smoke gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+
+      - name: Install test dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Required embedded manifest sync test
+        run: >-
+          uv run pytest -q --no-cov
+          tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync
+
+      - name: Verify installer manifests directly
+        run: |
+          sha256sum -c .sidar_manifest.txt
+          uv run python scripts/tools/update_core_install_manifest.py --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+
+      - name: Run installer smoke suite
+        run: >-
+          uv run pytest -q --no-cov
+          tests/smoke/test_install_verification.py
+
   production-profile-dry-run:
     name: Production dependency profile dry run (non-blocking)
     runs-on: ubuntu-latest

@@ -80,6 +80,36 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
 
 
+def test_ci_has_required_installer_manifest_smoke_gate() -> None:
+    workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+    docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
+
+    assert "installer-smoke:" in workflow
+    assert "name: Installer manifest and smoke gate" in workflow
+    assert "Branch protection should mark this job name as required" in workflow
+    assert "uv sync --frozen --extra dev" in workflow
+    assert (
+        "tests/smoke/test_install_verification.py::"
+        "test_install_sidar_embedded_manifests_in_sync"
+    ) in workflow
+    assert "sha256sum -c .sidar_manifest.txt" in workflow
+    assert "uv run python scripts/tools/update_core_install_manifest.py --check" in workflow
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check"
+    ) in workflow
+    for protected_path in (
+        "install_sidar.sh",
+        ".sidar_manifest.txt",
+        "core/memory.py",
+        "core/multimodal.py",
+        "scripts/install_modules/**",
+    ):
+        assert protected_path in workflow
+        assert protected_path in docs
+    assert "Installer manifest and smoke gate" in docs
+
+
 def test_release_quality_runs_benchmark_coverage_trend_gate():
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 
