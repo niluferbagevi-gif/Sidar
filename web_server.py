@@ -2999,61 +2999,39 @@ async def api_feedback_stats() -> Any:
 
 
 async def api_slack_send(req: _SlackSendRequest) -> Any:
-    maybe_mgr = _get_slack_manager()
-    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
-    ok, err = await mgr.send_message(text=req.text, channel=req.channel, thread_ts=req.thread_ts)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Slack hatası: {err}")
-    return JSONResponse({"success": True})
+    if _slack_mgr_instance is not None:
+        _slack_mgr_cache["instance"] = _slack_mgr_instance
+    return await integrations_router.legacy_exports["api_slack_send"](req)
 
 
 async def api_slack_channels() -> Any:
-    maybe_mgr = _get_slack_manager()
-    mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Slack entegrasyonu yapılandırılmamış.")
-    ok, channels, err = await mgr.list_channels()
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Slack hatası: {err}")
-    return JSONResponse({"success": True, "channels": channels})
+    if _slack_mgr_instance is not None:
+        _slack_mgr_cache["instance"] = _slack_mgr_instance
+    return await integrations_router.legacy_exports["api_slack_channels"]()
 
 
 async def api_jira_create_issue(req: _JiraCreateRequest) -> Any:
-    mgr = _get_jira_manager()
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
-    ok, issue, err = await mgr.create_issue(
-        project_key=req.project_key,
-        summary=req.summary,
-        description=req.description or "",
-        issue_type=req.issue_type,
-        priority=req.priority,
-    )
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Jira hatası: {err}")
-    return JSONResponse({"success": True, "issue": issue})
+    if _jira_mgr_instance is not None:
+        _jira_mgr_cache["instance"] = _jira_mgr_instance
+    elif _jira_mgr_cache.get("instance") is None:
+        _jira_mgr_cache["instance"] = _get_jira_manager()
+    return await integrations_router.legacy_exports["api_jira_create_issue"](req)
 
 
 async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
-    mgr = _get_jira_manager()
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
-    ok, issues, err = await mgr.search_issues(jql=jql, max_results=max_results)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Jira hatası: {err}")
-    return JSONResponse({"success": True, "issues": issues, "total": len(issues)})
+    if _jira_mgr_instance is not None:
+        _jira_mgr_cache["instance"] = _jira_mgr_instance
+    elif _jira_mgr_cache.get("instance") is None:
+        _jira_mgr_cache["instance"] = _get_jira_manager()
+    return await integrations_router.legacy_exports["api_jira_search_issues"](jql=jql, max_results=max_results)
 
 
 async def api_teams_send(req: _TeamsSendRequest) -> Any:
-    mgr = _get_teams_manager()
-    if not mgr.is_available():
-        raise HTTPException(status_code=503, detail="Teams entegrasyonu yapılandırılmamış.")
-    ok, err = await mgr.send_message(text=req.text, title=req.title or "Sidar Bildirimi")
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Teams hatası: {err}")
-    return JSONResponse({"success": True})
+    if _teams_mgr_instance is not None:
+        _teams_mgr_cache["instance"] = _teams_mgr_instance
+    elif _teams_mgr_cache.get("instance") is None:
+        _teams_mgr_cache["instance"] = _get_teams_manager()
+    return await integrations_router.legacy_exports["api_teams_send"](req)
 
 
 # Operations/Poyraz/Coverage HTTP request models and route handlers live in
