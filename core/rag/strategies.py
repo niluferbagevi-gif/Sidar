@@ -2,13 +2,47 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
+
+
+class RagSearchStore(Protocol):
+    """Structural contract required by RAG search strategies."""
+
+    _pgvector_available: bool
+    _chroma_available: bool
+    _bm25_available: bool
+    collection: Any
+
+    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+
+    def _chroma_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+
+    def _bm25_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+
+    def _keyword_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+
+    def _format_results_from_struct(
+        self,
+        results: list[dict[str, Any]],
+        query: str,
+        source_name: str,
+    ) -> tuple[bool, str]: ...
+
+    def _fetch_pgvector(
+        self, query: str, top_k: int, session_id: str
+    ) -> list[dict[str, Any]]: ...
+
+    def _fetch_chroma(
+        self, query: str, top_k: int, session_id: str
+    ) -> list[dict[str, Any]]: ...
+
+    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...
 
 
 class VectorOnlyStrategy:
     """Run a single vector backend search with pgvector preferred over ChromaDB."""
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: RagSearchStore) -> None:
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
@@ -25,7 +59,7 @@ class VectorOnlyStrategy:
 class BM25OnlyStrategy:
     """Run a single SQLite FTS/BM25 backend search."""
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: RagSearchStore) -> None:
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
@@ -38,7 +72,7 @@ class BM25OnlyStrategy:
 class HybridStrategy:
     """Merge vector and BM25 candidates with reciprocal-rank fusion."""
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: RagSearchStore) -> None:
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
