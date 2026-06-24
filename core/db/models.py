@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from core.db import (
+from core.db.auth import AuthTokenRecord, UserRecord
+from core.db.coverage import CoverageFindingRecord, CoverageTaskRecord
+from core.db.monolith import (
     AccessPolicyRecord,
     AuditLogRecord,
     ContentAssetRecord,
@@ -10,8 +12,6 @@ from core.db import (
     OperationChecklistRecord,
     PromptRecord,
 )
-from core.db.auth import AuthTokenRecord, UserRecord
-from core.db.coverage import CoverageFindingRecord, CoverageTaskRecord
 from core.db.session import MessageRecord, SessionRecord
 
 __all__ = [

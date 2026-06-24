@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from core.db import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
+from core.db.monolith import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
 
 __all__ = ["ContentAssetRecord", "MarketingCampaignRecord", "OperationChecklistRecord"]
