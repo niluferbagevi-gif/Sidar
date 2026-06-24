@@ -1,8 +1,12 @@
 import types
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from agent.core.contracts import DelegationRequest, TaskResult
+from agent.registry import AgentSpec
+from agent.swarm import SwarmOrchestrator
 from managers.web_search import WebSearchManager
 from tests.helpers import collect_async_chunks as _collect_stream
 
@@ -155,3 +159,58 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
         for msg in history
     )
     assert any(msg.get("role") == "assistant" for msg in history)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GraphRAG/reviewer P2P döngüsü hop limitini aşınca fail-closed sonlanmalıdır."""
+
+    cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1, SWARM_TASK_MAX_RETRIES=0)
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+    researcher = AgentSpec(role_name="researcher", capabilities=["rag_search"])
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: researcher)
+    monkeypatch.setattr(
+        orchestrator.router,
+        "route_by_role",
+        lambda role: reviewer if role == "reviewer" else researcher if role == "researcher" else None,
+    )
+
+    class _LoopingHandoffAgent:
+        def __init__(self, role: str) -> None:
+            self.role = role
+
+        async def handle(self, envelope):
+            target = "reviewer" if self.role == "researcher" else "researcher"
+            delegation = DelegationRequest(
+                task_id=envelope.task_id,
+                reply_to=self.role,
+                target_agent=target,
+                payload="GraphRAG bulgusunu reviewer ile tekrar değerlendir",
+                intent="code_review" if target == "reviewer" else "rag_search",
+                parent_task_id=envelope.parent_task_id or envelope.task_id,
+                meta={"reason": "rerun-loop-negative-case"},
+            )
+            return TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=delegation,
+                evidence=[f"{self.role}->handoff"],
+            )
+
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create", lambda role_name, **_kwargs: _LoopingHandoffAgent(role_name)
+    )
+
+    result = await orchestrator.run(
+        "GraphRAG bulgusunu reviewer akışıyla doğrula",
+        intent="rag_search",
+        session_id="graph-review-hop-limit",
+    )
+
+    assert result.status == "failed"
+    assert "maksimum devir sayısı" in result.summary
+    assert [handoff["receiver"] for handoff in result.handoffs] == ["reviewer", "researcher"]
+    assert result.handoffs[-1]["reason"] == "rerun-loop-negative-case"

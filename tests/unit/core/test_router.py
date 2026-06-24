@@ -186,6 +186,20 @@ def test_router_routes_to_local_when_budget_exceeded(monkeypatch: pytest.MonkeyP
     assert (provider, model) == ("ollama", "llama3")
 
 
+
+def test_router_routes_to_local_when_daily_budget_exactly_reaches_limit() -> None:
+    cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_COMPLEXITY_THRESHOLD=0.2)
+    cost_router = CostAwareRouter(cfg)
+    record_routing_cost(0.5)
+
+    provider, model = cost_router.select(
+        [{"role": "user", "content": "analyze compare optimize algorithm tradeoff?"}],
+        "openai",
+        "gpt-4o",
+    )
+
+    assert (provider, model) == ("ollama", "llama3")
+
 def test_router_does_not_reset_in_memory_budget_on_reinit() -> None:
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5)
     CostAwareRouter(cfg)
