@@ -1221,6 +1221,29 @@ ENV
   [[ "$output" != *"izinleri güvenli değil"* ]]
 }
 
+@test "ensure_auto_secrets preserves existing MEMORY_ENCRYPTION_KEY and logs reuse" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    for _attempt in {1..20}; do
+      memory_key="$(openssl rand -base64 32 | tr "+/" "-_")"
+      if ! is_weak_secret_value "$memory_key"; then
+        break
+      fi
+    done
+    ! is_weak_secret_value "$memory_key"
+    env_file="$tmpdir/.env"
+    printf "MEMORY_ENCRYPTION_KEY=%s\\n" "$memory_key" > "$env_file"
+
+    ensure_auto_secrets "$env_file"
+
+    [[ "$(read_env_value_from_file MEMORY_ENCRYPTION_KEY "$env_file")" == "$memory_key" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MEMORY_ENCRYPTION_KEY mevcut ve güvenli; yeniden üretilmedi"* ]]
+  [[ "$output" != *"MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi"* ]]
+}
+
 @test "verify_sidar_keys_file_permissions warns when secret file is group-readable" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

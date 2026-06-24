@@ -5396,6 +5396,8 @@ PY
         else
             warn "MEMORY_ENCRYPTION_KEY otomatik üretilemedi. Lütfen .env içinde geçerli bir Fernet anahtarı tanımlayın."
         fi
+    else
+        ok ".env: MEMORY_ENCRYPTION_KEY mevcut ve güvenli; yeniden üretilmedi."
     fi
 
     # ── Hex tabanlı webhook/federation secret'lar ─────────────────────────────
