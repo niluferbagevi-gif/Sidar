@@ -83,6 +83,15 @@ Geçiş kapıları:
 Bu politika, iki HTTP client paketinin aynı anda bulunmasını bilinçli bir geçiş durumu
 olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini engeller.
 
+## NeMo Guardrails minor pin policy
+
+`nemoguardrails` runtime bağımlılığı `>=0.22.0,<0.23.0` aralığında tutulur.
+0.22 sürümü lock dosyasında doğrulanmış mevcut API yüzeyidir; yeni minor/major
+geçişlerinde `SecurityManager` guardrails adapter sözleşmesi ve agent/swarm/core LLM
+doğrudan import guard testleri yeniden çalıştırılmadan aralık genişletilmemelidir.
+Guardrails API kullanımı ajan ya da LLM sağlayıcı katmanına yayılmamalı, merkezi
+olarak `managers/security.py` üzerinden izole kalmalıdır.
+
 ## Güvenlik odaklı çözümleme sınırları
 
 - `rag` extra içindeki PyTorch çözümlemesi geçici olarak `torch>=2.4.1,<2.12` ve

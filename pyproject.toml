@@ -67,7 +67,9 @@ dependencies = [
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.12.3",
   "bleach>=6.4.0,<7.0.0",
-  "nemoguardrails>=0.13.0",
+  # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
+  # adapter contract is re-run against a newer major/minor API.
+  "nemoguardrails>=0.22.0,<0.23.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",

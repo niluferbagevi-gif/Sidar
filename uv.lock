@@ -3574,7 +3574,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.83.7,<2.0.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.36.0,<2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "~=1.11.2" },
-    { name = "nemoguardrails", specifier = ">=0.13.0" },
+    { name = "nemoguardrails", specifier = ">=0.22.0,<0.23.0" },
     { name = "nvidia-ml-py", marker = "extra == 'gpu'", specifier = "~=12.560.30" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=2.8.0,<3.0.0" },
     { name = "openai-whisper", marker = "extra == 'voice'", specifier = ">=20231117" },
