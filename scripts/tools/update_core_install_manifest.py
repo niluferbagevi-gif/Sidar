@@ -29,6 +29,33 @@ def _expected_payload() -> str:
     return "\n".join(entries) + "\n"
 
 
+def _parse_manifest_payload(payload: str) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for line in payload.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        parts = stripped.split(maxsplit=1)
+        if len(parts) == 2:
+            entries[parts[1]] = parts[0]
+    return entries
+
+
+def _describe_entry_drift(label: str, actual_payload: str, expected_payload: str) -> list[str]:
+    actual_entries = _parse_manifest_payload(actual_payload)
+    expected_entries = _parse_manifest_payload(expected_payload)
+    details: list[str] = []
+
+    for rel in [target.as_posix() for target in TARGET_FILES]:
+        expected_hash = expected_entries.get(rel, "<eksik>")
+        actual_hash = actual_entries.get(rel, "<eksik>")
+        if actual_hash != expected_hash:
+            details.append(
+                f"- {label}: {rel} beklenen={expected_hash} mevcut={actual_hash}"
+            )
+    return details
+
+
 def _rewrite_install_script(install_text: str, payload: str) -> str:
     pattern = re.compile(
         rf"({re.escape(START)}\n)(.*?)(\n{re.escape(END)})",
@@ -41,6 +68,17 @@ def _rewrite_install_script(install_text: str, payload: str) -> str:
     if count != 1:
         raise RuntimeError("install_sidar.sh içindeki çekirdek manifest heredoc bloğu bulunamadı.")
     return updated_text
+
+
+def _extract_install_manifest_payload(install_text: str) -> str:
+    pattern = re.compile(
+        rf"{re.escape(START)}\n(.*?)\n{re.escape(END)}",
+        re.DOTALL,
+    )
+    match = pattern.search(install_text)
+    if not match:
+        return ""
+    return f"{match.group(1).rstrip()}\n"
 
 
 def _check() -> int:
@@ -61,6 +99,15 @@ def _check() -> int:
             "Düzeltmek için: scripts/sync_install_manifest.sh",
             file=sys.stderr,
         )
+        install_payload = _extract_install_manifest_payload(install_text)
+        details = [
+            *_describe_entry_drift(".sidar_manifest.txt", actual_manifest, payload),
+            *_describe_entry_drift("install_sidar.sh heredoc", install_payload, payload),
+        ]
+        if details:
+            print("Uyumsuz çekirdek manifest girdileri:", file=sys.stderr)
+            for detail in details:
+                print(detail, file=sys.stderr)
         return 1
     return 0
 
