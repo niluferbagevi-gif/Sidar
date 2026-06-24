@@ -727,6 +727,17 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: mypy" in config
     assert "entry: uv run mypy ." in config
     assert "pass_filenames: false" in config
+    assert "id: check-core-install-manifest" in config
+    assert "entry: uv run python scripts/tools/update_core_install_manifest.py --check" in config
+    assert "id: check-install-module-hashes" in config
+    assert (
+        "entry: uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check"
+    ) in config
+    assert "stages: [pre-commit, pre-push]" in config
+    assert ".sidar_manifest" in config
+    assert "core/(memory|multimodal)" in config
+    assert "scripts/install_modules/.*\\.(sh|ps1)" in config
     assert "id: shellcheck" in config
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config

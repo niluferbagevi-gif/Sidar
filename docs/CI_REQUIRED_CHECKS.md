@@ -52,3 +52,14 @@ If this gate fails, synchronize the manifests before merging:
 scripts/sync_install_manifest.sh
 scripts/sync_install_module_hashes.sh
 ```
+
+The same drift checks are also wired into `.pre-commit-config.yaml` for both
+`pre-commit` and `pre-push` stages:
+
+```bash
+uv run python scripts/tools/update_core_install_manifest.py --check
+uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+```
+
+These hooks intentionally run in check mode. If a hook fails, run the sync
+script(s), review the generated manifest changes, and commit them explicitly.
