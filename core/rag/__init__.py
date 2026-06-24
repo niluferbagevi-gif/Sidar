@@ -33,7 +33,6 @@ from typing import Any
 import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
-from . import backends as _rag_backends
 from config import Config
 from core.db import postgres_failure_diagnosis
 from core.embeddings import (
@@ -41,6 +40,7 @@ from core.embeddings import (
     sentence_transformer_local_files_only,
 )
 
+from . import backends as _rag_backends
 from .backends import bm25 as bm25_backend
 from .backends import chroma as chroma_backend
 from .backends import keyword as keyword_backend
@@ -66,6 +66,7 @@ from .graph import (
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
 from .query import GraphRAGSearchPlan
+from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
 
 _BLEACH_AVAILABLE = True
 
@@ -1565,16 +1566,10 @@ class DocumentStore:
             return self.search_graph(query, top_k)
 
         if mode == "vector":
-            if getattr(self, "_pgvector_available", False):
-                return self._pgvector_search(query, top_k, session_id)
-            if self._chroma_available and self.collection:
-                return self._chroma_search(query, top_k, session_id)
-            return False, "Vektör arama kullanılamıyor — pgvector/ChromaDB hazır değil."
+            return VectorOnlyStrategy(self).search(query, top_k, session_id)
 
         if mode == "bm25":
-            if self._bm25_available:
-                return self._bm25_search(query, top_k, session_id)
-            return False, "BM25 kullanılamıyor — SQLite FTS5 başlatılamadı."
+            return BM25OnlyStrategy(self).search(query, top_k, session_id)
 
         if mode == "keyword":
             return self._keyword_search(query, top_k, session_id)
@@ -1686,42 +1681,8 @@ class DocumentStore:
             logger.debug("Judge zamanlama hatası: %s", exc)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
-        vector_results = (
-            self._fetch_pgvector(query, top_k, session_id)
-            if getattr(self, "_pgvector_available", False)
-            else self._fetch_chroma(query, top_k, session_id)
-        )
-        bm25_results = self._fetch_bm25(query, top_k, session_id)
-
-        if not vector_results and not bm25_results:
-            return self._keyword_search(query, top_k, session_id)
-
-        k = 60
-        rrf_scores: dict[str, float] = {}
-        docs_map: dict[str, dict[str, Any]] = {}
-
-        for rank, res in enumerate(vector_results):
-            doc_id = res["id"]
-            docs_map[doc_id] = res
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
-
-        for rank, res in enumerate(bm25_results):
-            doc_id = res["id"]
-            if doc_id not in docs_map:
-                docs_map[doc_id] = res
-            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
-
-        ranked_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
-        final_results = []
-        for doc_id, score in ranked_docs:
-            doc_info = docs_map[doc_id]
-            doc_info["score"] = score
-            final_results.append(doc_info)
-
-        vector_name = "pgvector" if getattr(self, "_pgvector_available", False) else "ChromaDB"
-        return self._format_results_from_struct(
-            final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)"
-        )
+        """Run hybrid vector + BM25 search through the strategy facade."""
+        return HybridStrategy(self).search(query, top_k, session_id)
 
     def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
         return pgvector_backend.fetch_pgvector(self, query, top_k, session_id)
