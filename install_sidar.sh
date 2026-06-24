@@ -131,6 +131,17 @@ SIDAR_INSTALL_MANIFEST_EOF
         IFS="$_ifs_old"
     fi
 
+    local bootstrap_context=""
+    if [[ -n "${SIDAR_BOOTSTRAP_REEXEC_TARGET:-}" ]]; then
+        bootstrap_context="
+Bootstrap durumu:
+  • Clone/re-exec tamamlandı: ${SIDAR_BOOTSTRAP_REEXEC_TARGET}
+  • Ref: ${SIDAR_BOOTSTRAP_REEXEC_REF:-bilinmiyor}
+  • Bu aşama wget/chmod/git clone veya helper modül yükleme hatası değildir;
+    hata clone sonrası çekirdek manifest karşılaştırmasında oluştu.
+"
+    fi
+
     fail "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi (${failures} hata).
 
 Bu hata kurulum modül manifestinden (scripts/install_modules) değil, çekirdek
@@ -139,6 +150,7 @@ kurulum manifestinden gelir. Doğrulanan çekirdek dosyalar:
   • core/multimodal.py
 
 Uyumsuz çekirdek dosyalar: ${mismatched_csv:-bilinmiyor}
+${bootstrap_context}
 
 Çözüm:
   1) Repo'da scripts/sync_install_manifest.sh çalıştırıp .sidar_manifest.txt ve
@@ -467,6 +479,8 @@ bootstrap_clone_and_reexec() {
     [[ -f "$next_script" ]] || fail "Clone sonrası install_sidar.sh bulunamadı: $next_script"
     chmod +x "$next_script" || true
     cd "$clone_target" || fail "Clone sonrası dizine geçilemedi: $clone_target"
+    export SIDAR_BOOTSTRAP_REEXEC_TARGET="$clone_target"
+    export SIDAR_BOOTSTRAP_REEXEC_REF="$preferred_ref"
     info "Bootstrap clone tamamlandı; yerel kurulum betiği yeniden başlatılıyor."
     exec "$next_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
