@@ -688,6 +688,13 @@ printf "DATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${DATABASE_URL:
 exit 0
 EOF
     chmod +x "$tmpdir/bin/uv"
+    # pytest precheck (install_sidar.sh:`python -c "import pytest"`) runs against the
+    # system python, which has no pytest on the CI runner; stub it to satisfy the gate.
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/python"
     export PATH="$tmpdir/bin:$PATH"
     SCRIPT_DIR="$tmpdir"
     wait_for_redis_before_smoke_tests() { return 0; }
