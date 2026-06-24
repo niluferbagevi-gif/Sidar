@@ -106,6 +106,8 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     ) in workflow
     assert "raw installer as a release artifact" in docs
     assert "main/install_sidar.sh" in docs
+    assert "test_install_sidar_wget_raw_bootstrap_clone_smoke" in docs
+    assert "wget-style clean-install simulation" in docs
     for protected_path in (
         "install_sidar.sh",
         ".sidar_manifest.txt",

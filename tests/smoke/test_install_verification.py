@@ -1,8 +1,10 @@
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 
@@ -123,6 +125,27 @@ def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
     return "main"
 
 
+def _free_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_http_server(url: str, timeout_seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["wget", "-q", "--spider", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"Yerel raw installer HTTP sunucusu hazır olmadı: {url}")
+
+
 def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
     """Simulate the fresh-user scenario: no local repo, only a raw install_sidar.sh.
 
@@ -185,6 +208,87 @@ def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
         "uyumsuzluğu olduğu halde testten kaçınılmış olabilir.\n"
         f"--- combined ---\n{combined}"
     )
+
+
+def test_install_sidar_wget_raw_bootstrap_clone_smoke(tmp_path: Path) -> None:
+    """Exercise the documented wget/chmod flow against a branch-local raw URL."""
+    if shutil.which("wget") is None:
+        raise AssertionError("wget bu smoke test için gereklidir.")
+
+    repo_root = Path(os.getcwd())
+    origin = tmp_path / "origin"
+    branch = _build_synthetic_bootstrap_origin(repo_root, origin)
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    shutil.copy2(repo_root / "install_sidar.sh", raw_dir / "install_sidar.sh")
+
+    port = _free_local_port()
+    raw_url = f"http://127.0.0.1:{port}/install_sidar.sh"
+    server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+        cwd=raw_dir,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        _wait_for_http_server(raw_url)
+
+        host = tmp_path / "host"
+        host.mkdir()
+        subprocess.run(["wget", "-q", raw_url], cwd=host, check=True)
+        standalone = host / "install_sidar.sh"
+        standalone.chmod(0o755)
+
+        env = {
+            **os.environ,
+            "HOME": str(host),
+            "PWD": str(host),
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+            "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
+            "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
+            "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
+            "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
+            "SIDAR_BOOTSTRAP_CLONE_REF": branch,
+            "SIDAR_REPO_BRANCH": branch,
+        }
+        env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
+
+        result = subprocess.run(
+            ["./install_sidar.sh"],
+            cwd=host,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=5)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        "wget raw installer smoke beklenmedik şekilde başarısız oldu (exit="
+        f"{result.returncode}).\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    for required_marker in (
+        "bootstrap clone",
+        "Bootstrap clone tamamlandı",
+        "Çekirdek kurulum manifest hash doğrulaması başarılı",
+        "Kurulum modül hash doğrulaması başarılı",
+        "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1",
+    ):
+        assert required_marker in combined, (
+            f"wget raw installer smoke çıktısında beklenen marker yok: {required_marker!r}.\n"
+            f"--- combined ---\n{combined}"
+        )
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" not in combined
 
 
 def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> None:

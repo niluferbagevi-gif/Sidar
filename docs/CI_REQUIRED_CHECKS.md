@@ -46,6 +46,13 @@ checks are not sufficient by themselves for the raw `main/install_sidar.sh`
 distribution path. Raw installer verification must therefore remain in the PR
 merge gate.
 
+The installer smoke suite also includes a wget-style clean-install simulation
+(`test_install_sidar_wget_raw_bootstrap_clone_smoke`) that downloads
+`install_sidar.sh` from a branch-local raw HTTP URL, runs `chmod +x`, and then
+executes it with `SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1`. This avoids testing
+stale `main` from pull requests while still matching the documented end-user
+`wget ... && chmod +x ... && ./install_sidar.sh` flow.
+
 If this gate fails, synchronize the manifests before merging:
 
 ```bash
