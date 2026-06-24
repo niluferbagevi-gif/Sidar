@@ -99,6 +99,10 @@ from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
 from web.middleware.cors import configure_loopback_cors
+from web.middleware.ratelimit import (
+    ddos_rate_limit_middleware_impl,
+    rate_limit_middleware_impl,
+)
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
 from web.routes import federation as federation_routes
@@ -2285,53 +2289,31 @@ def _get_client_ip(request: Request) -> str:
 async def ddos_rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    if (
-        request.url.path.startswith("/ui/")
-        or request.url.path.startswith("/static/")
-        or request.url.path in ("/health", "/healthz", "/readyz")
-    ):
-        return await call_next(request)
-
-    client_ip = _get_client_ip(request)
-    if await _redis_is_rate_limited(
-        "ddos", client_ip, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SEC
-    ):
-        return JSONResponse(
-            status_code=429,
-            content={
-                "error": "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. Lütfen 1 dakika bekleyip tekrar deneyin."
-            },
-        )
-
-    return await call_next(request)
+    return await ddos_rate_limit_middleware_impl(
+        request,
+        call_next,
+        get_client_ip=_get_client_ip,
+        redis_is_rate_limited=_redis_is_rate_limited,
+        max_requests=RATE_LIMIT_MAX_REQUESTS,
+        window_sec=RATE_LIMIT_WINDOW_SEC,
+    )
 
 
 @app.middleware("http")
 async def rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    client_ip = _get_client_ip(request)
-
-    if request.url.path == "/ws/chat":
-        if await _redis_is_rate_limited("chat", client_ip, _RATE_LIMIT, _RATE_WINDOW):
-            return JSONResponse(
-                {"error": "Çok fazla istek. Lütfen bir dakika bekleyin."}, status_code=429
-            )
-    elif request.method in ("POST", "DELETE"):
-        if await _redis_is_rate_limited("mut", client_ip, _RATE_LIMIT_MUTATIONS, _RATE_WINDOW):
-            return JSONResponse(
-                {"error": "Çok fazla işlem isteği. Lütfen bir dakika bekleyin."}, status_code=429
-            )
-    elif request.method == "GET":
-        if any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS):
-            if await _redis_is_rate_limited("get", client_ip, _RATE_LIMIT_GET_IO, _RATE_WINDOW):
-                return JSONResponse(
-                    {"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."},
-                    status_code=429,
-                )
-
-    response = await call_next(request)
-    return response
+    return await rate_limit_middleware_impl(
+        request,
+        call_next,
+        get_client_ip=_get_client_ip,
+        redis_is_rate_limited=_redis_is_rate_limited,
+        chat_limit=_RATE_LIMIT,
+        mutation_limit=_RATE_LIMIT_MUTATIONS,
+        get_io_limit=_RATE_LIMIT_GET_IO,
+        window_sec=_RATE_WINDOW,
+        get_io_paths=_RATE_GET_IO_PATHS,
+    )
 
 
 async def _close_redis_client() -> None:
