@@ -12,6 +12,10 @@ ClientIpResolver = Callable[[Request], str]
 NextHandler = Callable[[Request], Awaitable[Response]]
 
 
+_DEFAULT_BYPASS_PATHS: tuple[str, ...] = ("/health", "/healthz", "/readyz")
+_DEFAULT_BYPASS_PREFIXES: tuple[str, ...] = ("/ui/", "/static/")
+
+
 async def ddos_rate_limit_middleware_impl(
     request: Request,
     call_next: NextHandler,
@@ -20,13 +24,12 @@ async def ddos_rate_limit_middleware_impl(
     redis_is_rate_limited: RedisRateLimitChecker,
     max_requests: int,
     window_sec: int,
+    bypass_paths: tuple[str, ...] = _DEFAULT_BYPASS_PATHS,
+    bypass_prefixes: tuple[str, ...] = _DEFAULT_BYPASS_PREFIXES,
 ) -> Response:
     """Apply the global DDoS protection bucket for non-static/non-health requests."""
-    if (
-        request.url.path.startswith("/ui/")
-        or request.url.path.startswith("/static/")
-        or request.url.path in ("/health", "/healthz", "/readyz")
-    ):
+    path = request.url.path
+    if path in bypass_paths or any(path.startswith(prefix) for prefix in bypass_prefixes):
         return await call_next(request)
 
     client_ip = get_client_ip(request)

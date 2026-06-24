@@ -49,6 +49,56 @@ async def test_ddos_rate_limit_impl_skips_health_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ddos_rate_limit_impl_respects_custom_bypass_paths() -> None:
+    """Wrapper'ın geçtiği bypass_paths listesi etkili olmalı; eşleşmeyen path normal kontrol görmeli."""
+
+    calls: list[tuple[str, str, int, int]] = []
+
+    async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
+        calls.append((namespace, key, limit, window))
+        return False
+
+    bypassed_response = await ddos_rate_limit_middleware_impl(
+        _request("/readyz"),
+        _ok_next,
+        get_client_ip=lambda _request: "127.0.0.1",
+        redis_is_rate_limited=_limited,
+        max_requests=1,
+        window_sec=60,
+        bypass_paths=("/health", "/healthz", "/readyz"),
+        bypass_prefixes=("/ui/", "/static/"),
+    )
+    assert bypassed_response.status_code == 200
+    assert calls == []
+
+    prefix_response = await ddos_rate_limit_middleware_impl(
+        _request("/ui/index.html"),
+        _ok_next,
+        get_client_ip=lambda _request: "127.0.0.1",
+        redis_is_rate_limited=_limited,
+        max_requests=1,
+        window_sec=60,
+        bypass_paths=("/health", "/healthz", "/readyz"),
+        bypass_prefixes=("/ui/", "/static/"),
+    )
+    assert prefix_response.status_code == 200
+    assert calls == []
+
+    checked_response = await ddos_rate_limit_middleware_impl(
+        _request("/api/some"),
+        _ok_next,
+        get_client_ip=lambda _request: "127.0.0.1",
+        redis_is_rate_limited=_limited,
+        max_requests=1,
+        window_sec=60,
+        bypass_paths=("/health", "/healthz", "/readyz"),
+        bypass_prefixes=("/ui/", "/static/"),
+    )
+    assert checked_response.status_code == 200
+    assert calls == [("ddos", "127.0.0.1", 1, 60)]
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_impl_blocks_get_io_bucket() -> None:
     calls: list[tuple[str, str, int, int]] = []
 
