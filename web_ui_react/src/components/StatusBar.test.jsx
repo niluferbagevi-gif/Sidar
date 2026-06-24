@@ -29,6 +29,12 @@ describe("StatusBar — bağlantı durumu göstergesi", () => {
     expect(screen.getByText(/Bağlanıyor/)).toBeInTheDocument();
   });
 
+  it("shows 🟡 Yeniden bağlanıyor for reconnecting status", () => {
+    render(<StatusBar wsStatus="reconnecting" onNewSession={vi.fn()} />);
+    expect(screen.getByTestId("ws-status")).toHaveAttribute("data-state", "reconnecting");
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("🟡 Yeniden bağlanıyor…");
+  });
+
   it("shows 🔴 Bağlantı kesildi for disconnected status", () => {
     render(<StatusBar wsStatus="disconnected" onNewSession={vi.fn()} />);
     expect(screen.getByText(/🔴/)).toBeInTheDocument();

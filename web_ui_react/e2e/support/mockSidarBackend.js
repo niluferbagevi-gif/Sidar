@@ -14,6 +14,10 @@ async function readJson(req) {
   return JSON.parse(text);
 }
 
+function selectFirstSubprotocol(protocols) {
+  return protocols.values().next().value || false;
+}
+
 const pendingHitl = [
   {
     request_id: "hitl-e2e-1",
@@ -148,8 +152,16 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
     res.end();
   });
 
-  const wss = new WebSocketServer({ server, path: "/ws/chat" });
-  const voiceWss = new WebSocketServer({ server, path: "/ws/voice" });
+  const wss = new WebSocketServer({
+    server,
+    path: "/ws/chat",
+    handleProtocols: selectFirstSubprotocol,
+  });
+  const voiceWss = new WebSocketServer({
+    server,
+    path: "/ws/voice",
+    handleProtocols: selectFirstSubprotocol,
+  });
 
   wss.on("connection", (socket, req) => {
     const token = req.headers["sec-websocket-protocol"] || "";

@@ -8,7 +8,7 @@ export function createSidarProxyConfig(
   const webSocketUrl = backendUrl.replace(/^http/, "ws");
   return {
     "/api": { target: backendUrl, changeOrigin: true },
-    "/ws": { target: webSocketUrl, ws: true },
+    "/ws": { target: webSocketUrl, ws: true, changeOrigin: true },
     "/admin": { target: backendUrl, changeOrigin: true },
     "/sessions": { target: backendUrl, changeOrigin: true },
     "/metrics": { target: backendUrl, changeOrigin: true },

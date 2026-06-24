@@ -8,6 +8,7 @@ import { useChatStore } from "../hooks/useChatStore.js";
 const STATUS_LABEL = {
   connected:    { icon: "🟢", text: "Bağlı" },
   connecting:   { icon: "🟡", text: "Bağlanıyor…" },
+  reconnecting: { icon: "🟡", text: "Yeniden bağlanıyor…" },
   disconnected: { icon: "🔴", text: "Bağlantı kesildi" },
   error:        { icon: "🔴", text: "Hata" },
   unauthenticated: { icon: "🟠", text: "Token gerekli" },
