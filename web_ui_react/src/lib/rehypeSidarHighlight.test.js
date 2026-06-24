@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import rehypeSidarHighlight from "./rehypeSidarHighlight.js";
 
-function buildCodeTree(language, value) {
+function buildCodeTree(language, value, classPrefix = "language") {
+  const className = language ? [`${classPrefix}-${language}`] : [];
   return {
     type: "root",
     children: [
@@ -13,7 +14,7 @@ function buildCodeTree(language, value) {
           {
             type: "element",
             tagName: "code",
-            properties: { className: [`language-${language}`] },
+            properties: { className },
             children: [{ type: "text", value }],
           },
         ],
@@ -37,6 +38,16 @@ describe("rehypeSidarHighlight", () => {
     expect(code.children.some((child) => child.type === "element")).toBe(true);
   });
 
+  it("highlights aliased lang-prefixed code blocks", () => {
+    const tree = buildCodeTree("py", "print('sidar')", "lang");
+
+    rehypeSidarHighlight()(tree);
+
+    const code = codeNode(tree);
+    expect(code.properties.className).toEqual(["lang-py", "hljs"]);
+    expect(code.children.some((child) => child.type === "element")).toBe(true);
+  });
+
   it("leaves unsupported languages untouched", () => {
     const tree = buildCodeTree("ruby", "puts 'sidar'");
 
@@ -45,5 +56,50 @@ describe("rehypeSidarHighlight", () => {
     const code = codeNode(tree);
     expect(code.properties.className).toEqual(["language-ruby"]);
     expect(code.children).toEqual([{ type: "text", value: "puts 'sidar'" }]);
+  });
+
+  it("leaves code blocks without a language untouched", () => {
+    const tree = buildCodeTree("", "plain sidar");
+
+    rehypeSidarHighlight()(tree);
+
+    const code = codeNode(tree);
+    expect(code.properties.className).toEqual([]);
+    expect(code.children).toEqual([{ type: "text", value: "plain sidar" }]);
+  });
+
+  it("extracts nested text before highlighting", () => {
+    const tree = buildCodeTree("javascript", "");
+    codeNode(tree).children = [
+      { type: "text", value: "const " },
+      { type: "element", tagName: "span", children: [{ type: "text", value: "answer = 42;" }] },
+    ];
+
+    rehypeSidarHighlight()(tree);
+
+    const code = codeNode(tree);
+    expect(code.properties.className).toContain("hljs");
+    expect(code.children.some((child) => child.type === "element")).toBe(true);
+  });
+
+  it("treats missing and null text children as empty strings", () => {
+    const tree = buildCodeTree("json", "");
+    codeNode(tree).children = [{ type: "text" }, null];
+
+    rehypeSidarHighlight()(tree);
+
+    const code = codeNode(tree);
+    expect(code.properties.className).toContain("hljs");
+    expect(code.children).toEqual([]);
+  });
+
+  it("ignores malformed or non-code AST branches", () => {
+    const tree = {
+      type: "root",
+      children: [null, "sidar", { type: "element", tagName: "code", children: null }],
+    };
+
+    expect(() => rehypeSidarHighlight()(tree)).not.toThrow();
+    expect(tree.children[2].children).toBeNull();
   });
 });
