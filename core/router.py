@@ -214,7 +214,8 @@ def _configure_budget_tracker(config: object) -> None:
 
     shared_budget_redis_url = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_URL")
     if shared_budget_redis_url:
-        _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url)
+        namespace = _read_optional_string(config, "COST_ROUTING_REDIS_BUDGET_NAMESPACE") or "sidar"
+        _budget_tracker = _RedisDailyBudgetTracker(shared_budget_redis_url, namespace=namespace)
         return
 
     if not isinstance(_budget_tracker, _DailyBudgetTracker):
@@ -294,24 +295,31 @@ class _SqliteDailyBudgetTracker:
 class _RedisDailyBudgetTracker:
     """Günlük maliyeti Redis üzerinde processler/podlar arası merkezi takip eder."""
 
-    _KEY_PREFIX = "sidar:cost_routing:daily_budget"
+    _KEY_SUFFIX = "cost_routing:daily_budget"
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(self, redis_url: str, *, namespace: str = "sidar") -> None:
         if SyncRedis is None:
             raise RuntimeError("Redis budget tracker için redis bağımlılığı gerekli.")
         self._redis_url = str(redis_url).strip()
         if not self._redis_url:
             raise ValueError("redis_url cannot be empty")
+        self._namespace = self._normalize_namespace(namespace)
+        self._key_prefix = f"{self._namespace}:{self._KEY_SUFFIX}"
         self._redis = SyncRedis.from_url(self._redis_url, decode_responses=True)
         self._fallback = _DailyBudgetTracker()
 
     @staticmethod
-    def _day_key(now: datetime | None = None) -> tuple[str, int]:
+    def _normalize_namespace(namespace: str) -> str:
+        normalized = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", str(namespace or "sidar").strip())
+        normalized = normalized.strip(":-")
+        return normalized or "sidar"
+
+    def _day_key(self, now: datetime | None = None) -> tuple[str, int]:
         current = now or datetime.now(UTC)
         day = current.strftime("%Y-%m-%d")
         midnight = datetime(current.year, current.month, current.day, tzinfo=UTC)
         next_midnight = midnight + timedelta(days=1)
-        return f"{_RedisDailyBudgetTracker._KEY_PREFIX}:{day}", int(next_midnight.timestamp())
+        return f"{self._key_prefix}:{day}", int(next_midnight.timestamp())
 
     def add(self, cost_usd: float) -> None:
         value = max(0.0, float(cost_usd or 0.0))

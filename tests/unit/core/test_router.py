@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -20,6 +21,7 @@ def _make_config(**overrides: object) -> SimpleNamespace:
         "COST_ROUTING_TOKEN_THRESHOLD": 0,
         "COST_ROUTING_LOCAL_MODEL": "llama3",
         "COST_ROUTING_CLOUD_MODEL": "gpt-4o",
+        "COST_ROUTING_REDIS_BUDGET_NAMESPACE": "sidar-test",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -412,6 +414,40 @@ def test_router_uses_redis_shared_budget_tracker_when_configured(
     )
     assert (provider, model) == ("ollama", "llama3")
 
+
+
+def test_redis_daily_budget_tracker_uses_sanitized_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeRedis:
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+    monkeypatch.setattr(router, "SyncRedis", _FakeRedis)
+    tracker = router._RedisDailyBudgetTracker("redis://fake:6379/0", namespace="sidar prod/api")
+
+    key, _expire_at = tracker._day_key(datetime(2026, 6, 24, tzinfo=router.UTC))
+
+    assert key == "sidar-prod-api:cost_routing:daily_budget:2026-06-24"
+
+
+def test_configure_budget_tracker_passes_redis_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: dict[str, str] = {}
+
+    class _FakeRedisTracker:
+        def __init__(self, redis_url: str, *, namespace: str = "sidar") -> None:
+            created["redis_url"] = redis_url
+            created["namespace"] = namespace
+
+    monkeypatch.setattr(router, "_RedisDailyBudgetTracker", _FakeRedisTracker)
+
+    router._configure_budget_tracker(
+        _make_config(
+            COST_ROUTING_REDIS_BUDGET_URL="redis://shared:6379/0",
+            COST_ROUTING_REDIS_BUDGET_NAMESPACE="prod-worker",
+        )
+    )
+
+    assert created == {"redis_url": "redis://shared:6379/0", "namespace": "prod-worker"}
 
 def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []

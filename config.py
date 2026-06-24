@@ -1114,6 +1114,12 @@ class Config:
     COST_ROUTING_DAILY_BUDGET_USD: float = get_float_env("COST_ROUTING_DAILY_BUDGET_USD", 1.0)
     # Tek bir isteğin yaklaşık token eşiği; aşılırsa lokal modele fallback uygulanır.
     COST_ROUTING_TOKEN_THRESHOLD: int = get_int_env("COST_ROUTING_TOKEN_THRESHOLD", 0)
+    # Çoklu worker/pod Redis bütçe sayaçlarında çakışmayı önleyen key namespace.
+    COST_ROUTING_SHARED_BUDGET_DB_PATH: str = os.getenv("COST_ROUTING_SHARED_BUDGET_DB_PATH", "")
+    COST_ROUTING_REDIS_BUDGET_URL: str = os.getenv("COST_ROUTING_REDIS_BUDGET_URL", "")
+    COST_ROUTING_REDIS_BUDGET_NAMESPACE: str = os.getenv(
+        "COST_ROUTING_REDIS_BUDGET_NAMESPACE", "sidar"
+    )
 
     # ─── Entity/Persona Memory (v5.0) ─────────────────────────
     ENABLE_ENTITY_MEMORY: bool = get_bool_env("ENABLE_ENTITY_MEMORY", True)
