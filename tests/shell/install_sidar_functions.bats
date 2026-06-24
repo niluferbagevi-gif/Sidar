@@ -1060,3 +1060,74 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"PostgreSQL auth başarısız"* ]]
 }
+
+@test "detect_cuda_driver_capability prefers nvidia-smi cuda_version query output" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+if [[ "\$*" == "--query-gpu=cuda_version --format=csv,noheader" ]]; then
+  printf "12.9\\n"
+  exit 0
+fi
+printf "unexpected nvidia-smi args: %s\\n" "\$*" >&2
+exit 1
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    [[ "$(detect_cuda_driver_capability "$tmpdir/nvidia-smi")" == "12.9" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_cuda_driver_capability falls back to banner parsing when query field is unavailable" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+if [[ "\$*" == "--query-gpu=cuda_version --format=csv,noheader" ]]; then
+  echo "Field \"cuda_version\" is not a valid field to query" >&2
+  exit 1
+fi
+cat <<BANNER
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 610.62                 Driver Version: 610.62     CUDA Version: 13.0 |
++-----------------------------------------------------------------------------+
+BANNER
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    [[ "$(detect_cuda_driver_capability "$tmpdir/nvidia-smi")" == "13.0" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_gpu reports CUDA Driver Cap from query fallback on changed nvidia-smi banners" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: Test GPU (UUID: GPU-test)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "Test GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "24576" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "8.9" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") echo "12.9" ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "610.62" ;;
+  *) echo "NVIDIA-SMI changed banner without CUDA token" ;;
+esac
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    export PATH="$tmpdir:$PATH"
+    FORCE_CPU=false
+    WSL2=false
+    RUN_GPU_STRESS=0
+    detect_gpu
+    [[ "$GPU_AVAILABLE" == "true" ]]
+    [[ "$CUDA_VERSION" == "12.9" ]]
+    [[ "$GPU_COMPUTE_CAPABILITY" == "8.9" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
+}

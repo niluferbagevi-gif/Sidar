@@ -3443,6 +3443,37 @@ ensure_prerequisites() {
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
+detect_cuda_driver_capability() {
+    local smi_cmd="$1"
+    local query_out=""
+    local parsed_version=""
+
+    if [[ -z "$smi_cmd" ]]; then
+        return 0
+    fi
+
+    # Yeni nvidia-smi sürümlerinde banner başlığı değişebildiği için önce
+    # makine-okunur query alanını kullan. Eski sürücülerde cuda_version alanı
+    # yoksa klasik banner parse fallback'i korunur.
+    query_out=$("$smi_cmd" --query-gpu=cuda_version --format=csv,noheader 2>/dev/null | head -1 || true)
+    parsed_version=$(echo "${query_out:-}" | tr -d '[:space:]' | grep -Eo '^[0-9]+([.][0-9]+)*' | head -1 || true)
+    if [[ -n "$parsed_version" ]]; then
+        printf '%s\n' "$parsed_version"
+        return 0
+    fi
+
+    parsed_version=$("$smi_cmd" 2>/dev/null | grep -Eo 'CUDA Version:[[:space:]]*[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
+    if [[ -n "$parsed_version" ]]; then
+        printf '%s\n' "$parsed_version"
+        return 0
+    fi
+
+    if command -v nvcc &>/dev/null; then
+        parsed_version=$(nvcc --version 2>/dev/null | grep -Eo 'release[[:space:]]+[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
+        [[ -n "$parsed_version" ]] && printf '%s\n' "$parsed_version"
+    fi
+}
+
 configure_wsl2_cuda_library_paths() {
     [[ "${WSL2:-false}" == true ]] || return 0
     [[ "${GPU_AVAILABLE:-false}" == true ]] || return 0
@@ -3511,7 +3542,7 @@ detect_gpu() {
 
         query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
         GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
-        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || true)
+        CUDA_VERSION=$(detect_cuda_driver_capability "$SMI_CMD")
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
