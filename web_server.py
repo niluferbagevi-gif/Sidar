@@ -55,13 +55,6 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
@@ -136,6 +129,16 @@ from web.security import (
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
+
+# OpenTelemetry bağımlılıkları config.Config.init_telemetry içinde lazy import edilir.
+# Bu fallback globals yalnız eski/test fallback yolu için korunur ve testlerde monkeypatch edilir.
+trace: Any = None
+OTLPSpanExporter: Any = None
+FastAPIInstrumentor: Any = None
+HTTPXClientInstrumentor: Any = None
+Resource: Any = None
+TracerProvider: Any = None
+BatchSpanProcessor: Any = None
 
 
 logger = logging.getLogger(__name__)
@@ -1391,13 +1394,6 @@ def _setup_tracing() -> None:
             service_name=getattr(cfg, "OTEL_SERVICE_NAME", "sidar-web"),
             fastapi_app=app,
             logger_obj=logger,
-            trace_module=trace,
-            otlp_exporter_cls=OTLPSpanExporter,
-            tracer_provider_cls=TracerProvider,
-            resource_cls=Resource,
-            batch_span_processor_cls=BatchSpanProcessor,
-            fastapi_instrumentor_cls=FastAPIInstrumentor,
-            httpx_instrumentor_cls=HTTPXClientInstrumentor,
         )
         return
 
