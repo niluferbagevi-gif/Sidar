@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -125,6 +126,9 @@ def patch_file(
 
 def glob_search(manager: Any, pattern: str, base_path: str = ".") -> tuple[bool, str]:
     """Find files by glob pattern under a safe base path."""
+    if not pattern:
+        return False, "⚠ Glob deseni belirtilmedi."
+
     try:
         base = Path(base_path).resolve()
         if not base.exists():
@@ -133,14 +137,31 @@ def glob_search(manager: Any, pattern: str, base_path: str = ".") -> tuple[bool,
             return False, f"Belirtilen yol bir dizin değil: {base_path}"
         if not manager.security_adapter.is_path_under(str(base), manager.base_dir):
             return False, f"[OpenClaw] Arama dizini proje kökü dışında: {base}"
-        matches = [p for p in base.rglob(pattern) if p.is_file()]
-        safe_matches = [m for m in matches if manager.security_adapter.can_read(str(m))]
+
+        if "**" in pattern:
+            parts = pattern.split("**", 1)
+            sub = parts[1].lstrip("/\\")
+            matches = list(base.rglob(sub))
+        else:
+            matches = list(base.glob(pattern))
+
+        safe_matches = []
+        for match in matches:
+            try:
+                match.resolve().relative_to(base)
+            except ValueError:
+                continue
+            if manager.security_adapter.can_read(str(match)):
+                safe_matches.append(match)
+
         safe_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         if not safe_matches:
             return True, f"Eşleşen dosya bulunamadı: `{pattern}` ({base_path})"
         lines = [f"Glob sonuçları — `{pattern}` ({len(safe_matches)} eşleşme):"]
-        for match in safe_matches[: manager.max_search_results]:
-            lines.append(f"- {match}")
+        for match in safe_matches[: getattr(manager, "max_search_results", len(safe_matches))]:
+            rel = match.relative_to(base)
+            tag = "📂" if match.is_dir() else "📄"
+            lines.append(f"  {tag} {rel}")
         return True, "\n".join(lines)
     except Exception as exc:
         return False, f"Glob arama hatası: {exc}"
@@ -151,9 +172,20 @@ def grep_files(
     pattern: str,
     path: str = ".",
     file_glob: str = "*",
-    context: int = 2,
+    case_sensitive: bool = True,
+    context_lines: int = 0,
+    max_results: int = 100,
 ) -> tuple[bool, str]:
     """Search text in files with a safe path and glob filter."""
+    if not pattern:
+        return False, "⚠ Arama kalıbı belirtilmedi."
+
+    try:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        compiled = re.compile(pattern, flags)
+    except re.error as exc:
+        return False, f"Geçersiz regex kalıbı: {exc}"
+
     try:
         target = Path(path).resolve()
         files_to_search: list[Path] = []
@@ -170,6 +202,7 @@ def grep_files(
                 ]
         else:
             return False, f"Yol bulunamadı: {path}"
+
         results: list[str] = []
         match_count = 0
         files_with_matches = 0
@@ -178,32 +211,49 @@ def grep_files(
                 continue
             try:
                 lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
-            except (OSError, UnicodeDecodeError) as exc:
-                logger.debug("grep okuma atlandı %s: %s", fp, exc)
+            except Exception as exc:
+                logger.warning("Dosya okunamadı, atlanıyor: %s (%s)", fp, exc)
                 continue
             file_matches: list[str] = []
-            for idx, line in enumerate(lines):
-                if pattern in line:
+            for index, line in enumerate(lines):
+                if compiled.search(line):
+                    if match_count >= max_results:
+                        break
                     match_count += 1
-                    start = max(0, idx - context)
-                    end = min(len(lines), idx + context + 1)
+                    start = max(0, index - context_lines)
+                    end = min(len(lines), index + context_lines + 1)
                     ctx_lines = [
-                        f"{line_no + 1:4d}: {lines[line_no]}" for line_no in range(start, end)
+                        f"  {'>' if line_no == index else ' '} {line_no + 1:4d}: {lines[line_no]}"
+                        for line_no in range(start, end)
                     ]
                     file_matches.append("\n".join(ctx_lines))
             if file_matches:
                 files_with_matches += 1
-                results.append(f"\n### {fp}\n" + "\n---\n".join(file_matches))
-            if len(results) >= manager.max_search_results:
+                try:
+                    rel = fp.relative_to(target if target.is_dir() else target.parent)
+                except ValueError:
+                    rel = fp
+                results.append(f"📄 {rel}")
+                results.extend(file_matches)
+                results.append("")
+            if match_count >= max_results:
+                results.append(
+                    f"⚠ Maksimum eşleşme sayısına ulaşıldı ({max_results}). Desen daraltılabilir."
+                )
                 break
         if not results:
             return True, f"Eşleşme bulunamadı: `{pattern}` ({path}, filtre: {file_glob})"
-        return True, f"{files_with_matches} dosyada {match_count} eşleşme\n" + "\n".join(results)
+        header = (
+            f"Grep sonuçları — `{pattern}`\n"
+            f"  {files_with_matches} dosyada {match_count} eşleşme"
+        )
+        return True, header + "\n\n" + "\n".join(results)
     except Exception as exc:
         return False, f"Grep arama hatası: {exc}"
 
 
 def list_directory(manager: Any, path: str = ".") -> tuple[bool, str]:
+    """List a directory after CodeManager security checks."""
     try:
         target = Path(path).resolve()
         if not target.exists():
@@ -214,9 +264,12 @@ def list_directory(manager: Any, path: str = ".") -> tuple[bool, str]:
             return False, f"[OpenClaw] Listeleme dizini proje kökü dışında: {target}"
         items = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
         lines = [f"📁 {path}/"]
-        for item in items[: manager.max_search_results]:
-            suffix = "/" if item.is_dir() else ""
-            lines.append(f"- {item.name}{suffix}")
+        for item in items[: getattr(manager, "max_search_results", len(items))]:
+            if item.is_dir():
+                lines.append(f"  📂 {item.name}/")
+            else:
+                size_kb = item.stat().st_size / 1024
+                lines.append(f"  📄 {item.name}  ({size_kb:.1f} KB)")
         return True, "\n".join(lines)
     except Exception as exc:
         return False, f"Dizin listeleme hatası: {exc}"
