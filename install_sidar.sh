@@ -162,7 +162,7 @@ sidar_t() {
             failed_command) printf '   Failed command: %s' "$1" ;;
             check_log) printf '   Check the log file for cleanup/review: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Installation Starting' ;;
-            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
+            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --enable-autonomous-cron | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
             invalid_docker_cli) printf 'Invalid DOCKER_CLI_INSTALL value: %s. Supported: auto|always|never' "$1" ;;
             invalid_mode) printf 'Invalid --mode value: %s. Supported: local|docker' "$1" ;;
             invalid_env) printf 'Invalid --env value: %s. Supported: development|production' "$1" ;;
@@ -185,7 +185,7 @@ sidar_t() {
             failed_command) printf '   Hata veren komut: %s' "$1" ;;
             check_log) printf '   Temizleme/inceleme için log dosyasını kontrol edin: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Kurulum Başlıyor' ;;
-            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
+            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --enable-autonomous-cron | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
             invalid_docker_cli) printf "Geçersiz DOCKER_CLI_INSTALL değeri: '%s'. Desteklenen: auto|always|never" "$1" ;;
             invalid_mode) printf "Geçersiz --mode değeri: '%s'. Desteklenen: local|docker" "$1" ;;
             invalid_env) printf "Geçersiz --env değeri: '%s'. Desteklenen: development|production" "$1" ;;
@@ -273,7 +273,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 dff96eaa7db641238d6e2026bc0fa82c4ac692b760fcd8f0a299881ff6c0305d  scripts/install_modules/phases/06_services.sh
-12cb80c9d4203dff0d3459f2abbcbacbb6c00ce5b14b64e24303f05c66d5c8a3  scripts/install_modules/phases/07_finish.sh
+e48f4658365d7fff4e0b99d940095ba591f795928d4b55dceb153c3babe28924  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
@@ -2189,6 +2189,7 @@ HELM_VALUES_FILE=""
 RUN_SMOKE_TESTS_MODE="always"
 RUN_AUDIT=true
 RUN_INSTALL_INTEGRATION_TESTS=false
+ENABLE_AUTONOMOUS_CRON=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
 APP_RUNTIME_MODE="ask"
@@ -2217,6 +2218,7 @@ MIGRATION_STATUS="atlandı"
 SMOKE_TEST_STATUS="atlandı"
 INTEGRATION_TEST_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
+AUTONOMOUS_CRON_STATUS="atlandı"
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
@@ -2232,7 +2234,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -2248,6 +2250,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --smoke-test  Require tests/smoke at the end of installation
   --skip-smoke-test  Do not run smoke tests at the end of installation
   --with-integration / --with-integration-tests  Also run tests/integration/api after smoke tests
+  --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
   --download-models  Download Ollama models by default
@@ -2288,12 +2291,13 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
     SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
+    SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  Equivalent to --enable-autonomous-cron
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
     SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary installer module directory for debugging
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -2309,6 +2313,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
   --with-integration / --with-integration-tests  Smoke sonrası tests/integration/api testlerini de çalıştır
+  --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
   --download-models  Ollama modellerini varsayılan olarak indir
@@ -2349,6 +2354,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
     SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
+    SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  --enable-autonomous-cron eşdeğeri
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
     SIDAR_KEEP_TEMP_MODULES=1|0  Geçici kurulum modül dizinini debug için korur
 EOF
@@ -2390,6 +2396,7 @@ for arg in "$@"; do
         --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --with-integration|--with-integration-tests) RUN_INSTALL_INTEGRATION_TESTS=true ;;
+        --enable-autonomous-cron) ENABLE_AUTONOMOUS_CRON=true ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
         --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
@@ -2438,6 +2445,7 @@ resolve_env_type_choice() {
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
 STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
+ENABLE_AUTONOMOUS_CRON="$(normalize_bool "${ENABLE_AUTONOMOUS_CRON:-${SIDAR_ENABLE_AUTONOMOUS_CRON:-false}}")"
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
@@ -7302,6 +7310,15 @@ print_summary() {
         echo "  Test artifact audit: ${AUDIT_STATUS}."
     else
         echo "  Test artifact audit: atlandı. Çalıştırmak için: ./install_sidar.sh --audit"
+    fi
+    if [[ "$AUTONOMOUS_CRON_STATUS" == "systemd_timer" ]]; then
+        echo "  Otonom döngü zamanlayıcısı: systemd user timer aktif (sidar-autonomous-loop.timer)."
+    elif [[ "$AUTONOMOUS_CRON_STATUS" == "crontab" ]]; then
+        echo "  Otonom döngü zamanlayıcısı: kullanıcı crontab satırı aktif."
+    elif [[ "$AUTONOMOUS_CRON_STATUS" == "manuel_gerekli" ]]; then
+        echo "  Otonom döngü zamanlayıcısı: otomatik kurulamadı; autonomous_loop.sh için manuel systemd/crontab planı ekleyin."
+    else
+        echo "  Otonom döngü zamanlayıcısı: opt-in kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-autonomous-cron"
     fi
     echo "  ollama serve              — Ollama servisini başlat"
     if [[ "$SKIP_MODELS" == true ]]; then

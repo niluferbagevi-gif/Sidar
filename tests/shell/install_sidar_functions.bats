@@ -594,6 +594,7 @@ ENV
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"Select installer message language"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--enable-autonomous-cron"* ]]
   [[ "$output" != *"Kullanım:"* ]]
 }
 
@@ -614,6 +615,60 @@ ENV
   [[ "$output" == *"Kullanım:"* ]]
   [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--enable-autonomous-cron"* ]]
+}
+
+@test "sidar_configure_autonomous_cron is opt-in and suggests the flag by default" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    mkdir -p "$tmpdir/scripts"
+    touch "$tmpdir/autonomous_loop.sh" "$tmpdir/scripts/auto_heal.py"
+
+    ENABLE_AUTONOMOUS_CRON=false
+    sidar_configure_autonomous_cron
+
+    [[ "$AUTONOMOUS_CRON_STATUS" == "atlandi_bayrak" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--enable-autonomous-cron"* ]]
+}
+
+@test "sidar_configure_autonomous_cron installs a crontab fallback when enabled" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin" "$tmpdir/scripts"
+    cat > "$tmpdir/bin/systemctl" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/crontab" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "-l" ]]; then
+  [[ -f "$tmpdir/current.cron" ]] && cat "$tmpdir/current.cron"
+  exit 0
+fi
+cat > "$tmpdir/installed.cron"
+EOF
+    chmod +x "$tmpdir/bin/systemctl" "$tmpdir/bin/crontab"
+    export PATH="$tmpdir/bin:$PATH"
+    HOME="$tmpdir/home"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/autonomous_loop.sh" "$tmpdir/scripts/auto_heal.py"
+    chmod +x "$tmpdir/autonomous_loop.sh"
+
+    ENABLE_AUTONOMOUS_CRON=true
+    sidar_configure_autonomous_cron
+
+    [[ "$AUTONOMOUS_CRON_STATUS" == "crontab" ]]
+    grep -q "Sidar autonomous loop" "$tmpdir/installed.cron"
+    grep -q "autonomous_loop.sh" "$tmpdir/installed.cron"
+    grep -q "flock -n" "$tmpdir/installed.cron"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"crontab satırı olarak kuruldu"* ]]
 }
 
 @test "run_install_integration_api_tests is opt-in and passes service env to pytest" {
