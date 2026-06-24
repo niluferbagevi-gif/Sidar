@@ -1216,6 +1216,59 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
     assert "action=rerun-install-script;refresh-sudo" in result.stdout
 
 
+def test_install_sidar_download_verified_script_fails_after_http_200_when_checksum_missing(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl_log = tmp_path / "curl.log"
+    downloaded_body = "#!/usr/bin/env bash\necho downloaded-ok\n"
+    curl_script = fake_bin / "curl"
+    curl_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"printf '%s\\n' \"$*\" >> {curl_log!s}\n"
+        "out=''\n"
+        "while [[ $# -gt 0 ]]; do\n"
+        "  if [[ \"$1\" == '-o' ]]; then shift; out=\"$1\"; fi\n"
+        "  shift || true\n"
+        "done\n"
+        "[[ -n \"$out\" ]]\n"
+        f"cat > \"$out\" <<'REMOTE_SCRIPT'\n{downloaded_body}REMOTE_SCRIPT\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    curl_script.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            export SIDAR_INSTALL_TEST_MODE=1
+            set --
+            source ./install_sidar.sh
+            OFFLINE_MODE=false
+            unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
+            download_verified_script 'https://example.invalid/install.sh' '' 'uv_install'
+            """,
+        ],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert curl_log.exists(), "HTTP 200 mock curl path should be exercised before checksum gate"
+    assert "https://example.invalid/install.sh" in curl_log.read_text(encoding="utf-8")
+    assert "uv_install checksum değeri tanımlı değil" in result.stderr
+    assert "UV_INSTALL_SHA256" in result.stderr
+    assert "no-retry;manual-fix-required" in result.stderr
+    assert "uv_install indirilemedi" not in result.stderr
+
+
 def test_install_sidar_remote_script_checksum_missing_is_classified_deterministic() -> None:
     result = subprocess.run(
         [
