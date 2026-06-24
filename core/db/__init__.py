@@ -42,6 +42,8 @@ __all__ = [
 from core.db import monolith as _monolith
 
 _monolith.__package__ = __name__
+# Keep the aliased monolith module package-like so ``core.db.<submodule>``
+# imports continue to resolve without requiring an attr-defined ignore.
 _monolith.__path__ = __path__
 _sys.modules[__name__] = _monolith
 
