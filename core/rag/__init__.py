@@ -33,7 +33,7 @@ from typing import Any
 import bleach as _bleach
 from opentelemetry import trace as _otel_trace
 
-import core.rag.backends as _rag_backends
+from . import backends as _rag_backends
 from config import Config
 from core.db import postgres_failure_diagnosis
 from core.embeddings import (
