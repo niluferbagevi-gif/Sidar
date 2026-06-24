@@ -148,6 +148,24 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
     assert "installer-impacting" in docs
 
 
+def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
+        encoding="utf-8"
+    )
+
+    for content in (readme, modularization_note):
+        assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1" in content
+        assert "çekirdek manifest" in content
+        assert "çözüm değildir" in content
+        assert "scripts/sync_install_manifest.sh" in content
+        assert "belirli bir commit/tag" in content
+    assert "Sorun giderme (çekirdek kurulum manifest uyuşmazlığı)" in readme
+    assert "Güncellenmiş installer/release" in readme
+    assert "core/memory.py" in readme
+    assert "core/multimodal.py" in readme
+
+
 def test_release_quality_runs_benchmark_coverage_trend_gate():
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 

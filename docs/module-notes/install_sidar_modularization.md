@@ -102,6 +102,14 @@ vermeden değiştiğinde yeni kurulumları yine kıracağı için bilinçli rele
 kararı gerektirir. Air-gapped kurulumlarda tercih edilen yol, uzak betik yerine
 `offline_packages/manifest.json` tarafından doğrulanan offline bundle kullanmaktır.
 
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` yalnız geçici/test ortamlarında uzak kurulum
+betikleri veya `scripts/install_modules` modül hash doğrulaması için risk kabulü
+anlamına gelir. `core/memory.py` / `core/multimodal.py` çekirdek manifest
+uyuşmazlığında bu bayrak çözüm değildir; normal kullanıcı güncellenmiş installer'ı
+veya manifesti güncel belirli bir commit/tag'i beklemeli, geliştirici ise
+`scripts/sync_install_manifest.sh` ile main branch manifest senkronizasyonunu
+düzeltmelidir.
+
 ### Auto-heal: uzak betik checksum metadata eksikliği deterministik kabul edilir
 
 `UV_INSTALL_SHA256` veya `OLLAMA_INSTALL_SHA256` tanımlı değilse `install_sidar.sh`

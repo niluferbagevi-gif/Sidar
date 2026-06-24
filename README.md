@@ -430,9 +430,12 @@ rm -f "$tmp_ollama"
 ```
 
 Doğrulamayı bilinçli olarak atlamak gerekiyorsa yalnız geçici ve izole ortamlarda
-`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh` kullanılabilir. Offline veya
-kurumsal dağıtımlarda tercih edilen yol, `offline_packages/manifest.json` içindeki
-SHA-256 doğrulamasına bağlı bundle akışıdır.
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh` kullanılabilir. Bu bayrak
+yalnız uzak kurulum betikleri ve `scripts/install_modules` modül doğrulaması için
+geçici/test bypass'tır; `core/memory.py` ve `core/multimodal.py` çekirdek manifest
+hatalarında çözüm değildir ve çekirdek dosya doğrulamasını devre dışı bırakmaz.
+Offline veya kurumsal dağıtımlarda tercih edilen yol, `offline_packages/manifest.json`
+içindeki SHA-256 doğrulamasına bağlı bundle akışıdır.
 
 > **Auto-heal davranışı:** `OLLAMA_INSTALL_SHA256` veya `UV_INSTALL_SHA256` eksikse
 > bu kök neden **deterministik** olarak işaretlenir; auto-heal retry yapmaz, doğrudan
@@ -576,6 +579,43 @@ cd ~/Sidar
 ./install_sidar.sh
 ```
 
+### Sorun giderme (çekirdek kurulum manifest uyuşmazlığı)
+
+Raw `install_sidar.sh` ile başlatılan kurulum aşağıdakine benzer bir hatayla durursa:
+
+```
+❌  Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi.
+Uyumsuz çekirdek dosyalar: core/memory.py
+Beklenen: ...
+Mevcut:   ...
+```
+
+Bu hata `scripts/install_modules` modül hash gate'i değildir. Çekirdek güvenlik
+zincirindeki `core/memory.py` veya `core/multimodal.py` dosyası, raw installer içine
+gömülü çekirdek manifest ile eşleşmiyor demektir. Varsayılan davranış fail-closed'dur;
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` bu hata için önerilmez ve çekirdek manifest
+doğrulamasını bypass etmez.
+
+Ne yapmalısınız:
+
+- **Normal kullanıcı**: Kurulumu zorlamayın. Güncellenmiş installer/release'in
+  yayınlanmasını bekleyin veya bakım ekibinin önerdiği belirli commit/tag üzerinden
+  kurulum yapın. Main dalındaki manifest senkronizasyonu düzeltilmeden temiz kurulum
+  güvenlik nedeniyle durmaya devam eder.
+- **Geliştirici (repo üzerinde çalışıyorsanız)**: Çekirdek manifesti senkronlayıp
+  değişikliği commit/PR edin:
+
+  ```bash
+  scripts/sync_install_manifest.sh
+  uv run python scripts/tools/update_core_install_manifest.py --check
+  git add .sidar_manifest.txt install_sidar.sh
+  git commit -m "Sync core install manifest"
+  ```
+
+Bu hata genellikle `core/memory.py` veya `core/multimodal.py` değiştiği halde
+`.sidar_manifest.txt` ve `install_sidar.sh` içindeki `SIDAR_INSTALL_MANIFEST_EOF`
+bloğu güncellenmeden merge yapıldığında oluşur.
+
 ### Sorun giderme (kurulum modül hash uyuşmazlığı)
 
 Raw `install_sidar.sh` ile başlatılan kurulum aşağıdakine benzer bir hatayla durursa:
@@ -616,7 +656,8 @@ Ne yapmalısınız:
   kontrolünün sonucunu özetler. CI manifestin senkron kaldığını gate
   olarak doğrular (`make check-install-manifests`).
 
-- **Bilinçli risk kabulü (yalnızca güvenilir, izole ortamlarda)**:
+- **Bilinçli risk kabulü (yalnızca güvenilir, izole test ortamlarında ve yalnız
+  modül/uzak betik doğrulaması için)**:
   Çalıştırılacak modül kodunu doğrulamadan devam etmeyi kabul ediyorsanız:
 
   ```bash
@@ -624,7 +665,9 @@ Ne yapmalısınız:
   ```
 
   Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen scriptlere
-  karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır.
+  karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır. Çekirdek manifest
+  hatalarında bu bayrak çözüm değildir; ana çözüm main branch manifest sync veya
+  manifesti güncel belirli bir commit/tag kullanmaktır.
 
 ---
 
