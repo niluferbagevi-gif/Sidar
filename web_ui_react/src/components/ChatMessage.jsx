@@ -6,7 +6,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import rehypeSidarHighlight from "../lib/rehypeSidarHighlight.js";
 
 const markdownRenderers = {
   pre: ({ node, ...props }) => (
@@ -20,7 +20,7 @@ const MemoMarkdown = React.memo(function MemoMarkdown({ content }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[rehypeSidarHighlight]}
       className="message__markdown"
       components={markdownRenderers}
     >

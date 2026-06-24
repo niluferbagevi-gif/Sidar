@@ -13,7 +13,7 @@ vi.mock("react-markdown", () => ({
   },
 }));
 vi.mock("remark-gfm", () => ({ default: () => {} }));
-vi.mock("rehype-highlight", () => ({ default: () => {} }));
+vi.mock("../lib/rehypeSidarHighlight.js", () => ({ default: () => {} }));
 
 const makeMsg = (overrides = {}) => ({
   id: "msg-1",

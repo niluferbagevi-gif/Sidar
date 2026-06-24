@@ -24,11 +24,12 @@
     "preinstall": "bash ../scripts/patch_ws_integrity.sh"
   },
   "dependencies": {
+    "highlight.js": "~11.11.0",
+    "lowlight": "^3.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "react-router-dom": "^6.30.4",
-    "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "zustand": "^4.5.2"
   },
