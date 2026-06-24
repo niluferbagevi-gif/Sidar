@@ -59,6 +59,8 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
 
 if ! declare -F compute_sha256 >/dev/null 2>&1; then
     compute_sha256() {
@@ -136,11 +138,26 @@ SIDAR_INSTALL_MANIFEST_EOF
     [[ -n "$mismatch_details" ]] || mismatch_details=$'\n  • bilinmiyor'
 
     local bootstrap_context=""
+    local git_head="bilinmiyor"
+    local git_branch="bilinmiyor"
+    local git_remote="bilinmiyor"
+    if command -v git >/dev/null 2>&1 && [[ -d "${SCRIPT_DIR}/.git" ]]; then
+        git_head="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo bilinmiyor)"
+        git_branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo bilinmiyor)"
+        git_remote="$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo bilinmiyor)"
+    fi
+
     if [[ -n "${SIDAR_BOOTSTRAP_REEXEC_TARGET:-}" ]]; then
         bootstrap_context="
 Bootstrap durumu:
   • Clone/re-exec tamamlandı: ${SIDAR_BOOTSTRAP_REEXEC_TARGET}
   • Ref: ${SIDAR_BOOTSTRAP_REEXEC_REF:-bilinmiyor}
+  • Clone HEAD: ${SIDAR_BOOTSTRAP_REEXEC_HEAD:-${git_head}}
+  • Clone remote: ${SIDAR_BOOTSTRAP_REEXEC_REMOTE:-${git_remote}}
+  • Raw installer metadata: ref=${SIDAR_BOOTSTRAP_RAW_INSTALLER_SOURCE_REF:-${SIDAR_INSTALLER_EMBEDDED_SOURCE_REF}}, commit=${SIDAR_BOOTSTRAP_RAW_INSTALLER_SOURCE_COMMIT:-${SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT}}
+  • Raw installer SHA256: ${SIDAR_BOOTSTRAP_ORIGINAL_INSTALLER_SHA256:-bilinmiyor}
+  • Clone install_sidar.sh SHA256: ${SIDAR_BOOTSTRAP_CLONED_INSTALLER_SHA256:-bilinmiyor}
+  • Raw/clone installer ilişkisi: ${SIDAR_BOOTSTRAP_INSTALLER_SHA_RELATION:-bilinmiyor}
   • Bu aşama wget/chmod/git clone veya helper modül yükleme hatası değildir;
     hata clone sonrası çekirdek manifest karşılaştırmasında oluştu.
 "
@@ -156,6 +173,11 @@ kurulum manifestinden gelir. Doğrulanan çekirdek dosyalar:
 Uyumsuz çekirdek dosyalar: ${mismatched_csv:-bilinmiyor}
 
 Uyumsuz çekirdek dosya detayları:${mismatch_details}
+
+Repo durumu:
+  • Repo: ${git_remote}
+  • Branch: ${git_branch}
+  • HEAD: ${git_head}
 ${bootstrap_context}
 
 Çözüm:
@@ -463,6 +485,11 @@ bootstrap_clone_and_reexec() {
     local clone_target="${clone_parent%/}/${clone_name}"
     local preferred_ref="${SIDAR_BOOTSTRAP_CLONE_REF:-${SIDAR_REPO_BRANCH:-main}}"
     local home_repo_candidate="${HOME}/Sidar"
+    local clone_head="bilinmiyor"
+    local clone_remote="bilinmiyor"
+    local raw_installer_sha="bilinmiyor"
+    local cloned_installer_sha="bilinmiyor"
+    local installer_sha_relation="bilinmiyor"
 
     warn "Yerel modüller eksik. Geçici /tmp modül indirme yerine bootstrap clone akışı başlatılıyor."
 
@@ -489,11 +516,27 @@ bootstrap_clone_and_reexec() {
 
     local next_script="$clone_target/install_sidar.sh"
     [[ -f "$next_script" ]] || fail "Clone sonrası install_sidar.sh bulunamadı: $next_script"
+    clone_head="$(git -C "$clone_target" rev-parse HEAD 2>/dev/null || echo bilinmiyor)"
+    clone_remote="$(git -C "$clone_target" remote get-url origin 2>/dev/null || echo bilinmiyor)"
+    raw_installer_sha="$(compute_sha256 "$ORIGINAL_SCRIPT_PATH" 2>/dev/null || echo bilinmiyor)"
+    cloned_installer_sha="$(compute_sha256 "$next_script" 2>/dev/null || echo bilinmiyor)"
+    if [[ "$raw_installer_sha" == "$cloned_installer_sha" ]]; then
+        installer_sha_relation="eşleşiyor"
+    else
+        installer_sha_relation="farklı"
+    fi
     chmod +x "$next_script" || true
     cd "$clone_target" || fail "Clone sonrası dizine geçilemedi: $clone_target"
     export SIDAR_BOOTSTRAP_REEXEC_TARGET="$clone_target"
     export SIDAR_BOOTSTRAP_REEXEC_REF="$preferred_ref"
-    info "Bootstrap clone tamamlandı; yerel kurulum betiği yeniden başlatılıyor."
+    export SIDAR_BOOTSTRAP_REEXEC_HEAD="$clone_head"
+    export SIDAR_BOOTSTRAP_REEXEC_REMOTE="$clone_remote"
+    export SIDAR_BOOTSTRAP_ORIGINAL_INSTALLER_SHA256="$raw_installer_sha"
+    export SIDAR_BOOTSTRAP_CLONED_INSTALLER_SHA256="$cloned_installer_sha"
+    export SIDAR_BOOTSTRAP_INSTALLER_SHA_RELATION="$installer_sha_relation"
+    export SIDAR_BOOTSTRAP_RAW_INSTALLER_SOURCE_REF="$SIDAR_INSTALLER_EMBEDDED_SOURCE_REF"
+    export SIDAR_BOOTSTRAP_RAW_INSTALLER_SOURCE_COMMIT="$SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT"
+    info "Bootstrap clone tamamlandı (HEAD=${clone_head}, installer_sha=${installer_sha_relation}); yerel kurulum betiği yeniden başlatılıyor."
     exec "$next_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
