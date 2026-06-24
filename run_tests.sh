@@ -1988,6 +1988,8 @@ run_frontend_e2e_with_retry() {
   fi
 
   echo "❌ Frontend Playwright smoke testleri retry sonrasında da başarısız (çıkış=${e2e_exit_code})."
+  echo "ℹ️ Aynı smoke testi ikinci denemede de kaldığı için sonuç flake yerine deterministik kabul edilir."
+  echo "   Chat WebSocket smoke için öncelikli kontroller: Vite /ws proxy upgrade, mock backend subprotocol negotiation ve StatusBar data-state."
   return "${e2e_exit_code}"
 }
 
