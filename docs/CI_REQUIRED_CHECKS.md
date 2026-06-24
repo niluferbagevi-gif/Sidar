@@ -33,6 +33,19 @@ uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
 ```
 
+Because `install_sidar.sh` is distributed directly through GitHub raw URLs, the
+same required gate treats the raw installer as a release artifact before merge:
+
+```bash
+bash -n install_sidar.sh
+SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 bash install_sidar.sh
+```
+
+The bundle producer still keeps its own fail-closed pre-bundle checks, but those
+checks are not sufficient by themselves for the raw `main/install_sidar.sh`
+distribution path. Raw installer verification must therefore remain in the PR
+merge gate.
+
 If this gate fails, synchronize the manifests before merging:
 
 ```bash

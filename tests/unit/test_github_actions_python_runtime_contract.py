@@ -98,6 +98,14 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in workflow
+    assert "Treat raw GitHub installer as release artifact" in workflow
+    assert "bash -n install_sidar.sh" in workflow
+    assert (
+        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 "
+        "bash install_sidar.sh"
+    ) in workflow
+    assert "raw installer as a release artifact" in docs
+    assert "main/install_sidar.sh" in docs
     for protected_path in (
         "install_sidar.sh",
         ".sidar_manifest.txt",
