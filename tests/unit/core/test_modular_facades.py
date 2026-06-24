@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import core.db as db
 import core.rag as rag
-from core.db import _parse_asyncpg_affected_rows, _quote_sql_identifier
+from core.db import Database, _parse_asyncpg_affected_rows, _quote_sql_identifier
+from core.db.engine import Database as EngineDatabase
+from core.db.multitenant import AccessPolicyRecord
 from core.db_components.dialect import parse_asyncpg_affected_rows, quote_sql_identifier
 from core.rag import embeddings_wrapper
 from core.rag.graph import GraphIndex
@@ -43,6 +46,15 @@ def test_rag_embedding_wrappers_delegate_lazily(monkeypatch) -> None:
         "cfg": "cfg",
     }
     assert embeddings_wrapper.embed_texts_for_semantic_cache(["a"], cfg="cfg") == [["a"], "cfg"]
+
+
+def test_db_init_is_short_backward_compatible_facade() -> None:
+    init_lines = Path("core/db/__init__.py").read_text(encoding="utf-8").splitlines()
+
+    assert len(init_lines) <= 200
+    assert db.Database is Database is EngineDatabase
+    assert AccessPolicyRecord.__name__ == "AccessPolicyRecord"
+    assert hasattr(db, "_ASYNCPG_COMMAND_TAG_COUNT_RE")
 
 
 def test_db_dialect_facade_matches_extracted_helpers() -> None:
