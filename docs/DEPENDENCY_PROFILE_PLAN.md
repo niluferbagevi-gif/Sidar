@@ -12,8 +12,9 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
   pytest/ruff/mypy/pyright/bandit/safety gibi geliştirme, LSP ve test araçları runtime listesinden çıkarılmıştır.
 - `dev` extra bu araçları taşır; `all` extra da `dev` profilini içerdiği için yerel geliştirme ve
   CI için `uv sync --all-extras` standardı geriye dönük uyumlu kalır.
-- Dockerfile/installer production varsayılanları bu PR'da değiştirilmez; production image/runbook
-  geçişi ayrı koordinasyon adımı olarak izlenir.
+- Faz 1 kapanışında production-minimal yüzey artık somut artifact'lere bağlandı:
+  `production` / `production-minimal` extras, `scripts/export_production_requirements.sh`
+  üreticisi ve `Dockerfile.production` no-dev image yolu aynı sözleşmeyi kullanır.
 
 ## Hedef profiller
 
@@ -22,7 +23,8 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 | `runtime` | Sidar çekirdeğinin minimum import/runtime bağımlılıkları | config, FastAPI, DB base, HTTP client, güvenlik, temel RAG olmayan core paketler | Ana `dependencies` uzun vadede buna indirgenir. |
 | `dev` | Test/lint/type/security kalite araçları | `pytest`, `pytest-*`, `ruff`, `mypy`, `pyright`, `bandit`, `safety`, type stubs, test doubles | CI ve local kalite kapıları bu profile bağlı kalır. |
 | `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
-| `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | Faz 1 itibarıyla `sidar[postgres,telemetry]` extra olarak tanımlıdır; Docker/installer varsayılanına geçiş ayrı doğrulanır. |
+| `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | `uv export --extra production --no-dev` ve `Dockerfile.production` tarafından kullanılan deploy profili. |
+| `production-minimal` | Production profilinin açık adlandırılmış alias'ı | `sidar[postgres,telemetry]` | Faz 1 kapanış kabul kriteri için production-minimal profilinin makine-okunur karşılığıdır. |
 
 ### Planlanan ayrıştırma grupları
 
@@ -113,11 +115,11 @@ olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini 
    kalite araçlarını `runtime`, `dev`, optional integration ve provider sınıflarına etiketle. Dev/test
    araçları ana runtime listesinden çıkarılmıştır; `uv sync --all-extras` davranışı korunur.
 2. **CI dry-run:** Yeni profil komutlarını ayrı non-blocking job olarak dene; örn. production image için
-   `uv sync --frozen --extra production` ancak ana gate yine `uv sync --all-extras` kalır.
+   `uv sync --frozen --extra production --no-dev` ancak ana gate yine `uv sync --all-extras` kalır.
    İlk takip işi `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ıdır;
    `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
-3. **Docker/installer koordinasyonu:** Production Dockerfile, installer ve deploy runbook'ları yeni profile
-   göre güncellenmeden varsayılan production install akışı değiştirilmez.
+3. **Docker/installer koordinasyonu:** `Dockerfile.production` yeni no-dev profile'ı kullanır; ana
+   `Dockerfile` ve installer varsayılanları local/CI paritesi için `uv sync --all-extras` kalır.
 4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
    extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
    Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
@@ -125,21 +127,25 @@ olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini 
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
-## Dockerfile / installer geçiş PR kapsamı
+## Dockerfile / requirements / installer geçiş PR kapsamı
 
-Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez. Production profile geçişi
-ayrı bir PR olarak ele alınmalı ve aşağıdaki dosyaları aynı değişiklik serisinde koordine etmelidir:
+Faz 1 kapanışında production-minimal profile için somut üretim artifact'leri eklenmiştir.
+Varsayılan developer/installer davranışı değişmeden kalır; no-dev production yolu bilinçli
+olarak ayrı Dockerfile ve requirements üreticisi üzerinden çalışır:
 
 | Alan | Mevcut sözleşme | Ayrı PR hedefi | Gerekli doğrulama |
 |---|---|---|---|
-| `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras --extra dev` kullanır. | Production image için `uv sync --frozen --extra production` denemesini ayrı stage/arg ile tanıt; dev araçlarını kaldırmadan önce dry-run sonuçlarını raporla. | Image build dry-run, web boot smoke, OpenAPI metadata smoke, import smoke. |
+| `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras --extra dev` kullanır. | Developer/full image standardını korur; production-minimal için `Dockerfile.production` kullanılır. | Mevcut image build dry-run ve local/CI parity smoke. |
+| `Dockerfile.production` | Yeni no-dev production image yolu. | `uv sync --frozen --extra production --no-dev` ile dev/test araçlarını image dışında tutar. | `docker build -f Dockerfile.production ...`, web boot smoke, OpenAPI metadata smoke, import smoke. |
+| `scripts/export_production_requirements.sh` | Yeni requirements üreticisi. | `uv export --frozen --extra production --no-dev --no-editable --no-emit-project` ile `requirements-production.txt` üretir. | Export dry-run ve dev/test paket yokluğu kontrolü. |
 | `install_sidar.sh` | Yerel/CI paritesi için `uv sync --frozen --all-extras` ana kurulum akışıdır. | `--dependency-profile=all|production` veya eşdeğer env override tasarla; varsayılan `all` kalmalı. | Online/offline installer smoke, `--ci` bundle smoke, pyright/self-heal dev bağımlılığı kontrolü. |
 | `scripts/install_modules/utils/python_env.sh` | Modüler installer yolu `uv sync --frozen --all-extras --extra dev` ile dev araçlarını garanti eder. | Profile-aware sync arg builder ekle; production seçilse bile dev-only kontrollerin bilinçli atlandığını raporla. | Shellcheck, installer module tests, production profile dry-run. |
 | Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
 
-Ayrı PR kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı, `production-profile-dry-run`
-job'ı non-blocking kalmalı ve Docker/installer production varsayılanları production profile'a ancak smoke/dry-run
-sonuçları raporlandıktan sonra geçirilmelidir.
+Faz 1 kapanış kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı,
+`production-profile-dry-run` job'ı non-blocking kalmalı, `Dockerfile.production`
+`--no-dev` kurulum yapmalı ve installer production varsayılanları ancak smoke/dry-run
+sonuçları raporlandıktan sonra profile-aware akışa geçirilmelidir.
 
 ## Kabul kriterleri
 

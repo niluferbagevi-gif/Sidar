@@ -3485,6 +3485,18 @@ production = [
     { name = "prometheus-client", marker = "sys_platform == 'linux'" },
     { name = "psycopg2-binary", marker = "sys_platform == 'linux'" },
 ]
+production-minimal = [
+    { name = "asyncpg", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-api", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-exporter-otlp", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-instrumentation-fastapi", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-sdk", marker = "sys_platform == 'linux'" },
+    { name = "pgvector", marker = "sys_platform == 'linux'" },
+    { name = "prometheus-client", marker = "sys_platform == 'linux'" },
+    { name = "psycopg2-binary", marker = "sys_platform == 'linux'" },
+]
 rag = [
     { name = "chromadb", marker = "sys_platform == 'linux'" },
     { name = "posthog", marker = "sys_platform == 'linux'" },
@@ -3626,6 +3638,7 @@ requires-dist = [
     { name = "sidar", extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "dev"], marker = "extra == 'all'" },
     { name = "sidar", extras = ["postgres"], marker = "extra == 'dev'" },
     { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production'" },
+    { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production-minimal'" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = "~=3.33.0" },
     { name = "speechrecognition", marker = "extra == 'voice'", specifier = "~=3.10.4" },
     { name = "sqlalchemy", specifier = "~=2.0.36" },
@@ -3648,7 +3661,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=15.0,<16.0" },
     { name = "yt-dlp", marker = "extra == 'tools'", specifier = ">=2024.0.0" },
 ]
-provides-extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "all", "production", "dev"]
+provides-extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "all", "production", "production-minimal", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "playwright", specifier = ">=1.60,<2.0" }]

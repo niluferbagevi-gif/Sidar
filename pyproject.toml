@@ -192,6 +192,9 @@ all = [
 production = [
   "sidar[postgres,telemetry]",
 ]
+production-minimal = [
+  "sidar[postgres,telemetry]",
+]
 dev = [
   "sidar[postgres]",
   "pytest>=8.0.0",
@@ -311,11 +314,13 @@ websockets = "runtime"
 
 [tool.sidar.dependency_profile_plan]
 current_install_standard = "uv sync --all-extras"
-status = "phase-1-dev-split"
+status = "phase-1-production-minimal"
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
 preserve_all_extras_standard = true
 planned_profile_groups = ["base", "web", "rag", "multimodal", "dev", "test", "gpu"]
-summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies while preserving uv sync --all-extras via the dev/all extras; Docker and installer production defaults remain coordinated separately."
+requirements_exporter = "scripts/export_production_requirements.sh"
+production_dockerfile = "Dockerfile.production"
+summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares production/production-minimal extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"
@@ -332,6 +337,10 @@ intent = "Current complete developer experience; must keep uv sync --all-extras 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "production"
 intent = "Web/API runtime plus postgres and telemetry extras; no pytest/ruff/mypy/bandit/safety once the split lands."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "production-minimal"
+intent = "Alias of the production web/API deploy surface used by Dockerfile.production and requirements export checks."
 
 [tool.bandit]
 exclude_dirs = [

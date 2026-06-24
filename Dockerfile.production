@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1.7
+
+# Sidar production-minimal image.
+# Build:
+#   docker build -f Dockerfile.production -t sidar:production .
+#
+# This image intentionally installs only the `production` extra with `--no-dev`.
+# The developer image remains covered by the main Dockerfile and the full local
+# dependency profile.
+
+ARG PYTHON_VERSION=3.11
+ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
+
+FROM ${BASE_IMAGE}
+
+ARG PYTHON_VERSION=3.11
+
+LABEL maintainer="Sidar AI Project"
+LABEL description="Sidar production-minimal Web/API image"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=7860 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_PYTHON=${PYTHON_VERSION} \
+    UV_LINK_MODE=copy \
+    VIRTUAL_ENV=/app/.venv \
+    PYTHONPATH=/app \
+    SIDAR_ENV=production \
+    ENABLE_TRACING=false \
+    REDIS_URL=redis://redis:6379/0 \
+    PATH="/app/.venv/bin:${PATH}"
+
+WORKDIR /app
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      git \
+      build-essential \
+      python3 \
+      python3-venv \
+      python3-pip \
+      ffmpeg \
+      portaudio19-dev \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv --version
+
+COPY pyproject.toml uv.lock README.md ./
+RUN test -f uv.lock || (echo "uv.lock is required for deterministic production builds" >&2; exit 1)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra production --no-dev --no-install-project
+
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra production --no-dev
+
+RUN useradd -m -u 10001 sidaruser \
+    && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db \
+    && chown -R sidaruser:sidaruser /app
+
+USER sidaruser
+
+EXPOSE 7860
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD sh -c 'curl -fsS "http://localhost:${WEB_PORT:-7860}/status" > /dev/null || exit 1'
+
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "web_server:app"]
+CMD ["--host", "0.0.0.0", "--port", "7860"]
