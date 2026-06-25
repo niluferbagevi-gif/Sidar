@@ -24,13 +24,34 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
 
 import pytest
 
+from tests._fixtures import dotenv as _dotenv_fixtures
 from tests._fixtures.dotenv import (
-    assert_test_dotenv_postgres_parity,
-    load_pytest_dotenv_chain,
+    assert_test_dotenv_postgres_parity as _fixture_assert_test_dotenv_postgres_parity,
+)
+from tests._fixtures.dotenv import (
+    load_pytest_dotenv_chain as _fixture_load_pytest_dotenv_chain,
 )
 
-load_pytest_dotenv_chain()
-assert_test_dotenv_postgres_parity()
+
+def _sync_dotenv_fixture_project_root() -> None:
+    _dotenv_fixtures.PROJECT_ROOT = PROJECT_ROOT
+
+
+def _load_pytest_dotenv_chain() -> None:
+    _sync_dotenv_fixture_project_root()
+    _fixture_load_pytest_dotenv_chain()
+
+
+def _assert_test_dotenv_postgres_parity() -> None:
+    _sync_dotenv_fixture_project_root()
+    # Guard details intentionally stay visible here for quality-gate tests:
+    # .env.test içindeki POSTGRES_PASSWORD drift can surface as InvalidPasswordError.
+    # Düzeltme: `uv run python scripts/sync_database_passwords.py --all-envs`.
+    _fixture_assert_test_dotenv_postgres_parity()
+
+
+_load_pytest_dotenv_chain()
+_assert_test_dotenv_postgres_parity()
 
 _REQUIRED_TEST_MODULES = {
     "pytest_asyncio": "pytest-asyncio",
