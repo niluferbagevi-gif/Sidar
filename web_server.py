@@ -132,22 +132,38 @@ WebSocketDisconnect = _FastAPIWebSocketDisconnect
 
 # OpenTelemetry bağımlılıkları config.Config.init_telemetry içinde lazy import edilir.
 # Bu fallback globals yalnız eski/test fallback yolu için korunur ve testlerde monkeypatch edilir.
-try:
-    from opentelemetry import trace
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-except ImportError:
-    trace = None
-    OTLPSpanExporter = None
-    FastAPIInstrumentor = None
-    HTTPXClientInstrumentor = None
-    Resource = None
-    TracerProvider = None
-    BatchSpanProcessor = None
+trace: Any = None
+OTLPSpanExporter: Any = None
+FastAPIInstrumentor: Any = None
+HTTPXClientInstrumentor: Any = None
+Resource: Any = None
+TracerProvider: Any = None
+BatchSpanProcessor: Any = None
+
+with contextlib.suppress(ImportError):
+    from opentelemetry import trace as _otel_trace
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter as _OTLPSpanExporter,
+    )
+    from opentelemetry.instrumentation.fastapi import (
+        FastAPIInstrumentor as _FastAPIInstrumentor,
+    )
+    from opentelemetry.instrumentation.httpx import (
+        HTTPXClientInstrumentor as _HTTPXClientInstrumentor,
+    )
+    from opentelemetry.sdk.resources import Resource as _Resource
+    from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
+    from opentelemetry.sdk.trace.export import (
+        BatchSpanProcessor as _BatchSpanProcessor,
+    )
+
+    trace = _otel_trace
+    OTLPSpanExporter = _OTLPSpanExporter
+    FastAPIInstrumentor = _FastAPIInstrumentor
+    HTTPXClientInstrumentor = _HTTPXClientInstrumentor
+    Resource = _Resource
+    TracerProvider = _TracerProvider
+    BatchSpanProcessor = _BatchSpanProcessor
 
 
 logger = logging.getLogger(__name__)
