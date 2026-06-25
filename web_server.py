@@ -2978,41 +2978,43 @@ async def api_feedback_stats() -> Any:
     return await memory_feedback_router.legacy_exports["api_feedback_stats"]()
 
 
+async def _prime_slack_manager_cache() -> None:
+    maybe_mgr = _get_slack_manager()
+    _slack_mgr_cache["instance"] = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
+
+
 async def api_slack_send(req: _SlackSendRequest) -> Any:
-    if _slack_mgr_instance is not None:
-        _slack_mgr_cache["instance"] = _slack_mgr_instance
+    await _prime_slack_manager_cache()
     return await integrations_router.legacy_exports["api_slack_send"](req)
 
 
 async def api_slack_channels() -> Any:
-    if _slack_mgr_instance is not None:
-        _slack_mgr_cache["instance"] = _slack_mgr_instance
+    await _prime_slack_manager_cache()
     return await integrations_router.legacy_exports["api_slack_channels"]()
 
 
+def _prime_jira_manager_cache() -> None:
+    _jira_mgr_cache["instance"] = _get_jira_manager()
+
+
 async def api_jira_create_issue(req: _JiraCreateRequest) -> Any:
-    if _jira_mgr_instance is not None:
-        _jira_mgr_cache["instance"] = _jira_mgr_instance
-    elif _jira_mgr_cache.get("instance") is None:
-        _jira_mgr_cache["instance"] = _get_jira_manager()
+    _prime_jira_manager_cache()
     return await integrations_router.legacy_exports["api_jira_create_issue"](req)
 
 
 async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
-    if _jira_mgr_instance is not None:
-        _jira_mgr_cache["instance"] = _jira_mgr_instance
-    elif _jira_mgr_cache.get("instance") is None:
-        _jira_mgr_cache["instance"] = _get_jira_manager()
+    _prime_jira_manager_cache()
     return await integrations_router.legacy_exports["api_jira_search_issues"](
         jql=jql, max_results=max_results
     )
 
 
+def _prime_teams_manager_cache() -> None:
+    _teams_mgr_cache["instance"] = _get_teams_manager()
+
+
 async def api_teams_send(req: _TeamsSendRequest) -> Any:
-    if _teams_mgr_instance is not None:
-        _teams_mgr_cache["instance"] = _teams_mgr_instance
-    elif _teams_mgr_cache.get("instance") is None:
-        _teams_mgr_cache["instance"] = _get_teams_manager()
+    _prime_teams_manager_cache()
     return await integrations_router.legacy_exports["api_teams_send"](req)
 
 
