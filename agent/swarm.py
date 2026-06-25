@@ -53,6 +53,11 @@ def _is_contracts_module_healthy(module: ModuleType) -> bool:
         "BrokerTaskEnvelope",
         "BrokerTaskResult",
         "is_delegation_request",
+        "LEGACY_FEDERATION_PROTOCOL_V1",
+        "ActionFeedback",
+        "ExternalTrigger",
+        "FederationTaskEnvelope",
+        "FederationTaskResult",
     )
     if not all(hasattr(module, name) for name in required):
         return False
@@ -98,8 +103,25 @@ def _contracts_module(*, force_refresh: bool = False) -> ModuleType:
         _CONTRACTS_MODULE_CACHE = module
         return module
     repaired = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get("agent.core.contracts")
     sys.modules["agent.core.contracts"] = repaired
-    spec.loader.exec_module(repaired)
+    try:
+        spec.loader.exec_module(repaired)
+    except Exception:
+        if previous is not None:
+            sys.modules["agent.core.contracts"] = previous
+        else:
+            sys.modules.pop("agent.core.contracts", None)
+        raise
+
+    if not _is_contracts_module_healthy(repaired):
+        if previous is not None:
+            sys.modules["agent.core.contracts"] = previous
+        else:
+            sys.modules.pop("agent.core.contracts", None)
+        _CONTRACTS_MODULE_CACHE = module
+        return module
+
     _CONTRACTS_MODULE_CACHE = repaired
     return repaired
 

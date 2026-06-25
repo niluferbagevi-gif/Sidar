@@ -769,6 +769,10 @@ def test_contract_health_check_handles_constructor_exceptions():
 
 
 def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch):
+    original_contracts = sys.modules.get("agent.core.contracts")
+    if original_contracts is not None:
+        monkeypatch.setitem(sys.modules, "agent.core.contracts", original_contracts)
+
     broken = SimpleNamespace()
 
     class _Loader:
@@ -780,6 +784,11 @@ def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch)
             module.BrokerTaskEnvelope = object
             module.BrokerTaskResult = object
             module.is_delegation_request = lambda _v: False
+            module.LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
+            module.ActionFeedback = object
+            module.ExternalTrigger = object
+            module.FederationTaskEnvelope = object
+            module.FederationTaskResult = object
 
     class _Spec:
         loader = _Loader()
@@ -792,6 +801,8 @@ def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch)
     repaired = swarm._contracts_module(force_refresh=True)
     assert callable(repaired.TaskEnvelope)
     assert "agent.core.contracts" in sys.modules
+    if original_contracts is not None:
+        assert sys.modules["agent.core.contracts"] is not original_contracts
 
 
 def test_task_router_catalog_prefers_valid_live_catalog_and_last_resort_live(monkeypatch):
