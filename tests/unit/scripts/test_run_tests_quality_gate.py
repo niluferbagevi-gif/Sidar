@@ -718,6 +718,7 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
 def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
 
     assert '"pre-commit>=4.0.0,<5.0.0"' in pyproject
     assert "id: ruff-check" in config
@@ -738,6 +739,10 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert ".sidar_manifest" in config
     assert "core/(memory|multimodal)" in config
     assert "scripts/install_modules/.*\\.(sh|ps1)" in config
+    assert "uv run pre-commit install --hook-type pre-commit --hook-type pre-push" in readme
+    assert "check-core-install-manifest" in readme
+    assert "check-install-module-hashes" in readme
+    assert "installer manifest drift" in readme
     assert "id: shellcheck" in config
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config

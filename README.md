@@ -547,8 +547,15 @@ Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir.
 git clone https://github.com/niluferbagevi-gif/Sidar.git
 cd Sidar
 uv sync --all-extras
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 ./install_sidar.sh
 ```
+
+> Geliştirici makinelerinde `pre-commit` ve `pre-push` hook'larının ikisi de
+> kurulmalıdır. `.pre-commit-config.yaml` içindeki `check-core-install-manifest`
+> ve `check-install-module-hashes` kontrolleri her iki aşamada da çalışarak
+> installer manifest drift'ini commit/push öncesi yakalar. Hook kurulumu
+> yapılmadıysa aynı koruma yalnızca CI/branch protection tarafında kalır.
 
 Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik Release
 bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
