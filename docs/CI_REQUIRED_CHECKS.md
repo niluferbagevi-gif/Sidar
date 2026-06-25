@@ -19,6 +19,20 @@ for changes touching any of these release-critical paths:
 - `scripts/tools/update_install_module_hash_manifest.py`
 - `tests/smoke/test_install_verification.py`
 
+Repository administrators must also keep these `main` branch protection or ruleset
+settings enabled in GitHub Settings:
+
+- **Require status checks to pass before merging** with
+  `Installer manifest and smoke gate` selected as a required check.
+- **Do not allow force pushes** so a forced update cannot bypass a previously failed
+  installer manifest gate.
+- **Require linear history** so the protected branch has an auditable, non-merge-bubble
+  release history for raw installer artifacts.
+
+These settings are intentionally documented next to the job contract because the
+workflow can detect manifest drift, but only GitHub branch protection can prevent
+merging or force-pushing a ref when the required status check is red.
+
 The gate runs the embedded manifest sync test directly:
 
 ```bash

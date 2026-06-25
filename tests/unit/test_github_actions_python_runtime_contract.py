@@ -108,6 +108,10 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "main/install_sidar.sh" in docs
     assert "test_install_sidar_wget_raw_bootstrap_clone_smoke" in docs
     assert "wget-style clean-install simulation" in docs
+    assert "Require status checks to pass before merging" in docs
+    assert "Installer manifest and smoke gate` selected as a required check" in docs
+    assert "Do not allow force pushes" in docs
+    assert "Require linear history" in docs
     for protected_path in (
         "install_sidar.sh",
         ".sidar_manifest.txt",
