@@ -247,6 +247,22 @@ def stage_files(file_paths: list[str]) -> tuple[bool, str]:
     return run_command(["git", "add", "--"] + literal_paths, show_output=False)
 
 
+def sync_install_manifests_before_commit() -> tuple[bool, str]:
+    """Commit öncesi install manifestlerini tazeler ve drift düzeltmelerini stage eder."""
+    sync_steps = [
+        ["bash", "scripts/sync_install_module_hashes.sh"],
+        ["bash", "scripts/sync_install_manifest.sh"],
+        ["git", "add", "install_sidar.sh", ".sidar_manifest.txt"],
+    ]
+
+    for cmd in sync_steps:
+        success, output = run_command(cmd, show_output=False)
+        if not success:
+            return False, output
+
+    return True, ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -533,6 +549,14 @@ def main() -> None:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
             print(f"  - {blocked}")
+
+    manifest_success, manifest_err = sync_install_manifests_before_commit()
+    if not manifest_success:
+        print(
+            f"{Colors.FAIL}❌ Install manifestleri commit öncesi senkronize edilemedi: "
+            f"{manifest_err}{Colors.ENDC}"
+        )
+        sys.exit(1)
 
     _, staged_status = run_command(["git", "diff", "--cached", "--name-status"], show_output=False)
 

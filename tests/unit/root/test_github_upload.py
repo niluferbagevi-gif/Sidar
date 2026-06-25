@@ -9,6 +9,13 @@ import pytest
 
 import github_upload as gu
 
+ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
+
+
+@pytest.fixture(autouse=True)
+def _stub_install_manifest_sync(monkeypatch):
+    monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
+
 
 def test_run_command_success_and_error(monkeypatch, capsys):
     class Result:
@@ -115,6 +122,70 @@ def test_stage_files(monkeypatch):
     ok, _ = gu.stage_files(["a.txt", "b.py"])
     assert ok
     assert captured["cmd"] == ["git", "add", "--", ":(literal)a.txt", ":(literal)b.py"]
+
+
+def test_sync_install_manifests_before_commit_runs_sync_scripts_and_stages(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append((cmd, show_output))
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        (["bash", "scripts/sync_install_module_hashes.sh"], False),
+        (["bash", "scripts/sync_install_manifest.sh"], False),
+        (["git", "add", "install_sidar.sh", ".sidar_manifest.txt"], False),
+    ]
+
+
+def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["bash", "scripts/sync_install_manifest.sh"]:
+            return False, "manifest drift"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT()
+
+    assert ok is False
+    assert err == "manifest drift"
+    assert calls == [
+        ["bash", "scripts/sync_install_module_hashes.sh"],
+        ["bash", "scripts/sync_install_manifest.sh"],
+    ]
+
+
+def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
+    monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
+    monkeypatch.setattr(
+        gu, "sync_install_manifests_before_commit", lambda: (False, "sync failed")
+    )
+
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+        ],
+    )
+
+    assert run_main_and_exit_code() == 1
 
 
 class MainHarness:
