@@ -5328,22 +5328,35 @@ report_env_api_key_status() {
     done
 }
 
-verify_sidar_keys_file_permissions() {
-    local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
+repair_private_file_permissions() {
+    local file_path="$1"
+    local label="$2"
     local mode=""
 
-    [[ -f "$sidar_keys_file" ]] || return 0
+    [[ -f "$file_path" ]] || return 0
 
-    mode="$(stat -c '%a' "$sidar_keys_file" 2>/dev/null || true)"
+    mode="$(stat -c '%a' "$file_path" 2>/dev/null || true)"
     case "$mode" in
         600|400)
-            ok "SIDAR_KEYS_FILE izin kontrolü tamamlandı: ${sidar_keys_file} mode=${mode}."
+            ok "${label} izin kontrolü tamamlandı: ${file_path} mode=${mode}."
             ;;
         *)
-            warn "SIDAR_KEYS_FILE izinleri güvenli değil: ${sidar_keys_file} mode=${mode:-bilinmiyor}."
-            warn "Secret dosyasını yalnız kullanıcı okuyacak şekilde düzeltin: chmod 600 \"${sidar_keys_file}\""
+            warn "${label} izinleri güvenli değil: ${file_path} mode=${mode:-bilinmiyor}; otomatik chmod 600 uygulanıyor."
+            if chmod 600 "$file_path"; then
+                ok "${label} izinleri 600 olarak düzeltildi: ${file_path}."
+            else
+                warn "${label} izinleri otomatik düzeltilemedi; manuel çalıştırın: chmod 600 \"${file_path}\""
+            fi
             ;;
     esac
+}
+
+verify_sidar_keys_file_permissions() {
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
+    local sidar_session_file="${SIDAR_SESSION_FILE:-$HOME/.sidar_session.json}"
+
+    repair_private_file_permissions "$sidar_keys_file" "SIDAR_KEYS_FILE"
+    repair_private_file_permissions "$sidar_session_file" "SIDAR_SESSION_FILE"
 }
 
 validate_runtime_env_loading() {

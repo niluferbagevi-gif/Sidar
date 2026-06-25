@@ -243,7 +243,11 @@ def _save_launcher_session(selection: dict[str, object], path: Path | None = Non
     session_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = session_path.with_suffix(session_path.suffix + ".tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Session cache may contain provider/model choices and future auth/session metadata;
+    # keep it readable only by the current user before and after the atomic replace.
+    os.chmod(tmp_path, 0o600)
     tmp_path.replace(session_path)
+    os.chmod(session_path, 0o600)
     return session_path
 
 

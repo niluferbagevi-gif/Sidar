@@ -873,6 +873,7 @@ def test_launcher_session_save_load_normalizes_values(
     loaded = main._load_launcher_session(saved_path)
 
     assert saved_path == session_path
+    assert (session_path.stat().st_mode & 0o777) == 0o600
     assert loaded is not None
     assert loaded["provider"] == "ollama"
     assert loaded["level"] == "sandbox"
