@@ -2596,3 +2596,45 @@ def test_resolve_lsp_command_skips_uvx_for_custom_python_server(manager, monkeyp
     monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
 
     assert manager._resolve_lsp_command("python") == ["custom-python-lsp", "--stdio"]
+
+
+def test_glob_search_rejects_non_directory_base(manager, tmp_path):
+    base_file = tmp_path / "not-a-dir.txt"
+    base_file.write_text("content\n", encoding="utf-8")
+
+    ok, msg = manager.glob_search("*.py", base_path=str(base_file))
+
+    assert ok is False
+    assert "Belirtilen yol bir dizin değil" in msg
+
+
+def test_glob_search_rejects_outside_base_dir(manager, monkeypatch, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(manager.security_adapter, "is_path_under", lambda *_args: False)
+
+    ok, msg = manager.glob_search("*.py", base_path=str(outside))
+
+    assert ok is False
+    assert "Arama dizini proje kökü dışında" in msg
+
+
+def test_grep_files_skips_unreadable_file(manager, monkeypatch, tmp_path):
+    target = tmp_path / "secret.py"
+    target.write_text("needle\n", encoding="utf-8")
+    monkeypatch.setattr(manager.security_adapter, "can_read", lambda _path: False)
+
+    ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.py")
+
+    assert ok is True
+    assert "Eşleşme bulunamadı" in msg
+    assert "secret.py" not in msg
+
+
+def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
+    monkeypatch.setattr(manager.security_adapter, "is_path_under", lambda *_args: False)
+
+    ok, msg = manager.list_directory(str(tmp_path))
+
+    assert ok is False
+    assert "Listeleme dizini proje kökü dışında" in msg

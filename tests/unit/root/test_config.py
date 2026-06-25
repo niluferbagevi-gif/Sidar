@@ -46,6 +46,13 @@ def test_get_external_bool_env_accepts_provider_aliases(monkeypatch):
     assert config.get_external_bool_env("TRANSFORMERS_OFFLINE", True) is False
 
 
+def test_get_external_bool_env_returns_default_for_empty(monkeypatch):
+    monkeypatch.setenv("HF_HUB_OFFLINE", "   ")
+
+    assert config.get_external_bool_env("HF_HUB_OFFLINE", default=True) is True
+    assert config.get_external_bool_env("HF_HUB_OFFLINE", default=False) is False
+
+
 def test_get_external_bool_env_rejects_unknown_values(monkeypatch):
     monkeypatch.setenv("HF_HUB_OFFLINE", "maybe")
 

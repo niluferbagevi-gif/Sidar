@@ -88,6 +88,53 @@ def test_response_eval_model_selection(monkeypatch, provider, model, expected):
     assert instance._response_eval_model() == expected
 
 
+def test_response_evaluation_weak_flag():
+    strong = judge.ResponseEvaluation(8, "ok", 1.0, "model", "provider")
+    weak = judge.ResponseEvaluation(7, "needs work", 1.0, "model", "provider")
+
+    assert strong.weak is False
+    assert weak.weak is True
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("anthropic", "claude-3-5-haiku-20241022"),
+        ("openai", "gpt-4o-mini"),
+        ("litellm", "gpt-4o-mini"),
+    ],
+)
+def test_response_eval_model_provider_defaults(monkeypatch, provider, expected):
+    _install_config_module(monkeypatch)
+    monkeypatch.setattr(DummyConfig, "JUDGE_PROVIDER", provider)
+
+    instance = judge.LLMJudge()
+
+    assert instance._response_eval_model() == expected
+
+
+@pytest.mark.asyncio
+async def test_evaluate_response_returns_valid_score(monkeypatch, judge_instance):
+    monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
+
+    async def fake_json(system, payload, *, model=None):
+        assert "Prompt:\nprompt" in payload
+        assert "Response:\nresponse" in payload
+        assert model == "text-model"
+        return {"score": "9", "reasoning": "context-supported"}
+
+    monkeypatch.setattr(judge_instance, "_call_llm_json", fake_json)
+
+    result = await judge_instance.evaluate_response("prompt", "response", {"source": "doc"})
+
+    assert result is not None
+    assert result.score == 9
+    assert result.reasoning == "context-supported"
+    assert result.weak is False
+    assert result.model == "text-model"
+    assert result.provider == "ollama"
+
+
 def test_response_eval_model_env_override(monkeypatch):
     _install_config_module(monkeypatch)
     monkeypatch.setattr(DummyConfig, "JUDGE_RESPONSE_MODEL", "explicit")
@@ -97,13 +144,13 @@ def test_response_eval_model_env_override(monkeypatch):
 
 def test_init_uses_config_module_helper_exports(monkeypatch):
     _install_config_module(monkeypatch)
-    monkeypatch.setenv("JUDGE_ENABLED", "0")
+    monkeypatch.setenv("JUDGE_ENABLED", "false")
     monkeypatch.setenv("JUDGE_PROVIDER", "anthropic")
     monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0")
     instance = judge.LLMJudge()
-    assert instance.enabled is True
-    assert instance.provider == "ollama"
-    assert instance.sample_rate == 1.0
+    assert instance.enabled is False
+    assert instance.provider == "anthropic"
+    assert instance.sample_rate == 0.0
 
 
 def test_should_evaluate(monkeypatch, judge_instance):
