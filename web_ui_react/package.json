@@ -20,7 +20,9 @@
     "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "build:budget": "npm run build && node scripts/check-bundle-budget.mjs",
+    "bundle:budget": "node scripts/check-bundle-budget.mjs"
   },
   "dependencies": {
     "highlight.js": "~11.11.0",

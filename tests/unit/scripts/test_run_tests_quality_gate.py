@@ -2232,6 +2232,8 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     locked_packages = package_lock["packages"]
 
     assert "preinstall" not in scripts
+    assert scripts["build:budget"] == "npm run build && node scripts/check-bundle-budget.mjs"
+    assert scripts["bundle:budget"] == "node scripts/check-bundle-budget.mjs"
     assert "hasInstallScript" not in locked_root
     assert dev_deps["@playwright/test"] == ">=1.60.0 <1.62.0"
     assert dev_deps["vite"] == "^8.0.16"
