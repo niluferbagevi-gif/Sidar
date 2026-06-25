@@ -2148,7 +2148,12 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     vite_server = Path("web_ui_react/e2e/support/testViteServer.js").read_text(encoding="utf-8")
     assert 'backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860"' in vite
     assert 'backendUrl.replace(/^http/, "ws")' in vite
-    assert '"/ws": { target: webSocketUrl, ws: true }' in vite
+    assert '"/ws":' in vite
+    assert "target: webSocketUrl" in vite
+    assert "ws: true" in vite
+    assert "changeOrigin: true" in vite
+    assert "proxyReqWs" in vite
+    assert 'sec-websocket-protocol' in vite
     assert "localhost:7860" not in vite
     assert "optimizeDeps:" in vite
     assert '"index.html"' in vite
