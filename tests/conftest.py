@@ -9,7 +9,7 @@ import sys
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +124,23 @@ def _build_freezegun_ignore_modules() -> list[str]:
     extras = [item.strip() for item in extra_raw.split(",") if item.strip()]
     # Aynı modülün tekrar eklenmesini önleyip deterministik sıra korur.
     return list(dict.fromkeys([*DEFAULT_FREEZEGUN_IGNORE_MODULES, *extras]))
+
+
+_CONTRACTS_MODULE_SENTINEL = object()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_contracts_module() -> Generator[None, None, None]:
+    """sys.modules['agent.core.contracts'] üzerinde test pollutionunu engelle."""
+    original = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
+    yield
+    current = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
+    if current is original:
+        return
+    if original is _CONTRACTS_MODULE_SENTINEL:
+        sys.modules.pop("agent.core.contracts", None)
+        return
+    sys.modules["agent.core.contracts"] = cast(ModuleType, original)
 
 
 @pytest.fixture(autouse=True)
