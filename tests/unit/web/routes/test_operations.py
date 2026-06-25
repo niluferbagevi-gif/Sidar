@@ -165,6 +165,12 @@ def test_decode_agent_tool_result_returns_dict_results_directly() -> None:
     assert operations.decode_agent_tool_result(raw) is raw
 
 
+def test_coverage_routes_are_split_to_coverage_ops_module() -> None:
+    assert operations.api_qa_coverage_tasks.__module__ == "web.routes.coverage_ops"
+    assert operations.api_qa_coverage_analyze.__module__ == "web.routes.coverage_ops"
+    assert operations.serialize_coverage_task.__module__ == "web.routes.coverage_ops"
+
+
 @pytest.mark.asyncio
 async def test_poyraz_run_rejects_tools_outside_rest_allowlist() -> None:
     operations.configure_operations_dependencies(

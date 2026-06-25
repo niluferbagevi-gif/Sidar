@@ -9,13 +9,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from . import coverage_ops
 from .operations_models import (
     CampaignCopyGenerateRequest,
     CampaignCreateRequest,
     ContentAssetCreateRequest,
-    CoverageAnalyzeRequest,
-    CoverageBatchRequest,
-    CoverageGenerateRequest,
     LandingPageDraftRequest,
     OperationChecklistCreateRequest,
     PoyrazToolRunRequest,
@@ -39,9 +37,19 @@ _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
 
 
+# Legacy exports kept for direct web_server/tests imports while endpoint implementations
+# live in the smaller coverage_ops route module.
+api_qa_coverage_tasks = coverage_ops.api_qa_coverage_tasks
+api_qa_coverage_analyze = coverage_ops.api_qa_coverage_analyze
+api_qa_coverage_generate = coverage_ops.api_qa_coverage_generate
+api_qa_coverage_batch = coverage_ops.api_qa_coverage_batch
+decode_agent_tool_result = coverage_ops.decode_agent_tool_result
+serialize_coverage_task = coverage_ops.serialize_coverage_task
+
 def configure_operations_dependencies(deps_factory: Callable[[], Any]) -> None:
     global _deps_factory
     _deps_factory = deps_factory
+    coverage_ops.configure_coverage_dependencies(deps_factory)
 
 
 def _deps() -> Any:
@@ -105,18 +113,6 @@ def serialize_operation_checklist(record: Any) -> dict[str, Any]:
     }
 
 
-def decode_agent_tool_result(raw_result: Any) -> dict[str, Any]:
-    if isinstance(raw_result, dict):
-        return raw_result
-    text_result = str(raw_result or "")
-    try:
-        parsed = json.loads(text_result)
-    except json.JSONDecodeError:
-        return {"success": bool(text_result.strip()), "output": text_result}
-    if isinstance(parsed, dict):
-        return parsed
-    return {"success": True, "output": parsed}
-
 
 def _database_unavailable_response() -> JSONResponse:
     return JSONResponse(
@@ -133,20 +129,6 @@ async def _resolve_operations_db(deps: Any) -> Any:
     agent = await deps.resolve_agent_instance()
     return agent.memory.db
 
-
-def serialize_coverage_task(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "requester_role": str(getattr(record, "requester_role", "") or ""),
-        "command": str(getattr(record, "command", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "target_path": str(getattr(record, "target_path", "") or ""),
-        "suggested_test_path": str(getattr(record, "suggested_test_path", "") or ""),
-        "review_payload_json": str(getattr(record, "review_payload_json", "{}") or "{}"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
 
 
 @router.get(
@@ -452,133 +434,4 @@ async def api_operations_plan_service(
         "Servis operasyon planı tamamlandı.",
     )
 
-
-@router.get(
-    "/api/qa/coverage/tasks", summary="Coverage görev geçmişini listele", tags=["QA", "Coverage"]
-)
-async def api_qa_coverage_tasks(
-    status: str = "",
-    limit: int = 50,
-    _user: Any = Depends(_get_request_user_proxy),
-) -> JSONResponse:
-    deps = _deps()
-    try:
-        db = await _resolve_operations_db(deps)
-        tasks = await db.list_coverage_tasks(
-            tenant_id=deps.get_user_tenant(_user), status=status or None, limit=limit
-        )
-    except Exception:
-        return _database_unavailable_response()
-    return JSONResponse(
-        {"success": True, "tasks": [serialize_coverage_task(item) for item in tasks]}
-    )
-
-
-@router.post(
-    "/api/qa/coverage/analyze", summary="Coverage raporunu analiz et", tags=["QA", "Coverage"]
-)
-async def api_qa_coverage_analyze(
-    req: CoverageAnalyzeRequest,
-    _user: Any = Depends(_get_request_user_proxy),
-) -> JSONResponse:
-    deps = _deps()
-    coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await deps.emit_control_room_event(
-        req.room_id, kind="tool_call", source="coverage", content="Coverage analizi başlatıldı."
-    )
-    raw_result = await coverage_agent._tool_analyze_coverage_report(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    result = decode_agent_tool_result(raw_result)
-    await deps.emit_control_room_event(
-        req.room_id, kind="status", source="coverage", content="Coverage analizi tamamlandı."
-    )
-    return JSONResponse(
-        {"success": True, "analysis": result, "tenant_id": deps.get_user_tenant(_user)}
-    )
-
-
-@router.post(
-    "/api/qa/coverage/generate",
-    summary="Coverage bulgusu için test adayı üret",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_generate(
-    req: CoverageGenerateRequest,
-    _user: Any = Depends(_get_request_user_proxy),
-) -> JSONResponse:
-    deps = _deps()
-    coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
-    payload = req.model_dump()
-    payload.pop("room_id", None)
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage test adayı üretimi başlatıldı.",
-    )
-    raw_candidate = await coverage_agent._tool_generate_missing_tests(
-        json.dumps(payload, ensure_ascii=False)
-    )
-    rejection_reason = coverage_agent._candidate_rejection_reason(
-        str(raw_candidate or ""), finding=dict(req.coverage_finding or {})
-    )
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage test adayı kalite kontrolünden geçti."
-        if not rejection_reason
-        else "Coverage test adayı kalite kapısında reddedildi.",
-        payload={"quality_rejection_reason": rejection_reason},
-    )
-    return JSONResponse(
-        {
-            "success": not bool(rejection_reason),
-            "candidate": str(raw_candidate or ""),
-            "quality_rejection_reason": rejection_reason,
-            "tenant_id": deps.get_user_tenant(_user),
-        }
-    )
-
-
-@router.post(
-    "/api/qa/coverage/batch",
-    summary="CoverageAgent otonom batch iyileştirme çalıştır",
-    tags=["QA", "Coverage"],
-)
-async def api_qa_coverage_batch(
-    req: CoverageBatchRequest,
-    _user: Any = Depends(_get_request_user_proxy),
-) -> JSONResponse:
-    deps = _deps()
-    coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="tool_call",
-        source="coverage",
-        content="Coverage batch iyileştirme başlatıldı.",
-    )
-    result = await coverage_agent.run_autonomous_coverage_batch(
-        coverage_xml=req.coverage_xml,
-        coveragerc=req.coveragerc,
-        limit=req.limit,
-        batch_size=req.batch_size,
-        append=req.append,
-    )
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="coverage",
-        content="Coverage batch iyileştirme tamamlandı.",
-        payload={"success": bool(result.get("success", False)), "status": result.get("status", "")},
-    )
-    return JSONResponse(
-        {
-            "success": bool(result.get("success", False)),
-            "result": result,
-            "tenant_id": deps.get_user_tenant(_user),
-        }
-    )
+router.routes.extend(coverage_ops.router.routes)
