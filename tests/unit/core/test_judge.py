@@ -20,7 +20,7 @@ class DummyConfig:
     JUDGE_RESPONSE_MODEL = ""
 
 
-def _install_config_module(monkeypatch):
+def _install_config_module(monkeypatch, *, isolate_env=True, patch_env_helpers=True):
     DummyConfig.JUDGE_ENABLED = True
     DummyConfig.JUDGE_MODEL = ""
     DummyConfig.JUDGE_PROVIDER = "ollama"
@@ -30,10 +30,35 @@ def _install_config_module(monkeypatch):
     DummyConfig.JUDGE_RESPONSE_MODEL = ""
     fake = types.ModuleType("config")
     fake.Config = DummyConfig
-    fake.get_bool_prefixed_env = lambda _prefix, _legacy, default=False: default
-    fake.get_float_prefixed_env = lambda _prefix, _legacy, default=0.0: default
-    fake.get_prefixed_env = lambda _prefix, _legacy, default="": default
     monkeypatch.setitem(sys.modules, "config", fake)
+
+    if patch_env_helpers:
+        monkeypatch.setattr(
+            judge, "get_bool_prefixed_env", lambda _prefix, _legacy, default=False: default
+        )
+        monkeypatch.setattr(
+            judge, "get_float_prefixed_env", lambda _prefix, _legacy, default=0.0: default
+        )
+        monkeypatch.setattr(judge, "get_prefixed_env", lambda _prefix, _legacy, default="": default)
+
+    if isolate_env:
+        for key in (
+            "JUDGE_AUTO_FEEDBACK_ENABLED",
+            "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED",
+            "JUDGE_AUTO_FEEDBACK_THRESHOLD",
+            "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD",
+            "JUDGE_ENABLED",
+            "SIDAR_JUDGE_ENABLED",
+            "JUDGE_MODEL",
+            "SIDAR_JUDGE_MODEL",
+            "JUDGE_PROVIDER",
+            "SIDAR_JUDGE_PROVIDER",
+            "JUDGE_RESPONSE_MODEL",
+            "SIDAR_JUDGE_RESPONSE_MODEL",
+            "JUDGE_SAMPLE_RATE",
+            "SIDAR_JUDGE_SAMPLE_RATE",
+        ):
+            monkeypatch.delenv(key, raising=False)
 
 
 class FakeLLMClient:
@@ -142,11 +167,11 @@ def test_response_eval_model_env_override(monkeypatch):
     assert instance._response_eval_model() == "explicit"
 
 
-def test_init_uses_config_module_helper_exports(monkeypatch):
-    _install_config_module(monkeypatch)
-    monkeypatch.setenv("JUDGE_ENABLED", "false")
-    monkeypatch.setenv("JUDGE_PROVIDER", "anthropic")
-    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0")
+def test_init_uses_bound_env_helpers(monkeypatch):
+    _install_config_module(monkeypatch, isolate_env=False, patch_env_helpers=False)
+    monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "false")
+    monkeypatch.setenv("SIDAR_JUDGE_PROVIDER", "anthropic")
+    monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "0")
     instance = judge.LLMJudge()
     assert instance.enabled is False
     assert instance.provider == "anthropic"
