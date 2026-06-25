@@ -94,7 +94,7 @@ function fromBase64(base64) {
 }
 
 function pickRecorderMimeType() {
-  /* c8 ignore next */
+  /* c8 ignore next -- SSR/test ortamında MediaRecorder olmayabilir; browser runtime fallback dalı korunur. */
   if (typeof MediaRecorder === "undefined") return "audio/webm";
   const candidates = [
     "audio/webm;codecs=opus",
@@ -432,7 +432,7 @@ export function useVoiceAssistant({
   }, [beginVoiceTurn, sendJson, setStatus, stopPlayback]);
 
   const handleSpeechEnd = useCallback(() => {
-    /* c8 ignore next */
+    /* c8 ignore next -- Bu erken dönüş gerçek VAD event sıralamasında yarış korumasıdır; testler happy-path commit akışını kapsar. */
     if (!speechActiveRef.current || !turnActiveRef.current) return;
     speechActiveRef.current = false;
     pendingCommitRef.current = true;
