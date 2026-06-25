@@ -77,25 +77,40 @@ def test_dependency_inventory_labels_main_and_dev_extra_dependencies() -> None:
         "integration",
         "test-double",
         "security-tool",
-        "migration-candidate",
     ):
         assert required_label in labels.values()
+    # Migration candidates are allowed by policy metadata, but none should be
+    # required after the httpx2 cleanup unless a new adapter RFC reopens one.
+    assert "migration-candidate" in allowed_labels
     assert inventory["status"] == "inventory-only"
     assert inventory["owner_doc"] == "docs/DEPENDENCY_PROFILE_PLAN.md"
     assert pyproject["tool"]["uv"]["environments"] == ["sys_platform == 'linux'"]
 
 
-def test_httpx2_dependency_is_documented_as_migration_candidate() -> None:
+def test_httpx2_migration_candidate_is_retired_to_keep_single_http_client() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]
+    deps = pyproject["project"]["dependencies"]
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert labels["httpx"] == "runtime"
-    assert labels["httpx2"] == "migration-candidate"
-    assert "HTTP client migration policy (`httpx` → `httpx2`)" in docs
-    assert "modüllerinde `import httpx2` yapılmaz" in docs
-    assert "SIDAR_HTTP_CLIENT_BACKEND=httpx|httpx2" in docs
+    assert "httpx2" not in labels
+    assert all(not dep.startswith("httpx2") for dep in deps)
+    assert "HTTP client standardization policy (`httpx` only)" in docs
+    assert "Production modüllerinde `import httpx2` yapılmaz" in docs
+    assert "SIDAR_HTTP_CLIENT_BACKEND=httpx|candidate" in docs
     assert "Final cleanup" in docs
+
+
+def test_posthog_major_cap_is_documented_as_chromadb_telemetry_constraint() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    deps = pyproject["project"]["dependencies"]
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert "posthog<6.0.0" in deps
+    assert "## PostHog major cap policy" in docs
+    assert "ChromaDB 0.5.x" in docs
+    assert "PostHog v6" in docs
 
 
 def test_ci_has_non_blocking_production_profile_dry_run() -> None:

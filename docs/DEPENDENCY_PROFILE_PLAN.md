@@ -47,8 +47,8 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 
 | Sınıf | Aday paketler / extras | Geçiş notu |
 |---|---|---|
-| `runtime-core` | `packaging`, `python-dotenv`, `pyyaml`, `httpx`, `pydantic`, `pydantic-settings`, `cachetools`, `redis`, `psutil` | Ana import/config/cache ve HTTP istemci yüzeyi; uzun vadeli `runtime` profilinin çekirdeği. |
-| `migration-candidate` | `httpx2` | Gelecek HTTP client major geçişi için lock altında tutulur; production kodu doğrudan import edemez, önce adapter/RFC kapısı gerekir. |
+| `runtime-core` | `packaging`, `python-dotenv`, `pyyaml`, `httpx`, `pydantic`, `pydantic-settings`, `cachetools`, `redis`, `psutil` | Ana import/config/cache ve tek HTTP istemci yüzeyi; uzun vadeli `runtime` profilinin çekirdeği. |
+| `migration-candidate` | Yok (2026-06-25 itibarıyla `httpx2` adaylığı kapatıldı) | Yeni HTTP client adayları önce adapter/RFC ve dual-run test kapısından geçmeden runtime dependency listesine eklenmez. |
 | `runtime-web` | `fastapi`, `starlette`, `python-multipart`, `uvicorn[standard]`, `anyio`, `websockets`, `bleach`, `PyJWT`, `cryptography` | Web/API boot, auth ve websocket runtime; production profilinin Web parçası. |
 | `runtime-db` | `aiosqlite`, `SQLAlchemy`, `alembic`; `postgres` extra: `asyncpg`, `psycopg2-binary`, `pgvector` | SQLite fallback ana listede kalır; PostgreSQL deploy hedefi `production` profilinde `postgres` extra ile gelir. |
 | `runtime-rag-content` | `tiktoken`, `rank-bm25`, `beautifulsoup4`, `nemoguardrails`, `chromadb`, `langchain-*`, `posthog`, `sentence-transformers`; `rag` extra: `torch`, `torchvision` | RAG/content yüzeyi halen ana listede; üretim-minimal split sırasında RAG olmayan Web/API image'dan ayrılması değerlendirilir. |
@@ -58,39 +58,47 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 | `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. Pyright LSP reviewer diagnostics için dev/all veya `uv tool install pyright` yoluyla sağlanır, production profile'a girmez. |
 
 
-## HTTP client migration policy (`httpx` → `httpx2`)
+## HTTP client standardization policy (`httpx` only)
 
-Mevcut kod tabanında production ve test modülleri doğrudan `httpx` API'sini kullanır;
-`httpx2` henüz hiçbir runtime modülün import yüzeyi değildir. Bu nedenle `httpx2`,
-`pyproject.toml` içinde `migration-candidate` etiketiyle tutulur ve runtime sahipliği
-`httpx` üzerinde kalır.
+Mevcut kod tabanında production ve test modülleri doğrudan `httpx` API'sini kullanır.
+Önceki `httpx2` migration-candidate bağımlılığı 2026-06-25 tarihinde kapatıldı ve
+runtime dependency graph'ından çıkarıldı; böylece tek desteklenen HTTP client yüzeyi
+`httpx` olarak netleşti. Production modüllerinde `import httpx2` yapılmaz.
 
-Geçiş kapıları:
+Yeni bir HTTP client adayının tekrar değerlendirilmesi için kapılar:
 
 1. **Adapter PR:** `core/http_client.py` benzeri tek bir facade eklenmeden production
-   modüllerinde `import httpx2` yapılmaz. Facade; timeout, streaming, retryable hata
+   modüllerinde alternatif client import edilmez. Facade; timeout, streaming, retryable hata
    sınıfları, OpenTelemetry instrumentation ve test-double davranışını `httpx` ile
    aynı sözleşmede sunmalıdır.
 2. **Dual-run smoke:** LLM provider çağrıları, RAG URL ingest, integration manager'lar
-   ve web/API test client kullanımları `SIDAR_HTTP_CLIENT_BACKEND=httpx|httpx2` ile
+   ve web/API test client kullanımları `SIDAR_HTTP_CLIENT_BACKEND=httpx|candidate` ile
    aynı test matrisinden geçmeden varsayılan backend değiştirilemez.
-3. **Lock ve telemetry onayı:** `uv lock --upgrade-package httpx --upgrade-package httpx2`
-   sonrası `opentelemetry-instrumentation-httpx` uyumluluğu doğrulanmalı; httpx2 için
-   eşdeğer instrumentation yoksa adapter span'leri uygulama içinde üretmelidir.
-4. **Final cleanup:** `httpx2` production backend olduktan sonra eski `httpx` bağımlılığı
-   yalnız test/compat ihtiyacı varsa extra'ya taşınır; aksi halde runtime listesinden çıkarılır.
+3. **Lock ve telemetry onayı:** `uv lock --upgrade-package httpx` ve aday paket lock yenilemesi
+   sonrası `opentelemetry-instrumentation-httpx` veya eşdeğer adapter span'leri doğrulanmalıdır.
+4. **Final cleanup:** Aday production backend olursa eski client yalnız test/compat ihtiyacı varsa
+   extra'ya taşınır; aksi halde runtime listesinden çıkarılır.
 
-Bu politika, iki HTTP client paketinin aynı anda bulunmasını bilinçli bir geçiş durumu
-olarak sınırlar ve hangi modülün hangi paketi kullanacağı belirsizliğini engeller.
+Bu politika, aynı anda iki HTTP client paketinin belirsiz biçimde runtime'a girmesini
+engeller ve dependency graph'ı küçük tutar.
 
 ## NeMo Guardrails minor pin policy
 
 `nemoguardrails` runtime bağımlılığı `>=0.22.0,<0.23.0` aralığında tutulur.
 0.22 sürümü lock dosyasında doğrulanmış mevcut API yüzeyidir; yeni minor/major
-geçişlerinde `SecurityManager` guardrails adapter sözleşmesi ve agent/swarm/core LLM
+geçişlerinde `SecurityManager` guardrails adapter sözleşmesi,
+`tests/quality/test_nemoguardrails_contract.py` kalite testi ve agent/swarm/core LLM
 doğrudan import guard testleri yeniden çalıştırılmadan aralık genişletilmemelidir.
 Guardrails API kullanımı ajan ya da LLM sağlayıcı katmanına yayılmamalı, merkezi
 olarak `managers/security.py` üzerinden izole kalmalıdır.
+
+## PostHog major cap policy
+
+`posthog<6.0.0` üst sınırı doğrudan ürün kodu kullanımından değil, ChromaDB 0.5.x'in
+telemetry client bağımlılığından kaynaklanır. Chroma/RAG telemetry smoke matrisi
+PostHog v6 ile doğrulanmadan bu sınır kaldırılmamalıdır. Doğrudan Sidar kodunda
+PostHog import'u eklenirse dependency label'ı `runtime-ops-telemetry` altında yeniden
+sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlendirilmelidir.
 
 ## Güvenlik odaklı çözümleme sınırları
 
