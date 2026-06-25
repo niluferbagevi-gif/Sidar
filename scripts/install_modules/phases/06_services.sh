@@ -2,6 +2,11 @@
 
 
 seed_rag_in_docker_after_startup() {
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-}" == "1" ]]; then
+        info "Test modu: RAG warmup seed atlandı."
+        return 0
+    fi
+
     local seed_mode="${AUTO_SEED_RAG_DOCKER_WARMUP:-true}"
     seed_mode="$(normalize_bool "$seed_mode")"
     [[ -z "$seed_mode" ]] && seed_mode="true"
