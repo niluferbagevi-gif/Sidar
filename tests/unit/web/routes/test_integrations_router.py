@@ -1,3 +1,6 @@
+import sys
+import types
+
 import pytest
 from fastapi import HTTPException
 
@@ -59,7 +62,7 @@ class _Teams:
 
 def _exports(*, slack=None, jira=None, teams=None):
     router = build_integrations_router(
-        cfg=object(),
+        cfg_provider=object,
         slack_cache={"instance": slack},
         jira_cache={"instance": jira},
         teams_cache={"instance": teams},
@@ -144,3 +147,34 @@ async def test_integrations_router_legacy_exports_upstream_error_paths(
             await exports[export_name](payload)
 
     assert exc_info.value.status_code == 502
+
+
+def test_integrations_router_uses_live_cfg_provider_for_jira_manager(monkeypatch):
+    class _JiraManager:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    cfg = type(
+        "Cfg",
+        (),
+        {
+            "JIRA_BASE_URL": "https://jira.example",
+            "JIRA_EMAIL": "bot@example.com",
+            "JIRA_API_TOKEN": "token",
+            "JIRA_DEFAULT_PROJECT": "SID",
+        },
+    )()
+    monkeypatch.setitem(
+        sys.modules, "managers.jira_manager", types.SimpleNamespace(JiraManager=_JiraManager)
+    )
+    router = build_integrations_router(
+        cfg_provider=lambda: cfg,
+        slack_cache={},
+        jira_cache={},
+        teams_cache={},
+    )
+
+    cfg.JIRA_DEFAULT_PROJECT = "SIDAR"
+
+    manager = router.legacy_exports["_get_jira_manager"]()
+    assert manager.kwargs["default_project"] == "SIDAR"

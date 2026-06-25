@@ -2901,7 +2901,7 @@ memory_feedback_router = memory_feedback_routes.build_memory_feedback_router(
     feedback_store_cache=_feedback_store_cache,
 )
 integrations_router = integrations_routes.build_integrations_router(
-    cfg=cfg,
+    cfg_provider=lambda: cfg,
     slack_cache=_slack_mgr_cache,
     jira_cache=_jira_mgr_cache,
     teams_cache=_teams_mgr_cache,

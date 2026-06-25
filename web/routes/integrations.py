@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException
@@ -31,7 +32,7 @@ class TeamsSendRequest(BaseModel):
 
 def build_integrations_router(
     *,
-    cfg: Any,
+    cfg_provider: Callable[[], Any],
     slack_cache: dict[str, Any],
     jira_cache: dict[str, Any],
     teams_cache: dict[str, Any],
@@ -42,6 +43,7 @@ def build_integrations_router(
         if slack_cache.get("instance") is None:
             from managers.slack_manager import SlackManager
 
+            cfg = cfg_provider()
             slack_cache["instance"] = SlackManager(
                 token=getattr(cfg, "SLACK_TOKEN", ""),
                 webhook_url=getattr(cfg, "SLACK_WEBHOOK_URL", ""),
@@ -54,6 +56,7 @@ def build_integrations_router(
         if jira_cache.get("instance") is None:
             from managers.jira_manager import JiraManager
 
+            cfg = cfg_provider()
             jira_cache["instance"] = JiraManager(
                 base_url=getattr(cfg, "JIRA_BASE_URL", ""),
                 email=getattr(cfg, "JIRA_EMAIL", ""),
@@ -66,6 +69,7 @@ def build_integrations_router(
         if teams_cache.get("instance") is None:
             from managers.teams_manager import TeamsManager
 
+            cfg = cfg_provider()
             teams_cache["instance"] = TeamsManager(
                 webhook_url=getattr(cfg, "TEAMS_WEBHOOK_URL", "")
             )
