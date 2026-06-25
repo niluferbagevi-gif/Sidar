@@ -145,8 +145,8 @@ class LLMJudge:
     response_model: str
 
     def __init__(self) -> None:
-        from config import (
-            Config,
+        from config import Config
+        from core.config_env_helpers import (
             get_bool_prefixed_env,
             get_float_prefixed_env,
             get_prefixed_env,
