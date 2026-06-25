@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -165,6 +166,9 @@ async def test_real_gpu_inference_smoke() -> None:
 @pytest.mark.gpu
 def test_torch_cuda_major_is_supported_for_installed_driver() -> None:
     """CUDA 13 sürücülerde torch cu12/cu13 wheel uyumluluğunu fail-closed doğrular."""
+
+    if "torch" in sys.modules:
+        pytest.skip("torch zaten yüklü; çift kayıt önleniyor")
 
     torch = pytest.importorskip("torch")
     cuda_major = _torch_cuda_major(torch)
