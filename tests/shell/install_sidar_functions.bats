@@ -618,6 +618,14 @@ ENV
   [[ "$output" == *"--enable-autonomous-cron"* ]]
 }
 
+@test "installer finish guidance highlights full integration verification command" {
+  local root
+  root="$(repo_root)"
+
+  grep -q "bash run_tests.sh --stage all" "$root/install_sidar.sh"
+  grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
+}
+
 @test "sidar_configure_autonomous_cron is opt-in and suggests the flag by default" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
