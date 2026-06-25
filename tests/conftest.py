@@ -209,7 +209,6 @@ _SENSITIVE_SYS_MODULES = (
     "core.db",
     "core.doctor",
     "core.llm_client",
-    "torch",
 )
 _SENSITIVE_SYS_MODULE_ATTRIBUTES = {
     "agent.base_agent": ("BaseAgent",),

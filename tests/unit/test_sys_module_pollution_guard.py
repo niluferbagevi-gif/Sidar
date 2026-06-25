@@ -29,3 +29,7 @@ def test_critical_sys_module_pollution_guard_allows_pending_monkeypatch(monkeypa
     )
 
     assert errors == []
+
+
+def test_sensitive_sys_modules_excludes_torch_c_extension_state() -> None:
+    assert "torch" not in conftest._SENSITIVE_SYS_MODULES
