@@ -1902,6 +1902,23 @@ def get_config() -> "Config":
     return _config_instance
 
 
+# Explicit public surface for strict mypy/no_implicit_reexport consumers.
+# Keep this list intentionally small: it covers the names imported from
+# `config` across the codebase plus the env helper compatibility exports.
+__all__ = [
+    "Config",
+    "OLLAMA_BATCH_POLICY",
+    "SANDBOX_LIMITS",
+    "get_bool_prefixed_env",
+    "get_config",
+    "get_dotenv_load_report",
+    "get_float_prefixed_env",
+    "get_prefixed_env",
+    "register_config_reload_callback",
+    "reload_environment",
+]
+
+
 # ═══════════════════════════════════════════════════════════════
 # BAŞLANGIÇ
 # ═══════════════════════════════════════════════════════════════
