@@ -65,12 +65,12 @@ EOF
     cat > "$tmpdir/pyproject.toml" <<EOF
 [dependency-groups]
 dev = [
-  "playwright>=1.60,<2.0",
+  "playwright>=1.60,<1.62",
 ]
 EOF
 
-    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "playwright>=1.60,<2.0" ]]
-    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == "playwright>=1.60,<2.0" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "playwright>=1.60,<1.62" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == "playwright>=1.60,<1.62" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -99,7 +99,7 @@ case "\$*" in
     exit 1
     ;;
   "-m playwright install-deps chromium") exit 0 ;;
-  "- playwright>=1.60,<2.0") exit 1 ;;
+  "- playwright>=1.60,<1.62") exit 1 ;;
 esac
 exit 1
 EOF
@@ -117,7 +117,7 @@ EOF
     install_playwright_browsers
 
     [[ ! -e "$tmpdir/uv-called" ]]
-    grep -q "^- playwright>=1.60,<2.0|$" "$tmpdir/python.log"
+    grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
@@ -145,7 +145,7 @@ case "\$*" in
     echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
     exit 1
     ;;
-  "- playwright>=1.60,<2.0") exit 0 ;;
+  "- playwright>=1.60,<1.62") exit 0 ;;
 esac
 exit 1
 EOF
@@ -161,10 +161,10 @@ EOF
 
     install_playwright_browsers
 
-    grep -q "^add --dev playwright>=1.60,<2.0$" "$tmpdir/uv.log"
+    grep -q "^add --dev playwright>=1.60,<1.62$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"playwright>=1.60,<2.0 şartını sağlamıyor"* ]]
+  [[ "$output" == *"playwright>=1.60,<1.62 şartını sağlamıyor"* ]]
   [[ "$output" == *"upgrade fallback ile tamamlandı"* ]]
 }
 

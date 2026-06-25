@@ -2233,10 +2233,14 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
 
     assert "preinstall" not in scripts
     assert "hasInstallScript" not in locked_root
+    assert dev_deps["@playwright/test"] == ">=1.60.0 <1.62.0"
     assert dev_deps["vite"] == "^8.0.16"
     assert dev_deps["ws"] == "^8.21.0"
+    assert locked_root_deps["@playwright/test"] == ">=1.60.0 <1.62.0"
     assert locked_root_deps["vite"] == "^8.0.16"
     assert locked_root_deps["ws"] == "^8.21.0"
+    assert locked_packages["node_modules/@playwright/test"]["version"].startswith("1.61.")
+    assert locked_packages["node_modules/playwright"]["version"].startswith("1.61.")
     assert locked_packages["node_modules/vite"]["version"] == "8.0.16"
     assert locked_packages["node_modules/ws"]["version"] == "8.21.0"
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"

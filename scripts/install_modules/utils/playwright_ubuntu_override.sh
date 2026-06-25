@@ -78,7 +78,7 @@ resolve_playwright_python_spec() {
             }
         ' "$pyproject_file")"
     fi
-    echo "${resolved_spec:-playwright>=1.60,<2.0}"
+    echo "${resolved_spec:-playwright>=1.60,<1.62}"
 }
 
 prepare_playwright_ubuntu_override_file() {
