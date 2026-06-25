@@ -290,6 +290,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Upload mypy failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-error-logs
+          path: artifacts/mypy_errors*.log
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Print last 300 lines of test_run.log on failure
         if: failure()
         run: tail -n 300 artifacts/test_run.log || true

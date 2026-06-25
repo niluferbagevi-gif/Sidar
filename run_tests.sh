@@ -970,7 +970,13 @@ run_static_analysis_gates() {
   local attempt=0
   local auto_heal_prompt_done=0
   while [ "${attempt}" -le "${AUTO_HEAL_MAX_ATTEMPTS}" ]; do
-    if uv run mypy 2>&1 | tee "${AUTO_HEAL_LOG_PATH}"; then
+    local mypy_attempt_log
+    if [[ "${AUTO_HEAL_LOG_PATH}" == *.log ]]; then
+      mypy_attempt_log="${AUTO_HEAL_LOG_PATH%.log}.attempt-$((attempt + 1)).log"
+    else
+      mypy_attempt_log="${AUTO_HEAL_LOG_PATH}.attempt-$((attempt + 1))"
+    fi
+    if uv run mypy 2>&1 | tee "${AUTO_HEAL_LOG_PATH}" "${mypy_attempt_log}"; then
       return 0
     fi
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
