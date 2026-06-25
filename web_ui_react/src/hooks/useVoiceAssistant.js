@@ -4,6 +4,11 @@ import { getStoredToken } from "../lib/api.js";
 const VOICE_WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/voice`;
 
+const withTokenQuery = (url, token) => {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+};
+
 const VAD_THRESHOLD = 0.035;
 const VAD_SILENCE_MS = 640;
 const MEDIA_TIMESLICE_MS = 250;
@@ -281,7 +286,7 @@ export function useVoiceAssistant({
 
     setStatus("connecting_voice");
     wsReadyPromiseRef.current = new Promise((resolve, reject) => {
-      const ws = new WebSocket(VOICE_WS_URL(), [token]);
+      const ws = new WebSocket(withTokenQuery(VOICE_WS_URL(), token), [token]);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {

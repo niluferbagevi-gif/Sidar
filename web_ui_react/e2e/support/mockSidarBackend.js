@@ -18,6 +18,17 @@ function selectFirstSubprotocol(protocols) {
   return protocols.values().next().value || false;
 }
 
+function firstHeaderValue(value) {
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+function extractAuthToken(req) {
+  const subprotocol = firstHeaderValue(req.headers["sec-websocket-protocol"]);
+  const authHeader = firstHeaderValue(req.headers.authorization).replace(/^bearer\s+/i, "");
+  const queryToken = new URL(req.url || "/", "http://sidar.local").searchParams.get("token") || "";
+  return String(subprotocol || authHeader || queryToken).trim();
+}
+
 const pendingHitl = [
   {
     request_id: "hitl-e2e-1",
@@ -164,8 +175,8 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
   });
 
   wss.on("connection", (socket, req) => {
-    const token = req.headers["sec-websocket-protocol"] || "";
-    if (!String(token).trim()) {
+    const token = extractAuthToken(req);
+    if (!token) {
       socket.close(4001, "missing token");
       return;
     }
@@ -221,8 +232,8 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
   });
 
   voiceWss.on("connection", (socket, req) => {
-    const token = req.headers["sec-websocket-protocol"] || "";
-    if (!String(token).trim()) {
+    const token = extractAuthToken(req);
+    if (!token) {
       socket.close(4001, "missing token");
       return;
     }

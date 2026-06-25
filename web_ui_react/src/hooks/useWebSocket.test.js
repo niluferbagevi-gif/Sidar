@@ -566,7 +566,7 @@ describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
     localStorage.setItem("sidar_access_token", "tok");
     renderHook(() => useWebSocket("s1", {}));
 
-    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
+    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat?token=tok", ["tok"]);
 
     globalThis.location = originalLocation;
   });

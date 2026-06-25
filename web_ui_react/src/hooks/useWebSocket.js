@@ -4,6 +4,11 @@ import { TOKEN_CHANGE_EVENT, TOKEN_KEY, getStoredToken } from "../lib/api.js";
 const WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
 
+const withTokenQuery = (url, token) => {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+};
+
 const RECONNECT_BASE_DELAY_MS = 800;
 const RECONNECT_MAX_DELAY_MS = 20_000;
 const RECONNECT_JITTER_MS = 600;
@@ -96,7 +101,7 @@ export function useWebSocket(
 
     setStatus("connecting");
     clearReconnectTimer();
-    const ws = new WebSocket(WS_URL(), [token]);
+    const ws = new WebSocket(withTokenQuery(WS_URL(), token), [token]);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
