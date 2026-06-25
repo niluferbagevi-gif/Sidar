@@ -8,7 +8,19 @@ export function createSidarProxyConfig(
   const webSocketUrl = backendUrl.replace(/^http/, "ws");
   return {
     "/api": { target: backendUrl, changeOrigin: true },
-    "/ws": { target: webSocketUrl, ws: true, changeOrigin: true },
+    "/ws": {
+      target: webSocketUrl,
+      ws: true,
+      changeOrigin: true,
+      configure: (proxy) => {
+        proxy.on("proxyReqWs", (proxyReq, req) => {
+          const subprotocol = req.headers["sec-websocket-protocol"];
+          if (subprotocol) {
+            proxyReq.setHeader("sec-websocket-protocol", subprotocol);
+          }
+        });
+      },
+    },
     "/admin": { target: backendUrl, changeOrigin: true },
     "/sessions": { target: backendUrl, changeOrigin: true },
     "/metrics": { target: backendUrl, changeOrigin: true },
