@@ -2225,10 +2225,14 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
     package_lock = json.loads(Path("web_ui_react/package-lock.json").read_text(encoding="utf-8"))
 
+    scripts = package_json["scripts"]
     dev_deps = package_json["devDependencies"]
-    locked_root_deps = package_lock["packages"][""]["devDependencies"]
+    locked_root = package_lock["packages"][""]
+    locked_root_deps = locked_root["devDependencies"]
     locked_packages = package_lock["packages"]
 
+    assert "preinstall" not in scripts
+    assert "hasInstallScript" not in locked_root
     assert dev_deps["vite"] == "^8.0.16"
     assert dev_deps["ws"] == "^8.21.0"
     assert locked_root_deps["vite"] == "^8.0.16"
