@@ -136,9 +136,10 @@ olarak `managers/security.py` üzerinden izole kalmalıdır.
 5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
-## Dockerfile / requirements / installer geçiş PR kapsamı
+## Dockerfile / installer geçiş PR kapsamı
 
 Faz 1 kapanışında production-minimal profile için somut üretim artifact'leri eklenmiştir.
+Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez; varsayılan production install akışı değiştirilmez.
 Varsayılan developer/installer davranışı değişmeden kalır; no-dev production yolu bilinçli
 olarak ayrı Dockerfile ve requirements üreticisi üzerinden çalışır:
 

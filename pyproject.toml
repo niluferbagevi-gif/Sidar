@@ -316,7 +316,7 @@ websockets = "runtime"
 
 [tool.sidar.dependency_profile_plan]
 current_install_standard = "uv sync --all-extras"
-status = "phase-1-production-minimal"
+status = "phase-1-dev-split"
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
 preserve_all_extras_standard = true
 planned_profile_groups = ["base", "web", "rag", "multimodal", "dev", "test", "gpu"]
