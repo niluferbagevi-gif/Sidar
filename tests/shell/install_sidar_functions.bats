@@ -967,6 +967,29 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "06 services docker mode honors disabled RAG warmup without local side effects" {
+  run_installer_function '
+    events=()
+    unset SIDAR_INSTALL_TEST_MODE
+    APP_RUNTIME_MODE_SELECTED=docker
+    AUTO_SEED_RAG_DOCKER_WARMUP=false
+    SCRIPT_DIR="/tmp/unused-sidar-script-dir"
+    sidar_source_install_utils() { events+=("source:$*"); }
+    prepare_docker_for_migrations() { events+=(unexpected_prepare); return 99; }
+    ensure_postgres_databases_exist() { events+=(unexpected_database_bootstrap); return 99; }
+    run_migrations() { events+=(unexpected_migration); return 99; }
+    download_ollama_models() { events+=(unexpected_models); return 99; }
+    command() { events+=("unexpected_command:$*"); return 99; }
+    info() { events+=("info:$*"); }
+
+    sidar_phase_local_migrations_and_models
+
+    [[ "${events[*]}" == "source:ollama_models.sh info:Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor. info:AUTO_SEED_RAG_DOCKER_WARMUP=false; Docker RAG warmup seed atlandı." ]]
+    [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {
   run_installer_function '
     sidar_source_install_utils wsl_gpu_preflight.sh
