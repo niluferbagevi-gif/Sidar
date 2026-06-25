@@ -626,6 +626,45 @@ ENV
   grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
 }
 
+@test "run_smoke_tests defensively repairs private key and session file permissions after pytest" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin" "$tmpdir/tests/smoke"
+    cat > "$tmpdir/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" > "$tmpdir/uv.args"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/uv"
+    printf "OPENAI_API_KEY=x\\n" > "$tmpdir/keys.env"
+    printf "{\"token\":\"x\"}\\n" > "$tmpdir/session.json"
+    chmod 644 "$tmpdir/keys.env" "$tmpdir/session.json"
+
+    export PATH="$tmpdir/bin:$PATH"
+    export SIDAR_KEYS_FILE="$tmpdir/keys.env"
+    export SIDAR_SESSION_FILE="$tmpdir/session.json"
+    SCRIPT_DIR="$tmpdir"
+    RUN_SMOKE_TESTS_MODE=always
+    WSL2=false
+    WSLCONFIG_CHANGED=false
+    GPU_AVAILABLE=false
+    wait_for_redis_before_smoke_tests() { return 0; }
+    wait_for_core_docker_health_before_smoke_tests() { :; }
+
+    run_smoke_tests
+
+    [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]
+    [[ "$(stat -c %a "$SIDAR_KEYS_FILE")" == "600" ]]
+    [[ "$(stat -c %a "$SIDAR_SESSION_FILE")" == "600" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "sidar_configure_autonomous_cron is opt-in and suggests the flag by default" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

@@ -7166,6 +7166,7 @@ run_smoke_tests() {
             fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
         fi
     fi
+    verify_sidar_keys_file_permissions
 }
 
 wait_for_core_docker_health_before_smoke_tests() {
