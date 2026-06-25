@@ -15,7 +15,7 @@ async function readJson(req) {
 }
 
 function selectFirstSubprotocol(protocols) {
-  return protocols.values().next().value || false;
+  return protocols.values().next().value ?? undefined;
 }
 
 function firstHeaderValue(value) {

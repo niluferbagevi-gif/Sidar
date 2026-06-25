@@ -101,7 +101,7 @@ export function useWebSocket(
 
     setStatus("connecting");
     clearReconnectTimer();
-    const ws = new WebSocket(withTokenQuery(WS_URL(), token), [token]);
+    const ws = new WebSocket(withTokenQuery(WS_URL(), token));
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
