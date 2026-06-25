@@ -1369,23 +1369,15 @@ class Config:
 
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
-        """Auto-tune Ollama coding context for GPU VRAM unless explicitly overridden."""
+        """Auto-tune Ollama coding context from the loaded hardware inventory."""
         if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
             return
         if not cls.USE_GPU:
             return
-        vram_mb = 0
-        try:
-            import torch
 
-            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                props = torch.cuda.get_device_properties(0)
-                vram_mb = int(getattr(props, "total_memory", 0) / (1024 * 1024))
-        except Exception:
-            vram_mb = 0
-
-        if vram_mb > 0:
-            cls.GPU_VRAM_MB = max(0, int(vram_mb))
+        # Keep check_hardware() as the single source of truth. Importing torch
+        # here can observe a different device or driver state than the hardware
+        # probe and overwrite cls.GPU_VRAM_MB with inconsistent data.
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
         elif cls.GPU_VRAM_MB >= 8192:

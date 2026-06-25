@@ -1,6 +1,7 @@
 import importlib
 import logging
 import os
+import sys
 import types
 import warnings
 from pathlib import Path
@@ -1838,6 +1839,20 @@ def test_dotenv_key_source_report_and_debug_log(monkeypatch, tmp_path, caplog):
 
 
 def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_properties(_index):
+            return types.SimpleNamespace(total_memory=8 * 1024 * 1024 * 1024)
+
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=FakeCuda))
     monkeypatch.setattr(config.Config, "_hardware_loaded", False)
     monkeypatch.setattr(config.Config, "USE_GPU", True)
     monkeypatch.setattr(config.Config, "OLLAMA_GPU_REQUEST_POOL_SIZE", 0)
@@ -1865,6 +1880,7 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.CUDA_VERSION == "12.4"
     assert config.Config.DRIVER_VERSION == "555.1"
     assert config.Config.GPU_VRAM_MB == 24 * 1024
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
     assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
 
 
