@@ -132,13 +132,22 @@ WebSocketDisconnect = _FastAPIWebSocketDisconnect
 
 # OpenTelemetry bağımlılıkları config.Config.init_telemetry içinde lazy import edilir.
 # Bu fallback globals yalnız eski/test fallback yolu için korunur ve testlerde monkeypatch edilir.
-trace: Any = None
-OTLPSpanExporter: Any = None
-FastAPIInstrumentor: Any = None
-HTTPXClientInstrumentor: Any = None
-Resource: Any = None
-TracerProvider: Any = None
-BatchSpanProcessor: Any = None
+try:
+    from opentelemetry import trace
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+except ImportError:
+    trace = None
+    OTLPSpanExporter = None
+    FastAPIInstrumentor = None
+    HTTPXClientInstrumentor = None
+    Resource = None
+    TracerProvider = None
+    BatchSpanProcessor = None
 
 
 logger = logging.getLogger(__name__)
