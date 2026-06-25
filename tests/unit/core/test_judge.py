@@ -95,6 +95,17 @@ def test_response_eval_model_env_override(monkeypatch):
     assert instance._response_eval_model() == "explicit"
 
 
+def test_init_uses_config_module_helper_exports(monkeypatch):
+    _install_config_module(monkeypatch)
+    monkeypatch.setenv("JUDGE_ENABLED", "0")
+    monkeypatch.setenv("JUDGE_PROVIDER", "anthropic")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0")
+    instance = judge.LLMJudge()
+    assert instance.enabled is True
+    assert instance.provider == "ollama"
+    assert instance.sample_rate == 1.0
+
+
 def test_should_evaluate(monkeypatch, judge_instance):
     monkeypatch.setattr(judge.random, "random", lambda: 0.3)
     assert judge_instance.should_evaluate() is True
