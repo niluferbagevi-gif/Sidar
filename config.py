@@ -11,12 +11,12 @@ import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+import core.logging_config as logging_config
 from core import config_dotenv, config_postgres
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
@@ -38,7 +38,6 @@ from core.config_gpu_detect import (
     normalize_gpu_memory_fractions,
     resolve_adaptive_gpu_pool_size,
 )
-from core.config_logging_setup import configure_noisy_dependency_loggers
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
@@ -70,65 +69,15 @@ _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 _FIRST_CONFIG_LOAD_LOGGED = False
 logger = logging.getLogger("Sidar.Config")
 
-_LOG_MESSAGES: dict[str, dict[str, str]] = {
-    "log_file_unavailable": {
-        "tr": "⚠️ Log dosyasına yazılamıyor (%s). Sadece konsol loglama ile devam edilecek.",
-        "en": "⚠️ Cannot write to log file (%s). Continuing with console logging only.",
-    },
-    "config_reload_suppressed": {
-        "tr": "Config tekrar yüklendi; aynı fingerprint için bilgi logu bastırıldı: %s",
-        "en": "Config reloaded; info log suppressed for the same fingerprint: %s",
-    },
-    "env_loaded": {
-        "tr": "✅ Ortam değişkenleri yüklendi: %s",
-        "en": "✅ Environment variables loaded: %s",
-    },
-    "provider_updated": {
-        "tr": "✅ AI Sağlayıcı güncellendi: %s",
-        "en": "✅ AI provider updated: %s",
-    },
-    "invalid_provider": {
-        "tr": "❌ Geçersiz sağlayıcı modu: %s  Geçerliler: %s",
-        "en": "❌ Invalid provider mode: %s  Valid values: %s",
-    },
-    "ollama_ok": {
-        "tr": "✅ Ollama bağlantısı başarılı.",
-        "en": "✅ Ollama connection successful.",
-    },
-    "ollama_status": {
-        "tr": "⚠️  Ollama yanıt kodu: %d",
-        "en": "⚠️  Ollama response status: %d",
-    },
-    "ollama_unreachable": {
-        "tr": "⚠️  Ollama'ya ulaşılamadı (%s)\n    'ollama serve' çalıştırıldığından emin olun.",
-        "en": "⚠️  Ollama is unreachable (%s)\n    Make sure 'ollama serve' is running.",
-    },
-    "otel_active": {
-        "tr": "✅ OpenTelemetry aktif: %s",
-        "en": "✅ OpenTelemetry active: %s",
-    },
-    "otel_failed": {
-        "tr": "OpenTelemetry başlatılamadı: %s",
-        "en": "OpenTelemetry could not be started: %s",
-    },
-    "config_loaded": {
-        "tr": "✅ %s v%s yapılandırması yüklendi.",
-        "en": "✅ %s v%s configuration loaded.",
-    },
-}
-
 
 def get_sidar_locale() -> str:
     """Resolve the runtime log locale from SIDAR_LOCALE."""
-    raw_locale = os.getenv("SIDAR_LOCALE", "tr").strip().lower()
-    normalized = raw_locale.split(".", 1)[0].replace("_", "-").split("-", 1)[0]
-    return "en" if normalized == "en" else "tr"
+    return logging_config.get_sidar_locale()
 
 
 def localized_log_message(key: str) -> str:
     """Return a localized log format string for the active Sidar locale."""
-    messages = _LOG_MESSAGES[key]
-    return messages.get(get_sidar_locale(), messages["tr"])
+    return logging_config.localized_log_message(key)
 
 
 def _log_first_load_info(message: str, *args: Any) -> None:
@@ -432,82 +381,31 @@ def get_db_pool_size_default() -> int:
 # ═══════════════════════════════════════════════════════════════
 # LOGLAMA SİSTEMİ  (dinamik, RotatingFileHandler)
 # ═══════════════════════════════════════════════════════════════
-_LOG_DIR = BASE_DIR / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-os.environ.setdefault("SIDAR_CONFIG_QUIET", "false")
-
-_LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
-_LOG_FILE_PATH = BASE_DIR / os.getenv("LOG_FILE", "logs/sidar_system.log")
-_LOG_MAX_BYTES = get_int_env("LOG_MAX_BYTES", 10_485_760)  # 10 MB
-_LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
-_VERBOSE_HTTP_LOGS = get_bool_env("SIDAR_VERBOSE_HTTP", False)
-_NOISY_DEPENDENCY_LOGGERS = (
-    "httpx",
-    "huggingface_hub",
-    "sentence_transformers",
-    "alembic.runtime.migration",
-)
-
-_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-
 def _repair_log_file_permissions(path: Path) -> None:
     """Backward-compatible wrapper for log permission repair helper."""
     repair_log_file_permissions(path)
 
 
-_repair_log_file_permissions(_LOG_FILE_PATH)
+_logging_state = logging_config.configure_sidar_logging(
+    base_dir=BASE_DIR,
+    get_int_env=get_int_env,
+    get_bool_env=get_bool_env,
+    repair_log_file_permissions=_repair_log_file_permissions,
+)
+_LOG_DIR = _logging_state.log_dir
+_LOG_LEVEL_STR = _logging_state.log_level_str
+_LOG_FILE_PATH = _logging_state.log_file_path
+_LOG_MAX_BYTES = _logging_state.log_max_bytes
+_LOG_BACKUP_CNT = _logging_state.log_backup_count
+_VERBOSE_HTTP_LOGS = _logging_state.verbose_http_logs
+_NOISY_DEPENDENCY_LOGGERS = _logging_state.noisy_dependency_loggers
 
 
 def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
     """Keep chatty HTTP/HF dependency logs quiet unless explicitly requested."""
-    configure_noisy_dependency_loggers(_NOISY_DEPENDENCY_LOGGERS, verbose_http=verbose_http)
-
-
-_root_logger = logging.getLogger()
-for _handler in list(_root_logger.handlers):
-    with contextlib.suppress(Exception):
-        _handler.flush()
-        _handler.close()
-    _root_logger.removeHandler(_handler)
-
-logging.basicConfig(
-    level=getattr(logging, _LOG_LEVEL_STR, logging.INFO),
-    format=(
-        "%(asctime)s %(levelname)-7s %(name)s [%(threadName)s]:%(lineno)d › %(message)s"
-        if _LOG_LEVEL_STR == "DEBUG"
-        else "%(asctime)s %(levelname)-7s %(name)s:%(lineno)d › %(message)s"
-    ),
-    handlers=[logging.StreamHandler(sys.stdout)],
-    force=True,
-)
-
-with contextlib.suppress(Exception):
-    _root_logger.handlers[0].setLevel(getattr(logging, _LOG_LEVEL_STR, logging.INFO))
-
-try:
-    _file_handler = RotatingFileHandler(
-        _LOG_FILE_PATH,
-        maxBytes=_LOG_MAX_BYTES,
-        backupCount=_LOG_BACKUP_CNT,
-        encoding="utf-8",
+    logging_config.configure_noisy_dependency_loggers(
+        _NOISY_DEPENDENCY_LOGGERS, verbose_http=verbose_http
     )
-    _file_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)-7s %(name)s [%(threadName)s]:%(lineno)d › %(message)s"
-            if _LOG_LEVEL_STR == "DEBUG"
-            else "%(asctime)s %(levelname)-7s %(name)s:%(lineno)d › %(message)s"
-        )
-    )
-    _root_logger.addHandler(_file_handler)
-except (PermissionError, OSError) as exc:
-    _root_logger.warning(
-        localized_log_message("log_file_unavailable"),
-        exc,
-    )
-
-_configure_noisy_dependency_loggers()
 
 _DEPENDENCY_AUTO = object()
 

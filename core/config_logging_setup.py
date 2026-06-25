@@ -1,16 +1,7 @@
+"""Backward-compatible logging setup imports for older config tests/helpers."""
+
 from __future__ import annotations
 
-import logging
+from core.logging_config import configure_noisy_dependency_loggers
 
-
-def configure_noisy_dependency_loggers(
-    logger_names: tuple[str, ...], *, verbose_http: bool
-) -> None:
-    """Set noisy dependency logger levels and unify output through root handlers."""
-    target_level = logging.NOTSET if verbose_http else logging.WARNING
-    for logger_name in logger_names:
-        dep_logger = logging.getLogger(logger_name)
-        dep_logger.setLevel(target_level)
-        dep_logger.propagate = True
-        if dep_logger.handlers:
-            dep_logger.handlers.clear()
+__all__ = ["configure_noisy_dependency_loggers"]
