@@ -15,9 +15,7 @@ test.describe("ChatPanel websocket e2e", () => {
 
   async function connectWithToken(page) {
     page.on("pageerror", (error) => console.error("BROWSER ERR:", error));
-    await page.goto(`${frontend.url}/chat`);
-    await page.waitForLoadState("networkidle");
-
+    await page.goto(`${frontend.url}/chat`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('[data-testid="ws-status"]', { timeout: 30_000 });
     const wsStatus = page.getByTestId("ws-status");
     await expect(wsStatus).toHaveAttribute("data-state", "unauthenticated");
