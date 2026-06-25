@@ -21,7 +21,7 @@ def main() -> int:
         "F401,F821,I001",
         *[str(path) for path in args.paths],
     ]
-    return subprocess.run(command, check=False).returncode  # nosec B603 - hardcoded uv/ruff command, no shell, paths from CLI args only
+    return subprocess.run(command, check=False).returncode  # Hardcoded uv/ruff command; no shell.  # nosec B603
 
 
 if __name__ == "__main__":
