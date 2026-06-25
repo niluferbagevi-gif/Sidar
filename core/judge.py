@@ -27,6 +27,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from core.config_env_helpers import (
+    get_bool_prefixed_env,
+    get_float_prefixed_env,
+    get_prefixed_env,
+)
+
 logger = logging.getLogger(__name__)
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
@@ -145,12 +151,10 @@ class LLMJudge:
     response_model: str
 
     def __init__(self) -> None:
+        # Config remains lazy here to avoid reintroducing startup/circular import
+        # pressure; env helpers are imported from their dependency-light source at
+        # module import time above.
         from config import Config
-        from core.config_env_helpers import (
-            get_bool_prefixed_env,
-            get_float_prefixed_env,
-            get_prefixed_env,
-        )
 
         self.config = Config()
         self.enabled = get_bool_prefixed_env(
