@@ -30,10 +30,14 @@ function getText(node) {
   return Array.isArray(node.children) ? node.children.map(getText).join("") : "";
 }
 
-function getLanguage(node) {
-  const classNames = Array.isArray(node?.properties?.className)
+function getClassNames(node) {
+  return Array.isArray(node?.properties?.className)
     ? node.properties.className
     : [];
+}
+
+function getLanguage(node) {
+  const classNames = getClassNames(node);
   const languageClass = classNames.find(
     (className) => className.startsWith("language-") || className.startsWith("lang-"),
   );
@@ -55,7 +59,7 @@ function visitCodeBlocks(node, parent) {
     }
 
     const highlighted = lowlight.highlight(language, getText(node));
-    const className = new Set([...(node.properties?.className || []), "hljs"]);
+    const className = new Set([...getClassNames(node), "hljs"]);
     node.properties = { ...node.properties, className: Array.from(className) };
     node.children = highlighted.children;
     return;

@@ -93,6 +93,39 @@ describe("rehypeSidarHighlight", () => {
     expect(code.children).toEqual([]);
   });
 
+  it("treats nested non-text nodes without children as empty strings", () => {
+    const tree = buildCodeTree("json", "");
+    codeNode(tree).children = [{ type: "element", tagName: "span" }];
+
+    rehypeSidarHighlight()(tree);
+
+    const code = codeNode(tree);
+    expect(code.properties.className).toContain("hljs");
+    expect(code.children).toEqual([]);
+  });
+
+  it("ignores code nodes with malformed className properties", () => {
+    const tree = buildCodeTree("python", "print('sidar')");
+    const code = codeNode(tree);
+    code.properties.className = "language-python";
+
+    rehypeSidarHighlight()(tree);
+
+    expect(code.properties.className).toBe("language-python");
+    expect(code.children).toEqual([{ type: "text", value: "print('sidar')" }]);
+  });
+
+  it("ignores class names without a language marker", () => {
+    const tree = buildCodeTree("python", "print('sidar')");
+    const code = codeNode(tree);
+    code.properties.className = ["chat-code"];
+
+    rehypeSidarHighlight()(tree);
+
+    expect(code.properties.className).toEqual(["chat-code"]);
+    expect(code.children).toEqual([{ type: "text", value: "print('sidar')" }]);
+  });
+
   it("ignores malformed or non-code AST branches", () => {
     const tree = {
       type: "root",
