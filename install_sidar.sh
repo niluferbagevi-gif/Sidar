@@ -7414,6 +7414,10 @@ print_summary() {
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
     echo "  Tam doğrulama için (entegrasyon + e2e):"
     echo "    bash run_tests.sh --stage all   # veya tek başına: --stage integration"
+    echo "  E2E odaklı doğrulama için:"
+    echo "    bash run_tests.sh --stage e2e   # tests/e2e/{agents,cli,web}"
+    echo "  Performans/benchmark doğrulaması için:"
+    echo "    RUN_BENCHMARKS=required bash run_tests.sh"
     echo "  uv run python github_upload.py   — projeyi GitHub'a yükle"
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."

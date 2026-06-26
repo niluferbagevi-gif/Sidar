@@ -624,6 +624,8 @@ ENV
 
   grep -q "bash run_tests.sh --stage all" "$root/install_sidar.sh"
   grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
+  grep -q "bash run_tests.sh --stage e2e" "$root/install_sidar.sh"
+  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/install_sidar.sh"
 }
 
 @test "run_smoke_tests defensively repairs private key and session file permissions after pytest" {
