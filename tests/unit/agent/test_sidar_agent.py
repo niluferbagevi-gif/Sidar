@@ -2161,6 +2161,70 @@ async def test_tool_subtask_non_string_and_tool_exception(
     assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
 
 
+@pytest.mark.parametrize("max_steps", [1, 3])
+async def test_tool_subtask_react_loop_hard_stops_at_configured_max_steps(
+    sidar_agent_factory, max_steps: int
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, SUBTASK_MAX_STEPS=max_steps, TEXT_MODEL="tm", CODING_MODEL="cm")
+    agent.llm = types.SimpleNamespace(
+        chat=AsyncMock(
+            return_value='{"thought":"keep looping","tool":"web_search","argument":"again"}'
+        )
+    )
+    agent._execute_tool = AsyncMock(return_value="loop signal")
+
+    output = await agent._tool_subtask("repeat until guard")
+
+    assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+    assert agent.llm.chat.await_count == max_steps
+    assert agent._execute_tool.await_count == max_steps
+
+
+async def test_execute_self_heal_plan_service_restores_backup_after_sandbox_failure(
+    tmp_path: Path,
+) -> None:
+    class _InMemoryCode:
+        def __init__(self) -> None:
+            self.files = {"src/app.py": "old()"}
+            self.sandbox_commands: list[str] = []
+
+        def read_file(self, path: str, include_line_numbers: bool = False) -> tuple[bool, str]:
+            return True, self.files[path]
+
+        def write_file(
+            self, path: str, content: str, include_line_numbers: bool = False
+        ) -> tuple[bool, str]:
+            self.files[path] = content
+            return True, "restored"
+
+        def patch_file(self, path: str, target: str, replacement: str) -> tuple[bool, str]:
+            self.files[path] = self.files[path].replace(target, replacement)
+            return True, "patched"
+
+        def run_shell_in_sandbox(self, command: str, workdir: str) -> tuple[bool, str]:
+            self.sandbox_commands.append(f"{workdir}:{command}")
+            return False, "sandbox validation failed"
+
+    code = _InMemoryCode()
+
+    result = await sidar_agent.execute_self_heal_plan_service(
+        code=code,
+        base_dir=str(tmp_path),
+        remediation_loop={"scope_paths": ["src/app.py"]},
+        plan={
+            "operations": [{"path": "src/app.py", "target": "old", "replacement": "new"}],
+            "validation_commands": ["uv run pytest tests/unit/agent -q"],
+        },
+    )
+
+    assert result["status"] == "reverted"
+    assert result["reverted"] is True
+    assert result["operations_applied"] == ["src/app.py"]
+    assert code.files == {"src/app.py": "old()"}
+    assert code.sandbox_commands == [f"{tmp_path}:uv run pytest tests/unit/agent -q"]
+
+
 async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(
