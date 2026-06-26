@@ -11,19 +11,22 @@ import sys
 import threading
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
+import config_autonomy
+import config_database
+import config_gpu
+import config_llm
+import config_rag
 import core.logging_config as logging_config
 from config_security import (
     get_missing_security_runtime_keys,
     load_security_settings,
 )
-from core import config_dotenv, config_postgres
+from core import config_dotenv
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_env_helpers import (
@@ -39,11 +42,7 @@ from core.config_env_helpers import (
     get_prefixed_env,
     get_web_scrape_max_chars,
 )
-from core.config_gpu_detect import (
-    HardwareInfo,
-    normalize_gpu_memory_fractions,
-    resolve_adaptive_gpu_pool_size,
-)
+from core.config_gpu_detect import HardwareInfo
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
@@ -288,7 +287,13 @@ class DotenvReloadPlan(BaseModel):
     sidar_keys_file: str = "~/.sidar_keys.env"
     skip_default_layers: bool = False
     labels: tuple[str, ...] = Field(
-        default=("base", "advanced", "environment", "explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"),
+        default=(
+            "base",
+            "advanced",
+            "environment",
+            "explicit:DOTENV_FILE",
+            "secret:SIDAR_KEYS_FILE",
+        ),
         min_length=5,
         max_length=5,
     )
@@ -303,7 +308,9 @@ class DotenvReloadPlan(BaseModel):
         return normalized
 
 
-def _build_dotenv_reload_plan(effective_env: dict[str, str], *, profile: str | None) -> DotenvReloadPlan:
+def _build_dotenv_reload_plan(
+    effective_env: dict[str, str], *, profile: str | None
+) -> DotenvReloadPlan:
     """Build and validate the dotenv reload chain plan from the effective environment."""
     selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
     return DotenvReloadPlan(
@@ -316,79 +323,14 @@ def _build_dotenv_reload_plan(effective_env: dict[str, str], *, profile: str | N
     )
 
 
-@dataclass(frozen=True)
-class OllamaBatchPolicy:
-    """Central Ollama num_batch bounds used by config and runtime clients."""
-
-    default: int = 2048
-    maximum: int = 4096
-    auto_min: int = 2048
-
-    def clamp(self, value: int) -> int:
-        """Clamp explicit num_batch values to the supported maximum."""
-        return min(self.maximum, value)
-
-    def auto_batch_for_context(self, num_ctx: int) -> int:
-        """Resolve automatic num_batch for large Ollama context windows."""
-        if num_ctx <= self.auto_min:
-            return 0
-        return min(self.maximum, num_ctx)
-
-
-OLLAMA_BATCH_POLICY = OllamaBatchPolicy()
-
-
-class LLMClientSettings(BaseSettings):
-    """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
-
-    model_config = SettingsConfigDict(
-        env_file=str(ENV_PATH) if ENV_PATH.exists() and not _SKIP_DEFAULT_DOTENV else None,
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    AI_PROVIDER: str = "ollama"
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_TIMEOUT: int = 60
-    LLM_MAX_RETRIES: int = 2
-    LLM_RETRY_BASE_DELAY: float = 0.4
-    LLM_RETRY_MAX_DELAY: float = 4.0
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
-    ANTHROPIC_TIMEOUT: int = 60
-    LITELLM_GATEWAY_URL: str = ""
-    LITELLM_API_KEY: str = ""
-    LITELLM_MODEL: str = ""
-    LITELLM_TIMEOUT: int = 60
-    OLLAMA_URL: str = "http://localhost:11434/api"
-    OLLAMA_TIMEOUT: int = 600
-    OLLAMA_KEEP_ALIVE: str = "30m"
-    OLLAMA_NUM_BATCH: int = OLLAMA_BATCH_POLICY.default
-    OLLAMA_CODING_NUM_CTX: int = 8192
-    OLLAMA_CONTEXT_MAX_CHARS: int = 12000
-    OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
-    CODING_MODEL: str = "qwen2.5-coder:7b"
-    REDIS_MAX_CONNECTIONS: int = 50
-    SEMANTIC_CACHE_TTL: int = 3600
-    SEMANTIC_CACHE_MAX_ITEMS: int = 500
-    SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD: int = 3
-    SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS: int = 30
-
-
-LLM_SETTINGS = LLMClientSettings()
-
-SUPPORTED_AI_PROVIDERS: frozenset[str] = frozenset(
-    {"ollama", "gemini", "openai", "anthropic", "litellm"}
+OllamaBatchPolicy = config_llm.OllamaBatchPolicy
+OLLAMA_BATCH_POLICY = config_llm.OLLAMA_BATCH_POLICY
+LLMClientSettings = config_llm.LLMClientSettings
+LLM_SETTINGS = config_llm.load_llm_settings(
+    env_path=ENV_PATH, skip_default_dotenv=_SKIP_DEFAULT_DOTENV
 )
-_PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
-    "gemini": ("GEMINI_API_KEY",),
-    "openai": ("OPENAI_API_KEY",),
-    "anthropic": ("ANTHROPIC_API_KEY",),
-    "litellm": ("LITELLM_GATEWAY_URL",),
-}
+SUPPORTED_AI_PROVIDERS = config_llm.SUPPORTED_AI_PROVIDERS
+_PROVIDER_REQUIRED_SETTINGS = config_llm.PROVIDER_REQUIRED_SETTINGS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -396,38 +338,14 @@ _PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 # ═══════════════════════════════════════════════════════════════
 
 
-def gpu_mixed_precision_default() -> bool:
-    """Return the profile-aware FP16 default for GPU-backed production workloads."""
-
-    return os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-
-
-def build_postgres_dsn(*, host: str | None = None) -> str:
-    """Build Sidar's async PostgreSQL DSN from normalized POSTGRES_* variables."""
-    return config_postgres.build_postgres_dsn(host=host, getenv=os.getenv)
-
-
-def get_database_url() -> str:
-    """Resolve DATABASE_URL, deriving it from POSTGRES_* variables when absent."""
-    return config_postgres.get_database_url(getenv=os.getenv)
-
-
-def get_container_database_url() -> str:
-    """Resolve the container DSN from SIDAR_CONTAINER_DATABASE_URL or POSTGRES_* values."""
-    return config_postgres.get_container_database_url(getenv=os.getenv)
-
-
-def _default_auto_migrate_enabled() -> bool:
-    """Enable runtime Alembic auto-migrate outside production by default."""
-    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
-
-
-def get_db_pool_size_default() -> int:
-    """Return the profile-aware default PostgreSQL pool size."""
-    return config_postgres.get_db_pool_size_default(
-        get_int_env=get_int_env,
-        cpu_count=os.cpu_count(),
-    )
+gpu_mixed_precision_default = config_gpu.gpu_mixed_precision_default
+normalize_gpu_memory_fractions = config_gpu.normalize_gpu_memory_fractions
+resolve_adaptive_gpu_pool_size = config_gpu.resolve_adaptive_gpu_pool_size
+build_postgres_dsn = config_database.build_postgres_dsn
+get_database_url = config_database.get_database_url
+get_container_database_url = config_database.get_container_database_url
+_default_auto_migrate_enabled = config_database.default_auto_migrate_enabled
+get_db_pool_size_default = config_database.get_db_pool_size_default
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -503,14 +421,10 @@ SANDBOX_LIMITS = {
 # the official PyTorch selector/release notes; keep this list aligned with
 # install_sidar.sh's dynamic selector and prefer uv-managed installs in
 # user-facing guidance. Last reviewed: 2026-06-11.
-PYTORCH_STABLE_CUDA_WHEEL_TAGS: tuple[str, ...] = ("cu128", "cu126", "cu124")
-PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG: str = PYTORCH_STABLE_CUDA_WHEEL_TAGS[0]
-PYTORCH_RECOMMENDED_CUDA_INDEX_URL: str = (
-    f"https://download.pytorch.org/whl/{PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG}"
-)
-PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND: str = (
-    "uv pip install torch torchvision " f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
-)
+PYTORCH_STABLE_CUDA_WHEEL_TAGS = config_gpu.PYTORCH_STABLE_CUDA_WHEEL_TAGS
+PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG = config_gpu.PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG
+PYTORCH_RECOMMENDED_CUDA_INDEX_URL = config_gpu.PYTORCH_RECOMMENDED_CUDA_INDEX_URL
+PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND = config_gpu.PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND
 
 
 def _is_wsl2() -> bool:
@@ -657,6 +571,9 @@ def check_hardware() -> HardwareInfo:
 # ═══════════════════════════════════════════════════════════════
 
 
+_SELF_HEAL_SETTINGS = config_autonomy.load_self_heal_settings()
+
+
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı.
@@ -673,32 +590,27 @@ class Config:
         True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
     )
     ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)
-    SELF_HEAL_MAX_PATCHES: int = get_int_env("SELF_HEAL_MAX_PATCHES", 3)
-    SELF_HEAL_PLAN_MAX_RETRIES: int = get_int_env("SELF_HEAL_PLAN_MAX_RETRIES", 3)
-    SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = get_int_env("SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180)
-    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = get_int_env("SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6)
-    SELF_HEAL_LOCAL_SCOPE_LIMIT: int = get_int_prefixed_env(
-        "SIDAR_SELF_HEAL_LOCAL_SCOPE_LIMIT", "SELF_HEAL_LOCAL_SCOPE_LIMIT", 200
+    SELF_HEAL_MAX_PATCHES: int = int(_SELF_HEAL_SETTINGS["SELF_HEAL_MAX_PATCHES"] or 3)
+    SELF_HEAL_PLAN_MAX_RETRIES: int = int(_SELF_HEAL_SETTINGS["SELF_HEAL_PLAN_MAX_RETRIES"] or 3)
+    SELF_HEAL_PLAN_TIMEOUT_SECONDS: int = int(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_PLAN_TIMEOUT_SECONDS"] or 180
     )
-    SELF_HEAL_HITL_SCOPE_THRESHOLD: int = get_int_prefixed_env(
-        "SIDAR_SELF_HEAL_HITL_SCOPE_THRESHOLD", "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3
+    SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES: int = int(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES"] or 6
     )
-    SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = get_int_prefixed_env(
-        "SIDAR_SELF_HEAL_AUTONOMOUS_BATCH_SIZE", "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5
+    SELF_HEAL_LOCAL_SCOPE_LIMIT: int = int(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_LOCAL_SCOPE_LIMIT"] or 200
     )
-    SELF_HEAL_DEFAULT_DECISION: str = (
-        (
-            get_optional_prefixed_env(
-                "SIDAR_SELF_HEAL_DEFAULT_DECISION", "SELF_HEAL_DEFAULT_DECISION"
-            )
-            or "prompt"
-        )
-        .strip()
-        .lower()
+    SELF_HEAL_HITL_SCOPE_THRESHOLD: int = int(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_HITL_SCOPE_THRESHOLD"] or 3
     )
-    RUFF_AUTOFIX_UNSAFE_RULES: str | None = get_optional_prefixed_env(
-        "SIDAR_RUFF_AUTOFIX_UNSAFE_RULES", "RUFF_AUTOFIX_UNSAFE_RULES"
+    SELF_HEAL_AUTONOMOUS_BATCH_SIZE: int = int(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_AUTONOMOUS_BATCH_SIZE"] or 5
     )
+    SELF_HEAL_DEFAULT_DECISION: str = str(
+        _SELF_HEAL_SETTINGS["SELF_HEAL_DEFAULT_DECISION"] or "prompt"
+    )
+    RUFF_AUTOFIX_UNSAFE_RULES: str | None = _SELF_HEAL_SETTINGS["RUFF_AUTOFIX_UNSAFE_RULES"]  # type: ignore[assignment]
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR: Path = BASE_DIR
@@ -901,7 +813,9 @@ class Config:
 
     # ─── Semantic Cache (v4.0) ───────────────────────────────
     ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
-    SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
+    SEMANTIC_CACHE_THRESHOLD: float = get_float_env(
+        "SEMANTIC_CACHE_THRESHOLD", config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS
     SIDAR_EVENT_BUS_BACKEND: str = os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis")
@@ -953,12 +867,14 @@ class Config:
 
     # ─── RAG — Belge Deposu ──────────────────────────────────
     RAG_DIR: Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
-    RAG_TOP_K: int = get_int_env("RAG_TOP_K", 3)
-    RAG_CHUNK_SIZE: int = get_int_env("RAG_CHUNK_SIZE", 1000)
-    RAG_CHUNK_OVERLAP: int = get_int_env("RAG_CHUNK_OVERLAP", 200)
+    RAG_TOP_K: int = get_int_env("RAG_TOP_K", config_rag.RAG_TOP_K_DEFAULT)
+    RAG_CHUNK_SIZE: int = get_int_env("RAG_CHUNK_SIZE", config_rag.RAG_CHUNK_SIZE_DEFAULT)
+    RAG_CHUNK_OVERLAP: int = get_int_env("RAG_CHUNK_OVERLAP", config_rag.RAG_CHUNK_OVERLAP_DEFAULT)
     # Büyük dosya eşiği: bu karakter sayısını geçen dosyalar okunduğunda
     # RAG deposuna ekleme önerilir (varsayılan ≈ 400 satır / ~20 KB).
-    RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
+    RAG_FILE_THRESHOLD: int = get_int_env(
+        "RAG_FILE_THRESHOLD", config_rag.RAG_FILE_THRESHOLD_DEFAULT
+    )
     RAG_VECTOR_BACKEND: str = os.getenv("RAG_VECTOR_BACKEND", "chroma")  # chroma | pgvector | bm25
     PGVECTOR_TABLE: str = os.getenv("PGVECTOR_TABLE", "rag_embeddings")
     PGVECTOR_EMBEDDING_DIM: int = get_int_env("PGVECTOR_EMBEDDING_DIM", 384)

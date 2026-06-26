@@ -10,6 +10,11 @@ from pathlib import Path
 import pytest
 
 import config
+import config_autonomy
+import config_database
+import config_gpu
+import config_llm
+import config_rag
 from core import config_env_helpers, config_validators
 
 
@@ -18,6 +23,15 @@ def test_config_reexports_split_env_helpers_and_validators() -> None:
     assert config.get_web_scrape_max_chars is config_env_helpers.get_web_scrape_max_chars
     assert config.normalize_ai_provider is config_validators.normalize_ai_provider
     assert config.is_valid_http_url is config_validators.is_valid_http_url
+
+
+def test_config_uses_split_domain_modules() -> None:
+    assert config.LLMClientSettings is config_llm.LLMClientSettings
+    assert config.OLLAMA_BATCH_POLICY is config_llm.OLLAMA_BATCH_POLICY
+    assert config.build_postgres_dsn is config_database.build_postgres_dsn
+    assert config.gpu_mixed_precision_default is config_gpu.gpu_mixed_precision_default
+    assert config.Config.SEMANTIC_CACHE_THRESHOLD == config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
 
 
 def test_get_bool_env_strict_true_false_and_default(monkeypatch):

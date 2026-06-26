@@ -1253,7 +1253,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `ENABLE_SEMANTIC_CACHE` | `false` | Redis tabanlı semantic cache'i aktif eder |
-| `SEMANTIC_CACHE_THRESHOLD` | `0.95` | Cache HIT kabulü için kosinüs benzerlik eşiği |
+| `SEMANTIC_CACHE_THRESHOLD` | `0.90` | Cache HIT kabulü için kosinüs benzerlik eşiği |
 | `SEMANTIC_CACHE_TTL` / `SEMANTIC_CACHE_MAX_ITEMS` | `3600` / `500` | Cache ömrü ve LRU kapasitesi |
 | `SIDAR_REDIS_URL` (`REDIS_URL` legacy) | `.env.example`: `redis://redis:6379/0`, `config.py` fallback: `redis://localhost:6379/0` | Semantic cache, rate limiting ve event-stream katmanının Redis bağlantısı |
 | `SIDAR_EVENT_BUS_CHANNEL` / `SIDAR_EVENT_BUS_GROUP` | `sidar:agent_events` / `sidar:agent_events:cg` | Swarm/event bus için Redis Streams kanal ve consumer group adları |
