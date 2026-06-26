@@ -7,7 +7,6 @@ Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altya
 import contextlib
 import logging
 import os
-import secrets
 import sys
 import warnings
 from collections.abc import Callable
@@ -18,6 +17,10 @@ from typing import Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import core.logging_config as logging_config
+from config_security import (
+    get_missing_security_runtime_keys,
+    load_security_settings,
+)
 from core import config_dotenv, config_postgres
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
@@ -263,6 +266,7 @@ _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
 _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
 
 ENV_PATH = base_env_path
+SECURITY_SETTINGS = load_security_settings()
 
 
 @dataclass(frozen=True)
@@ -694,19 +698,20 @@ class Config:
     TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
-    SIDAR_SKIP_DEFAULT_DOTENV: bool = _skip_default_dotenv_layers()
-    SIDAR_KEYS_FILE: str = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env")
-    ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "sandbox")
-    API_KEY: str = os.getenv("API_KEY", "")
+    SIDAR_SKIP_DEFAULT_DOTENV: bool = SECURITY_SETTINGS.sidar_skip_default_dotenv
+    SIDAR_KEYS_FILE: str = SECURITY_SETTINGS.sidar_keys_file
+    ACCESS_LEVEL: str = SECURITY_SETTINGS.access_level
+    API_KEY: str = SECURITY_SETTINGS.api_key
 
     # ─── JWT Auth (stateless) ─────────────────────────────────
-    # JWT imzalama anahtarı API_KEY ile aynı değere düşmemelidir. Geliştirme/test
-    # ortamlarında eksik JWT_SECRET_KEY için süreç ömrüyle sınırlı güçlü bir anahtar
-    # üretilir; production doğrulaması ise anahtarın açıkça yapılandırılmasını ister.
-    _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED: bool = bool(os.getenv("JWT_SECRET_KEY", "").strip())
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
-    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
+    # Security defaults live in config_security.py so JWT/API key handling and
+    # production validation can evolve outside the large Config surface.
+    _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED: bool = (
+        SECURITY_SETTINGS.jwt_secret_key_explicitly_configured
+    )
+    JWT_SECRET_KEY: str = SECURITY_SETTINGS.jwt_secret_key
+    JWT_ALGORITHM: str = SECURITY_SETTINGS.jwt_algorithm
+    JWT_TTL_DAYS: int = SECURITY_SETTINGS.jwt_ttl_days
 
     # ─── GitHub ──────────────────────────────────────────────
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
@@ -1149,14 +1154,15 @@ class Config:
         """Return critical keys that remain unresolved after the dotenv load chain."""
         missing: list[str] = []
         is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-        if (
-            not str(cls.JWT_SECRET_KEY or "").strip()
-            or (is_production and not cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED)
-        ) and not cls._is_test_env():
-            missing.append("JWT_SECRET_KEY")
-
-        if is_production and not str(cls.API_KEY or "").strip():
-            missing.append("API_KEY")
+        missing.extend(
+            get_missing_security_runtime_keys(
+                api_key=cls.API_KEY,
+                jwt_secret_key=cls.JWT_SECRET_KEY,
+                jwt_secret_key_explicitly_configured=cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED,
+                is_production=is_production,
+                is_test_env=cls._is_test_env(),
+            )
+        )
 
         provider = normalize_ai_provider(cls.AI_PROVIDER)
         for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):
