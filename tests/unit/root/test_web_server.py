@@ -2306,6 +2306,28 @@ async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
     assert web_server._get_client_ip(req) == "9.9.9.9"
 
 
+def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch):
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
+
+    req = _make_request(
+        "/x",
+        headers={"X-Forwarded-For": "9.9.9.9\nX-Injected: yes", "X-Real-IP": "not-an-ip"},
+        client_ip="127.0.0.1",
+    )
+
+    assert web_server._get_client_ip(req) == "127.0.0.1"
+
+
+def test_get_client_ip_accepts_trusted_proxy_cidr(monkeypatch):
+    monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"10.0.0.0/24"})
+
+    req = _make_request(
+        "/x", headers={"X-Forwarded-For": "2001:db8::1"}, client_ip="10.0.0.42"
+    )
+
+    assert web_server._get_client_ip(req) == "2001:db8::1"
+
+
 @pytest.mark.asyncio
 async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
     class _RedisOk:
@@ -9443,7 +9465,7 @@ async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_prox
         client=SimpleNamespace(host="127.0.0.1"),
         headers={"X-Forwarded-For": "   ", "X-Real-IP": "   "},
     )
-    assert web_server._get_client_ip(req) == ""
+    assert web_server._get_client_ip(req) == "127.0.0.1"
 
 
 @pytest.mark.asyncio

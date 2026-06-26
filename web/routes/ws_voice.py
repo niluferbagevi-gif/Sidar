@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from web.routes.ws_chat import send_json_if_connected, websocket_is_connected
+from web.routes.ws_lifecycle import WebSocketLifecycle
 from web.security import (
     SIDAR_WS_VOICE_PROTOCOL,
 )
@@ -65,6 +66,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         VoicePipeline = None  # type: ignore[misc, assignment]
 
     agent = await deps.resolve_agent_instance()
+    lifecycle = WebSocketLifecycle(websocket, logger=getattr(deps, "logger", None))
     pipeline = MultimodalPipeline(agent.llm, deps.cfg)
     voice_pipeline = None
     voice_init_error = ""
@@ -151,9 +153,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         )
         if active_response_task is None or active_response_task.done():
             return
-        active_response_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await active_response_task
+        await lifecycle.cancel_task(active_response_task)
         await send_json_if_connected(
             websocket, {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
         )
@@ -250,12 +250,14 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
 
         commit_audio = bytes(audio_buffer)
         audio_buffer.clear()
-        active_response_task = asyncio.create_task(
-            _run_voice_turn(
-                audio_bytes=commit_audio,
-                mime_type=session_mime_type,
-                language=session_language,
-                prompt=session_prompt,
+        active_response_task = lifecycle.track_task(
+            asyncio.create_task(
+                _run_voice_turn(
+                    audio_bytes=commit_audio,
+                    mime_type=session_mime_type,
+                    language=session_language,
+                    prompt=session_prompt,
+                )
             )
         )
 
@@ -397,16 +399,13 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
             await _process_audio_commit()
     except WebSocketDisconnect:
         deps.logger.info("İstemci voice WebSocket bağlantısını kesti.")
-        if active_response_task and not active_response_task.done():
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await active_response_task
+        await lifecycle.close(reason="disconnect")
     except Exception as exc:
         if deps.anyio_closed is not None and isinstance(exc, deps.anyio_closed):
             deps.logger.info(
                 "İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError)."
             )
-            if active_response_task and not active_response_task.done():  # pragma: no cover
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await active_response_task
+            await lifecycle.close(reason="closed_resource")
         else:
             deps.logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
+            await lifecycle.close(reason="unexpected_error")

@@ -20,6 +20,7 @@ import hmac
 import importlib
 import importlib.util
 import inspect
+import ipaddress
 import json
 import logging
 import os
@@ -2290,23 +2291,57 @@ async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_se
         return await _local_is_rate_limited(redis_key, limit, window_sec)
 
 
+def _parse_forwarded_ip(value: str) -> str | None:
+    """Return a normalized IP from a proxy header or None when invalid."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return None
+    if any(ch in candidate for ch in "\r\n\t "):
+        return None
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _trusted_proxy_matches(direct_ip: str) -> bool:
+    """Return whether the direct peer is allowed to supply forwarding headers."""
+    trusted_proxies = getattr(Config, "TRUSTED_PROXIES", frozenset())
+    if "*" in trusted_proxies:
+        return True
+    if direct_ip in trusted_proxies:
+        return True
+    try:
+        peer_ip = ipaddress.ip_address(direct_ip)
+    except ValueError:
+        return False
+    for proxy in trusted_proxies:
+        try:
+            if peer_ip in ipaddress.ip_network(str(proxy), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _get_client_ip(request: Request) -> str:
-    """İstemci IP'sini döndürür.
+    """İstemci IP'sini doğrulanmış proxy başlıklarından ya da direkt bağlantıdan döndürür.
 
     Proxy başlıkları (X-Forwarded-For, X-Real-IP) yalnızca direkt bağlantının
     Config.TRUSTED_PROXIES listesindeki bir adresten gelmesi durumunda okunur.
-    Bu sayede saldırganın bu başlıkları taklit ederek rate-limit'i atlatması engellenir.
+    Header değeri IP parser ile doğrulanır; boş, çok satırlı, port ekli veya
+    IP olmayan değerler header injection/rate-limit bypass riskine karşı yok sayılır.
     """
     direct_ip = request.client.host if request.client else "unknown"
-    if direct_ip in Config.TRUSTED_PROXIES:
+    if _trusted_proxy_matches(direct_ip):
         xff = request.headers.get("X-Forwarded-For", "")
-        if xff:
-            first_ip = xff.split(",")[0].strip()
-            if first_ip:
-                return first_ip
-        xri = request.headers.get("X-Real-IP", "")
-        if xri:
-            return xri.strip()
+        first_forwarded = xff.split(",", 1)[0] if xff else ""
+        parsed_xff = _parse_forwarded_ip(first_forwarded)
+        if parsed_xff:
+            return parsed_xff
+        parsed_real_ip = _parse_forwarded_ip(request.headers.get("X-Real-IP", ""))
+        if parsed_real_ip:
+            return parsed_real_ip
     return direct_ip
 
 

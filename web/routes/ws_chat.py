@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from web.routes.ws_lifecycle import WebSocketLifecycle
 from web.security import extract_ws_header_token as default_extract_ws_header_token
 
 
@@ -140,6 +141,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         await websocket.accept()
 
     agent = await deps.resolve_agent_instance()
+    lifecycle = WebSocketLifecycle(websocket, logger=getattr(deps, "logger", None))
     active_task: asyncio.Task[Any] | None = None
     ws_user_id = ""
     ws_username = ""
@@ -162,12 +164,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             await websocket.send_json({"auth_ok": True})
 
     async def _cancel_task_and_wait(task: Any | None) -> None:
-        if task is None or task.done():
-            return
-        task.cancel()
         if inspect.isawaitable(task):
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            await lifecycle.cancel_task(task)
 
     async def generate_response(msg: str) -> None:
         sub_id = None
@@ -524,18 +522,20 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                         )
                         continue
                     await _cancel_task_and_wait(room.active_task)
-                    room.active_task = asyncio.create_task(
-                        generate_room_response(room, actor_name=display_name, msg=command)
+                    room.active_task = lifecycle.track_task(
+                        asyncio.create_task(
+                            generate_room_response(room, actor_name=display_name, msg=command)
+                        )
                     )
                     await asyncio.sleep(0)
                 continue
 
-            active_task = asyncio.create_task(generate_response(user_message))
+            active_task = lifecycle.track_task(asyncio.create_task(generate_response(user_message)))
             await asyncio.sleep(0)
 
     except WebSocketDisconnect:
         deps.logger.info("İstemci WebSocket bağlantısını kesti.")
-        await _cancel_task_and_wait(active_task)
+        await lifecycle.close(reason="disconnect")
         if joined_room_id:
             room = deps.collaboration_rooms.get(joined_room_id)
             await _cancel_task_and_wait(getattr(room, "active_task", None))
@@ -545,7 +545,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
         if deps.anyio_closed is not None and isinstance(_ws_exc, deps.anyio_closed):
             deps.logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            await _cancel_task_and_wait(active_task)
+            await lifecycle.close(reason="closed_resource")
             if joined_room_id:
                 room = deps.collaboration_rooms.get(joined_room_id)
                 await _cancel_task_and_wait(getattr(room, "active_task", None))
@@ -556,5 +556,6 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 await websocket.send_json(
                     {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True}
                 )
+            await lifecycle.close(reason="unexpected_error")
             with contextlib.suppress(Exception):
                 await deps.leave_collaboration_room(websocket)
