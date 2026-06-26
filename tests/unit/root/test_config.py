@@ -1606,6 +1606,36 @@ def test_trusted_proxies_defaults_to_loopback(monkeypatch) -> None:
     assert "127.0.0.1" in reloaded.Config.TRUSTED_PROXIES
 
 
+def test_jwt_secret_no_longer_falls_back_to_api_key(monkeypatch):
+    monkeypatch.setenv("API_KEY", "api-key-must-not-sign-jwt")
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.API_KEY == "api-key-must-not-sign-jwt"
+    assert reloaded.Config.JWT_SECRET_KEY
+    assert reloaded.Config.JWT_SECRET_KEY != "api-key-must-not-sign-jwt"
+    assert reloaded.Config._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED is False
+
+
+def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setattr(config.Config, "API_KEY", "")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "generated-runtime-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+
+    assert "JWT_SECRET_KEY" in missing
+    assert "API_KEY" in missing
+    with pytest.raises(ValueError, match="JWT_SECRET_KEY, API_KEY boş bırakılamaz"):
+        config.Config()
+
+
 def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -1799,9 +1829,11 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
     monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "bad-url")
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "jwt-ok")
+    monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
     monkeypatch.setenv("SIDAR_ENV", "production")
     assert config.Config.get_missing_critical_runtime_keys() == [
+        "API_KEY",
         "LITELLM_GATEWAY_URL",
         "MEMORY_ENCRYPTION_KEY",
     ]

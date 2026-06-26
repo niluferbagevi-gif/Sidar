@@ -7,6 +7,7 @@ Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altya
 import contextlib
 import logging
 import os
+import secrets
 import sys
 import warnings
 from collections.abc import Callable
@@ -407,6 +408,7 @@ def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LO
         _NOISY_DEPENDENCY_LOGGERS, verbose_http=verbose_http
     )
 
+
 _DEPENDENCY_AUTO = object()
 
 
@@ -698,7 +700,11 @@ class Config:
     API_KEY: str = os.getenv("API_KEY", "")
 
     # ─── JWT Auth (stateless) ─────────────────────────────────
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", os.getenv("API_KEY", ""))
+    # JWT imzalama anahtarı API_KEY ile aynı değere düşmemelidir. Geliştirme/test
+    # ortamlarında eksik JWT_SECRET_KEY için süreç ömrüyle sınırlı güçlü bir anahtar
+    # üretilir; production doğrulaması ise anahtarın açıkça yapılandırılmasını ister.
+    _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED: bool = bool(os.getenv("JWT_SECRET_KEY", "").strip())
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY") or secrets.token_urlsafe(32)
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
 
@@ -1142,8 +1148,15 @@ class Config:
     def get_missing_critical_runtime_keys(cls) -> list[str]:
         """Return critical keys that remain unresolved after the dotenv load chain."""
         missing: list[str] = []
-        if not str(cls.JWT_SECRET_KEY or "").strip() and not cls._is_test_env():
+        is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
+        if (
+            not str(cls.JWT_SECRET_KEY or "").strip()
+            or (is_production and not cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED)
+        ) and not cls._is_test_env():
             missing.append("JWT_SECRET_KEY")
+
+        if is_production and not str(cls.API_KEY or "").strip():
+            missing.append("API_KEY")
 
         provider = normalize_ai_provider(cls.AI_PROVIDER)
         for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):
@@ -1154,10 +1167,7 @@ class Config:
             elif not is_nonempty_secret(raw_value):
                 missing.append(setting_name)
 
-        if (
-            os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-            and not str(cls.MEMORY_ENCRYPTION_KEY or "").strip()
-        ):
+        if is_production and not str(cls.MEMORY_ENCRYPTION_KEY or "").strip():
             missing.append("MEMORY_ENCRYPTION_KEY")
 
         return missing
@@ -1227,10 +1237,12 @@ class Config:
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
         missing_keys = self.__class__.get_missing_critical_runtime_keys()
-        if "JWT_SECRET_KEY" in missing_keys:
+        blocking_missing = [key for key in ("JWT_SECRET_KEY", "API_KEY") if key in missing_keys]
+        if blocking_missing:
             self.__class__._log_dotenv_load_status(missing_keys=missing_keys)
+            missing_label = ", ".join(blocking_missing)
             raise ValueError(
-                "JWT_SECRET_KEY boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme sırasını kontrol edin."
+                f"{missing_label} boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme sırasını kontrol edin."
             )
 
     @classmethod
