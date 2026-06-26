@@ -10,6 +10,7 @@ Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 from __future__ import annotations
 
 import argparse
+import asyncio
 import concurrent.futures
 import contextlib
 import json
@@ -60,6 +61,46 @@ _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 _DOCTOR_APPLY_ALL_APPROVED: bool | None = None
 _LAUNCHER_DOCTOR_AUTO_FIX_YES = False
 BASE_DIR = str(Path(__file__).resolve().parent)
+
+
+class LauncherError(Exception):
+    """Base error for typed launcher diagnostics."""
+
+
+class ConfigReloadError(LauncherError):
+    """Raised when launcher-side config reload cannot complete."""
+
+
+class DoctorCheckError(LauncherError):
+    """Raised when a Doctor check or auto-fix step cannot complete."""
+
+
+class LauncherEventLoopError(LauncherError):
+    """Raised when the launcher cannot safely run an async coroutine."""
+
+
+class LauncherEventLoopManager:
+    """Centralize synchronous launcher access to async coroutines.
+
+    main.py is mostly synchronous.  New async call sites should use this manager
+    instead of scattering direct ``asyncio.Runner`` calls, so nested loop errors
+    surface as a typed launcher diagnostic.
+    """
+
+    def run(self, coro: Any) -> Any:
+        """Run one coroutine from a synchronous launcher context."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            with asyncio.Runner() as runner:
+                return runner.run(coro)
+        raise LauncherEventLoopError(
+            "LauncherEventLoopManager.run() cannot be called from an active event loop; "
+            "await the coroutine in the caller instead."
+        )
+
+
+_EVENT_LOOP_MANAGER = LauncherEventLoopManager()
 
 try:
     import config as config_module
@@ -289,8 +330,9 @@ def _reload_config_environment(*, profile: str | None, reason: str) -> bool:
     global cfg
     try:
         reloaded_cfg = reload_environment(profile=profile)
-    except Exception as exc:
-        logger.warning("%s sonrası environment reload başarısız: %s", reason, exc)
+    except (ConfigReloadError, RuntimeError, ValueError, OSError, TypeError) as exc:
+        error = ConfigReloadError(f"{reason} sonrası environment reload başarısız")
+        logger.warning("%s: %s", error, exc)
         print(f"{YELLOW}⚠ Environment reload başarısız: {exc}{RESET}")
         return False
 
@@ -365,7 +407,7 @@ def _reload_database_env_from_loaded_dotenv_chain() -> bool:
 
     try:
         events = config_module.get_dotenv_load_report()
-    except Exception as exc:
+    except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
         logger.debug("Doctor auto-fix dotenv raporu okunamadı: %s", exc)
         return False
 
@@ -593,6 +635,27 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     return []
 
 
+
+
+def _doctor_auto_fix_fallback_commands(details: dict[str, Any]) -> list[str]:
+    """Return fallback Doctor commands when primary auto-fix fails."""
+    fallback = details.get("auto_fix_fallback") or details.get("auto_fix_fallbacks")
+    if isinstance(fallback, str) and fallback.strip():
+        return [fallback.strip()]
+    if isinstance(fallback, list):
+        return [step.strip() for step in fallback if isinstance(step, str) and step.strip()]
+
+    recommended = details.get("recommended_commands")
+    if isinstance(recommended, list):
+        primary = set(_doctor_auto_fix_commands(details))
+        return [
+            step.strip()
+            for step in recommended
+            if isinstance(step, str) and step.strip() and step.strip() not in primary
+        ]
+    return []
+
+
 def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> list[str]:
     """Interactive selector for checks that publish multiple auto-fix alternatives."""
     return commands
@@ -615,7 +678,8 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
-        logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
+        error = DoctorCheckError("Doctor auto_fix başlatılamadı")
+        logger.warning("%s: %s", error, exc)
         print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
         return False
     returncode = int(completed.returncode)
@@ -655,8 +719,19 @@ def _run_doctor_auto_fix(
             return False
 
     ran_any = False
-    for auto_fix in selected_auto_fix_commands:
+    pending_commands = list(selected_auto_fix_commands)
+    fallback_commands = _doctor_auto_fix_fallback_commands(details)
+    used_fallback = False
+    index = 0
+    while index < len(pending_commands):
+        auto_fix = pending_commands[index]
+        index += 1
         if not _run_doctor_auto_fix_command(auto_fix):
+            if not used_fallback and fallback_commands:
+                used_fallback = True
+                pending_commands.extend(fallback_commands)
+                print(f"{YELLOW}   • Auto-fix başarısız; fallback komutları denenecek.{RESET}")
+                continue
             return ran_any
         ran_any = True
         if check_func is None:
@@ -724,7 +799,7 @@ def _revalidate_doctor_check_after_auto_fix(
         _reload_environment_after_auto_fix(source_details)
     try:
         updated_check = check_func()
-    except Exception as exc:  # pragma: no cover - defensive launcher path
+    except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
         logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
         print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
         _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
@@ -799,7 +874,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             check_graphrag_entity_memory_ready,
             check_rag_readiness,
         )
-    except Exception as exc:  # pragma: no cover - defensive launcher path
+    except (ImportError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
         logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
         return
 
@@ -842,7 +917,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             if check_name == "database_env":
                 skip_database_dependents = final_status == "fail"
             return final_status
-        except Exception as exc:  # pragma: no cover - defensive launcher path
+        except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
             return "error"
@@ -870,7 +945,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             check_name, _check_func = futures[future]
             try:
                 completed[check_name] = future.result()
-            except Exception as exc:  # pragma: no cover - defensive launcher path
+            except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
                 completed[check_name] = exc
 
     for check_name, check_func in parallel_checks:
@@ -926,6 +1001,7 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         try:
             import httpx
 
+            httpx_http_error = getattr(httpx, "HTTPError", RuntimeError)
             base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
             tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
             with httpx.Client(timeout=2) as client:
@@ -938,7 +1014,7 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         except ImportError:
             logger.warning("'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.")
             print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
-        except Exception as exc:
+        except (httpx_http_error, RuntimeError, OSError) as exc:
             logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
             print(
                 f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}"
@@ -1006,7 +1082,7 @@ def _stream_pipe(
         target.flush()
         if mirror:
             print(f"{color}{prefix}{RESET} {line}", end="")
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(OSError, ValueError):
         pipe.close()
 
 
@@ -1054,7 +1130,7 @@ def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
             terminate()
             try:
                 process.wait(timeout=3)
-            except Exception:
+            except (subprocess.TimeoutExpired, TimeoutError):
                 if callable(kill):  # pragma: no cover
                     kill()  # pragma: no cover
         if f:
@@ -1243,7 +1319,7 @@ def execute_command(
     except subprocess.CalledProcessError as e:
         print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {e.returncode}){RESET}")
         return e.returncode
-    except Exception as e:
+    except (LauncherError, RuntimeError, OSError, ValueError) as e:
         print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
         return 1
 

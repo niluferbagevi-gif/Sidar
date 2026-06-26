@@ -237,6 +237,36 @@ def test_build_command_cli_non_ollama_omits_model() -> None:
     assert "--model" not in cmd
 
 
+
+def test_launcher_event_loop_manager_runs_coroutine() -> None:
+    async def _coro() -> str:
+        return "ok"
+
+    assert main.LauncherEventLoopManager().run(_coro()) == "ok"
+
+
+@pytest.mark.asyncio
+async def test_launcher_event_loop_manager_rejects_nested_loop() -> None:
+    async def _coro() -> str:
+        return "nested"
+
+    coro = _coro()
+    with pytest.raises(main.LauncherEventLoopError):
+        main.LauncherEventLoopManager().run(coro)
+    coro.close()
+
+
+def test_reload_config_environment_reports_typed_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_config = types.SimpleNamespace(
+        reload_environment=lambda **_kwargs: (_ for _ in ()).throw(ValueError("bad env"))
+    )
+    monkeypatch.setattr(main, "config_module", fake_config)
+
+    assert main._reload_config_environment(profile="development", reason="test") is False
+    assert "Environment reload başarısız" in capsys.readouterr().out
+
 def test_launcher_doctor_preflight_prints_actionable_guidance(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -661,6 +691,35 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     assert "scripts.unused_follow_up" not in output
     assert "Auto-fix Doctor/rag_readiness kontrolünü düzeltti" in output
 
+
+
+def test_doctor_auto_fix_runs_fallback_when_primary_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[list[str]] = []
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={
+            "auto_fix": "uv run python -m scripts.primary_fix",
+            "auto_fix_fallback": "uv run python -m scripts.fallback_fix",
+        },
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(cmd)
+        return SimpleNamespace(returncode=1 if len(commands) == 1 else 0)
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check) is True
+    assert commands == [
+        ["uv", "run", "python", "-m", "scripts.primary_fix"],
+        ["uv", "run", "python", "-m", "scripts.fallback_fix"],
+    ]
+    assert "fallback komutları denenecek" in capsys.readouterr().out
 
 def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:
     check = SimpleNamespace(
