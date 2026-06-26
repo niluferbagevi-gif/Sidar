@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import concurrent.futures
 import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ from typing import Any, cast
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
+MAX_AUTOFIX_RETRIES = 3
 
 
 # Terminal Renkleri (ANSI)
@@ -274,6 +276,22 @@ def _default_launch_selection() -> dict[str, Any]:
     )
 
 
+@contextlib.contextmanager
+def _launcher_session_lock(session_path: Path, *, exclusive: bool):
+    """Lock launcher session cache access across concurrent terminal processes."""
+    lock_path = session_path.with_suffix(session_path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:
+        with contextlib.suppress(OSError):
+            os.chmod(lock_path, 0o600)
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(lock_file.fileno(), operation)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _save_launcher_session(selection: dict[str, object], path: Path | None = None) -> Path:
     """Sihirbaz seçimlerini atomik şekilde .sidar_session.json cache'ine yazar."""
     session_path = path or _launcher_session_path()
@@ -282,13 +300,16 @@ def _save_launcher_session(selection: dict[str, object], path: Path | None = Non
         "selection": _normalize_launch_selection(selection),
     }
     session_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = session_path.with_suffix(session_path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # Session cache may contain provider/model choices and future auth/session metadata;
-    # keep it readable only by the current user before and after the atomic replace.
-    os.chmod(tmp_path, 0o600)
-    tmp_path.replace(session_path)
-    os.chmod(session_path, 0o600)
+    with _launcher_session_lock(session_path, exclusive=True):
+        tmp_path = session_path.with_suffix(f"{session_path.suffix}.{os.getpid()}.tmp")
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        # Session cache may contain provider/model choices and future auth/session metadata;
+        # keep it readable only by the current user before and after the atomic replace.
+        os.chmod(tmp_path, 0o600)
+        tmp_path.replace(session_path)
+        os.chmod(session_path, 0o600)
     return session_path
 
 
@@ -296,7 +317,8 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     """Son sihirbaz seçimlerini cache'den güvenli şekilde okur."""
     session_path = path or _launcher_session_path()
     try:
-        payload = json.loads(session_path.read_text(encoding="utf-8"))
+        with _launcher_session_lock(session_path, exclusive=False):
+            payload = json.loads(session_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         logger.debug(
             "Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path
@@ -635,8 +657,6 @@ def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     return []
 
 
-
-
 def _doctor_auto_fix_fallback_commands(details: dict[str, Any]) -> list[str]:
     """Return fallback Doctor commands when primary auto-fix fails."""
     fallback = details.get("auto_fix_fallback") or details.get("auto_fix_fallbacks")
@@ -728,7 +748,15 @@ def _run_doctor_auto_fix(
     fallback_commands = _doctor_auto_fix_fallback_commands(details)
     used_fallback = False
     index = 0
+    attempts = 0
     while index < len(pending_commands):
+        if attempts >= MAX_AUTOFIX_RETRIES:
+            print(
+                f"{YELLOW}   • Auto-fix tekrar limiti aşıldı "
+                f"({MAX_AUTOFIX_RETRIES}); kalan komutlar atlandı.{RESET}"
+            )
+            return ran_any
+        attempts += 1
         auto_fix = pending_commands[index]
         index += 1
         if not _run_doctor_auto_fix_command(auto_fix):
@@ -804,7 +832,14 @@ def _revalidate_doctor_check_after_auto_fix(
         _reload_environment_after_auto_fix(source_details)
     try:
         updated_check = check_func()
-    except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
+    except (
+        DoctorCheckError,
+        RuntimeError,
+        ValueError,
+        OSError,
+        TypeError,
+        AttributeError,
+    ) as exc:  # pragma: no cover - defensive launcher path
         logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
         print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
         _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
@@ -895,6 +930,27 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         _DOCTOR_APPLY_ALL_APPROVED = apply_all_mode
     skip_database_dependents = False
     skip_summary_printed = False
+    auto_fix_attempts = 0
+
+    def _guarded_invoke_doctor_auto_fix(check: Any, check_func: Any) -> bool:
+        nonlocal auto_fix_attempts
+        details = getattr(check, "details", {}) or {}
+        status = str(getattr(check, "status", "warn") or "warn")
+        has_auto_fix = (
+            status in {"warn", "fail"}
+            and isinstance(details, dict)
+            and bool(_doctor_auto_fix_commands(details))
+        )
+        if not has_auto_fix:
+            return _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
+        if auto_fix_attempts >= MAX_AUTOFIX_RETRIES:
+            print(
+                f"{YELLOW}   • Doctor auto-fix toplam tekrar limiti aşıldı "
+                f"({MAX_AUTOFIX_RETRIES}); sonraki öneriler uygulanmadı.{RESET}"
+            )
+            return False
+        auto_fix_attempts += 1
+        return _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
 
     def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
         nonlocal skip_database_dependents, skip_summary_printed
@@ -916,13 +972,20 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             check = check_func()
             _print_doctor_check_summary(check)
             _clear_doctor_auto_fix_revalidation_cache()
-            auto_fix_applied = _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
+            auto_fix_applied = _guarded_invoke_doctor_auto_fix(check, check_func)
             final_check = _doctor_final_check_after_auto_fix(check, auto_fix_applied)
             final_status = str(getattr(final_check, "status", "warn") or "warn")
             if check_name == "database_env":
                 skip_database_dependents = final_status == "fail"
             return final_status
-        except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
+        except (
+            DoctorCheckError,
+            RuntimeError,
+            ValueError,
+            OSError,
+            TypeError,
+            AttributeError,
+        ) as exc:  # pragma: no cover - defensive launcher path
             logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
             return "error"
@@ -950,7 +1013,14 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             check_name, _check_func = futures[future]
             try:
                 completed[check_name] = future.result()
-            except (DoctorCheckError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
+            except (
+                DoctorCheckError,
+                RuntimeError,
+                ValueError,
+                OSError,
+                TypeError,
+                AttributeError,
+            ) as exc:  # pragma: no cover - defensive launcher path
                 completed[check_name] = exc
 
     for check_name, check_func in parallel_checks:
@@ -960,7 +1030,7 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
             print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
             continue
         _print_doctor_check_summary(result)
-        _invoke_doctor_auto_fix(result, check_func, apply_all_mode)
+        _guarded_invoke_doctor_auto_fix(result, check_func)
 
 
 def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:

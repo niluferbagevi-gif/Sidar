@@ -237,7 +237,6 @@ def test_build_command_cli_non_ollama_omits_model() -> None:
     assert "--model" not in cmd
 
 
-
 def test_launcher_event_loop_manager_runs_coroutine() -> None:
     async def _coro() -> str:
         return "ok"
@@ -266,6 +265,7 @@ def test_reload_config_environment_reports_typed_failure(
 
     assert main._reload_config_environment(profile="development", reason="test") is False
     assert "Environment reload başarısız" in capsys.readouterr().out
+
 
 def test_launcher_doctor_preflight_prints_actionable_guidance(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -692,7 +692,6 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     assert "Auto-fix Doctor/rag_readiness kontrolünü düzeltti" in output
 
 
-
 def test_doctor_auto_fix_runs_fallback_when_primary_fails(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -720,6 +719,7 @@ def test_doctor_auto_fix_runs_fallback_when_primary_fails(
         ["uv", "run", "python", "-m", "scripts.fallback_fix"],
     ]
     assert "fallback komutları denenecek" in capsys.readouterr().out
+
 
 def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:
     check = SimpleNamespace(
@@ -937,6 +937,100 @@ def test_launcher_session_save_load_normalizes_values(
     assert loaded["provider"] == "ollama"
     assert loaded["level"] == "sandbox"
     assert loaded["extra_args"]["port"] == "9999"
+
+
+def test_launcher_session_save_load_uses_file_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[int] = []
+
+    def _fake_flock(_fd: int, operation: int) -> None:
+        calls.append(operation)
+
+    monkeypatch.setattr(main.fcntl, "flock", _fake_flock)
+    session_path = tmp_path / ".sidar_session.json"
+
+    main._save_launcher_session(
+        {
+            "mode": "web",
+            "provider": "ollama",
+            "level": "full",
+            "log": "info",
+            "extra_args": {"host": "127.0.0.1", "port": "7860"},
+        },
+        session_path,
+    )
+    assert main._load_launcher_session(session_path) is not None
+
+    assert main.fcntl.LOCK_EX in calls
+    assert main.fcntl.LOCK_SH in calls
+    assert calls.count(main.fcntl.LOCK_UN) == 2
+    assert (session_path.with_suffix(session_path.suffix + ".lock").stat().st_mode & 0o777) == 0o600
+
+
+def test_run_doctor_auto_fix_stops_at_retry_limit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 2)
+    monkeypatch.setattr(main, "_run_doctor_auto_fix_command", lambda _cmd: True)
+
+    commands = [
+        "uv run python -m scripts.one",
+        "uv run python -m scripts.two",
+        "uv run python -m scripts.three",
+    ]
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix_steps": commands, "status": "fail"},
+    )
+
+    assert main._run_doctor_auto_fix(check, apply_all_mode=True) is True
+
+    output = capsys.readouterr().out
+    assert "Auto-fix tekrar limiti aşıldı" in output
+
+
+def test_launcher_doctor_preflight_limits_total_auto_fix_attempts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 1)
+    monkeypatch.setattr(main, "_DOCTOR_APPLY_ALL_APPROVED", True)
+
+    def _warn_check(name: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            name=name,
+            status="warn",
+            message=name,
+            details={"auto_fix": "uv run python -m scripts.seed_rag"},
+        )
+
+    monkeypatch.setattr(doctor, "check_database_env", lambda: _warn_check("database_env"))
+    monkeypatch.setattr(
+        doctor, "check_database_connectivity", lambda: _warn_check("database_connectivity")
+    )
+    monkeypatch.setattr(doctor, "check_rag_readiness", lambda: _warn_check("rag_readiness"))
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: _warn_check("graphrag_entity_memory_ready"),
+    )
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", lambda: _warn_check("gpu_memory_config"))
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main,
+        "_invoke_doctor_auto_fix",
+        lambda check, _check_func, _apply_all_mode: calls.append(check.name) or True,
+    )
+
+    main._run_launcher_doctor_preflight(doctor_apply_all_yes=True)
+
+    output = capsys.readouterr().out
+    assert calls == ["database_env"]
+    assert "Doctor auto-fix toplam tekrar limiti aşıldı" in output
 
 
 def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -38,6 +38,7 @@ env/
 .sidar_keys.env
 .sidar_keys.env.local
 .sidar_session.json
+.sidar_session.json.lock
 
 # Secrets & credentials
 secrets/
