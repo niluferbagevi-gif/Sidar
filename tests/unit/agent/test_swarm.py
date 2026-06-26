@@ -277,6 +277,88 @@ def test_dispatch_distributed_pushes_task_to_backend(monkeypatch):
     assert dispatched.headers["session_id"] == "sess-42"
 
 
+def test_dispatch_distributed_reuses_idempotency_key(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    backend = InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: reviewer)
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: reviewer)
+
+    task = SwarmTask(
+        goal="Webhook incele",
+        intent="review",
+        context={"idempotency_key": "delivery-123"},
+    )
+
+    first = __import__("asyncio").run(
+        orchestrator.dispatch_distributed(task, session_id="sess-42", sender="supervisor")
+    )
+    second = __import__("asyncio").run(
+        orchestrator.dispatch_distributed(task, session_id="sess-42", sender="supervisor")
+    )
+
+    assert first is second
+    assert len(backend.dispatched) == 1
+
+
+def test_task_timeout_prefers_task_model_provider_then_global():
+    cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="qwen2.5-coder:7b",
+        SWARM_TASK_TIMEOUT_BY_MODEL='{"qwen2.5-coder:7b": 12}',
+        SWARM_TASK_TIMEOUT_SECONDS_OLLAMA=8,
+        SWARM_TASK_TIMEOUT_SECONDS=3,
+        REACT_TIMEOUT=2,
+    )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert (
+        orchestrator._task_timeout_seconds(
+            SwarmTask(goal="x", context={"timeout_seconds": "5"})
+        )
+        == 5
+    )
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 12
+    assert (
+        orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"model": "other"})) == 8
+    )
+
+
+def test_execute_task_runs_rollback_hook_on_failure(monkeypatch):
+    class _FailingAgent:
+        def __init__(self):
+            self.rollback_called = False
+
+        async def handle(self, _envelope):
+            raise RuntimeError("boom")
+
+        async def rollback_task(self, envelope, exc):
+            self.rollback_called = True
+            assert envelope.task_id == "swarm-1"
+            assert str(exc) == "boom"
+            return "rolled"
+
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    agent = _FailingAgent()
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(
+        orchestrator._execute_task(
+            SwarmTask(task_id="swarm-1", goal="Kod yaz", intent="code"),
+            session_id="sess-1",
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.agent_role == "coder"
+    assert agent.rollback_called is True
+    assert result.evidence == ["rollback:rollback_task:rolled"]
+
+
 def test_is_contracts_module_healthy_rejects_invalid_contract_module():
     empty = SimpleNamespace()
     assert swarm._is_contracts_module_healthy(empty) is False

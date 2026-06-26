@@ -87,6 +87,11 @@ def test_agent_max_react_steps_aliases_legacy_default() -> None:
     assert config.Config.AGENT_MAX_REACT_STEPS == config.Config.MAX_REACT_STEPS
 
 
+def test_swarm_timeout_config_exposes_model_and_ollama_overrides() -> None:
+    assert config.Config.SWARM_TASK_TIMEOUT_BY_MODEL == ""
+    assert config.Config.SWARM_TASK_TIMEOUT_SECONDS_OLLAMA == config.Config.SWARM_TASK_TIMEOUT_SECONDS
+
+
 def test_gpu_mixed_precision_defaults_to_true_only_for_production(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     assert config.gpu_mixed_precision_default() is True

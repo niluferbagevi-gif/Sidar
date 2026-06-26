@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import inspect
 import json
 import logging
 import sys
@@ -370,10 +371,94 @@ class SwarmOrchestrator:
         self.router = TaskRouter()
         self._active_agents: dict[str, object] = {}  # task_id → agent instance
         self.delegation_backend: AsyncDelegationBackend | None = None
+        self._distributed_idempotency_cache: dict[str, BrokerTaskResult] = {}
 
     def configure_delegation_backend(self, backend: AsyncDelegationBackend | None) -> None:
         """Broker tabanlı delegasyon backend'ini enjekte eder."""
         self.delegation_backend = backend
+
+    @staticmethod
+    def _distributed_idempotency_key(task: SwarmTask, *, session_id: str, receiver: str) -> str:
+        """Return a stable duplicate-suppression key for distributed dispatch."""
+        explicit = str(
+            task.context.get("idempotency_key")
+            or task.context.get("correlation_id")
+            or task.context.get("webhook_delivery_id")
+            or ""
+        ).strip()
+        if explicit:
+            return explicit
+        return f"{session_id}:{receiver}:{task.task_id}"
+
+    def _task_timeout_seconds(self, task: SwarmTask) -> float:
+        """Resolve timeout with task, model, provider and global fallbacks."""
+        explicit = str(task.context.get("timeout_seconds", "") or "").strip()
+        if explicit:
+            try:
+                return max(0.001, float(explicit))
+            except ValueError:
+                logger.debug("Invalid task timeout_seconds ignored: %s", explicit)
+
+        model = str(
+            task.context.get("model")
+            or getattr(self.cfg, "CODING_MODEL", "")
+            or getattr(self.cfg, "TEXT_MODEL", "")
+            or ""
+        ).strip()
+        raw_model_map = getattr(self.cfg, "SWARM_TASK_TIMEOUT_BY_MODEL", {}) or {}
+        model_map: dict[str, Any] = {}
+        if isinstance(raw_model_map, str) and raw_model_map.strip():
+            try:
+                parsed = json.loads(raw_model_map)
+                if isinstance(parsed, dict):
+                    model_map = parsed
+            except json.JSONDecodeError:
+                logger.debug("Invalid SWARM_TASK_TIMEOUT_BY_MODEL JSON ignored")
+        elif isinstance(raw_model_map, dict):
+            model_map = raw_model_map
+        if model and model in model_map:
+            try:
+                return max(0.001, float(model_map[model]))
+            except (TypeError, ValueError):
+                logger.debug("Invalid model timeout ignored for %s: %s", model, model_map[model])
+
+        provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").strip().upper()
+        provider_key = f"SWARM_TASK_TIMEOUT_SECONDS_{provider}" if provider else ""
+        provider_timeout = getattr(self.cfg, provider_key, None) if provider_key else None
+        if provider_timeout is not None:
+            try:
+                return max(0.001, float(provider_timeout))
+            except (TypeError, ValueError):
+                logger.debug("Invalid provider timeout ignored for %s", provider_key)
+
+        return max(
+            0.001,
+            float(
+                getattr(
+                    self.cfg,
+                    "SWARM_TASK_TIMEOUT_SECONDS",
+                    getattr(self.cfg, "REACT_TIMEOUT", 60),
+                )
+                or getattr(self.cfg, "REACT_TIMEOUT", 60)
+                or 60
+            ),
+        )
+
+    async def _attempt_task_rollback(self, agent: Any, envelope: Any, exc: Exception) -> str:
+        """Run best-effort rollback hook exposed by an agent after task failure."""
+        for hook_name in ("rollback_task", "rollback"):
+            hook = getattr(agent, hook_name, None)
+            if not callable(hook):
+                continue
+            try:
+                result = hook(envelope, exc)
+                if inspect.isawaitable(result):
+                    result = await result
+                return f"rollback:{hook_name}:{result or 'completed'}"
+            except Exception as rollback_exc:
+                logger.warning("Swarm rollback hook failed [%s]: %s", hook_name, rollback_exc)
+                return f"rollback:{hook_name}:failed:{rollback_exc}"
+        return ""
 
     async def dispatch_distributed(
         self,
@@ -403,6 +488,13 @@ class SwarmOrchestrator:
         if spec is None:
             raise RuntimeError("Dağıtık delegasyon için uygun ajan bulunamadı.")
 
+        idempotency_key = self._distributed_idempotency_key(
+            task, session_id=session_id, receiver=spec.role_name
+        )
+        cached_result = self._distributed_idempotency_cache.get(idempotency_key)
+        if cached_result is not None:
+            return cached_result
+
         envelope = TaskEnvelope(
             task_id=task.task_id,
             sender=sender,
@@ -423,7 +515,9 @@ class SwarmOrchestrator:
             reply_queue=reply_queue,
             headers={"session_id": session_id},
         )
-        return await self.delegation_backend.dispatch(broker_envelope)
+        result = await self.delegation_backend.dispatch(broker_envelope)
+        self._distributed_idempotency_cache[idempotency_key] = result
+        return result
 
     def _loop_repeat_limit(self) -> int:
         """Yerel modellerde daha sıkı, uzak modellerde daha esnek tekrar limiti."""
@@ -760,18 +854,7 @@ class SwarmOrchestrator:
         started_at = time.monotonic()
         max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
-        task_timeout = max(
-            0.001,
-            float(
-                getattr(
-                    self.cfg,
-                    "SWARM_TASK_TIMEOUT_SECONDS",
-                    getattr(self.cfg, "REACT_TIMEOUT", 60),
-                )
-                or getattr(self.cfg, "REACT_TIMEOUT", 60)
-                or 60
-            ),
-        )
+        task_timeout = self._task_timeout_seconds(task)
         max_hops = max(1, int(getattr(self.cfg, "SWARM_MAX_HANDOFF_HOPS", 4) or 4))
         route_trace = list(_route_trace or [])
         handoff_chain = list(_handoff_chain or [])
@@ -981,6 +1064,8 @@ class SwarmOrchestrator:
         except Exception as exc:
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.error("SwarmOrchestrator: [%s] hata [%s]: %s", task.task_id, spec.role_name, exc)
+            rollback_evidence = await self._attempt_task_rollback(agent, envelope, exc)
+            failure_evidence = [rollback_evidence] if rollback_evidence else []
             if self._should_fallback_to_supervisor(exc):
                 reason = f"fallback:{type(exc).__name__}"
                 logger.warning(
@@ -1015,6 +1100,7 @@ class SwarmOrchestrator:
                             f"Supervisor fallback da başarısız oldu: {fallback_exc}"
                         ),
                         elapsed_ms=elapsed,
+                        evidence=failure_evidence,
                         handoffs=handoff_chain,
                     )
             return SwarmResult(
@@ -1023,6 +1109,7 @@ class SwarmOrchestrator:
                 status="failed",
                 summary=f"Görev başarısız: {exc}",
                 elapsed_ms=elapsed,
+                evidence=failure_evidence,
                 handoffs=handoff_chain,
             )
         finally:
