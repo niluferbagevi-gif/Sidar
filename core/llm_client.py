@@ -57,6 +57,24 @@ OLLAMA_NUM_BATCH_MAX = OLLAMA_BATCH_POLICY.maximum
 OLLAMA_NUM_BATCH_AUTO_MIN = OLLAMA_BATCH_POLICY.auto_min
 _OLLAMA_GPU_LIMITERS: dict[tuple[str, int], asyncio.Semaphore] = {}
 _OLLAMA_GPU_LIMITERS_LOCK = asyncio.Lock()
+MAX_SAFE_TOKEN_COUNT = 2_147_483_647
+_PROVIDER_RETRYABLE_STATUS_CODES: dict[str, set[int]] = {
+    "ollama": {408, 409, 425, 429, 500, 502, 503, 504},
+    "gemini": {408, 409, 429, 500, 502, 503, 504},
+    "openai": {408, 409, 429, 500, 502, 503, 504},
+    "anthropic": {408, 409, 429, 500, 502, 503, 504, 529},
+    "litellm": {408, 409, 425, 429, 500, 502, 503, 504},
+}
+_CONTEXT_LIMIT_MARKERS = (
+    "context length",
+    "context_length",
+    "maximum context",
+    "token limit",
+    "too many tokens",
+    "input is too long",
+    "prompt is too long",
+    "reduce the length",
+)
 MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
     "gpt-4o": 5e-6,
     "gpt-4o-mini": 2e-6,
@@ -210,13 +228,58 @@ async def _acquire_ollama_gpu_limiter(limiter: asyncio.Semaphore, config: Any) -
             continue
 
 
-def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
+def _safe_token_count(value: Any) -> int:
+    """Return a non-negative bounded token count for provider usage payloads."""
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if parsed <= 0:
+        return 0
+    return min(parsed, MAX_SAFE_TOKEN_COUNT)
+
+
+def _extract_status_code(exc: Exception) -> int | None:
+    """Extract an HTTP-like status code from SDK/httpx exceptions."""
     status_code = getattr(exc, "status_code", None)
     http_status_error = getattr(httpx, "HTTPStatusError", None)
     if http_status_error and isinstance(exc, http_status_error):
         status_code = exc.response.status_code
-    if status_code == 429 or (status_code is not None and 500 <= int(status_code) < 600):
-        return True, int(status_code)
+    response = getattr(exc, "response", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+    try:
+        return int(status_code) if status_code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_context_limit_error(exc: Exception) -> bool:
+    detail = _format_exception_message(exc).lower()
+    return any(marker in detail for marker in _CONTEXT_LIMIT_MARKERS)
+
+
+def _is_retryable_exception(exc: Exception, provider: str = "") -> tuple[bool, int | None]:
+    provider_key = (provider or getattr(exc, "provider", "") or "").strip().lower()
+    status_code = _extract_status_code(exc)
+
+    if isinstance(exc, LLMAPIError):
+        if _is_context_limit_error(exc):
+            return False, status_code
+        if exc.retryable:
+            return True, status_code
+        if status_code is None:
+            return False, None
+
+    if _is_context_limit_error(exc):
+        return False, status_code
+
+    retryable_statuses = _PROVIDER_RETRYABLE_STATUS_CODES.get(
+        provider_key, _PROVIDER_RETRYABLE_STATUS_CODES["openai"]
+    )
+    if status_code is not None:
+        return status_code in retryable_statuses, status_code
+
     if isinstance(
         exc, httpx.TimeoutException | httpx.ConnectError | httpx.ReadError | asyncio.TimeoutError
     ):
@@ -248,7 +311,7 @@ async def _retry_with_backoff(
         try:
             return await operation()
         except Exception as exc:
-            retryable, status_code = _is_retryable_exception(exc)
+            retryable, status_code = _is_retryable_exception(exc, provider=provider)
             err_detail = _format_exception_message(exc)
             if (not retryable) or attempt >= max_retries:
                 message = f"{retry_hint}: {err_detail}"
@@ -334,14 +397,8 @@ def _extract_usage_tokens(data: dict[str, Any]) -> tuple[int, int]:
     if not isinstance(usage, dict):
         return 0, 0
 
-    def _safe_int(value: Any) -> int:
-        try:
-            return int(value or 0)
-        except Exception:
-            return 0
-
-    prompt = _safe_int(usage.get("prompt_tokens", 0))
-    completion = _safe_int(usage.get("completion_tokens", usage.get("output_tokens", 0)))
+    prompt = _safe_token_count(usage.get("prompt_tokens", 0))
+    completion = _safe_token_count(usage.get("completion_tokens", usage.get("output_tokens", 0)))
     return prompt, completion
 
 
@@ -351,13 +408,12 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
         return 0, 0
 
     if isinstance(usage, dict):
-        prompt = int(
+        prompt = _safe_token_count(
             usage.get(
                 "prompt_token_count", usage.get("input_token_count", usage.get("prompt_tokens", 0))
             )
-            or 0
         )
-        completion = int(
+        completion = _safe_token_count(
             usage.get(
                 "candidates_token_count",
                 usage.get(
@@ -365,18 +421,18 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
                     usage.get("completion_tokens", usage.get("output_tokens", 0)),
                 ),
             )
-            or 0
         )
         return prompt, completion
 
-    prompt = int(getattr(usage, "prompt_token_count", getattr(usage, "input_token_count", 0)) or 0)
-    completion = int(
+    prompt = _safe_token_count(
+        getattr(usage, "prompt_token_count", getattr(usage, "input_token_count", 0))
+    )
+    completion = _safe_token_count(
         getattr(
             usage,
             "candidates_token_count",
             getattr(usage, "output_token_count", getattr(usage, "completion_tokens", 0)),
         )
-        or 0
     )
     return prompt, completion
 
@@ -406,6 +462,49 @@ def _resolve_cost_per_token_usd(config: Any, model: str = "") -> float:
         return float(configured_default or DEFAULT_COST_PER_TOKEN_USD)
     except (TypeError, ValueError):
         return DEFAULT_COST_PER_TOKEN_USD
+
+
+def _estimate_tokens_bounded(text: str, *, model: str = "") -> int:
+    """Estimate tokens with overflow/negative protection."""
+    try:
+        return _safe_token_count(token_counter.estimate_tokens(text, model=model))
+    except Exception as exc:
+        logger.debug("Token estimate failed; treating prompt as zero tokens: %s", exc)
+        return 0
+
+
+def _estimate_message_tokens(messages: list[dict[str, str]], *, model: str = "") -> int:
+    """Estimate bounded tokens for a chat message list."""
+    prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
+    return _estimate_tokens_bounded(prompt_text, model=model)
+
+
+def _configured_prompt_token_limit(config: Any) -> int:
+    """Return configured prompt token limit; zero disables preflight rejection."""
+    for key in ("LLM_MAX_PROMPT_TOKENS", "MAX_INPUT_TOKENS"):
+        raw_limit = getattr(config, key, 0)
+        if not isinstance(raw_limit, str | int | float | bool):
+            continue
+        limit = _safe_token_count(raw_limit)
+        if limit > 0:
+            return limit
+    return 0
+
+
+def _validate_prompt_token_budget(
+    *, provider: str, messages: list[dict[str, str]], config: Any, model: str = ""
+) -> int:
+    """Validate estimated prompt tokens before dispatching to a provider."""
+    prompt_tokens = _estimate_message_tokens(messages, model=model)
+    limit = _configured_prompt_token_limit(config)
+    if limit > 0 and prompt_tokens > limit:
+        raise LLMAPIError(
+            provider,
+            f"Prompt token budget exceeded: estimated={prompt_tokens} limit={limit}",
+            status_code=413,
+            retryable=False,
+        )
+    return prompt_tokens
 
 
 def _record_llm_metric(
@@ -464,9 +563,9 @@ async def _track_stream_routing_cost(
     finally:
         prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
         completion_text = "".join(response_parts)
-        est_tokens = token_counter.estimate_tokens(
-            prompt_text, model=model
-        ) + token_counter.estimate_tokens(completion_text, model=model)
+        est_tokens = _estimate_tokens_bounded(prompt_text, model=model) + _estimate_tokens_bounded(
+            completion_text, model=model
+        )
         if est_tokens > 0:
             cost_per_token = _resolve_cost_per_token_usd(config, model=model)
             record_routing_cost(est_tokens * cost_per_token)
@@ -720,6 +819,10 @@ class LLMClient:
             for message in masked_messages
         ]
 
+        _validate_prompt_token_budget(
+            provider=self.provider, messages=messages, config=self.config, model=str(model or "")
+        )
+
         user_prompt = ""
         for message in reversed(messages):
             if message.get("role") == "user":
@@ -756,9 +859,9 @@ class LLMClient:
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
             _msg_text = "\n".join(m.get("content") or "" for m in messages)
-            _est_tokens = token_counter.estimate_tokens(
+            _est_tokens = _estimate_tokens_bounded(
                 _msg_text, model=str(model or "")
-            ) + token_counter.estimate_tokens(response, model=str(model or ""))
+            ) + _estimate_tokens_bounded(response, model=str(model or ""))
             _cost_per_token = _resolve_cost_per_token_usd(self.config, model=str(model or ""))
             record_routing_cost(_est_tokens * _cost_per_token)
 

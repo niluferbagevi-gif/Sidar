@@ -58,7 +58,8 @@ class SemanticCacheManager:
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
         self.threshold = max(0.0, float(_setting(config, "SEMANTIC_CACHE_THRESHOLD", 0.90)))
-        self.ttl = max(1, int(_setting(config, "SEMANTIC_CACHE_TTL", 3600)))
+        raw_ttl = int(_setting(config, "SEMANTIC_CACHE_TTL", 3600) or 0)
+        self.ttl = 0 if raw_ttl <= 0 else raw_ttl
         self.max_items = max(1, int(_setting(config, "SEMANTIC_CACHE_MAX_ITEMS", 500)))
         self.redis_cb_fail_threshold = max(
             1, int(_setting(config, "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD", 3))
@@ -234,7 +235,8 @@ class SemanticCacheManager:
             had_existing = item_key in keys_before
             async with redis_client.pipeline(transaction=True) as pipe:
                 pipe.hset(item_key, mapping=payload)
-                pipe.expire(item_key, self.ttl)
+                if self.ttl > 0:
+                    pipe.expire(item_key, self.ttl)
                 pipe.lrem(self.index_key, 0, item_key)
                 pipe.lpush(self.index_key, item_key)
                 pipe.ltrim(self.index_key, 0, self.max_items - 1)

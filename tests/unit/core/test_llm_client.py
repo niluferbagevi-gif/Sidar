@@ -421,6 +421,62 @@ async def test_is_retryable_exception_for_non_retryable_status() -> None:
     assert status == 400
 
 
+def test_provider_specific_retry_mapping_and_context_limit() -> None:
+    anthropic_529 = llm_client.LLMAPIError(
+        "anthropic", "overloaded", status_code=529, retryable=False
+    )
+    retryable, status = llm_client._is_retryable_exception(anthropic_529, provider="anthropic")
+    assert (retryable, status) == (True, 529)
+
+    context_error = llm_client.LLMAPIError(
+        "openai", "maximum context length reached", status_code=400, retryable=True
+    )
+    retryable, status = llm_client._is_retryable_exception(context_error, provider="openai")
+    assert (retryable, status) == (False, 400)
+
+
+def test_usage_token_counts_are_bounded_on_overflow() -> None:
+    huge = str(llm_client.MAX_SAFE_TOKEN_COUNT + 999_999)
+
+    assert llm_client._extract_usage_tokens(
+        {"usage": {"prompt_tokens": huge, "completion_tokens": -10}}
+    ) == (llm_client.MAX_SAFE_TOKEN_COUNT, 0)
+
+    usage = {"prompt_token_count": huge, "candidates_token_count": huge}
+    assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage)) == (
+        llm_client.MAX_SAFE_TOKEN_COUNT,
+        llm_client.MAX_SAFE_TOKEN_COUNT,
+    )
+
+
+@pytest.mark.asyncio
+async def test_prompt_token_budget_rejects_over_limit_before_provider_call(
+    monkeypatch: pytest.MonkeyPatch, mock_config
+) -> None:
+    class BudgetClient(llm_client.BaseLLMClient):
+        def __init__(self, config: Any) -> None:
+            super().__init__(config)
+            self.called = False
+
+        def json_mode_config(self) -> dict[str, Any]:
+            return {}
+
+        async def chat(self, *args: Any, **kwargs: Any) -> str:
+            self.called = True
+            return "should-not-run"
+
+    monkeypatch.setitem(llm_client.LLMClient.PROVIDER_REGISTRY, "budget", BudgetClient)
+    monkeypatch.setattr(llm_client.token_counter, "estimate_tokens", lambda *_args, **_kwargs: 100)
+
+    client = llm_client.LLMClient("budget", mock_config(LLM_MAX_PROMPT_TOKENS=10))
+    with pytest.raises(llm_client.LLMAPIError, match="Prompt token budget exceeded") as exc:
+        await client.chat([{"role": "user", "content": "hello"}], json_mode=False)
+
+    assert exc.value.status_code == 413
+    assert exc.value.retryable is False
+    assert client._client.called is False
+
+
 @pytest.mark.asyncio
 async def test_retry_with_backoff_wraps_litellm_api_connection_error(mock_config) -> None:
     class APIConnectionError(Exception):
@@ -812,6 +868,30 @@ async def test_semantic_cache_set_records_item(
     keys_with_manual = await fake_redis.lrange(manager.index_key, 0, -1)
     assert await _scan_response(keys_with_manual, "not-found") is True
     assert counters["eviction"] == 1
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_ttl_zero_skips_expire(
+    monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
+) -> None:
+    manager = SemanticCacheManager(mock_config(SEMANTIC_CACHE_TTL=0))
+
+    async def _get_redis():
+        return fake_redis
+
+    pipeline = fake_redis.pipeline(transaction=True)
+    expire_spy = MagicMock(wraps=pipeline.expire)
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.1, 0.2])
+    monkeypatch.setattr(pipeline, "expire", expire_spy)
+    monkeypatch.setattr(fake_redis, "pipeline", lambda transaction=True: pipeline)
+
+    await manager.set("forever", "cached")
+
+    assert manager.ttl == 0
+    expire_spy.assert_not_called()
+    item_key = "sidar:semantic_cache:item:" + hashlib.sha256(b"forever").hexdigest()
+    assert (await fake_redis.hgetall(item_key))["response"] == "cached"
 
 
 @pytest.mark.asyncio
