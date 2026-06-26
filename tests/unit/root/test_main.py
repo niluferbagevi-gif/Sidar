@@ -2997,6 +2997,16 @@ async def test_basic_auth_middleware_branches(monkeypatch):
     assert calls["reset_token"] == "tok-1"
 
 
+def test_get_rate_limit_key_prefers_authenticated_user() -> None:
+    request = _make_request("/files", "GET")
+    request.state.user = SimpleNamespace(id="u-42", tenant_id="tenant-a")
+
+    assert web_server._get_rate_limit_key(request, "9.9.9.9") == "user:tenant-a:u-42"
+
+    anonymous = _make_request("/files", "GET")
+    assert web_server._get_rate_limit_key(anonymous, "9.9.9.9") == "ip:9.9.9.9"
+
+
 @pytest.mark.asyncio
 async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
     async def _call_next(_request):

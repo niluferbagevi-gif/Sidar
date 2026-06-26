@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 
 RedisRateLimitChecker = Callable[[str, str, int, int], Awaitable[bool]]
 ClientIpResolver = Callable[[Request], str]
+RateLimitKeyResolver = Callable[[Request, str], str]
 NextHandler = Callable[[Request], Awaitable[Response]]
 
 
@@ -55,23 +56,26 @@ async def rate_limit_middleware_impl(
     get_io_limit: int,
     window_sec: int,
     get_io_paths: tuple[str, ...],
+    get_rate_limit_key: RateLimitKeyResolver | None = None,
 ) -> Response:
     """Apply route-class-specific chat, mutation, and IO-heavy GET rate limits."""
     client_ip = get_client_ip(request)
+    key_resolver = get_rate_limit_key or (lambda _request, fallback_ip: fallback_ip)
+    principal_key = key_resolver(request, client_ip)
 
     if request.url.path == "/ws/chat":
-        if await redis_is_rate_limited("chat", client_ip, chat_limit, window_sec):
+        if await redis_is_rate_limited("chat", principal_key, chat_limit, window_sec):
             return JSONResponse(
                 {"error": "Çok fazla istek. Lütfen bir dakika bekleyin."}, status_code=429
             )
     elif request.method in ("POST", "DELETE"):
-        if await redis_is_rate_limited("mut", client_ip, mutation_limit, window_sec):
+        if await redis_is_rate_limited("mut", principal_key, mutation_limit, window_sec):
             return JSONResponse(
                 {"error": "Çok fazla işlem isteği. Lütfen bir dakika bekleyin."}, status_code=429
             )
     elif request.method == "GET":
         if any(request.url.path.startswith(path) for path in get_io_paths):
-            if await redis_is_rate_limited("get", client_ip, get_io_limit, window_sec):
+            if await redis_is_rate_limited("get", principal_key, get_io_limit, window_sec):
                 return JSONResponse(
                     {"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."},
                     status_code=429,

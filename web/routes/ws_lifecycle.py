@@ -19,6 +19,7 @@ class WebSocketLifecycle:
         self._cleanup_callbacks: list[Callable[[], Awaitable[Any]]] = []
         self._tasks: list[Any] = []
         self._closed = False
+        self._close_lock = asyncio.Lock()
 
     def track_task(self, task: Any | None) -> Any | None:
         """Register a task-like object that must be cancelled before session shutdown."""
@@ -39,15 +40,18 @@ class WebSocketLifecycle:
             await task
 
     async def close(self, *, reason: str = "disconnect") -> None:
-        """Run all tracked cleanup exactly once."""
-        if self._closed:
-            return
-        self._closed = True
-        for task in list(reversed(self._tasks)):
-            await self.cancel_task(task)
-        for callback in list(reversed(self._cleanup_callbacks)):
-            try:
-                await callback()
-            except Exception as exc:  # pragma: no cover - defensive logging only
-                if self.logger is not None:
-                    self.logger.debug("WebSocket cleanup callback failed during %s: %s", reason, exc)
+        """Run all tracked cleanup exactly once, even under concurrent disconnect paths."""
+        async with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            for task in list(reversed(self._tasks)):
+                await self.cancel_task(task)
+            for callback in list(reversed(self._cleanup_callbacks)):
+                try:
+                    await callback()
+                except Exception as exc:  # pragma: no cover - defensive logging only
+                    if self.logger is not None:
+                        self.logger.debug(
+                            "WebSocket cleanup callback failed during %s: %s", reason, exc
+                        )

@@ -96,3 +96,28 @@ async def test_rate_limit_impl_blocks_get_io_bucket() -> None:
 
     assert response.status_code == 429
     assert calls == [("get", "10.0.0.1", 4, 60)]
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_impl_uses_principal_key_resolver() -> None:
+    calls: list[tuple[str, str, int, int]] = []
+
+    async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
+        calls.append((namespace, key, limit, window))
+        return False
+
+    response = await rate_limit_middleware_impl(
+        _request("/set-repo", "POST"),
+        _ok_next,
+        get_client_ip=lambda _request: "10.0.0.1",
+        redis_is_rate_limited=_limited,
+        chat_limit=2,
+        mutation_limit=3,
+        get_io_limit=4,
+        window_sec=60,
+        get_io_paths=("/files",),
+        get_rate_limit_key=lambda request, fallback_ip: "user:t1:u1",
+    )
+
+    assert response.status_code == 200
+    assert calls == [("mut", "user:t1:u1", 3, 60)]

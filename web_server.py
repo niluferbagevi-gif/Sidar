@@ -2345,6 +2345,16 @@ def _get_client_ip(request: Request) -> str:
     return direct_ip
 
 
+def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
+    """Return a user-scoped rate-limit key after JWT auth, falling back to IP."""
+    user = getattr(request.state, "user", None)
+    user_id = str(getattr(user, "id", "") or "").strip()
+    if user_id:
+        tenant_id = _get_user_tenant(user)
+        return f"user:{tenant_id}:{user_id}"
+    return f"ip:{fallback_ip}"
+
+
 @app.middleware("http")
 async def ddos_rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -2375,6 +2385,7 @@ async def rate_limit_middleware(
         get_io_limit=_RATE_LIMIT_GET_IO,
         window_sec=_RATE_WINDOW,
         get_io_paths=_RATE_GET_IO_PATHS,
+        get_rate_limit_key=_get_rate_limit_key,
     )
 
 
