@@ -82,7 +82,10 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     services = compose["services"]
 
-    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.65"
+    assert services["redis"]["image"] == "redis:7.4-alpine"
+    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
+
+    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
     assert ":latest" not in services["jaeger"]["image"]
 
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
@@ -90,7 +93,10 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
 
     postgres_exporter = services["postgres-exporter"]
     assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
-    assert any(item.startswith("DATA_SOURCE_NAME=postgresql://") for item in postgres_exporter["environment"])
+    assert any(
+        item.startswith("DATA_SOURCE_NAME=postgresql://")
+        for item in postgres_exporter["environment"]
+    )
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
@@ -103,6 +109,8 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
         "postgres-exporter",
         "cadvisor",
     ]
+    assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
+    assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
 
 

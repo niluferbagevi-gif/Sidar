@@ -7,7 +7,7 @@ services:
   #   SIDAR_TEMP_MOUNT=sidar_temp_prod
 
   redis:
-    image: redis:alpine
+    image: redis:7.4-alpine
     container_name: sidar_redis
     restart: unless-stopped
     command: redis-server --appendonly yes
@@ -17,7 +17,7 @@ services:
       - redis_data:/data
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.1-pg16
     container_name: sidar_postgres
     restart: unless-stopped
     command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
@@ -364,7 +364,7 @@ services:
 
 
   jaeger:
-    image: jaegertracing/all-in-one:1.65
+    image: jaegertracing/all-in-one:1.63.0
     container_name: sidar_jaeger
     restart: unless-stopped
     ports:
@@ -405,7 +405,7 @@ services:
       - /dev/disk:/dev/disk:ro
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.54.1
     container_name: sidar_prometheus
     restart: unless-stopped
     ports:
@@ -418,7 +418,7 @@ services:
       - cadvisor
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.2.0
     container_name: sidar_grafana
     restart: unless-stopped
     ports:
