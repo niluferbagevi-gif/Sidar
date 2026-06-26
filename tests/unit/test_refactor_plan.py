@@ -31,6 +31,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/bootstrap.py",
         "web/middleware/cors.py",
         "core/db/auth.py",
+        "core/db/audit.py",
         "core/rag/embeddings.py",
         "managers/code/patcher.py",
         "agent/self_heal/executor.py",

@@ -1,8 +1,8 @@
 """Backward-compatible facade for Sidar's database package.
 
 The large legacy implementation lives in :mod:`core.db.monolith` while new code can
-move toward narrower modules such as ``engine``, ``multitenant`` and
-``alembic_runner``. The runtime module is still aliased to the legacy implementation
+move toward narrower modules such as ``engine``, ``multitenant``,
+``audit`` and ``alembic_runner``. The runtime module is still aliased to the legacy implementation
 so existing imports and monkeypatch paths keep behaving during the transition, but
 this facade also declares the supported public export surface for static analysis.
 """
@@ -48,6 +48,7 @@ _monolith.__path__ = __path__
 _sys.modules[__name__] = _monolith
 
 for _submodule in (
+    "audit",
     "audit_log",
     "auth",
     "coverage",

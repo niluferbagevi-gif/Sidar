@@ -19,7 +19,7 @@ from typing import Any, TypeVar, cast
 import jwt
 
 from config import Config
-from core.db import audit_log as db_audit_log
+from core.db import audit as db_audit
 from core.db import metrics as db_metrics
 from core.db import prompt_registry as db_prompt_registry
 from core.db import sessions as db_sessions
@@ -1680,7 +1680,7 @@ class Database:
         allowed: bool,
         timestamp: str | None = None,
     ) -> None:
-        await db_audit_log.record_audit_log(
+        await db_audit.record_audit_log(
             self,
             record_cls=AuditLogRecord,
             parse_iso_datetime=_parse_iso_datetime,
@@ -1700,7 +1700,7 @@ class Database:
         user_id: str | None = None,
         limit: int = 100,
     ) -> list[AuditLogRecord]:
-        return await db_audit_log.list_audit_logs(
+        return await db_audit.list_audit_logs(
             self, record_cls=AuditLogRecord, user_id=user_id, limit=limit
         )
 
