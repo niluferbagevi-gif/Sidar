@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from agent.base_agent import BaseAgent
+from agent.core.circuit_breaker import SwarmCircuitBreaker
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 from agent.core.event_stream import get_agent_event_bus
 from agent.core.memory_hub import MemoryHub
@@ -122,6 +123,16 @@ class SupervisorAgent(BaseAgent):
         self.registry = ActiveAgentRegistry()
         self.events = get_agent_event_bus()
         self.memory_hub = MemoryHub()
+        self.circuit_breaker = SwarmCircuitBreaker(
+            max_failures=getattr(
+                self.cfg, "SWARM_CIRCUIT_MAX_FAILURES", SwarmCircuitBreaker.MAX_FAILURES
+            ),
+            reset_after_seconds=getattr(
+                self.cfg,
+                "SWARM_CIRCUIT_RESET_AFTER_SECONDS",
+                SwarmCircuitBreaker.RESET_AFTER_SECONDS,
+            ),
+        )
 
         if base_init_failed:
             # Base init başarısızsa, alt ajanlar da aynı sebeple kırılabilir.
@@ -298,6 +309,16 @@ class SupervisorAgent(BaseAgent):
             parent_task_id=parent_task_id,
             context=dict(context or {}),
         )
+        breaker = getattr(self, "circuit_breaker", None)
+        if breaker is not None and breaker.is_open(receiver):
+            return TaskResult(
+                task_id=task_id,
+                status="failed",
+                summary=(
+                    f"[P2P:STOP] Circuit breaker açık: {receiver} delegasyonu "
+                    "geçici olarak durduruldu."
+                ),
+            )
         agent = self.registry.get(receiver)
 
         t0 = time.monotonic()
@@ -318,10 +339,14 @@ class SupervisorAgent(BaseAgent):
         try:
             with span_ctx as span:
                 summary = await agent.run_task(envelope.goal)
+                if breaker is not None:
+                    breaker.record_success(receiver)
                 if span is not None and hasattr(span, "set_attribute"):
                     span.set_attribute("sidar.result_len", len(str(summary)))
         except Exception:
             status = "error"
+            if breaker is not None:
+                breaker.record_failure(receiver)
             raise
         finally:
             duration_s = time.monotonic() - t0

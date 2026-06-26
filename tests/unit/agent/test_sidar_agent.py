@@ -2181,6 +2181,53 @@ async def test_tool_subtask_react_loop_hard_stops_at_configured_max_steps(
     assert agent._execute_tool.await_count == max_steps
 
 
+async def test_tool_subtask_uses_agent_max_react_steps_when_configured(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(
+        agent,
+        AGENT_MAX_REACT_STEPS=2,
+        SUBTASK_MAX_STEPS=9,
+        TEXT_MODEL="tm",
+        CODING_MODEL="cm",
+    )
+    agent.llm = types.SimpleNamespace(
+        chat=AsyncMock(
+            return_value='{"thought":"keep looping","tool":"web_search","argument":"again"}'
+        )
+    )
+    agent._execute_tool = AsyncMock(return_value="loop signal")
+
+    output = await agent._tool_subtask("repeat until guard")
+
+    assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+    assert agent.llm.chat.await_count == 2
+    assert agent._execute_tool.await_count == 2
+
+
+async def test_tool_subtask_includes_failed_tool_context(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, AGENT_MAX_REACT_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+    prompts: list[str] = []
+
+    async def _chat(messages, **_kwargs):
+        prompts.append(messages[0]["content"])
+        return '{"thought":"t","tool":"bad_tool","argument":"payload"}'
+
+    agent.llm = types.SimpleNamespace(chat=AsyncMock(side_effect=_chat))
+    agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool down"))
+
+    output = await agent._tool_subtask("job")
+
+    assert output == sidar_agent.SUBTASK_MAX_STEPS_MESSAGE
+    assert "Araç çalışmadı" in prompts[1]
+    assert "bad_tool" in prompts[1]
+    assert "tool down" in prompts[1]
+
+
 async def test_execute_self_heal_plan_service_restores_backup_after_sandbox_failure(
     tmp_path: Path,
 ) -> None:

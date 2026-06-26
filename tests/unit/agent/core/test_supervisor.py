@@ -917,6 +917,63 @@ def test_delegate_error_records_status_and_reraises(monkeypatch: pytest.MonkeyPa
     assert statuses == ["error"]
 
 
+def test_delegate_short_circuits_when_receiver_circuit_is_open() -> None:
+    sup = SupervisorAgent.__new__(SupervisorAgent)
+    sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
+    sup.memory_hub = _DummyMemoryHub()
+    sup.events = _DummyEvents()
+
+    class _Registry:
+        def get(self, _role: str):
+            raise AssertionError("registry should not be used while circuit is open")
+
+    class _OpenBreaker:
+        def is_open(self, _receiver: str) -> bool:
+            return True
+
+    sup.registry = _Registry()
+    sup.circuit_breaker = _OpenBreaker()
+
+    result = asyncio.run(sup._delegate("coder", "görev", "code"))
+
+    assert result.status == "failed"
+    assert "Circuit breaker açık" in str(result.summary)
+
+
+def test_delegate_records_circuit_failure_before_reraising(monkeypatch: pytest.MonkeyPatch) -> None:
+    sup = SupervisorAgent.__new__(SupervisorAgent)
+    sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
+    sup.memory_hub = _DummyMemoryHub()
+    sup.events = _DummyEvents()
+
+    class _Worker:
+        async def run_task(self, _goal: str) -> str:
+            raise RuntimeError("boom")
+
+    class _Registry:
+        def get(self, _role: str):
+            return _Worker()
+
+    failures: list[str] = []
+
+    class _Breaker:
+        def is_open(self, _receiver: str) -> bool:
+            return False
+
+        def record_failure(self, receiver: str) -> None:
+            failures.append(receiver)
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", None)
+    sup.registry = _Registry()
+    sup.circuit_breaker = _Breaker()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(sup._delegate("coder", "görev", "code"))
+
+    assert failures == ["coder"]
+
+
 def test_route_p2p_delegates_and_returns_terminal_result() -> None:
     sup = _build_supervisor(max_qa_retries=3)
     calls: list[dict[str, object]] = []

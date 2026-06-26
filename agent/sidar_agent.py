@@ -1593,7 +1593,24 @@ class SidarAgent:
         except Exception:
             _metrics = None
 
-        max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5))
+        agent_max_steps = getattr(self.cfg, "AGENT_MAX_REACT_STEPS", None)
+        legacy_subtask_steps = getattr(self.cfg, "SUBTASK_MAX_STEPS", None)
+        if (
+            legacy_subtask_steps is not None
+            and int(legacy_subtask_steps) != int(getattr(Config, "SUBTASK_MAX_STEPS", 5))
+            and int(agent_max_steps or getattr(Config, "AGENT_MAX_REACT_STEPS", 10))
+            == int(getattr(Config, "AGENT_MAX_REACT_STEPS", 10))
+        ):
+            # Backward compatibility: existing callers/tests that explicitly tune
+            # SUBTASK_MAX_STEPS keep their narrower guard unless the new agent-level
+            # ReAct setting is also overridden.
+            max_steps = int(legacy_subtask_steps)
+        else:
+            max_steps = int(
+                agent_max_steps
+                if agent_max_steps is not None
+                else getattr(self.cfg, "MAX_REACT_STEPS", legacy_subtask_steps or 5)
+            )
         max_steps = max(1, max_steps)
         feedback = task
 
@@ -1668,7 +1685,14 @@ class SidarAgent:
                         "failed",
                         max(0.0, time.monotonic() - started_at),
                     )
-                feedback = f"Araç çağrısı başarısız: {exc}"
+                logger.warning(
+                    "Tool execution failed in subtask loop: tool=%s error=%s", tool or "llm", exc
+                )
+                feedback = (
+                    "Araç çalışmadı; sonraki adımda bunu dikkate al. "
+                    f"tool={tool or 'llm_decision'} argument={getattr(locals().get('action', None), 'argument', '')!r} "
+                    f"error={exc}"
+                )
 
         return SUBTASK_MAX_STEPS_MESSAGE
 

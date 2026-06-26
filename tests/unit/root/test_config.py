@@ -83,6 +83,10 @@ def test_require_gpu_defaults_to_false_for_cpu_only_bootstrap() -> None:
     assert "CPU-only hosts should boot without failing critical validation" in source
 
 
+def test_agent_max_react_steps_aliases_legacy_default() -> None:
+    assert config.Config.AGENT_MAX_REACT_STEPS == config.Config.MAX_REACT_STEPS
+
+
 def test_gpu_mixed_precision_defaults_to_true_only_for_production(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     assert config.gpu_mixed_precision_default() is True
