@@ -161,7 +161,7 @@ jobs:
           retention-days: 30
 
       - name: Set up Node.js (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
