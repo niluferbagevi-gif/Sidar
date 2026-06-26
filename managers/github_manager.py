@@ -565,6 +565,34 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR kapatma hatası: {exc}"
 
+    def merge_pull_request(
+        self, number: int, *, commit_message: str = "", merge_method: str = "merge"
+    ) -> tuple[bool, str]:
+        """Bir PR'ı merge eder ve branch protection kaynaklı reddi açıkça raporlar."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        safe_method = str(merge_method or "merge").strip().lower()
+        if safe_method not in {"merge", "squash", "rebase"}:
+            return False, "Geçersiz merge yöntemi. merge, squash veya rebase kullanılabilir."
+        try:
+            pr = self._repo.get_pull(number)
+            result = pr.merge(commit_message=str(commit_message or ""), merge_method=safe_method)
+            merged = bool(getattr(result, "merged", True))
+            message = str(getattr(result, "message", "") or "").strip()
+            if not merged:
+                return False, f"PR #{number} merge edilemedi: {message or 'GitHub merge kabul etmedi.'}"
+            return True, f"✓ PR #{number} merge edildi ({safe_method}): {message or getattr(pr, 'html_url', '')}"
+        except Exception as exc:
+            status = getattr(exc, "status", None)
+            text = str(exc)
+            lowered = text.lower()
+            if status in {403, 405} or any(
+                token in lowered
+                for token in ("protected branch", "branch protection", "required status", "required checks")
+            ):
+                return False, f"PR #{number} branch protection nedeniyle merge edilemedi: {text}"
+            return False, f"PR merge hatası: {exc}"
+
     def list_issues(
         self, state: str = "open", limit: int = 10
     ) -> tuple[bool, list[dict[str, Any]]]:
