@@ -32,7 +32,7 @@ dependencies = [
   # docs/DEPENDENCY_PROFILE_PLAN.md ve [tool.sidar.dependency_profile_plan]
   # ile takip edilir.
   # ── Temel altyapı ──────────────────────────────────────────────────────
-  "packaging~=24.1",
+  "packaging~=26.2",
   "python-dotenv==1.2.2",
   "pyyaml~=6.0.2",
   # HTTP client policy: production imports use httpx only; the old httpx2
