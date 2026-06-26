@@ -2,6 +2,7 @@ import importlib
 import logging
 import os
 import sys
+import threading
 import types
 import warnings
 from pathlib import Path
@@ -285,6 +286,49 @@ def test_ensure_hardware_info_loaded_cpu_only(monkeypatch):
     assert config.Config.CUDA_VERSION == "N/A"
     assert config.Config.DRIVER_VERSION == "N/A"
     assert config.Config.CPU_COUNT >= 1
+
+
+def test_ensure_hardware_info_loaded_is_thread_safe(monkeypatch):
+    calls = 0
+    release = threading.Event()
+
+    def fake_check_hardware():
+        nonlocal calls
+        calls += 1
+        release.wait(timeout=2)
+        return config.HardwareInfo(
+            has_cuda=True,
+            gpu_name="ThreadSafeGPU",
+            gpu_count=1,
+            cpu_count=8,
+            cuda_version="12.1",
+            driver_version="535",
+            gpu_vram_mb=8192,
+        )
+
+    monkeypatch.setattr(config.Config, "_hardware_loaded", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "_autoselect_ollama_coding_ctx_window", lambda: None)
+    monkeypatch.setattr(config, "resolve_adaptive_gpu_pool_size", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(config, "check_hardware", fake_check_hardware)
+
+    threads = [
+        threading.Thread(target=config.Config._ensure_hardware_info_loaded) for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    release.set()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert calls == 1
+    assert config.Config._hardware_loaded is True
+    assert config.Config.GPU_INFO == "ThreadSafeGPU"
+
+
+def test_dotenv_reload_plan_rejects_profile_path_traversal():
+    with pytest.raises(ValueError, match="SIDAR_ENV profile cannot contain path separators"):
+        config._build_dotenv_reload_plan({}, profile="../prod")
 
 
 def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):

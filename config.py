@@ -8,12 +8,14 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import core.logging_config as logging_config
@@ -71,6 +73,8 @@ _DOTENV_ORIGINAL_ENV_VALUES: dict[str, str] = {}
 _DOTENV_MISSING_FILE_NOTICES: list[str] = []
 _LAST_DOTENV_LOAD_CHAIN_SIGNATURE: tuple[tuple[str, str], ...] | None = None
 _FIRST_CONFIG_LOAD_LOGGED = False
+_CONFIG_STATE_LOCK = threading.RLock()
+_HARDWARE_LOAD_LOCK = threading.RLock()
 logger = logging.getLogger("Sidar.Config")
 
 
@@ -152,12 +156,14 @@ def _record_dotenv_event(
 
 def get_dotenv_load_report() -> list[dict[str, Any]]:
     """Return the ordered dotenv load attempts used by this runtime."""
-    return config_dotenv.clone_dotenv_load_report(_DOTENV_LOAD_EVENTS)
+    with _CONFIG_STATE_LOCK:
+        return config_dotenv.clone_dotenv_load_report(_DOTENV_LOAD_EVENTS)
 
 
 def get_dotenv_key_source_report() -> dict[str, dict[str, Any]]:
     """Return dotenv key-to-source metadata without exposing secret values."""
-    return config_dotenv.clone_dotenv_key_source_report(_DOTENV_KEY_SOURCES)
+    with _CONFIG_STATE_LOCK:
+        return config_dotenv.clone_dotenv_key_source_report(_DOTENV_KEY_SOURCES)
 
 
 # Açık referans: test izolasyon/reload araçlarında dotenv tanılama API'lerini sabit tutar.
@@ -177,19 +183,20 @@ def _load_dotenv_if_exists(
     record_missing: bool = True,
 ) -> Path | None:
     """Load a dotenv file when it exists and return the resolved path."""
-    return config_dotenv.load_dotenv_if_exists(
-        raw_path,
-        base_dir=BASE_DIR,
-        environ=os.environ,
-        load_events=_DOTENV_LOAD_EVENTS,
-        missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
-        managed_keys=_DOTENV_MANAGED_KEYS,
-        original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
-        key_sources=_DOTENV_KEY_SOURCES,
-        override=override,
-        label=label,
-        record_missing=record_missing,
-    )
+    with _CONFIG_STATE_LOCK:
+        return config_dotenv.load_dotenv_if_exists(
+            raw_path,
+            base_dir=BASE_DIR,
+            environ=os.environ,
+            load_events=_DOTENV_LOAD_EVENTS,
+            missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
+            managed_keys=_DOTENV_MANAGED_KEYS,
+            original_env_values=_DOTENV_ORIGINAL_ENV_VALUES,
+            key_sources=_DOTENV_KEY_SOURCES,
+            override=override,
+            label=label,
+            record_missing=record_missing,
+        )
 
 
 def _dotenv_values_for_reload(path: Path) -> dict[str, str]:
@@ -267,6 +274,46 @@ _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS
 
 ENV_PATH = base_env_path
 SECURITY_SETTINGS = load_security_settings()
+
+
+class DotenvReloadPlan(BaseModel):
+    """Validated plan for the dotenv precedence chain used during reloads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    profile: str = ""
+    base_path: Path
+    advanced_path: Path
+    explicit_path: str = ""
+    sidar_keys_file: str = "~/.sidar_keys.env"
+    skip_default_layers: bool = False
+    labels: tuple[str, ...] = Field(
+        default=("base", "advanced", "environment", "explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"),
+        min_length=5,
+        max_length=5,
+    )
+
+    @field_validator("profile")
+    @classmethod
+    def _normalize_profile(cls, value: str) -> str:
+        """Normalize dotenv profile names before environment-specific file lookup."""
+        normalized = str(value or "").strip().lower()
+        if any(char in normalized for char in ("/", "\\", "..")):
+            raise ValueError("SIDAR_ENV profile cannot contain path separators")
+        return normalized
+
+
+def _build_dotenv_reload_plan(effective_env: dict[str, str], *, profile: str | None) -> DotenvReloadPlan:
+    """Build and validate the dotenv reload chain plan from the effective environment."""
+    selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
+    return DotenvReloadPlan(
+        profile=selected_profile,
+        base_path=BASE_DIR / ".env",
+        advanced_path=BASE_DIR / ".env.advanced",
+        explicit_path=effective_env.get("DOTENV_FILE", "").strip(),
+        sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
+        skip_default_layers=_skip_default_dotenv_layers(effective_env),
+    )
 
 
 @dataclass(frozen=True)
@@ -1253,35 +1300,39 @@ class Config:
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
-        """Donanım bilgisini lazy-load ederek import yan etkisini azalt."""
+        """Donanım bilgisini thread-safe lazy-load ederek import yan etkisini azalt."""
         if cls._hardware_loaded:
             return
 
-        if not cls.USE_GPU:
-            cls.GPU_INFO = "Devre Dışı / CPU Modu"
-            cls.GPU_COUNT = 0
-            cls.CUDA_VERSION = "N/A"
-            cls.DRIVER_VERSION = "N/A"
-            cls.GPU_VRAM_MB = 0
-            cls.CPU_COUNT = os.cpu_count() or 1
-            cls._hardware_loaded = True
-            return
+        with _HARDWARE_LOAD_LOCK:
+            if cls._hardware_loaded:
+                return
 
-        hw = check_hardware()
-        cls.USE_GPU = bool(hw.has_cuda)
-        cls.GPU_INFO = hw.gpu_name
-        cls.GPU_COUNT = hw.gpu_count
-        cls.CPU_COUNT = hw.cpu_count or (os.cpu_count() or 1)
-        cls.CUDA_VERSION = hw.cuda_version
-        cls.DRIVER_VERSION = hw.driver_version
-        cls.GPU_VRAM_MB = int(getattr(hw, "gpu_vram_mb", 0) or 0)
-        cls.OLLAMA_GPU_REQUEST_POOL_SIZE = resolve_adaptive_gpu_pool_size(
-            hw,
-            get_int_env=get_int_env,
-            logger=logger,
-        )
-        cls._autoselect_ollama_coding_ctx_window()
-        cls._hardware_loaded = True
+            if not cls.USE_GPU:
+                cls.GPU_INFO = "Devre Dışı / CPU Modu"
+                cls.GPU_COUNT = 0
+                cls.CUDA_VERSION = "N/A"
+                cls.DRIVER_VERSION = "N/A"
+                cls.GPU_VRAM_MB = 0
+                cls.CPU_COUNT = os.cpu_count() or 1
+                cls._hardware_loaded = True
+                return
+
+            hw = check_hardware()
+            cls.USE_GPU = bool(hw.has_cuda)
+            cls.GPU_INFO = hw.gpu_name
+            cls.GPU_COUNT = hw.gpu_count
+            cls.CPU_COUNT = hw.cpu_count or (os.cpu_count() or 1)
+            cls.CUDA_VERSION = hw.cuda_version
+            cls.DRIVER_VERSION = hw.driver_version
+            cls.GPU_VRAM_MB = int(getattr(hw, "gpu_vram_mb", 0) or 0)
+            cls.OLLAMA_GPU_REQUEST_POOL_SIZE = resolve_adaptive_gpu_pool_size(
+                hw,
+                get_int_env=get_int_env,
+                logger=logger,
+            )
+            cls._autoselect_ollama_coding_ctx_window()
+            cls._hardware_loaded = True
 
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
@@ -1675,43 +1726,50 @@ class Config:
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
     global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
-    previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-    effective_env = _dotenv_reload_baseline_environment()
-    _DOTENV_MANAGED_KEYS.clear()
-    _DOTENV_LOAD_EVENTS.clear()
-    _DOTENV_KEY_SOURCES.clear()
+    with _CONFIG_STATE_LOCK:
+        previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
+        effective_env = _dotenv_reload_baseline_environment()
+        plan = _build_dotenv_reload_plan(effective_env, profile=profile)
+        _DOTENV_MANAGED_KEYS.clear()
+        _DOTENV_LOAD_EVENTS.clear()
+        _DOTENV_KEY_SOURCES.clear()
 
-    base_path = BASE_DIR / ".env"
-    advanced_path = BASE_DIR / ".env.advanced"
-    if not _skip_default_dotenv_layers(effective_env):
-        _load_dotenv_into_effective_env(effective_env, str(base_path), override=False, label="base")
-        _load_dotenv_into_effective_env(
-            effective_env, str(advanced_path), override=False, label="advanced"
-        )
-
-        selected_env = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-        if selected_env:
-            effective_env["SIDAR_ENV"] = selected_env
+        if not plan.skip_default_layers:
             _load_dotenv_into_effective_env(
-                effective_env,
-                str(BASE_DIR / f".env.{selected_env}"),
-                override=True,
-                label=f"environment:{selected_env}",
+                effective_env, str(plan.base_path), override=False, label="base"
+            )
+            _load_dotenv_into_effective_env(
+                effective_env, str(plan.advanced_path), override=False, label="advanced"
             )
 
-    explicit_dotenv = effective_env.get("DOTENV_FILE", "").strip()
-    _load_dotenv_into_effective_env(
-        effective_env, explicit_dotenv, override=True, label="explicit:DOTENV_FILE"
-    )
-    sidar_keys_file = effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-    _load_dotenv_into_effective_env(
-        effective_env, sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE"
-    )
+            selected_profile = DotenvReloadPlan(
+                profile=profile or effective_env.get("SIDAR_ENV", ""),
+                base_path=plan.base_path,
+                advanced_path=plan.advanced_path,
+                explicit_path=plan.explicit_path,
+                sidar_keys_file=plan.sidar_keys_file,
+                skip_default_layers=plan.skip_default_layers,
+            ).profile
+            if selected_profile:
+                effective_env["SIDAR_ENV"] = selected_profile
+                _load_dotenv_into_effective_env(
+                    effective_env,
+                    str(BASE_DIR / f".env.{selected_profile}"),
+                    override=True,
+                    label=f"environment:{selected_profile}",
+                )
 
-    removed_managed_keys = previous_managed_keys - set(effective_env)
-    for key in removed_managed_keys:
-        os.environ.pop(key, None)
-    os.environ.update(effective_env)
+        _load_dotenv_into_effective_env(
+            effective_env, plan.explicit_path, override=True, label="explicit:DOTENV_FILE"
+        )
+        _load_dotenv_into_effective_env(
+            effective_env, plan.sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE"
+        )
+
+        removed_managed_keys = previous_managed_keys - set(effective_env)
+        for key in removed_managed_keys:
+            os.environ.pop(key, None)
+        os.environ.update(effective_env)
 
 
 ConfigReloadCallback = Callable[["Config"], None]
@@ -1744,8 +1802,9 @@ _config_reload_callbacks, _last_notified_instance = _restore_reload_registry_fro
 
 def register_config_reload_callback(callback: ConfigReloadCallback) -> None:
     """Register a process-local hook that synchronizes cached Config references after reload."""
-    if callback not in _config_reload_callbacks:
-        _config_reload_callbacks.append(callback)
+    with _CONFIG_STATE_LOCK:
+        if callback not in _config_reload_callbacks:
+            _config_reload_callbacks.append(callback)
 
 
 def _notify_config_reload_callbacks(config_instance: "Config") -> None:
@@ -1755,10 +1814,12 @@ def _notify_config_reload_callbacks(config_instance: "Config") -> None:
     can invoke it eagerly without double-firing subscribers when nothing changed.
     """
     global _last_notified_instance
-    if _last_notified_instance is config_instance:
-        return
-    _last_notified_instance = config_instance
-    for callback in list(_config_reload_callbacks):
+    with _CONFIG_STATE_LOCK:
+        if _last_notified_instance is config_instance:
+            return
+        _last_notified_instance = config_instance
+        callbacks = list(_config_reload_callbacks)
+    for callback in callbacks:
         try:
             callback(config_instance)
         except Exception as exc:  # pragma: no cover - defensive isolation for app hooks
@@ -1778,8 +1839,10 @@ def reload_environment(*, profile: str | None = None) -> "Config":
         get_container_database_url=get_container_database_url,
         normalize_ai_provider=normalize_ai_provider,
     )
-    Config._hardware_loaded = False
-    _config_instance = None
+    with _HARDWARE_LOAD_LOCK:
+        Config._hardware_loaded = False
+    with _CONFIG_STATE_LOCK:
+        _config_instance = None
     Config._log_dotenv_load_status(missing_keys=Config.get_missing_critical_runtime_keys())
     reloaded = get_config()
     return reloaded
@@ -1804,10 +1867,12 @@ def get_config() -> "Config":
     otomatik olarak canlı singleton'a hizalanır.
     """
     global _config_instance
-    if _config_instance is None:
-        _config_instance = Config()
-    _notify_config_reload_callbacks(_config_instance)
-    return _config_instance
+    with _CONFIG_STATE_LOCK:
+        if _config_instance is None:
+            _config_instance = Config()
+        instance = _config_instance
+    _notify_config_reload_callbacks(instance)
+    return instance
 
 
 # Explicit public surface for strict mypy/no_implicit_reexport consumers.
