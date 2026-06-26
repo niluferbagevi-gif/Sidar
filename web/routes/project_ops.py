@@ -69,7 +69,11 @@ def _git_run(
             .decode()
             .strip()
         )
-    except Exception:
+    except subprocess.CalledProcessError as exc:
+        active_logger.warning("Git komutu başarısız oldu: %s (exit=%s)", cmd, exc.returncode)
+        return ""
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        active_logger.warning("Git komutu çalıştırılamadı: %s (%s)", cmd, exc)
         return ""
 
 
@@ -228,7 +232,8 @@ def build_project_ops_router(
         try:
             content = target.read_text(encoding="utf-8", errors="replace")
             return JSONResponse({"path": path, "content": content, "size": len(content)})
-        except Exception as exc:
+        except OSError as exc:
+            logger.warning("Proje dosyası okunamadı: %s (%s)", target, exc)
             return JSONResponse({"error": str(exc)}, status_code=500)
 
     @router.get("/git-info")

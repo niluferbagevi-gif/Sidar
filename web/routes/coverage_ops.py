@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -13,6 +14,7 @@ from .operations_models import CoverageAnalyzeRequest, CoverageBatchRequest, Cov
 
 _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def configure_coverage_dependencies(deps_factory: Callable[[], Any]) -> None:
@@ -36,7 +38,8 @@ async def _resolve_operations_db(deps: Any) -> Any:
     return agent.memory.db
 
 
-def _database_unavailable_response() -> JSONResponse:
+def _database_unavailable_response(*, operation: str, exc: Exception) -> JSONResponse:
+    logger.warning("Operations database unavailable during %s: %s", operation, exc)
     return JSONResponse(
         {
             "success": False,
@@ -91,8 +94,11 @@ async def api_qa_coverage_tasks(
         tasks = await db.list_coverage_tasks(
             tenant_id=deps.get_user_tenant(_user), status=status or None, limit=limit
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse(
         {"success": True, "tasks": [serialize_coverage_task(item) for item in tasks]}
     )

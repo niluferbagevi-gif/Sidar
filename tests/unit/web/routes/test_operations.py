@@ -140,7 +140,9 @@ def test_operations_serializers_normalize_optional_campaign_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_operations_router_returns_controlled_db_error_when_agent_resolution_fails() -> None:
+async def test_operations_router_returns_controlled_db_error_when_agent_resolution_fails(
+    caplog,
+) -> None:
     operations.configure_operations_dependencies(
         lambda: SimpleNamespace(
             get_user_tenant=lambda _user: "tenant-route",
@@ -157,6 +159,8 @@ async def test_operations_router_returns_controlled_db_error_when_agent_resoluti
         "error": "database_unavailable",
         "message": "Veritabanı geçici olarak kullanılamıyor.",
     }
+    assert "Operations database unavailable" in caplog.text
+    assert "password authentication failed" in caplog.text
 
 
 def test_decode_agent_tool_result_returns_dict_results_directly() -> None:

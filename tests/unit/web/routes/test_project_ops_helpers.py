@@ -23,6 +23,24 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
     )
 
 
+def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from subprocess import CalledProcessError
+
+    from web.routes.project_ops import _git_run
+
+    warnings: list[tuple[Any, ...]] = []
+    logger = SimpleNamespace(warning=lambda *args: warnings.append(args))
+
+    def _raise_called_process_error(*_args: Any, **_kwargs: Any) -> bytes:
+        raise CalledProcessError(7, "git")
+
+    monkeypatch.setattr("subprocess.check_output", _raise_called_process_error)
+
+    assert _git_run(["git"], ".", logger=logger) == ""
+    assert warnings
+    assert "Git komutu başarısız oldu" in warnings[0][0]
+
+
 @pytest.mark.parametrize(
     ("remote", "expected"),
     [

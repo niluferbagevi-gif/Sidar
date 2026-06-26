@@ -381,7 +381,8 @@ async def _hitl_broadcast(payload: dict[str, Any]) -> None:
     for ws in list(_hitl_ws_clients):
         try:
             await ws.send_json(payload)
-        except Exception:
+        except (RuntimeError, WebSocketDisconnect, _ANYIO_CLOSED) as exc:
+            logger.debug("HITL WebSocket yayını başarısız oldu; bağlantı düşürülecek: %s", exc)
             dead.add(ws)
     _hitl_ws_clients.difference_update(dead)
 
@@ -1964,8 +1965,11 @@ def _read_plugin_marketplace_state() -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        logger.warning("Plugin marketplace state okunamadı: %s", path)
+    except json.JSONDecodeError as exc:
+        logger.warning("Plugin marketplace state JSON olarak okunamadı: %s (%s)", path, exc)
+        return {}
+    except OSError as exc:
+        logger.warning("Plugin marketplace state dosyası okunamadı: %s (%s)", path, exc)
         return {}
     if not isinstance(payload, dict):
         return {}
