@@ -4,6 +4,7 @@ import builtins
 from types import SimpleNamespace
 
 import pytest
+from starlette.websockets import WebSocketState
 
 from web.routes import ws_voice
 
@@ -15,6 +16,7 @@ class _Ws:
         self.accepted: list[str | None] = []
         self.closed: list[tuple[int, str]] = []
         self._messages = iter(messages or [])
+        self.client_state = WebSocketState.CONNECTED
 
     async def accept(self, subprotocol: str | None = None) -> None:
         self.accepted.append(subprotocol)
@@ -157,6 +159,52 @@ async def test_websocket_voice_rejects_oversized_binary_after_auth(monkeypatch) 
 
     assert {"auth_ok": True} in ws.sent
     assert ws.closed == [(1008, "Voice payload too large")]
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_does_not_transcribe_after_disconnect(monkeypatch) -> None:
+    original_import = builtins.__import__
+    calls = {"transcribe": 0}
+
+    class _DisconnectAwareMultimodalPipeline:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            calls["transcribe"] += 1
+            return {"success": True, "text": "hello"}
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=_DisconnectAwareMultimodalPipeline)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=_VoicePipeline)
+        return original_import(name, *args, **kwargs)
+
+    async def _resolve_user(_agent, token: str):
+        assert token == "voice-token"
+        return SimpleNamespace(id="u1", username="ada")
+
+    ws = _Ws(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+        ]
+    )
+
+    async def _send_and_disconnect(payload: dict[str, object]) -> None:
+        ws.sent.append(payload)
+        if payload == {"auth_ok": True}:
+            ws.client_state = WebSocketState.DISCONNECTED
+
+    ws.send_json = _send_and_disconnect  # type: ignore[method-assign]
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_resolve_user))
+
+    assert {"auth_ok": True} in ws.sent
+    assert calls["transcribe"] == 0
 
 
 @pytest.mark.asyncio

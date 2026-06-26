@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from web.routes.ws_chat import send_json_if_connected, websocket_is_connected
 from web.security import (
     SIDAR_WS_VOICE_PROTOCOL,
 )
@@ -98,7 +99,8 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         nonlocal voice_sequence
         voice_sequence += 1
         if voice_pipeline is None or not hasattr(voice_pipeline, "build_voice_state_payload"):
-            await websocket.send_json(
+            await send_json_if_connected(
+                websocket,
                 {
                     "voice_state": str(event or "").strip().lower() or "unknown",
                     "buffered_bytes": len(audio_buffer),
@@ -122,16 +124,17 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                     "last_interrupt_reason": str(
                         getattr(duplex_state, "last_interrupt_reason", "") or ""
                     ),
-                }
+                },
             )
             return
-        await websocket.send_json(
+        await send_json_if_connected(
+            websocket,
             voice_pipeline.build_voice_state_payload(
                 event=event,
                 buffered_bytes=len(audio_buffer),
                 sequence=voice_sequence,
                 duplex_state=duplex_state,
-            )
+            ),
         )
 
     async def _cancel_active_response(reason: str) -> None:
@@ -151,8 +154,8 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         active_response_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await active_response_task
-        await websocket.send_json(
-            {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
+        await send_json_if_connected(
+            websocket, {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
         )
         active_response_task = None
 
@@ -163,8 +166,12 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         language: str | None,
         prompt: str,
     ) -> None:
+        if not websocket_is_connected(websocket):
+            return
         if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
+            await send_json_if_connected(
+                websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
+            )
             return
 
         result = await pipeline.transcribe_bytes(
@@ -179,19 +186,21 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
             reason = "Ses transkripsiyonu başarısız oldu."
             if isinstance(result, dict):
                 reason = str(result.get("reason", reason) or reason)
-            await websocket.send_json({"error": reason, "done": True})
+            await send_json_if_connected(websocket, {"error": reason, "done": True})
             return
 
         transcript_text = str(result.get("text", "") or "").strip()
-        await websocket.send_json(
+        if not await send_json_if_connected(
+            websocket,
             {
                 "transcript": transcript_text,
                 "language": result.get("language", ""),
                 "provider": result.get("provider", ""),
-            }
-        )
+            },
+        ):
+            return
         if not transcript_text:
-            await websocket.send_json({"done": True})
+            await send_json_if_connected(websocket, {"done": True})
             return
 
         assistant_turn_id = (
@@ -199,34 +208,41 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
             if voice_pipeline is not None and hasattr(voice_pipeline, "begin_assistant_turn")
             else int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
         )
-        await websocket.send_json(
-            {"assistant_turn": "started", "assistant_turn_id": assistant_turn_id}
-        )
+        if not await send_json_if_connected(
+            websocket, {"assistant_turn": "started", "assistant_turn_id": assistant_turn_id}
+        ):
+            return
 
         try:
             await deps.ws_stream_agent_text_response(websocket, agent, transcript_text)
         except deps.llm_api_error_cls as exc:
-            await websocket.send_json(
+            await send_json_if_connected(
+                websocket,
                 {
                     "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
                     "done": True,
-                }
+                },
             )
             return
         except Exception as exc:
             deps.logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
-            await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
+            await send_json_if_connected(
+                websocket, {"chunk": f"\n[Sistem Hatası] {exc}", "done": True}
+            )
             return
 
-        await websocket.send_json(
-            {"assistant_turn": "completed", "assistant_turn_id": assistant_turn_id}
-        )
-        await websocket.send_json({"done": True})
+        if not await send_json_if_connected(
+            websocket, {"assistant_turn": "completed", "assistant_turn_id": assistant_turn_id}
+        ):
+            return
+        await send_json_if_connected(websocket, {"done": True})
 
     async def _process_audio_commit() -> None:
         nonlocal audio_buffer, active_response_task
         if not audio_buffer:
-            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
+            await send_json_if_connected(
+                websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
+            )
             return
 
         if active_response_task and not active_response_task.done():

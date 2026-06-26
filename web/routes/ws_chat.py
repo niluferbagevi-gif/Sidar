@@ -13,8 +13,22 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from web.security import extract_ws_header_token as default_extract_ws_header_token
+
+
+def websocket_is_connected(websocket: WebSocket) -> bool:
+    """Return whether the accepted websocket is still connected for outbound sends."""
+    return getattr(websocket, "client_state", WebSocketState.CONNECTED) == WebSocketState.CONNECTED
+
+
+async def send_json_if_connected(websocket: WebSocket, payload: dict[str, Any]) -> bool:
+    """Send a JSON payload only while the websocket remains connected."""
+    if not websocket_is_connected(websocket):
+        return False
+    await websocket.send_json(payload)
+    return True
 
 
 def build_ws_chat_router(deps_factory: Callable[[], Any]) -> APIRouter:
@@ -65,7 +79,8 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
             audio_bytes = bytes(tts_result.get("audio_bytes") or b"")
             if not audio_bytes:
                 continue
-            await websocket.send_json(
+            sent = await send_json_if_connected(
+                websocket,
                 {
                     "audio_chunk": base64.b64encode(audio_bytes).decode("ascii"),
                     "audio_text": segment,
@@ -74,18 +89,25 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
                     "audio_voice": tts_result.get("voice", ""),
                     "assistant_turn_id": int(packet.get("assistant_turn_id", 0) or 0),
                     "audio_sequence": int(packet.get("audio_sequence", 0) or 0),
-                }
+                },
             )
+            if not sent:
+                return
 
     async for chunk in agent.respond(prompt):
+        if not websocket_is_connected(websocket):
+            break
         m_tool = tool_sentinel.match(chunk)
         m_thought = thought_sentinel.match(chunk)
         if m_tool:
-            await websocket.send_json({"tool_call": m_tool.group(1)})
+            if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
+                break
         elif m_thought:
-            await websocket.send_json({"thought": m_thought.group(1)})
+            if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
+                break
         else:
-            await websocket.send_json({"chunk": chunk})
+            if not await send_json_if_connected(websocket, {"chunk": chunk}):
+                break
             if voice_pipeline and getattr(voice_pipeline, "enabled", False):
                 pending_voice_text += chunk
                 await _emit_voice_segments()
@@ -169,7 +191,10 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                         evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
                     except TimeoutError:
                         continue
-                    await websocket.send_json({"status": f"{evt.source}: {evt.message}"})
+                    if not await send_json_if_connected(
+                        websocket, {"status": f"{evt.source}: {evt.message}"}
+                    ):
+                        break
 
             status_task = asyncio.create_task(_status_pump())
 
@@ -177,17 +202,22 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             _THOUGHT_SENTINEL = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
 
             async for chunk in agent.respond(msg):
+                if not websocket_is_connected(websocket):
+                    break
                 m_tool = _TOOL_SENTINEL.match(chunk)
                 m_thought = _THOUGHT_SENTINEL.match(chunk)
 
                 if m_tool:
-                    await websocket.send_json({"tool_call": m_tool.group(1)})
+                    if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
+                        break
                 elif m_thought:
-                    await websocket.send_json({"thought": m_thought.group(1)})
+                    if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
+                        break
                 else:
-                    await websocket.send_json({"chunk": chunk})
+                    if not await send_json_if_connected(websocket, {"chunk": chunk}):
+                        break
 
-            await websocket.send_json({"done": True})
+            await send_json_if_connected(websocket, {"done": True})
         except asyncio.CancelledError:
             pass
         except deps.llm_api_error_cls as exc:
@@ -198,18 +228,21 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 exc.retryable,
             )
             try:
-                await websocket.send_json(
+                await send_json_if_connected(
+                    websocket,
                     {
                         "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
                         "done": True,
-                    }
+                    },
                 )
             except Exception as exc:
                 deps.logger.debug("WebSocket LLM hata mesajı gönderilemedi: %s", exc)
         except Exception as exc:
             deps.logger.exception("Agent respond hatası: %s", exc)
             try:
-                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
+                await send_json_if_connected(
+                    websocket, {"chunk": f"\n[Sistem Hatası] {exc}", "done": True}
+                )
             except Exception as exc:
                 deps.logger.debug("WebSocket sistem hata mesajı gönderilemedi: %s", exc)
         finally:

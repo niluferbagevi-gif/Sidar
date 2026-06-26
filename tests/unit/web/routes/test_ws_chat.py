@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from starlette.websockets import WebSocketState
 
 from web.routes import ws_chat
 
@@ -17,6 +18,7 @@ class _Ws:
         self.accepted: list[str | None] = []
         self.closed: list[tuple[int, str]] = []
         self._messages = iter(messages or [])
+        self.client_state = WebSocketState.CONNECTED
 
     async def accept(self, subprotocol: str | None = None) -> None:
         self.accepted.append(subprotocol)
@@ -52,6 +54,26 @@ async def test_ws_stream_agent_text_response_streams_sentinels_and_chunks() -> N
         {"thought": "thinking"},
         {"chunk": "hello"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_stops_when_client_disconnects() -> None:
+    class _StreamingAgent:
+        async def respond(self, _prompt: str):
+            yield "first"
+            yield "second"
+
+    ws = _Ws()
+
+    async def _send_and_disconnect(payload: dict[str, object]) -> None:
+        ws.sent.append(payload)
+        ws.client_state = WebSocketState.DISCONNECTED
+
+    ws.send_json = _send_and_disconnect  # type: ignore[method-assign]
+
+    await ws_chat.ws_stream_agent_text_response(ws, _StreamingAgent(), "prompt")
+
+    assert ws.sent == [{"chunk": "first"}]
 
 
 @pytest.mark.asyncio
