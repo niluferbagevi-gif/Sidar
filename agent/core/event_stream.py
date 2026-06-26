@@ -96,6 +96,7 @@ class AgentEventBus:
         )
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
+        self._missing_optional_dependency_warnings: set[str] = set()
         self._backends: dict[str, BaseEventBusBackend] = self._build_backends()
 
     def _build_backends(self) -> dict[str, BaseEventBusBackend]:
@@ -112,6 +113,27 @@ class AgentEventBus:
             backend_cls = getattr(module, class_name)
             loaded[backend_name] = backend_cls(self)
         return loaded
+
+    def _warn_missing_optional_backend_dependency(
+        self, *, backend: str, package: str, install_hint: str
+    ) -> None:
+        """Log a visible warning once when an optional remote backend dependency is missing."""
+        key = f"{backend}:{package}"
+        if key in self._missing_optional_dependency_warnings:
+            return
+        self._missing_optional_dependency_warnings.add(key)
+        display_backend = {"rabbitmq": "RabbitMQ", "kafka": "Kafka", "redis": "Redis"}.get(
+            backend, backend
+        )
+        logger.warning(
+            "AgentEventBus %s backend bağımlılığı bulunamadı (%s); "
+            "remote transport devre dışı, process-içi fanout ve varsa Redis fallback korunacak. "
+            "SIDAR_EVENT_BUS_BACKEND=%s kullanacaksanız kurulum: %s",
+            display_backend,
+            package,
+            backend,
+            install_hint,
+        )
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
@@ -223,6 +245,16 @@ class AgentEventBus:
                 )
             self._rabbit_available = True
             self._rabbit_listener_task = asyncio.create_task(self._rabbit_listener_loop())
+        except ModuleNotFoundError as exc:
+            self._rabbit_available = False
+            self._warn_missing_optional_backend_dependency(
+                backend="rabbitmq", package="aio_pika", install_hint="uv pip install aio-pika"
+            )
+            logger.debug(
+                "AgentEventBus RabbitMQ bootstrap bağımlılığı eksik, local fallback kullanılacak: %s",
+                exc,
+            )
+            await self._cleanup_rabbit()
         except Exception as exc:
             self._rabbit_available = False
             logger.debug(
@@ -253,6 +285,16 @@ class AgentEventBus:
                 await self._kafka_consumer.start()
             self._kafka_available = True
             self._kafka_listener_task = asyncio.create_task(self._kafka_listener_loop())
+        except ModuleNotFoundError as exc:
+            self._kafka_available = False
+            self._warn_missing_optional_backend_dependency(
+                backend="kafka", package="aiokafka", install_hint="uv pip install aiokafka"
+            )
+            logger.debug(
+                "AgentEventBus Kafka bootstrap bağımlılığı eksik, local fallback kullanılacak: %s",
+                exc,
+            )
+            await self._cleanup_kafka()
         except Exception as exc:
             self._kafka_available = False
             logger.debug(

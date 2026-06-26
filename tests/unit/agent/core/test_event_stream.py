@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import json
+import logging
 import sys
 import time
 import types
@@ -1247,7 +1248,7 @@ def test_ensure_rabbit_listener_reuses_existing_connection(
 
 
 def test_ensure_rabbit_listener_handles_missing_optional_dependency(
-    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bus: AgentEventBus
 ) -> None:
     cleaned = {"ok": False}
 
@@ -1261,9 +1262,13 @@ def test_ensure_rabbit_listener_handles_missing_optional_dependency(
     )
     monkeypatch.setattr(bus, "_cleanup_rabbit", _cleanup)
 
-    asyncio.run(bus._ensure_rabbit_listener())
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bus._ensure_rabbit_listener())
     assert bus._rabbit_available is False
     assert cleaned["ok"] is True
+    assert "RabbitMQ" in caplog.text
+    assert "aio_pika" in caplog.text
+    assert "uv pip install aio-pika" in caplog.text
 
 
 def test_ensure_kafka_listener_success_and_failure(
@@ -1313,7 +1318,7 @@ def test_ensure_kafka_listener_success_and_failure(
 
 
 def test_ensure_kafka_listener_handles_missing_optional_dependency(
-    monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bus: AgentEventBus
 ) -> None:
     cleaned = {"ok": False}
 
@@ -1327,9 +1332,13 @@ def test_ensure_kafka_listener_handles_missing_optional_dependency(
     )
     monkeypatch.setattr(bus, "_cleanup_kafka", _cleanup)
 
-    asyncio.run(bus._ensure_kafka_listener())
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(bus._ensure_kafka_listener())
     assert bus._kafka_available is False
     assert cleaned["ok"] is True
+    assert "kafka" in caplog.text.lower()
+    assert "aiokafka" in caplog.text
+    assert "uv pip install aiokafka" in caplog.text
 
 
 def test_ensure_kafka_listener_short_circuit_and_reuse_paths(
