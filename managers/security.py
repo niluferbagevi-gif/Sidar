@@ -105,6 +105,10 @@ class SecurityManager:
         """NeMo Guardrails motorunu başlatır."""
         try:
             from nemoguardrails import LLMRails  # type: ignore
+        except ImportError:
+            logger.info("NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı.")
+            self._guardrails_engine = None
+            return
         except Exception as exc:  # pragma: no cover - ortama bağlı import hatası
             logger.warning("NeMo Guardrails başlatılamadı, guardrails devre dışı: %s", exc)
             self._guardrails_engine = None

@@ -272,6 +272,26 @@ def test_init_guardrails_import_error_falls_back_without_crashing(
     assert "Guardrails başlatılamadı" in caplog.text
 
 
+def test_init_guardrails_missing_dependency_logs_info(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    original_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "nemoguardrails":
+            raise ImportError("No module named 'nemoguardrails'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
+
+    with caplog.at_level("INFO"):
+        mgr = SecurityManager(cfg=cfg)
+
+    assert mgr._guardrails_engine is None
+    assert "NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı." in caplog.text
+
+
 def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     absolute_target = (tmp_path.parent / "abs-target.txt").resolve()
