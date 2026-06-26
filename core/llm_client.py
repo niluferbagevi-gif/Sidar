@@ -15,7 +15,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import nullcontext
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import httpx
 from opentelemetry import trace
@@ -536,11 +536,25 @@ async def _track_stream_completion(
     model: str,
     started_at: float,
 ) -> AsyncIterator[str]:
+    partial_parts: list[str] = []
+    partial_chars = 0
+    partial_cap = 2_000
     try:
         async for chunk in stream_iter:
+            if chunk and partial_chars < partial_cap:
+                remaining = partial_cap - partial_chars
+                partial_parts.append(str(chunk)[:remaining])
+                partial_chars += min(len(str(chunk)), remaining)
             yield chunk
         _record_llm_metric(provider=provider, model=model, started_at=started_at, success=True)
     except Exception as exc:
+        partial_response = "".join(partial_parts)
+        logger.warning(
+            "%s stream interrupted after partial response (%d chars): %s",
+            provider,
+            len(partial_response),
+            partial_response,
+        )
         _record_llm_metric(
             provider=provider, model=model, started_at=started_at, success=False, error=str(exc)
         )
@@ -587,6 +601,29 @@ async def _trace_stream_metrics(
     finally:
         if span is not None:
             span.end()
+
+
+class LLMProvider(Protocol):
+    """Strategy contract implemented by provider adapters behind the LLM facade."""
+
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Generate streaming text chunks for the given chat messages."""
+        ...
+
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> str | AsyncIterator[str]:
+        """Provider-specific chat call used by the compatibility facade."""
+        ...
 
 
 class BaseLLMClient(ABC):
@@ -642,6 +679,19 @@ class BaseLLMClient(ABC):
     ) -> str | AsyncIterator[str]:
         """Sağlayıcıya özel chat çağrısı."""
 
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Strategy API: stream generated chunks regardless of provider implementation."""
+        response = await self.chat(messages, stream=True, **kwargs)
+        if isinstance(response, str):
+            yield response
+            return
+        async for chunk in response:
+            yield chunk
+
 
 from core.llm.anthropic import AnthropicClient  # noqa: E402
 from core.llm.gemini import GeminiClient  # noqa: E402
@@ -653,7 +703,7 @@ from core.llm.openai import OpenAIClient  # noqa: E402
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
-    PROVIDER_REGISTRY: dict[str, type[BaseLLMClient]] = {
+    PROVIDER_REGISTRY: dict[str, type[LLMProvider]] = {
         "ollama": OllamaClient,
         "gemini": GeminiClient,
         "openai": OpenAIClient,
@@ -670,6 +720,14 @@ class LLMClient:
         if client_cls is None:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
         self._client = client_cls(config)
+
+    @classmethod
+    def register_provider(cls, name: str, provider_cls: type[LLMProvider]) -> None:
+        """Register a provider strategy without editing the facade dispatch code."""
+        provider_name = (name or "").strip().lower()
+        if not provider_name:
+            raise ValueError("Provider adı boş olamaz.")
+        cls.PROVIDER_REGISTRY[provider_name] = provider_cls
 
     @property
     def _ollama_base_url(self) -> str:

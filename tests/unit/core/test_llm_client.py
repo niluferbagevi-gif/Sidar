@@ -903,11 +903,13 @@ async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
 @pytest.mark.asyncio
 async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyPatch) -> None:
     events = []
+    logs = []
 
     def recorder(**kwargs):
         events.append(kwargs)
 
     monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+    monkeypatch.setattr(llm_client.logger, "warning", lambda *args, **_kwargs: logs.append(args))
 
     async def broken_stream():
         yield "a"
@@ -925,6 +927,42 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
     chunks = await consume()
     assert chunks == ["a"]
     assert events[-1]["success"] is False
+    assert logs[-1][2] == 1
+    assert logs[-1][3] == "a"
+
+
+@pytest.mark.asyncio
+async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_config) -> None:
+    class StrategyClient(llm_client.BaseLLMClient):
+        def __init__(self, config):
+            super().__init__(config)
+
+        def json_mode_config(self):
+            return {}
+
+        async def chat(
+            self,
+            messages,
+            model=None,
+            temperature=0.3,
+            stream=False,
+            json_mode=True,
+        ):
+            assert messages[0]["content"] == "hello"
+            if stream:
+                async def _stream():
+                    yield "strategy"
+                    yield "-ok"
+
+                return _stream()
+            return "strategy-ok"
+
+    monkeypatch.setitem(llm_client.LLMClient.PROVIDER_REGISTRY, "strategy", StrategyClient)
+    llm_client.LLMClient.register_provider("strategy", StrategyClient)
+
+    client = llm_client.LLMClient("strategy", mock_config())
+    chunks = [chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])]
+    assert chunks == ["strategy", "-ok"]
 
 
 @pytest.mark.asyncio
