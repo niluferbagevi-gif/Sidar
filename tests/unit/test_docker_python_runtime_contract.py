@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON_MAJOR_MINOR = "3.11"
 PYTHON_BASE_IMAGE = f"python:{PYTHON_MAJOR_MINOR}-slim"
@@ -74,3 +76,47 @@ def test_prod_staging_helm_values_do_not_pin_python_312_images():
         text = path.read_text()
         assert "python:3.12" not in text, path
         assert "python:3.12-slim" not in text, path
+
+
+def test_observability_compose_pins_tracing_and_exports_infra_metrics():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.65"
+    assert ":latest" not in services["jaeger"]["image"]
+
+    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
+    assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
+
+    postgres_exporter = services["postgres-exporter"]
+    assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
+    assert any(item.startswith("DATA_SOURCE_NAME=postgresql://") for item in postgres_exporter["environment"])
+    assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
+
+    cadvisor = services["cadvisor"]
+    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
+    assert cadvisor["privileged"] is True
+    assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
+
+    assert services["prometheus"]["depends_on"] == [
+        "redis-exporter",
+        "postgres-exporter",
+        "cadvisor",
+    ]
+    assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
+
+
+def test_prometheus_scrapes_sidar_and_infra_exporters():
+    prometheus = yaml.safe_load((ROOT / "docker_setup/prometheus/prometheus.yml").read_text())
+    scrape_targets = {
+        config["job_name"]: config["static_configs"][0]["targets"]
+        for config in prometheus["scrape_configs"]
+    }
+
+    assert scrape_targets == {
+        "sidar-web": ["sidar-web:7860"],
+        "redis-exporter": ["redis-exporter:9121"],
+        "postgres-exporter": ["postgres-exporter:9187"],
+        "cadvisor": ["cadvisor:8080"],
+    }
+    assert prometheus["scrape_configs"][0]["metrics_path"] == "/metrics/llm/prometheus"

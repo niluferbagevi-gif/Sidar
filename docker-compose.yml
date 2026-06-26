@@ -364,12 +364,45 @@ services:
 
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:1.65
     container_name: sidar_jaeger
     restart: unless-stopped
     ports:
       - "16686:16686"
       - "4317:4317"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: sidar_redis_exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: sidar_postgres_exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: sidar_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
 
   prometheus:
     image: prom/prometheus:latest
@@ -379,6 +412,10 @@ services:
       - "9090:9090"
     volumes:
       - ./docker_setup/prometheus:/etc/prometheus:ro
+    depends_on:
+      - redis-exporter
+      - postgres-exporter
+      - cadvisor
 
   grafana:
     image: grafana/grafana:latest
@@ -392,6 +429,12 @@ services:
     volumes:
       - ./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       - prometheus
 
