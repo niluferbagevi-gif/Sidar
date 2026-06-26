@@ -228,6 +228,30 @@ def test_async_main_flows(mem):
     asyncio.run(scenario())
 
 
+def test_history_reads_from_database_when_cache_is_compacted(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    mem = ConversationMemory(base_dir=tmp_path, max_turns=1, keep_last=1)
+
+    async def scenario() -> None:
+        await mem.initialize()
+        await mem.set_active_user("u1")
+        sid = mem.active_session_id
+        assert sid is not None
+
+        await mem.add("user", "one")
+        await mem.add("assistant", "two")
+        await mem.add("user", "three")
+
+        assert [turn["content"] for turn in mem._turns] == ["two", "three"]
+        assert [turn["content"] for turn in await mem.get_history()] == ["one", "two", "three"]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=2)] == [
+            "two",
+            "three",
+        ]
+
+    asyncio.run(scenario())
+
+
 def test_apply_summary_and_clear(mem):
     async def scenario():
         await mem.initialize()

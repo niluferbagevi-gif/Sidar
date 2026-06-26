@@ -229,8 +229,31 @@ class ConversationMemory:
         await self.db.add_message(session_id, role, resolved_content, tokens_used=0)
         self._dirty = False
 
+    def _message_record_to_turn(self, message: MessageRecord) -> dict[str, Any]:
+        """Convert a DB message row to the legacy in-memory turn dictionary shape."""
+        return {
+            "role": message.role,
+            "content": message.content,
+            "timestamp": self._safe_ts(message.created_at),
+            "tokens_used": message.tokens_used,
+        }
+
+    async def get_session_history(
+        self, session_id: str, n_last: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return conversation history from the database-backed messages table."""
+        await self._ensure_initialized()
+        normalized_session_id = str(session_id or "").strip()
+        if not normalized_session_id:
+            return []
+        messages = await self.db.get_session_messages(normalized_session_id)
+        turns = [self._message_record_to_turn(message) for message in messages]
+        return turns if n_last is None else turns[-n_last:]
+
     async def get_history(self, n_last: int | None = None) -> list[dict[str, Any]]:
         await self._ensure_initialized()
+        if self.active_session_id:
+            return await self.get_session_history(self.active_session_id, n_last=n_last)
         with self._lock:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
