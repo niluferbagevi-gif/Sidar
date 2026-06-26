@@ -65,6 +65,14 @@ Mevcut kod tabanında production ve test modülleri doğrudan `httpx` API'sini k
 runtime dependency graph'ından çıkarıldı; böylece tek desteklenen HTTP client yüzeyi
 `httpx` olarak netleşti. Production modüllerinde `import httpx2` yapılmaz.
 
+## Otomatik bağımlılık güncelleme kapısı
+
+`.github/dependabot.yml`, sıkı pinlenen bağımlılık yüzeyleri için haftalık Dependabot
+PR'ları açar. Kapsam; `uv`/`uv.lock`, `web_ui_react` npm lockfile'ı, GitHub
+Actions, Dockerfile image tag'leri ve `docker-compose.yml` image tag'leridir. PR'lar
+`dependencies` etiketiyle ve ekosistem bazlı gruplarla gelir; major güncellemeler
+Dependabot'un ayrı PR davranışına bırakılarak reviewer/QA değerlendirmesinden geçer.
+
 Yeni bir HTTP client adayının tekrar değerlendirilmesi için kapılar:
 
 1. **Adapter PR:** `core/http_client.py` benzeri tek bir facade eklenmeden production
