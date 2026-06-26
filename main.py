@@ -667,9 +667,14 @@ def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
-    """Run one Doctor auto-fix command without invoking a shell."""
-    cmd = shlex.split(auto_fix)
-    if not cmd:
+    """Run one validated Doctor auto-fix command without invoking a shell."""
+    try:
+        from core.doctor import validate_auto_fix_command
+
+        cmd = validate_auto_fix_command(auto_fix)
+    except ValueError as exc:
+        logger.warning("Doctor auto_fix komutu reddedildi: %s", exc)
+        print(f"{RED}   • Auto-fix komutu güvenlik doğrulamasından geçmedi: {exc}{RESET}")
         return False
     cmd = _launcher_auto_fix_command(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")

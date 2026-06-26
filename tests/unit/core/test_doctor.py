@@ -1796,3 +1796,46 @@ def test_rag_readiness_aggregate_reports_pass_when_split_checks_pass(monkeypatch
 
     assert check.status == "pass"
     assert check.message == "rag_index_ready=pass; graphrag_entity_memory_ready=pass"
+
+
+def test_doctor_check_contract_rejects_invalid_status() -> None:
+    bad = DoctorCheck("bad", "unknown", "message")
+    with pytest.raises(ValueError, match="status must be one of"):
+        doctor.validate_doctor_check_contract(bad)
+
+
+def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection() -> None:
+    assert doctor.validate_auto_fix_command(
+        "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    ) == ["uv", "run", "python", "-m", "scripts.sync_database_passwords", "--remove-explicit-urls"]
+    assert doctor.validate_auto_fix_command("docker compose up -d postgres") == [
+        "docker",
+        "compose",
+        "up",
+        "-d",
+        "postgres",
+    ]
+    with pytest.raises(ValueError, match="not allowlisted|not safe"):
+        doctor.validate_auto_fix_command("uv run python -m scripts.seed_rag; rm -rf / --force")
+    with pytest.raises(ValueError, match="not allowlisted"):
+        doctor.validate_auto_fix_command("bash -lc 'echo pwnd'")
+
+
+def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
+    check = DoctorCheck(
+        "db",
+        "warn",
+        "password=secret-token postgresql://sidar:secret-token@localhost/sidar",
+        {
+            "error": "password=secret-token postgresql://sidar:secret-token@localhost/sidar",
+            "nested": ["api_key=abc12345", {"token": "token=my-token"}],
+        },
+    )
+
+    payload = check.as_dict()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert "secret-token" not in serialized
+    assert "abc12345" not in serialized
+    assert "my-token" not in serialized
+    assert "postgresql://sidar:***@localhost/sidar" in serialized
