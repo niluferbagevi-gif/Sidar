@@ -139,7 +139,8 @@ rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
   # Keep torch below 2.12 while CVE-2025-3000 is tracked by security/pip-audit-ignores.tsv.
-  # Re-evaluate together with torchvision before the dated policy exception expires.
+  # Current lock target is torch 2.11.0; re-check upstream patches by 2026-08-15
+  # before the dated policy exception expires.
   "torch>=2.4.1,<2.12",
   "torchvision>=0.19,<0.27",
   "sentence-transformers>=3.0.1,<6.0.0",

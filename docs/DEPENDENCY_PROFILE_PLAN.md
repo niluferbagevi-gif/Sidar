@@ -116,7 +116,8 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   açık uçlu resolver davranışını durdurur.
 - Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir;
   `security/pip-audit-ignores.tsv` içindeki aktif `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
-  istisnası bu lock penceresi için tarihlidir. Yeni bir lock yenilemesi farklı torch/torchvision
+  istisnası bu lock penceresi için `status=watch` olarak tarihlidir. `2026-08-15` hedefli ara
+  kontrolde upstream patch durumu yeniden denenmeli; yeni bir lock yenilemesi farklı torch/torchvision
   çözümü üretirse istisnayı uzatmadan önce `<2.12` sınırı ve upstream fix durumu tekrar doğrulanmalıdır.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
