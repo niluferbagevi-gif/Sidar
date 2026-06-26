@@ -96,6 +96,7 @@ class AgentEventBus:
         )
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
+        self._consumer_offsets: dict[str, str] = {}
         self._missing_optional_dependency_warnings: set[str] = set()
         self._backends: dict[str, BaseEventBusBackend] = self._build_backends()
 
@@ -113,6 +114,16 @@ class AgentEventBus:
             backend_cls = getattr(module, class_name)
             loaded[backend_name] = backend_cls(self)
         return loaded
+
+    def get_consumer_offsets(self) -> dict[str, str]:
+        """Return the latest acknowledged/processed remote consumer offset per stream/topic."""
+
+        return dict(self._consumer_offsets)
+
+    def _record_consumer_offset(self, stream_name: object, offset: object) -> None:
+        """Track the latest successfully processed consumer-group offset."""
+
+        self._consumer_offsets[str(stream_name)] = str(offset)
 
     def _warn_missing_optional_backend_dependency(
         self, *, backend: str, package: str, install_hint: str
@@ -468,6 +479,7 @@ class AgentEventBus:
                                 await self._redis_client.xack(
                                     self._channel, self._consumer_group, msg_id
                                 )
+                                self._record_consumer_offset(_stream_name, msg_id)
                             except Exception as exc:
                                 await self._write_dead_letter(
                                     reason="ack_failed",
@@ -512,6 +524,16 @@ class AgentEventBus:
                 evt = self._deserialize_event_payload(message.value.decode("utf-8"))
                 if evt is not None:
                     self._fanout_local(evt)
+                kafka_offset = getattr(message, "offset", None)
+                if kafka_offset is not None:
+                    kafka_topic = getattr(message, "topic", self._kafka_topic)
+                    kafka_partition = getattr(message, "partition", None)
+                    stream_name = (
+                        f"{kafka_topic}:{kafka_partition}"
+                        if kafka_partition is not None
+                        else str(kafka_topic)
+                    )
+                    self._record_consumer_offset(stream_name, kafka_offset)
             except Exception as exc:
                 await self._write_dead_letter(
                     reason="invalid_payload",
@@ -684,6 +706,7 @@ class AgentEventBus:
         self._kafka_available = None
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
+        self._consumer_offsets.clear()
 
     async def _ensure_redis_loop_compatibility(self) -> None:
         if self._backend != "redis":

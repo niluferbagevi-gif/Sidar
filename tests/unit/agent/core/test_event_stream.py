@@ -215,8 +215,18 @@ class DummyRabbitConnection:
 
 
 class DummyKafkaMessage:
-    def __init__(self, value: bytes) -> None:
+    def __init__(
+        self,
+        value: bytes,
+        *,
+        topic: str = "sidar.agent_events",
+        partition: int = 0,
+        offset: int | None = None,
+    ) -> None:
         self.value = value
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
 
 
 class DummyKafkaProducer:
@@ -511,6 +521,37 @@ def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEven
     assert written[0]["reason"] == "publish_failed"
 
 
+@pytest.mark.asyncio
+async def test_publish_preserves_local_order_when_remote_write_falls_back_to_dlq(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    redis = DummyRedis()
+
+    async def _xadd_fail(*_args, **_kwargs):
+        raise RuntimeError("remote unavailable")
+
+    redis.xadd = _xadd_fail
+    bus._backend = "redis"
+    bus._redis_client = redis
+    bus._redis_available = True
+
+    async def _no_op() -> None:
+        return None
+
+    monkeypatch.setattr(bus, "_ensure_redis_loop_compatibility", _no_op)
+    monkeypatch.setattr(bus, "_ensure_redis_listener", _no_op)
+    monkeypatch.setattr(bus, "_cleanup_redis", _no_op)
+
+    _sid, queue = bus.subscribe(maxsize=10)
+
+    await bus.publish("supervisor", "first")
+    await bus.publish("supervisor", "second")
+
+    assert [queue.get_nowait().message, queue.get_nowait().message] == ["first", "second"]
+    assert [item["reason"] for item in bus._dlq_buffer] == ["publish_failed"]
+    assert bus._redis_available is False
+
+
 def test_redis_listener_loop_handles_payload_ack_and_errors(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -550,6 +591,100 @@ def test_redis_listener_loop_handles_payload_ack_and_errors(
     assert fanouts[0].message == "ok"
     assert "invalid_payload" in dlq_reasons
     assert "ack_failed" in dlq_reasons
+
+
+def test_redis_listener_tracks_consumer_group_offsets_in_ack_order(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    redis = DummyRedis()
+    bus._redis_client = redis
+    bus._redis_available = True
+
+    redis.responses = [
+        [
+            (
+                bus._channel,
+                [
+                    (
+                        "10-0",
+                        {
+                            "payload": json.dumps(
+                                {
+                                    "sid": "remote",
+                                    "ts": 10,
+                                    "source": "coder",
+                                    "message": "first",
+                                }
+                            )
+                        },
+                    ),
+                    (
+                        "11-0",
+                        {
+                            "payload": json.dumps(
+                                {
+                                    "sid": "remote",
+                                    "ts": 11,
+                                    "source": "qa",
+                                    "message": "second",
+                                }
+                            )
+                        },
+                    ),
+                ],
+            )
+        ],
+        asyncio.CancelledError(),
+    ]
+
+    fanouts: list[str] = []
+    monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt.message))
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(bus._redis_listener_loop())
+
+    assert fanouts == ["first", "second"]
+    assert redis.acks == ["10-0", "11-0"]
+    assert bus.get_consumer_offsets() == {bus._channel: "11-0"}
+    offsets_copy = bus.get_consumer_offsets()
+    offsets_copy[bus._channel] = "mutated"
+    assert bus.get_consumer_offsets()[bus._channel] == "11-0"
+
+
+@pytest.mark.asyncio
+async def test_kafka_listener_tracks_processed_offsets_and_order(
+    bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bus._kafka_consumer = DummyKafkaConsumer()
+    bus._kafka_topic = "sidar.agent_events"
+    bus._kafka_consumer.messages = [
+        DummyKafkaMessage(
+            json.dumps({"sid": "remote", "ts": 1, "source": "coder", "message": "first"}).encode(
+                "utf-8"
+            ),
+            topic="sidar.agent_events",
+            partition=2,
+            offset=41,
+        ),
+        DummyKafkaMessage(
+            json.dumps({"sid": "remote", "ts": 2, "source": "qa", "message": "second"}).encode(
+                "utf-8"
+            ),
+            topic="sidar.agent_events",
+            partition=2,
+            offset=42,
+        ),
+        asyncio.CancelledError(),
+    ]
+
+    fanouts: list[str] = []
+    monkeypatch.setattr(bus, "_fanout_local", lambda evt: fanouts.append(evt.message))
+
+    with pytest.raises(asyncio.CancelledError):
+        await bus._kafka_listener_loop()
+
+    assert fanouts == ["first", "second"]
+    assert bus.get_consumer_offsets() == {"sidar.agent_events:2": "42"}
 
 
 def test_redis_listener_loop_empty_response_continue(bus: AgentEventBus) -> None:
@@ -696,6 +831,7 @@ def test_reset_runtime_state_closes_global_resources_and_clears_state() -> None:
     bus._dlq_persist_flush_task = dlq_flush_task
     bus._remote_circuit_consecutive_failures = 3
     bus._remote_circuit_open_until = time.time() + 60
+    bus._record_consumer_offset("sidar:agent_events", "9-0")
 
     asyncio.run(bus.reset_runtime_state())
 
@@ -713,6 +849,7 @@ def test_reset_runtime_state_closes_global_resources_and_clears_state() -> None:
     assert bus._kafka_available is None
     assert bus._remote_circuit_consecutive_failures == 0
     assert bus._remote_circuit_open_until == 0.0
+    assert bus.get_consumer_offsets() == {}
 
 
 def test_cleanup_redis_without_client_or_listener() -> None:
@@ -1663,6 +1800,7 @@ def test_publish_via_remote_opens_circuit_after_threshold_failures(
     assert asyncio.run(bus._publish_via_remote(evt)) is False
     assert bus._remote_circuit_consecutive_failures == 1
     assert bus._remote_circuit_open_until == 0.0
+    assert bus.get_consumer_offsets() == {}
 
     assert asyncio.run(bus._publish_via_remote(evt)) is False
     assert bus._remote_circuit_consecutive_failures == 2
@@ -1689,6 +1827,7 @@ def test_publish_via_remote_resets_circuit_after_success(
     assert asyncio.run(bus._publish_via_remote(evt)) is True
     assert bus._remote_circuit_consecutive_failures == 0
     assert bus._remote_circuit_open_until == 0.0
+    assert bus.get_consumer_offsets() == {}
 
 
 def test_publish_skips_remote_bootstrap_when_circuit_open(
