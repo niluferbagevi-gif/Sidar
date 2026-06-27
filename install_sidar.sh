@@ -3253,7 +3253,7 @@ EOF
 
         info "Kamera ve ses kütüphaneleri kuruluyor..."
         local -a linux_media_pkgs=(
-            portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
+            portaudio19-dev alsa-utils v4l-utils ffmpeg
         )
         if [[ "$WSL2" == true ]]; then
             info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
