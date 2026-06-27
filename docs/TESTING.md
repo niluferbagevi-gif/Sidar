@@ -40,23 +40,31 @@ tekerleği her platformda hazır gelmeyebildiği için `uv sync --all-extras` ve
 `uv sync --extra voice` sırasında PortAudio geliştirme başlıklarına ihtiyaç
 duyabilir.
 
-Linux/Ubuntu tabanlı geliştirme ve CI ortamlarında Python bağımlılıklarını
-senkronlamadan önce sistem paketini kurun:
+Python bağımlılıklarını senkronlamadan önce kullandığınız platforma uygun
+PortAudio geliştirme paketini kurun:
 
 ```bash
+# Debian/Ubuntu
 sudo apt-get update
 sudo apt-get install -y portaudio19-dev
-uv sync --all-extras
-```
 
-macOS üzerinde eşdeğer ön koşul Homebrew ile sağlanır:
+# Fedora/RHEL
+sudo dnf install -y portaudio-devel
 
-```bash
+# Arch Linux
+sudo pacman -S --needed portaudio
+
+# openSUSE/SLES
+sudo zypper install portaudio19-devel
+
+# macOS/Homebrew
 brew install portaudio
+
 uv sync --all-extras
 ```
 
-Repo CI akışı bu ön koşulu `scripts/install_ci_system_deps.sh` üzerinden kurar;
-`install_sidar.sh` ve modüler installer da tam/voice profil senkronizasyonundan
-önce Debian/Ubuntu üzerinde `portaudio19-dev` paketini idempotent biçimde
-doğrular.
+Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
+`scripts/install_ci_system_deps.sh` üzerinden kurar. `install_sidar.sh` ve modüler
+installer da tam/voice profil senkronizasyonundan önce desteklenen paket
+yöneticileriyle (`apt`, `dnf`, `pacman`, `zypper`, `brew`) PortAudio geliştirme
+paketini idempotent biçimde doğrular veya platforma uygun manuel komutu gösterir.
