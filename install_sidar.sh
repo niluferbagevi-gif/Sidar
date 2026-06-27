@@ -25,7 +25,7 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; th
     if [[ -n "${SUDO_USER:-}" ]]; then
         echo "ℹ️ Tespit edilen normal kullanıcı: ${SUDO_USER}. Dizin sahipliği bozulduysa düzeltme:" >&2
         guard_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        echo "   sudo chown -R ${SUDO_USER}:${SUDO_USER} "${guard_script_dir}/.venv"" >&2
+        printf '   sudo chown -R %s:%s %q\n' "$SUDO_USER" "$SUDO_USER" "${guard_script_dir}/.venv" >&2
     fi
     exit 1
 fi
