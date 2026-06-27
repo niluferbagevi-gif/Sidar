@@ -16,7 +16,7 @@ SHELLCHECK_FILES := $(shell git ls-files \
 lint: lint-shell check-install-manifests
 
 installer-shellcheck:
-	$(SHELLCHECK) --severity=warning -x install_sidar.sh
+	$(SHELLCHECK) --severity=warning -x install_sidar.sh scripts/install_modules/install_helpers.sh scripts/install_modules/utils/python_env.sh
 
 lint-shell:
 	$(SHELLCHECK) --severity=warning -x $(SHELLCHECK_FILES)
