@@ -941,6 +941,62 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "modular python_env create_uv_venv recreates mismatched Python venv like inline installer" {
+  local root
+  root="$(repo_root)"
+  run bash -c '
+    set -Eeuo pipefail
+    repo_root="$1"
+    cd "$repo_root"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin" "$tmpdir/.venv/bin"
+    SCRIPT_DIR="$tmpdir"
+    PYTHON_VERSION="3.11"
+    step() { :; }
+    info() { :; }
+    ok() { :; }
+    warn() { printf "%s\n" "$*" >> "$tmpdir/warn.log"; }
+    fail() { printf "%s\n" "$*" >&2; exit 1; }
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "3.10\n"
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+if [[ "\$*" == "python install 3.11" ]]; then
+  exit 0
+fi
+if [[ "\$*" == "venv --python 3.11 $tmpdir/.venv" ]]; then
+  mkdir -p "$tmpdir/.venv/bin"
+  cat > "$tmpdir/.venv/bin/activate" <<ACTIVATE
+#!/usr/bin/env bash
+export VIRTUAL_ENV="$tmpdir/.venv"
+ACTIVATE
+  cat > "$tmpdir/.venv/bin/python" <<PYTHON
+#!/usr/bin/env bash
+printf "3.11\\n"
+PYTHON
+  chmod +x "$tmpdir/.venv/bin/python"
+  exit 0
+fi
+exit 99
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    source ./scripts/install_modules/utils/python_env.sh
+
+    create_uv_venv
+
+    grep -q "^python install 3.11$" "$tmpdir/uv.log"
+    grep -q "^venv --python 3.11 $tmpdir/.venv$" "$tmpdir/uv.log"
+    [[ "$("$tmpdir/.venv/bin/python")" == "3.11" ]]
+    grep -q "zorunlu sürüm 3.11" "$tmpdir/warn.log"
+  ' _ "$root"
+  [ "$status" -eq 0 ]
+}
+
 @test "install_python_deps installs PortAudio with apt-get directly for root installs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
