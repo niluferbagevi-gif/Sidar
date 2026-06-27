@@ -50,6 +50,21 @@ Bu rehber, SİDAR'ın üretim ortamında PostgreSQL'e güvenli geçişi için mi
    alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
    ```
 
+### `SIDAR_AUTO_MIGRATE=false` production politikası
+
+- `SIDAR_AUTO_MIGRATE=false` yalnızca migration'ların kontrollü değişiklik penceresinde
+  manuel/CI adımıyla çalıştırıldığı production ortamlarında kullanılmalıdır.
+- Bu bayrak kapalıyken runtime database bootstrap/Alembic auto-fix yolu atlanır; Doctor
+  database/RAG kontrolleri ortamı raporlar ancak şema yükseltmesini uygulama prosesi
+  içinde yapmaz.
+- Deploy öncesi zorunlu operatör adımları:
+  ```bash
+  uv run alembic upgrade head
+  uv run python -m core.doctor artifacts/install/doctor.json
+  ```
+- Fresh PostgreSQL volume veya `alembic_version` tablosu eksikse `SIDAR_AUTO_MIGRATE=false`
+  ile uygulamayı başlatmayın; önce yukarıdaki Alembic doğrulamasını tamamlayın.
+
 ## 2) Veri taşıma (SQLite -> PostgreSQL)
 
 1. Bakım penceresi açın (yazma trafiğini durdurun).

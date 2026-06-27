@@ -1671,8 +1671,24 @@ def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, 
 
     state = doctor._rag_readiness_state()
 
+    assert state["details"]["rag_backend_probe_path"] == "pgvector_database_env"
+    assert "pgvector" in state["details"]["rag_backend_smoke_scope"]
     assert state["details"]["database_env_status"] == "fail"
     assert state["details"]["blocked_by"] == "database_env"
+
+
+def test_rag_readiness_state_records_backend_probe_paths(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "chroma")
+    chroma_state = doctor._rag_readiness_state()
+    assert chroma_state["details"]["rag_backend_probe_path"] == "chromadb_local_index"
+    assert "ChromaDB/local index" in chroma_state["details"]["rag_backend_smoke_scope"]
+
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "bm25")
+    bm25_state = doctor._rag_readiness_state()
+    assert bm25_state["details"]["rag_backend_probe_path"] == "bm25_keyword_fallback"
+    assert bm25_state["details"]["rag_backend_smoke_scope"] == "BM25/keyword fallback only"
 
 
 def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None:

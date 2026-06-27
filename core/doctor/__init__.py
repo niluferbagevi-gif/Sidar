@@ -905,6 +905,15 @@ def _rag_readiness_state() -> dict[str, Any]:
         "entity_edge_count": entity_edge_count,
         "bm25_fallback": "SQLite FTS5",
     }
+    if vector_backend == "pgvector":
+        details["rag_backend_probe_path"] = "pgvector_database_env"
+        details["rag_backend_smoke_scope"] = "pgvector + database_env parity + BM25 fallback"
+    elif vector_backend in {"chroma", "chromadb"}:
+        details["rag_backend_probe_path"] = "chromadb_local_index"
+        details["rag_backend_smoke_scope"] = "ChromaDB/local index + BM25 fallback"
+    else:
+        details["rag_backend_probe_path"] = "bm25_keyword_fallback"
+        details["rag_backend_smoke_scope"] = "BM25/keyword fallback only"
 
     blockers: list[str] = []
     warnings: list[str] = []
