@@ -1342,6 +1342,22 @@ prepare_test_database() {
     return 1
   fi
 
+  if [ "${RUN_ALEMBIC_DOWNGRADE_CHECK:-1}" = "1" ]; then
+    echo "↩️ Alembic downgrade/upgrade zinciri doğrulanıyor (downgrade base && upgrade head)..."
+    if ! uv run alembic downgrade base; then
+      echo "❌ Alembic downgrade base doğrulaması başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+    if ! uv run alembic upgrade head; then
+      echo "❌ Alembic downgrade sonrası upgrade head doğrulaması başarısız oldu."
+      BACKEND_EXIT_CODE=1
+      return 1
+    fi
+  else
+    echo "⚠️ Alembic downgrade/upgrade zinciri atlandı (RUN_ALEMBIC_DOWNGRADE_CHECK=0)."
+  fi
+
   echo "✅ Test veritabanı ve migrasyon hazırlığı tamamlandı."
   return 0
 }

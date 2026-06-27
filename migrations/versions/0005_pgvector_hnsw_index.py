@@ -17,15 +17,43 @@ down_revision = "0004_faz_e_tables"
 branch_labels = None
 depends_on = None
 
+HNSW_M_ENV = "PGVECTOR_HNSW_M"
+HNSW_EF_CONSTRUCTION_ENV = "PGVECTOR_HNSW_EF_CONSTRUCTION"
+DEFAULT_HNSW_M = 16
+DEFAULT_HNSW_EF_CONSTRUCTION = 64
+
 
 def _resolve_engine_name(bind: object) -> str:
     engine = getattr(bind, "engine", None)
     if engine is not None and getattr(engine, "name", None):
-        return str(getattr(engine, "name")).strip().lower()
+        return str(engine.name).strip().lower()
     dialect = getattr(bind, "dialect", None)
     if dialect is not None and getattr(dialect, "name", None):
-        return str(getattr(dialect, "name")).strip().lower()
+        return str(dialect.name).strip().lower()
     return ""
+
+
+def _bounded_int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _hnsw_index_options() -> str:
+    """Resolve bounded HNSW index options for different memory/VRAM profiles."""
+    m = _bounded_int_env(HNSW_M_ENV, DEFAULT_HNSW_M, minimum=4, maximum=64)
+    ef_construction = _bounded_int_env(
+        HNSW_EF_CONSTRUCTION_ENV,
+        DEFAULT_HNSW_EF_CONSTRUCTION,
+        minimum=16,
+        maximum=512,
+    )
+    return f"WITH (m = {m}, ef_construction = {ef_construction})"
 
 
 def upgrade() -> None:
@@ -68,8 +96,9 @@ def upgrade() -> None:
         except Exception:
             return
 
+    hnsw_options = _hnsw_index_options()
     op.execute(
-        """
+        f"""
         DO $$
         BEGIN
             EXECUTE '
@@ -91,7 +120,7 @@ def upgrade() -> None:
             EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_parent '
                  || 'ON rag_embeddings(parent_id)';
             EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
-                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
+                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops) {hnsw_options}';
         END $$;
         """
     )

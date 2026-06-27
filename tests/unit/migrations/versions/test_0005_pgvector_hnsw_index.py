@@ -47,6 +47,21 @@ def test_upgrade_defines_rag_embeddings_schema_and_indexes(monkeypatch):
     assert "idx_rag_embeddings_session" in sql
     assert "idx_rag_embeddings_parent" in sql
     assert "idx_rag_embeddings_embedding_hnsw" in sql
+    assert "WITH (m = 16, ef_construction = 64)" in sql
+
+
+def test_upgrade_uses_bounded_env_hnsw_options(monkeypatch):
+    monkeypatch.setenv("PGVECTOR_HNSW_M", "32")
+    monkeypatch.setenv("PGVECTOR_HNSW_EF_CONSTRUCTION", "128")
+    module, op_mock = _load_migration(monkeypatch)
+
+    module.upgrade()
+
+    assert "WITH (m = 32, ef_construction = 128)" in op_mock.execute.call_args.args[0]
+
+    monkeypatch.setenv("PGVECTOR_HNSW_M", "999")
+    monkeypatch.setenv("PGVECTOR_HNSW_EF_CONSTRUCTION", "1")
+    assert module._hnsw_index_options() == "WITH (m = 64, ef_construction = 16)"
 
 
 def test_downgrade_drops_rag_embeddings_objects(monkeypatch):

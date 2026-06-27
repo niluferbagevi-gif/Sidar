@@ -125,6 +125,15 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     assert "profile=${COVERAGE_FAIL_UNDER_SOURCE}" in script
 
 
+def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
+    script = _script()
+
+    assert 'RUN_ALEMBIC_DOWNGRADE_CHECK:-1' in script
+    assert "uv run alembic downgrade base" in script
+    assert "uv run alembic upgrade head" in script
+    assert "downgrade/upgrade zinciri doğrulanıyor" in script
+
+
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
     script = _script()
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")

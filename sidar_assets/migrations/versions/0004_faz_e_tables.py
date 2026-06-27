@@ -7,16 +7,26 @@ Create Date: 2026-03-26 00:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0004_faz_e_tables"
 down_revision = "0003_audit_trail"
 branch_labels = None
 depends_on = None
 
+TABLE_PURPOSES = {
+    "marketing_campaigns": "Poyraz marketing campaigns and funnel objectives.",
+    "content_assets": "Generated campaign copy/assets linked to campaigns.",
+    "operation_checklists": "Operational launch/checklist tasks for campaign execution.",
+    "coverage_tasks": "CoverageAgent work queue for deterministic coverage improvements.",
+    "coverage_findings": "Line/branch findings emitted by coverage analysis tasks.",
+}
+
 
 def upgrade() -> None:
+    # Poyraz marketing domain: campaigns are the parent record for campaign copy,
+    # launch objectives, channel decisions and owner/budget metadata.
     op.create_table(
         "marketing_campaigns",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -37,6 +47,8 @@ def upgrade() -> None:
         ["tenant_id", "status", "updated_at"],
     )
 
+    # Poyraz content assets: generated social/landing/WhatsApp copy and related
+    # campaign artifacts. These cascade with their campaign parent.
     op.create_table(
         "content_assets",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -61,6 +73,8 @@ def upgrade() -> None:
         ["campaign_id", "tenant_id", "asset_type"],
     )
 
+    # Campaign operation planning: launch checklists, channel operations and
+    # owner-visible task status for marketing execution.
     op.create_table(
         "operation_checklists",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -84,6 +98,8 @@ def upgrade() -> None:
         ["campaign_id", "tenant_id", "status"],
     )
 
+    # CoverageAgent queue: captures coverage-improvement requests, command output
+    # and reviewer payloads so QA/coverage automation can be audited.
     op.create_table(
         "coverage_tasks",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -104,6 +120,8 @@ def upgrade() -> None:
         ["tenant_id", "status", "updated_at"],
     )
 
+    # CoverageAgent findings: normalized line/branch/test-gap findings belonging
+    # to a coverage task; dropped before coverage_tasks in downgrade.
     op.create_table(
         "coverage_findings",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
