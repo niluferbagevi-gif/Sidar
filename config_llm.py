@@ -77,4 +77,17 @@ class LLMClientSettings(BaseSettings):
 def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClientSettings:
     """Load LLM settings with the same dotenv precedence as the config facade."""
     env_file = str(env_path) if env_path.exists() and not skip_default_dotenv else None
-    return LLMClientSettings(_env_file=env_file)
+    if env_file is None:
+        return LLMClientSettings()
+
+    scoped_settings_type: type[LLMClientSettings] = type(
+        "ScopedLLMClientSettings",
+        (LLMClientSettings,),
+        {
+            "__module__": __name__,
+            "model_config": SettingsConfigDict(
+                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
+            ),
+        },
+    )
+    return scoped_settings_type()

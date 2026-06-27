@@ -226,6 +226,26 @@ def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(m
     assert settings.OLLAMA_NUM_BATCH == 2048
 
 
+def test_load_llm_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_TIMEOUT=321\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_TIMEOUT == 321
+
+
+def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_TIMEOUT=321\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=True)
+
+    assert settings.OLLAMA_TIMEOUT == 600
+
+
 def test_ollama_batch_policy_centralizes_runtime_bounds():
     policy = config.OllamaBatchPolicy()
 
