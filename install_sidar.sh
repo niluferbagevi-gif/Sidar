@@ -1006,6 +1006,7 @@ resolve_windows_userprofile_path() {
 
     # Fallback: powershell.exe interop (kurumsal cmd policy kısıtlarında işe yarayabilir)
     if command -v powershell.exe &>/dev/null; then
+        # shellcheck disable=SC2016  # PowerShell değişkeni; Bash tarafından genişletilmemeli.
         win_userprofile=$(powershell.exe -NoProfile -Command '$env:UserProfile' 2>/dev/null | tr -d '\r' | tail -n1 || true)
         resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
         if [[ -n "$resolved_wsl_path" ]]; then
@@ -1037,6 +1038,7 @@ resolve_windows_localappdata_path() {
     fi
 
     if command -v powershell.exe &>/dev/null; then
+        # shellcheck disable=SC2016  # PowerShell değişkeni; Bash tarafından genişletilmemeli.
         win_localappdata=$(powershell.exe -NoProfile -Command '$env:LocalAppData' 2>/dev/null | tr -d '\r' | tail -n1 || true)
         resolved_wsl_path="$(windows_path_to_wsl_path "$win_localappdata" || true)"
         if [[ -n "$resolved_wsl_path" ]]; then
