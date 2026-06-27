@@ -6106,6 +6106,7 @@ PY
         fi
         return 1
     }
+    # shellcheck disable=SC2317  # trap RETURN ile dolaylı çağrılır.
     cleanup_temp_ollama() {
         if [[ -n "${temp_ollama_pid:-}" ]] && kill -0 "${temp_ollama_pid:-}" >/dev/null 2>&1; then
             info "Geçici ollama serve süreci sonlandırılıyor (PID: ${temp_ollama_pid:-})..."
