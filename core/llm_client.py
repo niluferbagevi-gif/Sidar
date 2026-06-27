@@ -703,7 +703,7 @@ from core.llm.openai import OpenAIClient  # noqa: E402
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
-    PROVIDER_REGISTRY: dict[str, type[LLMProvider]] = {
+    PROVIDER_REGISTRY: dict[str, type[BaseLLMClient]] = {
         "ollama": OllamaClient,
         "gemini": GeminiClient,
         "openai": OpenAIClient,
@@ -722,7 +722,7 @@ class LLMClient:
         self._client = client_cls(config)
 
     @classmethod
-    def register_provider(cls, name: str, provider_cls: type[LLMProvider]) -> None:
+    def register_provider(cls, name: str, provider_cls: type[BaseLLMClient]) -> None:
         """Register a provider strategy without editing the facade dispatch code."""
         provider_name = (name or "").strip().lower()
         if not provider_name:
