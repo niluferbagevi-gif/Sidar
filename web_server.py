@@ -2306,7 +2306,7 @@ def _parse_forwarded_ip(value: str) -> str | None:
 
 def _trusted_proxy_matches(direct_ip: str) -> bool:
     """Return whether the direct peer is allowed to supply forwarding headers."""
-    trusted_proxies = getattr(Config, "TRUSTED_PROXIES", frozenset())
+    trusted_proxies: frozenset[str] = getattr(Config, "TRUSTED_PROXIES", frozenset())
     if "*" in trusted_proxies:
         return True
     if direct_ip in trusted_proxies:
