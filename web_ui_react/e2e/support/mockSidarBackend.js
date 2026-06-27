@@ -163,15 +163,23 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
     res.end();
   });
 
-  const wss = new WebSocketServer({
-    server,
-    path: "/ws/chat",
+  const wss = new WebSocketServer({ noServer: true });
+  const voiceWss = new WebSocketServer({
+    noServer: true,
     handleProtocols: selectFirstSubprotocol,
   });
-  const voiceWss = new WebSocketServer({
-    server,
-    path: "/ws/voice",
-    handleProtocols: selectFirstSubprotocol,
+
+  server.on("upgrade", (req, socket, head) => {
+    const pathname = new URL(req.url || "/", "http://sidar.local").pathname;
+    const target =
+      pathname === "/ws/voice" ? voiceWss : pathname === "/ws/chat" ? wss : null;
+    if (!target) {
+      socket.destroy();
+      return;
+    }
+    target.handleUpgrade(req, socket, head, (ws) => {
+      target.emit("connection", ws, req);
+    });
   });
 
   wss.on("connection", (socket, req) => {
