@@ -15,6 +15,11 @@ from core.utils.network_validation import is_local_only_host
 
 logger = logging.getLogger(__name__)
 
+LLM_ENTITY_EXTRACTION_TODO = (
+    "TODO(2026-Q3): deterministic GraphRAG entity extraction should be augmented with "
+    "an LLM-assisted extractor behind a feature flag and schema validation."
+)
+
 
 class GraphIndex:
     """Kod tabanı içi modül, endpoint ve çağrı ilişkilerini yönlü grafik olarak tutar."""
@@ -519,4 +524,5 @@ __all__ = [
     "GraphIndex",
     "KnowledgeGraphEdge",
     "KnowledgeGraphNode",
+    "LLM_ENTITY_EXTRACTION_TODO",
 ]

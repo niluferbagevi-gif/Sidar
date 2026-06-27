@@ -11,9 +11,9 @@ from core.db.engine import Database as EngineDatabase
 from core.db.multitenant import AccessPolicyRecord
 from core.db_components.dialect import parse_asyncpg_affected_rows, quote_sql_identifier
 from core.rag import embeddings_wrapper
-from core.rag.graph import GraphIndex
+from core.rag.graph import LLM_ENTITY_EXTRACTION_TODO, GraphIndex
 from core.rag.indexer import GraphIndex as IndexedGraphIndex
-from core.rag.query import GraphRAGSearchPlan
+from core.rag.query import GraphRAGSearchPlan, build_query_candidates
 from managers.code.lsp import (
     decode_lsp_stream,
     encode_lsp_message,
@@ -33,6 +33,23 @@ def test_rag_graph_and_query_facades_keep_stable_imports(tmp_path: Path) -> None
     assert rag.GraphIndex is GraphIndex is IndexedGraphIndex
     assert GraphIndex(tmp_path).root_dir == tmp_path.resolve()
     assert GraphRAGSearchPlan(query="q", vector_backend="bm25").query == "q"
+    assert rag.build_query_candidates("q") == ["q"]
+    assert "LLM-assisted extractor" in LLM_ENTITY_EXTRACTION_TODO
+
+
+def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
+    assert build_query_candidates("kampanya", expander=lambda _q: ["campaign", "marketing"]) == [
+        "campaign",
+        "marketing",
+        "kampanya",
+    ]
+
+    def _broken_expander(_query: str):
+        raise RuntimeError("expansion failed")
+
+    with caplog.at_level("WARNING", logger="core.rag.query"):
+        assert build_query_candidates("orijinal", expander=_broken_expander) == ["orijinal"]
+    assert "falling back to original query" in caplog.text
 
 
 def test_rag_embedding_wrappers_delegate_lazily(monkeypatch) -> None:

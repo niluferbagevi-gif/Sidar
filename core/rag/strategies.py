@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class RagSearchStore(Protocol):
@@ -65,6 +68,10 @@ class BM25OnlyStrategy:
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         """Execute BM25-only retrieval when the FTS index is available."""
         if getattr(self.store, "_bm25_available", False):
+            logger.info(
+                "RAG BM25 fallback/search selected: reason=explicit_bm25 mode, session_id=%s",
+                session_id,
+            )
             return self.store._bm25_search(query, top_k, session_id)
         return False, "BM25 kullanılamıyor — SQLite FTS5 başlatılamadı."
 
@@ -79,8 +86,17 @@ class HybridStrategy:
         """Execute hybrid vector + BM25 retrieval using reciprocal-rank fusion."""
         vector_results = self._fetch_vector_results(query, top_k, session_id)
         bm25_results = self.store._fetch_bm25(query, top_k, session_id)
+        if bm25_results and not vector_results:
+            logger.info(
+                "RAG BM25 fallback/search selected: reason=vector_candidates_empty, session_id=%s",
+                session_id,
+            )
 
         if not vector_results and not bm25_results:
+            logger.info(
+                "RAG keyword fallback selected: reason=no_vector_or_bm25_candidates, session_id=%s",
+                session_id,
+            )
             return self.store._keyword_search(query, top_k, session_id)
 
         k = 60

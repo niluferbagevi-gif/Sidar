@@ -113,3 +113,26 @@ def test_hybrid_strategy_falls_back_to_keyword_when_no_candidates() -> None:
         ("fetch_bm25", "missing", 5, "global"),
         ("keyword_search", "missing", 5, "global"),
     ]
+
+
+def test_hybrid_strategy_logs_when_bm25_is_only_available_candidate(caplog) -> None:
+    store = FakeStore()
+    store._bm25_available = True
+    store.bm25_results = [_doc("bm25-only")]
+
+    with caplog.at_level("INFO", logger="core.rag.strategies"):
+        result = HybridStrategy(store).search("sidar", 2, "s1")
+
+    assert result == (True, "Hibrit RRF (ChromaDB + BM25):sidar:bm25-only")
+    assert "reason=vector_candidates_empty" in caplog.text
+
+
+def test_bm25_strategy_logs_explicit_fallback_selection(caplog) -> None:
+    store = FakeStore()
+    store._bm25_available = True
+
+    with caplog.at_level("INFO", logger="core.rag.strategies"):
+        result = BM25OnlyStrategy(store).search("sidar", 2, "s1")
+
+    assert result == (True, "bm25")
+    assert "reason=explicit_bm25 mode" in caplog.text

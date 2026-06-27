@@ -58,6 +58,9 @@ from .facade import (
     embed_texts_for_semantic_cache as embed_texts_for_semantic_cache,
 )
 from .graph import (
+    LLM_ENTITY_EXTRACTION_TODO as LLM_ENTITY_EXTRACTION_TODO,
+)
+from .graph import (
     ExtractedKnowledgeEntity,
     ExtractedKnowledgeRelation,
     GraphIndex,
@@ -66,6 +69,7 @@ from .graph import (
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
 from .query import GraphRAGSearchPlan
+from .query import build_query_candidates as build_query_candidates
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
 
 _BLEACH_AVAILABLE = True
@@ -1592,7 +1596,16 @@ class DocumentStore:
                 if self._chroma_available and self.collection:  # pragma: no cover
                     return self._chroma_search(query, top_k, session_id)
             if self._bm25_available:
+                logger.info(
+                    "RAG BM25 fallback/search selected: reason=local_llm_auto_no_vector, "
+                    "session_id=%s",
+                    session_id,
+                )
                 return self._bm25_search(query, top_k, session_id)
+            logger.info(
+                "RAG keyword fallback selected: reason=local_llm_auto_no_bm25, session_id=%s",
+                session_id,
+            )
             return self._keyword_search(query, top_k, session_id)
 
         if (
@@ -1637,7 +1650,16 @@ class DocumentStore:
                 logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._bm25_available:
+            logger.info(
+                "RAG BM25 fallback/search selected: reason=vector_backends_unavailable, "
+                "session_id=%s",
+                session_id,
+            )
             return self._bm25_search(query, top_k, session_id)
+        logger.info(
+            "RAG keyword fallback selected: reason=no_vector_or_bm25_backend, session_id=%s",
+            session_id,
+        )
         return self._keyword_search(query, top_k, session_id)
 
     async def search(
