@@ -119,9 +119,46 @@ def test_ci_has_non_blocking_production_profile_dry_run() -> None:
 
     assert "production-profile-dry-run:" in workflow
     assert "continue-on-error: true" in workflow
-    assert "uv sync --frozen --extra production" in workflow
+    assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
+    assert "production-minimal imports ok" in workflow
     assert "production-profile-dry-run" in docs
     assert "ana CI gate'ini kırmaz" in docs
+
+
+def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"][
+        "torch_upgrade_reminder"
+    ]
+    calendar = Path(reminder["calendar_file"])
+    calendar_text = calendar.read_text(encoding="utf-8")
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert reminder["current_lock"] == "torch 2.11.0"
+    assert reminder["tracked_policy_exception"] == "CVE-2025-3000"
+    assert reminder["review_by"] == "2026-08-15"
+    assert reminder["expires"] == "2026-09-15"
+    assert reminder["upgrade_command"] == (
+        "uv lock --upgrade-package torch --upgrade-package torchvision"
+    )
+    assert "uv sync --all-extras" in reminder["validation_commands"]
+    assert calendar.exists()
+    assert "DTSTART;VALUE=DATE:20260815" in calendar_text
+    assert "Review Sidar torch 2.11.0 pin" in calendar_text
+    assert str(calendar) in docs
+
+
+def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    ruff = pyproject["tool"]["ruff"]
+    lint = pyproject["tool"]["ruff"]["lint"]
+    debt = pyproject["tool"]["sidar"]["ruff_debt"]
+
+    assert ruff["line-length"] == 100
+    assert "E501" in lint["ignore"]
+    assert debt["line_length"] == 100
+    assert debt["e501_global_ignore_review_by"] == "2026-09-30"
+    assert {"web_server.py", "main.py"} <= set(debt["legacy_hotspots"])
 
 
 def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() -> None:

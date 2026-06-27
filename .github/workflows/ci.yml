@@ -429,8 +429,10 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Dry-run production dependency profile
-        run: uv sync --frozen --extra production
+      - name: Dry-run production-minimal dependency profile
+        run: |
+          uv sync --frozen --extra production-minimal --no-dev
+          uv run --no-sync python -c "import fastapi, sqlalchemy, alembic; print('production-minimal imports ok')"
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test

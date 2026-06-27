@@ -325,6 +325,24 @@ requirements_exporter = "scripts/export_production_requirements.sh"
 production_dockerfile = "Dockerfile.production"
 summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares production/production-minimal extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
 
+[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
+current_lock = "torch 2.11.0"
+tracked_policy_exception = "CVE-2025-3000"
+review_by = "2026-08-15"
+expires = "2026-09-15"
+calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
+upgrade_command = "uv lock --upgrade-package torch --upgrade-package torchvision"
+validation_commands = [
+  "uv sync --all-extras",
+  "uv run --with pip-audit pip-audit --skip-editable --timeout 30",
+]
+
+[tool.sidar.ruff_debt]
+line_length = 100
+e501_global_ignore_review_by = "2026-09-30"
+e501_global_ignore_reason = "Legacy root entrypoints still contain long lines; new or meaningfully edited code should wrap to line-length=100 and avoid expanding this debt."
+legacy_hotspots = ["web_server.py", "main.py"]
+
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"
 intent = "Minimum library/runtime dependencies required by core Sidar imports."
@@ -553,6 +571,7 @@ select = [
   "D",
 ]
 ignore = [
+  # E501 remains a temporary legacy compatibility ignore; see [tool.sidar.ruff_debt].
   "E501",
   # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
   # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik

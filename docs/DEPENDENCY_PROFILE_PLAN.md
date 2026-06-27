@@ -119,6 +119,8 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   istisnası bu lock penceresi için `status=watch` olarak tarihlidir. `2026-08-15` hedefli ara
   kontrolde upstream patch durumu yeniden denenmeli; yeni bir lock yenilemesi farklı torch/torchvision
   çözümü üretirse istisnayı uzatmadan önce `<2.12` sınırı ve upstream fix durumu tekrar doğrulanmalıdır.
+  Calendar reminder: `docs/reminders/torch-cve-review-2026-08-15.ics`; makine-okunur takip metadata
+  `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğundadır.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
@@ -141,7 +143,7 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
    kalite araçlarını `runtime`, `dev`, optional integration ve provider sınıflarına etiketle. Dev/test
    araçları ana runtime listesinden çıkarılmıştır; `uv sync --all-extras` davranışı korunur.
 2. **CI dry-run:** Yeni profil komutlarını ayrı non-blocking job olarak dene; örn. production image için
-   `uv sync --frozen --extra production --no-dev` ancak ana gate yine `uv sync --all-extras` kalır.
+   `uv sync --frozen --extra production-minimal --no-dev` ancak ana gate yine `uv sync --all-extras` kalır.
    İlk takip işi `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ıdır;
    `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
 3. **Docker/installer koordinasyonu:** `Dockerfile.production` yeni no-dev profile'ı kullanır; ana
@@ -150,7 +152,7 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
    extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
    Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
    production profile yönlendirilir.
-5. **Güvenlik doğrulaması:** Production profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
+5. **Güvenlik doğrulaması:** Production-minimal profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
    smoke ayrı çalıştırılır; dev/test araçlarının production ortamına taşınmadığı doğrulanır.
 
 ## Dockerfile / installer geçiş PR kapsamı
