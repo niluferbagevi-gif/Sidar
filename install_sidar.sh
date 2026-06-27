@@ -3874,6 +3874,87 @@ create_uv_venv() {
 }
 
 # ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
+install_portaudio_prerequisite_for_pyaudio() {
+    local reason="voice extra içindeki pyaudio derlemesi için PortAudio geliştirme paketleri gerekli (uv sync --frozen --all-extras ön koşulu)."
+
+    if command -v apt-get >/dev/null 2>&1; then
+        if dpkg-query -W -f='${Status}' portaudio19-dev 2>/dev/null | grep -q "ok installed"; then
+            return 0
+        fi
+        info "${reason} portaudio19-dev kuruluyor."
+        if [[ "${EUID}" -eq 0 ]]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            sudo -n apt-get update
+            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+        else
+            fail "${reason} Önce 'sudo apt-get install -y portaudio19-dev' çalıştırın, ardından kurulumu tekrar deneyin."
+        fi
+        return 0
+    fi
+
+    if command -v dnf >/dev/null 2>&1; then
+        if rpm -q portaudio-devel >/dev/null 2>&1; then
+            return 0
+        fi
+        info "${reason} portaudio-devel kuruluyor."
+        if [[ "${EUID}" -eq 0 ]]; then
+            dnf install -y portaudio-devel
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            sudo -n dnf install -y portaudio-devel
+        else
+            fail "${reason} Önce 'sudo dnf install -y portaudio-devel' çalıştırın, ardından kurulumu tekrar deneyin."
+        fi
+        return 0
+    fi
+
+    if command -v zypper >/dev/null 2>&1; then
+        if rpm -q portaudio19-devel >/dev/null 2>&1; then
+            return 0
+        fi
+        info "${reason} portaudio19-devel kuruluyor."
+        if [[ "${EUID}" -eq 0 ]]; then
+            zypper --non-interactive refresh
+            zypper --non-interactive install --no-recommends portaudio19-devel
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            sudo -n zypper --non-interactive refresh
+            sudo -n zypper --non-interactive install --no-recommends portaudio19-devel
+        else
+            fail "${reason} Önce 'sudo zypper --non-interactive install --no-recommends portaudio19-devel' çalıştırın, ardından kurulumu tekrar deneyin."
+        fi
+        return 0
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        if pacman -Qi portaudio >/dev/null 2>&1; then
+            return 0
+        fi
+        info "${reason} portaudio kuruluyor."
+        if [[ "${EUID}" -eq 0 ]]; then
+            pacman -Sy --noconfirm --needed portaudio
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            sudo -n pacman -Sy --noconfirm --needed portaudio
+        else
+            fail "${reason} Önce 'sudo pacman -Sy --noconfirm --needed portaudio' çalıştırın, ardından kurulumu tekrar deneyin."
+        fi
+        return 0
+    fi
+
+    if command -v brew >/dev/null 2>&1; then
+        if brew list --formula portaudio >/dev/null 2>&1; then
+            return 0
+        fi
+        info "${reason} Homebrew portaudio formülü kuruluyor."
+        if brew install portaudio; then
+            return 0
+        fi
+        fail "${reason} Önce 'brew install portaudio' çalıştırın, ardından kurulumu tekrar deneyin."
+    fi
+
+    fail "${reason} Desteklenen paket yöneticisi bulunamadı. Platformunuza uygun PortAudio geliştirme paketini kurun (Debian/Ubuntu: portaudio19-dev, Fedora/RHEL: portaudio-devel, openSUSE/SLES: portaudio19-devel, Arch: portaudio, macOS/Homebrew: portaudio) ve kurulumu tekrar deneyin."
+}
+
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
@@ -3897,18 +3978,7 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    if command -v apt-get >/dev/null 2>&1 && ! dpkg-query -W -f='${Status}' portaudio19-dev 2>/dev/null | grep -q "ok installed"; then
-        info "voice extra içindeki pyaudio derlemesi için portaudio19-dev kuruluyor (uv sync --frozen --all-extras ön koşulu)."
-        if [[ "${EUID}" -eq 0 ]]; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
-        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n apt-get update
-            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
-        else
-            fail "voice extra içindeki pyaudio derlemesi için portaudio19-dev gerekli. Önce 'sudo apt-get install -y portaudio19-dev' çalıştırın, ardından 'uv sync --frozen --all-extras' akışını tekrar deneyin."
-        fi
-    fi
+    install_portaudio_prerequisite_for_pyaudio
 
     info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
