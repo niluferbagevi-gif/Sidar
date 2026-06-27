@@ -44,7 +44,6 @@ RUN set -eux; \
       python3-venv \
       python3-pip \
       ffmpeg \
-      portaudio19-dev \
     ; \
     rm -rf /var/lib/apt/lists/*
 
