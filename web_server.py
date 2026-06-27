@@ -9,7 +9,6 @@ Başlatmak için:
 
 from __future__ import annotations
 
-import argparse
 import ast
 import asyncio
 import atexit
@@ -40,7 +39,6 @@ from types import SimpleNamespace
 from typing import Annotated, Any, cast
 
 import anyio
-import uvicorn
 from fastapi import (
     Body,
     Depends,
@@ -81,10 +79,6 @@ from core.llm_metrics import (
     get_llm_metrics_collector,
     reset_current_metrics_user_id,
     set_current_metrics_user_id,
-)
-from core.utils.network_validation import (
-    is_unspecified_bind,
-    validate_bind_host,
 )
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
@@ -171,20 +165,10 @@ logger = logging.getLogger(__name__)
 print = builtins.print
 
 
-def _resolve_vision_components() -> tuple[Any, Any]:
-    vision_module = importlib.import_module("core.vision")
-    build_analyze_prompt = getattr(
-        vision_module,
-        "build_analyze_prompt",
-        lambda analysis_type="general": f"Görseli '{analysis_type}' odaklı analiz et.",
-    )
-    return vision_module.VisionPipeline, build_analyze_prompt
-
 
 def _resolve_psutil_module() -> Any:
     """Resolve psutil through Python import hooks for testable fallback behavior."""
-    return builtins.__import__("psutil")
-
+    return importlib.import_module("psutil")
 
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
@@ -2943,7 +2927,14 @@ _teams_mgr_cache: dict[str, Any] = {}
 vision_router = vision_routes.build_vision_router(
     cfg=cfg,
     resolve_agent_instance=_resolve_agent_instance,
-    resolve_vision_components=_resolve_vision_components,
+    resolve_vision_components=lambda: (
+        importlib.import_module("core.vision").VisionPipeline,
+        getattr(
+            importlib.import_module("core.vision"),
+            "build_analyze_prompt",
+            lambda analysis_type="general": f"Görseli '{analysis_type}' odaklı analiz et.",
+        ),
+    ),
 )
 memory_feedback_router = memory_feedback_routes.build_memory_feedback_router(
     cfg=cfg,
@@ -3315,75 +3306,10 @@ app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=Fals
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sidar Web Arayüzü")
-    parser.add_argument(
-        "--host", default=cfg.WEB_HOST, help=f"Sunucu adresi (varsayılan: {cfg.WEB_HOST})"
-    )
-    parser.add_argument(
-        "--port", type=int, default=cfg.WEB_PORT, help=f"Port numarası (varsayılan: {cfg.WEB_PORT})"
-    )
-    parser.add_argument(
-        "--level",
-        choices=["restricted", "sandbox", "full"],
-        help="Erişim seviyesi (varsayılan: .env'deki değer)",
-    )
-    parser.add_argument(
-        "--provider",
-        choices=["ollama", "gemini", "openai", "anthropic"],
-        help="AI sağlayıcısı (varsayılan: .env'deki değer)",
-    )
-    parser.add_argument("--log", default="info", help="Log seviyesi (debug/info/warning)")
-    args, _unknown_args = parser.parse_known_args()
+    """Run the Sidar web CLI entrypoint."""
+    from web.cli import main as cli_main
 
-    # Dinamik config override
-    if args.level:
-        cfg.ACCESS_LEVEL = args.level
-    if args.provider:
-        cfg.AI_PROVIDER = args.provider
-
-    # Ajan önceden başlat (ilk istekte gecikme olmasın).
-    # Bellek katmanı native-async olduğu için initialize() adımı burada tamamlanır.
-    global _agent
-    try:
-        _agent = SidarAgent(cfg)
-        initialize_result = getattr(_agent, "initialize", None)
-        if callable(initialize_result):
-            maybe_coro = initialize_result()
-            if inspect.iscoroutine(maybe_coro):
-                asyncio.run(maybe_coro)
-    except Exception as exc:
-        logger.warning(
-            "Web server agent ön başlatması başarısız; sunucu yine de başlatılacak: %s", exc
-        )
-        _agent = None
-
-    # B104 bypass yerine: bind adresini `ipaddress` tabanlı doğrulayıcıdan geçir.
-    # Üretim profilinde (SIDAR_ENV=production) 0.0.0.0 / :: değerleri açık onay
-    # (SIDAR_ALLOW_PUBLIC_BIND=true) olmadan reddedilir.
-    try:
-        validated_host = validate_bind_host(args.host)
-    except ValueError as exc:
-        logger.critical("Web sunucusu güvenlik politikasına takıldı: %s", exc)
-        raise SystemExit(2) from exc
-    args.host = validated_host
-    display_host = "localhost" if is_unspecified_bind(validated_host) else validated_host
-    agent_version = getattr(_agent, "VERSION", "") if _agent is not None else ""
-    version_label = f"v{agent_version}" if agent_version else f"v{getattr(cfg, 'VERSION', '?')}"
-
-    print()
-    print("  ╔══════════════════════════════════════╗")
-    print("  ║  SİDAR Web Arayüzü                   ║")
-    print(f"  ║  http://{display_host}:{args.port:<27}║")
-    print("  ╚══════════════════════════════════════╝")
-    print(f"     Sürüm: {version_label}")
-    print()
-
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level=args.log.lower(),
-    )
+    cli_main()
 
 
 if __name__ == "__main__":

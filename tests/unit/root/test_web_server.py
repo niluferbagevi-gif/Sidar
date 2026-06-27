@@ -20,6 +20,7 @@ if "opentelemetry.instrumentation.httpx" not in sys.modules:
     )
     sys.modules["opentelemetry.instrumentation.httpx"] = fake_httpx_mod
 
+import web.cli as web_cli
 import web_server
 from agent.core import contracts as agent_contracts
 from web import security as web_security
@@ -4653,9 +4654,9 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
             return _Args(), []
 
     run_calls = []
-    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(web_cli.argparse, "ArgumentParser", lambda **_: _Parser())
     monkeypatch.setattr(
-        web_server,
+        web_cli,
         "uvicorn",
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
@@ -4666,7 +4667,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
             coro.close()
         return None
 
-    monkeypatch.setattr(web_server, "asyncio", SimpleNamespace(run=_run_and_finalize))
+    monkeypatch.setattr(web_cli, "asyncio", SimpleNamespace(run=_run_and_finalize))
 
     class _AgentOK:
         VERSION = "9.9.9"
@@ -4674,7 +4675,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
         async def initialize(self):
             return None
 
-    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentOK())
+    monkeypatch.setattr(web_cli, "SidarAgent", lambda _cfg: _AgentOK())
     web_server.main()
     assert run_calls[-1][1]["host"] == "0.0.0.0"
     assert run_calls[-1][1]["port"] == 9191
@@ -4683,7 +4684,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
     assert web_server.cfg.AI_PROVIDER == "openai"
 
     monkeypatch.setattr(
-        web_server, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom"))
+        web_cli, "SidarAgent", lambda _cfg: (_ for _ in ()).throw(RuntimeError("boom"))
     )
     web_server.main()
     assert run_calls[-1][1]["port"] == 9191
@@ -4694,7 +4695,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
         def initialize(self):
             return None
 
-    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentSync())
+    monkeypatch.setattr(web_cli, "SidarAgent", lambda _cfg: _AgentSync())
     web_server.main()
     assert run_calls[-1][1]["host"] == "0.0.0.0"
 
@@ -4718,15 +4719,15 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
             return _Args(), []
 
     run_calls = []
-    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(web_cli.argparse, "ArgumentParser", lambda **_: _Parser())
     monkeypatch.setattr(
-        web_server,
+        web_cli,
         "uvicorn",
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
     monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
     monkeypatch.setattr(
-        web_server,
+        web_cli,
         "SidarAgent",
         lambda _cfg: SimpleNamespace(VERSION="1.0.0", initialize=lambda: None),
     )
@@ -4756,9 +4757,9 @@ def test_main_handles_non_callable_initialize_attribute(monkeypatch):
             return _Args(), []
 
     run_calls = []
-    monkeypatch.setattr(web_server.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(web_cli.argparse, "ArgumentParser", lambda **_: _Parser())
     monkeypatch.setattr(
-        web_server,
+        web_cli,
         "uvicorn",
         SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
     )
@@ -4768,7 +4769,7 @@ def test_main_handles_non_callable_initialize_attribute(monkeypatch):
         VERSION = "0.0.1"
         initialize = "not-callable"
 
-    monkeypatch.setattr(web_server, "SidarAgent", lambda _cfg: _AgentNoInit())
+    monkeypatch.setattr(web_cli, "SidarAgent", lambda _cfg: _AgentNoInit())
     web_server.main()
 
     assert run_calls[-1][1]["host"] == "127.0.0.1"
