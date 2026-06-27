@@ -114,6 +114,28 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
 
 
+def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:
+    script = _script()
+
+    assert "uv run mypy --strict core/ agent/ web/ managers/" in script
+    assert "uv run bandit -r . -c pyproject.toml" in script
+    assert 'MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"' in script
+    assert 'minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}' in script
+    assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
+
+
+def test_ci_exposes_security_and_mutation_quality_gates() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    mutation = Path(".github/workflows/weekly-mutation-and-critical-tests.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "uv run bandit -r . -c pyproject.toml" in ci
+    assert "uv run bash run_tests.sh" in ci
+    assert 'COVERAGE_FAIL_UNDER_CI: "95"' in ci
+    assert "uv run --with mutmut mutmut run --max-children 4" in mutation
+
+
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     script = _script()
 
@@ -143,7 +165,6 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
     assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
     assert "Aşama 1 unit fazı artık pytest-xdist mevcutsa" in notes
     assert "Unit ağırlığı" in notes
-
 
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
     script = _script()

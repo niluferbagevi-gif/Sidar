@@ -604,10 +604,23 @@ print_frontend_quality_summary() {
   fi
 }
 
+MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"
+if ! [[ "${MIN_UNIT_COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "⚠️ Geçersiz MIN_UNIT_COVERAGE_FAIL_UNDER değeri: '${MIN_UNIT_COVERAGE_FAIL_UNDER}'. Varsayılan 80 kullanılacak."
+  MIN_UNIT_COVERAGE_FAIL_UNDER="80"
+fi
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
   COVERAGE_FAIL_UNDER="90"
 fi
+COVERAGE_FAIL_UNDER="$(python - "${COVERAGE_FAIL_UNDER}" "${MIN_UNIT_COVERAGE_FAIL_UNDER}" <<'PY_COVERAGE_FLOOR'
+import sys
+
+resolved = float(sys.argv[1])
+floor = float(sys.argv[2])
+print(f"{max(resolved, floor):g}")
+PY_COVERAGE_FLOOR
+)"
 
 install_local_bats_dependencies() {
   echo "📦 BATS ve yerel kalite kapısı sistem bağımlılıkları kuruluyor..."
@@ -659,7 +672,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, .coveragerc baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, .coveragerc baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 
@@ -976,7 +989,7 @@ run_static_analysis_gates() {
     else
       mypy_attempt_log="${AUTO_HEAL_LOG_PATH}.attempt-$((attempt + 1))"
     fi
-    if uv run mypy 2>&1 | tee "${AUTO_HEAL_LOG_PATH}" "${mypy_attempt_log}"; then
+    if uv run mypy --strict core/ agent/ web/ managers/ 2>&1 | tee "${AUTO_HEAL_LOG_PATH}" "${mypy_attempt_log}"; then
       return 0
     fi
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
@@ -1046,7 +1059,7 @@ run_security_analysis_gates() {
   fi
 
   echo "🛡️ Hızlı SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
-  if ! uv run bandit -c pyproject.toml -q -r .; then
+  if ! uv run bandit -r . -c pyproject.toml; then
     echo "❌ Bandit güvenlik taraması başarısız."
     BACKEND_EXIT_CODE=1
     return 1

@@ -193,7 +193,7 @@ jobs:
 
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
-          uv run bandit -c pyproject.toml -q -r .
+          uv run bandit -r . -c pyproject.toml
           mkdir -p artifacts/security
           mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
           stderr_log=artifacts/security/pip-audit-stderr.log
