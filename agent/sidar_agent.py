@@ -1594,12 +1594,16 @@ class SidarAgent:
             _metrics = None
 
         agent_max_steps = getattr(self.cfg, "AGENT_MAX_REACT_STEPS", None)
+        resolved_agent_steps = (
+            agent_max_steps
+            if agent_max_steps is not None
+            else getattr(Config, "AGENT_MAX_REACT_STEPS", 10)
+        )
         legacy_subtask_steps = getattr(self.cfg, "SUBTASK_MAX_STEPS", None)
         if (
             legacy_subtask_steps is not None
             and int(legacy_subtask_steps) != int(getattr(Config, "SUBTASK_MAX_STEPS", 5))
-            and int(agent_max_steps or getattr(Config, "AGENT_MAX_REACT_STEPS", 10))
-            == int(getattr(Config, "AGENT_MAX_REACT_STEPS", 10))
+            and int(resolved_agent_steps) == int(getattr(Config, "AGENT_MAX_REACT_STEPS", 10))
         ):
             # Backward compatibility: existing callers/tests that explicitly tune
             # SUBTASK_MAX_STEPS keep their narrower guard unless the new agent-level
