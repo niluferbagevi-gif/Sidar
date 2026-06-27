@@ -2478,6 +2478,7 @@ EOF
 }
 
 INSTALL_SUBCOMMAND="full"
+# shellcheck disable=SC2034  # UPGRADE_LOCK is consumed by sourced python_env.sh install_python_deps.
 for arg in "$@"; do
     case "$arg" in
         --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ;;
@@ -3783,164 +3784,8 @@ setup_nvidia_docker() {
 }
 
 # ── 4. uv CLI kurulumu / güncelleme ──────────────────────────────────────────
-install_uv_cli() {
-    step "uv CLI Paket Yöneticisi"
-    export UV_PROGRESS_BAR=on
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
-    if ! command -v uv &>/dev/null; then
-        local uv_install_script=""
-        if [[ "$OFFLINE_MODE" == true ]]; then
-            info "uv bulunamadı — çevrimdışı paketlerden kurulacak."
-            uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
-            [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
-        else
-            info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-            DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
-                "https://astral.sh/uv/install.sh" \
-                "${UV_INSTALL_SHA256:-}" \
-                "uv_install"
-            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
-            uv_install_script="$DOWNLOADED_SCRIPT_FILE"
-        fi
-
-        sh "$uv_install_script"
-        [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-        if [[ -f "$HOME/.cargo/env" ]]; then
-            # shellcheck disable=SC1090
-            source "$HOME/.cargo/env"
-        fi
-        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
-        export PATH="$HOME/.local/bin:$PATH"
-    fi
-
-    if ! command -v uv &>/dev/null; then
-        fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
-    fi
-    ok "uv $(uv --version | cut -d' ' -f2)"
-}
-
-# ── 4.1 uv venv oluşturma / etkinleştirme ───────────────────────────────────
-create_uv_venv() {
-    step "uv venv Ortamı"
-    VENV_DIR="$SCRIPT_DIR/.venv"
-    info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
-    uv python install "$PYTHON_VERSION"
-
-    if [[ -d "$VENV_DIR" ]]; then
-        info "Mevcut uv venv bulundu: $VENV_DIR"
-        local detected_python_version=""
-        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
-        if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
-            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
-        fi
-        if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
-            warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
-            if [[ -O "$VENV_DIR" ]]; then
-                if ! rm -rf "$VENV_DIR"; then
-                    fail ".venv silinemedi: $VENV_DIR. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
-                fi
-            else
-                local venv_backup_dir
-                venv_backup_dir="$SCRIPT_DIR/.venv.broken-$(date +%Y%m%d-%H%M%S)"
-                warn ".venv mevcut kullanıcıya ait değil. Güvenli yol olarak yedek adla taşımayı deniyorum: $venv_backup_dir"
-                if mv "$VENV_DIR" "$venv_backup_dir" 2>/dev/null; then
-                    warn "Eski .venv taşındı: $venv_backup_dir"
-                elif [[ -t 0 ]] && command -v sudo &>/dev/null; then
-                    warn "Taşıma başarısız; etkileşimli modda sudo ile kaldırma onayı istenecek."
-                    if sudo rm -rf "$VENV_DIR"; then
-                        ok "Sudo ile eski .venv kaldırıldı."
-                    else
-                        fail ".venv kaldırılamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
-                    fi
-                else
-                    fail ".venv mevcut kullanıcıya ait değil ve taşınamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" (veya yalnızca .venv) ardından kurulumu tekrar çalıştırın."
-                fi
-            fi
-            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-            ok "uv venv zorunlu Python $PYTHON_VERSION ile yeniden oluşturuldu."
-        fi
-    else
-        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
-        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
-        ok "uv venv oluşturuldu."
-    fi
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate"
-    ok "Ortam aktif: $VENV_DIR"
-}
-
-# ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
-install_python_deps() {
-    step "Python Bağımlılıkları Kuruluyor"
-
-    cd "$SCRIPT_DIR"
-    UV_CMD=(uv)
-
-    # Dev araçları (pytest/coverage/mypy/ruff) self-healing ve otonom kalite
-    # döngüleri için production dahil her profilde zorunludur.
-    local -a SYNC_ARGS=(--frozen --all-extras)
-
-    if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
-        fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
-    fi
-
-    if [[ "$UPGRADE_LOCK" == true ]]; then
-        info "--upgrade-lock verildi; uv.lock bilinçli olarak güncelleniyor (uv lock --upgrade)."
-        if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" lock --upgrade; then
-            fail "uv lock --upgrade başarısız oldu; uv.lock güncellenemedi."
-        fi
-    else
-        info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
-    fi
-
-    ensure_portaudio_dev "uv sync --frozen --all-extras"
-
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
-    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
-    fi
-
-    if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
-        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras' akışını temiz bir ortamda tekrar çalıştırın."
-    fi
-
-    ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
-    ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."
-    ensure_env_file_secrets_after_uv_sync
-    validate_runtime_env_loading
-}
-
-# ── 5.1 Pyright LSP aracını kur/doğrula ─────────────────────────────────────
-install_pyright_lsp_tool() {
-    step "Pyright LSP Aracı"
-
-    local venv_bin="$SCRIPT_DIR/.venv/bin"
-    export PATH="$venv_bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-
-    if [[ -x "$venv_bin/pyright-langserver" ]]; then
-        ok "Pyright LSP hazır: $venv_bin/pyright-langserver"
-        return
-    fi
-
-    if uv run pyright-langserver --version >/dev/null 2>&1; then
-        ok "Pyright LSP uv sync ortamında hazır: $(uv run python -c 'import shutil; print(shutil.which("pyright-langserver") or "uv-run")')"
-        return
-    fi
-
-    warn "Pyright LSP proje ortamında bulunamadı; dev bağımlılıkları uv sync ile yenileniyor."
-    if uv sync --frozen --extra dev >/dev/null 2>&1; then
-        if uv run pyright-langserver --version >/dev/null 2>&1; then
-            ok "Pyright LSP dev bağımlılığı olarak doğrulandı: $(uv run python -c 'import shutil; print(shutil.which("pyright-langserver") or "uv-run")')"
-            return
-        fi
-    fi
-
-    fail "Pyright LSP bulunamadı. 'uv sync --frozen --all-extras' veya 'uv sync --frozen --extra dev' çalıştırarak dev bağımlılıklarını yükleyin."
-}
+# Python/uv environment helpers are sourced from scripts/install_modules/utils/python_env.sh.
+# Keep that module as the single source of truth; do not redefine them inline here.
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
 should_install_playwright_browsers() {
@@ -6870,49 +6715,7 @@ prepare_docker_for_migrations() {
 }
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
-select_pytorch_cuda_wheel_tag() {
-    local override_tag="${PYTORCH_CUDA_WHEEL_TAG:-}"
-    local cuda_version="${CUDA_VERSION:-}"
-    local compute_capability="${GPU_COMPUTE_CAPABILITY:-}"
-    local gpu_name="${GPU_NAME:-}"
-    local compute_major=""
-    local cuda_major=""
-    local cuda_minor=""
-
-    if [[ -n "$override_tag" ]]; then
-        echo "$override_tag"
-        return 0
-    fi
-
-    compute_major="${compute_capability%%.*}"
-    if [[ "$compute_major" =~ ^[0-9]+$ ]] && (( compute_major >= 12 )); then
-        # Blackwell / RTX 50xx sınıfı GPU'lar CUDA 12.6+ wheel ister; cu128 tercih edilir.
-        echo "cu128"
-        return 0
-    fi
-
-    if [[ "$gpu_name" =~ (Blackwell|RTX[[:space:]]*50|RTX[[:space:]]*5[0-9]{3}) ]]; then
-        echo "cu128"
-        return 0
-    fi
-
-    cuda_major="${cuda_version%%.*}"
-    cuda_minor="${cuda_version#*.}"
-    cuda_minor="${cuda_minor%%.*}"
-    if [[ "$cuda_major" =~ ^[0-9]+$ && "$cuda_minor" =~ ^[0-9]+$ ]]; then
-        if (( cuda_major > 12 || (cuda_major == 12 && cuda_minor >= 8) )); then
-            echo "cu128"
-            return 0
-        fi
-        if (( cuda_major == 12 && cuda_minor >= 6 )); then
-            echo "cu126"
-            return 0
-        fi
-    fi
-
-    echo "cu124"
-}
-
+# CUDA wheel tag selection is sourced from scripts/install_modules/utils/python_env.sh.
 sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"

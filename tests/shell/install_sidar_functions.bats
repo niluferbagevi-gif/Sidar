@@ -997,6 +997,27 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "install_sidar keeps python_env helpers single-sourced from the module" {
+  local root
+  root="$(repo_root)"
+  run bash -c '
+    set -Eeuo pipefail
+    repo_root="$1"
+    cd "$repo_root"
+    for helper in \
+      install_uv_cli \
+      create_uv_venv \
+      install_python_deps \
+      install_pyright_lsp_tool \
+      select_pytorch_cuda_wheel_tag
+    do
+      ! grep -Eq "^${helper}\\(\\)[[:space:]]*\\{" install_sidar.sh
+      grep -Eq "^${helper}\\(\\)[[:space:]]*\\{" scripts/install_modules/utils/python_env.sh
+    done
+  ' _ "$root"
+  [ "$status" -eq 0 ]
+}
+
 @test "install_python_deps installs PortAudio with apt-get directly for root installs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
