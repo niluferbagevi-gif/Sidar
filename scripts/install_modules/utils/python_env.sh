@@ -33,7 +33,8 @@ install_uv_cli() {
         sh "$uv_install_script"
         [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
-            # shellcheck disable=SC1090
+            # shellcheck source=/dev/null
+            # shellcheck disable=SC1090,SC1091
             source "$HOME/.cargo/env"
         fi
         # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
@@ -101,6 +102,7 @@ create_uv_venv() {
         uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
         ok "uv venv oluşturuldu."
     fi
+    # shellcheck source=/dev/null
     # shellcheck disable=SC1091
     source "$VENV_DIR/bin/activate"
     ok "Ortam aktif: $VENV_DIR"

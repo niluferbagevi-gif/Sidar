@@ -373,7 +373,7 @@ de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/instal
 c16a846a9a6a1f950c65916c65a89efd5480e3454fc5a3d0df7b44786944d452  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
 a8e12580b27f48f164bd016ee506d49916adb1b54d161dbaa01746cf5d2b10a2  scripts/install_modules/utils/playwright_ubuntu_override.sh
-a9de31dc4a7c85363eb4338f26e7f23b9b9a5542760494f84dbc91d75e6e84ff  scripts/install_modules/utils/python_env.sh
+7e36c3e3b9be02e424c88eb5acaa6feb7dedd15bf789f6d67bda727dc112ee0b  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
 59a71da6b15017249756e9acdc3a1fe6d807c529a7ced398923bb0f81e672674  scripts/install_modules/utils/wsl_integration_autofix.sh
@@ -3171,7 +3171,8 @@ install_system_dependencies() {
                 fi
 
                 if [[ -s "${nvm_dir}/nvm.sh" ]]; then
-                    # shellcheck disable=SC1090
+                    # shellcheck source=/dev/null
+                    # shellcheck disable=SC1090,SC1091
                     . "${nvm_dir}/nvm.sh"
                     if nvm install "${node_target_major}" >/dev/null 2>&1 && nvm alias default "${node_target_major}" >/dev/null 2>&1; then
                         node_bin="$(resolve_native_binary_path node || true)"
