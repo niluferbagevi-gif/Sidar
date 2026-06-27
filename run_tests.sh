@@ -1066,7 +1066,7 @@ run_security_analysis_gates() {
   fi
 
   local pip_audit_timeout="${PIP_AUDIT_TIMEOUT:-30}"
-  local pip_audit_max_retries="${PIP_AUDIT_MAX_RETRIES:-2}"
+  local pip_audit_max_retries="${PIP_AUDIT_MAX_RETRIES:-3}"
   local pip_audit_attempt=1
   local pip_audit_wait_seconds="${PIP_AUDIT_RETRY_WAIT_SECONDS:-5}"
   local pip_audit_artifact_dir="${PIP_AUDIT_ARTIFACT_DIR:-artifacts/security}"
