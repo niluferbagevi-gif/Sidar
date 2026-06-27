@@ -359,7 +359,7 @@ INSTALL_REMOTE_MODULES=(
 # Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
-2febaeec26080e527411a02fa1606ad5d4edfa3810bdaf10c03ee1f58857fc15  scripts/install_modules/install_helpers.sh
+6bf437739ed59231b2430e0e5e12832b68f296383aca508525d1758a979acd85  scripts/install_modules/install_helpers.sh
 eb93ab9d8ff921fec94eaf21dcf022dfadb844d6eb235e8e56a5e4686d41fec1  scripts/install_modules/phases/01_context.sh
 b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
@@ -373,7 +373,7 @@ de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/instal
 c16a846a9a6a1f950c65916c65a89efd5480e3454fc5a3d0df7b44786944d452  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
 a8e12580b27f48f164bd016ee506d49916adb1b54d161dbaa01746cf5d2b10a2  scripts/install_modules/utils/playwright_ubuntu_override.sh
-420d1db1debf544fa36df6a387e271786793f0a3286eb5ec1ab7fd496e1cb92a  scripts/install_modules/utils/python_env.sh
+4111cef253c0844fe1b0ca47bf6a4949004af7cfa2a9e79251cb82802b4e7c20  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
 59a71da6b15017249756e9acdc3a1fe6d807c529a7ced398923bb0f81e672674  scripts/install_modules/utils/wsl_integration_autofix.sh
@@ -3874,87 +3874,6 @@ create_uv_venv() {
 }
 
 # ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
-install_portaudio_prerequisite_for_pyaudio() {
-    local reason="voice extra içindeki pyaudio derlemesi için PortAudio geliştirme paketleri gerekli (uv sync --frozen --all-extras ön koşulu)."
-
-    if command -v apt-get >/dev/null 2>&1; then
-        if dpkg-query -W -f='${Status}' portaudio19-dev 2>/dev/null | grep -q "ok installed"; then
-            return 0
-        fi
-        info "${reason} portaudio19-dev kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
-        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n apt-get update
-            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
-        else
-            fail "${reason} Önce 'sudo apt-get install -y portaudio19-dev' çalıştırın, ardından kurulumu tekrar deneyin."
-        fi
-        return 0
-    fi
-
-    if command -v dnf >/dev/null 2>&1; then
-        if rpm -q portaudio-devel >/dev/null 2>&1; then
-            return 0
-        fi
-        info "${reason} portaudio-devel kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
-            dnf install -y portaudio-devel
-        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n dnf install -y portaudio-devel
-        else
-            fail "${reason} Önce 'sudo dnf install -y portaudio-devel' çalıştırın, ardından kurulumu tekrar deneyin."
-        fi
-        return 0
-    fi
-
-    if command -v zypper >/dev/null 2>&1; then
-        if rpm -q portaudio19-devel >/dev/null 2>&1; then
-            return 0
-        fi
-        info "${reason} portaudio19-devel kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
-            zypper --non-interactive refresh
-            zypper --non-interactive install --no-recommends portaudio19-devel
-        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n zypper --non-interactive refresh
-            sudo -n zypper --non-interactive install --no-recommends portaudio19-devel
-        else
-            fail "${reason} Önce 'sudo zypper --non-interactive install --no-recommends portaudio19-devel' çalıştırın, ardından kurulumu tekrar deneyin."
-        fi
-        return 0
-    fi
-
-    if command -v pacman >/dev/null 2>&1; then
-        if pacman -Qi portaudio >/dev/null 2>&1; then
-            return 0
-        fi
-        info "${reason} portaudio kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
-            pacman -Sy --noconfirm --needed portaudio
-        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n pacman -Sy --noconfirm --needed portaudio
-        else
-            fail "${reason} Önce 'sudo pacman -Sy --noconfirm --needed portaudio' çalıştırın, ardından kurulumu tekrar deneyin."
-        fi
-        return 0
-    fi
-
-    if command -v brew >/dev/null 2>&1; then
-        if brew list --formula portaudio >/dev/null 2>&1; then
-            return 0
-        fi
-        info "${reason} Homebrew portaudio formülü kuruluyor."
-        if brew install portaudio; then
-            return 0
-        fi
-        fail "${reason} Önce 'brew install portaudio' çalıştırın, ardından kurulumu tekrar deneyin."
-    fi
-
-    fail "${reason} Desteklenen paket yöneticisi bulunamadı. Platformunuza uygun PortAudio geliştirme paketini kurun (Debian/Ubuntu: portaudio19-dev, Fedora/RHEL: portaudio-devel, openSUSE/SLES: portaudio19-devel, Arch: portaudio, macOS/Homebrew: portaudio) ve kurulumu tekrar deneyin."
-}
-
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
@@ -3978,7 +3897,7 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    install_portaudio_prerequisite_for_pyaudio
+    ensure_portaudio_dev "uv sync --frozen --all-extras"
 
     info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
