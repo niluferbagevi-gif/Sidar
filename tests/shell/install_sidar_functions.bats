@@ -894,6 +894,53 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "modular python_env install_python_deps uses all-extras without conflicting extra dev" {
+  local root
+  root="$(repo_root)"
+  run bash -c '
+    set -Eeuo pipefail
+    repo_root="$1"
+    cd "$repo_root"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    PYTHON_VERSION="3.11"
+    touch "$tmpdir/uv.lock"
+    step() { :; }
+    info() { :; }
+    ok() { :; }
+    warn() { :; }
+    fail() { printf "%s\n" "$*" >&2; exit 1; }
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    source ./scripts/install_modules/install_helpers.sh
+    source ./scripts/install_modules/utils/python_env.sh
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+printf "Status: install ok installed\n"
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+case "\$*" in
+  "sync --frozen --all-extras") exit 0 ;;
+  "run python -c import pydantic, pydantic_settings") exit 0 ;;
+esac
+exit 99
+EOF
+    chmod +x "$tmpdir/bin/dpkg-query" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
+    ! grep -q -- "--extra dev" "$tmpdir/uv.log"
+  ' _ "$root"
+  [ "$status" -eq 0 ]
+}
+
 @test "install_python_deps installs PortAudio with apt-get directly for root installs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

@@ -59,17 +59,43 @@ ensure_python_311() {
 
 create_uv_venv() {
     step "uv venv Ortamı"
-    local expected_python_version="3.11"
     VENV_DIR="$SCRIPT_DIR/.venv"
-    if [[ "${PYTHON_VERSION:-$expected_python_version}" != "$expected_python_version" ]]; then
-        warn "PYTHON_VERSION=${PYTHON_VERSION:-unset} algılandı; runtime için ${expected_python_version} zorunlu."
-    fi
-    PYTHON_VERSION="$expected_python_version"
     info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
-    ensure_python_311 >/dev/null
+    uv python install "$PYTHON_VERSION"
 
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
+        local detected_python_version=""
+        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+        if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
+            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
+        fi
+        if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
+            warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
+            if [[ -O "$VENV_DIR" ]]; then
+                if ! rm -rf "$VENV_DIR"; then
+                    fail ".venv silinemedi: $VENV_DIR. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
+                fi
+            else
+                local venv_backup_dir
+                venv_backup_dir="$SCRIPT_DIR/.venv.broken-$(date +%Y%m%d-%H%M%S)"
+                warn ".venv mevcut kullanıcıya ait değil. Güvenli yol olarak yedek adla taşımayı deniyorum: $venv_backup_dir"
+                if mv "$VENV_DIR" "$venv_backup_dir" 2>/dev/null; then
+                    warn "Eski .venv taşındı: $venv_backup_dir"
+                elif [[ -t 0 ]] && command -v sudo &>/dev/null; then
+                    warn "Taşıma başarısız; etkileşimli modda sudo ile kaldırma onayı istenecek."
+                    if sudo rm -rf "$VENV_DIR"; then
+                        ok "Sudo ile eski .venv kaldırıldı."
+                    else
+                        fail ".venv kaldırılamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
+                    fi
+                else
+                    fail ".venv mevcut kullanıcıya ait değil ve taşınamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" (veya yalnızca .venv) ardından kurulumu tekrar çalıştırın."
+                fi
+            fi
+            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+            ok "uv venv zorunlu Python $PYTHON_VERSION ile yeniden oluşturuldu."
+        fi
     else
         info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
         uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
@@ -86,9 +112,9 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    # INSTALL_DEV standardı: dev araçları kurulumun varsayılan parçasıdır.
-    # uv'de bu sözleşmeyi --extra dev + --all-extras ile zorunlu tutuyoruz.
-    local -a SYNC_ARGS=(--frozen --all-extras --extra dev)
+    # Dev araçları (pytest/coverage/mypy/ruff) self-healing ve otonom kalite
+    # döngüleri için production dahil her profilde zorunludur.
+    local -a SYNC_ARGS=(--frozen --all-extras)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -103,15 +129,15 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    ensure_portaudio_dev "uv sync --frozen --all-extras --extra dev"
+    ensure_portaudio_dev "uv sync --frozen --all-extras"
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
-    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras --extra dev başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
+    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
+        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
-    if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
-        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras --extra dev' akışını temiz bir ortamda tekrar çalıştırın."
+    if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras' akışını temiz bir ortamda tekrar çalıştırın."
     fi
 
     ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
@@ -136,7 +162,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras --extra dev' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
+    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
 }
 
 select_pytorch_cuda_wheel_tag() {
