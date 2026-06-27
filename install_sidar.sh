@@ -982,7 +982,7 @@ windows_path_to_wsl_path() {
     local windows_path="${1:-}"
     if [[ "$windows_path" =~ ^[A-Za-z]:\\ ]]; then
         local drive_letter path_rest
-        drive_letter=$(echo "$windows_path" | cut -d: -f1 | tr 'A-Z' 'a-z')
+        drive_letter=$(echo "$windows_path" | cut -d: -f1 | tr '[:upper:]' '[:lower:]')
         path_rest=$(echo "$windows_path" | cut -d: -f2- | sed 's#\\#/#g')
         echo "/mnt/${drive_letter}${path_rest}"
         return 0
