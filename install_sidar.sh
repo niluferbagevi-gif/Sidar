@@ -835,8 +835,8 @@ on_install_error() {
         sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
     fi
     echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
-    echo "$(sidar_t failed_command "$failed_cmd")" >&2
-    echo "$(sidar_t check_log "$LOG_FILE")" >&2
+    sidar_t failed_command "$failed_cmd" >&2
+    sidar_t check_log "$LOG_FILE" >&2
     exit "$exit_code"
 }
 
