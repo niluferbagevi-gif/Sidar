@@ -33,3 +33,30 @@ CI profilinde coverage eşiği daha sıkı çalıştırılabilir:
 ```bash
 CI=true TEST_PROFILE=ci ./run_tests.sh
 ```
+## Voice extra / PyAudio sistem bağımlılığı
+
+`pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`
+tekerleği her platformda hazır gelmeyebildiği için `uv sync --all-extras` veya
+`uv sync --extra voice` sırasında PortAudio geliştirme başlıklarına ihtiyaç
+duyabilir.
+
+Linux/Ubuntu tabanlı geliştirme ve CI ortamlarında Python bağımlılıklarını
+senkronlamadan önce sistem paketini kurun:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y portaudio19-dev
+uv sync --all-extras
+```
+
+macOS üzerinde eşdeğer ön koşul Homebrew ile sağlanır:
+
+```bash
+brew install portaudio
+uv sync --all-extras
+```
+
+Repo CI akışı bu ön koşulu `scripts/install_ci_system_deps.sh` üzerinden kurar;
+`install_sidar.sh` ve modüler installer da tam/voice profil senkronizasyonundan
+önce Debian/Ubuntu üzerinde `portaudio19-dev` paketini idempotent biçimde
+doğrular.

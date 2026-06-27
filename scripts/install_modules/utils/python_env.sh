@@ -103,6 +103,19 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
+    if command -v apt-get >/dev/null 2>&1 && ! dpkg-query -W -f='${Status}' portaudio19-dev 2>/dev/null | grep -q "ok installed"; then
+        info "voice extra içindeki pyaudio derlemesi için portaudio19-dev kuruluyor (uv sync --frozen --all-extras --extra dev ön koşulu)."
+        if [[ "${EUID}" -eq 0 ]]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            sudo -n apt-get update
+            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+        else
+            fail "voice extra içindeki pyaudio derlemesi için portaudio19-dev gerekli. Önce 'sudo apt-get install -y portaudio19-dev' çalıştırın, ardından 'uv sync --frozen --all-extras --extra dev' akışını tekrar deneyin."
+        fi
+    fi
+
     info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras --extra dev. Dev araçları self-healing için standarttır."
     if ! env -u UV_EXTRA -u UV_ALL_EXTRAS -u UV_NO_EXTRA "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "uv sync --frozen --all-extras --extra dev başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
