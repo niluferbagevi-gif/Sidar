@@ -11,12 +11,17 @@ SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/**/*.sh' \
 	'tests/shell/*.bats')
 
+INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
+	'install_sidar.sh' \
+	'scripts/install_modules/*.sh' \
+	'scripts/install_modules/**/*.sh')
+
 .PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests
 
 lint: lint-shell check-install-manifests
 
 installer-shellcheck:
-	$(SHELLCHECK) --severity=warning -x install_sidar.sh scripts/install_modules/install_helpers.sh scripts/install_modules/utils/python_env.sh
+	$(SHELLCHECK) --severity=warning -x $(INSTALLER_SHELLCHECK_FILES)
 
 lint-shell:
 	$(SHELLCHECK) --severity=warning -x $(SHELLCHECK_FILES)
