@@ -856,6 +856,168 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "install_python_deps skips PortAudio apt install when portaudio19-dev is already installed" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+printf "Status: install ok installed\n"
+EOF
+    cat > "$tmpdir/bin/apt-get" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/apt.log"
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+case "\$1" in
+  sync) exit 0 ;;
+  run) exit 0 ;;
+esac
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-get" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    [[ ! -e "$tmpdir/apt.log" ]]
+    grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_python_deps installs PortAudio with apt-get directly for root installs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    SIDAR_INSTALL_EFFECTIVE_UID=0
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/apt-get" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/apt.log"
+exit 0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-get" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    grep -q "^update$" "$tmpdir/apt.log"
+    grep -q "^install -y --no-install-recommends portaudio19-dev$" "$tmpdir/apt.log"
+    grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_python_deps installs PortAudio through passwordless sudo for non-root installs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    SIDAR_INSTALL_EFFECTIVE_UID=1000
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/apt-get" <<EOF
+#!/usr/bin/env bash
+printf "unexpected apt-get without sudo\n" >> "$tmpdir/apt.log"
+exit 99
+EOF
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/sudo.log"
+if [[ "\$*" == "-n true" ]]; then
+  exit 0
+fi
+exit 0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-get" "$tmpdir/bin/sudo" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    [[ ! -s "$tmpdir/apt.log" ]]
+    grep -q "^-n true$" "$tmpdir/sudo.log"
+    grep -q "^-n apt-get update$" "$tmpdir/sudo.log"
+    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev$" "$tmpdir/sudo.log"
+    grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_python_deps fails with actionable PortAudio guidance when apt install cannot be authorized" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    SIDAR_INSTALL_EFFECTIVE_UID=1000
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/apt-get" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == "-n true" ]]; then
+  exit 1
+fi
+exit 1
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "uv should not run\n" >> "$tmpdir/uv.log"
+exit 99
+EOF
+    chmod +x "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-get" "$tmpdir/bin/sudo" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"sudo apt-get install -y portaudio19-dev"* ]]
+}
+
 @test "is_alembic_at_head compares current and heads with the configured DATABASE_URL" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

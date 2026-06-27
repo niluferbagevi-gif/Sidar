@@ -145,13 +145,14 @@ sidar_source_install_utils() {
 ensure_portaudio_dev() {
     local sync_command="${1:-uv sync --frozen --all-extras}"
     local reason="voice extra içindeki pyaudio derlemesi için PortAudio geliştirme paketleri gerekli (${sync_command} ön koşulu)."
+    local effective_uid="${SIDAR_INSTALL_EFFECTIVE_UID:-${EUID}}"
 
     if command -v apt-get >/dev/null 2>&1; then
         if dpkg-query -W -f='${Status}' portaudio19-dev 2>/dev/null | grep -q "ok installed"; then
             return 0
         fi
         info "${reason} portaudio19-dev kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
+        if [[ "${effective_uid}" -eq 0 ]]; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
@@ -168,7 +169,7 @@ ensure_portaudio_dev() {
             return 0
         fi
         info "${reason} portaudio-devel kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
+        if [[ "${effective_uid}" -eq 0 ]]; then
             dnf install -y portaudio-devel
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
             sudo -n dnf install -y portaudio-devel
@@ -183,7 +184,7 @@ ensure_portaudio_dev() {
             return 0
         fi
         info "${reason} portaudio19-devel kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
+        if [[ "${effective_uid}" -eq 0 ]]; then
             zypper --non-interactive refresh
             zypper --non-interactive install --no-recommends portaudio19-devel
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
@@ -200,7 +201,7 @@ ensure_portaudio_dev() {
             return 0
         fi
         info "${reason} portaudio kuruluyor."
-        if [[ "${EUID}" -eq 0 ]]; then
+        if [[ "${effective_uid}" -eq 0 ]]; then
             pacman -Sy --noconfirm --needed portaudio
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
             sudo -n pacman -Sy --noconfirm --needed portaudio
