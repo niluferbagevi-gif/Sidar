@@ -3224,7 +3224,9 @@ EOF
                 node_bin="$(resolve_native_binary_path node || true)"
                 local installed_node_version=""
                 local installed_node_major=""
-                installed_node_version="$([[ -n "$node_bin" ]] && "$node_bin" --version 2>/dev/null || true)"
+                if [[ -n "$node_bin" ]]; then
+                    installed_node_version="$("$node_bin" --version 2>/dev/null || true)"
+                fi
                 installed_node_major="$(echo "$installed_node_version" | grep -oE '[0-9]+' | head -n1 || true)"
                 if sudo apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
                     ok "Node.js NodeSource üzerinden kuruldu: ${installed_node_version:-sürüm alınamadı}"
@@ -3369,7 +3371,11 @@ ensure_prerequisites() {
         warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
         if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
             info "Kurulum yapılıyor: sudo apt-get update && sudo apt-get install -y ffmpeg"
-            sudo apt-get update && sudo apt-get install -y ffmpeg || warn "FFmpeg otomatik kurulamadı, manuel kurunuz."
+            if sudo apt-get update && sudo apt-get install -y ffmpeg; then
+                ok "FFmpeg otomatik kuruldu."
+            else
+                warn "FFmpeg otomatik kurulamadı, manuel kurunuz."
+            fi
         elif command -v apt-get &>/dev/null; then
             info "Kurulum için: sudo apt-get update && sudo apt-get install -y ffmpeg"
         elif command -v dnf &>/dev/null; then
@@ -4121,9 +4127,11 @@ setup_wsl2_audio() {
             dpkg -l "$pkg" &>/dev/null 2>&1 || pa_pkgs_needed+=("$pkg")
         done
         if [[ ${#pa_pkgs_needed[@]} -gt 0 ]]; then
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" \
-                >/dev/null 2>&1 && ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}" \
-                || warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
+            if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" >/dev/null 2>&1; then
+                ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}"
+            else
+                warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
+            fi
             audio_restart_needed=true
         else
             ok "PulseAudio paketleri zaten kurulu."
