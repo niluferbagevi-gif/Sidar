@@ -1,6 +1,55 @@
 import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
+
+function createBundleAnalysisPlugins() {
+  if (process.env.BUNDLE_ANALYZE !== "1") {
+    return [];
+  }
+  return [
+    visualizer({
+      filename: "dist/bundle-stats.html",
+      gzipSize: true,
+      brotliSize: true,
+      template: "treemap",
+    }),
+  ];
+}
+
+export function createSidarManualChunks(id) {
+  if (!id.includes("node_modules")) {
+    return undefined;
+  }
+
+  const modulePath = id.split("node_modules/")[1];
+  if (!modulePath) {
+    return "vendor";
+  }
+
+  if (modulePath.startsWith("react-dom/client")) {
+    return "react-dom-client";
+  }
+  if (modulePath.startsWith("react-dom/server")) {
+    return "react-dom-server";
+  }
+  if (modulePath.startsWith("react-dom/")) {
+    return "react-dom";
+  }
+  if (modulePath.startsWith("react/")) {
+    return "react";
+  }
+  if (modulePath.startsWith("highlight.js/")) {
+    return "highlight-js-core";
+  }
+
+  const parts = modulePath.split("/");
+  if (parts[0]?.startsWith("@") && parts.length > 1) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+
+  return parts[0] || "vendor";
+}
 
 export function createSidarProxyConfig(
   backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860",
@@ -21,7 +70,7 @@ export function createSidarProxyConfig(
 
 export default defineConfig(() => {
   return {
-    plugins: [react()],
+    plugins: [react(), ...createBundleAnalysisPlugins()],
     resolve: {
       alias: {
         "react-router-dom": path.resolve(__dirname, "src/lib/routerShim.jsx"),
@@ -46,23 +95,7 @@ export default defineConfig(() => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
-          manualChunks(id) {
-            if (!id.includes("node_modules")) {
-              return undefined;
-            }
-
-            const modulePath = id.split("node_modules/")[1];
-            if (!modulePath) {
-              return "vendor";
-            }
-
-            const parts = modulePath.split("/");
-            if (parts[0]?.startsWith("@") && parts.length > 1) {
-              return `${parts[0]}/${parts[1]}`;
-            }
-
-            return parts[0] || "vendor";
-          },
+          manualChunks: createSidarManualChunks,
         },
       },
     },
