@@ -4165,9 +4165,11 @@ ASOUNDRC
                 if grep -Fxq "$pulse_export" "$rcfile" 2>/dev/null; then
                     ok "PULSE_SERVER zaten ${rcfile} içinde tanımlı."
                 else
-                    echo "" >> "$rcfile"
-                    echo "# Sidar WSL2 ses desteği" >> "$rcfile"
-                    echo "$pulse_export" >> "$rcfile"
+                    {
+                        echo ""
+                        echo "# Sidar WSL2 ses desteği"
+                        echo "$pulse_export"
+                    } >> "$rcfile"
                     ok "PULSE_SERVER → ${rcfile} dosyasına eklendi."
                     audio_restart_needed=true
                 fi
