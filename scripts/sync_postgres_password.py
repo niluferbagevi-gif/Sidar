@@ -82,6 +82,34 @@ def _postgres_container_name(env: dict[str, str], explicit_container: str | None
     )
 
 
+def _pre_harden_password_file(env: dict[str, str]) -> Path | None:
+    password_file = env.get("PRE_HARDEN_DB_PASSWORD_FILE", "").strip()
+    if not password_file:
+        return None
+    return Path(password_file).expanduser()
+
+
+def _read_pre_harden_password(env: dict[str, str]) -> str:
+    direct_password = env.get("PRE_HARDEN_DB_PASSWORD", "").strip()
+    if direct_password:
+        return direct_password
+
+    password_file = _pre_harden_password_file(env)
+    if password_file is None or not password_file.is_file():
+        return ""
+    return password_file.read_text(encoding="utf-8").strip()
+
+
+def _remove_pre_harden_password_file(env: dict[str, str]) -> None:
+    password_file = _pre_harden_password_file(env)
+    if password_file is None:
+        return
+    try:
+        password_file.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
 def _docker_exec_command(
     env: dict[str, str], *, postgres_container: str | None = None
 ) -> list[str]:
@@ -94,7 +122,7 @@ def _docker_exec_command(
         env.get("POSTGRES_ADMIN_DB", "").strip() or env.get("POSTGRES_DB", "").strip() or "postgres"
     )
     container = _postgres_container_name(env, explicit_container=postgres_container)
-    pre_harden_password = env.get("PRE_HARDEN_DB_PASSWORD", "").strip()
+    pre_harden_password = _read_pre_harden_password(env)
     auth_password = pre_harden_password or env.get("POSTGRES_PASSWORD", "").strip()
     cmd = [docker, "exec", "-i"]
     if auth_password:
@@ -133,10 +161,9 @@ def sync_postgres_password_with_docker_exec(
         postgres_password=postgres_password,
     )
     container = _postgres_container_name(effective_env, explicit_container=postgres_container)
-    auth_password = (
-        effective_env.get("PRE_HARDEN_DB_PASSWORD", "").strip()
-        or effective_env.get("POSTGRES_PASSWORD", "").strip()
-    )
+    auth_password = _read_pre_harden_password(effective_env) or effective_env.get(
+        "POSTGRES_PASSWORD", ""
+    ).strip()
     completed = subprocess.run(  # Fixed command list; SQL is passed via stdin.  # nosec B603
         cmd,
         cwd=PROJECT_ROOT,
@@ -155,6 +182,7 @@ def sync_postgres_password_with_docker_exec(
             "docker exec PostgreSQL password sync failed "
             f"with exit code {completed.returncode}: {output.strip()}"
         )
+    _remove_pre_harden_password_file(effective_env)
     return _redacted_summary(
         changed=True,
         method="docker-exec",

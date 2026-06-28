@@ -446,6 +446,9 @@ ENV
     grep -q '^POSTGRES_PASSWORD=GeneratedStrongDbToken_1234567890$' '$env_file'
     grep -q '^POSTGRES_USER=sidar$' '$env_file'
     grep -q '^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@postgres:5432/sidar$' '$env_file'
+    test -f "${PRE_HARDEN_DB_PASSWORD_FILE}"
+    test "$(cat "${PRE_HARDEN_DB_PASSWORD_FILE}")" = "postgres"
+    test "$(stat -c '%a' "${PRE_HARDEN_DB_PASSWORD_FILE}")" = "600"
   "
   rm -rf "$tmpdir"
   [ "$status" -eq 0 ]

@@ -1147,7 +1147,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv run python scripts/sync_database_passwords.py --all-envs" in services_phase
     assert "uv run python scripts/sync_postgres_password.py" in services_phase
     assert "SKIP_LIVE_POSTGRES_SYNC=1" in services_phase
-    assert 'PRE_HARDEN_DB_PASSWORD="${PRE_HARDEN_DB_PASSWORD:-}" uv run python scripts/sync_postgres_password.py 2>&1' in services_phase
+    assert 'PRE_HARDEN_DB_PASSWORD_FILE="${PRE_HARDEN_DB_PASSWORD_FILE:-}" uv run python scripts/sync_postgres_password.py 2>&1' in services_phase
     assert "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı (exit=$sync_exit). Detay:" in services_phase
     assert "while IFS= read -r line; do printf" in services_phase
     assert "POSTGRES_PASSWORD değeri .env ile uyuşmuyor" in services_phase
@@ -1181,6 +1181,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv pip" not in python_env_utils
     assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
+    assert "sidar_store_pre_harden_postgres_password()" in db_utils
+    assert "pre_harden_postgres_password" in db_utils
+    assert "chmod 600" in db_utils
+    assert "PRE_HARDEN_DB_PASSWORD_FILE" in db_utils
     assert "sync_postgres_env_with_database_url()" in db_utils
     assert "ensure_database_url_defaults()" in db_utils
     assert "setup_env_file()" in env_utils
