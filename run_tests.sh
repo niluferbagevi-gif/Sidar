@@ -1988,7 +1988,7 @@ install_local_frontend_playwright_chromium_cache() {
     local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
     local playwright_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
     if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
-      echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i ubuntu24.04-x64 OS override ile hazırlanıyor."
+      echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i en yakın desteklenen Ubuntu OS override ile hazırlanıyor."
       run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}" \
         npx --no-install playwright install chromium
     else

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 # Playwright upstream yeni Ubuntu sürümlerini tanımadan önce Chromium indirmesi
-# başarısız olabilir. Yalnız Ubuntu 25+ hostlarda kararlı ubuntu24.04-x64 paketini
-# seç; diğer distro ve mimarileri koşulsuz override etme.
+# başarısız olabilir. Ubuntu 25-30 aralığındaki hostlarda Playwright
+# paketinin bildiği en yeni Ubuntu LTS fallback build'ini seç; diğer distro,
+# mimari ve belirsiz gelecek sürümleri koşulsuz override etme.
 is_playwright_ubuntu_override_recommended() {
     local os_release_file="${1:-/etc/os-release}"
     local distro_id=""
@@ -24,7 +25,7 @@ is_playwright_ubuntu_override_recommended() {
     [[ " ${distro_id,,} ${distro_like,,} " == *"ubuntu"* ]] || return 1
     local ubuntu_major="${version_id%%.*}"
     [[ "$ubuntu_major" =~ ^[0-9]+$ ]] || return 1
-    (( ubuntu_major >= 25 ))
+    (( ubuntu_major >= 25 && ubuntu_major <= 30 ))
 }
 
 # Ubuntu 25+ için override yalnız upstream Playwright host matrisi henüz bu
@@ -61,6 +62,62 @@ raise SystemExit(probe.returncode)
 PY_PLAYWRIGHT_HOST_SUPPORT
 }
 
+playwright_latest_supported_ubuntu_version() {
+    local fallback_version="24.04"
+    local probe_output=""
+    shift || true
+
+    if [[ "$#" -eq 0 ]]; then
+        echo "$fallback_version"
+        return 0
+    fi
+
+    probe_output="$(
+        "$@" - <<'PY_PLAYWRIGHT_SUPPORTED_UBUNTU' 2>/dev/null
+from pathlib import Path
+import re
+
+try:
+    import playwright
+except Exception:
+    raise SystemExit(1)
+
+host_platform_module = (
+    Path(playwright.__file__).resolve().parent
+    / "driver"
+    / "package"
+    / "lib"
+    / "server"
+    / "utils"
+    / "hostPlatform.js"
+)
+try:
+    source = host_platform_module.read_text(encoding="utf-8")
+except OSError:
+    raise SystemExit(1)
+
+versions = sorted(
+    set(re.findall(r"ubuntu(\d+\.\d+)-x64", source)),
+    key=lambda value: tuple(map(int, value.split("."))),
+)
+if not versions:
+    raise SystemExit(1)
+print(versions[-1])
+PY_PLAYWRIGHT_SUPPORTED_UBUNTU
+    )" || probe_output=""
+
+    if [[ "$probe_output" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        echo "$probe_output"
+    else
+        echo "$fallback_version"
+    fi
+}
+
+playwright_ubuntu_override_platform() {
+    local supported_version="${1:-24.04}"
+    echo "ubuntu${supported_version}-x64"
+}
+
 resolve_playwright_python_spec() {
     local pyproject_file="${1:-${SCRIPT_DIR}/pyproject.toml}"
     local resolved_spec=""
@@ -84,6 +141,7 @@ resolve_playwright_python_spec() {
 prepare_playwright_ubuntu_override_file() {
     local source_os_release="${1:-/etc/os-release}"
     local target_os_release="$2"
+    local supported_ubuntu_version="${3:-24.04}"
     local normalized_os_release=""
 
     if [[ -r "$source_os_release" ]]; then
@@ -92,18 +150,18 @@ prepare_playwright_ubuntu_override_file() {
     if [[ -s "$target_os_release" ]]; then
         if grep -q '^VERSION_ID=' "$target_os_release"; then
             normalized_os_release="$(mktemp)"
-            awk 'BEGIN { replaced=0 }
-                /^VERSION_ID=/ && !replaced { print "VERSION_ID=\"24.04\""; replaced=1; next }
+            awk -v supported_ubuntu_version="$supported_ubuntu_version" 'BEGIN { replaced=0 }
+                /^VERSION_ID=/ && !replaced { print "VERSION_ID=\"" supported_ubuntu_version "\""; replaced=1; next }
                 { print }
             ' "$target_os_release" > "$normalized_os_release"
             mv "$normalized_os_release" "$target_os_release"
         else
-            echo 'VERSION_ID="24.04"' >> "$target_os_release"
+            echo "VERSION_ID=\"${supported_ubuntu_version}\"" >> "$target_os_release"
         fi
     else
-        cat > "$target_os_release" <<'OS_RELEASE_EOF'
+        cat > "$target_os_release" <<OS_RELEASE_EOF
 ID=ubuntu
-VERSION_ID="24.04"
+VERSION_ID="${supported_ubuntu_version}"
 OS_RELEASE_EOF
     fi
 }
@@ -113,12 +171,22 @@ run_playwright_ubuntu_override_install() {
     local download_timeout_ms="${2:-120000}"
     local override_os_release=""
     local install_rc=0
+    local supported_ubuntu_version=""
+    local override_platform=""
+    local -a python_probe_cmd=()
+    local arg=""
     shift 2
 
+    for arg in "$@"; do
+        [[ "$arg" == "-m" ]] && break
+        python_probe_cmd+=("$arg")
+    done
+    supported_ubuntu_version="$(playwright_latest_supported_ubuntu_version "$source_os_release" "${python_probe_cmd[@]:-$@}")"
+    override_platform="$(playwright_ubuntu_override_platform "$supported_ubuntu_version")"
     override_os_release="$(mktemp)"
-    prepare_playwright_ubuntu_override_file "$source_os_release" "$override_os_release"
+    prepare_playwright_ubuntu_override_file "$source_os_release" "$override_os_release" "$supported_ubuntu_version"
     env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$download_timeout_ms" \
-        PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64" \
+        PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="$override_platform" \
         OS_RELEASE_PATH="$override_os_release" \
         "$@" || install_rc=$?
     rm -f "$override_os_release"

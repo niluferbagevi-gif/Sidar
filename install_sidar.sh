@@ -372,7 +372,7 @@ de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/instal
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
 c16a846a9a6a1f950c65916c65a89efd5480e3454fc5a3d0df7b44786944d452  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
-a8e12580b27f48f164bd016ee506d49916adb1b54d161dbaa01746cf5d2b10a2  scripts/install_modules/utils/playwright_ubuntu_override.sh
+67152035ee32162fb63c6d0afdc14df79ea85825dfee1b15704bb45f38014354  scripts/install_modules/utils/playwright_ubuntu_override.sh
 b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/install_modules/utils/python_env.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -3935,7 +3935,7 @@ PY_PLAYWRIGHT_VERSION
 
         if is_playwright_ubuntu_override_recommended "$_pw_os_release_path" &&
             ! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"; then
-            info "Ubuntu ${_pw_ubuntu_version:-25+} yüklü Playwright resmi destek matrisinin dışında; ubuntu24.04 OS override kurulumu doğrudan deneniyor..."
+            info "Ubuntu ${_pw_ubuntu_version:-25+} yüklü Playwright resmi destek matrisinin dışında; en yakın desteklenen Ubuntu OS override kurulumu doğrudan deneniyor..."
             if _try_playwright_ubuntu_override_install; then
                 grep -vE "$_pw_browser_noise_regex" \
                     "$_pw_install_log" || true

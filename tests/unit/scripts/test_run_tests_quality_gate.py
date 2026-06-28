@@ -2549,6 +2549,70 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
     assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
+def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_bundle(
+    tmp_path: Path,
+) -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    package_dir = tmp_path / "playwright"
+    host_platform = package_dir / "driver" / "package" / "lib" / "server" / "utils" / "hostPlatform.js"
+    mock_python = tmp_path / "mock-python.sh"
+    os_release = tmp_path / "os-release"
+    host_platform.parent.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("# fake playwright\n", encoding="utf-8")
+    host_platform.write_text(
+        "module.exports = { known: [\"ubuntu22.04-x64\", \"ubuntu24.04-x64\", \"ubuntu26.04-x64\"] };",
+        encoding="utf-8",
+    )
+    mock_python.write_text(
+        f"""#!/usr/bin/bash
+if [[ "$*" == "-m playwright install chromium" ]]; then
+  printf '%s|' "${{PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}}"
+  grep -q '^VERSION_ID="26.04"$' "${{OS_RELEASE_PATH}}"
+  exit $?
+fi
+PYTHONPATH={tmp_path} python3 "$@"
+""",
+        encoding="utf-8",
+    )
+    mock_python.chmod(0o755)
+    os_release.write_text('ID=ubuntu\nVERSION_ID="28.04"\n', encoding="utf-8")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; source "$1"; run_playwright_ubuntu_override_install "$2" 120000 "$3" -m playwright install chromium',
+            "bash",
+            str(helper),
+            str(os_release),
+            str(mock_python),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout == "ubuntu26.04-x64|"
+
+
+def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override() -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; source "$1"; tmp="$(mktemp)"; printf "ID=ubuntu\nVERSION_ID=\"32.04\"\n" > "$tmp"; ! is_playwright_ubuntu_override_recommended "$tmp"',
+            "bash",
+            str(helper),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+
+
 def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_supports_host(
     tmp_path: Path,
 ) -> None:

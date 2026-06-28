@@ -211,7 +211,7 @@ EOF
     sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
+  [[ "$output" == *"en yakın desteklenen Ubuntu OS override kurulumu doğrudan deneniyor"* ]]
   [[ "$output" == *"Chromium override browser downloaded"* ]]
   [[ "$output" == *"install-deps ile doğrulandı"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
