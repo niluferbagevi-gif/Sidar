@@ -118,6 +118,32 @@ def test_sync_postgres_password_prefers_pre_harden_password_for_docker_auth(
     assert new_secret in calls["kwargs"]["input"]
 
 
+def test_sync_postgres_password_falls_back_to_current_password_when_old_secret_fails(
+    monkeypatch, tmp_path: Path
+):
+    calls = []
+    old_secret = "stale-volume-password-123456"
+    new_secret = "current-env-password-123456"
+    env_file = tmp_path / ".env"
+    _write_env(env_file, password=new_secret, pre_harden_password=old_secret)
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        if f"PGPASSWORD={old_secret}" in cmd:
+            return subprocess.CompletedProcess(cmd, 2, stdout="password authentication failed")
+        return subprocess.CompletedProcess(cmd, 0, stdout="ALTER ROLE\n")
+
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    summary = sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
+
+    assert len(calls) == 2
+    assert f"PGPASSWORD={old_secret}" in calls[0][0]
+    assert f"PGPASSWORD={new_secret}" in calls[1][0]
+    assert summary["changed"] is True
+
 
 def test_sync_postgres_password_reads_pre_harden_password_file_and_removes_it(
     monkeypatch, tmp_path: Path
