@@ -267,16 +267,26 @@ sync_database_passwords_before_smoke_tests() {
     ensure_env_test_postgres_password_matches_base_before_smoke
     ensure_postgres_volume_reset_before_smoke_tests
 
+    if [[ "${SKIP_LIVE_POSTGRES_SYNC:-0}" == "1" ]]; then
+        info "SKIP_LIVE_POSTGRES_SYNC=1; canlı PostgreSQL parola senkronizasyonu atlandı."
+        return 0
+    fi
+
     if [[ ! -f "$SCRIPT_DIR/scripts/sync_postgres_password.py" ]]; then
         warn "scripts/sync_postgres_password.py bulunamadı; canlı PostgreSQL parola senkronizasyonu atlandı."
         return 0
     fi
 
+    local sync_output=""
+    local sync_exit=0
     info "Smoke test öncesi canlı PostgreSQL kullanıcı parolası doğrulanıyor..."
-    if (cd "$SCRIPT_DIR" && uv run python scripts/sync_postgres_password.py >/dev/null 2>&1); then
+    if sync_output=$(cd "$SCRIPT_DIR" && uv run python scripts/sync_postgres_password.py 2>&1); then
         ok "Canlı PostgreSQL kullanıcı parolası smoke test öncesi eşitlendi."
     else
-        warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı; smoke testler mevcut veritabanı durumu ile devam edecek."
+        sync_exit=$?
+        warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı (exit=$sync_exit). Detay:"
+        while IFS= read -r line; do printf '       %s\n' "$line" >&2; done <<< "$sync_output"
+        info "Devre dışı bırakmak için: SKIP_LIVE_POSTGRES_SYNC=1 ./install_sidar.sh"
         sidar_phase06_report_production_postgres_password_alignment || true
     fi
 }
