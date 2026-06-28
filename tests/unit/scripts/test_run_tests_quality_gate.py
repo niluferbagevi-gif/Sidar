@@ -713,6 +713,17 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
         in installer
     )
     assert "MISSING_PACKAGES=()" in installer
+    assert "CHECK_ONLY=false" in installer
+    assert 'if [[ "${1:-}" == "--check" ]]; then' in installer
+    assert "Supported package manager not found (apt-get, dnf, zypper, pacman, or brew required)." in installer
+    assert "PACKAGES=(portaudio-devel ShellCheck bats)" in installer
+    assert "PACKAGES=(portaudio shellcheck bats)" in installer
+    assert "PACKAGES=(portaudio shellcheck bats-core)" in installer
+    assert "Missing system dependencies for ${MANAGER}: ${MISSING_PACKAGES[*]}" in installer
+    assert "brew install" in installer
+    assert "pacman -Sy --needed --noconfirm" in installer
+    assert "zypper --non-interactive install --no-recommends" in installer
+    assert "dnf install -y" in installer
     assert "SUDO=(sudo -n)" in installer
     assert "if ! sudo -n true >/dev/null 2>&1; then" in installer
     assert "Passwordless or cached sudo is required for non-interactive installation." in installer
@@ -721,6 +732,73 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
         '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
         in installer
     )
+
+
+
+def test_ci_system_dependency_installer_check_mode_reports_apt_missing(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    apt_log = tmp_path / "apt.log"
+    (fake_bin / "apt-get").write_text(
+        f"""#!/usr/bin/env bash
+printf 'unexpected apt-get call: %s\n' "$*" >> {apt_log!s}
+exit 99
+""",
+        encoding="utf-8",
+    )
+    (fake_bin / "dpkg-query").write_text(
+        """#!/usr/bin/env bash
+if [[ "$*" == *shellcheck* ]]; then printf 'Status: install ok installed\n'; exit 0; fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    (fake_bin / "apt-get").chmod(0o755)
+    (fake_bin / "dpkg-query").chmod(0o755)
+
+    result = subprocess.run(
+        ["/usr/bin/bash", "scripts/install_ci_system_deps.sh", "--check"],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}/usr/bin:/bin"},
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Missing system dependencies for apt: portaudio19-dev bats" in result.stderr
+    assert not apt_log.exists()
+
+
+def test_ci_system_dependency_installer_check_mode_supports_brew(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    brew_log = tmp_path / "brew.log"
+    (fake_bin / "brew").write_text(
+        f"""#!/usr/bin/bash
+printf '%s\n' "$*" >> {brew_log!s}
+if [[ "$1" == "list" && "$2" == "--versions" ]]; then
+  [[ "$3" == "shellcheck" ]] && exit 0
+  exit 1
+fi
+exit 99
+""",
+        encoding="utf-8",
+    )
+    (fake_bin / "brew").chmod(0o755)
+
+    result = subprocess.run(
+        ["/usr/bin/bash", "scripts/install_ci_system_deps.sh", "--check"],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "PATH": str(fake_bin)},
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Missing system dependencies for brew: portaudio bats-core" in result.stderr
+    brew_output = brew_log.read_text(encoding="utf-8")
+    assert "list --versions portaudio" in brew_output
+    assert "install" not in brew_output
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
@@ -2400,7 +2478,7 @@ def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthet
     mock_install = tmp_path / "mock-install.sh"
     os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
     mock_install.write_text(
-        """#!/usr/bin/env bash
+        """#!/usr/bin/bash
 printf '%s|%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-}"
 grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
 """,
@@ -2435,7 +2513,7 @@ def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_s
     probe_log = tmp_path / "probe.log"
     os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
     mock_python.write_text(
-        """#!/usr/bin/env bash
+        """#!/usr/bin/bash
 printf '%s|%s' "${OS_RELEASE_PATH:-}" "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" > "${MOCK_PROBE_LOG}"
 exit "${MOCK_PROBE_EXIT:-0}"
 """,
@@ -2517,7 +2595,7 @@ exit 1
     )
     npx = bin_dir / "npx"
     npx.write_text(
-        """#!/usr/bin/env bash
+        """#!/usr/bin/bash
 printf '%s\\n' "$*" >> "${MOCK_NPX_LOG}"
 touch "${MOCK_BROWSER}"
 """,

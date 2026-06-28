@@ -65,8 +65,9 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 ## Shell testleri ve bağımlılık güvenlik taraması
 
-- `scripts/install_ci_system_deps.sh`, Debian/Ubuntu geliştirme ve CI ortamlarında `bats`,
-  `shellcheck` ve `portaudio19-dev` paketlerini idempotent biçimde kurar. CI profilinde
+- `scripts/install_ci_system_deps.sh`, apt/dnf/zypper/pacman/Homebrew geliştirme ve CI
+  ortamlarında `bats`, `shellcheck` ve PortAudio geliştirme paketlerini idempotent
+  biçimde kurar; `--check` modu eksikleri kurmadan raporlar. CI profilinde
   `RUN_BATS_TESTS=1` varsayılanı korunur: BATS eksikse shell testleri sessizce atlanmaz ve eksik
   altyapı hata olarak raporlanır. Ana `install_sidar.sh` apt tabanlı yerel kurulumda `bats` paketini
   temel sistem bağımlılıklarıyla birlikte hazırlar. Yerel profilde `RUN_BATS_TESTS=auto` varsayılanı

@@ -64,15 +64,18 @@ uv sync --all-extras
 ```
 
 Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
-`scripts/install_ci_system_deps.sh` üzerinden kurar. Yerel Debian/Ubuntu ortamlarında
-CI ile aynı sırayı kullanın:
+`scripts/install_ci_system_deps.sh` üzerinden kurar. Aynı script apt, dnf, zypper,
+pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri yalnız
+raporlamak için `--check` modu çalıştırılabilir. Yerel ortamlarda CI ile aynı
+sırayı kullanın:
 
 ```bash
 bash scripts/install_ci_system_deps.sh
 uv sync --all-extras
 ```
 
-Bu sıra `portaudio19-dev`, `shellcheck` ve `bats` paketlerini Python bağımlılıkları
+Bu sıra Debian/Ubuntu'da `portaudio19-dev`, `shellcheck` ve `bats` paketlerini
+(Pacman/Homebrew gibi ortamlarda eşdeğer paketleri) Python bağımlılıkları
 çözülmeden önce hazırlar; aksi halde `pyaudio` kaynak derlemesi `portaudio.h`
 eksiğiyle veya shell testleri `bats` bulunamadığı için başarısız olabilir.
 `install_sidar.sh` ve modüler installer da tam/voice profil senkronizasyonundan önce
