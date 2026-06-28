@@ -1634,6 +1634,26 @@ def test_install_sidar_dumps_docker_compose_stderr_and_guides_cadvisor_failures(
     assert 'rm -f "$stderr_file"' in launch_body
 
 
+def test_install_sidar_waits_for_observability_services_after_compose_start() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    helper_body = script[
+        script.index("wait_for_observability_services_health() {") : script.index(
+            "wait_for_compose_services_health() {",
+            script.index("wait_for_observability_services_health() {")
+        )
+    ]
+    launch_body = script[
+        script.index("launch_docker_services() {") : script.index(
+            "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
+        )
+    ]
+
+    assert "redis-exporter postgres-exporter prometheus grafana" in helper_body
+    assert 'wait_for_compose_services_health "${compose_cmd[@]}" -- "${observability_services[@]}"' in helper_body
+    assert "Monitoring servisleri healthcheck beklemesi tamamlanamadı" in helper_body
+    assert launch_body.count('wait_for_observability_services_health "${docker_compose_cmd[@]}" --') == 2
+
+
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     docs = Path("README.md").read_text(encoding="utf-8")

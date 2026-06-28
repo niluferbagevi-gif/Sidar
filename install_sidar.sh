@@ -1417,6 +1417,21 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+wait_for_observability_services_health() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+
+    local -a observability_services=(redis-exporter postgres-exporter prometheus grafana)
+    wait_for_compose_services_health "${compose_cmd[@]}" -- "${observability_services[@]}" || warn "Monitoring servisleri healthcheck beklemesi tamamlanamadı; smoke testler kendi hazır kontrolleriyle devam edecek."
+}
+
 wait_for_compose_services_health() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -7378,6 +7393,7 @@ launch_docker_services() {
                 stderr_file=$(mktemp)
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}" 2>"$stderr_file"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
+                    wait_for_observability_services_health "${docker_compose_cmd[@]}" --
                 else
                     warn "Altyapı Docker servisleri başlatılamadı:"
                     while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
@@ -7396,6 +7412,7 @@ launch_docker_services() {
                 stderr_file=$(mktemp)
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d 2>"$stderr_file"; then
                     ok "Docker servisleri başarıyla başlatıldı."
+                    wait_for_observability_services_health "${docker_compose_cmd[@]}" --
                 else
                     warn "Docker servisleri başlatılamadı:"
                     while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
