@@ -60,16 +60,15 @@ ensure_python_311() {
 
 create_uv_venv() {
     step "uv venv Ortamı"
-    local required_python_version="3.11"
-    local requested_python_version="${PYTHON_VERSION:-$required_python_version}"
-
-    if [[ "$requested_python_version" != "$required_python_version" ]]; then
-        warn "PYTHON_VERSION=$requested_python_version algılandı; runtime için $required_python_version zorunlu."
+    local expected_python_version="3.11"
+    local requested_python_version="${PYTHON_VERSION:-$expected_python_version}"
+    if [[ -n "${PYTHON_VERSION:-}" && "$requested_python_version" != "$expected_python_version" ]]; then
+        warn "PYTHON_VERSION=${requested_python_version} algılandı; runtime için ${expected_python_version} zorunlu."
     fi
-
+    PYTHON_VERSION="$expected_python_version"
     VENV_DIR="$SCRIPT_DIR/.venv"
-    info "Python sürümü uv ile sabitleniyor ($required_python_version)..."
-    uv python install "$required_python_version"
+    info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
+    uv python install "$PYTHON_VERSION"
 
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
@@ -78,8 +77,8 @@ create_uv_venv() {
         if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
             detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
         fi
-        if [[ "$detected_python_version" != "$required_python_version" ]]; then
-            warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $required_python_version. .venv yeniden oluşturuluyor."
+        if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
+            warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
             if [[ -O "$VENV_DIR" ]]; then
                 if ! rm -rf "$VENV_DIR"; then
                     fail ".venv silinemedi: $VENV_DIR. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" && rm -rf \"$VENV_DIR\""
@@ -101,12 +100,12 @@ create_uv_venv() {
                     fail ".venv mevcut kullanıcıya ait değil ve taşınamadı. Düzeltme: sudo chown -R $(id -u):$(id -g) \"$SCRIPT_DIR\" (veya yalnızca .venv) ardından kurulumu tekrar çalıştırın."
                 fi
             fi
-            uv venv --python "$required_python_version" "$VENV_DIR"
-            ok "uv venv zorunlu Python $required_python_version ile yeniden oluşturuldu."
+            uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
+            ok "uv venv zorunlu Python $PYTHON_VERSION ile yeniden oluşturuldu."
         fi
     else
-        info "Yeni uv venv oluşturuluyor ($required_python_version)..."
-        uv venv --python "$required_python_version" "$VENV_DIR"
+        info "Yeni uv venv oluşturuluyor ($PYTHON_VERSION)..."
+        uv venv --python "$PYTHON_VERSION" "$VENV_DIR"
         ok "uv venv oluşturuldu."
     fi
     # shellcheck source=/dev/null
