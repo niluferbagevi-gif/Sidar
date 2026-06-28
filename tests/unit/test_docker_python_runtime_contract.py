@@ -88,10 +88,12 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
     assert ":latest" not in services["jaeger"]["image"]
 
+    assert services["redis-exporter"]["profiles"] == ["cpu", "gpu"]
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
     assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
 
     postgres_exporter = services["postgres-exporter"]
+    assert postgres_exporter["profiles"] == ["cpu", "gpu"]
     assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
     assert any(
         item.startswith("DATA_SOURCE_NAME=postgresql://")

@@ -372,6 +372,7 @@ services:
       - "4317:4317"
 
   redis-exporter:
+    profiles: ["cpu", "gpu"]
     image: oliver006/redis_exporter:v1.67.0
     container_name: sidar_redis_exporter
     restart: unless-stopped
@@ -381,6 +382,7 @@ services:
       - redis
 
   postgres-exporter:
+    profiles: ["cpu", "gpu"]
     image: prometheuscommunity/postgres-exporter:v0.15.0
     container_name: sidar_postgres_exporter
     restart: unless-stopped
