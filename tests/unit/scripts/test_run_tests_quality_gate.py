@@ -1617,6 +1617,23 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "tekrar menü göstermeden" in launch_body
 
 
+def test_install_sidar_dumps_docker_compose_stderr_and_guides_cadvisor_failures() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    launch_body = script[
+        script.index("launch_docker_services() {") : script.index(
+            "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
+        )
+    ]
+
+    assert "stderr_file=$(mktemp)" in launch_body
+    assert '2>"$stderr_file"' in launch_body
+    assert "while IFS= read -r line; do printf" in launch_body
+    assert 'grep -qi "500 Internal Server Error" "$stderr_file"' in launch_body
+    assert "cAdvisor/privileged container çakışmasından gelir" in launch_body
+    assert "docker compose stop cadvisor && docker compose rm -f cadvisor" in launch_body
+    assert 'rm -f "$stderr_file"' in launch_body
+
+
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     docs = Path("README.md").read_text(encoding="utf-8")

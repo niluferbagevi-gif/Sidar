@@ -7374,21 +7374,39 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                local stderr_file
+                stderr_file=$(mktemp)
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}" 2>"$stderr_file"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    warn "Altyapı Docker servisleri başlatılamadı:"
+                    while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
+                    if grep -qi "500 Internal Server Error" "$stderr_file"; then
+                        info "İpucu: 500 Internal Server Error genelde WSL2 + Docker Desktop ile cAdvisor/privileged container çakışmasından gelir."
+                        info "Çözüm: docker compose stop cadvisor && docker compose rm -f cadvisor; sonra COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d --no-deps prometheus grafana redis-exporter postgres-exporter"
+                    fi
+                    warn "Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
                     info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
+                rm -f "$stderr_file"
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                local stderr_file
+                stderr_file=$(mktemp)
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d 2>"$stderr_file"; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    warn "Docker servisleri başlatılamadı:"
+                    while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
+                    if grep -qi "500 Internal Server Error" "$stderr_file"; then
+                        info "İpucu: 500 Internal Server Error genelde WSL2 + Docker Desktop ile cAdvisor/privileged container çakışmasından gelir."
+                        info "Çözüm: docker compose stop cadvisor && docker compose rm -f cadvisor; sonra COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d --no-deps prometheus grafana redis-exporter postgres-exporter"
+                    fi
+                    warn "Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
                     info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
+                rm -f "$stderr_file"
             fi
             ;;
         *)
