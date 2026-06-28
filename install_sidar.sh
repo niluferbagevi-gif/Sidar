@@ -1463,7 +1463,19 @@ wait_for_compose_services_health() {
         return 0
     fi
 
-    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]})..."
+    local health_timeout_seconds="${COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS:-90}"
+    local health_poll_seconds="${COMPOSE_HEALTH_WAIT_POLL_SECONDS:-2}"
+    local health_deadline=0
+    local now=0
+
+    if ! [[ "$health_timeout_seconds" =~ ^[0-9]+$ ]] || (( health_timeout_seconds < 1 )); then
+        health_timeout_seconds=90
+    fi
+    if ! [[ "$health_poll_seconds" =~ ^[0-9]+$ ]] || (( health_poll_seconds < 1 )); then
+        health_poll_seconds=2
+    fi
+
+    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]}, timeout=${health_timeout_seconds}s, poll=${health_poll_seconds}s)..."
     for service_name in "${services[@]}"; do
         container_id="$("${compose_cmd[@]}" ps -q "$service_name" 2>/dev/null | head -n1 || true)"
         if [[ -z "$container_id" ]]; then
@@ -1471,7 +1483,8 @@ wait_for_compose_services_health() {
             continue
         fi
 
-        for _ in {1..45}; do
+        health_deadline=$(( $(date +%s) + health_timeout_seconds ))
+        while true; do
             state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
             case "$state" in
                 healthy|running)
@@ -1483,12 +1496,16 @@ wait_for_compose_services_health() {
                     return 1
                     ;;
             esac
-            sleep 2
+            now="$(date +%s)"
+            if (( now >= health_deadline )); then
+                break
+            fi
+            sleep "$health_poll_seconds"
         done
 
         state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
         if [[ "$state" != "healthy" && "$state" != "running" ]]; then
-            warn "Servis health timeout: ${service_name} (son durum: ${state})"
+            warn "Servis health timeout: ${service_name} (son durum: ${state}, timeout=${health_timeout_seconds}s)"
             return 1
         fi
     done

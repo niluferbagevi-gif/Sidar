@@ -1,4 +1,5 @@
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -465,6 +466,174 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
         "Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n"
         f"--- combined ---\n{combined}"
     )
+
+
+def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-lc", script],
+        cwd=Path(os.getcwd()),
+        env={**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    venv_bin = script_dir / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (script_dir / ".env").write_text(
+        "DATABASE_URL= postgresql://sidar:sidar@localhost:5432/sidar \n",
+        encoding="utf-8",
+    )
+    (script_dir / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+    fake_python = venv_bin / "python"
+    fake_python.write_text(
+        textwrap.dedent(
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$DATABASE_URL" >> "$SCRIPT_DIR/dburl.log"
+            case "$*" in
+              "-m alembic current")
+                printf '%s\n' "INFO [alembic.runtime.migration] Context impl PostgresqlImpl."
+                printf '%s\n' "  1abc23def456 (head)"
+                ;;
+              "-m alembic heads")
+                printf '%s\n' "INFO [alembic.runtime.migration] noisy prefix"
+                printf '%s\n' " 1abc23def456 (head)"
+                ;;
+              *) exit 2 ;;
+            esac
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source install_sidar.sh
+        SCRIPT_DIR={shlex.quote(str(script_dir))}
+        export SCRIPT_DIR
+        if ! is_alembic_at_head; then
+          echo "is_alembic_at_head failed" >&2
+          exit 1
+        fi
+        test "$(sort -u "$SCRIPT_DIR/dburl.log")" = "postgresql://sidar:sidar@localhost:5432/sidar"
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir()
+    key_script = "source install_sidar.sh; sidar_user_api_key_names"
+    keys_result = _run_bash_smoke(key_script, tmp_path)
+    assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
+    keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
+    assert len(keys) == 18
+
+    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
+    (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+    for name in (".env.advanced", ".env.development", ".env.test"):
+        (script_dir / name).write_text("\n".join(f"{key}=" for key in keys) + "\n", encoding="utf-8")
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source install_sidar.sh
+        SCRIPT_DIR={shlex.quote(str(script_dir))}
+        ENV_FILE="$SCRIPT_DIR/.env"
+        NO_INTERACTION=true
+        export SCRIPT_DIR ENV_FILE NO_INTERACTION
+        collect_api_keys_interactive "$ENV_FILE"
+        for profile in .env.advanced .env.development .env.test; do
+          for key in $(sidar_user_api_key_names); do
+            expected=$(read_env_value_from_file "$key" "$ENV_FILE")
+            actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/$profile")
+            if [[ "$actual" != "$expected" ]]; then
+              echo "$profile:$key expected=$expected actual=$actual" >&2
+              exit 1
+            fi
+          done
+        done
+        report_env_api_key_status "$ENV_FILE"
+        test "$ENV_API_KEYS_TOTAL" -eq 18
+        test "$ENV_API_KEYS_FILLED" -eq 18
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
+    os_release = tmp_path / "os-release"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    fake_python = tmp_path / "python"
+    fake_python.write_text("#!/usr/bin/env bash\nprintf '26.04\\n'\n", encoding="utf-8")
+    fake_python.chmod(0o755)
+    override_file = tmp_path / "override-os-release"
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source scripts/install_modules/utils/playwright_ubuntu_override.sh
+        is_playwright_ubuntu_override_recommended {shlex.quote(str(os_release))}
+        supported=$(playwright_latest_supported_ubuntu_version {shlex.quote(str(os_release))} {shlex.quote(str(fake_python))})
+        test "$supported" = "26.04"
+        test "$(playwright_ubuntu_override_platform "$supported")" = "ubuntu26.04-x64"
+        prepare_playwright_ubuntu_override_file {shlex.quote(str(os_release))} {shlex.quote(str(override_file))} "$supported"
+        grep -q 'VERSION_ID="26.04"' {shlex.quote(str(override_file))}
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    compose = fake_bin / "compose"
+    compose.write_text(
+        "#!/usr/bin/env bash\nif [[ $1 == ps && $2 == -q ]]; then echo fake-container; exit 0; fi\nexit 2\n",
+        encoding="utf-8",
+    )
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\nif [[ $1 == inspect ]]; then echo starting; exit 0; fi\nexit 0\n",
+        encoding="utf-8",
+    )
+    compose.chmod(0o755)
+    docker.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", "-lc", f"""
+        set -euo pipefail
+        export PATH={shlex.quote(str(fake_bin))}:$PATH
+        export SIDAR_INSTALL_TEST_MODE=1
+        export COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS=1
+        export COMPOSE_HEALTH_WAIT_POLL_SECONDS=1
+        source install_sidar.sh
+        if wait_for_compose_services_health compose -- postgres; then
+          echo "timeout was expected" >&2
+          exit 1
+        fi
+        """],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "timeout=1s" in combined
+    assert "Servis health timeout: postgres" in combined
 
 
 def test_bundled_install_sidar_manifest_matches() -> None:
