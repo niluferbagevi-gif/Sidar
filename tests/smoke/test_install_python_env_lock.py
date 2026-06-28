@@ -92,3 +92,81 @@ EOS
         env={**os.environ, "UV_STUB_LOG": str(tmp_path / "uv.log")},
         check=True,
     )
+
+
+def test_install_python_deps_uses_all_extras_without_bats(tmp_path):
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir(parents=True)
+    (script_dir / "uv.lock").touch()
+
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir(parents=True)
+    (fake_bin / "dpkg-query").write_text(
+        textwrap.dedent(
+            """#!/usr/bin/env bash
+            printf "Status: install ok installed\n"
+            """
+        ),
+        encoding="utf-8",
+    )
+    (fake_bin / "uv").write_text(
+        textwrap.dedent(
+            r"""#!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
+            case "$*" in
+              "sync --frozen --all-extras") exit 0 ;;
+              "run python -c import pydantic, pydantic_settings") exit 0 ;;
+            esac
+            printf 'unexpected uv call: %s\n' "$*" >&2
+            exit 99
+            """
+        ),
+        encoding="utf-8",
+    )
+    (fake_bin / "dpkg-query").chmod(0o755)
+    (fake_bin / "uv").chmod(0o755)
+
+    smoke_script = textwrap.dedent(
+        r"""
+        set -euo pipefail
+        source scripts/install_modules/install_helpers.sh
+        source scripts/install_modules/utils/python_env.sh
+
+        step(){ :; }
+        info(){ :; }
+        ok(){ :; }
+        warn(){ :; }
+        fail(){ echo "FAIL:$*"; exit 1; }
+        ensure_env_file_secrets_after_uv_sync(){ :; }
+        validate_runtime_env_loading(){ :; }
+
+        export SCRIPT_DIR="$1"
+        export PATH="$2:$PATH"
+        export UPGRADE_LOCK=false
+        export PYTHON_VERSION="3.11"
+
+        install_python_deps
+
+        grep -q "^sync --frozen --all-extras$" "$UV_STUB_LOG"
+        ! grep -q -- "--extra dev" "$UV_STUB_LOG"
+        ! grep -q -- "uv pip" "$UV_STUB_LOG"
+        """
+    )
+
+    subprocess.run(
+        [
+            "bash",
+            "-lc",
+            smoke_script,
+            "sidar-install-deps-smoke",
+            str(script_dir),
+            str(fake_bin),
+        ],
+        cwd=os.getcwd(),
+        env={
+            **os.environ,
+            "UV_STUB_LOG": str(tmp_path / "install-python-deps-uv.log"),
+        },
+        check=True,
+    )
