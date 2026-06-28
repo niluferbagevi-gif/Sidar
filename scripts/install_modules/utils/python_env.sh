@@ -54,6 +54,9 @@ create_uv_venv() {
     if [[ -n "${PYTHON_VERSION:-}" && "$requested_python_version" != "$expected_python_version" ]]; then
         warn "PYTHON_VERSION=${requested_python_version} algılandı; runtime için ${expected_python_version} zorunlu."
     fi
+    # Global bırakılır: sonraki installer phase/helper fonksiyonları zorunlu
+    # runtime sürümünü PYTHON_VERSION üzerinden okur. Local yapılırsa fazlar
+    # arasında Python sürümü tekrar override edilip regression oluşabilir.
     PYTHON_VERSION="$expected_python_version"
     VENV_DIR="$SCRIPT_DIR/.venv"
     info "Python sürümü uv ile sabitleniyor ($PYTHON_VERSION)..."
