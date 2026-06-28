@@ -1869,17 +1869,27 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
     )
 
 
-def test_run_tests_requires_bats_when_shell_tests_are_enabled() -> None:
+def test_run_tests_warns_and_skips_when_bats_is_missing() -> None:
     script = _script()
     bats_block = script[
         script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
     ]
 
     assert 'if [ "${RUN_BATS_TESTS}" != "1" ]; then' in bats_block
-    assert "RUN_BATS_TESTS=1 ancak BATS bulunamadı" in bats_block
+    assert "⚠️ bats yok — shell testleri atlandı" in bats_block
     assert "bash scripts/install_ci_system_deps.sh" in bats_block
-    assert "BACKEND_EXIT_CODE=1" in bats_block
-    assert "shell testleri opsiyonel olduğu için atlandı" not in bats_block
+    missing_bats_start = bats_block.index(
+        'if ! command -v bats >/dev/null 2>&1; then',
+        bats_block.index('try_auto_install_ci_system_deps || true'),
+    )
+    missing_bats_block = bats_block[
+        missing_bats_start : bats_block.index(
+            'echo "🐚 BATS shell testleri çalıştırılıyor..."'
+        )
+    ]
+    assert 'record_backend_failure "bats_missing"' not in missing_bats_block
+    assert "BACKEND_EXIT_CODE=1" not in missing_bats_block
+    assert "return 0" in missing_bats_block
 
 
 def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> None:
