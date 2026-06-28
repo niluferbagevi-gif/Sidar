@@ -397,6 +397,10 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "override=False ile yüklenir" in env_advanced
     assert "boş" in env_advanced and ".env içindeki dolu değerleri ezmez" in env_advanced
     assert "docker-compose env_file:" in env_advanced
+    assert "PostgreSQL parola senkronizasyonu (sync_postgres_password.py)" in env_advanced
+    assert "POSTGRES_ADMIN_USER=" in env_advanced
+    assert "POSTGRES_ADMIN_DB=" in env_advanced
+    assert "SIDAR_POSTGRES_CONTAINER=sidar_postgres" in env_advanced
     assert "AUTONOMOUS_LOOP_COVERAGE_XML=coverage.xml" in env_advanced
     assert "SIDAR_EVENT_BUS_BACKEND=redis" in env_advanced
     assert "SIDAR_RABBITMQ_URL=" in env_advanced
