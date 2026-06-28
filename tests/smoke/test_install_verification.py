@@ -171,6 +171,7 @@ def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
         **os.environ,
         "HOME": str(host),
         "PWD": str(host),
+        "TMPDIR": str(tmp_path),
         "SIDAR_INSTALL_TEST_MODE": "1",
         "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
         "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
@@ -321,6 +322,7 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
         **os.environ,
         "HOME": str(host),
         "PWD": str(host),
+        "TMPDIR": str(tmp_path),
         "SIDAR_INSTALL_TEST_MODE": "1",
         "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
         "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1",
@@ -362,6 +364,21 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
             f"Drift hata mesajında beklenen bilgi yok: {required_marker!r}.\n"
             f"--- combined ---\n{combined}"
         )
+    leaked_manifests = sorted(tmp_path.glob("sidar_module_hashes.*"))
+    assert leaked_manifests == [], (
+        "Embedded module hash manifest geçici dosyası hata yolunda temizlenmeliydi; "
+        f"kalan dosyalar: {leaked_manifests}"
+    )
+
+
+def test_install_sidar_embedded_manifest_temp_cleanup_trap_is_registered() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE" in installer
+    assert "cleanup_embedded_module_hash_manifest_temp_file" in installer
+    assert "trap 'cleanup_embedded_module_hash_manifest_temp_file' EXIT" in installer
+    assert "trap 'cleanup_embedded_module_hash_manifest_temp_file; exit 130' INT" in installer
+    assert "trap 'cleanup_embedded_module_hash_manifest_temp_file; exit 143' TERM" in installer
 
 
 def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Path) -> None:

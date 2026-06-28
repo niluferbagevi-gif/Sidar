@@ -388,6 +388,7 @@ b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/instal
 SIDAR_MODULE_HASHES_EOF
 
 declare -A INSTALL_REMOTE_MODULE_HASHES=()
+EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE=""
 
 populate_remote_module_hashes_from_embedded_manifest() {
     local expected_hash=""
@@ -403,6 +404,13 @@ populate_remote_module_hashes_from_embedded_manifest() {
 }
 
 populate_remote_module_hashes_from_embedded_manifest
+
+cleanup_embedded_module_hash_manifest_temp_file() {
+    if [[ -n "${EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE:-}" ]]; then
+        rm -f "$EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE"
+        EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE=""
+    fi
+}
 
 verify_remote_install_module_hash() {
     local module_rel="$1"
@@ -659,6 +667,10 @@ verify_install_module_hashes_if_present() {
 
     if [[ ! -f "$hash_manifest" && -n "${EMBEDDED_MODULE_HASHES_MANIFEST:-}" ]]; then
         embedded_manifest_file="$(mktemp "${TMPDIR:-/tmp}/sidar_module_hashes.XXXXXX")"
+        EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE="$embedded_manifest_file"
+        trap 'cleanup_embedded_module_hash_manifest_temp_file' EXIT
+        trap 'cleanup_embedded_module_hash_manifest_temp_file; exit 130' INT
+        trap 'cleanup_embedded_module_hash_manifest_temp_file; exit 143' TERM
         printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" > "$embedded_manifest_file"
         hash_manifest="$embedded_manifest_file"
     fi
@@ -744,7 +756,10 @@ Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
         ok "Kurulum modül hash doğrulaması başarılı."
     fi
 
-    [[ -n "$embedded_manifest_file" ]] && rm -f "$embedded_manifest_file"
+    if [[ -n "$embedded_manifest_file" ]]; then
+        cleanup_embedded_module_hash_manifest_temp_file
+        trap - EXIT INT TERM
+    fi
 }
 
 verify_install_module_hashes_if_present
