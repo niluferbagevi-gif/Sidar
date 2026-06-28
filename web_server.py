@@ -94,6 +94,7 @@ from web.middleware.ratelimit import (
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
 from web.routes import federation as federation_routes
+from web.routes import health_runtime as health_runtime_routes
 from web.routes import integrations as integrations_routes
 from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
@@ -2494,102 +2495,33 @@ async def websocket_voice(websocket: WebSocket) -> Any:
 
 
 def _expose_operational_error_details() -> bool:
-    return _app_factory._expose_exception_details()
+    return health_runtime_routes.expose_operational_error_details(_app_factory)
 
 
 def _health_error_payload(error: str, exc: Exception) -> dict[str, Any]:
-    payload: dict[str, Any] = {"status": "degraded", "error": error}
-    if _expose_operational_error_details():
-        payload["detail"] = str(exc)
-    return payload
+    return health_runtime_routes.health_error_payload(
+        error,
+        exc,
+        expose_details=_expose_operational_error_details(),
+    )
 
 
 async def _health_response(require_dependencies: bool = False) -> JSONResponse:
-    try:
-        agent = await _resolve_agent_instance()
-        health_data = agent.health.get_health_summary()
-    except Exception as exc:
-        logger.exception("Health check güvenli fallback'e düştü: %s", exc)
-        payload = _health_error_payload("health_check_failed", exc)
-        payload["uptime_seconds"] = int(time.monotonic() - _start_time)
-        return JSONResponse(
-            payload,
-            status_code=503,
-        )
-
-    health_data["uptime_seconds"] = int(time.monotonic() - _start_time)
-
-    # Eğer ana yapay zeka servisi (Ollama) çöktüyse 503 HTTP kodu döndür
-    if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:
-        health_data["status"] = "degraded"
-        return JSONResponse(health_data, status_code=503)
-
-    if require_dependencies:
-        try:
-            dependency_health = agent.health.get_dependency_health()
-        except Exception as exc:
-            logger.exception("Dependency health sorgusu başarısız oldu: %s", exc)
-            dependency_error: dict[str, Any] = {
-                "healthy": False,
-                "error": "dependency_health_failed",
-            }
-            if _expose_operational_error_details():
-                dependency_error["detail"] = str(exc)
-            health_data["dependencies"] = {"error": dependency_error}
-            health_data["status"] = "degraded"
-            return JSONResponse(health_data, status_code=503)
-        health_data["dependencies"] = dependency_health
-        if any(item.get("healthy") is False for item in dependency_health.values()):
-            health_data["status"] = "degraded"
-            return JSONResponse(health_data, status_code=503)
-
-    return JSONResponse(health_data)
+    return await health_runtime_routes.build_health_response(
+        require_dependencies=require_dependencies,
+        resolve_agent_instance=_resolve_agent_instance,
+        expose_details=_expose_operational_error_details,
+        logger=logger,
+        start_time=_start_time,
+    )
 
 
 async def _status_response() -> JSONResponse:
-    """Return the legacy /status payload kept for backwards-compatible callers."""
-    started_at = time.monotonic()
-    agent = await _resolve_agent_instance()
-    cfg_obj = agent.cfg
-    provider = str(getattr(cfg_obj, "AI_PROVIDER", "") or "")
-    model = (
-        str(getattr(cfg_obj, "GEMINI_MODEL", "") or "")
-        if provider == "gemini"
-        else str(getattr(cfg_obj, "CODING_MODEL", "") or "")
+    return await health_runtime_routes.build_status_response(
+        resolve_agent_instance=_resolve_agent_instance,
+        metrics_snapshot=lambda: get_llm_metrics_collector().snapshot(),
+        start_time=_start_time,
     )
-
-    ollama_online = bool(agent.health.check_ollama())
-    ollama_latency_ms = int((time.monotonic() - started_at) * 1000)
-
-    payload: dict[str, Any] = {
-        "status": "ok",
-        "version": getattr(agent, "VERSION", ""),
-        "uptime_seconds": int(time.monotonic() - _start_time),
-        "provider": provider,
-        "model": model,
-        "ollama_online": ollama_online,
-        "ollama_latency_ms": ollama_latency_ms,
-        "gpu": {
-            "enabled": bool(getattr(cfg_obj, "USE_GPU", False)),
-            "info": agent.health.get_gpu_info(),
-            "configured_info": getattr(cfg_obj, "GPU_INFO", {}),
-            "count": getattr(cfg_obj, "GPU_COUNT", 0),
-            "cuda_version": getattr(cfg_obj, "CUDA_VERSION", ""),
-        },
-        "memory": {
-            "turns": len(getattr(agent, "memory", [])),
-            "encrypted": bool(getattr(cfg_obj, "MEMORY_ENCRYPTION_KEY", "")),
-        },
-        "access_level": getattr(cfg_obj, "ACCESS_LEVEL", ""),
-        "services": {
-            "github": bool(agent.github.is_available()),
-            "web_search": bool(agent.web.is_available()),
-            "docs": agent.docs.status(),
-            "package_info": agent.pkg.status(),
-        },
-        "llm_metrics": get_llm_metrics_collector().snapshot(),
-    }
-    return JSONResponse(payload)
 
 
 frontend_router = build_frontend_router(

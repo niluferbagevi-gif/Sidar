@@ -27,6 +27,7 @@ from config_security import (
     load_security_settings,
 )
 from core import config_dotenv
+from core.config_app import load_app_runtime_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_env_helpers import (
@@ -43,10 +44,11 @@ from core.config_env_helpers import (
     get_web_scrape_max_chars,
 )
 from core.config_gpu_detect import HardwareInfo
+from core.config_observability import load_observability_settings
+from core.config_orchestrator import load_orchestrator_settings
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
 from core.config_secrets import is_nonempty_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
-from sidar_version import PRODUCT_VERSION
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -571,6 +573,9 @@ def check_hardware() -> HardwareInfo:
 # ═══════════════════════════════════════════════════════════════
 
 
+_APP_SETTINGS = load_app_runtime_settings()
+_OBSERVABILITY_SETTINGS = load_observability_settings()
+_ORCHESTRATOR_SETTINGS = load_orchestrator_settings()
 _SELF_HEAL_SETTINGS = config_autonomy.load_self_heal_settings()
 
 
@@ -583,12 +588,10 @@ class Config:
     """
 
     # ─── Genel ───────────────────────────────────────────────
-    PROJECT_NAME: str = "Sidar"
-    VERSION: str = PRODUCT_VERSION
-    DEBUG_MODE: bool = get_bool_env("DEBUG_MODE", False)
-    ENABLE_MULTI_AGENT: bool = (
-        True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
-    )
+    PROJECT_NAME: str = _APP_SETTINGS.project_name
+    VERSION: str = _APP_SETTINGS.version
+    DEBUG_MODE: bool = _APP_SETTINGS.debug_mode
+    ENABLE_MULTI_AGENT: bool = _APP_SETTINGS.enable_multi_agent
     ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)
     SELF_HEAL_MAX_PATCHES: int = int(_SELF_HEAL_SETTINGS["SELF_HEAL_MAX_PATCHES"] or 3)
     SELF_HEAL_PLAN_MAX_RETRIES: int = int(_SELF_HEAL_SETTINGS["SELF_HEAL_PLAN_MAX_RETRIES"] or 3)
@@ -719,11 +722,11 @@ class Config:
     GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", gpu_mixed_precision_default())
 
     # ─── Uygulama ────────────────────────────────────────────
-    MAX_MEMORY_TURNS: int = get_int_env("MAX_MEMORY_TURNS", 20)
-    MEMORY_SUMMARY_KEEP_LAST: int = get_int_env("MEMORY_SUMMARY_KEEP_LAST", 4)
-    CLI_FAST_MODE: bool = get_bool_env("CLI_FAST_MODE", False)
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    RESPONSE_LANGUAGE: str = os.getenv("RESPONSE_LANGUAGE", "tr")
+    MAX_MEMORY_TURNS: int = _APP_SETTINGS.max_memory_turns
+    MEMORY_SUMMARY_KEEP_LAST: int = _APP_SETTINGS.memory_summary_keep_last
+    CLI_FAST_MODE: bool = _APP_SETTINGS.cli_fast_mode
+    LOG_LEVEL: str = _APP_SETTINGS.log_level
+    RESPONSE_LANGUAGE: str = _APP_SETTINGS.response_language
 
     # ─── Loglama ─────────────────────────────────────────────
     LOG_FILE: Path = _LOG_FILE_PATH
@@ -731,16 +734,16 @@ class Config:
     LOG_BACKUP_COUNT: int = _LOG_BACKUP_CNT
 
     # ─── ReAct Döngüsü ───────────────────────────────────────
-    MAX_REACT_STEPS: int = get_int_env("MAX_REACT_STEPS", 10)
-    AGENT_MAX_REACT_STEPS: int = get_int_env("AGENT_MAX_REACT_STEPS", MAX_REACT_STEPS)
-    REACT_TIMEOUT: int = get_int_env("REACT_TIMEOUT", 60)
-    SWARM_TASK_TIMEOUT_SECONDS: int = get_int_env("SWARM_TASK_TIMEOUT_SECONDS", REACT_TIMEOUT)
-    SWARM_TASK_TIMEOUT_BY_MODEL: str = os.getenv("SWARM_TASK_TIMEOUT_BY_MODEL", "")
-    SWARM_TASK_TIMEOUT_SECONDS_OLLAMA: int = get_int_env(
-        "SWARM_TASK_TIMEOUT_SECONDS_OLLAMA", SWARM_TASK_TIMEOUT_SECONDS
+    MAX_REACT_STEPS: int = _ORCHESTRATOR_SETTINGS.max_react_steps
+    AGENT_MAX_REACT_STEPS: int = _ORCHESTRATOR_SETTINGS.agent_max_react_steps
+    REACT_TIMEOUT: int = _ORCHESTRATOR_SETTINGS.react_timeout
+    SWARM_TASK_TIMEOUT_SECONDS: int = _ORCHESTRATOR_SETTINGS.swarm_task_timeout_seconds
+    SWARM_TASK_TIMEOUT_BY_MODEL: str = _ORCHESTRATOR_SETTINGS.swarm_task_timeout_by_model
+    SWARM_TASK_TIMEOUT_SECONDS_OLLAMA: int = (
+        _ORCHESTRATOR_SETTINGS.swarm_task_timeout_seconds_ollama
     )
-    SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
-    AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
+    SUBTASK_MAX_STEPS: int = _ORCHESTRATOR_SETTINGS.subtask_max_steps
+    AUTO_HANDLE_TIMEOUT: int = _ORCHESTRATOR_SETTINGS.auto_handle_timeout
 
     # ─── API Rate Limiting ───────────────────────────────────
     SIDAR_RATE_LIMIT_WINDOW: int = get_int_prefixed_env(
@@ -789,7 +792,7 @@ class Config:
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
     # Metrics endpoint'leri için statik Bearer token (boşsa yalnızca admin kullanıcılar erişebilir)
-    METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
+    METRICS_TOKEN: str = _OBSERVABILITY_SETTINGS.metrics_token
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = get_database_url()
@@ -810,11 +813,11 @@ class Config:
     SIDAR_AUTO_MIGRATE: bool = get_bool_env("SIDAR_AUTO_MIGRATE", _default_auto_migrate_enabled())
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
-    ENABLE_TRACING: bool = get_bool_env("ENABLE_TRACING", False)
-    OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
-    OTEL_SERVICE_NAME: str = os.getenv("OTEL_SERVICE_NAME", "sidar")
-    OTEL_INSTRUMENT_FASTAPI: bool = get_bool_env("OTEL_INSTRUMENT_FASTAPI", True)
-    OTEL_INSTRUMENT_HTTPX: bool = get_bool_env("OTEL_INSTRUMENT_HTTPX", True)
+    ENABLE_TRACING: bool = _OBSERVABILITY_SETTINGS.enable_tracing
+    OTEL_EXPORTER_ENDPOINT: str = _OBSERVABILITY_SETTINGS.otel_exporter_endpoint
+    OTEL_SERVICE_NAME: str = _OBSERVABILITY_SETTINGS.otel_service_name
+    OTEL_INSTRUMENT_FASTAPI: bool = _OBSERVABILITY_SETTINGS.otel_instrument_fastapi
+    OTEL_INSTRUMENT_HTTPX: bool = _OBSERVABILITY_SETTINGS.otel_instrument_httpx
 
     # ─── Semantic Cache (v4.0) ───────────────────────────────
     ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
@@ -930,14 +933,14 @@ class Config:
 
     # ─── Observability Bağlantı Noktaları ───────────────────
     # GRAFANA_URL ayarlanmazsa varsayılan olarak yerel kurulum portu kullanılır.
-    GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
+    GRAFANA_URL: str = _OBSERVABILITY_SETTINGS.grafana_url
 
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
     REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "uv run pytest")
 
     # ─── DLP — Veri Kaybı Önleme ─────────────────────────────
     DLP_ENABLED: bool = get_bool_env("DLP_ENABLED", True)
-    DLP_LOG_DETECTIONS: bool = get_bool_env("DLP_LOG_DETECTIONS", False)
+    DLP_LOG_DETECTIONS: bool = _OBSERVABILITY_SETTINGS.dlp_log_detections
 
     # ─── HITL — Human-in-the-Loop Onay Geçidi ────────────────
     HITL_ENABLED: bool = get_bool_env("HITL_ENABLED", False)
@@ -1057,12 +1060,11 @@ class Config:
     LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
     PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
     TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
-    ENABLE_AUTONOMOUS_CRON: bool = get_bool_env("ENABLE_AUTONOMOUS_CRON", False)
-    AUTONOMOUS_CRON_INTERVAL_SECONDS: int = get_int_env("AUTONOMOUS_CRON_INTERVAL_SECONDS", 900)
-    AUTONOMOUS_CRON_PROMPT: str = os.getenv(
-        "AUTONOMOUS_CRON_PROMPT",
-        "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
+    ENABLE_AUTONOMOUS_CRON: bool = _ORCHESTRATOR_SETTINGS.enable_autonomous_cron
+    AUTONOMOUS_CRON_INTERVAL_SECONDS: int = (
+        _ORCHESTRATOR_SETTINGS.autonomous_cron_interval_seconds
     )
+    AUTONOMOUS_CRON_PROMPT: str = _ORCHESTRATOR_SETTINGS.autonomous_cron_prompt
     ENABLE_NIGHTLY_MEMORY_PRUNING: bool = get_bool_env("ENABLE_NIGHTLY_MEMORY_PRUNING", False)
     NIGHTLY_MEMORY_INTERVAL_SECONDS: int = get_int_env("NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400)
     NIGHTLY_MEMORY_IDLE_SECONDS: int = get_int_env("NIGHTLY_MEMORY_IDLE_SECONDS", 1800)
@@ -1082,8 +1084,8 @@ class Config:
         "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE",
         get_bool_env("SIDAR_AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", True),
     )
-    ENABLE_SWARM_FEDERATION: bool = get_bool_env("ENABLE_SWARM_FEDERATION", True)
-    SWARM_FEDERATION_SHARED_SECRET: str = os.getenv("SWARM_FEDERATION_SHARED_SECRET", "")
+    ENABLE_SWARM_FEDERATION: bool = _ORCHESTRATOR_SETTINGS.enable_swarm_federation
+    SWARM_FEDERATION_SHARED_SECRET: str = _ORCHESTRATOR_SETTINGS.swarm_federation_shared_secret
     ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
     GRAPH_RAG_MAX_FILES: int = get_int_env("GRAPH_RAG_MAX_FILES", 5000)
     ENABLE_RAG_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_ENTITY_EXTRACTION", True)
