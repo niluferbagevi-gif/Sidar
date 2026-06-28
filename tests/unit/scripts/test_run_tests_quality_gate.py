@@ -1149,6 +1149,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase
     assert "ensure_postgres_volume_reset_before_smoke_tests" in services_phase
+    assert "sidar_phase06_db_password_hardened_marker_present()" in services_phase
+    assert ".sidar_install_state DB_PASSWORD_HARDENED=true" in services_phase
     assert "local -a ensure_db_args=(" in services_phase
     assert '"$pg_pw"' in services_phase
     assert 'ensure_postgres_databases_exist "${ensure_db_args[@]}"' in services_phase
@@ -1195,6 +1197,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
     assert "sidar_store_pre_harden_postgres_password()" in db_utils
+    assert "sidar_mark_db_password_hardened_state()" in db_utils
+    assert ".sidar_install_state" in db_utils
+    assert "DB_PASSWORD_HARDENED=true" in db_utils
     assert "pre_harden_postgres_password" in db_utils
     assert "chmod 600" in db_utils
     assert "PRE_HARDEN_DB_PASSWORD_FILE" in db_utils

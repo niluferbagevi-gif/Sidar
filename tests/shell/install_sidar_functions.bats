@@ -430,9 +430,10 @@ EOF
 }
 
 @test "harden_database_credentials rewrites weak DATABASE_URL and syncs postgres env values" {
-  local tmpdir env_file
+  local tmpdir env_file state_file
   tmpdir="$(mktemp -d)"
   env_file="$tmpdir/.env"
+  state_file="$tmpdir/.sidar_install_state"
   cat > "$env_file" <<'ENV'
 SIDAR_ENV=development
 DATABASE_URL=postgresql+asyncpg://sidar:postgres@localhost:5432/sidar?ssl=disable
@@ -440,6 +441,7 @@ POSTGRES_PASSWORD=postgres
 ENV
 
   run_installer_function "
+    SIDAR_INSTALL_STATE_FILE='$state_file'
     generate_secure_token() { printf '%s\\n' 'GeneratedStrongDbToken_1234567890'; }
     harden_database_credentials '$env_file'
     grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@localhost:5432/sidar?ssl=disable$' '$env_file'
@@ -449,6 +451,7 @@ ENV
     test -f "${PRE_HARDEN_DB_PASSWORD_FILE}"
     test "$(cat "${PRE_HARDEN_DB_PASSWORD_FILE}")" = "postgres"
     test "$(stat -c '%a' "${PRE_HARDEN_DB_PASSWORD_FILE}")" = "600"
+    grep -q '^DB_PASSWORD_HARDENED=true$' '$state_file'
   "
   rm -rf "$tmpdir"
   [ "$status" -eq 0 ]

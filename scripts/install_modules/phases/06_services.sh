@@ -194,6 +194,11 @@ sidar_phase06_discover_postgres_volumes() {
     fi
 }
 
+sidar_phase06_db_password_hardened_marker_present() {
+    local state_file="${SIDAR_INSTALL_STATE_FILE:-$SCRIPT_DIR/.sidar_install_state}"
+    [[ -f "$state_file" ]] && grep -q '^DB_PASSWORD_HARDENED=true$' "$state_file" 2>/dev/null
+}
+
 ensure_postgres_volume_reset_before_smoke_tests() {
     local -a docker_compose_cmd=()
     local -a volumes_before=()
@@ -202,8 +207,13 @@ ensure_postgres_volume_reset_before_smoke_tests() {
     local volume_name=""
 
     if [[ "${DB_PASSWORD_HARDENED:-false}" != true ]]; then
-        info "DB parola hardening işaretlenmedi; smoke öncesi PostgreSQL volume reset gerekmiyor."
-        return 0
+        if sidar_phase06_db_password_hardened_marker_present; then
+            DB_PASSWORD_HARDENED=true
+            info ".sidar_install_state DB_PASSWORD_HARDENED=true işaretledi; smoke öncesi PostgreSQL volume reset doğrulaması yapılacak."
+        else
+            info "DB parola hardening işaretlenmedi; smoke öncesi PostgreSQL volume reset gerekmiyor."
+            return 0
+        fi
     fi
 
     if [[ "${POSTGRES_VOLUME_RESET_DONE:-false}" == true ]]; then
