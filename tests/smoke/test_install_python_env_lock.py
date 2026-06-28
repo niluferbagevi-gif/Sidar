@@ -26,7 +26,11 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
               mkdir -p "$venv_dir/bin"
               cat > "$venv_dir/bin/python" <<'EOS'
 #!/usr/bin/env bash
-echo "Python 3.11.9"
+if [[ "${1:-}" == "-c" ]]; then
+  echo "3.11"
+else
+  echo "Python 3.11.9"
+fi
 EOS
               chmod +x "$venv_dir/bin/python"
               cat > "$venv_dir/bin/activate" <<'EOS'
@@ -53,7 +57,7 @@ EOS
 
         step(){ :; }
         info(){ :; }
-        ok(){ :; }
+        ok(){ echo "OK:$*"; }
         fail(){ echo "FAIL:$*"; exit 1; }
         warn(){ echo "WARN:$*"; }
 
@@ -71,6 +75,9 @@ EOS
         overridden_version="$($SCRIPT_DIR/.venv/bin/python --version)"
         [[ "$overridden_version" == Python\ 3.11.* ]]
         [[ "$output" == *"WARN:PYTHON_VERSION=3.12 algılandı; runtime için 3.11 zorunlu."* ]]
+
+        output="$(create_uv_venv 2>&1)"
+        [[ "$output" == *"OK:.venv mevcut sürümle uyumlu: 3.11"* ]]
         """
     )
 

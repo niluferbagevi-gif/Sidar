@@ -69,7 +69,9 @@ create_uv_venv() {
         if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
             detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
         fi
-        if [[ "$detected_python_version" != "$PYTHON_VERSION" ]]; then
+        if [[ "$detected_python_version" == "$PYTHON_VERSION" ]]; then
+            ok ".venv mevcut sürümle uyumlu: $detected_python_version"
+        else
             warn "Mevcut .venv Python sürümü ${detected_python_version:-bilinmiyor}; zorunlu sürüm $PYTHON_VERSION. .venv yeniden oluşturuluyor."
             if [[ -O "$VENV_DIR" ]]; then
                 if ! rm -rf "$VENV_DIR"; then
