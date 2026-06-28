@@ -345,6 +345,7 @@ INSTALL_PHASE_MODULES=(
     "phases/03_runtime.sh"
     "phases/04_workspace.sh"
     "phases/05_frontend.sh"
+    "phases/13_playwright.sh"
     "phases/06_services.sh"
     "phases/07_finish.sh"
 )
@@ -365,6 +366,7 @@ b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/instal
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
+3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
 44f30be5a15a06fff67244020e714795d829a1c9b163717cb651ba4c409474a8  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
@@ -3802,216 +3804,7 @@ setup_nvidia_docker() {
 # Keep that module as the single source of truth; do not redefine them inline here.
 
 # ── 6. Playwright tarayıcı motorları ─────────────────────────────────────────
-should_install_playwright_browsers() {
-    case "$PLAYWRIGHT_BROWSERS_MODE" in
-        always) return 0 ;;
-        never) return 1 ;;
-    esac
-
-    local env_file="$SCRIPT_DIR/.env"
-    local sidar_env="development"
-    if [[ -f "$env_file" ]]; then
-        sidar_env="$(read_env_value_from_file "SIDAR_ENV" "$env_file")"
-    fi
-    sidar_env=$(echo "${sidar_env:-development}" | tr '[:upper:]' '[:lower:]' | tr -d '"'\''[:space:]')
-
-    case "$sidar_env" in
-        development|dev|local|test) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-install_playwright_browsers() {
-    step "Playwright Tarayıcı Motorları"
-
-    if ! should_install_playwright_browsers; then
-        info "Playwright tarayıcı kurulumu atlandı (mode=${PLAYWRIGHT_BROWSERS_MODE}, SIDAR_ENV tabanlı otomatik politika)."
-        return
-    fi
-
-    PY_CMD=(python)
-
-    if "${PY_CMD[@]}" -c "import playwright" >/dev/null 2>&1; then
-        local pw_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-        local _pw_install_log; _pw_install_log=$(mktemp)
-        local _pw_os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
-        local _pw_install_completed=false
-        local _pw_python_spec
-        local _pw_apt_noise_regex='is already the newest version|0 upgraded.*0 newly.*not upgraded|Reading package|Building dependency|Reading state|Solving dependencies|^$'
-        local _pw_browser_noise_regex="BEWARE: your OS is not officially supported|Cannot install dependencies for ubuntu[0-9]+\.04-x64|${_pw_apt_noise_regex}"
-        local _pw_ubuntu_version=""
-        if [[ -r "$_pw_os_release_path" ]]; then
-            _pw_ubuntu_version="$(awk -F= '/^VERSION_ID=/{gsub(/"/, "", $2); print $2; exit}' "$_pw_os_release_path")"
-        fi
-        _pw_python_spec="$(resolve_playwright_python_spec "${SCRIPT_DIR}/pyproject.toml")"
-
-        _is_playwright_os_mismatch_error() {
-            local _output="${1:-}"
-            [[ "$_output" == *"OS is not officially supported by Playwright"* ]] || \
-            [[ "$_output" == *"Playwright does not support chromium on"* ]] || \
-            [[ "$_output" == *"Cannot install dependencies for"* ]] || \
-            [[ "$_output" == *"Failed to install browsers"* ]]
-        }
-
-        _try_playwright_install() {
-            local _mode="${1:-binary}"
-            if [[ "$_mode" == "with-deps" ]]; then
-                env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-                    "${PY_CMD[@]}" -m playwright install --with-deps chromium >"$_pw_install_log" 2>&1
-            else
-                env PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT="$pw_timeout_ms" \
-                    "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
-            fi
-        }
-
-        _try_playwright_ubuntu_override_install() {
-            run_playwright_ubuntu_override_install "$_pw_os_release_path" "$pw_timeout_ms" \
-                "${PY_CMD[@]}" -m playwright install chromium >"$_pw_install_log" 2>&1
-        }
-
-        _try_playwright_install_deps() {
-            local _pw_deps_output=""
-            if ! "${PY_CMD[@]}" -m playwright install-deps chromium >"$_pw_install_log" 2>&1; then
-                return 1
-            fi
-            _pw_deps_output="$(cat "$_pw_install_log" 2>/dev/null || true)"
-            if grep -Eqi 'Cannot install dependencies|BEWARE|is not officially supported' <<<"$_pw_deps_output"; then
-                return 1
-            fi
-        }
-
-        _ensure_playwright_override_dependencies() {
-            info "Playwright OS override sonrası Chromium sistem bağımlılıkları doğrulanıyor..."
-            if _try_playwright_install_deps; then
-                grep -vE "$_pw_apt_noise_regex" \
-                    "$_pw_install_log" || true
-                if playwright_linux_dependencies_ready; then
-                    ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
-                    return 0
-                fi
-                warn "Playwright install-deps başarılı döndü ancak kritik Chromium bağımlılıkları doğrulanamadı; sabit apt fallback uygulanacak."
-            fi
-
-            grep -vE "$_pw_browser_noise_regex" "$_pw_install_log" >&2 || true
-            if ! is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
-                warn "Playwright install-deps başarısız oldu; sabit apt fallback yalnızca Ubuntu 25+ override hostlarında uygulanır."
-                return 1
-            fi
-
-            warn "Playwright install-deps başarısız oldu; Ubuntu ${_pw_ubuntu_version:-25+} için sabit Chromium apt bağımlılık listesi deneniyor..."
-            if install_playwright_linux_dependencies_fallback; then
-                ok "Playwright Chromium sistem bağımlılıkları sabit apt fallback ile kuruldu."
-                return 0
-            fi
-
-            warn "Playwright Chromium sistem bağımlılıkları kurulamadı; browser binary mevcut olsa da headless çalışma doğrulanmadı."
-            return 1
-        }
-
-        _playwright_python_upgrade_required() {
-            "${PY_CMD[@]}" - "$_pw_python_spec" <<'PY_PLAYWRIGHT_VERSION' >/dev/null 2>&1
-from importlib.metadata import PackageNotFoundError, version
-import sys
-
-from packaging.specifiers import SpecifierSet
-
-try:
-    installed_version = version("playwright")
-except PackageNotFoundError:
-    raise SystemExit(0)
-raise SystemExit(0 if installed_version not in SpecifierSet(sys.argv[1].removeprefix("playwright")) else 1)
-PY_PLAYWRIGHT_VERSION
-        }
-
-        _try_playwright_last_resort_override() {
-            if _try_playwright_ubuntu_override_install; then
-                grep -vE "$_pw_browser_noise_regex" \
-                    "$_pw_install_log" || true
-                if _ensure_playwright_override_dependencies; then
-                    ok "Playwright kurulumu OS override fallback ile tamamlandı (chromium + deps)."
-                else
-                    warn "Playwright OS override fallback binary indirmesi tamamlandı ancak sistem bağımlılıkları eksik kaldı."
-                fi
-            else
-                cat "$_pw_install_log" >&2
-                warn "Playwright kurulumu tüm fallback seviyelerinde başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install chromium"
-            fi
-        }
-
-        if is_playwright_ubuntu_override_recommended "$_pw_os_release_path" &&
-            ! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"; then
-            info "Ubuntu ${_pw_ubuntu_version:-25+} yüklü Playwright resmi destek matrisinin dışında; en yakın desteklenen Ubuntu OS override kurulumu doğrudan deneniyor..."
-            if _try_playwright_ubuntu_override_install; then
-                grep -vE "$_pw_browser_noise_regex" \
-                    "$_pw_install_log" || true
-                if _ensure_playwright_override_dependencies; then
-                    ok "Playwright kurulumu proaktif OS override ile tamamlandı (chromium + deps)."
-                    _pw_install_completed=true
-                else
-                    warn "Playwright proaktif OS override binary indirmesi tamamlandı ancak sistem bağımlılıkları eksik kaldı. Standart fallback zinciri deneniyor..."
-                fi
-            else
-                cat "$_pw_install_log" >&2
-                warn "Playwright proaktif OS override kurulumu başarısız oldu. Standart fallback zinciri deneniyor..."
-            fi
-        fi
-
-        if [[ "$_pw_install_completed" != true ]]; then
-            info "Playwright headless optimizasyonu: yalnızca Chromium (--with-deps) kuruluyor (timeout=${pw_timeout_ms}ms)..."
-            if _try_playwright_install with-deps; then
-                grep -vE "$_pw_apt_noise_regex" \
-                    "$_pw_install_log" || true
-                ok "Playwright kurulumu tamamlandı (chromium, --with-deps)."
-            else
-                local _pw_install_output
-                _pw_install_output="$(cat "$_pw_install_log")"
-                cat "$_pw_install_log" >&2
-
-                if _is_playwright_os_mismatch_error "$_pw_install_output"; then
-                    warn "Playwright --with-deps bu işletim sisteminde desteklenmiyor. Fallback: yalnızca Chromium binary kurulumu deneniyor..."
-                    if _try_playwright_install binary; then
-                        grep -vE "$_pw_apt_noise_regex" \
-                            "$_pw_install_log" || true
-                        ok "Playwright kurulumu fallback ile tamamlandı (chromium, deps yok)."
-                    else
-                        local _pw_binary_output
-                        _pw_binary_output="$(cat "$_pw_install_log")"
-                        cat "$_pw_install_log" >&2
-                        if _is_playwright_os_mismatch_error "$_pw_binary_output"; then
-                            if _playwright_python_upgrade_required; then
-                                warn "Playwright binary fallback OS uyumsuzluğu nedeniyle başarısız ve kurulu paket ${_pw_python_spec} şartını sağlamıyor. Upgrade fallback deneniyor..."
-                                if uv add --dev "$_pw_python_spec"; then
-                                    if _try_playwright_install binary; then
-                                        grep -vE "$_pw_apt_noise_regex" \
-                                            "$_pw_install_log" || true
-                                        ok "Playwright kurulumu upgrade fallback ile tamamlandı (chromium, deps yok)."
-                                    else
-                                        cat "$_pw_install_log" >&2
-                                        warn "Playwright upgrade fallback sonrası kurulum yine başarısız. Son çare: OS override fallback deneniyor..."
-                                        _try_playwright_last_resort_override
-                                    fi
-                                else
-                                    warn "Playwright upgrade fallback (uv add --dev \"${_pw_python_spec}\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
-                                fi
-                            else
-                                info "Kurulu Playwright paketi ${_pw_python_spec} şartını zaten sağlıyor; gereksiz uv add upgrade fallback atlanıyor. Son çare: OS override fallback deneniyor..."
-                                _try_playwright_last_resort_override
-                            fi
-                        else
-                            warn "Playwright fallback kurulumu başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install chromium"
-                        fi
-                    fi
-                else
-                    warn "Playwright kurulumu başarısız oldu. Önce: uv add --dev \"${_pw_python_spec}\" sonra: uv run python -m playwright install --with-deps chromium"
-                fi
-            fi
-        fi
-
-        rm -f "$_pw_install_log"
-    else
-        info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."
-    fi
-}
+# Playwright browser installation helpers live in scripts/install_modules/phases/13_playwright.sh.
 
 # ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────
 setup_react_frontend() {

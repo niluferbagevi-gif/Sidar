@@ -632,6 +632,16 @@ ENV
   grep -q "📊 Kurulum doğrulama kapsamı" "$root/install_sidar.sh"
 }
 
+@test "Playwright browser installer lives in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/13_playwright.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/13_playwright.sh" "$root/install_sidar.sh"
+  grep -q "^install_playwright_browsers()" "$root/scripts/install_modules/phases/13_playwright.sh"
+  ! grep -q "^install_playwright_browsers()" "$root/install_sidar.sh"
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"
