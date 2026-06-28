@@ -1058,6 +1058,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
     assert "create_uv_venv()" in python_env_utils
+    assert "ensure_python_311()" not in python_env_utils
     assert "install_python_deps()" in python_env_utils
     assert "uv sync" in python_env_utils
     assert "uv pip" not in python_env_utils

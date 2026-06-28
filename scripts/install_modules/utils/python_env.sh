@@ -47,17 +47,6 @@ install_uv_cli() {
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
 
-ensure_python_311() {
-    local expected_python_version="3.11"
-
-    if ! uv python find "$expected_python_version" --quiet >/dev/null 2>&1; then
-        warn "Python ${expected_python_version} bulunamadı. uv ile indiriliyor..."
-        uv python install "$expected_python_version"
-    fi
-
-    uv python find "$expected_python_version" --quiet
-}
-
 create_uv_venv() {
     step "uv venv Ortamı"
     local expected_python_version="3.11"
