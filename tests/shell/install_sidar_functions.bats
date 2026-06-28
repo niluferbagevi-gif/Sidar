@@ -655,6 +655,17 @@ ENV
   ! grep -q "^is_alembic_at_head()" "$root/install_sidar.sh"
 }
 
+@test "React frontend setup lives in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/14_react.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/14_react.sh" "$root/install_sidar.sh"
+  grep -q "^setup_react_frontend()" "$root/scripts/install_modules/phases/14_react.sh"
+  grep -q "setup_react_frontend" "$root/scripts/install_modules/phases/05_frontend.sh"
+  ! grep -q "^setup_react_frontend()" "$root/install_sidar.sh"
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"
