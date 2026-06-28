@@ -1157,6 +1157,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "POSTGRES_PASSWORD değeri .env ile uyuşmuyor" in services_phase
     assert "docker compose down --volumes --remove-orphans" in services_phase
     assert "PostgreSQL volume reset doğrulanamadı" in services_phase
+    assert 'profile_label="Development"' in services_phase
+    assert "Development profili: PostgreSQL volume parolası .env ile uyuşmuyor." in services_phase
+    assert "Onarım: docker compose down --volumes && ./install_sidar.sh" in services_phase
+    assert "Production profili: mevcut PostgreSQL volume parolası .env ile doğrulanamadı" in services_phase
     assert services_phase.index(
         "sync_database_passwords_before_smoke_tests"
     ) < services_phase.index("run_smoke_tests")

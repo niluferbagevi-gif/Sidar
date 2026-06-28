@@ -296,11 +296,10 @@ sidar_phase06_report_production_postgres_password_alignment() {
     sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$SCRIPT_DIR/.env" | tr -d '\n' | tr '[:upper:]' '[:lower:]')
     sidar_env="${sidar_env:-development}"
 
+    local profile_label="Development"
     case "$sidar_env" in
         production|prod)
-            ;;
-        *)
-            return 0
+            profile_label="Production"
             ;;
     esac
 
@@ -315,19 +314,22 @@ sidar_phase06_report_production_postgres_password_alignment() {
     pg_container="${pg_container:-sidar_postgres}"
 
     if [[ -z "${pg_password//[[:space:]]/}" ]]; then
-        warn "Production profili: POSTGRES_PASSWORD boş görünüyor; mevcut volume parola uyumu doğrulanamadı."
+        warn "${profile_label} profili: POSTGRES_PASSWORD boş görünüyor; mevcut volume parola uyumu doğrulanamadı."
         return 0
     fi
 
     if ! command -v docker &>/dev/null; then
-        warn "Production profili: docker CLI bulunamadı; mevcut volume parola uyumu doğrulanamadı."
+        warn "${profile_label} profili: docker CLI bulunamadı; mevcut volume parola uyumu doğrulanamadı."
         return 0
     fi
 
     if env PGPASSWORD="$pg_password" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -c 'SELECT 1;' >/dev/null 2>&1; then
-        ok "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile uyumlu görünüyor."
+        ok "${profile_label} profili: mevcut PostgreSQL volume parolası .env ile uyumlu."
+    elif [[ "$profile_label" == "Development" ]]; then
+        warn "Development profili: PostgreSQL volume parolası .env ile uyuşmuyor."
+        info "Onarım: docker compose down --volumes && ./install_sidar.sh"
     else
-        warn "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
+        warn "Production profili: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
     fi
 }
 
