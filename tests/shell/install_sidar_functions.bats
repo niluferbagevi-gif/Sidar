@@ -1053,8 +1053,11 @@ EOF
 #!/usr/bin/env bash
 printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
-  "-m alembic current") echo "0006_access_control_schema (head)" ;;
-  "-m alembic heads") echo "0006_access_control_schema (head)" ;;
+  "-m alembic current")
+    echo "INFO  [alembic.runtime.migration] Context impl PostgresqlImpl." >&2
+    echo "  0006_access_control_schema (head)"
+    ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
 esac
 EOF
     chmod +x "$tmpdir/bin/python3"
@@ -1083,8 +1086,8 @@ EOF
 #!/usr/bin/env bash
 printf "venv|%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
-  "-m alembic current") echo "0006_access_control_schema (head)" ;;
-  "-m alembic heads") echo "0006_access_control_schema (head)" ;;
+  "-m alembic current") echo "  0006_access_control_schema (head)" ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
 esac
 EOF
     cat > "$tmpdir/bin/python3" <<EOF

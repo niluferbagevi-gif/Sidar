@@ -6565,6 +6565,8 @@ is_alembic_at_head() {
     local alembic_ini="$SCRIPT_DIR/alembic.ini"
     local py_bin=""
     local db_url=""
+    local current_output=""
+    local heads_output=""
     local current_rev=""
     local head_rev=""
 
@@ -6572,11 +6574,16 @@ is_alembic_at_head() {
     py_bin="$(resolve_alembic_python)" || return 1
 
     [[ -f "$env_file" ]] || return 1
-    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n')"
+    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n[:space:]')"
     [[ -n "${db_url//[[:space:]]/}" ]] || return 1
 
-    current_rev="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current 2>/dev/null | awk '/^[0-9a-f]+/ {print $1}' | tail -n1)"
-    head_rev="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>/dev/null | awk '/^[0-9a-f]+/ {print $1}' | tail -n1)"
+    current_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current 2>&1)" || return 1
+    heads_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>&1)" || return 1
+    current_rev="$(printf '%s\n' "$current_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+    head_rev="$(printf '%s\n' "$heads_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+    if [[ -z "$current_rev" || -z "$head_rev" ]]; then
+        debug "Alembic current/head çıktısı ayrıştırılamadı. current=$(printf '%s' "$current_output" | tail -n 3 | tr '\n' ' ') heads=$(printf '%s' "$heads_output" | tail -n 3 | tr '\n' ' ')"
+    fi
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
