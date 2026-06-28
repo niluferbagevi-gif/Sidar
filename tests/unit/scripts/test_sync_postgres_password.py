@@ -8,19 +8,23 @@ from pathlib import Path
 from scripts import sync_postgres_password
 
 
-def _write_env(path: Path, *, sidar_env: str = "development", password: str) -> None:
-    path.write_text(
-        "\n".join(
-            (
-                f"SIDAR_ENV={sidar_env}",
-                "POSTGRES_USER=sidar",
-                "POSTGRES_DB=sidar",
-                f"POSTGRES_PASSWORD={password}",
-                "",
-            )
-        ),
-        encoding="utf-8",
-    )
+def _write_env(
+    path: Path,
+    *,
+    sidar_env: str = "development",
+    password: str,
+    pre_harden_password: str | None = None,
+) -> None:
+    lines = [
+        f"SIDAR_ENV={sidar_env}",
+        "POSTGRES_USER=sidar",
+        "POSTGRES_DB=sidar",
+        f"POSTGRES_PASSWORD={password}",
+    ]
+    if pre_harden_password is not None:
+        lines.append(f"PRE_HARDEN_DB_PASSWORD={pre_harden_password}")
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
@@ -47,9 +51,11 @@ def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
     assert summary["changed"] is True
     assert summary["method"] == "docker-exec"
     assert summary["postgres_user"] == "sidar"
-    assert calls["cmd"][:4] == ["/usr/bin/docker", "exec", "-i", "sidar_postgres"]
+    assert calls["cmd"][:3] == ["/usr/bin/docker", "exec", "-i"]
+    assert "-e" in calls["cmd"]
+    assert f"PGPASSWORD={secret}" in calls["cmd"]
+    assert "sidar_postgres" in calls["cmd"]
     assert "psql" in calls["cmd"]
-    assert secret not in " ".join(calls["cmd"])
     assert "ALTER USER" in calls["kwargs"]["input"]
     assert secret in calls["kwargs"]["input"]
     assert calls["kwargs"]["cwd"] == sync_postgres_password.PROJECT_ROOT
@@ -79,9 +85,36 @@ def test_sync_postgres_password_reads_later_dotenv_override(monkeypatch, tmp_pat
 
     summary = sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
 
+    assert f"PGPASSWORD={override_secret}" in calls["cmd"]
     assert override_secret in calls["kwargs"]["input"]
     assert base_secret not in calls["kwargs"]["input"]
     assert str(override_file) in summary["checked_files"]
+
+
+
+def test_sync_postgres_password_prefers_pre_harden_password_for_docker_auth(
+    monkeypatch, tmp_path: Path
+):
+    calls = {}
+    old_secret = "old-volume-password-123456"
+    new_secret = "new-env-password-123456"
+    env_file = tmp_path / ".env"
+    _write_env(env_file, password=new_secret, pre_harden_password=old_secret)
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return subprocess.CompletedProcess(cmd, 0, stdout="ALTER ROLE\n")
+
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
+
+    assert f"PGPASSWORD={old_secret}" in calls["cmd"]
+    assert f"PGPASSWORD={new_secret}" not in calls["cmd"]
+    assert new_secret in calls["kwargs"]["input"]
 
 
 def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
@@ -119,6 +152,7 @@ def test_sync_postgres_password_backward_compatible_wrapper_uses_docker_exec(
 
     assert summary["method"] == "docker-exec"
     assert calls["cmd"][1:3] == ["exec", "-i"]
+    assert any(arg.startswith("PGPASSWORD=") for arg in calls["cmd"])
 
 
 def test_sync_postgres_password_main_emits_redacted_summary(monkeypatch, capsys, tmp_path: Path):

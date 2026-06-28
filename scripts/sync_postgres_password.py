@@ -94,10 +94,12 @@ def _docker_exec_command(
         env.get("POSTGRES_ADMIN_DB", "").strip() or env.get("POSTGRES_DB", "").strip() or "postgres"
     )
     container = _postgres_container_name(env, explicit_container=postgres_container)
-    return [
-        docker,
-        "exec",
-        "-i",
+    pre_harden_password = env.get("PRE_HARDEN_DB_PASSWORD", "").strip()
+    auth_password = pre_harden_password or env.get("POSTGRES_PASSWORD", "").strip()
+    cmd = [docker, "exec", "-i"]
+    if auth_password:
+        cmd += ["-e", f"PGPASSWORD={auth_password}"]
+    cmd += [
         container,
         "psql",
         "-U",
@@ -108,6 +110,7 @@ def _docker_exec_command(
         "ON_ERROR_STOP=1",
         "--quiet",
     ]
+    return cmd
 
 
 def sync_postgres_password_with_docker_exec(
@@ -129,6 +132,11 @@ def sync_postgres_password_with_docker_exec(
         postgres_user=postgres_user,
         postgres_password=postgres_password,
     )
+    container = _postgres_container_name(effective_env, explicit_container=postgres_container)
+    auth_password = (
+        effective_env.get("PRE_HARDEN_DB_PASSWORD", "").strip()
+        or effective_env.get("POSTGRES_PASSWORD", "").strip()
+    )
     completed = subprocess.run(  # Fixed command list; SQL is passed via stdin.  # nosec B603
         cmd,
         cwd=PROJECT_ROOT,
@@ -140,6 +148,8 @@ def sync_postgres_password_with_docker_exec(
         timeout=30,
     )
     output = (completed.stdout or "").replace(postgres_password, "***")
+    if auth_password:
+        output = output.replace(auth_password, "***")
     if completed.returncode != 0:
         raise RuntimeError(
             "docker exec PostgreSQL password sync failed "
@@ -148,12 +158,12 @@ def sync_postgres_password_with_docker_exec(
     return _redacted_summary(
         changed=True,
         method="docker-exec",
-        container=cmd[3],
+        container=container,
         service="postgres",
         postgres_user=postgres_user,
         postgres_password_set=True,
         checked_files=checked_files,
-        command="docker exec -i <postgres_container> psql -U <admin> -d <admin_db>",
+        command="docker exec -i -e PGPASSWORD=*** <postgres_container> psql -U <admin> -d <admin_db>",
     )
 
 

@@ -280,7 +280,7 @@ sync_database_passwords_before_smoke_tests() {
     local sync_output=""
     local sync_exit=0
     info "Smoke test öncesi canlı PostgreSQL kullanıcı parolası doğrulanıyor..."
-    if sync_output=$(cd "$SCRIPT_DIR" && uv run python scripts/sync_postgres_password.py 2>&1); then
+    if sync_output=$(cd "$SCRIPT_DIR" && PRE_HARDEN_DB_PASSWORD="${PRE_HARDEN_DB_PASSWORD:-}" uv run python scripts/sync_postgres_password.py 2>&1); then
         ok "Canlı PostgreSQL kullanıcı parolası smoke test öncesi eşitlendi."
     else
         sync_exit=$?
