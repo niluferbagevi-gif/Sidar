@@ -114,8 +114,8 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    # Dev araçları (pytest/coverage/mypy/ruff) self-healing ve otonom kalite
-    # döngüleri için production dahil her profilde zorunludur.
+    # Standart kurulum komutu: uv sync --frozen --all-extras — all extra grubu
+    # dev dahil tüm extras'ı içerir (pyproject.toml:194).
     local -a SYNC_ARGS=(--frozen --all-extras)
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
@@ -133,13 +133,13 @@ install_python_deps() {
 
     ensure_portaudio_dev "uv sync --frozen --all-extras"
 
-    info "Bağımlılıklar kilitli profilden senkronlanıyor: uv sync --frozen --all-extras (dev extra dahil). Dev araçları self-healing için standarttır."
+    info "Standart kurulum komutu: uv sync --frozen --all-extras — all extra grubu dev dahil tüm extras'ı içerir (pyproject.toml:194)."
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "uv sync --frozen --all-extras başarısız oldu. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+        fail "Standart kurulum komutu başarısız oldu: uv sync --frozen --all-extras. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
-        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. 'uv sync --frozen --all-extras' akışını temiz bir ortamda tekrar çalıştırın."
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. Standart kurulum komutunu temiz bir ortamda tekrar çalıştırın: uv sync --frozen --all-extras."
     fi
 
     ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
@@ -164,7 +164,7 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart akışla 'uv sync --frozen --all-extras' çalıştırın veya pyright'ı dev bağımlılığı olarak 'uv add --dev pyright' ile ekleyin."
+    fail "Pyright LSP bulunamadı. Standart kurulum komutunu çalıştırın: uv sync --frozen --all-extras. all extra grubu dev dahil tüm extras'ı içerir (pyproject.toml:194)."
 }
 
 select_pytorch_cuda_wheel_tag() {
