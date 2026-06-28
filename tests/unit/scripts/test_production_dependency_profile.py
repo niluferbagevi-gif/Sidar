@@ -14,7 +14,8 @@ def test_production_minimal_profile_and_artifacts_are_declared() -> None:
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
 
     assert optional_deps["production"] == ["sidar[postgres,telemetry]"]
-    assert optional_deps["production-minimal"] == ["sidar[postgres,telemetry]"]
+    assert optional_deps["production-minimal"] == ["sidar[postgres]"]
+    assert optional_deps["production-minimal"] != optional_deps["production"]
     assert plan["requirements_exporter"] == "scripts/export_production_requirements.sh"
     assert plan["production_dockerfile"] == "Dockerfile.production"
     assert {profile["name"] for profile in plan["profiles"]} >= {

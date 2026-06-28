@@ -205,7 +205,7 @@ production = [
   "sidar[postgres,telemetry]",
 ]
 production-minimal = [
-  "sidar[postgres,telemetry]",
+  "sidar[postgres]",
 ]
 dev = [
   "sidar[postgres]",
@@ -331,7 +331,7 @@ preserve_all_extras_standard = true
 planned_profile_groups = ["base", "web", "rag", "multimodal", "dev", "test", "gpu"]
 requirements_exporter = "scripts/export_production_requirements.sh"
 production_dockerfile = "Dockerfile.production"
-summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares production/production-minimal extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
+summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares distinct production (postgres+telemetry) and production-minimal (postgres-only) extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
 
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 current_lock = "torch 2.11.0"
@@ -373,7 +373,7 @@ intent = "Web/API runtime plus postgres and telemetry extras; no pytest/ruff/myp
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "production-minimal"
-intent = "Alias of the production web/API deploy surface used by Dockerfile.production and requirements export checks."
+intent = "Postgres-only no-dev Web/API smoke surface used by the CI dry-run before telemetry is opted in via production."
 
 [tool.bandit]
 exclude_dirs = [

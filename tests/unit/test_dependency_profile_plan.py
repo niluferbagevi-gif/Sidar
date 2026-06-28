@@ -16,9 +16,8 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     assert plan["status"] == "phase-1-dev-split"
     profile_names = {item["name"] for item in plan["profiles"]}
     assert {"runtime", "dev", "all", "production"} <= profile_names
-    assert (
-        "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
-    )
+    assert "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
+    assert pyproject["project"]["optional-dependencies"]["production-minimal"] == ["sidar[postgres]"]
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
@@ -122,6 +121,7 @@ def test_ci_has_non_blocking_production_profile_dry_run() -> None:
     assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
     assert "production-minimal imports ok" in workflow
     assert "production-profile-dry-run" in docs
+    assert "`sidar[postgres]`" in docs
     assert "ana CI gate'ini kırmaz" in docs
 
 

@@ -3494,14 +3494,7 @@ production = [
 ]
 production-minimal = [
     { name = "asyncpg", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-api", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-exporter-otlp", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-instrumentation-fastapi", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-instrumentation-httpx", marker = "sys_platform == 'linux'" },
-    { name = "opentelemetry-sdk", marker = "sys_platform == 'linux'" },
     { name = "pgvector", marker = "sys_platform == 'linux'" },
-    { name = "prometheus-client", marker = "sys_platform == 'linux'" },
     { name = "psycopg2-binary", marker = "sys_platform == 'linux'" },
 ]
 rag = [
@@ -3643,9 +3636,9 @@ requires-dist = [
     { name = "shellcheck-py", marker = "extra == 'dev'", specifier = ">=0.10.0.1,<0.11.0" },
     { name = "sidar", extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "dev"], marker = "extra == 'all'" },
     { name = "sidar", extras = ["postgres"], marker = "extra == 'dev'" },
+    { name = "sidar", extras = ["postgres"], marker = "extra == 'production-minimal'" },
     { name = "sidar", extras = ["postgres", "dev"], marker = "extra == 'dev-light'" },
     { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production'" },
-    { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production-minimal'" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = "~=3.33.0" },
     { name = "speechrecognition", marker = "extra == 'voice'", specifier = "~=3.10.4" },
     { name = "sqlalchemy", specifier = "~=2.0.36" },

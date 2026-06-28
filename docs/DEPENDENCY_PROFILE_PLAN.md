@@ -13,7 +13,7 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 - `dev` extra bu araçları taşır; `all` extra da `dev` profilini içerdiği için yerel geliştirme ve
   CI için `uv sync --all-extras` standardı geriye dönük uyumlu kalır.
 - Faz 1 kapanışında production-minimal yüzey artık somut artifact'lere bağlandı:
-  `production` / `production-minimal` extras, `scripts/export_production_requirements.sh`
+  `production` / `production-minimal` extras (artık farklı kapsamlarla), `scripts/export_production_requirements.sh`
   üreticisi ve `Dockerfile.production` no-dev image yolu aynı sözleşmeyi kullanır.
 
 ## Hedef profiller
@@ -23,8 +23,8 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 | `runtime` | Sidar çekirdeğinin minimum import/runtime bağımlılıkları | config, FastAPI, DB base, HTTP client, güvenlik, temel RAG olmayan core paketler | Ana `dependencies` uzun vadede buna indirgenir. |
 | `dev` | Test/lint/type/security kalite araçları | `pytest`, `pytest-*`, `ruff`, `mypy`, `pyright`, `bandit`, `safety`, type stubs, test doubles | CI ve local kalite kapıları bu profile bağlı kalır. |
 | `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
-| `production` | Web/API deploy için minimum runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | `uv export --extra production --no-dev` ve `Dockerfile.production` tarafından kullanılan deploy profili. |
-| `production-minimal` | Production profilinin açık adlandırılmış alias'ı | `sidar[postgres,telemetry]` | Faz 1 kapanış kabul kriteri için production-minimal profilinin makine-okunur karşılığıdır. |
+| `production` | Web/API deploy için gözlemlenebilirlik dahil runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | `uv export --extra production --no-dev` ve `Dockerfile.production` tarafından kullanılan deploy profili. |
+| `production-minimal` | Telemetry dahil etmeden en dar no-dev Web/API smoke yüzeyi | `sidar[postgres]` | CI dry-run ve hızlı production-minimal import smoke için kullanılır; telemetry isteyen deploy `production` profilini seçmelidir. |
 
 ### Planlanan ayrıştırma grupları
 
@@ -150,7 +150,7 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 3. **Docker/installer koordinasyonu:** `Dockerfile.production` yeni no-dev profile'ı kullanır; ana
    `Dockerfile` ve installer varsayılanları local/CI paritesi için `uv sync --all-extras` kalır.
 4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
-   extra'ya taşındı; production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
+   extra'ya taşındı; production profili `sidar[postgres,telemetry]`, production-minimal profili ise `sidar[postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
    Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
    production profile yönlendirilir.
 5. **Güvenlik doğrulaması:** Production-minimal profilinde `pip-audit`, import smoke, web boot smoke ve DB migration
