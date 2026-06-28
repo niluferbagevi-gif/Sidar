@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -110,6 +111,15 @@ def _remove_pre_harden_password_file(env: dict[str, str]) -> None:
         return
 
 
+def _sync_timeout_seconds() -> int:
+    raw_timeout = os.getenv("SIDAR_PG_SYNC_TIMEOUT", "90").strip()
+    try:
+        timeout = int(raw_timeout)
+    except ValueError:
+        return 90
+    return max(timeout, 1)
+
+
 def _docker_exec_command(
     env: dict[str, str], *, postgres_container: str | None = None
 ) -> list[str]:
@@ -172,7 +182,7 @@ def sync_postgres_password_with_docker_exec(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
-        timeout=30,
+        timeout=_sync_timeout_seconds(),
     )
     output = (completed.stdout or "").replace(postgres_password, "***")
     if auth_password:

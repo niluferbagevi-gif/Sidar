@@ -58,6 +58,7 @@ def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
     assert "psql" in calls["cmd"]
     assert "ALTER USER" in calls["kwargs"]["input"]
     assert secret in calls["kwargs"]["input"]
+    assert calls["kwargs"]["timeout"] == 90
     assert calls["kwargs"]["cwd"] == sync_postgres_password.PROJECT_ROOT
 
 
@@ -146,6 +147,47 @@ def test_sync_postgres_password_reads_pre_harden_password_file_and_removes_it(
     assert new_secret in calls["kwargs"]["input"]
     assert summary["command"] == "docker exec -i -e PGPASSWORD=*** <postgres_container> psql -U <admin> -d <admin_db>"
     assert not password_file.exists()
+
+
+
+def test_sync_postgres_password_honors_timeout_env(monkeypatch, tmp_path: Path):
+    calls = {}
+    secret = "timeout-secret-password-123456"
+    env_file = tmp_path / ".env"
+    _write_env(env_file, password=secret)
+
+    def fake_run(cmd, **kwargs):
+        calls["kwargs"] = kwargs
+        return subprocess.CompletedProcess(cmd, 0, stdout="ALTER ROLE\n")
+
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_PG_SYNC_TIMEOUT", "123")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
+
+    assert calls["kwargs"]["timeout"] == 123
+
+
+def test_sync_postgres_password_invalid_timeout_falls_back(monkeypatch, tmp_path: Path):
+    calls = {}
+    secret = "timeout-fallback-secret-password-123456"
+    env_file = tmp_path / ".env"
+    _write_env(env_file, password=secret)
+
+    def fake_run(cmd, **kwargs):
+        calls["kwargs"] = kwargs
+        return subprocess.CompletedProcess(cmd, 0, stdout="ALTER ROLE\n")
+
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_PG_SYNC_TIMEOUT", "not-an-int")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
+
+    assert calls["kwargs"]["timeout"] == 90
 
 
 def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
