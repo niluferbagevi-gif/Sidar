@@ -3414,6 +3414,43 @@ dev = [
     { name = "types-pyyaml", marker = "sys_platform == 'linux'" },
     { name = "types-requests", marker = "sys_platform == 'linux'" },
 ]
+dev-light = [
+    { name = "asyncpg", marker = "sys_platform == 'linux'" },
+    { name = "bandit", marker = "sys_platform == 'linux'" },
+    { name = "defusedxml", marker = "sys_platform == 'linux'" },
+    { name = "fakeredis", marker = "sys_platform == 'linux'" },
+    { name = "freezegun", marker = "sys_platform == 'linux'" },
+    { name = "hypothesis", marker = "sys_platform == 'linux'" },
+    { name = "mypy", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-api", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-exporter-otlp", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-instrumentation-fastapi", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-instrumentation-httpx", marker = "sys_platform == 'linux'" },
+    { name = "opentelemetry-sdk", marker = "sys_platform == 'linux'" },
+    { name = "pgvector", marker = "sys_platform == 'linux'" },
+    { name = "pre-commit", marker = "sys_platform == 'linux'" },
+    { name = "psycopg2-binary", marker = "sys_platform == 'linux'" },
+    { name = "pyright", marker = "sys_platform == 'linux'" },
+    { name = "pytest", marker = "sys_platform == 'linux'" },
+    { name = "pytest-asyncio", marker = "sys_platform == 'linux'" },
+    { name = "pytest-benchmark", marker = "sys_platform == 'linux'" },
+    { name = "pytest-cov", marker = "sys_platform == 'linux'" },
+    { name = "pytest-mock", marker = "sys_platform == 'linux'" },
+    { name = "pytest-timeout", marker = "sys_platform == 'linux'" },
+    { name = "pytest-xdist", marker = "sys_platform == 'linux'" },
+    { name = "respx", marker = "sys_platform == 'linux'" },
+    { name = "ruff", marker = "sys_platform == 'linux'" },
+    { name = "safety", marker = "sys_platform == 'linux'" },
+    { name = "shellcheck-py", marker = "sys_platform == 'linux'" },
+    { name = "testcontainers", marker = "sys_platform == 'linux'" },
+    { name = "types-beautifulsoup4", marker = "sys_platform == 'linux'" },
+    { name = "types-bleach", marker = "sys_platform == 'linux'" },
+    { name = "types-cachetools", marker = "sys_platform == 'linux'" },
+    { name = "types-defusedxml", marker = "sys_platform == 'linux'" },
+    { name = "types-pyyaml", marker = "sys_platform == 'linux'" },
+    { name = "types-requests", marker = "sys_platform == 'linux'" },
+]
 gemini = [
     { name = "google-genai", marker = "sys_platform == 'linux'" },
 ]
@@ -3606,6 +3643,7 @@ requires-dist = [
     { name = "shellcheck-py", marker = "extra == 'dev'", specifier = ">=0.10.0.1,<0.11.0" },
     { name = "sidar", extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "dev"], marker = "extra == 'all'" },
     { name = "sidar", extras = ["postgres"], marker = "extra == 'dev'" },
+    { name = "sidar", extras = ["postgres", "dev"], marker = "extra == 'dev-light'" },
     { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production'" },
     { name = "sidar", extras = ["postgres", "telemetry"], marker = "extra == 'production-minimal'" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = "~=3.33.0" },
@@ -3630,7 +3668,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=15.0,<16.0" },
     { name = "yt-dlp", marker = "extra == 'tools'", specifier = ">=2024.0.0" },
 ]
-provides-extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "all", "production", "production-minimal", "dev"]
+provides-extras = ["gemini", "anthropic", "openai", "litellm", "postgres", "telemetry", "rag", "lora", "gpu", "sandbox", "gui", "slack", "browser", "voice", "tools", "aws", "jira", "teams", "all", "dev-light", "production", "production-minimal", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "playwright", specifier = ">=1.60,<1.62" }]

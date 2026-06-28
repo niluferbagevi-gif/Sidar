@@ -196,6 +196,11 @@ teams = [
 all = [
   "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools,aws,jira,teams,dev]",
 ]
+# Fast PR/local profile with no system-header-dependent voice/browser/media extras.
+# Use this when PortAudio/Playwright/GPU packages are irrelevant to the change.
+dev-light = [
+  "sidar[postgres,dev]",
+]
 production = [
   "sidar[postgres,telemetry]",
 ]
@@ -353,6 +358,10 @@ intent = "Minimum library/runtime dependencies required by core Sidar imports."
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "dev"
 intent = "pytest, lint, type-check and security-audit tools used by local/CI gates."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "dev-light"
+intent = "Fast PR/local profile: postgres + dev tools without voice/browser/GPU system dependencies."
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "all"

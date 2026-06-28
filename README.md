@@ -292,6 +292,8 @@ uv sync --frozen --all-extras
 > `sidar[voice]` içindeki `pyaudio` için platform marker eklenmedi; sorun çoğu zaman
 > işletim sisteminden bağımsız olarak eksik PortAudio header'ıdır. Bu yüzden standart
 > çözüm, `uv sync` öncesinde yukarıdaki sistem bağımlılığı scriptini çalıştırmaktır.
+> Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
+> `uv sync --frozen --extra dev-light` kullanılabilir.
 
 ```bash
 cd Sidar

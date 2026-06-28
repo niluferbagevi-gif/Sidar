@@ -56,6 +56,7 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 | `optional-provider` | `gemini`, `anthropic`, `openai`, `litellm`, `lora`, `gpu`, `voice` extras | Model sağlayıcıları ve ağır ML/GPU/STT yüzeyi varsayılan production-minimal profile zorunlu olmamalı. |
 | `optional-integration` | `PyGithub`, `duckduckgo-search`, `pillow`, `pyttsx3`; extras: `sandbox`, `gui`, `slack`, `browser`, `tools`, `aws`, `jira`, `teams` | Dış servis, browser, GUI ve sandbox entegrasyonları kullanım bazlı extras olarak kalmalı. |
 | `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. Pyright LSP reviewer diagnostics için dev/all veya `uv tool install pyright` yoluyla sağlanır, production profile'a girmez. |
+| `dev-light` | `postgres` + `dev` | Hızlı PR/local kontrolleri için voice/browser/GPU gibi sistem bağımlılığı gerektiren extras'ı dışarıda bırakır; standart full kurulumun yerine geçmez. Komut: `uv sync --frozen --extra dev-light`. |
 
 
 ## HTTP client standardization policy (`httpx` only)

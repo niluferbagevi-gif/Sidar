@@ -72,6 +72,10 @@ bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
 uv sync --frozen --all-extras
 ```
 
+Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
+`uv sync --frozen --extra dev-light` sistemi başlık paketlerine ihtiyaç duymadan
+`postgres` + `dev` araçlarını kuran hafif profildir.
+
 Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
 `scripts/install_ci_system_deps.sh` üzerinden kurar. Aynı script apt, dnf, zypper,
 pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri yalnız
