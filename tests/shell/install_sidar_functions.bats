@@ -594,6 +594,7 @@ ENV
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"Select installer message language"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--ci-full"* ]]
   [[ "$output" == *"--enable-autonomous-cron"* ]]
   [[ "$output" != *"Kullanım:"* ]]
 }
@@ -615,6 +616,7 @@ ENV
   [[ "$output" == *"Kullanım:"* ]]
   [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--ci-full"* ]]
   [[ "$output" == *"--enable-autonomous-cron"* ]]
 }
 
@@ -626,6 +628,44 @@ ENV
   grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
   grep -q "bash run_tests.sh --stage e2e" "$root/install_sidar.sh"
   grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/install_sidar.sh"
+  grep -q "./install_sidar.sh --ci-full" "$root/install_sidar.sh"
+  grep -q "📊 Kurulum doğrulama kapsamı" "$root/install_sidar.sh"
+}
+
+@test "installer validation coverage summary calls out skipped full suites" {
+  run_installer_function '
+    SMOKE_TEST_STATUS="tamamlandi"
+    INTEGRATION_TEST_STATUS="atlandi_bayrak"
+    CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
+    print_install_validation_coverage
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Smoke:"*"TAMAMLANDI"* ]]
+  [[ "$output" == *"Integration:"*"ATLANDI"*"api/cli/db/managers/web/workflow"* ]]
+  [[ "$output" == *"E2E:"*"ATLANDI"*"agents/cli/web"* ]]
+  [[ "$output" == *"Benchmark:"*"ATLANDI"* ]]
+  [[ "$output" == *"./install_sidar.sh --ci-full"* ]]
+  [[ "$output" == *"./run_tests.sh --stage all"* ]]
+}
+
+@test "ci-full validation runs run_tests stage all with CI profile" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s|%s\n" "\${TEST_PROFILE:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\$*" > "$tmpdir/run_tests.log"
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    grep -q "^ci|required|1|--stage all$" "$tmpdir/run_tests.log"
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "run_smoke_tests defensively repairs private key and session file permissions after pytest" {

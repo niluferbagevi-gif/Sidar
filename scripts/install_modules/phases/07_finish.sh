@@ -83,6 +83,7 @@ EOF
 sidar_phase_finish() {
     sidar_ensure_autonomy_scripts_executable
     sidar_configure_autonomous_cron
+    run_install_ci_full_validation
     print_summary
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
