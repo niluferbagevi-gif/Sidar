@@ -23,6 +23,36 @@ sidar_write_env_value() {
     echo "${key}=${value}" >> "$env_file"
 }
 
+sidar_store_pre_harden_postgres_password() {
+    local password="$1"
+    local cache_root="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}"
+    local cache_dir="${cache_root}/sidar"
+    local password_file="${cache_dir}/pre_harden_postgres_password"
+
+    mkdir -p "$cache_dir"
+    chmod 700 "$cache_dir" 2>/dev/null || true
+    umask 077
+    printf '%s' "$password" > "$password_file"
+    chmod 600 "$password_file"
+
+    # shellcheck disable=SC2034  # consumed by later install phases and subprocess env.
+    PRE_HARDEN_DB_PASSWORD_FILE="$password_file"
+    export PRE_HARDEN_DB_PASSWORD_FILE
+}
+
+sidar_mark_db_password_hardened_state() {
+    local state_file="${SIDAR_INSTALL_STATE_FILE:-$SCRIPT_DIR/.sidar_install_state}"
+
+    mkdir -p "$(dirname "$state_file")"
+    touch "$state_file"
+    chmod 600 "$state_file" 2>/dev/null || true
+    if grep -q '^DB_PASSWORD_HARDENED=' "$state_file" 2>/dev/null; then
+        sed_inplace 's/^DB_PASSWORD_HARDENED=.*/DB_PASSWORD_HARDENED=true/' "$state_file"
+    else
+        printf '%s\n' 'DB_PASSWORD_HARDENED=true' >> "$state_file"
+    fi
+}
+
 sync_postgres_env_variants_with_source() {
     local source_env_file="$1"
     shift || true
@@ -98,6 +128,7 @@ harden_database_credentials() {
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
                 # shellcheck disable=SC2034  # summarized later by installer status output.
                 PRE_HARDEN_DB_PASSWORD="$db_password"
+                sidar_store_pre_harden_postgres_password "$db_password"
                 local generated_password=""
                 generated_password=$(generate_secure_token 24)
                 if [[ -n "$generated_password" ]]; then
@@ -128,6 +159,7 @@ harden_database_credentials() {
                     fi
                     # shellcheck disable=SC2034  # summarized later by installer status output.
                     DB_PASSWORD_HARDENED=true
+                    sidar_mark_db_password_hardened_state
                     ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                     sync_postgres_env_variants_with_source "$env_file" "${variant_specs[@]}"
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."

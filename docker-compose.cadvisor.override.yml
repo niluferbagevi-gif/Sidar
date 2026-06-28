@@ -1,0 +1,9 @@
+services:
+  prometheus:
+    depends_on:
+      redis-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+      cadvisor:
+        condition: service_started

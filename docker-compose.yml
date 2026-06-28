@@ -370,30 +370,54 @@ services:
     ports:
       - "16686:16686"
       - "4317:4317"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:14269/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
   redis-exporter:
+    profiles: ["cpu", "gpu"]
     image: oliver006/redis_exporter:v1.67.0
     container_name: sidar_redis_exporter
     restart: unless-stopped
     environment:
       - REDIS_ADDR=redis://redis:6379
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9121/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       - redis
 
   postgres-exporter:
+    profiles: ["cpu", "gpu"]
     image: prometheuscommunity/postgres-exporter:v0.15.0
     container_name: sidar_postgres_exporter
     restart: unless-stopped
     environment:
       - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9187/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["monitoring-full", "wsl2-monitoring"]
+    image: gcr.io/cadvisor/cadvisor:v0.52.0
     container_name: sidar_cadvisor
     restart: unless-stopped
+    command:
+      - --disable_metrics=referenced_memory,udp
+      - --store_container_labels=false
     privileged: true
     devices:
       - /dev/kmsg
@@ -413,9 +437,10 @@ services:
     volumes:
       - ./docker_setup/prometheus:/etc/prometheus:ro
     depends_on:
-      - redis-exporter
-      - postgres-exporter
-      - cadvisor
+      redis-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -437,6 +462,10 @@ services:
       start_period: 30s
     depends_on:
       - prometheus
+
+networks:
+  default:
+    name: ${SIDAR_DOCKER_NETWORK:-sidar-net}
 
 volumes:
   redis_data:

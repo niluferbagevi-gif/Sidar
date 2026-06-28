@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-
+# Phase 06: service startup, database readiness, and smoke validation.
+# This module coordinates Docker-backed infrastructure needed by local runs.
+# It keeps PostgreSQL password hardening safe across installer restarts,
+# validates live DB/Redis readiness before smoke tests, and reports actionable
+# diagnostics instead of hiding Docker/PostgreSQL failures.
 
 seed_rag_in_docker_after_startup() {
     if [[ "${SIDAR_INSTALL_TEST_MODE:-}" == "1" ]]; then
@@ -52,7 +56,16 @@ sidar_phase_local_migrations_and_models() {
         if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
             pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
         fi
-        ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
+        # Parola ham argv değeri olarak korunmalı; printf %q ile escape etmek
+        # PGPASSWORD değerini değiştirir. Array expansion word-splitting/glob riskini kapatır.
+        local -a ensure_db_args=(
+            "127.0.0.1"
+            "${POSTGRES_PORT:-5432}"
+            "${POSTGRES_USER:-sidar}"
+            "$pg_pw"
+            "${POSTGRES_DB:-sidar}"
+        )
+        ensure_postgres_databases_exist "${ensure_db_args[@]}"
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
@@ -185,6 +198,11 @@ sidar_phase06_discover_postgres_volumes() {
     fi
 }
 
+sidar_phase06_db_password_hardened_marker_present() {
+    local state_file="${SIDAR_INSTALL_STATE_FILE:-$SCRIPT_DIR/.sidar_install_state}"
+    [[ -f "$state_file" ]] && grep -q '^DB_PASSWORD_HARDENED=true$' "$state_file" 2>/dev/null
+}
+
 ensure_postgres_volume_reset_before_smoke_tests() {
     local -a docker_compose_cmd=()
     local -a volumes_before=()
@@ -193,8 +211,13 @@ ensure_postgres_volume_reset_before_smoke_tests() {
     local volume_name=""
 
     if [[ "${DB_PASSWORD_HARDENED:-false}" != true ]]; then
-        info "DB parola hardening işaretlenmedi; smoke öncesi PostgreSQL volume reset gerekmiyor."
-        return 0
+        if sidar_phase06_db_password_hardened_marker_present; then
+            DB_PASSWORD_HARDENED=true
+            info ".sidar_install_state DB_PASSWORD_HARDENED=true işaretledi; smoke öncesi PostgreSQL volume reset doğrulaması yapılacak."
+        else
+            info "DB parola hardening işaretlenmedi; smoke öncesi PostgreSQL volume reset gerekmiyor."
+            return 0
+        fi
     fi
 
     if [[ "${POSTGRES_VOLUME_RESET_DONE:-false}" == true ]]; then
@@ -267,16 +290,26 @@ sync_database_passwords_before_smoke_tests() {
     ensure_env_test_postgres_password_matches_base_before_smoke
     ensure_postgres_volume_reset_before_smoke_tests
 
+    if [[ "${SKIP_LIVE_POSTGRES_SYNC:-0}" == "1" ]]; then
+        info "SKIP_LIVE_POSTGRES_SYNC=1; canlı PostgreSQL parola senkronizasyonu atlandı."
+        return 0
+    fi
+
     if [[ ! -f "$SCRIPT_DIR/scripts/sync_postgres_password.py" ]]; then
         warn "scripts/sync_postgres_password.py bulunamadı; canlı PostgreSQL parola senkronizasyonu atlandı."
         return 0
     fi
 
+    local sync_output=""
+    local sync_exit=0
     info "Smoke test öncesi canlı PostgreSQL kullanıcı parolası doğrulanıyor..."
-    if (cd "$SCRIPT_DIR" && uv run python scripts/sync_postgres_password.py >/dev/null 2>&1); then
+    if sync_output=$(cd "$SCRIPT_DIR" && PRE_HARDEN_DB_PASSWORD="${PRE_HARDEN_DB_PASSWORD:-}" PRE_HARDEN_DB_PASSWORD_FILE="${PRE_HARDEN_DB_PASSWORD_FILE:-}" uv run python scripts/sync_postgres_password.py 2>&1); then
         ok "Canlı PostgreSQL kullanıcı parolası smoke test öncesi eşitlendi."
     else
-        warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı; smoke testler mevcut veritabanı durumu ile devam edecek."
+        sync_exit=$?
+        warn "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı (exit=$sync_exit). Detay:"
+        while IFS= read -r line; do printf '       %s\n' "$line" >&2; done <<< "$sync_output"
+        info "Devre dışı bırakmak için: SKIP_LIVE_POSTGRES_SYNC=1 ./install_sidar.sh"
         sidar_phase06_report_production_postgres_password_alignment || true
     fi
 }
@@ -286,11 +319,10 @@ sidar_phase06_report_production_postgres_password_alignment() {
     sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$SCRIPT_DIR/.env" | tr -d '\n' | tr '[:upper:]' '[:lower:]')
     sidar_env="${sidar_env:-development}"
 
+    local profile_label="Development"
     case "$sidar_env" in
         production|prod)
-            ;;
-        *)
-            return 0
+            profile_label="Production"
             ;;
     esac
 
@@ -305,19 +337,22 @@ sidar_phase06_report_production_postgres_password_alignment() {
     pg_container="${pg_container:-sidar_postgres}"
 
     if [[ -z "${pg_password//[[:space:]]/}" ]]; then
-        warn "Production profili: POSTGRES_PASSWORD boş görünüyor; mevcut volume parola uyumu doğrulanamadı."
+        warn "${profile_label} profili: POSTGRES_PASSWORD boş görünüyor; mevcut volume parola uyumu doğrulanamadı."
         return 0
     fi
 
     if ! command -v docker &>/dev/null; then
-        warn "Production profili: docker CLI bulunamadı; mevcut volume parola uyumu doğrulanamadı."
+        warn "${profile_label} profili: docker CLI bulunamadı; mevcut volume parola uyumu doğrulanamadı."
         return 0
     fi
 
     if env PGPASSWORD="$pg_password" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -c 'SELECT 1;' >/dev/null 2>&1; then
-        ok "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile uyumlu görünüyor."
+        ok "${profile_label} profili: mevcut PostgreSQL volume parolası .env ile uyumlu."
+    elif [[ "$profile_label" == "Development" ]]; then
+        warn "Development profili: PostgreSQL volume parolası .env ile uyuşmuyor."
+        info "Onarım: docker compose down --volumes && ./install_sidar.sh"
     else
-        warn "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
+        warn "Production profili: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
     fi
 }
 

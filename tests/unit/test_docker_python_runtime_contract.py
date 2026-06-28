@@ -82,33 +82,52 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     services = compose["services"]
 
+    assert compose["networks"]["default"]["name"] == "${SIDAR_DOCKER_NETWORK:-sidar-net}"
     assert services["redis"]["image"] == "redis:7.4-alpine"
     assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
 
     assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
     assert ":latest" not in services["jaeger"]["image"]
+    assert "http://localhost:14269/" in services["jaeger"]["healthcheck"]["test"][1]
+    assert services["jaeger"]["healthcheck"]["start_period"] == "30s"
 
+    assert services["redis-exporter"]["profiles"] == ["cpu", "gpu"]
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
     assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
+    assert "http://localhost:9121/metrics" in services["redis-exporter"]["healthcheck"]["test"][1]
+    assert services["redis-exporter"]["healthcheck"]["start_period"] == "30s"
 
     postgres_exporter = services["postgres-exporter"]
+    assert postgres_exporter["profiles"] == ["cpu", "gpu"]
     assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
     assert any(
         item.startswith("DATA_SOURCE_NAME=postgresql://")
         for item in postgres_exporter["environment"]
     )
+    assert "http://localhost:9187/metrics" in postgres_exporter["healthcheck"]["test"][1]
+    assert postgres_exporter["healthcheck"]["start_period"] == "30s"
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
-    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
+    assert cadvisor["profiles"] == ["monitoring-full", "wsl2-monitoring"]
+    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.52.0"
+    assert cadvisor["command"] == [
+        "--disable_metrics=referenced_memory,udp",
+        "--store_container_labels=false",
+    ]
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
-    assert services["prometheus"]["depends_on"] == [
-        "redis-exporter",
-        "postgres-exporter",
-        "cadvisor",
-    ]
+    assert services["prometheus"]["depends_on"] == {
+        "redis-exporter": {"condition": "service_started"},
+        "postgres-exporter": {"condition": "service_started"},
+    }
+    cadvisor_override = yaml.safe_load(
+        (ROOT / "docker-compose.cadvisor.override.yml").read_text()
+    )
+    assert cadvisor_override["services"]["prometheus"]["depends_on"]["cadvisor"] == {
+        "condition": "service_started"
+    }
     assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"

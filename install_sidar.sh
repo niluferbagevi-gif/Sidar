@@ -1417,6 +1417,21 @@ start_docker_services_or_fail() {
     fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
 }
 
+wait_for_observability_services_health() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+
+    local -a observability_services=(redis-exporter postgres-exporter prometheus grafana)
+    wait_for_compose_services_health "${compose_cmd[@]}" -- "${observability_services[@]}" || warn "Monitoring servisleri healthcheck beklemesi tamamlanamadı; smoke testler kendi hazır kontrolleriyle devam edecek."
+}
+
 wait_for_compose_services_health() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -7374,19 +7389,41 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
-                    ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
+                local stderr_file
+                stderr_file=$(mktemp)
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}" 2>"$stderr_file"; then
+                    ok "Altyapı Docker servisleri başarıyla başlatıldı (hedefler: ${infra_services[*]}; compose bağımlıları: redis-exporter postgres-exporter; opsiyonel tam izleme: cadvisor)."
+                    wait_for_observability_services_health "${docker_compose_cmd[@]}" --
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Altyapı Docker servisleri başlatılamadı:"
+                    while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
+                    if grep -qi "500 Internal Server Error" "$stderr_file"; then
+                        info "İpucu: 500 Internal Server Error genelde WSL2 + Docker Desktop ile cAdvisor/privileged container çakışmasından gelir."
+                        info "Çözüm: docker compose stop cadvisor && docker compose rm -f cadvisor; sonra COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d --no-deps prometheus grafana redis-exporter postgres-exporter"
+                    fi
+                    warn "Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
+                rm -f "$stderr_file"
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                local stderr_file
+                stderr_file=$(mktemp)
+                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d 2>"$stderr_file"; then
                     ok "Docker servisleri başarıyla başlatıldı."
+                    wait_for_observability_services_health "${docker_compose_cmd[@]}" --
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Docker servisleri başlatılamadı:"
+                    while IFS= read -r line; do printf '       %s\n' "$line" >&2; done < "$stderr_file"
+                    if grep -qi "500 Internal Server Error" "$stderr_file"; then
+                        info "İpucu: 500 Internal Server Error genelde WSL2 + Docker Desktop ile cAdvisor/privileged container çakışmasından gelir."
+                        info "Çözüm: docker compose stop cadvisor && docker compose rm -f cadvisor; sonra COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d --no-deps prometheus grafana redis-exporter postgres-exporter"
+                    fi
+                    warn "Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
+                rm -f "$stderr_file"
             fi
             ;;
         *)

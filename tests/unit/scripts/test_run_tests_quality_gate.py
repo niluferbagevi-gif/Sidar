@@ -366,6 +366,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     None
 ):
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
@@ -396,7 +397,13 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "Override hiyerarşisi" in env_advanced
     assert "override=False ile yüklenir" in env_advanced
     assert "boş" in env_advanced and ".env içindeki dolu değerleri ezmez" in env_advanced
+    assert "Kurulum betiği otomatik güçlü parola üretir; bu değer yalnız yer tutucudur." in env_example
     assert "docker-compose env_file:" in env_advanced
+    assert "PostgreSQL parola senkronizasyonu (sync_postgres_password.py)" in env_advanced
+    assert "POSTGRES_ADMIN_USER=" in env_advanced
+    assert "POSTGRES_ADMIN_DB=" in env_advanced
+    assert "SIDAR_POSTGRES_CONTAINER=sidar_postgres" in env_advanced
+    assert "SIDAR_PG_SYNC_TIMEOUT=90" in env_advanced
     assert "AUTONOMOUS_LOOP_COVERAGE_XML=coverage.xml" in env_advanced
     assert "SIDAR_EVENT_BUS_BACKEND=redis" in env_advanced
     assert "SIDAR_RABBITMQ_URL=" in env_advanced
@@ -538,6 +545,7 @@ def test_primary_env_example_stays_minimal_for_new_users() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert len(env_example.splitlines()) <= 50
+    assert "Kurulum betiği otomatik güçlü parola üretir; bu değer yalnız yer tutucudur." in env_example
     assert "DATABASE_URL=" not in env_example
     assert "SIDAR_CONTAINER_DATABASE_URL=" not in env_example
     assert "GOOGLE_API_KEY" not in env_example
@@ -1140,15 +1148,31 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"'
         in workspace_phase
     )
+    assert "Phase 06: service startup, database readiness, and smoke validation." in services_phase
+    assert "validates live DB/Redis readiness before smoke tests" in services_phase
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase
     assert "ensure_postgres_volume_reset_before_smoke_tests" in services_phase
+    assert "sidar_phase06_db_password_hardened_marker_present()" in services_phase
+    assert ".sidar_install_state DB_PASSWORD_HARDENED=true" in services_phase
+    assert "local -a ensure_db_args=(" in services_phase
+    assert '"$pg_pw"' in services_phase
+    assert 'ensure_postgres_databases_exist "${ensure_db_args[@]}"' in services_phase
+    assert "printf %q ile escape etmek" in services_phase
     assert "uv run python scripts/sync_database_passwords.py --all-envs" in services_phase
     assert "uv run python scripts/sync_postgres_password.py" in services_phase
+    assert "SKIP_LIVE_POSTGRES_SYNC=1" in services_phase
+    assert 'PRE_HARDEN_DB_PASSWORD_FILE="${PRE_HARDEN_DB_PASSWORD_FILE:-}" uv run python scripts/sync_postgres_password.py 2>&1' in services_phase
+    assert "Canlı PostgreSQL parola senkronizasyonu tamamlanamadı (exit=$sync_exit). Detay:" in services_phase
+    assert "while IFS= read -r line; do printf" in services_phase
     assert "POSTGRES_PASSWORD değeri .env ile uyuşmuyor" in services_phase
     assert "docker compose down --volumes --remove-orphans" in services_phase
     assert "PostgreSQL volume reset doğrulanamadı" in services_phase
+    assert 'profile_label="Development"' in services_phase
+    assert "Development profili: PostgreSQL volume parolası .env ile uyuşmuyor." in services_phase
+    assert "Onarım: docker compose down --volumes && ./install_sidar.sh" in services_phase
+    assert "Production profili: mevcut PostgreSQL volume parolası .env ile doğrulanamadı" in services_phase
     assert services_phase.index(
         "sync_database_passwords_before_smoke_tests"
     ) < services_phase.index("run_smoke_tests")
@@ -1177,6 +1201,13 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv pip" not in python_env_utils
     assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
+    assert "sidar_store_pre_harden_postgres_password()" in db_utils
+    assert "sidar_mark_db_password_hardened_state()" in db_utils
+    assert ".sidar_install_state" in db_utils
+    assert "DB_PASSWORD_HARDENED=true" in db_utils
+    assert "pre_harden_postgres_password" in db_utils
+    assert "chmod 600" in db_utils
+    assert "PRE_HARDEN_DB_PASSWORD_FILE" in db_utils
     assert "sync_postgres_env_with_database_url()" in db_utils
     assert "ensure_database_url_defaults()" in db_utils
     assert "setup_env_file()" in env_utils
@@ -1615,6 +1646,43 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
         in launch_body
     )
     assert "tekrar menü göstermeden" in launch_body
+
+
+def test_install_sidar_dumps_docker_compose_stderr_and_guides_cadvisor_failures() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    launch_body = script[
+        script.index("launch_docker_services() {") : script.index(
+            "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
+        )
+    ]
+
+    assert "stderr_file=$(mktemp)" in launch_body
+    assert '2>"$stderr_file"' in launch_body
+    assert "while IFS= read -r line; do printf" in launch_body
+    assert 'grep -qi "500 Internal Server Error" "$stderr_file"' in launch_body
+    assert "cAdvisor/privileged container çakışmasından gelir" in launch_body
+    assert "docker compose stop cadvisor && docker compose rm -f cadvisor" in launch_body
+    assert 'rm -f "$stderr_file"' in launch_body
+
+
+def test_install_sidar_waits_for_observability_services_after_compose_start() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    helper_body = script[
+        script.index("wait_for_observability_services_health() {") : script.index(
+            "wait_for_compose_services_health() {",
+            script.index("wait_for_observability_services_health() {")
+        )
+    ]
+    launch_body = script[
+        script.index("launch_docker_services() {") : script.index(
+            "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
+        )
+    ]
+
+    assert "redis-exporter postgres-exporter prometheus grafana" in helper_body
+    assert 'wait_for_compose_services_health "${compose_cmd[@]}" -- "${observability_services[@]}"' in helper_body
+    assert "Monitoring servisleri healthcheck beklemesi tamamlanamadı" in helper_body
+    assert launch_body.count('wait_for_observability_services_health "${docker_compose_cmd[@]}" --') == 2
 
 
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
