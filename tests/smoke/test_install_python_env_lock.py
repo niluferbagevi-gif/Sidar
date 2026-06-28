@@ -14,6 +14,7 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
         textwrap.dedent(
             r"""#!/usr/bin/env bash
             set -euo pipefail
+            printf "%s\n" "$*" >> "${UV_STUB_LOG:?}"
             if [[ "$1" == "python" && "$2" == "install" ]]; then
               exit 0
             fi
@@ -76,13 +77,18 @@ EOS
         [[ "$overridden_version" == Python\ 3.11.* ]]
         [[ "$output" == *"WARN:PYTHON_VERSION=3.12 algılandı; runtime için 3.11 zorunlu."* ]]
 
+        venv_calls_before="$(grep -c "^venv " "$UV_STUB_LOG")"
+        [[ "$venv_calls_before" == "2" ]]
         output="$(create_uv_venv 2>&1)"
+        venv_calls_after="$(grep -c "^venv " "$UV_STUB_LOG")"
         [[ "$output" == *"OK:.venv mevcut sürümle uyumlu: 3.11"* ]]
+        [[ "$venv_calls_before" == "$venv_calls_after" ]]
         """
     )
 
     subprocess.run(
         ["bash", "-lc", smoke_script, "sidar-smoke", str(script_dir), str(fake_bin)],
         cwd=os.getcwd(),
+        env={**os.environ, "UV_STUB_LOG": str(tmp_path / "uv.log")},
         check=True,
     )
