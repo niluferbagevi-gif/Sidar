@@ -82,6 +82,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     services = compose["services"]
 
+    assert compose["networks"]["default"]["name"] == "${SIDAR_DOCKER_NETWORK:-sidar-net}"
     assert services["redis"]["image"] == "redis:7.4-alpine"
     assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
 

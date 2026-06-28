@@ -445,6 +445,10 @@ services:
     depends_on:
       - prometheus
 
+networks:
+  default:
+    name: ${SIDAR_DOCKER_NETWORK:-sidar-net}
+
 volumes:
   redis_data:
   postgres_data:
