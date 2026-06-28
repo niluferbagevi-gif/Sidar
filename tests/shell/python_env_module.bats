@@ -109,3 +109,52 @@ STUB
   '
   [ "$status" -eq 0 ]
 }
+
+@test "python_env module create_uv_venv ignores PYTHON_VERSION override" {
+  run_python_env_module '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    PYTHON_VERSION="3.12"
+    step() { :; }
+    info() { :; }
+    ok() { :; }
+    warn() { printf "%s\n" "$*" >> "$tmpdir/warn.log"; }
+    fail() { printf "%s\n" "$*" >&2; exit 1; }
+    cat > "$tmpdir/bin/uv" <<STUB
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+if [[ "\$*" == "python install 3.11" ]]; then
+  exit 0
+fi
+if [[ "\$*" == "venv --python 3.11 $tmpdir/.venv" ]]; then
+  mkdir -p "$tmpdir/.venv/bin"
+  cat > "$tmpdir/.venv/bin/activate" <<ACTIVATE
+#!/usr/bin/env bash
+export VIRTUAL_ENV="$tmpdir/.venv"
+ACTIVATE
+  cat > "$tmpdir/.venv/bin/python" <<PYTHON
+#!/usr/bin/env bash
+printf "Python 3.11.9\n"
+PYTHON
+  chmod +x "$tmpdir/.venv/bin/python"
+  exit 0
+fi
+printf "unexpected uv call: %s\n" "\$*" >&2
+exit 99
+STUB
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    source ./scripts/install_modules/utils/python_env.sh
+
+    create_uv_venv
+
+    grep -q "^python install 3.11$" "$tmpdir/uv.log"
+    grep -q "^venv --python 3.11 $tmpdir/.venv$" "$tmpdir/uv.log"
+    ! grep -q "3.12" "$tmpdir/uv.log"
+    [[ "$("$tmpdir/.venv/bin/python" --version)" == "Python 3.11.9" ]]
+    grep -q "PYTHON_VERSION=3.12 algılandı; runtime için 3.11 zorunlu." "$tmpdir/warn.log"
+  '
+  [ "$status" -eq 0 ]
+}
