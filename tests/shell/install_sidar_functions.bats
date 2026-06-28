@@ -642,6 +642,19 @@ ENV
   ! grep -q "^install_playwright_browsers()" "$root/install_sidar.sh"
 }
 
+@test "Alembic migration helpers live in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/12_alembic.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/12_alembic.sh" "$root/install_sidar.sh"
+  grep -q "^run_migrations()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  grep -q "^is_alembic_at_head()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  grep -q "^ensure_postgres_databases_exist()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  ! grep -q "^run_migrations()" "$root/install_sidar.sh"
+  ! grep -q "^is_alembic_at_head()" "$root/install_sidar.sh"
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"
