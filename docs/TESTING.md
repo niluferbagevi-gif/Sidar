@@ -63,16 +63,18 @@ brew install portaudio
 uv sync --all-extras
 ```
 
+### Geliştirici ön koşulu
+
+```bash
+bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
+uv sync --frozen --all-extras
+```
+
 Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
 `scripts/install_ci_system_deps.sh` üzerinden kurar. Aynı script apt, dnf, zypper,
 pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri yalnız
 raporlamak için `--check` modu çalıştırılabilir. Yerel ortamlarda CI ile aynı
 sırayı kullanın:
-
-```bash
-bash scripts/install_ci_system_deps.sh
-uv sync --all-extras
-```
 
 Bu sıra Debian/Ubuntu'da `portaudio19-dev`, `shellcheck` ve `bats` paketlerini
 (Pacman/Homebrew gibi ortamlarda eşdeğer paketleri) Python bağımlılıkları

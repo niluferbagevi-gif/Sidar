@@ -699,6 +699,30 @@ def test_install_sidar_has_locale_switch_for_english_messages() -> None:
     assert "Select installer message language" in script
 
 
+def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    prerequisite = (
+        "bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats\n"
+        "uv sync --frozen --all-extras"
+    )
+
+    assert "#### Geliştirici ön koşulu" in readme
+    assert "### Geliştirici ön koşulu" in testing_doc
+    assert prerequisite in readme
+    assert prerequisite in testing_doc
+    readme_prereq_start = readme.index("#### Geliştirici ön koşulu")
+    testing_prereq_start = testing_doc.index("### Geliştirici ön koşulu")
+    assert readme.index(
+        "bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats",
+        readme_prereq_start,
+    ) < readme.index("uv sync --frozen --all-extras", readme_prereq_start)
+    assert testing_doc.index(
+        "bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats",
+        testing_prereq_start,
+    ) < testing_doc.index("uv sync --frozen --all-extras", testing_prereq_start)
+
+
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
     sidar_installer = Path("install_sidar.sh").read_text(encoding="utf-8")

@@ -282,6 +282,13 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Önerilen: `.venv` + `uv` ile kurulum
 
+#### Geliştirici ön koşulu
+
+```bash
+bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
+uv sync --frozen --all-extras
+```
+
 ```bash
 cd Sidar
 python -m venv .venv
