@@ -102,8 +102,12 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
-    assert cadvisor["profiles"] == ["monitoring-full"]
-    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
+    assert cadvisor["profiles"] == ["monitoring-full", "wsl2-monitoring"]
+    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.52.0"
+    assert cadvisor["command"] == [
+        "--disable_metrics=referenced_memory,udp",
+        "--store_container_labels=false",
+    ]
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 

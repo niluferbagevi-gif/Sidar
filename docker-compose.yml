@@ -393,10 +393,13 @@ services:
         condition: service_healthy
 
   cadvisor:
-    profiles: ["monitoring-full"]
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["monitoring-full", "wsl2-monitoring"]
+    image: gcr.io/cadvisor/cadvisor:v0.52.0
     container_name: sidar_cadvisor
     restart: unless-stopped
+    command:
+      - --disable_metrics=referenced_memory,udp
+      - --store_container_labels=false
     privileged: true
     devices:
       - /dev/kmsg
