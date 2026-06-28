@@ -28,8 +28,12 @@ from scripts.sync_database_passwords import (  # noqa: E402
     discover_env_chain,
 )
 
-DEFAULT_ALLOWED_ENVS = {"", "development", "dev", "local", "test", "testing"}
+DEFAULT_ALLOWED_ENVS = {"development", "dev", "local", "test", "testing"}
 DEFAULT_POSTGRES_CONTAINER = "sidar_postgres"
+
+
+class PostgresSyncError(RuntimeError):
+    """Raised when live PostgreSQL password synchronization cannot continue."""
 
 
 def _redacted_summary(**values: Any) -> dict[str, Any]:
@@ -68,7 +72,12 @@ def _check_environment_allowed(*, env: dict[str, str], allow_non_dev: bool) -> N
     sidar_env = env.get("SIDAR_ENV", "").strip().lower()
     if allow_non_dev or sidar_env in DEFAULT_ALLOWED_ENVS:
         return
-    raise RuntimeError(
+    if not sidar_env:
+        raise PostgresSyncError(
+            "SIDAR_ENV must be set to a local/development profile before mutating "
+            "PostgreSQL credentials."
+        )
+    raise PostgresSyncError(
         "Refusing to mutate PostgreSQL credentials outside a local/development profile. "
         "Set SIDAR_ENV=development or pass --allow-non-dev intentionally."
     )
@@ -125,7 +134,7 @@ def _docker_exec_command(
 ) -> list[str]:
     docker = shutil.which("docker")
     if not docker:
-        raise RuntimeError("docker executable not found on PATH")
+        raise PostgresSyncError("docker executable not found on PATH")
     postgres_user = env.get("POSTGRES_USER", "sidar").strip() or "sidar"
     admin_user = env.get("POSTGRES_ADMIN_USER", "").strip() or postgres_user
     admin_db = (
@@ -178,7 +187,7 @@ def sync_postgres_password_with_docker_exec(
     postgres_user = effective_env.get("POSTGRES_USER", "sidar").strip() or "sidar"
     postgres_password = effective_env.get("POSTGRES_PASSWORD", "").strip()
     if not postgres_password:
-        raise RuntimeError("POSTGRES_PASSWORD is not set in the effective env chain")
+        raise PostgresSyncError("POSTGRES_PASSWORD is not set in the effective env chain")
 
     sql = _build_alter_user_sql(
         postgres_user=postgres_user,
@@ -208,11 +217,11 @@ def sync_postgres_password_with_docker_exec(
             break
 
     if completed is None:
-        raise RuntimeError("No PostgreSQL authentication password candidate is available")
+        raise PostgresSyncError("No PostgreSQL authentication password candidate is available")
 
     output = _redact_passwords(completed.stdout or "", auth_passwords)
     if completed.returncode != 0:
-        raise RuntimeError(
+        raise PostgresSyncError(
             "docker exec PostgreSQL password sync failed "
             f"with exit code {completed.returncode}: {output.strip()}"
         )
@@ -288,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
                 postgres_container=args.postgres_container or None,
             )
         else:  # pragma: no cover - argparse choices prevent this path.
-            raise RuntimeError(f"Unsupported method: {args.method}")
+            raise PostgresSyncError(f"Unsupported method: {args.method}")
     except Exception as exc:
         print(f"❌ PostgreSQL kullanıcı parolası eşitlenemedi: {exc}", file=sys.stderr)
         return 1

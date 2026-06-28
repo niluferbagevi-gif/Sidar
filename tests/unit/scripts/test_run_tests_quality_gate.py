@@ -366,6 +366,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     None
 ):
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
@@ -396,6 +397,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
     assert "Override hiyerarşisi" in env_advanced
     assert "override=False ile yüklenir" in env_advanced
     assert "boş" in env_advanced and ".env içindeki dolu değerleri ezmez" in env_advanced
+    assert "Kurulum betiği otomatik güçlü parola üretir; bu değer yalnız yer tutucudur." in env_example
     assert "docker-compose env_file:" in env_advanced
     assert "PostgreSQL parola senkronizasyonu (sync_postgres_password.py)" in env_advanced
     assert "POSTGRES_ADMIN_USER=" in env_advanced
@@ -543,6 +545,7 @@ def test_primary_env_example_stays_minimal_for_new_users() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert len(env_example.splitlines()) <= 50
+    assert "Kurulum betiği otomatik güçlü parola üretir; bu değer yalnız yer tutucudur." in env_example
     assert "DATABASE_URL=" not in env_example
     assert "SIDAR_CONTAINER_DATABASE_URL=" not in env_example
     assert "GOOGLE_API_KEY" not in env_example
@@ -1145,6 +1148,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"'
         in workspace_phase
     )
+    assert "Phase 06: service startup, database readiness, and smoke validation." in services_phase
+    assert "validates live DB/Redis readiness before smoke tests" in services_phase
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase

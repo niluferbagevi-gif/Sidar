@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-
+# Phase 06: service startup, database readiness, and smoke validation.
+# This module coordinates Docker-backed infrastructure needed by local runs.
+# It keeps PostgreSQL password hardening safe across installer restarts,
+# validates live DB/Redis readiness before smoke tests, and reports actionable
+# diagnostics instead of hiding Docker/PostgreSQL failures.
 
 seed_rag_in_docker_after_startup() {
     if [[ "${SIDAR_INSTALL_TEST_MODE:-}" == "1" ]]; then

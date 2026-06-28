@@ -88,10 +88,14 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
 
     assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
     assert ":latest" not in services["jaeger"]["image"]
+    assert "http://localhost:14269/" in services["jaeger"]["healthcheck"]["test"][1]
+    assert services["jaeger"]["healthcheck"]["start_period"] == "30s"
 
     assert services["redis-exporter"]["profiles"] == ["cpu", "gpu"]
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
     assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
+    assert "http://localhost:9121/metrics" in services["redis-exporter"]["healthcheck"]["test"][1]
+    assert services["redis-exporter"]["healthcheck"]["start_period"] == "30s"
 
     postgres_exporter = services["postgres-exporter"]
     assert postgres_exporter["profiles"] == ["cpu", "gpu"]
@@ -100,6 +104,8 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
         item.startswith("DATA_SOURCE_NAME=postgresql://")
         for item in postgres_exporter["environment"]
     )
+    assert "http://localhost:9187/metrics" in postgres_exporter["healthcheck"]["test"][1]
+    assert postgres_exporter["healthcheck"]["start_period"] == "30s"
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]

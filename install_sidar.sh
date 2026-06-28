@@ -7392,7 +7392,7 @@ launch_docker_services() {
                 local stderr_file
                 stderr_file=$(mktemp)
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}" 2>"$stderr_file"; then
-                    ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
+                    ok "Altyapı Docker servisleri başarıyla başlatıldı (hedefler: ${infra_services[*]}; compose bağımlıları: redis-exporter postgres-exporter; opsiyonel tam izleme: cadvisor)."
                     wait_for_observability_services_health "${docker_compose_cmd[@]}" --
                 else
                     warn "Altyapı Docker servisleri başlatılamadı:"

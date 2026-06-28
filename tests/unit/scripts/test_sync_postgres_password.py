@@ -216,6 +216,25 @@ def test_sync_postgres_password_invalid_timeout_falls_back(monkeypatch, tmp_path
     assert calls["kwargs"]["timeout"] == 90
 
 
+
+def test_sync_postgres_password_requires_sidar_env(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "POSTGRES_USER=sidar\nPOSTGRES_DB=sidar\nPOSTGRES_PASSWORD=super-secret-password-123456\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/docker")
+
+    try:
+        sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
+    except sync_postgres_password.PostgresSyncError as exc:
+        assert "SIDAR_ENV must be set" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("expected PostgresSyncError")
+
+
 def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
     monkeypatch, tmp_path: Path
 ):
@@ -227,7 +246,7 @@ def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
 
     try:
         sync_postgres_password.sync_postgres_password_with_docker_exec(env_file=env_file)
-    except RuntimeError as exc:
+    except sync_postgres_password.PostgresSyncError as exc:
         assert "Refusing to mutate PostgreSQL credentials" in str(exc)
     else:  # pragma: no cover - assertion guard
         raise AssertionError("expected RuntimeError")

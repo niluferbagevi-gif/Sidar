@@ -370,6 +370,12 @@ services:
     ports:
       - "16686:16686"
       - "4317:4317"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:14269/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
   redis-exporter:
     profiles: ["cpu", "gpu"]
@@ -378,6 +384,12 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_ADDR=redis://redis:6379
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9121/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       - redis
 
@@ -388,6 +400,12 @@ services:
     restart: unless-stopped
     environment:
       - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9187/metrics >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
