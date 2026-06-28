@@ -172,6 +172,9 @@ browser = [
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
+  # PyAudio is intentionally not hidden behind a platform marker: failures are
+  # usually missing PortAudio headers on otherwise supported developer hosts.
+  # Run scripts/install_ci_system_deps.sh before uv sync to prepare them.
   "pyaudio~=0.2.14",
   "openai-whisper>=20231117",
 ]

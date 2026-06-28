@@ -38,7 +38,9 @@ CI=true TEST_PROFILE=ci ./run_tests.sh
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`
 tekerleği her platformda hazır gelmeyebildiği için `uv sync --all-extras` veya
 `uv sync --extra voice` sırasında PortAudio geliştirme başlıklarına ihtiyaç
-duyabilir.
+duyabilir. Bu bağımlılık platform marker ile gizlenmez; Linux/macOS/yerel CI
+hatalarının çoğu eksik sistem header'ından kaynaklandığı için güvenli çözüm
+`uv sync` öncesinde sistem ön koşulunu kurmaktır.
 
 Python bağımlılıklarını senkronlamadan önce kullandığınız platforma uygun
 PortAudio geliştirme paketini kurun:

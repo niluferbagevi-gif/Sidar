@@ -709,8 +709,15 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
 
     assert "#### Geliştirici ön koşulu" in readme
     assert "### Geliştirici ön koşulu" in testing_doc
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
     assert prerequisite in readme
     assert prerequisite in testing_doc
+    assert "platform marker eklenmedi" in readme
+    assert "platform marker ile gizlenmez" in testing_doc
+    assert '"pyaudio~=0.2.14"' in pyproject
+    assert '"pyaudio~=0.2.14";' not in pyproject
+    assert "PyAudio is intentionally not hidden behind a platform marker" in pyproject
     readme_prereq_start = readme.index("#### Geliştirici ön koşulu")
     testing_prereq_start = testing_doc.index("### Geliştirici ön koşulu")
     assert readme.index(
