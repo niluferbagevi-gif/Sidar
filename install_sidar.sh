@@ -7377,7 +7377,8 @@ launch_docker_services() {
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
@@ -7385,7 +7386,8 @@ launch_docker_services() {
                 if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Docker servisleri başlatılamadı. Port çakışması, Docker daemon/API uyumsuzluğu veya opsiyonel monitoring bileşeni kaynaklı olabilir."
+                    info "cAdvisor varsayılan compose akışından çıkarıldı; tam container izleme için: COMPOSE_PROFILES=${compose_profiles},monitoring-full ${docker_compose_cmd[*]} -f docker-compose.yml -f docker-compose.cadvisor.override.yml up -d cadvisor prometheus grafana"
                 fi
             fi
             ;;

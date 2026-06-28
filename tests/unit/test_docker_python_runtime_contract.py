@@ -100,15 +100,21 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
+    assert cadvisor["profiles"] == ["monitoring-full"]
     assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
-    assert services["prometheus"]["depends_on"] == [
-        "redis-exporter",
-        "postgres-exporter",
-        "cadvisor",
-    ]
+    assert services["prometheus"]["depends_on"] == {
+        "redis-exporter": {"condition": "service_started"},
+        "postgres-exporter": {"condition": "service_started"},
+    }
+    cadvisor_override = yaml.safe_load(
+        (ROOT / "docker-compose.cadvisor.override.yml").read_text()
+    )
+    assert cadvisor_override["services"]["prometheus"]["depends_on"]["cadvisor"] == {
+        "condition": "service_started"
+    }
     assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"

@@ -391,6 +391,7 @@ services:
         condition: service_healthy
 
   cadvisor:
+    profiles: ["monitoring-full"]
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: sidar_cadvisor
     restart: unless-stopped
@@ -413,9 +414,10 @@ services:
     volumes:
       - ./docker_setup/prometheus:/etc/prometheus:ro
     depends_on:
-      - redis-exporter
-      - postgres-exporter
-      - cadvisor
+      redis-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
 
   grafana:
     image: grafana/grafana:11.2.0
