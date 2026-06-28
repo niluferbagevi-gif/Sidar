@@ -333,6 +333,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
     "utils/python_env.sh"
+    "utils/database_url.sh"
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
     "utils/ollama_models.sh"
@@ -366,14 +367,15 @@ f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/instal
 eb93ab9d8ff921fec94eaf21dcf022dfadb844d6eb235e8e56a5e4686d41fec1  scripts/install_modules/phases/01_context.sh
 b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
-cffa870c448f52b9a465e97f15e9f78a9cd5dc59f463549f51d0585be4961ed6  scripts/install_modules/phases/04_workspace.sh
+57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 368cb0354fed38dafec44d6fa2021dc77ac50f4a1c57140300ce67d0019e6e84  scripts/install_modules/phases/14_react.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
 4c425dc5a1f2fe3c74b6430a49cdddb7a8922eeaeaa6ca6c6983157331efaf0f  scripts/install_modules/phases/12_alembic.sh
 44f30be5a15a06fff67244020e714795d829a1c9b163717cb651ba4c409474a8  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
-76a6eab2b6e0aeafad9d31d22d90f2f2bbd181412539b12210e22a3b4b66b681  scripts/install_modules/utils/db_credentials.sh
+58071b371a362db7449615bba14881688ee772348da7544c347191525dbfdff5  scripts/install_modules/utils/database_url.sh
+812f561b75d57484da3a695d94927ebc7bf2b2cbb9e85ffd1f340edae83af66c  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
 c16a846a9a6a1f950c65916c65a89efd5480e3454fc5a3d0df7b44786944d452  scripts/install_modules/utils/install_remediation.sh
@@ -757,6 +759,7 @@ sidar_source_install_utils \
     "wsl_gpu_preflight.sh" \
     "gpu_utils.sh" \
     "python_env.sh" \
+    "database_url.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
     "ollama_models.sh" \
@@ -4454,102 +4457,7 @@ harden_database_credentials() {
     fi
 }
 
-sync_postgres_env_with_database_url() {
-    local env_file="$1"
-    local db_url=""
-
-    [[ -f "$env_file" ]] || return
-
-    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-    [[ -n "$db_url" ]] || return
-
-    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
-        local db_user="${BASH_REMATCH[2]}"
-        local db_password="${BASH_REMATCH[3]}"
-        local db_host_and_name="${BASH_REMATCH[4]}"
-        local db_name="${db_host_and_name#*/}"
-
-        # Host kısmında "/" yoksa varsayılan adı koru.
-        if [[ "$db_name" == "$db_host_and_name" ]]; then
-            db_name="sidar"
-        fi
-
-        # Olası query string'i temizle.
-        db_name="${db_name%%\?*}"
-
-        # Eski/çakışan satırları temizleyip en alta tek doğruluk kaynağını yaz.
-        sed_inplace '/^POSTGRES_USER=/d' "$env_file"
-        sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
-        sed_inplace '/^POSTGRES_DB=/d' "$env_file"
-        sed_inplace '/^DATABASE_URL=/d' "$env_file"
-
-        local container_db_url="postgresql+asyncpg://${db_user}:${db_password}@postgres:5432/${db_name}"
-        sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
-        {
-            echo "POSTGRES_USER=${db_user}"
-            echo "POSTGRES_PASSWORD=${db_password}"
-            echo "POSTGRES_DB=${db_name}"
-            echo "DATABASE_URL=${db_url}"
-            echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
-        } >> "$env_file"
-
-        ok ".env: DATABASE_URL/POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB değerleri güvenli şekilde yeniden senkronize edildi."
-    fi
-}
-
-write_generated_default_database_url() {
-    local env_file="$1"
-    local generated_password=""
-    generated_password=$(generate_secure_token 24)
-    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
-
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@127.0.0.1:5432/sidar"
-    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
-
-    sed_inplace '/^POSTGRES_USER=/d' "$env_file"
-    sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
-    sed_inplace '/^POSTGRES_DB=/d' "$env_file"
-    sed_inplace '/^DATABASE_URL=/d' "$env_file"
-    sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
-    {
-        echo "POSTGRES_USER=sidar"
-        echo "POSTGRES_PASSWORD=${generated_password}"
-        echo "POSTGRES_DB=sidar"
-        echo "DATABASE_URL=${local_db_url}"
-        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
-    } >> "$env_file"
-    DB_PASSWORD_HARDENED=true
-}
-
-ensure_database_url_defaults() {
-    local env_file="$1"
-    local current_db_url=""
-
-    if [[ ! -f "$env_file" ]]; then
-        return
-    fi
-
-    current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-
-    if [[ -z "$current_db_url" ]]; then
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
-        return
-    fi
-
-    if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
-        warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
-        return
-    fi
-
-    if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
-        write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
-    fi
-}
+# DATABASE_URL defaults and PostgreSQL dotenv sync helpers live in scripts/install_modules/utils/database_url.sh.
 
 ensure_rag_vector_backend_pgvector() {
     local env_file="$1"

@@ -666,6 +666,20 @@ ENV
   ! grep -q "^setup_react_frontend()" "$root/install_sidar.sh"
 }
 
+@test "DATABASE_URL defaults live in a dedicated utility module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"utils/database_url.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/utils/database_url.sh" "$root/install_sidar.sh"
+  grep -q "database_url.sh" "$root/scripts/install_modules/phases/04_workspace.sh"
+  grep -q "^ensure_database_url_defaults()" "$root/scripts/install_modules/utils/database_url.sh"
+  grep -q "^write_generated_default_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
+  grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
+  ! grep -q "^ensure_database_url_defaults()" "$root/install_sidar.sh"
+  ! grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/db_credentials.sh"
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"

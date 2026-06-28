@@ -13,7 +13,7 @@ sidar_precheck_workspace_ownership() {
 }
 
 sidar_phase_workspace_config() {
-    sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"
+    sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" "env_utils.sh"
     sidar_precheck_workspace_ownership
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # Modern paket yönetimi standardı: ortam kurulumu yalnızca uv venv + uv sync ile yapılır.
