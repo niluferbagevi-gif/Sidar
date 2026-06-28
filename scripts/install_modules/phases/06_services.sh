@@ -52,7 +52,16 @@ sidar_phase_local_migrations_and_models() {
         if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
             pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
         fi
-        ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
+        # Parola ham argv değeri olarak korunmalı; printf %q ile escape etmek
+        # PGPASSWORD değerini değiştirir. Array expansion word-splitting/glob riskini kapatır.
+        local -a ensure_db_args=(
+            "127.0.0.1"
+            "${POSTGRES_PORT:-5432}"
+            "${POSTGRES_USER:-sidar}"
+            "$pg_pw"
+            "${POSTGRES_DB:-sidar}"
+        )
+        ensure_postgres_databases_exist "${ensure_db_args[@]}"
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'

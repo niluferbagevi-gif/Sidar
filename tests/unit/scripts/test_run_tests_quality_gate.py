@@ -1148,6 +1148,10 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase
     assert "ensure_postgres_volume_reset_before_smoke_tests" in services_phase
+    assert "local -a ensure_db_args=(" in services_phase
+    assert '"$pg_pw"' in services_phase
+    assert 'ensure_postgres_databases_exist "${ensure_db_args[@]}"' in services_phase
+    assert "printf %q ile escape etmek" in services_phase
     assert "uv run python scripts/sync_database_passwords.py --all-envs" in services_phase
     assert "uv run python scripts/sync_postgres_password.py" in services_phase
     assert "SKIP_LIVE_POSTGRES_SYNC=1" in services_phase
