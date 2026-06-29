@@ -76,7 +76,11 @@ tek seferlik/geçici dosya adlarını referans almaz.
   `RUN_BATS_TESTS=1 bash run_tests.sh` kullanılabilir. Script, root
   olmayan kullanıcılarda interaktif parola istemez; `sudo -n` kullanılamıyorsa net bir hatayla durur.
   Eksik yerel bağımlılıklar için `run_tests.sh` başlangıç uyarısında ortak kurulum scriptini ve
-  parolasız sudo ortamlarına uygun opt-in otomatik kurulum komutunu gösterir.
+  parolasız sudo ortamlarına uygun opt-in otomatik kurulum komutunu gösterir. Kısa ömürlü bulut
+  çalışma alanlarında BATS'i oturum başlangıcında zorunlu kurmak yerine CI sonucunu beklemek önerilir;
+  manuel doğrulama gerektiğinde `bash scripts/install_ci_system_deps.sh` veya parolasız sudo
+  ortamlarında `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh` kullanılmalıdır. Dev Container
+  imajı ise kalıcı geliştirici ortamları için `bats` paketini build aşamasında hazırlar.
 - BATS shell testleri `run_tests.sh` içinde `--report-formatter junit` ile çalışır ve varsayılan olarak
   `artifacts/bats/report.xml` üretir. Rapor dizini güvenli temizleme için yalnız `artifacts/` altında
   kalmak koşuluyla `BATS_REPORT_DIR` ile değiştirilebilir. Yeni shell

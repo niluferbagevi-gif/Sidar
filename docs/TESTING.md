@@ -82,6 +82,15 @@ pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri
 raporlamak için `--check` modu çalıştırılabilir. Yerel ortamlarda CI ile aynı
 sırayı kullanın:
 
+> **Kısa ömürlü bulut çalışma alanları:** BATS'i her oturum başlangıcında zorunlu
+> kurmak gerekmez; PR/CI akışı shell testlerini otomatik çalıştırır ve JUnit
+> raporunu artifact olarak saklar. Bulut oturumunda tekil shell senaryosunu elle
+> doğrulamak isterseniz önce `bash scripts/install_ci_system_deps.sh` çalıştırın.
+> Parolasız sudo yoksa `AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh` opt-in
+> kurulumu dener; yine başarısız olursa yerel profilde BATS testleri uyarı verip
+> atlanır, CI profilinde ise eksik bağımlılık hata olarak görünür. Dev Container
+> imajı kalıcı geliştirici ortamları için `bats` paketini build aşamasında içerir.
+
 Bu sıra Debian/Ubuntu'da `portaudio19-dev`, `shellcheck` ve `bats` paketlerini
 (Pacman/Homebrew gibi ortamlarda eşdeğer paketleri) Python bağımlılıkları
 çözülmeden önce hazırlar; aksi halde `pyaudio` kaynak derlemesi `portaudio.h`
