@@ -286,9 +286,20 @@ is_alembic_at_head() {
     [[ -f "$alembic_ini" ]] || return 1
     py_bin="$(resolve_alembic_python)" || return 1
 
-    [[ -f "$env_file" ]] || return 1
-    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n[:space:]')"
-    [[ -n "${db_url//[[:space:]]/}" ]] || return 1
+    if [[ -n "${DATABASE_URL:-}" ]]; then
+        db_url="$DATABASE_URL"
+    elif [[ -f "$env_file" ]]; then
+        db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file")"
+    else
+        debug "Alembic head kontrolü için DATABASE_URL bulunamadı: ortam değişkeni ve ${env_file} yok."
+        return 1
+    fi
+
+    db_url="$(printf '%s' "$db_url" | tr -d '\n[:space:]')"
+    if [[ -z "${db_url//[[:space:]]/}" ]]; then
+        debug "Alembic head kontrolü için DATABASE_URL boş; current/head sorgusu atlandı."
+        return 1
+    fi
 
     current_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current 2>&1)" || return 1
     heads_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>&1)" || return 1

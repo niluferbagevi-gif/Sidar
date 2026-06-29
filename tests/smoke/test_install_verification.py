@@ -490,12 +490,16 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
+    alembic_phase = repo_root / "scripts" / "install_modules" / "phases" / "12_alembic.sh"
+    alembic_prelude = alembic_phase.read_text(encoding="utf-8").split("resolve_alembic_python", maxsplit=1)[0]
 
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
     assert "uv venv" in installer_text
+    assert "set -e" not in alembic_prelude
+    assert "set -u" not in alembic_prelude
 
     legacy_install_markers = (
         "conda env create",
@@ -561,6 +565,38 @@ def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
           exit 1
         fi
         test "$(sort -u "$SCRIPT_DIR/dburl.log")" = "postgresql://sidar:sidar@localhost:5432/sidar"
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    venv_bin = script_dir / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (script_dir / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+    fake_python = venv_bin / "python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$SCRIPT_DIR/unexpected-alembic-call.log\"\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source install_sidar.sh
+        SCRIPT_DIR={shlex.quote(str(script_dir))}
+        export SCRIPT_DIR
+        unset DATABASE_URL
+        if is_alembic_at_head; then
+          echo "is_alembic_at_head should fail without DATABASE_URL" >&2
+          exit 1
+        fi
+        test ! -e "$SCRIPT_DIR/unexpected-alembic-call.log"
         """,
         tmp_path,
     )
