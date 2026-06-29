@@ -8,6 +8,8 @@ from web.app_factory import (
     _expose_exception_details,
     _noop_lifespan,
     create_app,
+    get_runtime_state,
+    initialize_runtime_state,
     register_exception_handlers,
 )
 
@@ -63,6 +65,32 @@ def test_create_app_allows_central_version_override() -> None:
     app = create_app(version="9.8.7")
 
     assert app.version == "9.8.7"
+
+
+def test_create_app_attaches_isolated_runtime_state() -> None:
+    first = create_app()
+    second = create_app()
+
+    first_state = get_runtime_state(first)
+    second_state = get_runtime_state(second)
+
+    assert first_state is first.state.sidar_runtime
+    assert second_state is second.state.sidar_runtime
+    assert first_state is not second_state
+    assert first_state.agent is None
+    assert first_state.agent_lock is None
+
+
+def test_initialize_runtime_state_preserves_existing_values_and_applies_overrides() -> None:
+    app = create_app()
+    state = initialize_runtime_state(app, agent="agent-1")
+
+    same_state = initialize_runtime_state(app, redis_lock="redis-lock")
+
+    assert same_state is state
+    assert state.agent == "agent-1"
+    assert state.redis_lock == "redis-lock"
+    assert hasattr(state, "rag_prewarm_task")
 
 
 def test_create_app_hides_unhandled_exception_detail_in_production(

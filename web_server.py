@@ -628,15 +628,27 @@ async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
     _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
     global _agent, _agent_lock
-    if _agent is not None:
+    runtime_state = _runtime_state()
+    if runtime_state is not None and getattr(runtime_state, "agent", None) is not None:
+        _agent = runtime_state.agent
         return _agent
+    if _agent is not None:
+        if runtime_state is not None:
+            runtime_state.agent = _agent
+        return _agent
+    if runtime_state is not None and getattr(runtime_state, "agent_lock", None) is not None:
+        _agent_lock = runtime_state.agent_lock
     if _agent_lock is None:
         _agent_lock = asyncio.Lock()
+        if runtime_state is not None:
+            runtime_state.agent_lock = _agent_lock
     async with _agent_lock:
         if _agent is None:
             _agent = SidarAgent(cfg)
             await _agent.initialize()
             _bind_llm_usage_sink(_agent)
+            if runtime_state is not None:
+                runtime_state.agent = _agent
     return _agent
 
 
@@ -1282,16 +1294,26 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _agent_lock = asyncio.Lock()
     _redis_lock = asyncio.Lock()
     _local_rate_lock = asyncio.Lock()
+    runtime_state = _runtime_state(_app)
+    runtime_state.agent = _agent
+    runtime_state.agent_lock = _agent_lock
+    runtime_state.redis_lock = _redis_lock
+    runtime_state.local_rate_lock = _local_rate_lock
     # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
     await asyncio.to_thread(Config.validate_critical_settings)
     await asyncio.to_thread(_reload_persisted_marketplace_plugins)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
+    runtime_state.rag_prewarm_task = _rag_prewarm_task
     if bool(getattr(cfg, "ENABLE_AUTONOMOUS_CRON", False)):
         _autonomy_cron_stop = asyncio.Event()
         _autonomy_cron_task = asyncio.create_task(_autonomous_cron_loop(_autonomy_cron_stop))
+        runtime_state.autonomy_cron_stop = _autonomy_cron_stop
+        runtime_state.autonomy_cron_task = _autonomy_cron_task
     if bool(getattr(cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
         _nightly_memory_stop = asyncio.Event()
         _nightly_memory_task = asyncio.create_task(_nightly_memory_loop(_nightly_memory_stop))
+        runtime_state.nightly_memory_stop = _nightly_memory_stop
+        runtime_state.nightly_memory_task = _nightly_memory_task
     try:
         yield
     finally:
@@ -1344,6 +1366,12 @@ app = _app_factory.create_app(
     lifespan=_app_lifespan,
     version=str(getattr(cfg, "VERSION", "") or ""),
 )
+
+
+def _runtime_state(application: FastAPI | None = None) -> Any:
+    """Return app-scoped runtime state while keeping legacy globals as aliases."""
+
+    return _app_factory.get_runtime_state(application or app)
 
 
 @app.middleware("http")
