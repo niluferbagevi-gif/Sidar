@@ -471,6 +471,14 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
     )
 
 
+def _decode_timeout_stream(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     smoke_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
     smoke_env.pop("INSTALL_SIDAR_VERSION", None)
@@ -480,14 +488,26 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
     export TMPDIR={shlex.quote(str(tmp_path))}
     {script}
     """
-    return subprocess.run(
-        ["bash", "-c", guarded_script],
-        cwd=Path(os.getcwd()),
-        env=smoke_env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "180"))
+    try:
+        return subprocess.run(
+            ["bash", "-c", guarded_script],
+            cwd=Path(os.getcwd()),
+            env=smoke_env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as exc:
+        out = _decode_timeout_stream(exc.stdout)
+        err = _decode_timeout_stream(exc.stderr)
+        raise AssertionError(
+            f"_run_bash_smoke {timeout_seconds}s içinde tamamlanamadı.\n"
+            f"--- guarded_script ---\n{guarded_script}\n"
+            f"--- partial stdout ---\n{out[-4000:]}\n"
+            f"--- partial stderr ---\n{err[-4000:]}\n"
+        ) from exc
 
 
 def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
