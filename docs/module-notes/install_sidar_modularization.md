@@ -22,6 +22,18 @@ Bu yaklaşım ile:
 - bakım/debug kolaylaşır,
 - dağıtımda tek dosya avantajı korunur.
 
+
+## Modularization roadmap / TODOs
+
+- [ ] **Ollama install step extraction (A/Sorun 2):** İlk taşıma
+  `scripts/install_modules/phases/03_runtime_ollama.sh` içindeki
+  `_ollama_install_step` ile başlatıldı ve uzak betik doğrulaması
+  `scripts/install_modules/utils/remote_script.sh` altında ortaklaştırıldı. Bu TODO,
+  kalan takip işlerini görünür tutar: Ollama kurulum adımının monolitik
+  `install_sidar.sh` içindeki legacy yardımcı fonksiyon bağımlılıkları azaltılmalı,
+  phase modülü tek başına test edilebilir hale getirilmeli ve release bundle üretimi
+  sonrasında bu sınırın korunması CI dokümantasyonunda açıkça izlenmelidir.
+
 ## Cross-module değişken lint sözleşmesi
 
 `install_sidar.sh` ve `scripts/install_modules/` altındaki faz/yardımcı modüller
