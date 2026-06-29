@@ -80,6 +80,42 @@ sidar_is_deterministic_failure_signal() {
     esac
 }
 
+sidar_failure_signature() {
+    local phase="${1:-}"
+    local failed_cmd="${2:-}"
+    local reason="${3:-}"
+    local exit_code="${4:-}"
+    local normalized=""
+    normalized="$(printf '%s' "${phase}|${exit_code}|${failed_cmd}|${reason}" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's#/tmp/[^[:space:]]+#/tmp/<tmp>#g; s#[0-9]{4}-[0-9]{2}-[0-9]{2}t[0-9:]+z#<timestamp>#g; s#[0-9]+(\.[0-9]+)?s#<duration>#g; s#[[:space:]]+# #g')"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$normalized" | sha256sum | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$normalized" | shasum -a 256 | awk '{print $1}'
+        return 0
+    fi
+    printf '%s' "$normalized" | cksum | awk '{print $1}'
+}
+
+sidar_is_non_retryable_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"environmentfilenotfound"*|*"environment.yml"*|*"is_alembic_at_head failed"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 sidar_is_remote_script_checksum_missing() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
@@ -400,6 +436,8 @@ sidar_resume_after_remediation() {
     local resume_runtime_mode="${APP_RUNTIME_MODE:-}"
     local resume_gpu_available="${GPU_AVAILABLE:-}"
     local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
+    local resume_failure_signature="${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}"
+    local resume_failure_phase="${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}"
 
     warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
@@ -412,6 +450,8 @@ sidar_resume_after_remediation() {
         APP_RUNTIME_MODE_SELECTED="$resume_runtime_mode_selected" \
         APP_RUNTIME_MODE="$resume_runtime_mode" \
         GPU_AVAILABLE="$resume_gpu_available" \
+        SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$resume_failure_signature" \
+        SIDAR_INSTALL_LAST_FAILURE_PHASE="$resume_failure_phase" \
         bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \
         "$ORIGINAL_SCRIPT_PATH" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
@@ -424,6 +464,7 @@ sidar_handle_install_failure() {
     local phase="${SIDAR_CURRENT_INSTALL_PHASE:-}"
     local attempt="${SIDAR_INSTALL_REMEDIATION_ATTEMPT:-0}"
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
+    local failure_signature=""
 
     [[ -n "$phase" ]] || return 1
     if sidar_phase_is_informational "$phase"; then
@@ -435,12 +476,26 @@ sidar_handle_install_failure() {
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
+    failure_signature="$(sidar_failure_signature "$phase" "$failed_cmd" "$reason" "$exit_code")"
 
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
         return 1
     fi
+    if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında öğrenilmiş kalıcı hata imzası algılandı; retry/resume atlanıyor."
+        sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;signature=${failure_signature}"
+        return 1
+    fi
+    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
+        warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
+        sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
+        return 1
+    fi
+    export SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$failure_signature"
+    export SIDAR_INSTALL_LAST_FAILURE_PHASE="$phase"
+
     if sidar_is_deterministic_failure_signal "$failed_cmd" "$reason"; then
         warn "Auto-heal: ${phase} fazında deterministik failure sinyali algılandı; retry bütçesi ${max_attempts} ile sınırlandı."
     fi

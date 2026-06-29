@@ -1363,6 +1363,42 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "auto-heal fails fast for learned non-retryable installer failures" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=06_services
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_handle_install_failure 1 20 "pytest smoke" "EnvironmentFileNotFound: environment.yml"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"öğrenilmiş kalıcı hata imzası"* ]]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
+@test "auto-heal cuts off repeated failure signatures before transient retry budget" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=06_services
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=1
+    SIDAR_INSTALL_LAST_FAILURE_PHASE=06_services
+    SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$(sidar_failure_signature 06_services "docker compose up" "service still starting" 1)"
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_handle_install_failure 1 20 "docker compose up" "service still starting"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"aynı failure imzası tekrarlandı"* ]]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {
