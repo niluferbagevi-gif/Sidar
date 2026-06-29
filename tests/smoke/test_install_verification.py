@@ -545,6 +545,12 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
+        mkdir -p "$TMPDIR/fake-bin"
+        printf '%s\n' '#!/usr/bin/env bash' \
+          'echo "python3 should not be required for SIDAR_INSTALL_TEST_MODE version resolution" >&2' \
+          'exit 42' > "$TMPDIR/fake-bin/python3"
+        chmod +x "$TMPDIR/fake-bin/python3"
+        export PATH="$TMPDIR/fake-bin:$PATH"
         source install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
           echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
