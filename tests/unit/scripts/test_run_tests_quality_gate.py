@@ -1594,10 +1594,12 @@ def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() ->
 
 
 def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
-    assert "no-retry;manual-fix-required" in script
-    assert "deterministiktir" in script
-    assert "auto-heal/retry aynı duvara çarpar" in script
+    remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "no-retry;manual-fix-required" in remote_script_util
+    assert "deterministiktir" in remote_script_util
+    assert "auto-heal/retry aynı duvara çarpar" in remote_script_util
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:
@@ -1692,13 +1694,25 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
         encoding="utf-8"
     )
 
-    assert "remote_script_checksum_hint()" in script
+    remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
+        encoding="utf-8"
+    )
+    ollama_phase = Path("scripts/install_modules/phases/03_runtime_ollama.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "remote_script_checksum_hint()" in remote_script_util
+    assert "download_verified_script()" in remote_script_util
     assert "load_remote_script_checksums()" in script
     assert "scripts/install_modules/remote_checksums.env" in script
-    assert "Supply-chain doğrulamasını korumak" in script
-    assert r'less "\$tmp"' in script
-    assert r"export ${checksum_var}=\$(sha256sum" in script
-    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1" in script
+    assert "utils/remote_script.sh" in script
+    assert "phases/03_runtime_ollama.sh" in script
+    assert "_ollama_install_step" in script
+    assert "download_verified_script" in ollama_phase
+    assert "Supply-chain doğrulamasını korumak" in remote_script_util
+    assert r'less "\$tmp"' in remote_script_util
+    assert r"export ${checksum_var}=\$(sha256sum" in remote_script_util
+    assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1" in remote_script_util
     assert "UV_INSTALL_SHA256" in docs
     assert "OLLAMA_INSTALL_SHA256" in docs
     assert "https://astral.sh/uv/install.sh" in docs

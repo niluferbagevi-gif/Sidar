@@ -120,10 +120,14 @@ olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
 çalıştırmadan önce `scripts/install_modules/remote_checksums.env` içindeki reviewed
 default checksum değerlerini yükler, ardından `UV_INSTALL_SHA256` ve
 `OLLAMA_INSTALL_SHA256` değişkenlerini kontrol eder. Shell ortamında açıkça verilen
-değerler dosyadaki default değerlerden önceliklidir. Bu değişkenler boşsa ve `ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça
-verilmemişse kurulum fail-fast durur. Amaç, `https://astral.sh/uv/install.sh` veya
-`https://ollama.com/install.sh` üzerinde upstream içerik değişimi/supply-chain riski
-oluştuğunda sessizce doğrulanmamış betik çalıştırmamaktır.
+değerler dosyadaki default değerlerden önceliklidir. Uzak betik indirme/doğrulama
+yardımcıları `scripts/install_modules/utils/remote_script.sh` dosyasındadır; Ollama
+kurulum adımı da `scripts/install_modules/phases/03_runtime_ollama.sh` içinde
+`_ollama_install_step` olarak tutulur. Bu değişkenler boşsa ve
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça verilmemişse kurulum fail-fast durur.
+Amaç, `https://astral.sh/uv/install.sh` veya `https://ollama.com/install.sh` üzerinde
+upstream içerik değişimi/supply-chain riski oluştuğunda sessizce doğrulanmamış betik
+çalıştırmamaktır.
 
 Operatör yeni bir WSL/Ubuntu makinede önce betiği indirip incelemeli, sonra aynı
 dosyadan SHA-256 üretip export etmelidir:

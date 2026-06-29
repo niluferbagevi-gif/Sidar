@@ -358,6 +358,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/wsl_integration_autofix.sh"
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
+    "utils/remote_script.sh"
     "utils/python_env.sh"
     "utils/database_url.sh"
     "utils/db_credentials.sh"
@@ -369,6 +370,7 @@ INSTALL_UTILITY_MODULES=(
 INSTALL_PHASE_MODULES=(
     "phases/01_context.sh"
     "phases/02_repo.sh"
+    "phases/03_runtime_ollama.sh"
     "phases/03_runtime.sh"
     "phases/04_workspace.sh"
     "phases/14_react.sh"
@@ -393,6 +395,7 @@ f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/instal
 eb93ab9d8ff921fec94eaf21dcf022dfadb844d6eb235e8e56a5e4686d41fec1  scripts/install_modules/phases/01_context.sh
 b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
+987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 e10dd4041e0d19f0b1248ac4e51119dc9341197b48192a87ca136e3a8401018a  scripts/install_modules/phases/06_services.sh
@@ -408,6 +411,7 @@ f9c9f268c61f70650e61ceb1aa25d203b753c064ea9e6babb27306b43ef061d0  scripts/instal
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
 67152035ee32162fb63c6d0afdc14df79ea85825dfee1b15704bb45f38014354  scripts/install_modules/utils/playwright_ubuntu_override.sh
 b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/install_modules/utils/python_env.sh
+1bdf714bc3bad4670ae2e97c3a70ce2193698ee17901d0030da146cd799cc981  scripts/install_modules/utils/remote_script.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
 59a71da6b15017249756e9acdc3a1fe6d807c529a7ced398923bb0f81e672674  scripts/install_modules/utils/wsl_integration_autofix.sh
@@ -803,6 +807,7 @@ sidar_source_install_utils \
     "wsl_integration_autofix.sh" \
     "wsl_gpu_preflight.sh" \
     "gpu_utils.sh" \
+    "remote_script.sh" \
     "python_env.sh" \
     "database_url.sh" \
     "db_credentials.sh" \
@@ -949,6 +954,7 @@ compute_sha256() {
     fi
 }
 
+# shellcheck disable=SC2034  # Set by remote_script.sh and consumed by phase helpers.
 DOWNLOADED_SCRIPT_FILE=""
 
 validate_downloaded_script_file() {
@@ -1130,65 +1136,6 @@ verify_offline_bundle_manifest() {
     export npm_config_cache="${bundle_dir}/npm/cache"
     export OLLAMA_MODELS="${bundle_dir}/ollama/models"
     ok "Çevrimdışı bundle doğrulandı ve wheel/npm/Ollama cache yolları ayarlandı."
-}
-
-remote_script_checksum_hint() {
-    local script_url="$1"
-    local script_label="$2"
-    local checksum_var="${script_label^^}_SHA256"
-
-    cat <<EOF
-${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
-Bu kök neden deterministiktir: ortam değişkeni sağlanmadan auto-heal/retry aynı duvara çarpar (no-retry;manual-fix-required).
-Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):
-  tmp=\$(mktemp)
-  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o "\$tmp"
-  less "\$tmp"                    # betiği gözden geçir
-  export ${checksum_var}=\$(sha256sum "\$tmp" | awk '{print \$1}')
-  rm -f "\$tmp"
-  ./install_sidar.sh
-Alternatif (sadece bilinçli test/izole ortam): risk kabulüyle ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 kullanın.
-EOF
-}
-
-download_verified_script() {
-    local script_url="$1"
-    local expected_sha="$2"
-    local script_label="$3"
-    local script_file
-    script_file=$(mktemp)
-
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        rm -f "$script_file"
-        fail "${script_label}: --offline/--air-gapped modunda uzak betik indirilemez (${script_url}). offline_packages kullanın."
-    fi
-
-    if ! curl -fsSL --retry 3 --retry-all-errors \
-        -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
-        "$script_url" -o "$script_file"; then
-        rm -f "$script_file"
-        fail "${script_label} indirilemedi: ${script_url}"
-    fi
-
-    local actual_sha
-    actual_sha=$(compute_sha256 "$script_file")
-
-    if [[ -z "$expected_sha" ]]; then
-        if [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
-            local checksum_hint
-            checksum_hint="$(remote_script_checksum_hint "$script_url" "$script_label")"
-            rm -f "$script_file"
-            fail "$checksum_hint"
-        fi
-        warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
-    elif [[ "$actual_sha" != "$expected_sha" ]]; then
-        rm -f "$script_file"
-        fail "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
-    else
-        ok "${script_label} checksum doğrulaması başarılı."
-    fi
-
-    DOWNLOADED_SCRIPT_FILE="$script_file"
 }
 
 docker_repo_platform() {
@@ -3640,91 +3587,7 @@ ensure_prerequisites() {
         warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
-    # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum
-    if ! ollama -v &>/dev/null; then
-        warn "Ollama bulunamadı veya kurulumu bozuk. İndiriliyor..."
-        if command -v sudo &>/dev/null; then
-            # Eski bozuk dosya kalıntılarını temizle
-            sudo rm -f /usr/local/bin/ollama
-            info "Ollama kurulumu başlatılıyor..."
-            local ollama_install_script=""
-            if [[ "$OFFLINE_MODE" == true ]]; then
-                ollama_install_script="$(resolve_offline_package_file "ollama/install.sh" || true)"
-                if [[ -z "$ollama_install_script" ]]; then
-                    ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
-                fi
-                if [[ -z "$ollama_install_script" ]]; then
-                    ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
-                fi
-                if [[ -z "$ollama_install_script" ]]; then
-                    fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
-                fi
-            else
-                DOWNLOADED_SCRIPT_FILE=""
-                download_verified_script \
-                    "https://ollama.com/install.sh" \
-                    "${OLLAMA_INSTALL_SHA256:-}" \
-                    "ollama_install"
-                validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "ollama_install"
-                ollama_install_script="$DOWNLOADED_SCRIPT_FILE"
-            fi
-
-            info "Ollama kurulumu öncesi sudo yetkisi doğrulanıyor..."
-            if [[ "$NO_INTERACTION" == true ]]; then
-                sudo -n -v || fail "Ollama kurulumu için sudo yetkisi gerekli. --ci/--no-interaction modunda şifresiz sudo veya önceden doğrulanmış sudo oturumu beklenir."
-            else
-                sudo -v || fail "Ollama kurulumu için sudo doğrulaması başarısız oldu."
-            fi
-
-            local sudo_keepalive_pid=""
-            (
-                while true; do
-                    sudo -n -v 2>/dev/null || exit 0
-                    sleep "${SUDO_KEEPALIVE_INTERVAL_SECONDS:-30}"
-                done
-            ) &
-            sudo_keepalive_pid=$!
-            info "Ollama kurulumu boyunca sudo zaman damgası canlı tutulacak (pid=${sudo_keepalive_pid})."
-
-            local _ollama_rc=0
-            if sh "$ollama_install_script"; then
-                _ollama_rc=0
-            else
-                _ollama_rc=$?
-            fi
-
-            if [[ -n "$sudo_keepalive_pid" ]]; then
-                kill "$sudo_keepalive_pid" 2>/dev/null || true
-                wait "$sudo_keepalive_pid" 2>/dev/null || true
-            fi
-            [[ "$ollama_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-
-            if (( _ollama_rc != 0 )); then
-                if command -v ollama &>/dev/null && ollama -v &>/dev/null; then
-                    warn "Ollama install.sh rc=${_ollama_rc} döndü (büyük olasılıkla sudo timestamp expire); ancak 'ollama -v' yanıt veriyor, kurulum tamamlanmış kabul ediliyor."
-                else
-                    fail "Ollama kurulumu başarısız (rc=${_ollama_rc}). /var/log/syslog veya logs/install_*.log dosyalarını kontrol edin."
-                fi
-            fi
-            ok "Ollama başarıyla kuruldu."
-        else
-            warn "Sudo yetkisi bulunamadı. Kurulum manuel yapılmalı: https://ollama.com"
-        fi
-    else
-        ok "Ollama zaten kurulu."
-    fi
-
-    # Servisin anlık olarak yanıt verip vermediğini kontrol et
-    OLLAMA_VERSION_URL=$(resolve_ollama_version_url "$SCRIPT_DIR/.env")
-    local ollama_healthcheck_wait_seconds="${OLLAMA_API_HEALTHCHECK_MAX_WAIT_SECONDS:-30}"
-    info "Ollama API healthcheck bekleme döngüsü başlatılıyor (maksimum ${ollama_healthcheck_wait_seconds} saniye)..."
-    if wait_for_ollama_api_ready "$OLLAMA_VERSION_URL" "$ollama_healthcheck_wait_seconds" 1; then
-        ok "Ollama API servisi aktif (${OLLAMA_VERSION_URL})."
-    else
-        warn "Ollama kurulu ancak API servisi şu an yanıt vermiyor (${OLLAMA_VERSION_URL})."
-        info "Model indirmek veya servisi başlatmak için ayrı bir terminalde 'ollama serve' komutunu çalıştırabilirsiniz."
-        info "Alternatif olarak .env içinde AI_PROVIDER=gemini veya openai kullanabilirsiniz."
-    fi
+    _ollama_install_step
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
