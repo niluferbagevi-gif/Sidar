@@ -22,6 +22,34 @@ Bu yaklaşım ile:
 - bakım/debug kolaylaşır,
 - dağıtımda tek dosya avantajı korunur.
 
+## Cross-module değişken lint sözleşmesi
+
+`install_sidar.sh` ve `scripts/install_modules/` altındaki faz/yardımcı modüller
+aynı Bash sürecinde `source` edilerek çalışır. Bu nedenle ana betikte hazırlanan
+bazı durum değişkenleri, ShellCheck'in tek dosya analizinde okunmuyor gibi görünse
+de sourced modüller tarafından tüketilir. Yeni modülerleştirme veya taşıma
+çalışmalarında bu değişkenler için aşağıdaki kural zorunludur:
+
+- Cross-module okunan her değişkenin ilk atamasının hemen üstüne tek satırlık
+  `# shellcheck disable=SC2034` yorumu eklenmelidir.
+- Yorum, değişkeni okuyan sourced modül yolunu açıkça belirtmelidir; örn.
+  `scripts/install_modules/phases/12_alembic.sh reads this sourced state`.
+- Aynı değişken runtime içinde başka dallarda tekrar atanıyor ve ShellCheck aynı
+  atama noktasında SC2034 üretiyorsa, ilgili atamanın hemen üstünde de aynı
+  kapsamı açıklayan dar yorum kullanılmalıdır.
+- Sadece SC2034'ü susturmak için değişken `export` edilmemelidir; `export` yalnız
+  gerçekten child process ortamına aktarılması gereken değerlerde tercih edilir.
+- Yeni faz veya yardımcı modül eklendiğinde, ana betikte hazırlanan cross-module
+  state değişkenleri için bu dosyadaki sözleşme ve ilgili yorumlar PR içinde
+  birlikte güncellenmelidir.
+
+Örnek:
+
+```bash
+# shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced state.
+MIGRATION_DOCKER_POLICY="auto"
+```
+
 ## Kullanıcı yönlendirmesi: çevrimiçi varsayılan dinamik modül indirme
 
 Standart çevrimiçi kullanıcı akışında ana yöntem, kök `install_sidar.sh` dosyasının
