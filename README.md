@@ -420,8 +420,11 @@ OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 #### Ollama/uv uzak betik hash doğrulaması
 
 Yeni Ubuntu/WSL kurulumunda sistemde `ollama` veya `uv` yoksa, doğrulanmamış uzak
-betik çalıştırmayı önlemek için aşağıdaki değişkenlerden ilgili olanı kurulumdan
-önce ayarlayın. Bu akış TOFU (trust-on-first-use) hazırlığıdır: indirilen betiği
+betik çalıştırmayı önlemek için kurulum önce
+`scripts/install_modules/remote_checksums.env` dosyasındaki reviewed default hash
+değerlerini yükler; operatörün shell'de verdiği `OLLAMA_INSTALL_SHA256` /
+`UV_INSTALL_SHA256` değerleri her zaman bu dosyadan önceliklidir. Hash yoksa
+aşağıdaki değişkenlerden ilgili olanı kurulumdan önce ayarlayın. Bu akış TOFU (trust-on-first-use) hazırlığıdır: indirilen betiği
 önce inceleyin, sonra hash'i aynı dosyadan üretin.
 
 ```bash

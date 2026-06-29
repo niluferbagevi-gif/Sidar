@@ -64,6 +64,19 @@ mask_install_log_stream() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+load_remote_script_checksums() {
+    local checksum_file="${SIDAR_REMOTE_CHECKSUMS_FILE:-${SCRIPT_DIR}/scripts/install_modules/remote_checksums.env}"
+    if [[ -f "$checksum_file" ]]; then
+        # shellcheck source=/dev/null
+        # shellcheck disable=SC1090
+        source "$checksum_file"
+        printf 'ℹ️   Uzak kurulum betiği checksum varsayılanları yüklendi: %s\n' "$checksum_file" >&2
+    fi
+}
+
+load_remote_script_checksums
+
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
 SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
 

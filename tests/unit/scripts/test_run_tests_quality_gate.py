@@ -1648,6 +1648,43 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "tekrar menü göstermeden" in launch_body
 
 
+
+def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operator_env(
+    tmp_path: Path,
+) -> None:
+    checksum_file = tmp_path / "remote_checksums.env"
+    checksum_file.write_text(
+        ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n'
+        ': "${UV_INSTALL_SHA256:=file-uv}"\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"""
+            set -Eeuo pipefail
+            export SIDAR_INSTALL_TEST_MODE=1
+            export SIDAR_REMOTE_CHECKSUMS_FILE={checksum_file!s}
+            export OLLAMA_INSTALL_SHA256=operator-ollama
+            set --
+            source ./install_sidar.sh
+            printf 'ollama=%s\n' "$OLLAMA_INSTALL_SHA256"
+            printf 'uv=%s\n' "$UV_INSTALL_SHA256"
+            """,
+        ],
+        check=False,
+        capture_output=True,
+        env=os.environ.copy(),
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "ollama=operator-ollama" in result.stdout
+    assert "uv=file-uv" in result.stdout
+    assert "remote_checksums.env" in result.stderr
+
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     docs = Path("README.md").read_text(encoding="utf-8")
@@ -1656,6 +1693,8 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     )
 
     assert "remote_script_checksum_hint()" in script
+    assert "load_remote_script_checksums()" in script
+    assert "scripts/install_modules/remote_checksums.env" in script
     assert "Supply-chain doğrulamasını korumak" in script
     assert r'less "\$tmp"' in script
     assert r"export ${checksum_var}=\$(sha256sum" in script
@@ -1663,9 +1702,11 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     assert "UV_INSTALL_SHA256" in docs
     assert "OLLAMA_INSTALL_SHA256" in docs
     assert "https://astral.sh/uv/install.sh" in docs
+    assert "scripts/install_modules/remote_checksums.env" in docs
     assert "https://ollama.com/install.sh" in docs
     assert "UV_INSTALL_SHA256" in modular_note
     assert "OLLAMA_INSTALL_SHA256" in modular_note
+    assert "scripts/install_modules/remote_checksums.env" in modular_note
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
