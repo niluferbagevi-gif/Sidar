@@ -375,7 +375,7 @@ a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/instal
 3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
 368cb0354fed38dafec44d6fa2021dc77ac50f4a1c57140300ce67d0019e6e84  scripts/install_modules/phases/14_react.sh
 58071b371a362db7449615bba14881688ee772348da7544c347191525dbfdff5  scripts/install_modules/utils/database_url.sh
-812f561b75d57484da3a695d94927ebc7bf2b2cbb9e85ffd1f340edae83af66c  scripts/install_modules/utils/db_credentials.sh
+2b6cfda3e03e5e23fc9e40aab6fe524790cb00fce2a1dd739c5b6f1665c0d8aa  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
 f9c9f268c61f70650e61ceb1aa25d203b753c064ea9e6babb27306b43ef061d0  scripts/install_modules/utils/install_remediation.sh
@@ -4446,8 +4446,12 @@ harden_database_credentials() {
 
         if is_weak_secret_value "$db_password"; then
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced recovery password.
-                PRE_HARDEN_DB_PASSWORD="$db_password"
+                if declare -F sidar_record_pre_harden_db_password >/dev/null 2>&1; then
+                    sidar_record_pre_harden_db_password "$db_password"
+                else
+                    # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced recovery password.
+                    PRE_HARDEN_DB_PASSWORD="$db_password"
+                fi
                 local generated_password=""
                 generated_password=$(generate_secure_token 24)
                 if [[ -n "$generated_password" ]]; then

@@ -6,6 +6,12 @@ SIDAR_INSTALL_UTIL_DB_CREDENTIALS_SH_LOADED=1
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the workspace phase.
 
+sidar_record_pre_harden_db_password() {
+    # Single writer for the password recovery handoff consumed by
+    # scripts/install_modules/phases/12_alembic.sh during auth repair.
+    # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced recovery password.
+    PRE_HARDEN_DB_PASSWORD="${1:-}"
+}
 
 harden_database_credentials() {
     local env_file="$1"
@@ -32,8 +38,7 @@ harden_database_credentials() {
 
         if is_weak_secret_value "$db_password"; then
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                # shellcheck disable=SC2034  # summarized later by installer status output.
-                PRE_HARDEN_DB_PASSWORD="$db_password"
+                sidar_record_pre_harden_db_password "$db_password"
                 local generated_password=""
                 generated_password=$(generate_secure_token 24)
                 if [[ -n "$generated_password" ]]; then
@@ -85,4 +90,3 @@ harden_database_credentials() {
         fi
     fi
 }
-

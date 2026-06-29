@@ -50,6 +50,23 @@ de sourced modüller tarafından tüketilir. Yeni modülerleştirme veya taşım
 MIGRATION_DOCKER_POLICY="auto"
 ```
 
+## DB credential hardening sorumluluk sınırı
+
+Veritabanı parola güçlendirme akışının canonical implementation'ı
+`scripts/install_modules/utils/db_credentials.sh` içindedir. Kök `install_sidar.sh`
+dosyasındaki aynı isimli fonksiyon, eski monolitik/source test akışları ve geçiş
+dönemi için tutulan uyumluluk katmanıdır; workspace fazı çalışırken
+`scripts/install_modules/phases/04_workspace.sh` ilgili utility dosyalarını tekrar
+source ederek modüler implementation'ı etkin hale getirir.
+
+`PRE_HARDEN_DB_PASSWORD` değişkeni sadece Alembic auth-repair aşamasına eski
+parolayı recovery adayı olarak aktarmak için kullanılmalıdır. Yeni kod,
+bu değişkeni doğrudan set etmek yerine `db_credentials.sh` içindeki
+`sidar_record_pre_harden_db_password` yardımcısını çağırmalıdır. Böylece
+`scripts/install_modules/phases/12_alembic.sh` tarafından okunan recovery handoff
+tek yazıcı üzerinden yönetilir; `12_alembic.sh` bu değeri üretmez veya değiştirmez,
+yalnızca okur.
+
 ## Kullanıcı yönlendirmesi: çevrimiçi varsayılan dinamik modül indirme
 
 Standart çevrimiçi kullanıcı akışında ana yöntem, kök `install_sidar.sh` dosyasının
