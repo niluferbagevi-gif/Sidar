@@ -40,7 +40,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `cli.py` → `docs/module-notes/cli.py.md`
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
-- `core/db.py` → `docs/module-notes/core/db.py.md`
+- `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
