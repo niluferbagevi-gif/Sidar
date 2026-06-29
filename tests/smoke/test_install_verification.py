@@ -522,6 +522,7 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
+    assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
     assert "uv venv" in installer_text
     assert "set -e" not in alembic_prelude

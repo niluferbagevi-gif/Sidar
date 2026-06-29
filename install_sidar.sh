@@ -762,7 +762,11 @@ Geçersiz modül yüklemeyi önlemek için kurulum durduruldu."
     fi
 }
 
-verify_install_module_hashes_if_present
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" != "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+    info "SIDAR_INSTALL_TEST_MODE=1 source akışı: modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek."
+else
+    verify_install_module_hashes_if_present
+fi
 if [[ "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" == "1" ]]; then
     info "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1; hash doğrulaması sonrası erken çıkış."
     exit 0
