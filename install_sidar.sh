@@ -369,7 +369,7 @@ b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/instal
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-aa7528463d7f7ac388a55173838f48e8a94b9015673562015ad0a882f9a3dd24  scripts/install_modules/phases/06_services.sh
+794e264308df2b4b4687b6d65a1a956d967522c5006ac83aebc07c4995b87dcc  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
@@ -2453,6 +2453,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
     SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
+    SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1|0  Enable/disable the local-mode pre-service installer smoke gate
     SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  Equivalent to --enable-autonomous-cron
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
     SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary installer module directory for debugging
@@ -2517,6 +2518,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
     SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
+    SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1|0  Local modda servis öncesi installer smoke gate'i aç/kapat
     SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  --enable-autonomous-cron eşdeğeri
     SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
     SIDAR_KEEP_TEMP_MODULES=1|0  Geçici kurulum modül dizinini debug için korur

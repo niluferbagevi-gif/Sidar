@@ -343,20 +343,25 @@ run_pre_service_installer_smoke_gate() {
         return 0
     fi
 
-    local smoke_log_dir="${SIDAR_INSTALL_ARTIFACT_DIR:-$SCRIPT_DIR/artifacts/install}/smoke"
-    local smoke_log="$smoke_log_dir/pre_service_installer_smoke.log"
-    mkdir -p "$smoke_log_dir" 2>/dev/null || true
+    local smoke_log
+    smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
 
-    info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov). Log: $smoke_log"
+    info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov)."
     if (
-        cd "$SCRIPT_DIR" && \
-            SIDAR_INSTALL_TEST_MODE=1 \
-            uv run pytest -q --no-cov -x tests/smoke/test_install_verification.py < /dev/null
-    ) > >(tee "$smoke_log") 2> >(tee -a "$smoke_log" >&2); then
+        set -o pipefail
+        (
+            cd "$SCRIPT_DIR" && \
+                SIDAR_INSTALL_TEST_MODE=1 \
+                SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 \
+                uv run pytest -q --no-cov -x tests/smoke/test_install_verification.py \
+                </dev/null
+        ) 2>&1 | tee "$smoke_log"
+    ); then
         ok "Servis öncesi installer smoke gate başarılı."
+        rm -f "$smoke_log"
     else
-        warn "Servis öncesi installer smoke gate çıktısı: $smoke_log"
-        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu."
+        warn "Smoke gate çıktısı: $smoke_log"
+        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: $smoke_log)."
     fi
 }
 

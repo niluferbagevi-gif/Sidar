@@ -67,6 +67,15 @@ executes it with `SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1`. This avoids testing
 stale `main` from pull requests while still matching the documented end-user
 `wget ... && chmod +x ... && ./install_sidar.sh` flow.
 
+
+For local installer runs, the pre-service smoke gate in local runtime mode can be bypassed only as an explicit operator escape hatch:
+
+```bash
+SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh --runtime-mode=local
+```
+
+Keep the bypass off for normal development and CI; it exists for diagnosing installer or environment breakage before Docker services start.
+
 If this gate fails, synchronize the manifests before merging:
 
 ```bash
