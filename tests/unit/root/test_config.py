@@ -34,6 +34,26 @@ def test_config_uses_split_domain_modules() -> None:
     assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
 
 
+def test_config_legacy_import_surface_survives_split() -> None:
+    from config import (  # noqa: PLC0415 - verifies public compatibility import path.
+        Config,
+        OLLAMA_BATCH_POLICY,
+        SANDBOX_LIMITS,
+        get_config,
+        get_dotenv_load_report,
+        register_config_reload_callback,
+        reload_environment,
+    )
+
+    assert Config is config.Config
+    assert OLLAMA_BATCH_POLICY is config_llm.OLLAMA_BATCH_POLICY
+    assert SANDBOX_LIMITS is config.SANDBOX_LIMITS
+    assert get_config is config.get_config
+    assert get_dotenv_load_report is config.get_dotenv_load_report
+    assert register_config_reload_callback is config.register_config_reload_callback
+    assert reload_environment is config.reload_environment
+
+
 def test_get_bool_env_strict_true_false_and_default(monkeypatch):
     monkeypatch.setenv("FLAG_A", " true ")
     monkeypatch.setenv("FLAG_B", "FALSE")
