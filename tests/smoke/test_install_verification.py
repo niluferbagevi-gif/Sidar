@@ -510,7 +510,36 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
         ) from exc
 
 
-def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
+def _fake_python3_fails_snippet() -> str:
+    return """
+    mkdir -p "$TMPDIR/fake-bin"
+    printf '%s\n' '#!/usr/bin/env bash' \
+      'echo "python3 should not be required for SIDAR_INSTALL_TEST_MODE version resolution" >&2' \
+      'exit 42' > "$TMPDIR/fake-bin/python3"
+    chmod +x "$TMPDIR/fake-bin/python3"
+    export PATH="$TMPDIR/fake-bin:$PATH"
+    """
+
+
+def _diagnose_sourced_install_version(tmp_path: Path) -> str:
+    diagnosis = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        {_fake_python3_fails_snippet()}
+        source install_sidar.sh >/dev/null
+        printf '%s' "${{INSTALL_SIDAR_VERSION:-EMPTY}}"
+        """,
+        tmp_path,
+    )
+    return (
+        f"--- diagnosis args ---\n{diagnosis.args}\n"
+        f"--- diagnosis returncode ---\n{diagnosis.returncode}\n"
+        f"--- diagnosis stdout ---\n{diagnosis.stdout!r}\n"
+        f"--- diagnosis stderr ---\n{diagnosis.stderr!r}\n"
+    )
+
+
+def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
@@ -542,15 +571,16 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
             "Conda yalnızca docs/archive altında tarihsel kayıt olarak kalabilir."
         )
 
+
+def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
+
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
-        mkdir -p "$TMPDIR/fake-bin"
-        printf '%s\n' '#!/usr/bin/env bash' \
-          'echo "python3 should not be required for SIDAR_INSTALL_TEST_MODE version resolution" >&2' \
-          'exit 42' > "$TMPDIR/fake-bin/python3"
-        chmod +x "$TMPDIR/fake-bin/python3"
-        export PATH="$TMPDIR/fake-bin:$PATH"
+        {_fake_python3_fails_snippet()}
         source install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
           echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
@@ -559,7 +589,13 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
         """,
         tmp_path,
     )
-    assert version_result.returncode == 0, version_result.stdout + version_result.stderr
+    assert version_result.returncode == 0, (
+        "INSTALL_SIDAR_VERSION sourced akışta beklenen değere set olmadı.\n"
+        f"--- args ---\n{version_result.args}\n"
+        f"--- stdout ---\n{version_result.stdout!r}\n"
+        f"--- stderr ---\n{version_result.stderr!r}\n"
+        f"--- INSTALL_SIDAR_VERSION (post-run) ---\n{_diagnose_sourced_install_version(tmp_path)}"
+    )
 
 
 def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
