@@ -8,7 +8,6 @@ editable olmayan kaynak ağaçlarında ise `pyproject.toml` okunur. Böylece
 from __future__ import annotations
 
 import tomllib
-from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 
@@ -32,7 +31,7 @@ def resolve_version() -> str:
 
     try:
         resolved = package_version(PACKAGE_NAME).strip()
-    except PackageNotFoundError:
+    except Exception:
         resolved = ""
     return resolved or _read_pyproject_version()
 
