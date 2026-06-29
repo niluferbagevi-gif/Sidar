@@ -517,6 +517,7 @@ AUTO_BUILD_DOCKER_TEST_IMAGE="${AUTO_BUILD_DOCKER_TEST_IMAGE:-0}"
 AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"
 DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
+QUALITY_GATE_EXIT_AFTER_FIRST_FAIL="${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL:-0}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -1471,6 +1472,10 @@ PY
     "${coverage_pytest_opts[@]}"
     --cov-fail-under=0
   )
+  if [ "${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL}" = "1" ]; then
+    echo "ℹ️ QUALITY_GATE_EXIT_AFTER_FIRST_FAIL=1; pytest ilk failure sonrası duracak (-x)."
+    base_pytest_cmd+=(-x)
+  fi
 
   local enable_gpu_tests="${ENABLE_GPU_TESTS:-auto}"
   if [ "${enable_gpu_tests}" = "auto" ]; then

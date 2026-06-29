@@ -1250,6 +1250,7 @@ EOF
     APP_RUNTIME_MODE_SELECTED=local
     sidar_source_install_utils() { events+=("source:$*"); }
     phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
+    run_pre_service_installer_smoke_gate() { events+=(run_pre_service_installer_smoke_gate); }
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
     run_migrations() { events+=(run_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
@@ -1260,7 +1261,24 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "06 services stops before Docker launch when pre-service installer smoke fails" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=local
+    phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
+    run_pre_service_installer_smoke_gate() { events+=(run_pre_service_installer_smoke_gate); return 42; }
+    launch_docker_services() { events+=(unexpected_launch); return 99; }
+    run_smoke_tests() { events+=(unexpected_smoke); return 99; }
+
+    if sidar_phase_services_and_validation; then
+      exit 1
+    fi
+    [[ "${events[*]}" == "phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate" ]]
   '
   [ "$status" -eq 0 ]
 }

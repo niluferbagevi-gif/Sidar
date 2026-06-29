@@ -321,9 +321,42 @@ sidar_phase06_report_production_postgres_password_alignment() {
     fi
 }
 
+run_pre_service_installer_smoke_gate() {
+    local gate_enabled="${SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE:-1}"
+    gate_enabled="$(normalize_bool "$gate_enabled")"
+    [[ -z "$gate_enabled" ]] && gate_enabled="true"
+
+    if [[ "$gate_enabled" != "true" ]]; then
+        info "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0; servis öncesi installer smoke gate atlandı."
+        return 0
+    fi
+    if [[ "${RUN_SMOKE_TESTS_MODE:-prompt}" == "never" ]]; then
+        info "--skip-smoke-test verildiği için servis öncesi installer smoke gate atlandı."
+        return 0
+    fi
+    if [[ ! -f "$SCRIPT_DIR/tests/smoke/test_install_verification.py" ]]; then
+        warn "Servis öncesi installer smoke gate atlandı: tests/smoke/test_install_verification.py bulunamadı."
+        return 0
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        warn "Servis öncesi installer smoke gate atlandı: uv bulunamadı."
+        return 0
+    fi
+
+    info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov)."
+    if (cd "$SCRIPT_DIR" && SIDAR_INSTALL_TEST_MODE=1 uv run pytest -q --no-cov -x tests/smoke/test_install_verification.py); then
+        ok "Servis öncesi installer smoke gate başarılı."
+    else
+        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu."
+    fi
+}
+
 sidar_phase_services_and_validation() {
     if declare -F phase06_docker_daemon_gate_or_fail >/dev/null 2>&1; then
         phase06_docker_daemon_gate_or_fail
+    fi
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
+        run_pre_service_installer_smoke_gate || return $?
     fi
     # Tüm altyapı (jaeger/prometheus/grafana dahil) smoke testlerden önce hazır olsun.
     launch_docker_services

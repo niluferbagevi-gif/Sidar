@@ -236,6 +236,12 @@ jobs:
           tests/quality/test_llm_quality_gate.py
           tests/quality/test_shellcheck_quality_gate.py
 
+      - name: Run critical smoke import gates with exit-first
+        run: >-
+          uv run pytest -q -x --no-cov
+          tests/smoke/test_boot.py
+          tests/smoke/test_imports.py
+
       - name: Run installer/runtime smoke verification tests
         run: >-
           uv run pytest -q --no-cov
@@ -263,6 +269,7 @@ jobs:
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
+          QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
