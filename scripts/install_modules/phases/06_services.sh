@@ -384,6 +384,7 @@ run_pre_service_installer_smoke_gate() {
         else
             sed -n '1,200p' "$smoke_log" | sed 's/^/  | /' || true
         fi
+        warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
         fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: $smoke_log)."
     fi
 }

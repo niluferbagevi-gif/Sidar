@@ -26,6 +26,11 @@ if [[ "${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; th
         echo "ℹ️ Tespit edilen normal kullanıcı: ${SUDO_USER}. Dizin sahipliği bozulduysa düzeltme:" >&2
         guard_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         printf '   sudo chown -R %s:%s %q\n' "$SUDO_USER" "$SUDO_USER" "${guard_script_dir}/.venv" >&2
+    else
+        guard_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        echo "ℹ️ Root oturumundan çıkıp normal kullanıcı hesabınızla tekrar çalıştırın." >&2
+        echo "ℹ️ Eğer root altında çalıştırma sonrası sahiplik bozulduysa normal kullanıcı adınızla şu komutu uygulayın:" >&2
+        printf '   sudo chown -R <normal-kullanıcı>:<normal-kullanıcı> %q\n' "${guard_script_dir}/.venv" >&2
     fi
     exit 1
 fi
@@ -211,7 +216,15 @@ SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
-    mkdir -p "$LOG_DIR"
+    if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+        LOG_DIR="${TMPDIR:-/tmp}"
+        printf '⚠️  Log dizini oluşturulamıyor, geçici olarak %s kullanılacak.\n' "$LOG_DIR" >&2
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+    elif [[ -d "$LOG_DIR" && ! -w "$LOG_DIR" ]]; then
+        LOG_DIR="${TMPDIR:-/tmp}"
+        printf '⚠️  Log dizini yazılamıyor, geçici olarak %s kullanılacak.\n' "$LOG_DIR" >&2
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+    fi
     LOG_FILE="$LOG_DIR/install_$(date -u +%Y-%m-%dT%H%M%SZ).log"
     exec > >(mask_install_log_stream | tee -i >(sed -u -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g' > "$LOG_FILE")) 2>&1
 else
@@ -369,7 +382,7 @@ b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/instal
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-8cb4df53ccc40a54a925ff9046347a3c0b78865ed940db9367fcab47225046ff  scripts/install_modules/phases/06_services.sh
+e10dd4041e0d19f0b1248ac4e51119dc9341197b48192a87ca136e3a8401018a  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
