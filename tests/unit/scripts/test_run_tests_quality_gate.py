@@ -1590,8 +1590,16 @@ def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() ->
     assert "UV_INSTALL_SHA256" in combined
     assert "https://ollama.com/install.sh" in combined
     assert "https://astral.sh/uv/install.sh" in combined
+    assert "NEXT STEP → OLLAMA_INSTALL_SHA256=<hash> ./install_sidar.sh" in combined
+    assert "NEXT STEP → UV_INSTALL_SHA256=<hash> ./install_sidar.sh" in combined
     assert "TOFU" in combined or "tofu" in combined.lower()
     assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" in combined
+
+    remediation_util = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "remote_script_checksum_hint" in remediation_util
+    assert r'less "\$tmp"' not in remediation_util
 
 
 def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall() -> None:

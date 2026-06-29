@@ -5,7 +5,7 @@ SIDAR_INSTALL_UTIL_REMOTE_SCRIPT_SH_LOADED=1
 remote_script_checksum_hint() {
     local script_url="$1"
     local script_label="$2"
-    local checksum_var="${script_label^^}_SHA256"
+    local checksum_var="${3:-${script_label^^}_SHA256}"
 
     cat <<EOF
 NEXT STEP → ${checksum_var}=<hash> ./install_sidar.sh  (detay aşağıda)

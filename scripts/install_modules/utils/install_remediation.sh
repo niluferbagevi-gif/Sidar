@@ -411,18 +411,26 @@ sidar_emit_remediation_guidance() {
             *) script_url="<ilgili uzak betik URL'i>" ;;
         esac
         warn "Auto-heal: ${phase} fazı uzak betik checksum metadata eksikliği nedeniyle durdu. Bu durum self-heal ile güvenli biçimde onarılamaz (retry aynı duvara çarpar)."
-        warn "Çözüm (önerilen TOFU akışı): betiği indir, gözden geçir ve aynı içerikten SHA-256 üret:"
-        if [[ -n "$missing_var" && "$script_url" != "<"* ]]; then
-            warn "  tmp=\$(mktemp)"
-            warn "  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o \"\$tmp\""
-            warn "  less \"\$tmp\"                    # betiği gözden geçir"
-            warn "  export ${missing_var}=\$(sha256sum \"\$tmp\" | awk '{print \$1}')"
-            warn "  rm -f \"\$tmp\""
-            warn "  ./install_sidar.sh"
-        else
-            warn "  İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
+        if ! declare -F remote_script_checksum_hint >/dev/null 2>&1; then
+            local remediation_utils_dir=""
+            remediation_utils_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            # shellcheck source=/dev/null
+            # shellcheck disable=SC1090
+            source "${remediation_utils_dir}/remote_script.sh"
         fi
-        warn "Alternatif (sadece bilinçli test amaçlı): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh"
+        if [[ -n "$missing_var" && "$script_url" != "<"* ]]; then
+            local script_label="remote_install"
+            case "$missing_var" in
+                OLLAMA_INSTALL_SHA256) script_label="ollama_install" ;;
+                UV_INSTALL_SHA256) script_label="uv_install" ;;
+            esac
+            while IFS= read -r guidance_line; do
+                warn "$guidance_line"
+            done < <(remote_script_checksum_hint "$script_url" "$script_label" "$missing_var")
+        else
+            warn "NEXT STEP → <ilgili>_SHA256=<hash> ./install_sidar.sh  (detay aşağıda)"
+            warn "İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
+        fi
         return 0
     fi
 
