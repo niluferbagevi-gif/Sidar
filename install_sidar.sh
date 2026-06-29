@@ -2688,16 +2688,33 @@ fi
 resolve_install_sidar_version() {
     local resolved_version=""
 
-    if command -v python3 &>/dev/null && [[ -f "$SCRIPT_DIR/sidar_version.py" ]]; then
-        resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>/dev/null || true
+    # Önce pyproject.toml üzerinden deterministik sed çıkarımı denenir.
+    # Bu yol Python yorumlayıcısına veya kurulu paket metadata'sına
+    # bağımlı değildir; smoke gate gibi pre-service akışlarda en güvenilir
+    # tek doğruluk kaynağıdır.
+    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
+    fi
+
+    # sed boş döndüyse (örn. paketlenmiş wheel runtime'da pyproject.toml yok)
+    # sidar_version.py paket metadata fallback'ine başvur. Hata ayıklama
+    # modunda stderr korunur ki sessiz Python import hataları görünür olsun.
+    if [[ -z "${resolved_version//[[:space:]]/}" ]] \
+        && command -v python3 &>/dev/null \
+        && [[ -f "$SCRIPT_DIR/sidar_version.py" ]]; then
+        if [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]]; then
+            resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' || true
 from sidar_version import resolve_version
 print(resolve_version())
 PY_VERSION
 )
-    fi
-
-    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-        resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
+        else
+            resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>/dev/null || true
+from sidar_version import resolve_version
+print(resolve_version())
+PY_VERSION
+)
+        fi
     fi
 
     resolved_version="${resolved_version//[[:space:]]/}"
