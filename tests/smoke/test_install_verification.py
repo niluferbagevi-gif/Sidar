@@ -479,6 +479,30 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
     )
 
 
+def test_install_sidar_test_mode_and_uv_only_contract() -> None:
+    repo_root = Path(os.getcwd())
+    installer = repo_root / "install_sidar.sh"
+    installer_text = installer.read_text(encoding="utf-8")
+
+    assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
+    assert 'main "$@"' in installer_text
+    assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
+    assert "mask_install_log_stream | tee" in installer_text
+    assert "uv venv" in installer_text
+
+    legacy_install_markers = (
+        "conda env create",
+        "environment.yml",
+        "miniconda",
+    )
+    lowered_installer = installer_text.lower()
+    for marker in legacy_install_markers:
+        assert marker not in lowered_installer, (
+            f"{marker!r} aktif install_sidar.sh akışına geri dönmemeli; "
+            "Conda yalnızca docs/archive altında tarihsel kayıt olarak kalabilir."
+        )
+
+
 def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"

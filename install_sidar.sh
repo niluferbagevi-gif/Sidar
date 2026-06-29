@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidar AI — Kurulum Betiği (install_sidar.sh)
 # Sürüm : pyproject.toml / sidar_version.py üzerinden otomatik çözülür
-# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX GPU ailesi (PyTorch CUDA wheel dinamik seçilir)
+# Hedef : WSL2 / Ubuntu / uv venv + NVIDIA RTX GPU ailesi (PyTorch CUDA wheel dinamik seçilir)
 #
 # Kullanım:
 #   chmod +x install_sidar.sh
@@ -3391,7 +3391,7 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
-    info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak (Conda/Miniconda adımları devre dışı)."
+    info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak; eski paket yöneticisi tabanlı ortam kurulumları devre dışı."
     info "Not: install_sidar.sh betiğini sudo ile çalıştırmayın; gerekli yerde sudo apt-get çağrılarını betik kendisi yapar."
 
     if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
