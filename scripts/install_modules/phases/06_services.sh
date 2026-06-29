@@ -343,6 +343,23 @@ run_pre_service_installer_smoke_gate() {
         return 0
     fi
 
+    local expected_installer_version=""
+    local sourced_installer_version=""
+    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        expected_installer_version="$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)"
+    fi
+    if [[ -n "${expected_installer_version//[[:space:]]/}" ]]; then
+        sourced_installer_version="$(
+            cd "$SCRIPT_DIR" && \
+                SIDAR_INSTALL_TEST_MODE=1 \
+                bash -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
+                2>/dev/null || true
+        )"
+        if [[ "$sourced_installer_version" != "$expected_installer_version" ]]; then
+            fail "Servis öncesi installer smoke gate başarısız: source install_sidar.sh sonrası INSTALL_SIDAR_VERSION=${sourced_installer_version:-<boş>} beklenen pyproject.toml sürümüyle (${expected_installer_version}) eşleşmiyor."
+        fi
+    fi
+
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
 

@@ -524,6 +524,7 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
+    assert "export INSTALL_SIDAR_VERSION" in installer_text
     assert "uv venv" in installer_text
     assert "set -e" not in alembic_prelude
     assert "set -u" not in alembic_prelude
@@ -545,7 +546,10 @@ def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
         f"""
         set -euo pipefail
         source install_sidar.sh >/dev/null
-        test "$INSTALL_SIDAR_VERSION" = {shlex.quote(pyproject_version)}
+        if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          exit 1
+        fi
         """,
         tmp_path,
     )
