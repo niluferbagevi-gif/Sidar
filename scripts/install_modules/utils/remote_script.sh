@@ -8,6 +8,7 @@ remote_script_checksum_hint() {
     local checksum_var="${script_label^^}_SHA256"
 
     cat <<EOF
+NEXT STEP → ${checksum_var}=<hash> ./install_sidar.sh  (detay aşağıda)
 ${script_label} checksum değeri tanımlı değil. Supply-chain doğrulamasını korumak için ${checksum_var} değişkenini ayarlayın.
 Bu kök neden deterministiktir: ortam değişkeni sağlanmadan auto-heal/retry aynı duvara çarpar (no-retry;manual-fix-required).
 Örnek güvenli TOFU hazırlığı (betiği inceleyip hash'i aynı içerikten üretin):

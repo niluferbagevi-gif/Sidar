@@ -1462,6 +1462,7 @@ def test_install_sidar_download_verified_script_fails_after_http_200_when_checks
     assert "https://example.invalid/install.sh" in curl_log.read_text(encoding="utf-8")
     assert "uv_install checksum değeri tanımlı değil" in result.stderr
     assert "UV_INSTALL_SHA256" in result.stderr
+    assert "NEXT STEP → UV_INSTALL_SHA256=<hash> ./install_sidar.sh" in result.stderr
     assert "no-retry;manual-fix-required" in result.stderr
     assert "uv_install indirilemedi" not in result.stderr
 
@@ -1597,6 +1598,7 @@ def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wal
     remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
         encoding="utf-8"
     )
+    assert "NEXT STEP → ${checksum_var}=<hash> ./install_sidar.sh" in remote_script_util
     assert "no-retry;manual-fix-required" in remote_script_util
     assert "deterministiktir" in remote_script_util
     assert "auto-heal/retry aynı duvara çarpar" in remote_script_util
@@ -1709,6 +1711,7 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     assert "phases/03_runtime_ollama.sh" in script
     assert "_ollama_install_step" in script
     assert "download_verified_script" in ollama_phase
+    assert "NEXT STEP → ${checksum_var}=<hash> ./install_sidar.sh" in remote_script_util
     assert "Supply-chain doğrulamasını korumak" in remote_script_util
     assert r'less "\$tmp"' in remote_script_util
     assert r"export ${checksum_var}=\$(sha256sum" in remote_script_util
