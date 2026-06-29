@@ -2384,10 +2384,12 @@ INTEGRATION_TEST_STATUS="atlandı"
 CI_FULL_VALIDATION_STATUS="atlandı"
 AUDIT_STATUS="atlandı"
 AUTONOMOUS_CRON_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced state.
 MIGRATION_DOCKER_POLICY="auto"
 DOCKER_DB_SERVICES_STARTED=false
 DB_PASSWORD_HARDENED=false
 POSTGRES_VOLUME_RESET_DONE=false
+# shellcheck disable=SC2034  # scripts/install_modules/{phases/12_alembic.sh,utils/db_credentials.sh} read this sourced state.
 PRE_HARDEN_DB_PASSWORD=""
 AUDIO_SESSION_RESTART_RECOMMENDED=false
 WSL2=false
@@ -4444,6 +4446,7 @@ harden_database_credentials() {
 
         if is_weak_secret_value "$db_password"; then
             if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
+                # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced recovery password.
                 PRE_HARDEN_DB_PASSWORD="$db_password"
                 local generated_password=""
                 generated_password=$(generate_secure_token 24)
@@ -6010,6 +6013,7 @@ prepare_docker_for_migrations() {
             info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
         fi
         info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
         MIGRATION_DOCKER_POLICY="disabled"
         return
     fi
@@ -6022,6 +6026,7 @@ prepare_docker_for_migrations() {
         wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
         return
     elif [[ "$AUTO_START_DOCKER_SERVICES" == "false" ]]; then
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
         MIGRATION_DOCKER_POLICY="disabled"
         info "AUTO_INSTALL: START_DOCKER_SERVICES=false olduğu için migrasyon sırasında servis başlatma atlandı."
         return
@@ -6038,6 +6043,7 @@ prepare_docker_for_migrations() {
     start_for_migration=$(prompt_yes_no_with_timeout_default_yes "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] ")
     case "${start_for_migration:-E}" in
         [HhNn]*)
+            # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
             MIGRATION_DOCKER_POLICY="disabled"
             info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
             ;;
