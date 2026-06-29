@@ -1244,6 +1244,37 @@ def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
     assert strict_mode_pos < default_pos < phase_runner_pos
 
 
+def test_install_remediation_treats_timeout_exit_codes_as_non_retryable() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            source ./scripts/install_modules/utils/install_remediation.sh
+            for rc in -9 124; do
+                if sidar_is_non_retryable_failure_code "$rc"; then
+                    echo "non-retryable:$rc"
+                else
+                    echo "retryable:$rc"
+                fi
+            done
+            if sidar_is_non_retryable_failure_code 1; then
+                echo retryable-code-marked-non-retryable
+            else
+                echo retryable:1
+            fi
+            """,
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == ["non-retryable:-9", "non-retryable:124", "retryable:1"]
+
+
 def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
     result = subprocess.run(
         [

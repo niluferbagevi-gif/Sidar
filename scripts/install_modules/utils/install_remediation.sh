@@ -49,7 +49,7 @@ sidar_phase_is_informational() {
 sidar_is_non_retryable_failure_code() {
     local exit_code="${1:-0}"
     case "$exit_code" in
-        2|127) return 0 ;;
+        -9|2|124|127) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -442,6 +442,7 @@ sidar_resume_after_remediation() {
     warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
     export SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt"
+    # shellcheck disable=SC2016  # Inner bash expands env-provided cwd and argv after exec.
     exec env \
         SIDAR_INSTALL_RESUME_FROM_PHASE="$phase" \
         SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt" \
