@@ -6,6 +6,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -471,7 +472,10 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
 
 
 def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    smoke_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    smoke_env.pop("INSTALL_SIDAR_VERSION", None)
     guarded_script = f"""
+    unset INSTALL_SIDAR_VERSION
     export SIDAR_INSTALL_TEST_MODE=1
     export TMPDIR={shlex.quote(str(tmp_path))}
     {script}
@@ -479,19 +483,21 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
     return subprocess.run(
         ["bash", "-c", guarded_script],
         cwd=Path(os.getcwd()),
-        env={**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)},
+        env=smoke_env,
         capture_output=True,
         text=True,
         timeout=60,
     )
 
 
-def test_install_sidar_test_mode_and_uv_only_contract() -> None:
+def test_install_sidar_test_mode_and_uv_only_contract(tmp_path: Path) -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
     alembic_phase = repo_root / "scripts" / "install_modules" / "phases" / "12_alembic.sh"
     alembic_prelude = alembic_phase.read_text(encoding="utf-8").split("resolve_alembic_python", maxsplit=1)[0]
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
@@ -500,6 +506,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert "uv venv" in installer_text
     assert "set -e" not in alembic_prelude
     assert "set -u" not in alembic_prelude
+    assert f"v{pyproject_version}" not in installer_text
 
     legacy_install_markers = (
         "conda env create",
@@ -512,6 +519,16 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
             f"{marker!r} aktif install_sidar.sh akışına geri dönmemeli; "
             "Conda yalnızca docs/archive altında tarihsel kayıt olarak kalabilir."
         )
+
+    version_result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source install_sidar.sh >/dev/null
+        test "$INSTALL_SIDAR_VERSION" = {shlex.quote(pyproject_version)}
+        """,
+        tmp_path,
+    )
+    assert version_result.returncode == 0, version_result.stdout + version_result.stderr
 
 
 def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
