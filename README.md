@@ -417,7 +417,7 @@ OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 > betiği inceleyip aynı içerikten hash üretmeli veya risk kabulüyle doğrulamayı
 > açıkça devre dışı bırakmalıdır.
 
-#### Ollama/uv uzak betik hash doğrulaması
+#### Remote script checksum
 
 Yeni Ubuntu/WSL kurulumunda sistemde `ollama` veya `uv` yoksa, doğrulanmamış uzak
 betik çalıştırmayı önlemek için kurulum önce
@@ -547,7 +547,7 @@ chmod +x install_sidar.sh
 ./install_sidar.sh --ci
 
 # Uzak uv/Ollama kurulum betikleri gerekiyorsa önce SHA-256 değişkenlerini
-# hazırlayın (yukarıdaki "Ollama/uv uzak betik hash doğrulaması" bölümüne bakın).
+# hazırlayın (bkz. [Remote script checksum](#remote-script-checksum)).
 ./install_sidar.sh
 
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
@@ -681,16 +681,11 @@ Ne yapmalısınız:
 
 - **Bilinçli risk kabulü (yalnızca güvenilir, izole test ortamlarında ve yalnız
   modül/uzak betik doğrulaması için)**:
-  Çalıştırılacak modül kodunu doğrulamadan devam etmeyi kabul ediyorsanız:
-
-  ```bash
-  ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 bash install_sidar.sh
-  ```
-
-  Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen scriptlere
-  karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır. Çekirdek manifest
-  hatalarında bu bayrak çözüm değildir; ana çözüm main branch manifest sync veya
-  manifesti güncel belirli bir commit/tag kullanmaktır.
+  Doğrulanmamış modül veya uzak betik çalıştırma bypass'ı için tek kaynak
+  [Remote script checksum](#remote-script-checksum) bölümüdür. Üretim/host
+  makinelerde **kullanmayın**; çekirdek manifest hatalarında bu bypass çözüm
+  değildir. Ana çözüm main branch manifest sync veya manifesti güncel belirli
+  bir commit/tag kullanmaktır.
 
 ---
 
