@@ -2708,6 +2708,17 @@ resolve_install_sidar_version() {
         resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
     fi
 
+    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/scripts/version_probe.py" && -f "$SCRIPT_DIR/pyproject.toml" ]] && command -v python3 &>/dev/null; then
+        python_version_error="$(mktemp "${TMPDIR:-/tmp}/sidar_version_resolve.XXXXXX")" || python_version_error=""
+        resolved_version=$(python3 "$SCRIPT_DIR/scripts/version_probe.py" --pyproject "$SCRIPT_DIR/pyproject.toml" 2>"${python_version_error:-/dev/null}" || true)
+        if [[ -n "$python_version_error" ]]; then
+            if [[ -z "${resolved_version//[[:space:]]/}" && -s "$python_version_error" ]]; then
+                warn "scripts/version_probe.py üzerinden sürüm okunamadı; sidar_version.py fallback denenecek: $(tr '\n' ' ' < "$python_version_error")"
+            fi
+            rm -f "$python_version_error"
+        fi
+    fi
+
     if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/sidar_version.py" && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v python3 &>/dev/null; then
         python_version_error="$(mktemp "${TMPDIR:-/tmp}/sidar_version_resolve.XXXXXX")" || python_version_error=""
         resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>"${python_version_error:-/dev/null}" || true

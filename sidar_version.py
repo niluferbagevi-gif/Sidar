@@ -7,23 +7,20 @@ editable olmayan kaynak ağaçlarında ise `pyproject.toml` okunur. Böylece
 
 from __future__ import annotations
 
-import tomllib
-from importlib.metadata import version as package_version
+import importlib.metadata as importlib_metadata
 from pathlib import Path
+
+from scripts.version_probe import resolve_pyproject_version
 
 PACKAGE_NAME = "sidar"
 _FALLBACK_VERSION = "0.0.0"
+PackageNotFoundError = importlib_metadata.PackageNotFoundError
+package_version = importlib_metadata.version
 
 
 def _read_pyproject_version() -> str:
     pyproject_path = Path(__file__).resolve().parent / "pyproject.toml"
-    try:
-        with pyproject_path.open("rb") as file_obj:
-            project = tomllib.load(file_obj).get("project", {})
-    except (OSError, tomllib.TOMLDecodeError):
-        return _FALLBACK_VERSION
-    raw_version = str(project.get("version", "")).strip()
-    return raw_version or _FALLBACK_VERSION
+    return resolve_pyproject_version(pyproject_path)
 
 
 def resolve_version() -> str:
