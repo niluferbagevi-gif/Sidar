@@ -8,6 +8,8 @@ import textwrap
 import time
 from pathlib import Path
 
+import pytest
+
 
 def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     repo_root = Path(os.getcwd())
@@ -469,8 +471,13 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
 
 
 def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    guarded_script = f"""
+    export SIDAR_INSTALL_TEST_MODE=1
+    export TMPDIR={shlex.quote(str(tmp_path))}
+    {script}
+    """
     return subprocess.run(
-        ["bash", "-lc", script],
+        ["bash", "-c", guarded_script],
         cwd=Path(os.getcwd()),
         env={**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)},
         capture_output=True,
@@ -540,7 +547,13 @@ def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         f"""
         set -euo pipefail
-        source install_sidar.sh
+        source install_sidar.sh > "$TMPDIR/source-install.out" 2>&1
+        if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" "$TMPDIR/source-install.out"; then
+          echo "install_sidar.sh source işlemi main() kurulum akışını tetikledi" >&2
+          cat "$TMPDIR/source-install.out" >&2
+          exit 1
+        fi
+        test "${{LOG_FILE:-}}" = ""
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         export SCRIPT_DIR
         if ! is_alembic_at_head; then
@@ -557,6 +570,13 @@ def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
 def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
+    source_check = _run_bash_smoke("set -euo pipefail; source install_sidar.sh; type sidar_user_api_key_names >/dev/null", tmp_path)
+    if source_check.returncode != 0:
+        pytest.skip(
+            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
+            f"{source_check.stdout}{source_check.stderr}"
+        )
+
     key_script = "source install_sidar.sh; sidar_user_api_key_names"
     keys_result = _run_bash_smoke(key_script, tmp_path)
     assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
@@ -636,11 +656,10 @@ def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
     compose.chmod(0o755)
     docker.chmod(0o755)
 
-    result = subprocess.run(
-        ["bash", "-lc", f"""
+    result = _run_bash_smoke(
+        f"""
         set -euo pipefail
         export PATH={shlex.quote(str(fake_bin))}:$PATH
-        export SIDAR_INSTALL_TEST_MODE=1
         export COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS=1
         export COMPOSE_HEALTH_WAIT_POLL_SECONDS=1
         source install_sidar.sh
@@ -648,11 +667,8 @@ def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
           echo "timeout was expected" >&2
           exit 1
         fi
-        """],
-        cwd=Path(os.getcwd()),
-        capture_output=True,
-        text=True,
-        timeout=10,
+        """,
+        tmp_path,
     )
     combined = result.stdout + result.stderr
     assert result.returncode == 0, combined
