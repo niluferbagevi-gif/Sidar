@@ -60,7 +60,9 @@ harden_database_credentials() {
                     fi
                     local db_name_for_container="${db_host_and_name#*/}"
                     db_name_for_container="${db_name_for_container%%\?*}"
-                    [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
+                    if [[ -z "$db_name_for_container" || "$db_name_for_container" == "$db_host_and_name" ]]; then
+                        db_name_for_container="sidar"
+                    fi
                     local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
                     if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
                         sed_inplace "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"

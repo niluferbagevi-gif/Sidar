@@ -375,7 +375,7 @@ a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/instal
 3122dcb6f041dae9974094eaaf6c491f4ae60a74d02df1495d2167b0a573d962  scripts/install_modules/phases/13_playwright.sh
 368cb0354fed38dafec44d6fa2021dc77ac50f4a1c57140300ce67d0019e6e84  scripts/install_modules/phases/14_react.sh
 58071b371a362db7449615bba14881688ee772348da7544c347191525dbfdff5  scripts/install_modules/utils/database_url.sh
-2b6cfda3e03e5e23fc9e40aab6fe524790cb00fce2a1dd739c5b6f1665c0d8aa  scripts/install_modules/utils/db_credentials.sh
+6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
 de763c8956246e60017bb2e9eb06dfc36884cddfabd6352f7cfcd734423f0c6b  scripts/install_modules/utils/env_utils.sh
 170e1ddc9382183601a944fd1bd22512ba98712bd57abeee5b7b9887bd78b41c  scripts/install_modules/utils/gpu_utils.sh
 f9c9f268c61f70650e61ceb1aa25d203b753c064ea9e6babb27306b43ef061d0  scripts/install_modules/utils/install_remediation.sh
@@ -3592,9 +3592,15 @@ ensure_prerequisites() {
             local ollama_install_script=""
             if [[ "$OFFLINE_MODE" == true ]]; then
                 ollama_install_script="$(resolve_offline_package_file "ollama/install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
-                [[ -z "$ollama_install_script" ]] && ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
-                [[ -n "$ollama_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
+                if [[ -z "$ollama_install_script" ]]; then
+                    ollama_install_script="$(resolve_offline_package_file "ollama_install.sh" || true)"
+                fi
+                if [[ -z "$ollama_install_script" ]]; then
+                    ollama_install_script="$(resolve_offline_package_file "install_ollama.sh" || true)"
+                fi
+                if [[ -z "$ollama_install_script" ]]; then
+                    fail "Çevrimdışı mod: offline_packages altında Ollama kurulum betiği bulunamadı (ollama/install.sh, ollama_install.sh, install_ollama.sh)."
+                fi
             else
                 DOWNLOADED_SCRIPT_FILE=""
                 download_verified_script \
@@ -4473,7 +4479,9 @@ harden_database_credentials() {
                     fi
                     local db_name_for_container="${db_host_and_name#*/}"
                     db_name_for_container="${db_name_for_container%%\?*}"
-                    [[ -n "$db_name_for_container" && "$db_name_for_container" != "$db_host_and_name" ]] || db_name_for_container="sidar"
+                    if [[ -z "$db_name_for_container" || "$db_name_for_container" == "$db_host_and_name" ]]; then
+                        db_name_for_container="sidar"
+                    fi
                     local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
                     if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
                         sed_inplace "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
@@ -5357,7 +5365,9 @@ is_known_weak_secret_value() {
     local key="$1" value="${2:-}" weak_file line entry_key entry_value
     [[ -n "${value//[[:space:]]/}" ]] || return 1
     weak_file="$(known_weak_secrets_file)"
-    [[ -n "$weak_file" && -f "$weak_file" ]] || return 1
+    if [[ -z "$weak_file" || ! -f "$weak_file" ]]; then
+        return 1
+    fi
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%$'\r'}"
