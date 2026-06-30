@@ -479,7 +479,9 @@ def _decode_timeout_stream(value: bytes | str | None) -> str:
     return value
 
 
-def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_bash_smoke(
+    script: str, tmp_path: Path, timeout_seconds: int | None = None
+) -> subprocess.CompletedProcess[str]:
     smoke_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
     smoke_env.pop("INSTALL_SIDAR_VERSION", None)
     guarded_script = f"""
@@ -488,7 +490,8 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
     export TMPDIR={shlex.quote(str(tmp_path))}
     {script}
     """
-    timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "180"))
+    if timeout_seconds is None:
+        timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "30"))
     try:
         return subprocess.run(
             ["bash", "-c", guarded_script],
@@ -502,11 +505,27 @@ def _run_bash_smoke(script: str, tmp_path: Path) -> subprocess.CompletedProcess[
     except subprocess.TimeoutExpired as exc:
         out = _decode_timeout_stream(exc.stdout)
         err = _decode_timeout_stream(exc.stderr)
+        try:
+            diag = subprocess.run(
+                ["bash", "-c", "echo BASH_OK=$$; type python3 || true; command -v sed"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                stdin=subprocess.DEVNULL,
+            )
+            diag_text = (
+                f"--- timeout diagnostic returncode ---\n{diag.returncode}\n"
+                f"--- timeout diagnostic stdout ---\n{diag.stdout[-4000:]}\n"
+                f"--- timeout diagnostic stderr ---\n{diag.stderr[-4000:]}\n"
+            )
+        except subprocess.TimeoutExpired as diag_exc:
+            diag_text = f"--- timeout diagnostic ---\nbash/python/sed diagnostic timed out after {diag_exc.timeout}s\n"
         raise AssertionError(
             f"_run_bash_smoke {timeout_seconds}s içinde tamamlanamadı.\n"
             f"--- guarded_script ---\n{guarded_script}\n"
             f"--- partial stdout ---\n{out[-4000:]}\n"
             f"--- partial stderr ---\n{err[-4000:]}\n"
+            f"{diag_text}"
         ) from exc
 
 
@@ -603,6 +622,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         fi
         """,
         tmp_path,
+        timeout_seconds=10,
     )
     assert version_result.returncode == 0, (
         "INSTALL_SIDAR_VERSION sourced akışta beklenen değere set olmadı.\n"
