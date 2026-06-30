@@ -77,6 +77,27 @@ load_remote_script_checksums() {
 
 load_remote_script_checksums
 
+# Fast-path: version-probe-only akışı (örn. CI smoke gate) için tüm ağır
+# subprocess çağrılarını (readlink, sed, sha256sum, helper source, manifest
+# verify) atlayarak pure-bash regex ile pyproject.toml'dan sürümü çözüp
+# kullanıcının yavaş fork() ortamlarında (örn. WSL2 + Defender) 10s'lik
+# timeout'a takılmadan dönmemizi sağlar.
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
+    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
+    if [[ -z "$INSTALL_SIDAR_VERSION" && -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        while IFS= read -r _sidar_version_probe_line; do
+            if [[ "$_sidar_version_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "$SCRIPT_DIR/pyproject.toml"
+        unset _sidar_version_probe_line
+    fi
+    [[ -n "$INSTALL_SIDAR_VERSION" ]] || INSTALL_SIDAR_VERSION="0.0.0"
+    export INSTALL_SIDAR_VERSION
+    return 0 2>/dev/null || exit 0
+fi
+
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
 SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
 
@@ -848,17 +869,6 @@ if [[ "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" == "1" ]]; then
     info "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1; hash doğrulaması sonrası erken çıkış."
     exit 0
 fi
-if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
-    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
-    if is_blank "$INSTALL_SIDAR_VERSION"; then
-        info "INSTALL_SIDAR_VERSION boş çözüldü; güvenli fallback sürümü kullanılacak."
-        warn "Installer sürümü pyproject.toml/sidar_version.py üzerinden okunamadı; INSTALL_SIDAR_VERSION=0.0.0 olarak ayarlanıyor."
-        INSTALL_SIDAR_VERSION="0.0.0"
-    fi
-    export INSTALL_SIDAR_VERSION
-    return 0 2>/dev/null || exit 0
-fi
-
 validate_install_utility_modules
 sidar_source_install_utils "install_remediation.sh"
 sidar_source_install_utils \
