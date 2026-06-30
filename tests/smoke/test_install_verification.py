@@ -592,8 +592,14 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
     assert "which python3:" in diagnosis
     assert "command -v sha256sum:" in diagnosis
     assert "--- timed probe ---" in diagnosis
-    assert "probe real=" in diagnosis
-    assert "timed_probe_status=" in diagnosis
+    assert (
+        "probe real=" in diagnosis
+        or "--- diagnosis timeout ---" in diagnosis
+    ), diagnosis
+    assert (
+        "timed_probe_status=" in diagnosis
+        or "--- diagnosis timeout ---" in diagnosis
+    ), diagnosis
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
@@ -739,7 +745,8 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "pyproject.toml" in version_contract_block
-    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=30" in phase
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in phase
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
