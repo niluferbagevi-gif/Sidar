@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # REACT_UI_STATUS is consumed by installer summary phases.
 
 # ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────
+maybe_upgrade_npm_latest() {
+    local npm_bin="${1:-npm}"
+    local upgrade_raw="${SIDAR_UPGRADE_NPM_LATEST:-${UPGRADE_NPM_LATEST:-0}}"
+    upgrade_raw="$(echo "$upgrade_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+    case "$upgrade_raw" in
+        1|true|yes|y|evet|e|on)
+            info "SIDAR_UPGRADE_NPM_LATEST etkin; npm@latest global güncellemesi deneniyor..."
+            if "$npm_bin" install -g npm@latest --no-audit --no-fund; then
+                ok "npm güncellendi: $("$npm_bin" -v 2>/dev/null || echo 'sürüm alınamadı')"
+            else
+                warn "npm@latest güncellemesi başarısız oldu; mevcut npm ile devam edilecek."
+            fi
+            ;;
+        *)
+            info "npm major update notice gürültüsünü azaltmak için npm update notifier kapalı çalıştırılacak. Global npm güncellemesi için SIDAR_UPGRADE_NPM_LATEST=1 kullanın."
+            ;;
+    esac
+}
+
 setup_react_frontend() {
     step "React Web Arayüzü"
 
@@ -28,6 +49,9 @@ setup_react_frontend() {
         REACT_UI_STATUS="npm_yok"
         return
     fi
+    export npm_config_update_notifier=false
+    export NPM_CONFIG_UPDATE_NOTIFIER=false
+    maybe_upgrade_npm_latest "$npm_bin"
 
     local node_bin=""
     node_bin="$(resolve_native_binary_path node || true)"

@@ -1236,6 +1236,18 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'module_dir "/phases' in bundler
 
 
+def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade() -> None:
+    react_phase = Path("scripts/install_modules/phases/14_react.sh").read_text(encoding="utf-8")
+
+    assert "maybe_upgrade_npm_latest()" in react_phase
+    assert "SIDAR_UPGRADE_NPM_LATEST" in react_phase
+    assert "UPGRADE_NPM_LATEST" in react_phase
+    assert 'install -g npm@latest --no-audit --no-fund' in react_phase
+    assert "npm_config_update_notifier=false" in react_phase
+    assert "NPM_CONFIG_UPDATE_NOTIFIER=false" in react_phase
+    assert react_phase.index("maybe_upgrade_npm_latest") < react_phase.index("npm ci")
+
+
 def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_install_rc() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     ollama_block = script[
