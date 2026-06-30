@@ -49,6 +49,35 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+# Zero-fork erken probe: SIDAR_INSTALL_VERSION_PROBE_ONLY=1 verildiğinde betiği,
+# SCRIPT_DIR çözümlemesi (dirname/$ subshell), helper source ve sha256 forku gibi
+# pahalı işlemleri ATLATARAK pure-bash parameter expansion ile pyproject.toml'dan
+# sürümü okuyup tek bir external/clone yapmadan döner. WSL2 + Defender'da her
+# fork ~3 saniye sürebildiği için bu blok smoke gate timeout sözleşmesini korur.
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
+    _sidar_probe_src="${BASH_SOURCE[0]:-$0}"
+    case "$_sidar_probe_src" in
+        */*) _sidar_probe_dir="${_sidar_probe_src%/*}" ;;
+        *)   _sidar_probe_dir="." ;;
+    esac
+    _sidar_probe_version="${INSTALL_SIDAR_VERSION:-}"
+    if [[ -z "${_sidar_probe_version//[[:space:]]/}" && -f "${_sidar_probe_dir}/pyproject.toml" ]]; then
+        while IFS= read -r _sidar_probe_line; do
+            if [[ "$_sidar_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                _sidar_probe_version="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "${_sidar_probe_dir}/pyproject.toml"
+    fi
+    if [[ -z "${_sidar_probe_version//[[:space:]]/}" ]]; then
+        _sidar_probe_version="0.0.0"
+    fi
+    INSTALL_SIDAR_VERSION="$_sidar_probe_version"
+    export INSTALL_SIDAR_VERSION
+    unset _sidar_probe_src _sidar_probe_dir _sidar_probe_version _sidar_probe_line
+    return 0 2>/dev/null || exit 0
+fi
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz.
 # Filtre önce terminal/log fan-out'una girer; böylece set -x, sed hata çıktısı
 # veya beklenmeyen tool çıktıları DATABASE_URL/parola/token değerlerini hem
