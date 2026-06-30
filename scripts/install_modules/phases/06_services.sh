@@ -353,11 +353,13 @@ run_pre_service_installer_smoke_gate() {
         local sourced_rc=0
         smoke_preflight_log="$(mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX")" || fail "Smoke gate version preflight log dosyası oluşturulamadı."
         sourced_installer_version="$(
-            cd "$SCRIPT_DIR" && \
-                SIDAR_INSTALL_TEST_MODE=1 \
-                bash -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
-                </dev/null
-        )" 2>"$smoke_preflight_log" || sourced_rc=$?
+            {
+                cd "$SCRIPT_DIR" && \
+                    SIDAR_INSTALL_TEST_MODE=1 \
+                    bash -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
+                    </dev/null
+            } 2>"$smoke_preflight_log"
+        )" || sourced_rc=$?
         if [[ "$sourced_rc" -ne 0 || "$sourced_installer_version" != "$expected_installer_version" ]]; then
             warn "Smoke gate version preflight stderr ($smoke_preflight_log):"
             sed -n '1,80p' "$smoke_preflight_log" | sed 's/^/  | /' || true

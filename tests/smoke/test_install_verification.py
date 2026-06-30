@@ -610,7 +610,9 @@ def test_pre_service_smoke_version_preflight_preserves_diagnostics() -> None:
     assert 'mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX"' in phase
     assert 'local sourced_rc=0' in phase
     assert "</dev/null" in phase
-    assert '2>"$smoke_preflight_log" || sourced_rc=$?' in phase
+    assert '} 2>"$smoke_preflight_log"' in phase
+    assert ')" || sourced_rc=$?' in phase
+    assert ')" 2>"$smoke_preflight_log" || sourced_rc=$?' not in phase
     assert 'sed -n \'1,80p\' "$smoke_preflight_log" | sed \'s/^/  | /\'' in phase
     assert "rc=${sourced_rc}" in phase
     assert 'rm -f "$smoke_preflight_log"' in phase
