@@ -1381,6 +1381,25 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "auto-heal suppression env disables remediation for installer smoke gates" {
+  run_installer_function '
+    SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1
+    SIDAR_CURRENT_INSTALL_PHASE=04_workspace
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_install_auto_heal_enabled; then
+      exit 1
+    fi
+    if sidar_handle_install_failure 1 10 "uv sync" "uv sync"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
 @test "auto-heal fails fast for learned non-retryable installer failures" {
   run_installer_function '
     SIDAR_CURRENT_INSTALL_PHASE=06_services

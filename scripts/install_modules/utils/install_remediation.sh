@@ -9,6 +9,12 @@ SIDAR_INSTALL_UTIL_INSTALL_REMEDIATION_SH_LOADED=1
 # the operator to restart from scratch.
 
 sidar_install_auto_heal_enabled() {
+    local suppress_raw="${SIDAR_INSTALL_SUPPRESS_AUTO_HEAL:-0}"
+    suppress_raw="$(echo "$suppress_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$suppress_raw" in
+        1|true|yes|y|evet|e|on|enable|enabled) return 1 ;;
+    esac
+
     local raw="${SIDAR_INSTALL_AUTO_HEAL:-1}"
     raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$raw" in
@@ -503,13 +509,13 @@ sidar_handle_install_failure() {
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
     local failure_signature=""
 
+    sidar_install_auto_heal_enabled || return 1
     [[ -n "$phase" ]] || return 1
     if sidar_phase_is_informational "$phase"; then
         warn "Auto-heal: ${phase} bilgilendirme fazı; retry/resume atlanıyor (warn-only)."
         sidar_write_remediation_report "$phase" "informational-phase" "warn-only;no-retry;no-resume"
         return 1
     fi
-    sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1

@@ -624,6 +624,12 @@ def test_pre_service_smoke_version_preflight_preserves_diagnostics() -> None:
         phase.index("local expected_installer_version=") : phase.index("local smoke_log")
     ]
 
+    remediation_utils = Path(
+        "scripts/install_modules/utils/install_remediation.sh"
+    ).read_text(encoding="utf-8")
+    assert "SIDAR_INSTALL_SUPPRESS_AUTO_HEAL" in remediation_utils
+    assert "sidar_install_auto_heal_enabled || return 1" in remediation_utils
+
 
 def test_pre_service_smoke_version_preflight_captures_source_stderr(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
