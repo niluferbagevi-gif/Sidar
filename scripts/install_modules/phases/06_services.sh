@@ -83,11 +83,11 @@ sidar_phase06_run_database_password_sync_all_envs() {
 }
 
 sidar_phase06_preserve_pre_service_smoke_log() {
-    local smoke_log="$1"
+    local log_path="$1"
     local dir=""
     local target=""
 
-    [[ -f "$smoke_log" ]] || return 1
+    [[ -f "$log_path" ]] || return 1
     if declare -F sidar_remediation_log_dir >/dev/null 2>&1; then
         dir="$(sidar_remediation_log_dir)"
     else
@@ -96,7 +96,7 @@ sidar_phase06_preserve_pre_service_smoke_log() {
     fi
 
     target="${dir}/$(date +%Y%m%d_%H%M%S)_pre_service_smoke_gate.log"
-    if cp "$smoke_log" "$target"; then
+    if cp "$log_path" "$target"; then
         printf '%s\n' "$target"
         return 0
     fi

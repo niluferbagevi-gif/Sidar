@@ -77,27 +77,6 @@ load_remote_script_checksums() {
 
 load_remote_script_checksums
 
-# Fast-path: version-probe-only akışı (örn. CI smoke gate) için tüm ağır
-# subprocess çağrılarını (readlink, sed, sha256sum, helper source, manifest
-# verify) atlayarak pure-bash regex ile pyproject.toml'dan sürümü çözüp
-# kullanıcının yavaş fork() ortamlarında (örn. WSL2 + Defender) 10s'lik
-# timeout'a takılmadan dönmemizi sağlar.
-if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
-    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
-    if [[ -z "$INSTALL_SIDAR_VERSION" && -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-        while IFS= read -r _sidar_version_probe_line; do
-            if [[ "$_sidar_version_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
-                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
-                break
-            fi
-        done < "$SCRIPT_DIR/pyproject.toml"
-        unset _sidar_version_probe_line
-    fi
-    [[ -n "$INSTALL_SIDAR_VERSION" ]] || INSTALL_SIDAR_VERSION="0.0.0"
-    export INSTALL_SIDAR_VERSION
-    return 0 2>/dev/null || exit 0
-fi
-
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
 SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
 
@@ -420,7 +399,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-a49b4fe817fa15395098bdd658b9fad9ae8a28c19afb0f1949759b0c4b742713  scripts/install_modules/phases/06_services.sh
+bf8d5655066ec3e7bdd0eba9e28c5268e2e66f90528a62ec78202b869f8d9fdc  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -734,6 +713,29 @@ validate_install_utility_modules() {
         fi
     done
 }
+
+# Fast-path: version-probe-only akışı (örn. CI smoke gate) için tüm ağır
+# subprocess çağrılarını (readlink, sed, sha256sum, helper source, manifest
+# verify) atlayarak pure-bash regex ile pyproject.toml'dan sürümü çözüp
+# kullanıcının yavaş fork() ortamlarında (örn. WSL2 + Defender) 10s'lik
+# timeout'a takılmadan dönmemizi sağlar.
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
+    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
+    if is_blank "$INSTALL_SIDAR_VERSION" && [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        while IFS= read -r _sidar_version_probe_line; do
+            if [[ "$_sidar_version_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "$SCRIPT_DIR/pyproject.toml"
+        unset _sidar_version_probe_line
+    fi
+    if is_blank "$INSTALL_SIDAR_VERSION"; then
+        INSTALL_SIDAR_VERSION="0.0.0"
+    fi
+    export INSTALL_SIDAR_VERSION
+    return 0 2>/dev/null || exit 0
+fi
 
 load_install_phase_modules() {
     local module_rel=""
