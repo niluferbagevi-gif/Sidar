@@ -82,6 +82,27 @@ sidar_phase06_run_database_password_sync_all_envs() {
     (cd "$SCRIPT_DIR" && uv run python scripts/sync_database_passwords.py --all-envs >/dev/null 2>&1)
 }
 
+sidar_phase06_preserve_pre_service_smoke_log() {
+    local smoke_log="$1"
+    local dir=""
+    local target=""
+
+    [[ -f "$smoke_log" ]] || return 1
+    if declare -F sidar_remediation_log_dir >/dev/null 2>&1; then
+        dir="$(sidar_remediation_log_dir)"
+    else
+        dir="${SCRIPT_DIR}/artifacts/install/remediation"
+        mkdir -p "$dir"
+    fi
+
+    target="${dir}/$(date +%Y%m%d_%H%M%S)_pre_service_smoke_gate.log"
+    if cp "$smoke_log" "$target"; then
+        printf '%s\n' "$target"
+        return 0
+    fi
+    return 1
+}
+
 ensure_env_test_postgres_password_matches_base_before_smoke() {
     local base_env_file="$SCRIPT_DIR/.env"
     local test_env_file="$SCRIPT_DIR/.env.test"
@@ -378,7 +399,14 @@ run_pre_service_installer_smoke_gate() {
         ok "Servis öncesi installer smoke gate başarılı."
         rm -f "$smoke_log"
     else
+        local persisted_smoke_log=""
+        persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"
         warn "Smoke gate çıktısı: $smoke_log"
+        if [[ -n "${persisted_smoke_log//[[:space:]]/}" ]]; then
+            warn "Smoke gate kalıcı log kopyası: $persisted_smoke_log"
+        else
+            warn "Smoke gate kalıcı log kopyası artifacts/install/remediation altına yazılamadı."
+        fi
         warn "Smoke gate hata önizleme (ilk 200 satır):"
         if command -v head >/dev/null 2>&1; then
             head -n 200 "$smoke_log" | sed 's/^/  | /' || true
@@ -386,7 +414,7 @@ run_pre_service_installer_smoke_gate() {
             sed -n '1,200p' "$smoke_log" | sed 's/^/  | /' || true
         fi
         warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
-        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: $smoke_log)."
+        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
     fi
 }
 
