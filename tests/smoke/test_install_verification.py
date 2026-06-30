@@ -593,7 +593,7 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
     assert "command -v sha256sum:" in diagnosis
     assert "--- timed probe ---" in diagnosis
     assert "probe real=" in diagnosis
-    assert "INSTALL_SIDAR_VERSION=5.2.0" in diagnosis
+    assert "timed_probe_status=" in diagnosis
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
