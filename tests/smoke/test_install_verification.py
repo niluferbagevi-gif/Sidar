@@ -628,6 +628,27 @@ def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> Non
     )
 
 
+def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> None:
+    result = _run_bash_smoke(
+        """
+        set -euo pipefail
+        source install_sidar.sh >/dev/null
+        sidar_handle_install_failure() {
+          printf 'handler_cmd=%s\\n' "$3"
+          printf 'handler_reason=%s\\n' "$4"
+          return 1
+        }
+        fail "servis smoke failed"
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 1
+    assert "handler_cmd=fail" in result.stdout
+    assert "handler_reason=servis smoke failed" in result.stdout
+    assert "sidar_handle_install_failure 1" not in result.stdout
+    assert "sidar_handle_install_failure 1" not in result.stderr
+
+
 def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight() -> None:
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     version_contract_block = phase[

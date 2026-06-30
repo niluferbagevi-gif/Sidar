@@ -328,9 +328,10 @@ debug() {
 }
 warn() { printf '%s\n' "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
-    printf '%s\n' "${RED}❌  $*${NC}" >&2
+    local fail_reason="$*"
+    printf '%s\n' "${RED}❌  ${fail_reason}${NC}" >&2
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
-        sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "${BASH_COMMAND:-fail}" "$*" || true
+        sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "fail" "$fail_reason" || true
     fi
     exit 1
 }
