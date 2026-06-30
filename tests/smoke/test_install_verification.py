@@ -550,6 +550,12 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
 
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
+    resolve_idx = installer_text.index("resolve_install_sidar_version()")
+    validate_idx = installer_text.index("validate_install_utility_modules()")
+    export_idx = installer_text.index("export INSTALL_SIDAR_VERSION")
+    load_phase_idx = installer_text.index("load_install_phase_modules\n# END_BUNDLE_MODULES")
+    assert resolve_idx < validate_idx
+    assert export_idx < load_phase_idx
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
