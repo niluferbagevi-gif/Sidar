@@ -598,6 +598,21 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     )
 
 
+def test_pre_service_smoke_version_preflight_preserves_diagnostics() -> None:
+    phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+
+    assert 'mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX"' in phase
+    assert 'local sourced_rc=0' in phase
+    assert "</dev/null" in phase
+    assert '2>"$smoke_preflight_log" || sourced_rc=$?' in phase
+    assert 'sed -n \'1,80p\' "$smoke_preflight_log" | sed \'s/^/  | /\'' in phase
+    assert "rc=${sourced_rc}" in phase
+    assert 'rm -f "$smoke_preflight_log"' in phase
+    assert "2>/dev/null || true" not in phase[
+        phase.index("local expected_installer_version=") : phase.index("local smoke_log")
+    ]
+
+
 def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"

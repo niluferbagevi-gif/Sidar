@@ -349,15 +349,21 @@ run_pre_service_installer_smoke_gate() {
         expected_installer_version="$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)"
     fi
     if [[ -n "${expected_installer_version//[[:space:]]/}" ]]; then
+        local smoke_preflight_log=""
+        local sourced_rc=0
+        smoke_preflight_log="$(mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX")" || fail "Smoke gate version preflight log dosyası oluşturulamadı."
         sourced_installer_version="$(
             cd "$SCRIPT_DIR" && \
                 SIDAR_INSTALL_TEST_MODE=1 \
                 bash -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
-                2>/dev/null || true
-        )"
-        if [[ "$sourced_installer_version" != "$expected_installer_version" ]]; then
-            fail "Servis öncesi installer smoke gate başarısız: source install_sidar.sh sonrası INSTALL_SIDAR_VERSION=${sourced_installer_version:-<boş>} beklenen pyproject.toml sürümüyle (${expected_installer_version}) eşleşmiyor."
+                </dev/null
+        )" 2>"$smoke_preflight_log" || sourced_rc=$?
+        if [[ "$sourced_rc" -ne 0 || "$sourced_installer_version" != "$expected_installer_version" ]]; then
+            warn "Smoke gate version preflight stderr ($smoke_preflight_log):"
+            sed -n '1,80p' "$smoke_preflight_log" | sed 's/^/  | /' || true
+            fail "Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=${sourced_installer_version:-<boş>} (beklenen=${expected_installer_version}, rc=${sourced_rc}). Detay yukarıda."
         fi
+        rm -f "$smoke_preflight_log"
     fi
 
     local smoke_log
