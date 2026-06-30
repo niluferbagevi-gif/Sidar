@@ -1107,6 +1107,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
         encoding="utf-8"
     )
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
+        encoding="utf-8"
+    )
     remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
         encoding="utf-8"
     )
@@ -1115,6 +1118,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     )
     gpu_utils = Path("scripts/install_modules/utils/gpu_utils.sh").read_text(encoding="utf-8")
     python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(
+        encoding="utf-8"
+    )
+    db_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
         encoding="utf-8"
     )
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
@@ -1137,7 +1143,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
     assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
     assert (
-        'sidar_source_install_utils "python_env.sh" "db_credentials.sh" "env_utils.sh"'
+        'sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" "env_utils.sh"'
         in workspace_phase
     )
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
@@ -1170,6 +1176,11 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "Ollama API" in preflight_utils
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
+    assert "docker_nvidia_runtime_registered()" in gpu_utils
+    assert "wait_for_docker_nvidia_runtime()" in gpu_utils
+    assert "SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS" in gpu_utils
+    assert "docker info --format '{{json .Runtimes}}'" in gpu_utils
+    assert "wait_for_docker_nvidia_runtime()" in install_script
     assert "create_uv_venv()" in python_env_utils
     assert "ensure_python_311()" not in python_env_utils
     assert "install_python_deps()" in python_env_utils
@@ -1177,8 +1188,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv pip" not in python_env_utils
     assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
-    assert "sync_postgres_env_with_database_url()" in db_utils
-    assert "ensure_database_url_defaults()" in db_utils
+    assert "sync_postgres_env_with_database_url()" in db_url_utils
+    assert "ensure_database_url_defaults()" in db_url_utils
     assert "setup_env_file()" in env_utils
     assert 'ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"' in env_utils
     assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in env_utils
@@ -1190,7 +1201,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert (
         "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
     )
-    assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in install_script
+    assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in alembic_phase
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[
         env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index(

@@ -3733,6 +3733,33 @@ print_docker_desktop_restart_notice() {
     warn "╚════════════════════════════════════════════════════════════════════╝"
 }
 
+docker_nvidia_runtime_registered() {
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'
+}
+
+wait_for_docker_nvidia_runtime() {
+    local timeout_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS:-90}"
+    local interval_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_INTERVAL_SECONDS:-3}"
+    local elapsed=0
+
+    [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || timeout_seconds=90
+    [[ "$interval_seconds" =~ ^[0-9]+$ && "$interval_seconds" -gt 0 ]] || interval_seconds=3
+
+    if docker_nvidia_runtime_registered; then
+        return 0
+    fi
+
+    info "Docker NVIDIA runtime kaydı bekleniyor (maks. ${timeout_seconds}sn)..."
+    while (( elapsed < timeout_seconds )); do
+        sleep "$interval_seconds"
+        elapsed=$((elapsed + interval_seconds))
+        if docker_nvidia_runtime_registered; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 setup_nvidia_docker() {
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
@@ -3771,6 +3798,18 @@ setup_nvidia_docker() {
             ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
         else
             ok "nvidia-container-toolkit zaten kurulu."
+        fi
+
+        if wait_for_docker_nvidia_runtime; then
+            ok "Docker NVIDIA runtime doğrulandı."
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
+        elif [[ "$WSL2" == true ]]; then
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="true"
+            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="Docker NVIDIA runtime henüz kayıtlı görünmüyor; Docker Desktop restart sonrası 'docker info --format {{json .Runtimes}}' çıktısında nvidia görünene kadar bekleyin."
+            warn "$SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG"
+        elif [[ "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME:-false}" == "true" ]]; then
+            warn "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-Docker NVIDIA runtime kayıtlı görünmüyor; nvidia-container-toolkit doğrulamasını manuel kontrol edin.}"
         fi
     fi
 }
