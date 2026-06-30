@@ -684,6 +684,11 @@ def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path
         "# smoke placeholder\n",
         encoding="utf-8",
     )
+    (script_dir / "scripts").mkdir()
+    (script_dir / "scripts" / "sync_database_passwords.py").write_text(
+        "# sync placeholder\n",
+        encoding="utf-8",
+    )
     (script_dir / "pyproject.toml").write_text(
         '[project]\nversion = "5.2.0"\n',
         encoding="utf-8",
@@ -739,6 +744,11 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
     (script_dir / "tests" / "smoke").mkdir(parents=True)
     (script_dir / "tests" / "smoke" / "test_install_verification.py").write_text(
         "# smoke placeholder\n",
+        encoding="utf-8",
+    )
+    (script_dir / "scripts").mkdir()
+    (script_dir / "scripts" / "sync_database_passwords.py").write_text(
+        "# sync placeholder\n",
         encoding="utf-8",
     )
     (script_dir / "pyproject.toml").write_text(

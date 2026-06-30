@@ -1159,6 +1159,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         "sync_database_passwords_before_smoke_tests"
     ) < services_phase.index("run_smoke_tests")
     assert services_phase.index(
+        "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor"
+    ) < services_phase.index("uv run pytest -q --no-cov -p no:xdist -x")
+    assert services_phase.index(
         "scripts/sync_database_passwords.py --all-envs"
     ) < services_phase.index("ensure_env_test_postgres_password_matches_base_before_smoke")
     assert services_phase.index(

@@ -356,6 +356,14 @@ run_pre_service_installer_smoke_gate() {
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
 
+    unset SIDAR_DATABASE_ENV_CHAIN_SYNCED || true
+    info "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor..."
+    if sidar_phase06_run_database_password_sync_all_envs; then
+        ok "Servis öncesi installer smoke gate dotenv profilleri eşitlendi."
+    else
+        fail "Servis öncesi installer smoke gate başlatılamadı; PostgreSQL dotenv profilleri eşitlenemedi."
+    fi
+
     info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov)."
     if (
         set -o pipefail
