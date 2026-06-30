@@ -726,6 +726,62 @@ def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in combined_output
     assert "Servis öncesi installer smoke gate başarılı" in combined_output
 
+
+def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    (script_dir / "tests" / "smoke").mkdir(parents=True)
+    (script_dir / "tests" / "smoke" / "test_install_verification.py").write_text(
+        "# smoke placeholder\n",
+        encoding="utf-8",
+    )
+    (script_dir / "pyproject.toml").write_text(
+        '[project]\nversion = "5.2.0"\n',
+        encoding="utf-8",
+    )
+    (script_dir / "install_sidar.sh").write_text("exit 1\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_uv.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """
+                set -euo pipefail
+                source scripts/install_modules/phases/06_services.sh
+                info(){ printf 'INFO:%s\n' "$*" >&2; }
+                warn(){ printf 'WARN:%s\n' "$*" >&2; }
+                ok(){ printf 'OK:%s\n' "$*" >&2; }
+                fail(){ printf 'FAIL:%s\n' "$*" >&2; return 99; }
+                normalize_bool(){ [[ "$1" == "1" ]] && printf true || printf '%s' "$1"; }
+                export SCRIPT_DIR="$1"
+                export APP_RUNTIME_MODE_SELECTED=local
+                export SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1
+                run_pre_service_installer_smoke_gate
+                """
+            ),
+            "preflight-silent-source-abort-regression",
+            str(script_dir),
+        ],
+        cwd=Path(os.getcwd()),
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode == 0, combined_output
+    assert "Smoke gate version preflight stderr" not in combined_output
+    assert "Tanılayıcı bash -x re-run" not in combined_output
+    assert "source install_sidar.sh" not in combined_output
+    assert "Servis öncesi installer smoke gate başarılı" in combined_output
+
+
 def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"
