@@ -525,6 +525,7 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     diagnosis = _run_bash_smoke(
         f"""
         set -euo pipefail
+        export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
         {_fake_python3_fails_snippet()}
         source install_sidar.sh >/dev/null
         printf '%s' "${{INSTALL_SIDAR_VERSION:-EMPTY}}"
@@ -553,12 +554,15 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     blank_idx = installer_text.index("is_blank()")
     resolve_idx = installer_text.index("resolve_install_sidar_version()")
     validate_idx = installer_text.index("validate_install_utility_modules()")
+    validate_call_idx = installer_text.index("validate_install_utility_modules\nsidar_source_install_utils")
     export_idx = installer_text.index("export INSTALL_SIDAR_VERSION")
     load_phase_idx = installer_text.index("load_install_phase_modules\n# END_BUNDLE_MODULES")
     assert blank_idx < resolve_idx
-    assert resolve_idx < validate_idx
+    probe_idx = installer_text.index('if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then')
+    assert resolve_idx < validate_idx < probe_idx < validate_call_idx
     assert export_idx < load_phase_idx
-    assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 2
+    assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
+    assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
@@ -590,6 +594,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
+        export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
         {_fake_python3_fails_snippet()}
         source install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
