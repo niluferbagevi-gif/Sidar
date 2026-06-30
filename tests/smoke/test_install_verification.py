@@ -578,9 +578,13 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     load_phase_idx = installer_text.index("load_install_phase_modules\n# END_BUNDLE_MODULES")
     assert blank_idx < resolve_idx
     probe_idx = installer_text.index('if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then')
-    assert resolve_idx < validate_idx < probe_idx < validate_call_idx
+    # Probe-only fast path runs before any forky preflight (readlink, manifest
+    # verify, helper sourcing) so the smoke gate can resolve the version with
+    # only the load_remote_script_checksums call ahead of it.
+    load_checksums_call_idx = installer_text.index("\nload_remote_script_checksums\n")
+    assert load_checksums_call_idx < probe_idx < resolve_idx < validate_idx < validate_call_idx
     assert export_idx < load_phase_idx
-    assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
+    assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 2
     assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
@@ -678,8 +682,12 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
+    # The preserve-smoke-log helper added by abe330e introduces an earlier
+    # `local smoke_log="$1"` declaration, so anchor the slice end to the first
+    # `local smoke_log` that follows the expected_installer_version block.
+    version_contract_start = phase.index("local expected_installer_version=")
     version_contract_block = phase[
-        phase.index("local expected_installer_version=") : phase.index("local smoke_log")
+        version_contract_start : phase.index("local smoke_log", version_contract_start)
     ]
 
     assert "--skip-smoke-test/RUN_SMOKE_TESTS_MODE=never" in phase
