@@ -610,6 +610,9 @@ def test_pre_service_smoke_version_preflight_preserves_diagnostics() -> None:
     assert 'mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX"' in phase
     assert 'local sourced_rc=0' in phase
     assert "</dev/null" in phase
+    assert "SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1" in phase
+    assert "bash --norc --noprofile -c" in phase
+    assert "unset INSTALL_SIDAR_VERSION INSTALL_HELPERS_TEMP_DIR INSTALL_MODULES_DOWNLOADED" in phase
     assert '2>"$smoke_preflight_log" </dev/null' in phase
     assert ')" || sourced_rc=$?' in phase
     assert ')" 2>"$smoke_preflight_log" || sourced_rc=$?' not in phase

@@ -355,7 +355,8 @@ run_pre_service_installer_smoke_gate() {
         sourced_installer_version="$(
             cd "$SCRIPT_DIR" && \
                 SIDAR_INSTALL_TEST_MODE=1 \
-                bash -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
+                SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1 \
+                bash --norc --noprofile -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION INSTALL_HELPERS_TEMP_DIR INSTALL_MODULES_DOWNLOADED; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
                 2>"$smoke_preflight_log" </dev/null
         )" || sourced_rc=$?
         if [[ "$sourced_rc" -ne 0 || "$sourced_installer_version" != "$expected_installer_version" ]]; then
