@@ -656,6 +656,12 @@ if ! declare -F clear_stdin_buffer >/dev/null 2>&1; then
     }
 fi
 
+
+is_blank() {
+    local value="${1-}"
+    [[ -z "${value//[[:space:]]/}" ]]
+}
+
 resolve_install_sidar_version() {
     local resolved_version=""
     local python_version_error=""
@@ -664,18 +670,18 @@ resolve_install_sidar_version() {
         resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
     fi
 
-    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/scripts/version_probe.py" && -f "$SCRIPT_DIR/pyproject.toml" ]] && command -v python3 &>/dev/null; then
+    if is_blank "$resolved_version" && [[ -f "$SCRIPT_DIR/scripts/version_probe.py" && -f "$SCRIPT_DIR/pyproject.toml" ]] && command -v python3 &>/dev/null; then
         python_version_error="$(mktemp "${TMPDIR:-/tmp}/sidar_version_resolve.XXXXXX")" || python_version_error=""
         resolved_version=$(python3 "$SCRIPT_DIR/scripts/version_probe.py" --pyproject "$SCRIPT_DIR/pyproject.toml" 2>"${python_version_error:-/dev/null}" || true)
         if [[ -n "$python_version_error" ]]; then
-            if [[ -z "${resolved_version//[[:space:]]/}" && -s "$python_version_error" ]]; then
+            if is_blank "$resolved_version" && [[ -s "$python_version_error" ]]; then
                 warn "scripts/version_probe.py üzerinden sürüm okunamadı; sidar_version.py fallback denenecek: $(tr '\n' ' ' < "$python_version_error")"
             fi
             rm -f "$python_version_error"
         fi
     fi
 
-    if [[ -z "${resolved_version//[[:space:]]/}" && -f "$SCRIPT_DIR/sidar_version.py" && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v python3 &>/dev/null; then
+    if is_blank "$resolved_version" && [[ -f "$SCRIPT_DIR/sidar_version.py" && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] && command -v python3 &>/dev/null; then
         python_version_error="$(mktemp "${TMPDIR:-/tmp}/sidar_version_resolve.XXXXXX")" || python_version_error=""
         resolved_version=$(PYTHONPATH="$SCRIPT_DIR" python3 - <<'PY_VERSION' 2>"${python_version_error:-/dev/null}" || true
 from sidar_version import resolve_version
@@ -684,7 +690,7 @@ print(resolve_version())
 PY_VERSION
 )
         if [[ -n "$python_version_error" ]]; then
-            if [[ -z "${resolved_version//[[:space:]]/}" && -s "$python_version_error" ]]; then
+            if is_blank "$resolved_version" && [[ -s "$python_version_error" ]]; then
                 warn "sidar_version.py üzerinden sürüm okunamadı; 0.0.0 fallback kullanılabilir: $(tr '\n' ' ' < "$python_version_error")"
             fi
             rm -f "$python_version_error"
@@ -855,7 +861,7 @@ sidar_source_install_utils \
     "ollama_models.sh" \
     "playwright_ubuntu_override.sh"
 INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
-if [[ -z "${INSTALL_SIDAR_VERSION//[[:space:]]/}" ]]; then
+if is_blank "$INSTALL_SIDAR_VERSION"; then
     info "INSTALL_SIDAR_VERSION boş çözüldü; güvenli fallback sürümü kullanılacak."
     warn "Installer sürümü pyproject.toml/sidar_version.py üzerinden okunamadı; INSTALL_SIDAR_VERSION=0.0.0 olarak ayarlanıyor."
     INSTALL_SIDAR_VERSION="0.0.0"
@@ -2712,7 +2718,7 @@ refresh_install_sidar_version_from_repo() {
     local refreshed_version=""
     refreshed_version="$(resolve_install_sidar_version)"
     INSTALL_SIDAR_VERSION="${refreshed_version:-0.0.0}"
-    if [[ -z "${INSTALL_SIDAR_VERSION//[[:space:]]/}" ]]; then
+    if is_blank "$INSTALL_SIDAR_VERSION"; then
         info "Repo yenileme sonrası INSTALL_SIDAR_VERSION boş çözüldü; güvenli fallback sürümü kullanılacak."
         warn "Installer sürümü repo kaynaklarından okunamadı; INSTALL_SIDAR_VERSION=0.0.0 olarak ayarlanıyor."
         INSTALL_SIDAR_VERSION="0.0.0"

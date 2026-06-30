@@ -550,12 +550,16 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
 
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
+    blank_idx = installer_text.index("is_blank()")
     resolve_idx = installer_text.index("resolve_install_sidar_version()")
     validate_idx = installer_text.index("validate_install_utility_modules()")
     export_idx = installer_text.index("export INSTALL_SIDAR_VERSION")
     load_phase_idx = installer_text.index("load_install_phase_modules\n# END_BUNDLE_MODULES")
+    assert blank_idx < resolve_idx
     assert resolve_idx < validate_idx
     assert export_idx < load_phase_idx
+    assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 2
+    assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
@@ -601,6 +605,26 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         f"--- stdout ---\n{version_result.stdout!r}\n"
         f"--- stderr ---\n{version_result.stderr!r}\n"
         f"--- INSTALL_SIDAR_VERSION (post-run) ---\n{_diagnose_sourced_install_version(tmp_path)}"
+    )
+
+
+def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> None:
+    result = _run_bash_smoke(
+        """
+        set -euo pipefail
+        source install_sidar.sh >/dev/null
+        is_blank ""
+        is_blank "   "
+        is_blank $'\\t\\n'
+        ! is_blank "5.2.0"
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, (
+        "is_blank helper boş/whitespace sürüm kontrollerini beklenen şekilde ele almadı.\n"
+        f"--- args ---\n{result.args}\n"
+        f"--- stdout ---\n{result.stdout!r}\n"
+        f"--- stderr ---\n{result.stderr!r}"
     )
 
 
