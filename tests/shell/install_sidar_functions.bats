@@ -1804,6 +1804,51 @@ ENV
   [[ "$output" != *"MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi"* ]]
 }
 
+@test "ensure_auto_secrets retries generated tokens that match weak placeholder patterns" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    printf "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars\\n" > "$env_file"
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/python3.count"
+count=0
+if [[ -f "\$count_file" ]]; then
+  count=\$(cat "\$count_file")
+fi
+count=\$((count + 1))
+printf "%s\\n" "\$count" > "\$count_file"
+if [[ "\$*" == "-c import secrets; print(secrets.token_urlsafe(64))" ]]; then
+  jwt_count_file="$tmpdir/python3.jwt.count"
+  jwt_count=0
+  if [[ -f "\$jwt_count_file" ]]; then
+    jwt_count=\$(cat "\$jwt_count_file")
+  fi
+  jwt_count=\$((jwt_count + 1))
+  printf "%s\\n" "\$jwt_count" > "\$jwt_count_file"
+  if [[ "\$jwt_count" -eq 1 ]]; then
+    printf "%s\\n" "GeneratedTESTTokenThatShouldBeRejectedBecauseItContainsTest1234567890"
+  else
+    printf "%s\\n" "GnrtdStrongToknWithoutPlacehldrWords_QwE9RtY8UiO7PaS6DfG5HjK4LmN3"
+  fi
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    export PATH="$tmpdir/bin:$PATH"
+    secret_strength_script_file() { return 0; }
+
+    ensure_auto_secrets "$env_file"
+
+    grep -q "^JWT_SECRET_KEY=GnrtdStrongToknWithoutPlacehldrWords_QwE9RtY8UiO7PaS6DfG5HjK4LmN3$" "$env_file"
+    ! grep -q "GeneratedTESTToken" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "verify_sidar_keys_file_permissions warns when secret file is group-readable" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

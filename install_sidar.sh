@@ -4977,32 +4977,71 @@ ensure_auto_secrets() {
     # urlsafe token üretici (python3 → openssl fallback)
     _gen_urlsafe() {
         local n="$1"
+        local candidate attempt
         if command -v python3 &>/dev/null; then
-            python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true
+            for attempt in {1..10}; do
+                candidate="$(python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true)"
+                [[ -n "$candidate" ]] || continue
+                if ! is_weak_secret_value "$candidate"; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+            done
         elif command -v openssl &>/dev/null; then
-            openssl rand -base64 "$n" 2>/dev/null | tr '+/' '-_' | tr -d '\n=' || true
+            for attempt in {1..10}; do
+                candidate="$(openssl rand -base64 "$n" 2>/dev/null | tr '+/' '-_' | tr -d '\n=' || true)"
+                [[ -n "$candidate" ]] || continue
+                if ! is_weak_secret_value "$candidate"; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+            done
         fi
     }
 
     # hex token üretici
     _gen_hex() {
         local bits="$1"
+        local candidate attempt
         if command -v python3 &>/dev/null; then
-            python3 -c "import secrets; print(secrets.token_hex($((bits / 2))))" 2>/dev/null || true
+            for attempt in {1..10}; do
+                candidate="$(python3 -c "import secrets; print(secrets.token_hex($((bits / 2))))" 2>/dev/null || true)"
+                [[ -n "$candidate" ]] || continue
+                if ! is_weak_secret_value "$candidate"; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+            done
         elif command -v openssl &>/dev/null; then
-            openssl rand -hex "$((bits / 2))" 2>/dev/null | tr -d '\n' || true
+            for attempt in {1..10}; do
+                candidate="$(openssl rand -hex "$((bits / 2))" 2>/dev/null | tr -d '\n' || true)"
+                [[ -n "$candidate" ]] || continue
+                if ! is_weak_secret_value "$candidate"; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+            done
         fi
     }
 
     # Fernet anahtarı üretici
     _gen_fernet() {
-        python3 - 2>/dev/null <<'PY' || true
+        local candidate attempt
+        for attempt in {1..10}; do
+            candidate="$(python3 - 2>/dev/null <<'PY' || true
 try:
     from cryptography.fernet import Fernet
     print(Fernet.generate_key().decode())
 except Exception:
     pass
 PY
+)"
+            [[ -n "$candidate" ]] || continue
+            if ! is_weak_secret_value "$candidate"; then
+                printf '%s\n' "$candidate"
+                return 0
+            fi
+        done
     }
 
     # ── POSTGRES_PASSWORD ────────────────────────────────────────────────────
