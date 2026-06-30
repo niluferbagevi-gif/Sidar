@@ -621,7 +621,9 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     original_dir_idx = installer_text.index('ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"')
     populate_call_idx = installer_text.index("populate_remote_module_hashes_from_embedded_manifest\nfi")
     helper_source_idx = installer_text.index('source "$INSTALL_HELPERS_MODULE"')
+    core_source_guard_idx = installer_text.index('SIDAR_INSTALL_TEST_MODE=1 source akışı: çekirdek manifest doğrulaması atlandı.')
     manifest_verify_idx = installer_text.index("verify_core_install_manifest || core_manifest_status=$?")
+    assert core_source_guard_idx < manifest_verify_idx
     assert installer_text.rfind(probe_only_guard, 0, original_path_idx) != -1
     assert original_path_idx < original_dir_idx
     assert installer_text.rfind(probe_only_guard, 0, populate_call_idx) != -1

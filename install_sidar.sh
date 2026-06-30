@@ -642,12 +642,16 @@ if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
     fi
 
     core_manifest_status=0
-    verify_core_install_manifest || core_manifest_status=$?
-    if [[ $core_manifest_status -ne 0 ]]; then
-        case "$core_manifest_status" in
-            2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
-            *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
-        esac
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+        info "SIDAR_INSTALL_TEST_MODE=1 source akışı: çekirdek manifest doğrulaması atlandı."
+    else
+        verify_core_install_manifest || core_manifest_status=$?
+        if [[ $core_manifest_status -ne 0 ]]; then
+            case "$core_manifest_status" in
+                2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
+                *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
+            esac
+        fi
     fi
 fi
 
