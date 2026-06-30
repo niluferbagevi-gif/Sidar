@@ -352,11 +352,16 @@ run_pre_service_installer_smoke_gate() {
         local smoke_preflight_log=""
         local sourced_rc=0
         smoke_preflight_log="$(mktemp "${TMPDIR:-/tmp}/sidar_smoke_version.XXXXXX")" || fail "Smoke gate version preflight log dosyası oluşturulamadı."
+        # shellcheck disable=SC2016  # Inner bash expands INSTALL_SIDAR_VERSION after sourcing.
         sourced_installer_version="$(
             cd "$SCRIPT_DIR" && \
-                SIDAR_INSTALL_TEST_MODE=1 \
-                SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1 \
-                bash --norc --noprofile -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION INSTALL_HELPERS_TEMP_DIR INSTALL_MODULES_DOWNLOADED; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
+                env -i \
+                    "HOME=${HOME:-}" \
+                    "PATH=${PATH:-/usr/bin:/bin}" \
+                    "TMPDIR=${TMPDIR:-/tmp}" \
+                    SIDAR_INSTALL_TEST_MODE=1 \
+                    SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1 \
+                    bash --norc --noprofile -c 'set -euo pipefail; unset INSTALL_SIDAR_VERSION INSTALL_HELPERS_TEMP_DIR INSTALL_MODULES_DOWNLOADED; source install_sidar.sh >/dev/null; printf "%s" "${INSTALL_SIDAR_VERSION:-}"' \
                 2>"$smoke_preflight_log" </dev/null
         )" || sourced_rc=$?
         if [[ "$sourced_rc" -ne 0 || "$sourced_installer_version" != "$expected_installer_version" ]]; then

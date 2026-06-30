@@ -611,6 +611,9 @@ def test_pre_service_smoke_version_preflight_preserves_diagnostics() -> None:
     assert 'local sourced_rc=0' in phase
     assert "</dev/null" in phase
     assert "SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1" in phase
+    assert '"HOME=${HOME:-}"' in phase
+    assert '"PATH=${PATH:-/usr/bin:/bin}"' in phase
+    assert '"TMPDIR=${TMPDIR:-/tmp}"' in phase
     assert "bash --norc --noprofile -c" in phase
     assert "unset INSTALL_SIDAR_VERSION INSTALL_HELPERS_TEMP_DIR INSTALL_MODULES_DOWNLOADED" in phase
     assert '2>"$smoke_preflight_log" </dev/null' in phase
@@ -696,6 +699,74 @@ def test_pre_service_smoke_version_preflight_captures_source_stderr(tmp_path: Pa
     assert "Smoke gate version preflight stderr" in combined_output
     assert "preflight source stderr is preserved" in combined_output
     assert "rc=43" in combined_output
+
+
+def test_pre_service_smoke_version_preflight_uses_clean_environment(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    (script_dir / "tests" / "smoke").mkdir(parents=True)
+    (script_dir / "tests" / "smoke" / "test_install_verification.py").write_text(
+        "# smoke placeholder\n",
+        encoding="utf-8",
+    )
+    (script_dir / "pyproject.toml").write_text(
+        '[project]\nversion = "5.2.0"\n',
+        encoding="utf-8",
+    )
+    (script_dir / "install_sidar.sh").write_text(
+        textwrap.dedent(
+            """
+            if [[ -n "${SIDAR_BOOTSTRAP_LEAK:-}" || -n "${EMBEDDED_MODULE_HASHES_MANIFEST:-}" || -n "${INSTALL_REMOTE_MODULE_HASHES:-}" || -n "${LOG_FILE:-}" ]]; then
+              echo "inherited installer environment leaked into smoke preflight" >&2
+              exit 44
+            fi
+            INSTALL_SIDAR_VERSION=5.2.0
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_uv.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """
+                set -euo pipefail
+                source scripts/install_modules/phases/06_services.sh
+                info(){ printf 'INFO:%s\n' "$*" >&2; }
+                warn(){ printf 'WARN:%s\n' "$*" >&2; }
+                ok(){ printf 'OK:%s\n' "$*" >&2; }
+                fail(){ printf 'FAIL:%s\n' "$*" >&2; return 99; }
+                normalize_bool(){ [[ "$1" == "1" ]] && printf true || printf '%s' "$1"; }
+                export SCRIPT_DIR="$1"
+                export APP_RUNTIME_MODE_SELECTED=local
+                export SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1
+                export SIDAR_BOOTSTRAP_LEAK=present
+                export EMBEDDED_MODULE_HASHES_MANIFEST=present
+                export INSTALL_REMOTE_MODULE_HASHES=present
+                export LOG_FILE=present
+                run_pre_service_installer_smoke_gate
+                """
+            ),
+            "preflight-clean-env-regression",
+            str(script_dir),
+        ],
+        cwd=Path(os.getcwd()),
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode == 0, combined_output
+    assert "inherited installer environment leaked" not in combined_output
+    assert "Servis öncesi installer smoke gate başarılı" in combined_output
 
 
 def test_pre_service_smoke_version_preflight_traces_silent_source_abort(tmp_path: Path) -> None:
