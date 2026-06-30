@@ -614,7 +614,14 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     export_idx = installer_text.index("export INSTALL_SIDAR_VERSION")
     load_phase_idx = installer_text.index("load_install_phase_modules\n# END_BUNDLE_MODULES")
     assert blank_idx < resolve_idx
-    probe_idx = installer_text.index('if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then')
+    probe_marker = 'if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then'
+    early_probe_idx = installer_text.index(probe_marker)
+    probe_idx = installer_text.rindex(probe_marker)
+    assert installer_text.count(probe_marker) == 2, (
+        "İki probe bloğu beklenir: SCRIPT_DIR'den önce zero-fork erken probe ve "
+        "validate_install_utility_modules() sonrası fallback probe."
+    )
+    assert early_probe_idx < installer_text.index("SCRIPT_DIR=")
     assert resolve_idx < validate_idx < probe_idx < validate_call_idx
     probe_only_guard = 'if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then'
     original_path_idx = installer_text.index('ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"')
