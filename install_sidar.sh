@@ -43,6 +43,37 @@ export ALLOW_UNVERIFIED_REMOTE_SCRIPTS="${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}"
 # küresel GPU bayrağını en erken noktada güvenli CPU fallback'iyle tanımla.
 export GPU_AVAILABLE="${GPU_AVAILABLE:-false}"
 
+# Ultra fast-path: smoke/version probe akışı sadece INSTALL_SIDAR_VERSION
+# export'unu doğrular. WSL2 + Defender gibi yavaş fork() ortamlarında bu probe'un
+# helper source, checksum yükleme, manifest parse veya log fan-out aşamalarına
+# girmesi kurulum smoke gate'ini dakikalarca kilitleyebilir. Bu nedenle probe-only
+# modunu en üstte, yalnız Bash built-in'leriyle pyproject.toml okuyarak bitir.
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
+    _sidar_probe_source="${BASH_SOURCE[0]}"
+    if [[ "$_sidar_probe_source" == */* ]]; then
+        _sidar_probe_dir="${_sidar_probe_source%/*}"
+        [[ "$_sidar_probe_dir" == /* ]] || _sidar_probe_dir="${PWD}/${_sidar_probe_dir}"
+    else
+        _sidar_probe_dir="${PWD}"
+    fi
+
+    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
+    if [[ -z "$INSTALL_SIDAR_VERSION" && -f "${_sidar_probe_dir}/pyproject.toml" ]]; then
+        while IFS= read -r _sidar_probe_line; do
+            if [[ "$_sidar_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "${_sidar_probe_dir}/pyproject.toml"
+    fi
+    if [[ -z "$INSTALL_SIDAR_VERSION" ]]; then
+        INSTALL_SIDAR_VERSION="0.0.0"
+    fi
+    export INSTALL_SIDAR_VERSION
+    unset _sidar_probe_source _sidar_probe_dir _sidar_probe_line
+    return 0 2>/dev/null || exit 0
+fi
+
 # GitHub Codespaces overlay dosya sisteminde uv hardlink uyarılarını ve gereksiz
 # full-copy fallback denemelerini önlemek için copy modu varsayılanlaştırılır.
 if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODESPACES:-}" == "true" ) ]]; then
@@ -401,7 +432,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-1d91ff471837c4b754f76f073a872ecc89fa118379210fe1c137bf83dfdcd274  scripts/install_modules/phases/06_services.sh
+f1bb34ce0dd2ce18c78b1e70b4ee36a681c0ccdbdb2c04a13964fd485cbe3c67  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
