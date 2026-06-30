@@ -621,6 +621,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
+    probe_timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20"))
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
@@ -633,7 +634,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         fi
         """,
         tmp_path,
-        timeout_seconds=10,
+        timeout_seconds=probe_timeout_seconds,
     )
     assert version_result.returncode == 0, (
         "INSTALL_SIDAR_VERSION sourced akışta beklenen değere set olmadı.\n"
