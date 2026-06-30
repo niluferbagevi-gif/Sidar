@@ -219,10 +219,12 @@ bypass mekanizmasıdır; çekirdek dosya manifesti için bypass uygulanmaz."
 if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
     cd "${SIDAR_INSTALL_RESUME_CWD}"
 fi
-# WSL integration autofix sentinel should not leak across reinstall attempts
-rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
-ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    # WSL integration autofix sentinel should not leak across reinstall attempts.
+    rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
+    ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+    ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+fi
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
 SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.

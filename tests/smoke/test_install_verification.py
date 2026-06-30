@@ -580,9 +580,13 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     probe_idx = installer_text.index('if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then')
     assert resolve_idx < validate_idx < probe_idx < validate_call_idx
     probe_only_guard = 'if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then'
+    original_path_idx = installer_text.index('ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"')
+    original_dir_idx = installer_text.index('ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"')
     populate_call_idx = installer_text.index("populate_remote_module_hashes_from_embedded_manifest\nfi")
     helper_source_idx = installer_text.index('source "$INSTALL_HELPERS_MODULE"')
     manifest_verify_idx = installer_text.index("verify_core_install_manifest || core_manifest_status=$?")
+    assert installer_text.rfind(probe_only_guard, 0, original_path_idx) != -1
+    assert original_path_idx < original_dir_idx
     assert installer_text.rfind(probe_only_guard, 0, populate_call_idx) != -1
     assert installer_text.rfind(probe_only_guard, 0, helper_source_idx) != -1
     assert installer_text.rfind(probe_only_guard, 0, manifest_verify_idx) != -1
