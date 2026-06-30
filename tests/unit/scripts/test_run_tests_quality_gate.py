@@ -2803,13 +2803,22 @@ def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependen
         encoding="utf-8"
     )
 
+    assert "playwright_ubuntu_dependency_packages()" in helper
+    assert "playwright_missing_ubuntu_dependencies()" in helper
+    assert "apt list --installed" in helper
     assert 'gtk_package="libgtk-3-0"' in helper
     assert 'gtk_package="libgtk-3-0t64"' in helper
     assert "libxshmfence1" in helper
-    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    assert "libnss3" in helper
+    assert "libnspr4" in helper
+    assert "libasound2t64" in helper
+    phase = Path("scripts/install_modules/phases/13_playwright.sh").read_text(encoding="utf-8")
+    assert "playwright_linux_dependencies_ready" in phase
+    assert "playwright_missing_ubuntu_dependencies" in phase
+    assert "apt ön taraması eksik Chromium bağımlılıkları buldu" in phase
     assert (
         '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"'
-        in installer
+        in phase
     )
 
 

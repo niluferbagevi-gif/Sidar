@@ -81,6 +81,20 @@ install_playwright_browsers() {
 
         _ensure_playwright_override_dependencies() {
             info "Playwright OS override sonrası Chromium sistem bağımlılıkları doğrulanıyor..."
+            if playwright_linux_dependencies_ready; then
+                ok "Playwright Chromium sistem bağımlılıkları apt ön taramasında hazır görünüyor."
+                return 0
+            fi
+            if is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
+                local _pw_missing_deps=""
+                _pw_missing_deps="$(playwright_missing_ubuntu_dependencies | paste -sd ' ' - 2>/dev/null || true)"
+                warn "Playwright Ubuntu ${_pw_ubuntu_version:-25+} apt ön taraması eksik Chromium bağımlılıkları buldu: ${_pw_missing_deps:-bilinmiyor}. Sabit Sidar dependency listesi install-deps uyarıları basılmadan önce deneniyor..."
+                if install_playwright_linux_dependencies_fallback; then
+                    ok "Playwright Chromium sistem bağımlılıkları apt ön tarama fallback ile kuruldu."
+                    return 0
+                fi
+                warn "Playwright apt ön tarama fallback bağımlılıkları tamamlayamadı; Playwright install-deps doğrulaması denenecek."
+            fi
             if _try_playwright_install_deps; then
                 grep -vE "$_pw_apt_noise_regex" \
                     "$_pw_install_log" || true

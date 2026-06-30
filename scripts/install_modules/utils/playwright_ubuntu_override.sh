@@ -195,17 +195,14 @@ run_playwright_ubuntu_override_install() {
 
 playwright_linux_dependencies_ready() {
     local package_name=""
-    local package_status=""
     local ldconfig_cache=""
 
-    if command -v dpkg-query >/dev/null 2>&1; then
+    if command -v apt >/dev/null 2>&1 || command -v apt-cache >/dev/null 2>&1 || command -v dpkg-query >/dev/null 2>&1; then
         for package_name in libnss3 libnspr4 libxshmfence1; do
-            package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
-            [[ "$package_status" == ii* ]] || return 1
+            playwright_package_installed "$package_name" || return 1
         done
         for package_name in libgtk-3-0t64 libgtk-3-0; do
-            package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
-            [[ "$package_status" == ii* ]] && return 0
+            playwright_package_installed "$package_name" && return 0
         done
         return 1
     fi
@@ -219,32 +216,67 @@ playwright_linux_dependencies_ready() {
     return 1
 }
 
-install_playwright_linux_dependencies_fallback() {
+playwright_package_installed() {
+    local package_name="$1"
+    local package_status=""
+
+    if command -v apt >/dev/null 2>&1; then
+        if apt list --installed "$package_name" 2>/dev/null | awk -F/ 'NR > 1 {print $1}' | grep -Fxq "$package_name"; then
+            return 0
+        fi
+    fi
+
+    if command -v dpkg-query >/dev/null 2>&1; then
+        package_status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null || true)"
+        [[ "$package_status" == ii* ]] && return 0
+    fi
+
+    return 1
+}
+
+playwright_ubuntu_dependency_packages() {
     local gtk_package="libgtk-3-0"
-    # Ubuntu 24.04+ t64 geçişinde paket adı libgtk-3-0t64 oldu; eski Ubuntu
-    # sürümleri için libgtk-3-0 fallback değerini koru.
+    # Ubuntu 24.04+ t64 geçişinde paket adı libgtk-3-0t64 oldu; Ubuntu
+    # 26.04 (resolute) için de resmi Sidar fallback listesinde bu paket
+    # tercih edilir. Eski Ubuntu sürümleri için libgtk-3-0 fallback kalır.
     if command -v apt-cache >/dev/null 2>&1 && apt-cache show libgtk-3-0t64 >/dev/null 2>&1; then
         gtk_package="libgtk-3-0t64"
     fi
-    local -a playwright_linux_dependencies=(
-        libnss3
-        libnspr4
-        libatk1.0-0
-        libatk-bridge2.0-0
-        libcups2
-        libdrm2
-        libxkbcommon0
-        libxcomposite1
-        libxdamage1
-        libxfixes3
-        libxrandr2
-        libxshmfence1
-        libgbm1
-        "$gtk_package"
-        libpango-1.0-0
-        libcairo2
+    printf '%s\n' \
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libxshmfence1 \
+        libgbm1 \
+        "$gtk_package" \
+        libpango-1.0-0 \
+        libcairo2 \
         libasound2t64
-    )
+}
+
+playwright_missing_ubuntu_dependencies() {
+    local package_name=""
+    local -a missing_packages=()
+
+    while IFS= read -r package_name; do
+        [[ -n "$package_name" ]] || continue
+        playwright_package_installed "$package_name" || missing_packages+=("$package_name")
+    done < <(playwright_ubuntu_dependency_packages)
+
+    printf '%s\n' "${missing_packages[@]}"
+}
+
+install_playwright_linux_dependencies_fallback() {
+    local -a playwright_linux_dependencies=()
+    mapfile -t playwright_linux_dependencies < <(playwright_ubuntu_dependency_packages)
 
     if ! command -v apt-get >/dev/null 2>&1; then
         warn "Playwright Chromium sistem bağımlılıkları otomatik kurulamadı: apt-get bulunamadı."
