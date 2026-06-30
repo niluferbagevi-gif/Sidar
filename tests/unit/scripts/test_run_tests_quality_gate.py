@@ -1515,6 +1515,51 @@ def test_install_sidar_remote_script_checksum_missing_is_classified_deterministi
     ]
 
 
+def test_install_sidar_smoke_gate_version_failure_is_classified_deterministic(
+    tmp_path: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            info() { printf '%s\n' "$*" >&2; }
+            warn() { printf '%s\n' "$*" >&2; }
+            SCRIPT_DIR="$1"
+            source ./scripts/install_modules/utils/install_remediation.sh
+            reason='Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=<boş> beklenen pyproject.toml sürümüyle (5.2.0) eşleşmiyor.'
+            sidar_retry_budget_for_failure 06_services 'run_pre_service_installer_smoke_gate' "$reason"
+            if sidar_is_deterministic_failure_signal 'run_pre_service_installer_smoke_gate' "$reason"; then
+                echo deterministic
+            else
+                echo transient
+            fi
+            if sidar_phase_remediation_strategy 06_services 'run_pre_service_installer_smoke_gate' "$reason"; then
+                echo retry-scheduled
+            else
+                echo no-retry
+            fi
+            sidar_emit_remediation_guidance 06_services 'run_pre_service_installer_smoke_gate' "$reason"
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_06_services.log' | sort | tail -n 1)"
+            cat "$report"
+            """,
+            "bash",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert result.stdout.splitlines()[:3] == ["1", "deterministic", "no-retry"]
+    assert "installer-smoke-gate-failure" in result.stdout
+    assert "no-retry;manual-fix-required" in result.stdout
+    assert "NEXT STEP" in result.stderr
+    assert "aynı imza retry ile düzelmez" in result.stderr
+
+
 def test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_missing(
     tmp_path: Path,
 ) -> None:

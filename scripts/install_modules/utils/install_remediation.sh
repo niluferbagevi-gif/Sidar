@@ -66,6 +66,9 @@ sidar_is_deterministic_failure_signal() {
         *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
             return 0
             ;;
+        *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
+            return 0
+            ;;
     esac
     case "$normalized" in
         *"sudo: timed out"*|*"ollama_install"*)
@@ -108,6 +111,22 @@ sidar_is_non_retryable_failure_signal() {
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
         *"environmentfilenotfound"*|*"environment.yml"*|*"is_alembic_at_head failed"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidar_is_installer_smoke_gate_failure() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
             return 0
             ;;
         *)
@@ -365,6 +384,10 @@ sidar_phase_remediation_strategy() {
         sidar_write_remediation_report "$phase" "remote-script-checksum-missing" "$action"
         return 1
     fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-smoke-gate-failure" "no-retry;manual-fix-required"
+        return 1
+    fi
 
     case "$phase" in
         03_runtime)
@@ -431,6 +454,11 @@ sidar_emit_remediation_guidance() {
             warn "NEXT STEP → <ilgili>_SHA256=<hash> ./install_sidar.sh  (detay aşağıda)"
             warn "İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
         fi
+        return 0
+    fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazı installer smoke gate hatası nedeniyle durdu. Bu sinyal deterministiktir; aynı imza retry ile düzelmez."
+        warn "NEXT STEP → Smoke gate version preflight logundaki stderr satırlarını inceleyin; INSTALL_SIDAR_VERSION, pyproject.toml version ve source install_sidar.sh erken çıkış nedenini düzeltip ./install_sidar.sh çalıştırın."
         return 0
     fi
 
