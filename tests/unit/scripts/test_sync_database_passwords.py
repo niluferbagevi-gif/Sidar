@@ -267,7 +267,7 @@ def test_sync_env_chain_all_envs_includes_env_test_and_uses_base_password(
         f"DATABASE_URL=postgresql://sidar:{master_password}@localhost:5432/sidar\n",
         encoding="utf-8",
     )
-    for filename in (".env.development", ".env.test", ".env.advanced"):
+    for filename in (".env.development", ".env.test", ".env.production", ".env.advanced"):
         (tmp_path / filename).write_text(
             f"POSTGRES_PASSWORD={stale_password}\n"
             f"DATABASE_URL=postgresql://sidar:{stale_password}@localhost:5432/sidar\n"
@@ -278,10 +278,13 @@ def test_sync_env_chain_all_envs_includes_env_test_and_uses_base_password(
     summary = sync_database_passwords.sync_env_chain(base_env, all_envs=True)
 
     checked_names = {Path(path).name for path in summary["checked_files"]}
-    assert {".env.development", ".env.test", ".env.advanced"}.issubset(checked_names)
+    assert {".env.development", ".env.test", ".env.production", ".env.advanced"}.issubset(
+        checked_names
+    )
     assert str(tmp_path / ".env.test") in summary["changed_files"]
+    assert str(tmp_path / ".env.production") in summary["changed_files"]
     assert summary["all_envs"] is True
-    for filename in (".env.development", ".env.test", ".env.advanced"):
+    for filename in (".env.development", ".env.test", ".env.production", ".env.advanced"):
         text = (tmp_path / filename).read_text(encoding="utf-8")
         assert f"POSTGRES_PASSWORD={master_password}" in text
         assert stale_password not in text

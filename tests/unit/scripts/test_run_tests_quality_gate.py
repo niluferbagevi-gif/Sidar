@@ -1196,11 +1196,21 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
     assert "propagate_shared_secrets_to_env_variants" in env_utils
     assert "sync_database_env_chain_after_setup()" in env_utils
+    assert "uv run python -m scripts.sync_database_passwords --all-envs" in env_utils
     assert "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in env_utils
     assert "sync_database_env_chain_after_setup()" in install_script
+    assert "uv run python -m scripts.sync_database_passwords --all-envs" in install_script
     assert (
         "uv run python -m scripts.sync_database_passwords --remove-explicit-urls" in install_script
     )
+    propagate_body = install_script[
+        install_script.index("propagate_shared_secrets_to_env_variants()") : install_script.index(
+            "ensure_local_service_host_defaults()"
+        )
+    ]
+    assert "POSTGRES_PASSWORD" not in propagate_body
+    assert "DATABASE_URL" not in propagate_body
+    assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" in install_script
     assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in alembic_phase
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[

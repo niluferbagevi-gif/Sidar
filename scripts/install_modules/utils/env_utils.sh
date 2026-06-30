@@ -7,6 +7,10 @@ SIDAR_INSTALL_UTIL_ENV_UTILS_SH_LOADED=1
 # install_sidar.sh when sourced by the relevant phase module.
 
 sync_database_env_chain_after_setup() {
+    if [[ "${SIDAR_DATABASE_ENV_CHAIN_SYNCED:-0}" == "1" ]]; then
+        info "PostgreSQL dotenv zinciri bu oturumda zaten eşitlendi; tekrar yazım atlandı."
+        return 0
+    fi
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
@@ -17,12 +21,18 @@ sync_database_env_chain_after_setup() {
         return 0
     fi
 
-    info "Ortam değişkenlerindeki veritabanı şifre çakışmaları temizleniyor..."
-    if (cd "$SCRIPT_DIR" && uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1); then
+    info "Ortam değişkenlerindeki PostgreSQL şifreleri tek Python helper ile eşitleniyor..."
+    if (
+        cd "$SCRIPT_DIR" && \
+            uv run python -m scripts.sync_database_passwords --all-envs >/dev/null 2>&1 && \
+            uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1
+    ); then
+        SIDAR_DATABASE_ENV_CHAIN_SYNCED=1
+        export SIDAR_DATABASE_ENV_CHAIN_SYNCED
         ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
     else
         warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
-            "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+            "uv run python -m scripts.sync_database_passwords --all-envs && uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     fi
 }
 

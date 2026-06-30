@@ -5089,9 +5089,6 @@ PY
 propagate_shared_secrets_to_env_variants() {
     local src="$1"
     local -a shared_keys=(
-        POSTGRES_PASSWORD
-        DATABASE_URL
-        SIDAR_CONTAINER_DATABASE_URL
         API_KEY
         JWT_SECRET_KEY
         MEMORY_ENCRYPTION_KEY
@@ -5110,7 +5107,7 @@ propagate_shared_secrets_to_env_variants() {
 
     [[ -f "$src" ]] || return 0
 
-    local pair target example name key val cur example_val
+    local pair target example name key val cur example_val changed_count
     for pair in "${variants[@]}"; do
         target="$SCRIPT_DIR/${pair%%:*}"
         example="$SCRIPT_DIR/${pair##*:}"
@@ -5126,29 +5123,15 @@ propagate_shared_secrets_to_env_variants() {
             fi
         fi
 
+        changed_count=0
         for key in "${shared_keys[@]}"; do
-            if [[ "$name" == ".env.production" ]] && [[ "$key" == "DATABASE_URL" || "$key" == "SIDAR_CONTAINER_DATABASE_URL" ]]; then
-                # Production profile should derive DSN from POSTGRES_* parts at runtime.
-                # Avoid persistent explicit URL overrides that trigger doctor warnings.
-                sed_inplace "/^${key}=/d" "$target"
-                continue
-            fi
-
             val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
             [[ -z "${val//[[:space:]]/}" ]] && continue
 
             cur=$(read_env_value_from_file "$key" "$target" | tr -d '\n')
             example_val=$(read_env_value_from_file "$key" "$example" | tr -d '\n')
 
-            local always_overwrite=false
-            case "$key" in
-                POSTGRES_PASSWORD|DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL)
-                    always_overwrite=true
-                    ;;
-            esac
-
-            if [[ "$always_overwrite" == true ]] \
-                || is_weak_secret_value "$cur" \
+            if is_weak_secret_value "$cur" \
                 || is_known_weak_secret_value "$key" "$cur" \
                 || is_env_example_secret_value "$key" "$cur" \
                 || [[ -n "${example_val//[[:space:]]/}" && "$cur" == "$example_val" ]]; then
@@ -5157,10 +5140,17 @@ propagate_shared_secrets_to_env_variants() {
                 else
                     echo "${key}=${val}" >> "$target"
                 fi
-                ok "${name}: ${key} .env ile senkronize edildi."
+                changed_count=$((changed_count + 1))
             fi
         done
+        if (( changed_count > 0 )); then
+            ok "${name}: ${changed_count} ortak secret .env ile senkronize edildi."
+        fi
     done
+
+    # PostgreSQL credentials are intentionally delegated to the idempotent Python
+    # helper to avoid per-key/per-file bash rewrites and noisy repeated logs.
+    sync_database_env_chain_after_setup
 }
 
 ensure_local_service_host_defaults() {
@@ -5410,6 +5400,10 @@ PYDB
 }
 
 sync_database_env_chain_after_setup() {
+    if [[ "${SIDAR_DATABASE_ENV_CHAIN_SYNCED:-0}" == "1" ]]; then
+        info "PostgreSQL dotenv zinciri bu oturumda zaten eşitlendi; tekrar yazım atlandı."
+        return 0
+    fi
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
@@ -5420,12 +5414,18 @@ sync_database_env_chain_after_setup() {
         return 0
     fi
 
-    info "Ortam değişkenlerindeki veritabanı şifre çakışmaları temizleniyor..."
-    if (cd "$SCRIPT_DIR" && uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1); then
+    info "Ortam değişkenlerindeki PostgreSQL şifreleri tek Python helper ile eşitleniyor..."
+    if (
+        cd "$SCRIPT_DIR" && \
+            uv run python -m scripts.sync_database_passwords --all-envs >/dev/null 2>&1 && \
+            uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1
+    ); then
+        SIDAR_DATABASE_ENV_CHAIN_SYNCED=1
+        export SIDAR_DATABASE_ENV_CHAIN_SYNCED
         ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
     else
         warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
-            "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+            "uv run python -m scripts.sync_database_passwords --all-envs && uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     fi
 }
 
