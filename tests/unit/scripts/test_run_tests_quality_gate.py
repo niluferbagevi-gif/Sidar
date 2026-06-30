@@ -1210,7 +1210,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     ]
     assert "POSTGRES_PASSWORD" not in propagate_body
     assert "DATABASE_URL" not in propagate_body
-    assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" in install_script
+    assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" not in env_utils
+    assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" not in install_script
     assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in alembic_phase
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[

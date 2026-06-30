@@ -732,6 +732,33 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "sync_database_env_chain_after_setup reruns helper even when prior sync marker exists" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    mkdir -p "$tmpdir/bin" "$tmpdir/scripts"
+    touch "$tmpdir/scripts/sync_database_passwords.py"
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    export SIDAR_DATABASE_ENV_CHAIN_SYNCED=1
+
+    sync_database_env_chain_after_setup
+    sync_database_env_chain_after_setup
+
+    [[ "$(wc -l < "$tmpdir/uv.log")" -eq 4 ]]
+    [[ "$(grep -c -- "-m scripts.sync_database_passwords --all-envs" "$tmpdir/uv.log")" -eq 2 ]]
+    [[ "$(grep -c -- "-m scripts.sync_database_passwords --remove-explicit-urls" "$tmpdir/uv.log")" -eq 2 ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"zaten eşitlendi; tekrar yazım atlandı"* ]]
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"

@@ -5407,10 +5407,6 @@ PYDB
 }
 
 sync_database_env_chain_after_setup() {
-    if [[ "${SIDAR_DATABASE_ENV_CHAIN_SYNCED:-0}" == "1" ]]; then
-        info "PostgreSQL dotenv zinciri bu oturumda zaten eşitlendi; tekrar yazım atlandı."
-        return 0
-    fi
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
@@ -5427,8 +5423,6 @@ sync_database_env_chain_after_setup() {
             uv run python -m scripts.sync_database_passwords --all-envs >/dev/null 2>&1 && \
             uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1
     ); then
-        SIDAR_DATABASE_ENV_CHAIN_SYNCED=1
-        export SIDAR_DATABASE_ENV_CHAIN_SYNCED
         ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
     else
         warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
