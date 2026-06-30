@@ -219,10 +219,12 @@ bypass mekanizmasıdır; çekirdek dosya manifesti için bypass uygulanmaz."
 if [[ -n "${SIDAR_INSTALL_RESUME_CWD:-}" && -d "${SIDAR_INSTALL_RESUME_CWD}" ]]; then
     cd "${SIDAR_INSTALL_RESUME_CWD}"
 fi
-# WSL integration autofix sentinel should not leak across reinstall attempts
-rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
-ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    # WSL integration autofix sentinel should not leak across reinstall attempts.
+    rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
+    ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+    ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+fi
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
 SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
@@ -399,7 +401,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-bf8d5655066ec3e7bdd0eba9e28c5268e2e66f90528a62ec78202b869f8d9fdc  scripts/install_modules/phases/06_services.sh
+1d91ff471837c4b754f76f073a872ecc89fa118379210fe1c137bf83dfdcd274  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -434,7 +436,9 @@ populate_remote_module_hashes_from_embedded_manifest() {
     done < <(printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" | awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}')
 }
 
-populate_remote_module_hashes_from_embedded_manifest
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    populate_remote_module_hashes_from_embedded_manifest
+fi
 
 cleanup_embedded_module_hash_manifest_temp_file() {
     if [[ -n "${EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE:-}" ]]; then
@@ -630,19 +634,25 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
     fi
 fi
-# shellcheck disable=SC1090
-source "$INSTALL_HELPERS_MODULE"
-if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
-    ok "Kurulum modülleri indirildi."
-fi
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    # shellcheck disable=SC1090
+    source "$INSTALL_HELPERS_MODULE"
+    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
+        ok "Kurulum modülleri indirildi."
+    fi
 
-core_manifest_status=0
-verify_core_install_manifest || core_manifest_status=$?
-if [[ $core_manifest_status -ne 0 ]]; then
-    case "$core_manifest_status" in
-        2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
-        *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
-    esac
+    core_manifest_status=0
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+        info "SIDAR_INSTALL_TEST_MODE=1 source akışı: çekirdek manifest doğrulaması atlandı."
+    else
+        verify_core_install_manifest || core_manifest_status=$?
+        if [[ $core_manifest_status -ne 0 ]]; then
+            case "$core_manifest_status" in
+                2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
+                *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
+            esac
+        fi
+    fi
 fi
 
 # Eski/uzaktan indirilen yardımcı modüllerde fonksiyon henüz yoksa tek dosyalık

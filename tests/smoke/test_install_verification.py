@@ -541,22 +541,59 @@ def _fake_python3_fails_snippet() -> str:
 
 
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
-    diagnosis = _run_bash_smoke(
-        f"""
-        set -euo pipefail
-        export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
-        {_fake_python3_fails_snippet()}
-        source install_sidar.sh >/dev/null
-        printf '%s' "${{INSTALL_SIDAR_VERSION:-EMPTY}}"
-        """,
-        tmp_path,
-    )
+    diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20"))
+    diagnosis_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    diagnosis_env.pop("INSTALL_SIDAR_VERSION", None)
+    diagnostic_script = f"""
+    unset INSTALL_SIDAR_VERSION
+    export SIDAR_INSTALL_TEST_MODE=1
+    export TMPDIR={shlex.quote(str(tmp_path))}
+    set +e
+    echo '--- command diagnostics ---'
+    printf 'which python3: '; which python3 2>&1 || true
+    printf 'command -v python3: '; command -v python3 2>&1 || true
+    printf 'type -a python3:\n'; type -a python3 2>&1 || true
+    printf 'command -v sha256sum: '; command -v sha256sum 2>&1 || true
+    printf 'command -v readlink: '; command -v readlink 2>&1 || true
+    printf 'command -v sed: '; command -v sed 2>&1 || true
+    echo '--- timed probe ---'
+    {_fake_python3_fails_snippet()}
+    TIMEFORMAT='probe real=%3R user=%3U sys=%3S'
+    time bash -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"'
+    printf 'timed_probe_status=%s\n' "$?"
+    """
+    try:
+        diagnosis = subprocess.run(
+            ["bash", "-c", diagnostic_script],
+            cwd=Path(os.getcwd()),
+            env=diagnosis_env,
+            capture_output=True,
+            text=True,
+            timeout=diagnose_timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return (
+            f"--- diagnosis timeout ---\n{diagnose_timeout}s\n"
+            f"--- diagnosis partial stdout ---\n{_decode_timeout_stream(exc.stdout)[-4000:]}\n"
+            f"--- diagnosis partial stderr ---\n{_decode_timeout_stream(exc.stderr)[-4000:]}\n"
+        )
     return (
         f"--- diagnosis args ---\n{diagnosis.args}\n"
         f"--- diagnosis returncode ---\n{diagnosis.returncode}\n"
         f"--- diagnosis stdout ---\n{diagnosis.stdout!r}\n"
         f"--- diagnosis stderr ---\n{diagnosis.stderr!r}\n"
     )
+
+
+def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path: Path) -> None:
+    diagnosis = _diagnose_sourced_install_version(tmp_path)
+
+    assert "which python3:" in diagnosis
+    assert "command -v sha256sum:" in diagnosis
+    assert "--- timed probe ---" in diagnosis
+    assert "probe real=" in diagnosis
+    assert "timed_probe_status=" in diagnosis
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
@@ -579,6 +616,19 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert blank_idx < resolve_idx
     probe_idx = installer_text.index('if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then')
     assert resolve_idx < validate_idx < probe_idx < validate_call_idx
+    probe_only_guard = 'if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then'
+    original_path_idx = installer_text.index('ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"')
+    original_dir_idx = installer_text.index('ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"')
+    populate_call_idx = installer_text.index("populate_remote_module_hashes_from_embedded_manifest\nfi")
+    helper_source_idx = installer_text.index('source "$INSTALL_HELPERS_MODULE"')
+    core_source_guard_idx = installer_text.index('SIDAR_INSTALL_TEST_MODE=1 source akışı: çekirdek manifest doğrulaması atlandı.')
+    manifest_verify_idx = installer_text.index("verify_core_install_manifest || core_manifest_status=$?")
+    assert core_source_guard_idx < manifest_verify_idx
+    assert installer_text.rfind(probe_only_guard, 0, original_path_idx) != -1
+    assert original_path_idx < original_dir_idx
+    assert installer_text.rfind(probe_only_guard, 0, populate_call_idx) != -1
+    assert installer_text.rfind(probe_only_guard, 0, helper_source_idx) != -1
+    assert installer_text.rfind(probe_only_guard, 0, manifest_verify_idx) != -1
     assert export_idx < load_phase_idx
     assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
     assert 'return 0 2>/dev/null || exit 0' in installer_text
@@ -610,6 +660,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
+    probe_timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20"))
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
@@ -622,7 +673,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         fi
         """,
         tmp_path,
-        timeout_seconds=10,
+        timeout_seconds=probe_timeout_seconds,
     )
     assert version_result.returncode == 0, (
         "INSTALL_SIDAR_VERSION sourced akışta beklenen değere set olmadı.\n"
@@ -688,6 +739,9 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "pyproject.toml" in version_contract_block
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=30" in phase
+    assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
+    assert "Smoke gate probe timeout belirtisi" in phase
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
     assert "source install_sidar.sh" not in version_contract_block
