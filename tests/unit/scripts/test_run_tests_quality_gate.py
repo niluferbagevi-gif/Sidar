@@ -734,6 +734,14 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
     ) < testing_doc.index("uv sync --frozen --all-extras", testing_prereq_start)
 
 
+
+def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "ignore::pydantic.warnings.PydanticDeprecatedSince20" not in pyproject
+    assert "ignore::DeprecationWarning:pydantic.*" in pyproject
+    assert "pytest should reach tests/conftest.py" in pyproject
+
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
     sidar_installer = Path("install_sidar.sh").read_text(encoding="utf-8")
@@ -1161,6 +1169,15 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert services_phase.index(
         "sync_database_passwords_before_smoke_tests"
     ) < services_phase.index("run_smoke_tests")
+    assert "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor" in services_phase
+    assert "for module in (\"pytest\", \"pydantic\", \"pydantic_settings\")" in services_phase
+    assert "uv sync --frozen --extra dev-light" in services_phase
+    assert "Manuel doğrulama: uv sync --frozen --extra dev-light" in services_phase
+    assert services_phase.index(
+        "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor"
+    ) < services_phase.index(
+        "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor"
+    )
     assert services_phase.index(
         "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor"
     ) < services_phase.index("uv run pytest -q --no-cov -p no:xdist -x")

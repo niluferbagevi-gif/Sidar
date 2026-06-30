@@ -417,7 +417,12 @@ filterwarnings = [
   "ignore::FutureWarning:torch",
   "ignore::UserWarning:torch",
   "ignore::ResourceWarning",
-  "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+  # Keep this as a message/module filter instead of importing the pydantic
+  # warning class during pytest config parsing. If a developer has not run
+  # `uv sync --all-extras` yet, pytest should reach tests/conftest.py and
+  # emit the project's actionable missing-dependency message rather than
+  # failing early while resolving this warning category.
+  "ignore::DeprecationWarning:pydantic.*",
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
   "ignore:invalid escape sequence '\\\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",

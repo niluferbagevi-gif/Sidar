@@ -377,6 +377,30 @@ run_pre_service_installer_smoke_gate() {
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
 
+    info "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor (pytest + pydantic)."
+    if ! (
+        cd "$SCRIPT_DIR" && \
+            uv run python - <<'PY'
+import importlib.util
+import sys
+
+missing = [
+    module
+    for module in ("pytest", "pydantic", "pydantic_settings")
+    if importlib.util.find_spec(module) is None
+]
+if missing:
+    print(", ".join(missing), file=sys.stderr)
+    raise SystemExit(1)
+PY
+    ); then
+        warn "Servis öncesi installer smoke gate için pytest/pydantic bağımlılıkları eksik; dev-light profili uv ile senkronize ediliyor."
+        if ! (cd "$SCRIPT_DIR" && uv sync --frozen --extra dev-light); then
+            fail "Servis öncesi installer smoke gate başlatılamadı; pytest/pydantic bağımlılıkları hazırlanamadı. Manuel doğrulama: uv sync --frozen --extra dev-light"
+        fi
+        ok "Servis öncesi installer smoke gate bağımlılıkları dev-light profiliyle hazırlandı."
+    fi
+
     unset SIDAR_DATABASE_ENV_CHAIN_SYNCED || true
     info "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor..."
     if sidar_phase06_run_database_password_sync_all_envs; then
