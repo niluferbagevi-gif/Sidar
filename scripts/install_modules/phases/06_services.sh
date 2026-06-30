@@ -331,7 +331,7 @@ run_pre_service_installer_smoke_gate() {
         return 0
     fi
     if [[ "${RUN_SMOKE_TESTS_MODE:-prompt}" == "never" ]]; then
-        info "--skip-smoke-test verildiği için servis öncesi installer smoke gate atlandı."
+        info "--skip-smoke-test/RUN_SMOKE_TESTS_MODE=never verildiği için servis öncesi installer smoke gate atlandı."
         return 0
     fi
     if [[ ! -f "$SCRIPT_DIR/tests/smoke/test_install_verification.py" ]]; then

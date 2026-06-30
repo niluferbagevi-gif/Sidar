@@ -651,10 +651,17 @@ def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> N
 
 def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight() -> None:
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
     version_contract_block = phase[
         phase.index("local expected_installer_version=") : phase.index("local smoke_log")
     ]
 
+    assert "--skip-smoke-test/RUN_SMOKE_TESTS_MODE=never" in phase
+    assert "RUN_SMOKE_TESTS_MODE=never" in readme
+    assert "docs/install-script-options.md" in readme
+    assert "RUN_SMOKE_TESTS_MODE=never" in install_options
+    assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "pyproject.toml" in version_contract_block
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block

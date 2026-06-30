@@ -554,6 +554,12 @@ chmod +x install_sidar.sh
 ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
 ```
 
+Smoke test ve servis öncesi smoke gate opt-out değerleri için `--skip-smoke-test`,
+`RUN_SMOKE_TESTS_MODE=never` ve `SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0`
+seçenekleri `docs/install-script-options.md` içinde belgelenmiştir. Normal
+geliştirme ve CI akışlarında bu gate'leri açık bırakın; opt-out değerlerini
+yalnız geçici tanılama veya ayrı doğrulama gate'leri bulunan ortamlarda kullanın.
+
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya
 uzun coverage kampanyaları için repoyu klonlamak hâlâ en doğru çalışma şeklidir:
 
