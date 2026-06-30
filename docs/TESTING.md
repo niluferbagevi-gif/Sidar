@@ -76,6 +76,16 @@ Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gere
 `uv sync --frozen --extra dev-light` sistemi başlık paketlerine ihtiyaç duymadan
 `postgres` + `dev` araçlarını kuran hafif profildir.
 
+> **Pydantic ve pytest warning filtresi:** `pydantic` ile
+> `pydantic-settings` Sidar için runtime bağımlılığıdır; konfigürasyon, araç
+> şemaları ve web request doğrulamalarında kullanılır. Pytest tarafında Pydantic
+> v2 geçiş uyarıları filtrelenirken artık
+> `ignore::pydantic.warnings.PydanticDeprecatedSince20` gibi sınıf import eden
+> bir kategori kullanılmaz; `ignore::DeprecationWarning:pydantic.*` modül
+> filtresi kullanılır. Böylece eksik/yarım kurulumlarda pytest config aşamasında
+> pydantic import etmeye çalışıp erken düşmez; suite `tests/conftest.py` içindeki
+> `uv sync --all-extras` yönlendirmesine kadar ulaşır.
+
 Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
 `scripts/install_ci_system_deps.sh` üzerinden kurar. Aynı script apt, dnf, zypper,
 pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri yalnız
