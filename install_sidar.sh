@@ -434,7 +434,9 @@ populate_remote_module_hashes_from_embedded_manifest() {
     done < <(printf '%s\n' "$EMBEDDED_MODULE_HASHES_MANIFEST" | awk 'NF>=2 && $1 !~ /^#/ {print $1, $2}')
 }
 
-populate_remote_module_hashes_from_embedded_manifest
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    populate_remote_module_hashes_from_embedded_manifest
+fi
 
 cleanup_embedded_module_hash_manifest_temp_file() {
     if [[ -n "${EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE:-}" ]]; then
@@ -630,19 +632,21 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
         ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
     fi
 fi
-# shellcheck disable=SC1090
-source "$INSTALL_HELPERS_MODULE"
-if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
-    ok "Kurulum modülleri indirildi."
-fi
+if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
+    # shellcheck disable=SC1090
+    source "$INSTALL_HELPERS_MODULE"
+    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" == "1" ]]; then
+        ok "Kurulum modülleri indirildi."
+    fi
 
-core_manifest_status=0
-verify_core_install_manifest || core_manifest_status=$?
-if [[ $core_manifest_status -ne 0 ]]; then
-    case "$core_manifest_status" in
-        2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
-        *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
-    esac
+    core_manifest_status=0
+    verify_core_install_manifest || core_manifest_status=$?
+    if [[ $core_manifest_status -ne 0 ]]; then
+        case "$core_manifest_status" in
+            2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
+            *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
+        esac
+    fi
 fi
 
 # Eski/uzaktan indirilen yardımcı modüllerde fonksiyon henüz yoksa tek dosyalık
