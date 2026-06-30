@@ -680,6 +680,58 @@ ENV
   ! grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/db_credentials.sh"
 }
 
+@test "ensure_database_url_defaults preserves existing strong PostgreSQL password when composing missing DSNs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_db
+EOF
+    generate_secure_token() {
+      printf "%s\n" "SHOULD_NOT_BE_USED_1234567890"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_USER=sidar_user$" "$env_file"
+    grep -q "^POSTGRES_PASSWORD=$existing_password$" "$env_file"
+    grep -q "^POSTGRES_DB=sidar_db$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_db$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@postgres:5432/sidar_db$" "$env_file"
+    ! grep -q "SHOULD_NOT_BE_USED" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults rotates weak PostgreSQL password when composing missing DSNs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    generated_password="R9mKq2pT7vXc5aHj6sDf4Gh8N"
+    cat > "$env_file" <<EOF
+POSTGRES_PASSWORD=postgres
+EOF
+    generate_secure_token() {
+      printf "%s\n" "$generated_password"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_USER=sidar$" "$env_file"
+    grep -q "^POSTGRES_PASSWORD=$generated_password$" "$env_file"
+    grep -q "^POSTGRES_DB=sidar$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@127.0.0.1:5432/sidar$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@postgres:5432/sidar$" "$env_file"
+    [[ "${DB_PASSWORD_HARDENED:-}" == "true" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
     SMOKE_TEST_STATUS="tamamlandi"

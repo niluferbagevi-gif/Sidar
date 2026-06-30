@@ -116,12 +116,25 @@ sync_postgres_env_with_database_url() {
 
 write_generated_default_database_url() {
     local env_file="$1"
-    local generated_password=""
-    generated_password=$(generate_secure_token 24)
-    [[ -n "$generated_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
+    local postgres_user="sidar"
+    local postgres_db="sidar"
+    local postgres_password=""
 
-    local local_db_url="postgresql+asyncpg://sidar:${generated_password}@127.0.0.1:5432/sidar"
-    local container_db_url="postgresql+asyncpg://sidar:${generated_password}@postgres:5432/sidar"
+    postgres_user=$(read_env_value_from_file "POSTGRES_USER" "$env_file" | tr -d '\n')
+    postgres_db=$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')
+    postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file" | tr -d '\n')
+
+    [[ -n "${postgres_user//[[:space:]]/}" ]] || postgres_user="sidar"
+    [[ -n "${postgres_db//[[:space:]]/}" ]] || postgres_db="sidar"
+
+    if [[ -z "${postgres_password//[[:space:]]/}" ]] || is_weak_secret_value "$postgres_password"; then
+        postgres_password=$(generate_secure_token 24)
+        [[ -n "$postgres_password" ]] || fail "DATABASE_URL için güçlü parola üretilemedi."
+        DB_PASSWORD_HARDENED=true
+    fi
+
+    local local_db_url="postgresql+asyncpg://${postgres_user}:${postgres_password}@127.0.0.1:5432/${postgres_db}"
+    local container_db_url="postgresql+asyncpg://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}"
 
     sed_inplace '/^POSTGRES_USER=/d' "$env_file"
     sed_inplace '/^POSTGRES_PASSWORD=/d' "$env_file"
@@ -129,13 +142,12 @@ write_generated_default_database_url() {
     sed_inplace '/^DATABASE_URL=/d' "$env_file"
     sed_inplace '/^SIDAR_CONTAINER_DATABASE_URL=/d' "$env_file"
     {
-        echo "POSTGRES_USER=sidar"
-        echo "POSTGRES_PASSWORD=${generated_password}"
-        echo "POSTGRES_DB=sidar"
+        echo "POSTGRES_USER=${postgres_user}"
+        echo "POSTGRES_PASSWORD=${postgres_password}"
+        echo "POSTGRES_DB=${postgres_db}"
         echo "DATABASE_URL=${local_db_url}"
         echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}"
     } >> "$env_file"
-    DB_PASSWORD_HARDENED=true
 }
 
 ensure_database_url_defaults() {
@@ -149,21 +161,36 @@ ensure_database_url_defaults() {
     current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
 
     if [[ -z "$current_db_url" ]]; then
+        DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+        else
+            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
+        fi
         return
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
         warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
+        DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        else
+            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak güncellendi."
+        fi
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
         warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
+        DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
-        ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+        else
+            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+        fi
     fi
 }
