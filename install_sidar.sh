@@ -6486,6 +6486,11 @@ run_smoke_tests() {
         return
     fi
 
+    if [[ "$WSL2" == true && -z "${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-}" ]]; then
+        export SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180
+        info "WSL2 ortamında smoke bash helper timeout değeri 180 saniyeye yükseltildi (SIDAR_INSTALL_SMOKE_BASH_TIMEOUT ile override edilebilir)."
+    fi
+
     if [[ ! -d "$smoke_dir" ]]; then
         warn "Smoke test dizini bulunamadı: $smoke_dir"
         SMOKE_TEST_STATUS="dizin_yok"

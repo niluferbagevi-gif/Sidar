@@ -118,7 +118,8 @@ Add-MpPreference -ExclusionPath "\\wsl$\Ubuntu\home\<kullanıcı>\Sidar"
 
 Repo içi smoke testlerde `SIDAR_INSTALL_VERSION_PROBE_ONLY=1` kaynaklama
 sözleşmesi, yavaş WSL2/Defender ortamlarında yanlış negatif üretmemesi için
-60 saniyelik varsayılan timeout ile doğrulanır. Kurulum fazındaki servis öncesi
-gate daha geniş operasyonel tampon kullanır (`SIDAR_INSTALL_SMOKE_BASH_TIMEOUT`
+60 saniyelik varsayılan timeout ile doğrulanır. Kurulum akışında ise hem
+servis öncesi gate hem de final `tests/smoke` çalıştırması WSL2 algılandığında
+daha geniş operasyonel tampon kullanır (`SIDAR_INSTALL_SMOKE_BASH_TIMEOUT`
 varsayılanı 180 saniye) ve ihtiyaç halinde 240 saniye gibi değerlerle
 override edilebilir.

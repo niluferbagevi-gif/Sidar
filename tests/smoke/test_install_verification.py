@@ -787,6 +787,7 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     readme = Path("README.md").read_text(encoding="utf-8")
     install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
     troubleshooting = Path("docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md").read_text(encoding="utf-8")
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
     version_contract_block = phase[
         phase.index("local expected_installer_version=") : phase.index("local smoke_log")
     ]
@@ -802,13 +803,15 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "pyproject.toml" in version_contract_block
     assert 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"' in phase
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
+    assert "WSL2 ortamında smoke bash helper timeout değeri 180 saniyeye yükseltildi" in installer
+    assert "export SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in installer
+    assert "final `tests/smoke` çalıştırması WSL2 algılandığında" in troubleshooting
     assert "Ubuntu 26.04/resolute" in troubleshooting
     assert "Windows Defender real-time scanning" in troubleshooting
     assert "güncel akış Conda değil `uv` kullanır" in troubleshooting
     assert "60 saniyelik varsayılan timeout" in troubleshooting
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
-    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
     assert "sidar_phase06_cleanup_pre_service_smoke_log" in phase
     assert "SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG" in phase
     assert "sidar_phase06_fail_with_smoke_cleanup" in phase
