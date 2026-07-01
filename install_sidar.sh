@@ -314,7 +314,19 @@ sidar_t() {
             failed_command) printf '   Failed command: %s' "$1" ;;
             check_log) printf '   Check the log file for cleanup/review: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Installation Starting' ;;
-            invalid_arg) printf 'Unknown argument: %s. Accepted values: doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y' "$1" ;;
+            invalid_arg)
+                printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+                    "Unknown argument: $1." \
+                    'Accepted values:' \
+                    '  Commands: doctor | prepare-system | sync-deps | provision-models | smoke' \
+                    '  Core flags: --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto' \
+                    '  Environment: --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode' \
+                    '  Assets/offline: --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli' \
+                    '  Cleanup/Kubernetes: --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=...' \
+                    '  Tests/automation: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit' \
+                    '  Models/UI/audio: --skip-models | --download-models | --build-ui | --enable-audio'
+                printf '\n%s' '  Non-interactive: --ci | --no-interaction | --non-interactive | --headless | --yes | -y'
+                ;;
             invalid_docker_cli) printf 'Invalid DOCKER_CLI_INSTALL value: %s. Supported: auto|always|never' "$1" ;;
             invalid_mode) printf 'Invalid --mode value: %s. Supported: local|docker' "$1" ;;
             invalid_env) printf 'Invalid --env value: %s. Supported: development|production' "$1" ;;
@@ -337,7 +349,19 @@ sidar_t() {
             failed_command) printf '   Hata veren komut: %s' "$1" ;;
             check_log) printf '   Temizleme/inceleme için log dosyasını kontrol edin: %s' "$1" ;;
             banner_title) printf 'Sidar AI — Kurulum Başlıyor' ;;
-            invalid_arg) printf 'Bilinmeyen argüman: %s (doctor | prepare-system | sync-deps | provision-models | smoke | --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto | --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode | --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli | --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=... | --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit | --skip-models | --download-models | --build-ui | --enable-audio | --ci | --no-interaction | --non-interactive | --headless | --yes | -y kabul edilir)' "$1" ;;
+            invalid_arg)
+                printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+                    "Bilinmeyen argüman: $1." \
+                    'Kabul edilen değerler:' \
+                    '  Komutlar: doctor | prepare-system | sync-deps | provision-models | smoke' \
+                    '  Temel bayraklar: --upgrade-lock | --i-understand-full-access | --cpu | --docker-only | --runtime-mode=local|docker | --silent | --auto' \
+                    '  Ortam: --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode' \
+                    '  Varlık/offline: --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli' \
+                    '  Temizlik/Kubernetes: --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=...' \
+                    '  Test/otomasyon: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit' \
+                    '  Model/UI/ses: --skip-models | --download-models | --build-ui | --enable-audio'
+                printf '\n%s' '  Etkileşimsiz: --ci | --no-interaction | --non-interactive | --headless | --yes | -y'
+                ;;
             invalid_docker_cli) printf "Geçersiz DOCKER_CLI_INSTALL değeri: '%s'. Desteklenen: auto|always|never" "$1" ;;
             invalid_mode) printf "Geçersiz --mode değeri: '%s'. Desteklenen: local|docker" "$1" ;;
             invalid_env) printf "Geçersiz --env değeri: '%s'. Desteklenen: development|production" "$1" ;;
