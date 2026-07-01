@@ -642,6 +642,11 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert installer_text.rfind(probe_only_guard, 0, helper_source_idx) != -1
     assert installer_text.rfind(probe_only_guard, 0, manifest_verify_idx) != -1
     assert export_idx < load_phase_idx
+    bash_resolve_idx = installer_text.index("Always try the Bash-only pyproject parser")
+    python_probe_idx = installer_text.index("scripts/version_probe.py", resolve_idx)
+    assert resolve_idx < bash_resolve_idx < python_probe_idx
+    assert 'return 0' in installer_text[bash_resolve_idx:python_probe_idx]
+    assert "sed -nE" not in installer_text[resolve_idx:python_probe_idx]
     assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
     assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
@@ -665,6 +670,33 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
             f"{marker!r} aktif install_sidar.sh akışına geri dönmemeli; "
             "Conda yalnızca docs/archive altında tarihsel kayıt olarak kalabilir."
         )
+
+
+def test_install_sidar_test_mode_source_resolves_pyproject_version_without_python(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        export SIDAR_INSTALL_TEST_MODE=1
+        unset SIDAR_INSTALL_VERSION
+        {_fake_python3_fails_snippet()}
+        source install_sidar.sh >/dev/null
+        if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          exit 1
+        fi
+        """,
+        tmp_path,
+        timeout_seconds=int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20")),
+    )
+    assert result.returncode == 0, (
+        "SIDAR_INSTALL_TEST_MODE source akışı python3 olmadan pyproject sürümünü çözmeli.\n"
+        f"--- stdout ---\n{result.stdout!r}\n"
+        f"--- stderr ---\n{result.stderr!r}"
+    )
 
 
 def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path: Path) -> None:

@@ -707,9 +707,23 @@ is_blank() {
 resolve_install_sidar_version() {
     local resolved_version=""
     local python_version_error=""
+    local pyproject_line=""
 
+    # Repo refresh/source smoke paths must not depend on python3 or sed just to
+    # resolve the installer version. Always try the Bash-only pyproject parser
+    # first and return immediately when [project].version is present.
     if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-        resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
+        while IFS= read -r pyproject_line; do
+            if [[ "$pyproject_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                resolved_version="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "$SCRIPT_DIR/pyproject.toml"
+    fi
+    resolved_version="${resolved_version//[[:space:]]/}"
+    if [[ -n "$resolved_version" ]]; then
+        echo "$resolved_version"
+        return 0
     fi
 
     if is_blank "$resolved_version" && [[ -f "$SCRIPT_DIR/scripts/version_probe.py" && -f "$SCRIPT_DIR/pyproject.toml" ]] && command -v python3 &>/dev/null; then
