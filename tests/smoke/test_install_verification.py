@@ -646,6 +646,30 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
     assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
+    # resolve_install_sidar_version() `is_blank` fallback zincirine (sed →
+    # python3 version_probe.py → python3 sidar_version.py) düşmeden önce
+    # pure Bash `while read` + BASH_REMATCH fast-path'i denemeli. Bu, yavaş
+    # fork() ortamlarında (WSL2 + Defender) source akışı sırasında hiç
+    # python3 subprocess spawn edilmemesini garantiler.
+    resolve_body = installer_text[resolve_idx : validate_idx]
+    assert "while IFS= read -r _sidar_resolve_line" in resolve_body, (
+        "resolve_install_sidar_version() built-in `while read` fast-path'i "
+        "içermeli."
+    )
+    assert "BASH_REMATCH[1]" in resolve_body, (
+        "resolve_install_sidar_version() BASH_REMATCH ile sürümü "
+        "çekmeli (pure-bash yol)."
+    )
+    fast_path_return_idx = resolve_body.index(
+        'if ! is_blank "$resolved_version"; then'
+    )
+    sed_fallback_idx = resolve_body.index(
+        "sed -nE 's/^[[:space:]]*version"
+    )
+    assert fast_path_return_idx < sed_fallback_idx, (
+        "resolve_install_sidar_version() fast-path erken return, sed "
+        "fallback'ten önce gelmeli."
+    )
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text

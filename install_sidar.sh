@@ -708,6 +708,30 @@ resolve_install_sidar_version() {
     local resolved_version=""
     local python_version_error=""
 
+    # Ultra fast-path: pure Bash yerleşikleriyle pyproject.toml'dan sürümü
+    # dene. sed/head/python3 subprocess çağrıları WSL2 + Windows Defender gibi
+    # yavaş fork() ortamlarında saniyeler alabildiği için, `is_blank` fallback
+    # zincirine düşmeden önce her zaman built-in `while read` ile denenir.
+    # Bu, `source install_sidar.sh` akışlarında (SIDAR_INSTALL_TEST_MODE=1 ve
+    # smoke gate senaryoları dahil) sürüm çözümlemesinin milisaniyeler içinde
+    # bitmesini sağlar.
+    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+        local _sidar_resolve_line=""
+        while IFS= read -r _sidar_resolve_line; do
+            if [[ "$_sidar_resolve_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+                resolved_version="${BASH_REMATCH[1]}"
+                break
+            fi
+        done < "$SCRIPT_DIR/pyproject.toml"
+        unset _sidar_resolve_line
+    fi
+
+    if ! is_blank "$resolved_version"; then
+        resolved_version="${resolved_version//[[:space:]]/}"
+        echo "${resolved_version:-0.0.0}"
+        return 0
+    fi
+
     if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         resolved_version=$(sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$SCRIPT_DIR/pyproject.toml" | head -n1 || true)
     fi
