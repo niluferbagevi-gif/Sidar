@@ -4084,6 +4084,43 @@ ASOUNDRC
         echo "${1:-0}" | grep -oP '^\d+' || echo "0"
     }
 
+    _detect_host_cpus() {
+        local total_cpus="0"
+        local ps_cpus=""
+        local wmic_cpus=""
+
+        if command -v powershell.exe &>/dev/null; then
+            ps_cpus=$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors" 2>/dev/null \
+                | tr -d '\r' \
+                | awk 'NF {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^[0-9]+$/) {print $0; exit}}' || true)
+            if [[ -n "$ps_cpus" && "$ps_cpus" -gt 0 ]]; then
+                total_cpus="$ps_cpus"
+            fi
+        fi
+        if [[ "$total_cpus" -le 0 ]] \
+            && command -v cmd.exe &>/dev/null \
+            && command -v wmic.exe &>/dev/null; then
+            wmic_cpus=$(cmd.exe /c "wmic cpu get NumberOfLogicalProcessors /value" 2>/dev/null \
+                | tr -d '\r' \
+                | awk -F= '/^NumberOfLogicalProcessors=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 ~ /^[0-9]+$/) {print $2; exit}}' || true)
+            if [[ -n "$wmic_cpus" && "$wmic_cpus" -gt 0 ]]; then
+                total_cpus="$wmic_cpus"
+            fi
+        fi
+        if [[ "$total_cpus" -le 0 ]] && command -v nproc &>/dev/null; then
+            local nproc_cpus=""
+            nproc_cpus=$(nproc 2>/dev/null || echo "0")
+            if [[ -n "$nproc_cpus" && "$nproc_cpus" -gt 0 ]]; then
+                total_cpus="$nproc_cpus"
+            fi
+        fi
+        if [[ "$total_cpus" -le 0 ]]; then
+            echo "4"
+            return
+        fi
+        echo "$total_cpus"
+    }
+
     _detect_host_ram_gb() {
         local total_bytes="0"
         local wmic_bytes=""
@@ -4140,41 +4177,58 @@ ASOUNDRC
     }
 
     local host_ram_gb
+    local host_cpus
     local target_memory_gb
     local target_swap_gb
+    local target_processors
     host_ram_gb=$(_detect_host_ram_gb)
+    host_cpus=$(_detect_host_cpus)
     target_memory_gb=$((host_ram_gb * 3 / 4))
     target_memory_gb=$(_clamp_int "$target_memory_gb" 4 32)
     target_swap_gb=$((host_ram_gb / 2))
     target_swap_gb=$(_clamp_int "$target_swap_gb" 2 16)
+    # WSL2 varsayılan olarak host'un tüm mantıksal CPU'larını tüketir; host
+    # tarafında planlayıcının nefes alması için 3/4'e sabitleyip [2, 16]
+    # aralığına clamp ediyoruz.
+    target_processors=$((host_cpus * 3 / 4))
+    target_processors=$(_clamp_int "$target_processors" 2 16)
 
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
-    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap} (host RAM: ${host_ram_gb}GB)."
+    # cgroup v2'yi zorla (Docker Desktop olmayan WSL2'lerde bile eşit
+    # dağıtım/limit davranışı için gereklidir) ve `[experimental] sparseVhd`
+    # ile ext4 VHD dosyalarının silinen alanı OS'a geri vermesini sağla.
+    local target_kernel_cmdline="cgroup_no_v1=all"
+    local target_sparse_vhd="true"
+    info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap}, processors=${target_processors} (host RAM: ${host_ram_gb}GB, host CPU: ${host_cpus}), kernelCommandLine=${target_kernel_cmdline}, [experimental] sparseVhd=${target_sparse_vhd}."
 
-    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
-    # Değer zaten varsa korur, yinelenen satırları temizler.
-    _ensure_wsl2_key_once() {
+    # Bir INI bölümü altında bir anahtarın tekil olmasını sağlar; yoksa
+    # ekler, varsa mevcut değerine dokunmaz. Bölüm tamamen yoksa dosyanın
+    # sonuna [section] başlığı ile birlikte ekler. Yinelenen satırları
+    # temizler.
+    _ensure_ini_key_once() {
         local cfg_file="$1"
-        local cfg_key="$2"
-        local cfg_value="$3"
+        local target_section="$2"   # örn. "wsl2" veya "experimental"
+        local cfg_key="$3"
+        local cfg_value="$4"
         local tmp_file
         tmp_file=$(mktemp)
 
-        awk -v key="$cfg_key" -v value="$cfg_value" '
-            BEGIN { in_wsl2=0; seen_key=0 }
+        awk -v target_section="$target_section" -v key="$cfg_key" -v value="$cfg_value" '
+            BEGIN { in_target=0; seen_key=0; section_found=0 }
             {
                 if ($0 ~ /^\[.*\]$/) {
-                    if (in_wsl2 && !seen_key) {
+                    if (in_target && !seen_key) {
                         print key "=" value
                         seen_key=1
                     }
-                    in_wsl2 = ($0 == "[wsl2]")
+                    in_target = ($0 == "[" target_section "]")
+                    if (in_target) { section_found=1 }
                     print
                     next
                 }
 
-                if (in_wsl2 && $0 ~ ("^" key "=")) {
+                if (in_target && $0 ~ ("^" key "=")) {
                     if (!seen_key) {
                         print
                         seen_key=1
@@ -4185,7 +4239,11 @@ ASOUNDRC
                 print
             }
             END {
-                if (in_wsl2 && !seen_key) {
+                if (in_target && !seen_key) {
+                    print key "=" value
+                } else if (!section_found) {
+                    print ""
+                    print "[" target_section "]"
                     print key "=" value
                 }
             }
@@ -4201,6 +4259,12 @@ ASOUNDRC
 
         rm -f "$tmp_file"
         return 1
+    }
+
+    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
+    # Değer zaten varsa korur, yinelenen satırları temizler.
+    _ensure_wsl2_key_once() {
+        _ensure_ini_key_once "$1" "wsl2" "$2" "$3"
     }
 
     # [wsl2] bölümünde anahtar değerini zorla günceller (ilkini değiştirir, tekrarları temizler).
@@ -4256,9 +4320,14 @@ ASOUNDRC
 [wsl2]
 memory=__SIDAR_WSL_MEMORY__
 swap=__SIDAR_WSL_SWAP__
+processors=__SIDAR_WSL_PROCESSORS__
+kernelCommandLine=__SIDAR_WSL_KERNEL_CMDLINE__
+
+[experimental]
+sparseVhd=__SIDAR_WSL_SPARSE_VHD__
 WSLCFG
-            sed_inplace "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g" "$wslconfig_path"
-            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap})."
+            sed_inplace "s/__SIDAR_WSL_MEMORY__/${target_memory}/g; s/__SIDAR_WSL_SWAP__/${target_swap}/g; s/__SIDAR_WSL_PROCESSORS__/${target_processors}/g; s/__SIDAR_WSL_KERNEL_CMDLINE__/${target_kernel_cmdline}/g; s/__SIDAR_WSL_SPARSE_VHD__/${target_sparse_vhd}/g" "$wslconfig_path"
+            ok "WSL2: %UserProfile%/.wslconfig oluşturuldu (memory=${target_memory}, swap=${target_swap}, processors=${target_processors}, kernelCommandLine=${target_kernel_cmdline}, [experimental] sparseVhd=${target_sparse_vhd})."
             WSLCONFIG_CHANGED=true
             info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
         else
@@ -4391,6 +4460,48 @@ WSLCFG
                 ok "WSL2: .wslconfig swap=${cur_swap} — yeterli."
             fi
 
+            # [wsl2] altındaki processors= satırını yoksa ekle. Kullanıcı
+            # manuel bir override yazmışsa değere dokunmayız — düşüş
+            # (downgrade) etkileşimli akış yalnız memory/swap için var.
+            local ensure_proc_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "processors" "$target_processors" || ensure_proc_rc=$?
+            case $ensure_proc_rc in
+                0)
+                    ok "WSL2: .wslconfig içinde processors=${target_processors} satırı eklendi."
+                    changed=true
+                    ;;
+                1) : ;;
+                2) warn "WSL2: .wslconfig processors satırı güncellenemedi (dosya yazma hatası)." ;;
+            esac
+
+            # kernelCommandLine=cgroup_no_v1=all — cgroup v2'yi zorlayarak
+            # Docker/systemd olmayan senaryolarda bile modern kaynak
+            # limitlemesi ve daha hızlı syscall path'i sağlar.
+            local ensure_kcmd_rc=0
+            _ensure_wsl2_key_once "$wslconfig_path" "kernelCommandLine" "$target_kernel_cmdline" || ensure_kcmd_rc=$?
+            case $ensure_kcmd_rc in
+                0)
+                    ok "WSL2: .wslconfig içinde kernelCommandLine=${target_kernel_cmdline} satırı eklendi."
+                    changed=true
+                    ;;
+                1) : ;;
+                2) warn "WSL2: .wslconfig kernelCommandLine satırı güncellenemedi (dosya yazma hatası)." ;;
+            esac
+
+            # [experimental] sparseVhd=true — ext4.vhdx dosyasının silinen
+            # alanı OS'a geri vermesini sağlar; smoke gate ve npm/uv cache
+            # yazımlarında dosya sistemi 2-3× hızlanabilir.
+            local ensure_sparse_rc=0
+            _ensure_ini_key_once "$wslconfig_path" "experimental" "sparseVhd" "$target_sparse_vhd" || ensure_sparse_rc=$?
+            case $ensure_sparse_rc in
+                0)
+                    ok "WSL2: .wslconfig içinde [experimental] sparseVhd=${target_sparse_vhd} satırı eklendi."
+                    changed=true
+                    ;;
+                1) : ;;
+                2) warn "WSL2: .wslconfig [experimental] sparseVhd satırı güncellenemedi (dosya yazma hatası)." ;;
+            esac
+
             if [[ "$changed" == true ]]; then
                 WSLCONFIG_CHANGED=true
                 info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
@@ -4402,6 +4513,11 @@ WSLCFG
         echo "       [wsl2]"
         echo "       memory=${target_memory}"
         echo "       swap=${target_swap}"
+        echo "       processors=${target_processors}"
+        echo "       kernelCommandLine=${target_kernel_cmdline}"
+        echo ""
+        echo "       [experimental]"
+        echo "       sparseVhd=${target_sparse_vhd}"
     fi
 }
 

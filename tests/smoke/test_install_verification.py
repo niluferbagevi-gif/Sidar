@@ -670,6 +670,56 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
         "resolve_install_sidar_version() fast-path erken return, sed "
         "fallback'ten önce gelmeli."
     )
+
+    # .wslconfig WSL2 performans ayarları:
+    # - processors: WSL2 varsayılan olarak host'un tüm mantıksal CPU'larını
+    #   tüketir; installer 3/4 clamp [2, 16] ile hedef belirler.
+    # - kernelCommandLine=cgroup_no_v1=all: cgroup v2'yi zorlar.
+    # - [experimental] sparseVhd=true: ext4 VHD dosyasının OS'a alan
+    #   dönmesini sağlar, dosya sistemi 2-3× hızlanır.
+    # - Log satırı bu değerlerin hepsini yazdırmalı ki operatör kontrol
+    #   edebilsin.
+    assert "_detect_host_cpus()" in installer_text, (
+        "install_sidar.sh WSL2 host CPU tespiti için _detect_host_cpus() "
+        "helper'ı sağlamalı."
+    )
+    assert "target_processors=$((host_cpus * 3 / 4))" in installer_text, (
+        "WSL2 processors hedefi host CPU * 3/4 formülüyle hesaplanmalı."
+    )
+    assert "kernelCommandLine=${target_kernel_cmdline}" in installer_text, (
+        "WSL2 template'i kernelCommandLine anahtarını içermeli."
+    )
+    assert 'target_kernel_cmdline="cgroup_no_v1=all"' in installer_text, (
+        "WSL2 kernelCommandLine değeri cgroup_no_v1=all olmalı."
+    )
+    assert 'target_sparse_vhd="true"' in installer_text, (
+        "[experimental] sparseVhd hedef değeri true olmalı."
+    )
+    assert '_ensure_ini_key_once "$wslconfig_path" "experimental" "sparseVhd"' in installer_text, (
+        "sparseVhd ayarı generic _ensure_ini_key_once ile [experimental] "
+        "bölümüne yazılmalı."
+    )
+    assert '_ensure_wsl2_key_once "$wslconfig_path" "processors"' in installer_text, (
+        "processors ayarı _ensure_wsl2_key_once ile [wsl2] altına yazılmalı."
+    )
+    assert '_ensure_wsl2_key_once "$wslconfig_path" "kernelCommandLine"' in installer_text, (
+        "kernelCommandLine ayarı _ensure_wsl2_key_once ile [wsl2] altına "
+        "yazılmalı."
+    )
+    wsl_log_line = "WSL2 için dinamik .wslconfig hedefleri: memory="
+    log_idx = installer_text.index(wsl_log_line)
+    log_line_end = installer_text.index('."', log_idx)
+    wsl_log = installer_text[log_idx:log_line_end]
+    for probe in (
+        "processors=${target_processors}",
+        "kernelCommandLine=${target_kernel_cmdline}",
+        "sparseVhd=${target_sparse_vhd}",
+    ):
+        assert probe in wsl_log, (
+            f"WSL2 hedefleri info log satırı {probe!r} değerini de "
+            "yazdırmalı; operatör kurulum log'una bakarak ayarları "
+            "doğrulayabilmeli."
+        )
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
