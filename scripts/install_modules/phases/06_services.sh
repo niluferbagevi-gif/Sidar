@@ -409,13 +409,18 @@ PY
         fail "Servis öncesi installer smoke gate başlatılamadı; PostgreSQL dotenv profilleri eşitlenemedi."
     fi
 
-    info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov)."
+    local smoke_bash_timeout="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"
+    if [[ ! "$smoke_bash_timeout" =~ ^[1-9][0-9]*$ ]]; then
+        warn "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT değeri geçersiz (${smoke_bash_timeout@Q}); varsayılan 180 saniyeye düşülüyor."
+        smoke_bash_timeout=180
+    fi
+    info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov, bash timeout=${smoke_bash_timeout}s)."
     if (
         set -o pipefail
         (
             cd "$SCRIPT_DIR" && \
                 SIDAR_INSTALL_TEST_MODE=1 \
-                SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 \
+                SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="$smoke_bash_timeout" \
                 uv run pytest -q --no-cov -p no:xdist -x tests/smoke/test_install_verification.py \
                 </dev/null
         ) 2>&1 | tee "$smoke_log"
@@ -440,7 +445,7 @@ PY
         warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
         warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
         warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
-        warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
+        warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle (SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh) yeniden deneyin; bu ortam değişkeni artık installer tarafından pytest çağrısına aktarılıyor. Kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın; sadece bu adımı devre dışı bırakmak için SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 verin."
         fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
     fi
 }

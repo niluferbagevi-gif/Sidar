@@ -59,7 +59,11 @@ bash -c 'unset INSTALL_SIDAR_VERSION; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INS
 ./install_sidar.sh
 ```
 
-Eğer yalnızca ortam yavaşlığı doğrulanmışsa geçici olarak timeout artırılabilir:
+Eğer yalnızca ortam yavaşlığı doğrulanmışsa geçici olarak timeout artırılabilir.
+Bu ortam değişkeni artık installer tarafından pre-service smoke gate'in
+`pytest` çağrısına doğrudan aktarılmaktadır; verilen değer boş, sıfır veya
+alfasayısal olmayan bir girdi olursa installer bir uyarıyla `180` saniyelik
+varsayılana geri döner:
 
 ```bash
 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh
@@ -72,6 +76,8 @@ bırakır:
 ./install_sidar.sh --skip-smoke-test
 # veya
 RUN_SMOKE_TESTS_MODE=never ./install_sidar.sh
+# veya yalnızca pre-service smoke gate'i devre dışı bırakmak için:
+SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh
 ```
 
 ## Repo tarafında korunması gereken sözleşme

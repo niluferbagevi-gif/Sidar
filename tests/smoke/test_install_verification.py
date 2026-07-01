@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -751,7 +752,25 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "pyproject.toml" in version_contract_block
-    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in phase
+    # 180 saniyelik varsayılan smoke bash timeout'u; kullanıcı
+    # SIDAR_INSTALL_SMOKE_BASH_TIMEOUT env-var'ı ile override edebilmeli.
+    # Sözleşme: varsayılan 180 ${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}
+    # ifadesiyle sarmalanmalı ve doğrulanmış yerel değişken pytest'e
+    # geçirilmelidir.
+    assert re.search(
+        r'smoke_bash_timeout="\$\{SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180\}"',
+        phase,
+    ), (
+        "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT override edilebilir olarak "
+        "tanımlanmalı (varsayılan 180)."
+    )
+    assert re.search(
+        r'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="\$smoke_bash_timeout"',
+        phase,
+    ), (
+        "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT pytest çağrısına yerelde doğrulanmış "
+        "değişkeni üzerinden geçirilmeli."
+    )
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
