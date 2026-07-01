@@ -7343,6 +7343,6 @@ main() {
     sidar_run_install_phase "07_finish" sidar_phase_finish
 }
 
-if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
