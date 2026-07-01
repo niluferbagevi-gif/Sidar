@@ -432,7 +432,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 57f8c354d8959e50d701a8dd8cf5c2a85cdd99f3f1ff52ca5130b51d31046f6e  scripts/install_modules/phases/04_workspace.sh
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
-cc1ebb2fde2f735a0b8ebb9b8e937c5ffe10b3ed51275c4f40248ad6ad0aafc3  scripts/install_modules/phases/06_services.sh
+580260c3492497e7874d33c5f409cbc7f1a09d74ecb56ab19dea2debd7d40d1d  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
 a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -1060,7 +1060,7 @@ relocate_log_file_if_needed() {
 }
 
 # shellcheck disable=SC2154
-trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
+trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; if declare -F sidar_phase06_cleanup_pre_service_smoke_log >/dev/null 2>&1; then sidar_phase06_cleanup_pre_service_smoke_log || true; fi; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
 
 compute_sha256() {
     local file_path="$1"

@@ -755,6 +755,11 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    assert "sidar_phase06_cleanup_pre_service_smoke_log" in phase
+    assert "SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG" in phase
+    assert "sidar_phase06_fail_with_smoke_cleanup" in phase
+    assert "sidar_phase06_cleanup_pre_service_smoke_log || true" in installer
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
     assert "source install_sidar.sh" not in version_contract_block

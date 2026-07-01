@@ -82,6 +82,13 @@ sidar_phase06_run_database_password_sync_all_envs() {
     (cd "$SCRIPT_DIR" && uv run python scripts/sync_database_passwords.py --all-envs >/dev/null 2>&1)
 }
 
+sidar_phase06_cleanup_pre_service_smoke_log() {
+    if [[ -n "${SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG:-}" ]]; then
+        rm -f -- "$SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG"
+        SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG=""
+    fi
+}
+
 sidar_phase06_preserve_pre_service_smoke_log() {
     local log_path="$1"
     local dir=""
@@ -376,6 +383,11 @@ run_pre_service_installer_smoke_gate() {
 
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
+    SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG="$smoke_log"
+    sidar_phase06_fail_with_smoke_cleanup() {
+        sidar_phase06_cleanup_pre_service_smoke_log
+        fail "$@"
+    }
 
     info "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor (pytest + pydantic)."
     if ! (
@@ -396,7 +408,7 @@ PY
     ); then
         warn "Servis öncesi installer smoke gate için pytest/pydantic bağımlılıkları eksik; dev-light profili uv ile senkronize ediliyor."
         if ! (cd "$SCRIPT_DIR" && uv sync --frozen --extra dev-light); then
-            fail "Servis öncesi installer smoke gate başlatılamadı; pytest/pydantic bağımlılıkları hazırlanamadı. Manuel doğrulama: uv sync --frozen --extra dev-light"
+            sidar_phase06_fail_with_smoke_cleanup "Servis öncesi installer smoke gate başlatılamadı; pytest/pydantic bağımlılıkları hazırlanamadı. Manuel doğrulama: uv sync --frozen --extra dev-light"
         fi
         ok "Servis öncesi installer smoke gate bağımlılıkları dev-light profiliyle hazırlandı."
     fi
@@ -406,7 +418,7 @@ PY
     if sidar_phase06_run_database_password_sync_all_envs; then
         ok "Servis öncesi installer smoke gate dotenv profilleri eşitlendi."
     else
-        fail "Servis öncesi installer smoke gate başlatılamadı; PostgreSQL dotenv profilleri eşitlenemedi."
+        sidar_phase06_fail_with_smoke_cleanup "Servis öncesi installer smoke gate başlatılamadı; PostgreSQL dotenv profilleri eşitlenemedi."
     fi
 
     info "Servis başlatmadan önce installer smoke gate çalıştırılıyor (-x, no-cov)."
@@ -421,7 +433,7 @@ PY
         ) 2>&1 | tee "$smoke_log"
     ); then
         ok "Servis öncesi installer smoke gate başarılı."
-        rm -f "$smoke_log"
+        sidar_phase06_cleanup_pre_service_smoke_log
     else
         local persisted_smoke_log=""
         persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"
@@ -441,8 +453,9 @@ PY
         warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
         warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
         warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
-        fail "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
+        sidar_phase06_fail_with_smoke_cleanup "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
     fi
+    sidar_phase06_cleanup_pre_service_smoke_log
 }
 
 sidar_phase_services_and_validation() {
