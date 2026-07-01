@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -645,6 +646,80 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
     assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
+    # resolve_install_sidar_version() `is_blank` fallback zincirine (sed →
+    # python3 version_probe.py → python3 sidar_version.py) düşmeden önce
+    # pure Bash `while read` + BASH_REMATCH fast-path'i denemeli. Bu, yavaş
+    # fork() ortamlarında (WSL2 + Defender) source akışı sırasında hiç
+    # python3 subprocess spawn edilmemesini garantiler.
+    resolve_body = installer_text[resolve_idx : validate_idx]
+    assert "while IFS= read -r _sidar_resolve_line" in resolve_body, (
+        "resolve_install_sidar_version() built-in `while read` fast-path'i "
+        "içermeli."
+    )
+    assert "BASH_REMATCH[1]" in resolve_body, (
+        "resolve_install_sidar_version() BASH_REMATCH ile sürümü "
+        "çekmeli (pure-bash yol)."
+    )
+    fast_path_return_idx = resolve_body.index(
+        'if ! is_blank "$resolved_version"; then'
+    )
+    sed_fallback_idx = resolve_body.index(
+        "sed -nE 's/^[[:space:]]*version"
+    )
+    assert fast_path_return_idx < sed_fallback_idx, (
+        "resolve_install_sidar_version() fast-path erken return, sed "
+        "fallback'ten önce gelmeli."
+    )
+
+    # .wslconfig WSL2 performans ayarları:
+    # - processors: WSL2 varsayılan olarak host'un tüm mantıksal CPU'larını
+    #   tüketir; installer 3/4 clamp [2, 16] ile hedef belirler.
+    # - kernelCommandLine=cgroup_no_v1=all: cgroup v2'yi zorlar.
+    # - [experimental] sparseVhd=true: ext4 VHD dosyasının OS'a alan
+    #   dönmesini sağlar, dosya sistemi 2-3× hızlanır.
+    # - Log satırı bu değerlerin hepsini yazdırmalı ki operatör kontrol
+    #   edebilsin.
+    assert "_detect_host_cpus()" in installer_text, (
+        "install_sidar.sh WSL2 host CPU tespiti için _detect_host_cpus() "
+        "helper'ı sağlamalı."
+    )
+    assert "target_processors=$((host_cpus * 3 / 4))" in installer_text, (
+        "WSL2 processors hedefi host CPU * 3/4 formülüyle hesaplanmalı."
+    )
+    assert "kernelCommandLine=${target_kernel_cmdline}" in installer_text, (
+        "WSL2 template'i kernelCommandLine anahtarını içermeli."
+    )
+    assert 'target_kernel_cmdline="cgroup_no_v1=all"' in installer_text, (
+        "WSL2 kernelCommandLine değeri cgroup_no_v1=all olmalı."
+    )
+    assert 'target_sparse_vhd="true"' in installer_text, (
+        "[experimental] sparseVhd hedef değeri true olmalı."
+    )
+    assert '_ensure_ini_key_once "$wslconfig_path" "experimental" "sparseVhd"' in installer_text, (
+        "sparseVhd ayarı generic _ensure_ini_key_once ile [experimental] "
+        "bölümüne yazılmalı."
+    )
+    assert '_ensure_wsl2_key_once "$wslconfig_path" "processors"' in installer_text, (
+        "processors ayarı _ensure_wsl2_key_once ile [wsl2] altına yazılmalı."
+    )
+    assert '_ensure_wsl2_key_once "$wslconfig_path" "kernelCommandLine"' in installer_text, (
+        "kernelCommandLine ayarı _ensure_wsl2_key_once ile [wsl2] altına "
+        "yazılmalı."
+    )
+    wsl_log_line = "WSL2 için dinamik .wslconfig hedefleri: memory="
+    log_idx = installer_text.index(wsl_log_line)
+    log_line_end = installer_text.index('."', log_idx)
+    wsl_log = installer_text[log_idx:log_line_end]
+    for probe in (
+        "processors=${target_processors}",
+        "kernelCommandLine=${target_kernel_cmdline}",
+        "sparseVhd=${target_sparse_vhd}",
+    ):
+        assert probe in wsl_log, (
+            f"WSL2 hedefleri info log satırı {probe!r} değerini de "
+            "yazdırmalı; operatör kurulum log'una bakarak ayarları "
+            "doğrulayabilmeli."
+        )
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
     assert "modül hash doğrulaması atlandı; fonksiyon modülleri yüklenmeye devam edecek" in installer_text
     assert "mask_install_log_stream | tee" in installer_text
@@ -693,6 +768,123 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         f"--- stdout ---\n{version_result.stdout!r}\n"
         f"--- stderr ---\n{version_result.stderr!r}\n"
         f"--- INSTALL_SIDAR_VERSION (post-run) ---\n{_diagnose_sourced_install_version(tmp_path)}"
+    )
+
+
+def test_invalid_argument_message_is_grouped_and_readable() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    # Locale mesajları eskiden tek satırda 200+ karakter uzunluğundaydı; TR
+    # ve EN case'leri artık grup grup çok satırlı printf çağrılarına
+    # bölünmüş olmalı. Ayrı bir yardım fonksiyonuna çıkarmaya gerek yok;
+    # sözleşme yalnız (1) tek satırlık her şey-tek-liste formunun geri
+    # gelmemesi, (2) grup başlıklarının var olması, (3) hiçbir satırın
+    # 200 karakteri geçmemesi.
+    single_line_probe = "Accepted values: doctor | prepare-system"
+    assert single_line_probe not in installer, (
+        "EN invalid_arg mesajı yeniden tek satırda uzun listeye "
+        "dönüşmemeli; grup grup çok satırlı printf ile bölünmüş olmalı."
+    )
+    tr_single_line_probe = "(doctor | prepare-system | sync-deps"
+    assert tr_single_line_probe not in installer, (
+        "TR invalid_arg mesajı yeniden tek satırda uzun listeye "
+        "dönüşmemeli; grup grup çok satırlı printf ile bölünmüş olmalı."
+    )
+
+    for group_header in (
+        "Subcommands       : doctor | prepare-system",
+        "Docker CLI        : --install-docker-cli",
+        "Kubernetes / Helm : --kubernetes | --helm",
+        "Automation        : --ci",
+    ):
+        assert group_header in installer, (
+            f"EN invalid_arg mesajı {group_header!r} grup başlığını içermeli."
+        )
+    for group_header in (
+        "Alt komutlar        : doctor | prepare-system",
+        "Docker CLI          : --install-docker-cli",
+        "Kubernetes / Helm   : --kubernetes | --helm",
+        "Otomasyon           : --ci",
+    ):
+        assert group_header in installer, (
+            f"TR invalid_arg mesajı {group_header!r} grup başlığını içermeli."
+        )
+
+    # invalid_arg case bloğunda hiçbir printf satırı 200 karakteri geçmemeli
+    # (locale mesajları için makul UX üst sınırı).
+    for locale_marker in ("Unknown argument: %s", "Bilinmeyen argüman: %s"):
+        block_start = installer.index(f"invalid_arg)\n                printf '{locale_marker}")
+        # Bir sonraki case etiketine kadarki bloğu oku (`;;` sonlandırıcı).
+        block_end = installer.index(";;", block_start)
+        block = installer[block_start:block_end]
+        offending = [
+            line for line in block.splitlines() if len(line) > 200
+        ]
+        assert not offending, (
+            f"invalid_arg bloğunda 200 karakteri geçen satır kaldı: "
+            f"{offending!r}"
+        )
+
+
+def test_smoke_gate_troubleshooting_docs_cover_defender_and_bypass_shortcut() -> None:
+    doc = Path("docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md").read_text(
+        encoding="utf-8"
+    )
+
+    # Windows Defender exclusion bölümü: WSL2 + Defender kombinasyonunda
+    # smoke gate timeout'unun en yaygın kök nedenini kısa PowerShell
+    # komutlarıyla operatöre gösteriyor.
+    assert "## Ortamı hızlandırın (WSL2 + Windows Defender)" in doc, (
+        "Docs, WSL2 + Windows Defender için ayrı bir hızlandırma bölümü "
+        "içermeli."
+    )
+    for defender_line in (
+        'Add-MpPreference -ExclusionProcess "wsl.exe"',
+        'Add-MpPreference -ExclusionProcess "bash.exe"',
+        'Add-MpPreference -ExclusionProcess "python3.exe"',
+        'Add-MpPreference -ExclusionPath "\\\\wsl$\\Ubuntu\\home\\<kullanici-adi>\\Sidar"',
+        "Get-MpPreference | Select-Object -ExpandProperty ExclusionProcess",
+    ):
+        assert defender_line in doc, (
+            f"Docs, Defender exclusion adımını {defender_line!r} olarak "
+            "göstermeli."
+        )
+    assert "PowerShell'i \"Yönetici olarak çalıştır\"" in doc, (
+        "Defender exclusion adımı yönetici PowerShell gerektirdiğini "
+        "açıkça belirtmeli."
+    )
+    assert "wsl --shutdown" in doc, (
+        ".wslconfig değişikliklerinin etkinleşmesi için wsl --shutdown "
+        "adımı yönlendirilmeli."
+    )
+    for wslconfig_hint in (
+        "processors",
+        "kernelCommandLine=cgroup_no_v1=all",
+        "[experimental] sparseVhd=true",
+    ):
+        assert wslconfig_hint in doc, (
+            f"Docs, installer'ın .wslconfig içine yazdığı {wslconfig_hint!r} "
+            "hedefini de anmalı."
+        )
+
+    # Kısa yol bölümü: SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 tek satırlık
+    # bypass olarak öne çıkarılmalı; --skip-smoke-test ve
+    # RUN_SMOKE_TESTS_MODE=never alternatifleriyle birlikte listelenmeli.
+    assert "## Kısa yol: smoke gate'i atla ve kurulumu bitir" in doc, (
+        "Docs, kurulumu ilerletmek için ayrı bir kısa-yol bölümü içermeli."
+    )
+    assert (
+        "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh" in doc
+    ), "Kısa yol bölümü SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 komutunu içermeli."
+    assert "./install_sidar.sh --skip-smoke-test" in doc, (
+        "Kısa yol bölümü --skip-smoke-test alternatifini içermeli."
+    )
+    assert "RUN_SMOKE_TESTS_MODE=never ./install_sidar.sh" in doc, (
+        "Kısa yol bölümü RUN_SMOKE_TESTS_MODE=never alternatifini içermeli."
+    )
+    assert "geçici olarak" in doc, (
+        "Kısa yolun sadece geçici tanılama için kullanılması gerektiği "
+        "yazılı olarak belirtilmeli."
     )
 
 
@@ -751,10 +943,48 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "pyproject.toml" in version_contract_block
-    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in phase
+    # 180 saniyelik varsayılan smoke bash timeout'u; kullanıcı
+    # SIDAR_INSTALL_SMOKE_BASH_TIMEOUT env-var'ı ile override edebilmeli.
+    # Sözleşme: varsayılan 180 ${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}
+    # ifadesiyle sarmalanmalı ve doğrulanmış yerel değişken pytest'e
+    # geçirilmelidir.
+    assert re.search(
+        r'smoke_bash_timeout="\$\{SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180\}"',
+        phase,
+    ), (
+        "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT override edilebilir olarak "
+        "tanımlanmalı (varsayılan 180)."
+    )
+    assert re.search(
+        r'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="\$smoke_bash_timeout"',
+        phase,
+    ), (
+        "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT pytest çağrısına yerelde doğrulanmış "
+        "değişkeni üzerinden geçirilmeli."
+    )
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
+    # /tmp/sidar_pre_service_smoke.XXXXXX geçici log dosyası artık her exit
+    # path'inde temizleniyor: RETURN trap normal return için, fail'den önceki
+    # inline `rm -f -- "$smoke_log"` çağrıları ise `exit 1` bypass senaryoları
+    # için güvenli temizlik sağlamalı. Kalıcı log kopyası artifacts/install/
+    # remediation altına yazıldığından /tmp kopyası birikmemeli.
+    assert re.search(
+        r"trap\s+'rm -f -- \"\$\{smoke_log:-\}\"'\s+RETURN",
+        phase,
+    ), (
+        "smoke_log mktemp'inden sonra RETURN trap ile /tmp temizliği "
+        "kurulmalı."
+    )
+    smoke_gate_fail_pattern = re.compile(
+        r'rm -f -- "\$smoke_log" \|\| true\s+fail "Servis öncesi installer smoke gate',
+        re.DOTALL,
+    )
+    assert smoke_gate_fail_pattern.search(phase), (
+        "Smoke gate fail path'i, `fail` çağrısından önce /tmp geçici log "
+        "dosyasını açıkça temizlemeli."
+    )
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
     assert "source install_sidar.sh" not in version_contract_block
