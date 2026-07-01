@@ -33,18 +33,26 @@ cd ~/Sidar
 bash -c 'unset INSTALL_SIDAR_VERSION; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source install_sidar.sh >/dev/null; printf "%s\n" "$INSTALL_SIDAR_VERSION"'
 ```
 
-Çıktı `pyproject.toml` içindeki sürümle aynı olmalıdır; örneğin bu sürümde
-`5.2.0` beklenir.
+Çıktı `pyproject.toml` içindeki sürümle aynı olmalıdır; beklenen değer
+komut çalıştırılan checkout'taki `[project].version` alanından okunur (değer
+hard-code edilmez).
 
 ## En olası kök nedenler
 
 1. Yereldeki `install_sidar.sh`, probe-only fast-path düzeltmesini içermeyen eski
    bir kopyadır.
 2. Kurulum farklı bir dizindeki eski Sidar checkout'undan çalıştırılmıştır.
-3. Antivirüs/WSL dosya sistemi yavaşlığı smoke test süresini büyütmektedir; ancak
-   güncel fast-path ile bu kontrol normalde saniyeler içinde bitmelidir.
+3. Antivirüs/WSL dosya sistemi yavaşlığı smoke test süresini büyütmektedir.
+   Özellikle Ubuntu 26.04/resolute gibi geliştirme dağıtımı + WSL2 + Windows Defender real-time scanning kombinasyonunda `source install_sidar.sh` çağrısı
+   dosyanın yeniden taranması nedeniyle 20 saniyeye yaklaşabilir. Güncel
+   fast-path Python/uv/helper source işlemlerine girmese bile bu dış I/O maliyeti
+   ortam kaynaklı olarak kalabilir.
 4. `pyproject.toml` ve `install_sidar.sh` farklı branch veya farklı commit'ten
    gelmiştir.
+5. Timeout sonrası pytest'in gösterdiği stdout/stderr parçası önceki denemeden
+   kalmış gibi görünebilir. Aktif installer sözleşmesini doğrulamak için
+   `pyproject.toml`, `install_sidar.sh` ve smoke gate logundaki komut satırı
+   birlikte kontrol edilmelidir; güncel akış Conda değil `uv` kullanır.
 
 ## Önerilen düzeltme sırası
 
@@ -59,7 +67,9 @@ bash -c 'unset INSTALL_SIDAR_VERSION; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INS
 ./install_sidar.sh
 ```
 
-Eğer yalnızca ortam yavaşlığı doğrulanmışsa geçici olarak timeout artırılabilir:
+Eğer yalnızca ortam yavaşlığı doğrulanmışsa geçici olarak timeout artırılabilir.
+WSL2/Defender kaynaklı probe süreleri 20 saniyeye yaklaşıyorsa 240 saniye
+başlangıç için güvenli değerdir:
 
 ```bash
 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh
@@ -103,3 +113,12 @@ Add-MpPreference -ExclusionPath "\\wsl$\Ubuntu\home\<kullanıcı>\Sidar"
   `INSTALL_SIDAR_VERSION` aynı kalmalıdır.
 - Kurulum komutları `uv` standardını izlemelidir: tam geliştirici kurulum için
   `uv sync --all-extras`, test araçları için `uv sync --extra dev`.
+
+## Test timeout politikası
+
+Repo içi smoke testlerde `SIDAR_INSTALL_VERSION_PROBE_ONLY=1` kaynaklama
+sözleşmesi, yavaş WSL2/Defender ortamlarında yanlış negatif üretmemesi için
+60 saniyelik varsayılan timeout ile doğrulanır. Kurulum fazındaki servis öncesi
+gate daha geniş operasyonel tampon kullanır (`SIDAR_INSTALL_SMOKE_BASH_TIMEOUT`
+varsayılanı 180 saniye) ve ihtiyaç halinde 240 saniye gibi değerlerle
+override edilebilir.

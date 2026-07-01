@@ -541,7 +541,7 @@ def _fake_python3_fails_snippet() -> str:
 
 
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
-    diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20"))
+    diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60"))
     diagnosis_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
     diagnosis_env.pop("INSTALL_SIDAR_VERSION", None)
     diagnostic_script = f"""
@@ -703,7 +703,7 @@ def test_install_sidar_test_mode_source_resolves_pyproject_version_without_pytho
         fi
         """,
         tmp_path,
-        timeout_seconds=int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20")),
+        timeout_seconds=int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60")),
     )
     assert result.returncode == 0, (
         "SIDAR_INSTALL_TEST_MODE source akışı python3 olmadan pyproject sürümünü çözmeli.\n"
@@ -717,7 +717,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
-    probe_timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "20"))
+    probe_timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60"))
     version_result = _run_bash_smoke(
         f"""
         set -euo pipefail
@@ -802,6 +802,10 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "pyproject.toml" in version_contract_block
     assert 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"' in phase
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
+    assert "Ubuntu 26.04/resolute" in troubleshooting
+    assert "Windows Defender real-time scanning" in troubleshooting
+    assert "güncel akış Conda değil `uv` kullanır" in troubleshooting
+    assert "60 saniyelik varsayılan timeout" in troubleshooting
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
