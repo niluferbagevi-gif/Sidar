@@ -774,6 +774,26 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
+    # /tmp/sidar_pre_service_smoke.XXXXXX geçici log dosyası artık her exit
+    # path'inde temizleniyor: RETURN trap normal return için, fail'den önceki
+    # inline `rm -f -- "$smoke_log"` çağrıları ise `exit 1` bypass senaryoları
+    # için güvenli temizlik sağlamalı. Kalıcı log kopyası artifacts/install/
+    # remediation altına yazıldığından /tmp kopyası birikmemeli.
+    assert re.search(
+        r"trap\s+'rm -f -- \"\$\{smoke_log:-\}\"'\s+RETURN",
+        phase,
+    ), (
+        "smoke_log mktemp'inden sonra RETURN trap ile /tmp temizliği "
+        "kurulmalı."
+    )
+    smoke_gate_fail_pattern = re.compile(
+        r'rm -f -- "\$smoke_log" \|\| true\s+fail "Servis öncesi installer smoke gate',
+        re.DOTALL,
+    )
+    assert smoke_gate_fail_pattern.search(phase), (
+        "Smoke gate fail path'i, `fail` çağrısından önce /tmp geçici log "
+        "dosyasını açıkça temizlemeli."
+    )
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
     assert "source install_sidar.sh" not in version_contract_block
