@@ -655,6 +655,13 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert "mask_install_log_stream | tee" in installer_text
     assert "export INSTALL_SIDAR_VERSION" in installer_text
     assert "uv venv" in installer_text
+    assert "processors=__SIDAR_WSL_PROCESSORS__" in installer_text
+    assert "kernelCommandLine=__SIDAR_WSL_KERNEL_COMMAND_LINE__" in installer_text
+    assert "[experimental]" in installer_text
+    assert "sparseVhd=__SIDAR_WSL_SPARSE_VHD__" in installer_text
+    assert "_detect_host_processors" in installer_text
+    assert "kernelCommandLine=${target_kernel_command_line}" in installer_text
+    assert "sparseVhd=${target_sparse_vhd}" in installer_text
     assert "set -e" not in alembic_prelude
     assert "set -u" not in alembic_prelude
     assert f"v{pyproject_version}" not in installer_text
