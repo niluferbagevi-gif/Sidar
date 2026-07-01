@@ -6564,7 +6564,7 @@ run_smoke_tests() {
         if [[ "$smoke_failure_policy" == "warn" ]]; then
             warn "Smoke testlerde hata var. SMOKE_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
         else
-            fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu."
+            fail "Smoke testlerde hata var. Kurulum güvenliği için süreç durduruldu. WSL2/Windows Defender kaynaklı yavaş fork/exec timeout şüphesinde './install_sidar.sh --skip-smoke-test', 'SMOKE_TEST_FAILURE_POLICY=warn ./install_sidar.sh' veya 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 ./install_sidar.sh' seçeneklerini kullanabilirsiniz."
         fi
     fi
     verify_sidar_keys_file_permissions

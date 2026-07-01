@@ -479,6 +479,25 @@ def _decode_timeout_stream(value: bytes | str | None) -> str:
     return value
 
 
+def _is_wsl2_smoke_host() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        proc_version = Path("/proc/version").read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return "microsoft" in proc_version.casefold() or "wsl2" in proc_version.casefold()
+
+
+def _default_bash_smoke_timeout() -> int:
+    configured_timeout = os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT")
+    if configured_timeout:
+        return int(configured_timeout)
+    if _is_wsl2_smoke_host():
+        return 90
+    return 30
+
+
 def _run_bash_smoke(
     script: str, tmp_path: Path, timeout_seconds: int | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -491,7 +510,7 @@ def _run_bash_smoke(
     {script}
     """
     if timeout_seconds is None:
-        timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "30"))
+        timeout_seconds = _default_bash_smoke_timeout()
     try:
         return subprocess.run(
             ["bash", "-c", guarded_script],
@@ -538,6 +557,20 @@ def _fake_python3_fails_snippet() -> str:
     chmod +x "$TMPDIR/fake-bin/python3"
     export PATH="$TMPDIR/fake-bin:$PATH"
     """
+
+
+def test_bash_smoke_timeout_defaults_expand_on_wsl2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", raising=False)
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+
+    assert _default_bash_smoke_timeout() == 90
+
+
+def test_bash_smoke_timeout_env_override_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "180")
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+
+    assert _default_bash_smoke_timeout() == 180
 
 
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
@@ -813,6 +846,9 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG" in phase
     assert "sidar_phase06_fail_with_smoke_cleanup" in phase
     assert "sidar_phase06_cleanup_pre_service_smoke_log || true" in installer
+    assert "--skip-smoke-test" in installer
+    assert "SMOKE_TEST_FAILURE_POLICY=warn ./install_sidar.sh" in installer
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 ./install_sidar.sh" in installer
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
     assert "source install_sidar.sh" not in version_contract_block
