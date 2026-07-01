@@ -415,7 +415,7 @@ PY
         (
             cd "$SCRIPT_DIR" && \
                 SIDAR_INSTALL_TEST_MODE=1 \
-                SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 \
+                SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}" \
                 uv run pytest -q --no-cov -p no:xdist -x tests/smoke/test_install_verification.py \
                 </dev/null
         ) 2>&1 | tee "$smoke_log"
