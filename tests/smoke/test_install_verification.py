@@ -780,6 +780,7 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
+    troubleshooting = Path("docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md").read_text(encoding="utf-8")
     version_contract_block = phase[
         phase.index("local expected_installer_version=") : phase.index("local smoke_log")
     ]
@@ -789,6 +790,9 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "docs/install-script-options.md" in readme
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
+    assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh" in troubleshooting
+    assert 'Add-MpPreference -ExclusionProcess "wsl.exe"' in troubleshooting
+    assert "Add-MpPreference -ExclusionPath" in troubleshooting
     assert "pyproject.toml" in version_contract_block
     assert 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"' in phase
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase

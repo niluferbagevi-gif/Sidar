@@ -65,14 +65,35 @@ Eğer yalnızca ortam yavaşlığı doğrulanmışsa geçici olarak timeout art�
 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh
 ```
 
-Smoke gate'i bilinçli atlamak son çaredir; servis öncesi sözleşmeyi devre dışı
-bırakır:
+Sadece servis öncesi smoke gate takılı kalıyor, diğer kurulum adımlarını koruyarak
+Docker servislerine geçmek istiyorsanız daha dar kapsamlı kısa yol kullanılabilir:
+
+```bash
+SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh
+```
+
+Smoke gate'i bilinçli atlamak son çaredir; servis öncesi sözleşmeyi ve kurulum
+sonu smoke testlerini devre dışı bırakır:
 
 ```bash
 ./install_sidar.sh --skip-smoke-test
 # veya
 RUN_SMOKE_TESTS_MODE=never ./install_sidar.sh
 ```
+
+WSL2 üzerinde `bash`, `python3`, `uv` veya repo dosya erişimleri Windows Defender
+taraması nedeniyle belirgin yavaşlıyorsa, Windows PowerShell'i yönetici olarak
+açıp yalnız kendi WSL/Sidar yolunuz için exclusion ekleyin:
+
+```powershell
+Add-MpPreference -ExclusionProcess "wsl.exe"
+Add-MpPreference -ExclusionProcess "bash.exe"
+Add-MpPreference -ExclusionPath "\\wsl$\Ubuntu\home\<kullanıcı>\Sidar"
+```
+
+> Not: `<kullanıcı>` ve dağıtım adını kendi ortamınıza göre değiştirin. Defender
+> exclusion kurumsal güvenlik politikalarına bağlı olabilir; yalnız güvendiğiniz
+> proje dizinini hariç tutun.
 
 ## Repo tarafında korunması gereken sözleşme
 
