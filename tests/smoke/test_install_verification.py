@@ -771,6 +771,68 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     )
 
 
+def test_smoke_gate_troubleshooting_docs_cover_defender_and_bypass_shortcut() -> None:
+    doc = Path("docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md").read_text(
+        encoding="utf-8"
+    )
+
+    # Windows Defender exclusion bölümü: WSL2 + Defender kombinasyonunda
+    # smoke gate timeout'unun en yaygın kök nedenini kısa PowerShell
+    # komutlarıyla operatöre gösteriyor.
+    assert "## Ortamı hızlandırın (WSL2 + Windows Defender)" in doc, (
+        "Docs, WSL2 + Windows Defender için ayrı bir hızlandırma bölümü "
+        "içermeli."
+    )
+    for defender_line in (
+        'Add-MpPreference -ExclusionProcess "wsl.exe"',
+        'Add-MpPreference -ExclusionProcess "bash.exe"',
+        'Add-MpPreference -ExclusionProcess "python3.exe"',
+        'Add-MpPreference -ExclusionPath "\\\\wsl$\\Ubuntu\\home\\<kullanici-adi>\\Sidar"',
+        "Get-MpPreference | Select-Object -ExpandProperty ExclusionProcess",
+    ):
+        assert defender_line in doc, (
+            f"Docs, Defender exclusion adımını {defender_line!r} olarak "
+            "göstermeli."
+        )
+    assert "PowerShell'i \"Yönetici olarak çalıştır\"" in doc, (
+        "Defender exclusion adımı yönetici PowerShell gerektirdiğini "
+        "açıkça belirtmeli."
+    )
+    assert "wsl --shutdown" in doc, (
+        ".wslconfig değişikliklerinin etkinleşmesi için wsl --shutdown "
+        "adımı yönlendirilmeli."
+    )
+    for wslconfig_hint in (
+        "processors",
+        "kernelCommandLine=cgroup_no_v1=all",
+        "[experimental] sparseVhd=true",
+    ):
+        assert wslconfig_hint in doc, (
+            f"Docs, installer'ın .wslconfig içine yazdığı {wslconfig_hint!r} "
+            "hedefini de anmalı."
+        )
+
+    # Kısa yol bölümü: SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 tek satırlık
+    # bypass olarak öne çıkarılmalı; --skip-smoke-test ve
+    # RUN_SMOKE_TESTS_MODE=never alternatifleriyle birlikte listelenmeli.
+    assert "## Kısa yol: smoke gate'i atla ve kurulumu bitir" in doc, (
+        "Docs, kurulumu ilerletmek için ayrı bir kısa-yol bölümü içermeli."
+    )
+    assert (
+        "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh" in doc
+    ), "Kısa yol bölümü SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 komutunu içermeli."
+    assert "./install_sidar.sh --skip-smoke-test" in doc, (
+        "Kısa yol bölümü --skip-smoke-test alternatifini içermeli."
+    )
+    assert "RUN_SMOKE_TESTS_MODE=never ./install_sidar.sh" in doc, (
+        "Kısa yol bölümü RUN_SMOKE_TESTS_MODE=never alternatifini içermeli."
+    )
+    assert "geçici olarak" in doc, (
+        "Kısa yolun sadece geçici tanılama için kullanılması gerektiği "
+        "yazılı olarak belirtilmeli."
+    )
+
+
 def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         """
