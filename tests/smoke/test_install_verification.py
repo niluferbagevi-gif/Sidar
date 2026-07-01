@@ -771,6 +771,61 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     )
 
 
+def test_invalid_argument_message_is_grouped_and_readable() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    # Locale mesajları eskiden tek satırda 200+ karakter uzunluğundaydı; TR
+    # ve EN case'leri artık grup grup çok satırlı printf çağrılarına
+    # bölünmüş olmalı. Ayrı bir yardım fonksiyonuna çıkarmaya gerek yok;
+    # sözleşme yalnız (1) tek satırlık her şey-tek-liste formunun geri
+    # gelmemesi, (2) grup başlıklarının var olması, (3) hiçbir satırın
+    # 200 karakteri geçmemesi.
+    single_line_probe = "Accepted values: doctor | prepare-system"
+    assert single_line_probe not in installer, (
+        "EN invalid_arg mesajı yeniden tek satırda uzun listeye "
+        "dönüşmemeli; grup grup çok satırlı printf ile bölünmüş olmalı."
+    )
+    tr_single_line_probe = "(doctor | prepare-system | sync-deps"
+    assert tr_single_line_probe not in installer, (
+        "TR invalid_arg mesajı yeniden tek satırda uzun listeye "
+        "dönüşmemeli; grup grup çok satırlı printf ile bölünmüş olmalı."
+    )
+
+    for group_header in (
+        "Subcommands       : doctor | prepare-system",
+        "Docker CLI        : --install-docker-cli",
+        "Kubernetes / Helm : --kubernetes | --helm",
+        "Automation        : --ci",
+    ):
+        assert group_header in installer, (
+            f"EN invalid_arg mesajı {group_header!r} grup başlığını içermeli."
+        )
+    for group_header in (
+        "Alt komutlar        : doctor | prepare-system",
+        "Docker CLI          : --install-docker-cli",
+        "Kubernetes / Helm   : --kubernetes | --helm",
+        "Otomasyon           : --ci",
+    ):
+        assert group_header in installer, (
+            f"TR invalid_arg mesajı {group_header!r} grup başlığını içermeli."
+        )
+
+    # invalid_arg case bloğunda hiçbir printf satırı 200 karakteri geçmemeli
+    # (locale mesajları için makul UX üst sınırı).
+    for locale_marker in ("Unknown argument: %s", "Bilinmeyen argüman: %s"):
+        block_start = installer.index(f"invalid_arg)\n                printf '{locale_marker}")
+        # Bir sonraki case etiketine kadarki bloğu oku (`;;` sonlandırıcı).
+        block_end = installer.index(";;", block_start)
+        block = installer[block_start:block_end]
+        offending = [
+            line for line in block.splitlines() if len(line) > 200
+        ]
+        assert not offending, (
+            f"invalid_arg bloğunda 200 karakteri geçen satır kaldı: "
+            f"{offending!r}"
+        )
+
+
 def test_smoke_gate_troubleshooting_docs_cover_defender_and_bypass_shortcut() -> None:
     doc = Path("docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md").read_text(
         encoding="utf-8"
