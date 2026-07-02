@@ -1733,6 +1733,23 @@ def test_install_sidar_uses_single_source_project_version() -> None:
     assert f"v{project_version}" not in script
 
 
+def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
+    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    smoke_tests = Path("tests/smoke/test_install_verification.py").read_text(encoding="utf-8")
+
+    assert "verify_reexec_installer_or_fail()" in script
+    assert (
+        'verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"'
+        in script
+    )
+    assert 'verify_reexec_installer_or_fail "$next_script" "Bootstrap clone re-exec"' in script
+    assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC" in script
+    assert "test_install_sidar_home_reexec_hash_drift_blocks_stale_installer" in smoke_tests
+    assert "test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer" in smoke_tests
+    assert "stale-installer-ran" in smoke_tests
+    assert "re-exec install_sidar.sh SHA256 farklı" in smoke_tests
+
+
 def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     launch_body = script[
