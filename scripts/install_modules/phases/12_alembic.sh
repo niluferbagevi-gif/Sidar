@@ -366,3 +366,102 @@ ensure_postgres_databases_exist() (
         ok "Veritabanı hazır: ${db_name}"
     done <<<"$unique_dbs"
 )
+
+# ── 12. Alembic migrasyonları ────────────────────────────────────────────────
+# Alembic migration helpers live in scripts/install_modules/phases/12_alembic.sh.
+
+
+seed_rag_metadata_after_migrations() {
+    local seed_mode="${AUTO_SEED_RAG_METADATA:-true}"
+    seed_mode="$(normalize_bool "$seed_mode")"
+    [[ -z "$seed_mode" ]] && seed_mode="true"
+
+    if [[ "$seed_mode" != "true" ]]; then
+        info "AUTO_SEED_RAG_METADATA=${AUTO_SEED_RAG_METADATA:-false}; RAG metadata seed adımı atlandı."
+        return 0
+    fi
+
+    if [[ "${MIGRATION_STATUS:-}" != "tamamlandi" ]]; then
+        info "Migrasyon tamamlanmadığı için RAG metadata seed adımı atlandı (MIGRATION_STATUS=${MIGRATION_STATUS:-bilinmiyor})."
+        return 0
+    fi
+
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; RAG metadata seed otomasyonu atlandı. Manuel: uv run python -m scripts.seed_rag --metadata-only"
+        return 0
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/scripts/seed_rag.py" ]]; then
+        warn "scripts/seed_rag.py bulunamadı; RAG metadata seed otomasyonu atlandı."
+        return 0
+    fi
+
+    info "RAG/GraphRAG metadata başlangıç seed'i uygulanıyor..."
+    if (cd "$SCRIPT_DIR" && uv run python -m scripts.seed_rag --metadata-only); then
+        ok "RAG index ve GraphRAG entity metadata seed adımı tamamlandı."
+    else
+        warn "RAG metadata seed adımı başarısız; Doctor uyarılarını gidermek için manuel çalıştırın: uv run python -m scripts.seed_rag --metadata-only"
+    fi
+}
+
+prepare_docker_for_migrations() {
+    local docker_compose_cmd=()
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker_compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        docker_compose_cmd=(docker-compose)
+    else
+        return
+    fi
+
+    if ! ensure_docker_daemon_running; then
+        warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
+        fi
+        info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
+        MIGRATION_DOCKER_POLICY="disabled"
+        return
+    fi
+
+    if [[ "$AUTO_START_DOCKER_SERVICES" == "true" ]]; then
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=true olduğu için migrasyon öncesi servisler otomatik başlatılıyor."
+        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+        DOCKER_DB_SERVICES_STARTED=true
+        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
+        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
+        return
+    elif [[ "$AUTO_START_DOCKER_SERVICES" == "false" ]]; then
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
+        MIGRATION_DOCKER_POLICY="disabled"
+        info "AUTO_INSTALL: START_DOCKER_SERVICES=false olduğu için migrasyon sırasında servis başlatma atlandı."
+        return
+    elif [[ "$NO_INTERACTION" == true ]]; then
+        info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
+        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+        DOCKER_DB_SERVICES_STARTED=true
+        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
+        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
+        return
+    fi
+
+    echo ""
+    start_for_migration=$(prompt_yes_no_with_timeout_default_yes "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] ")
+    case "${start_for_migration:-E}" in
+        [HhNn]*)
+            # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
+            MIGRATION_DOCKER_POLICY="disabled"
+            info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
+            ;;
+        *)
+            start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+            DOCKER_DB_SERVICES_STARTED=true
+            wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
+            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
+            ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
+            ;;
+    esac
+}
+

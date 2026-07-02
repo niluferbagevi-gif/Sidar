@@ -474,12 +474,12 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 d79dab59a438e7cc8ddf9ce171fc474227cc1d1978bbb8aae3391b679bcc8207  scripts/install_modules/phases/04_workspace.sh
 63748f5fe9313bc0f64b29694ba80e7d937823952f2c8b57a3332e3d71a94ea0  scripts/install_modules/phases/05_frontend.sh
 74e0214378689ceacbb321cd7af6d135dc8334b0b4d2dd7b4a5aaf26bda1f054  scripts/install_modules/phases/06_services.sh
-ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
+5c137834a3ea3af832276618535dc75d05fa1444bd33b4545a5c6e2941fa630c  scripts/install_modules/phases/07_finish.sh
 30ff1a79b83f83c36809b57266fcdb5e28e53d9b6545d661182ce50afe90c03a  scripts/install_modules/phases/08_env.sh
 6d8e91ad6b318d22cc175740f765e7b7c1115debe28465281362d107876d42bf  scripts/install_modules/phases/09_ollama_models.sh
 41b6b56db34e867a57317b557685a30d69ff0284266792c09dbc49249e24cc1a  scripts/install_modules/phases/10_validation.sh
 629e7f0a29de6c5a175743f59759b52c619be79311e0cca417b53f110d3c5bab  scripts/install_modules/phases/11_post_install.sh
-a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
+8b253cdfe6ea41260af4d6110af27aae69905543548578112b5db208c2c6e251  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
 0607926653d6e9be9957c662f48dc8db686fa51ad54ee84503ff0237c3c1290b  scripts/install_modules/utils/database_url.sh
@@ -2198,102 +2198,7 @@ log_host_ollama_runtime_diagnostics() {
 # Ollama model hazırlık yardımcıları scripts/install_modules/phases/09_ollama_models.sh içinden yüklenir.
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
-# Alembic migration helpers live in scripts/install_modules/phases/12_alembic.sh.
-
-
-seed_rag_metadata_after_migrations() {
-    local seed_mode="${AUTO_SEED_RAG_METADATA:-true}"
-    seed_mode="$(normalize_bool "$seed_mode")"
-    [[ -z "$seed_mode" ]] && seed_mode="true"
-
-    if [[ "$seed_mode" != "true" ]]; then
-        info "AUTO_SEED_RAG_METADATA=${AUTO_SEED_RAG_METADATA:-false}; RAG metadata seed adımı atlandı."
-        return 0
-    fi
-
-    if [[ "${MIGRATION_STATUS:-}" != "tamamlandi" ]]; then
-        info "Migrasyon tamamlanmadığı için RAG metadata seed adımı atlandı (MIGRATION_STATUS=${MIGRATION_STATUS:-bilinmiyor})."
-        return 0
-    fi
-
-    if ! command -v uv &>/dev/null; then
-        warn "uv bulunamadı; RAG metadata seed otomasyonu atlandı. Manuel: uv run python -m scripts.seed_rag --metadata-only"
-        return 0
-    fi
-
-    if [[ ! -f "$SCRIPT_DIR/scripts/seed_rag.py" ]]; then
-        warn "scripts/seed_rag.py bulunamadı; RAG metadata seed otomasyonu atlandı."
-        return 0
-    fi
-
-    info "RAG/GraphRAG metadata başlangıç seed'i uygulanıyor..."
-    if (cd "$SCRIPT_DIR" && uv run python -m scripts.seed_rag --metadata-only); then
-        ok "RAG index ve GraphRAG entity metadata seed adımı tamamlandı."
-    else
-        warn "RAG metadata seed adımı başarısız; Doctor uyarılarını gidermek için manuel çalıştırın: uv run python -m scripts.seed_rag --metadata-only"
-    fi
-}
-
-prepare_docker_for_migrations() {
-    local docker_compose_cmd=()
-
-    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-        docker_compose_cmd=(docker compose)
-    elif command -v docker-compose &>/dev/null; then
-        docker_compose_cmd=(docker-compose)
-    else
-        return
-    fi
-
-    if ! ensure_docker_daemon_running; then
-        warn "Docker daemon erişilemediği için migrasyon öncesi PostgreSQL/Redis servisleri otomatik başlatılamadı."
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 için öneri: $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
-        fi
-        info "Docker hazır olduktan sonra manuel çalıştırın: ${docker_compose_cmd[*]} up -d postgres redis"
-        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
-        MIGRATION_DOCKER_POLICY="disabled"
-        return
-    fi
-
-    if [[ "$AUTO_START_DOCKER_SERVICES" == "true" ]]; then
-        info "AUTO_INSTALL: START_DOCKER_SERVICES=true olduğu için migrasyon öncesi servisler otomatik başlatılıyor."
-        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
-        DOCKER_DB_SERVICES_STARTED=true
-        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
-        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
-        return
-    elif [[ "$AUTO_START_DOCKER_SERVICES" == "false" ]]; then
-        # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
-        MIGRATION_DOCKER_POLICY="disabled"
-        info "AUTO_INSTALL: START_DOCKER_SERVICES=false olduğu için migrasyon sırasında servis başlatma atlandı."
-        return
-    elif [[ "$NO_INTERACTION" == true ]]; then
-        info "--ci/--no-interaction etkin: migrasyon öncesi PostgreSQL/Redis servisleri otomatik hazırlanıyor."
-        start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
-        DOCKER_DB_SERVICES_STARTED=true
-        wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
-        wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; smoke testlerden önce servis hazır olmayabilir."
-        return
-    fi
-
-    echo ""
-    start_for_migration=$(prompt_yes_no_with_timeout_default_yes "Migrasyon öncesi PostgreSQL/Redis Docker servisleri şimdi başlatılsın mı? [E/h] ")
-    case "${start_for_migration:-E}" in
-        [HhNn]*)
-            # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced migration policy.
-            MIGRATION_DOCKER_POLICY="disabled"
-            info "Migrasyon sırasında Docker servisleri otomatik başlatma kapatıldı."
-            ;;
-        *)
-            start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
-            DOCKER_DB_SERVICES_STARTED=true
-            wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
-            wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
-            ok "Migrasyon için PostgreSQL/Redis servisleri hazırlandı."
-            ;;
-    esac
-}
+# Migrasyon ve RAG seed yardımcıları scripts/install_modules/phases/12_alembic.sh içinden yüklenir.
 
 # ── 13-14. CUDA / Smoke / CI doğrulamaları ───────────────────────────────────
 # Kurulum doğrulama yardımcıları scripts/install_modules/phases/10_validation.sh içinden yüklenir.
@@ -2301,167 +2206,7 @@ prepare_docker_for_migrations() {
 # Smoke gate kontratı: export SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180 davranışı 10_validation.sh içinde korunur.
 
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
-print_summary() {
-    local summary_banner=""
-    summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
-    echo ""
-    echo -e "${BOLD}${GREEN}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    printf "║%s║\n" "$(_pad_visible "$summary_banner" 60)"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-
-    echo -e "${BOLD}Sonraki Adımlar:${NC}"
-    echo ""
-    echo -e "  1️⃣  .env dosyasını düzenle:"
-    echo "       nano .env"
-    echo ""
-    echo -e "${BOLD}.env API anahtar durumu:${NC}"
-    if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
-        echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
-    else
-        echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
-        if [[ "${#ENV_API_KEYS_MISSING[@]}" -gt 0 ]]; then
-            echo "  Eksik / boş bırakılan anahtarlar:"
-            local missing_key
-            for missing_key in "${ENV_API_KEYS_MISSING[@]}"; do
-                echo "    - ${missing_key}"
-            done
-        fi
-        echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
-    fi
-    verify_sidar_keys_file_permissions
-    echo ""
-    echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
-    echo "       source .venv/bin/activate"
-    echo ""
-    echo -e "  3️⃣  Arka plan servisleri durumu:"
-    if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
-        echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
-        echo "       Altyapı servisleri: docker compose up -d postgres redis jaeger prometheus grafana"
-        echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
-        echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
-    else
-        echo "       Çalışma modu: Tam Docker (web/agent dahil)."
-    echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
-    fi
-    echo ""
-    echo -e "  4️⃣  CLI ile başlat:"
-    echo "       uv run python main.py"
-    echo "       # veya: source .venv/bin/activate && python main.py"
-    echo ""
-    local web_url="http://localhost:7860"
-    if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "docker" && "$GPU_AVAILABLE" == true ]]; then
-        web_url="http://localhost:${WEB_GPU_PORT:-7861} (GPU profili)"
-    fi
-    echo -e "  5️⃣  Web arayüzü ile başlat (${web_url}):"
-    echo "       uv run python main.py --quick web"
-    echo "       # veya: source .venv/bin/activate && python main.py --quick web"
-    if [[ "$REACT_UI_STATUS" == "hazır" || "$REACT_UI_STATUS" == "hazır_cache" ]]; then
-        if [[ "$REACT_UI_STATUS" == "hazır_cache" ]]; then
-            echo "       React UI build: cache kullanıldı, yeniden derleme atlandı (web_ui_react/dist)"
-        else
-            echo "       React UI build: tamamlandı (web_ui_react/dist)"
-        fi
-    elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
-        echo "       React UI build: başarısız (npm ci|npm install ve/veya npm run build hata verdi)"
-        echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm ci && npm run build"
-    else
-        echo "       React UI build: atlandı (${REACT_UI_STATUS})"
-        echo "       Manuel build için: cd web_ui_react && npm ci && npm run build"
-    fi
-    echo ""
-    echo -e "  6️⃣  Testleri çalıştır (varsayılan kurulumda hazır):"
-    echo "       ./run_tests.sh"
-    echo ""
-    print_install_validation_coverage
-
-    if [[ "$GPU_AVAILABLE" == true ]]; then
-        echo -e "  ${GREEN}🚀 GPU hızlandırma aktif — .env: USE_GPU=true${NC}"
-        echo ""
-    fi
-
-    if [[ "$WSL2" == true ]]; then
-        local multimodal_val=""
-        [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]')
-        if [[ "$multimodal_val" == "true" ]]; then
-            echo -e "  ${GREEN}🎙️  Ses/mikrofon desteği aktif (WSLg PulseAudio) — .env: ENABLE_MULTIMODAL=true${NC}"
-            if [[ "$AUDIO_SESSION_RESTART_RECOMMENDED" == true ]]; then
-                echo -e "  ${YELLOW}⚠️  Ses paketleri/yol değişkenleri güncellendi. Sağlıklı çalışması için kurulumdan sonra terminali kapatıp yeniden açın.${NC}"
-            fi
-        else
-            echo -e "  ${YELLOW}🔇 Ses desteği kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-audio${NC}"
-        fi
-        if [[ "$WSLCONFIG_CHANGED" == true ]]; then
-            echo -e "  ${YELLOW}⚠️  ÖNEMLİ: .wslconfig değişti → memory/swap ayarlarının etkili olması için:${NC}"
-            echo "       PowerShell'de: wsl --shutdown && wsl"
-        fi
-        echo ""
-    fi
-
-    echo -e "${BOLD}Faydalı Komutlar:${NC}"
-    echo "  Tam doğrulama için (entegrasyon + e2e):"
-    echo "    bash run_tests.sh --stage all   # veya tek başına: --stage integration"
-    echo "  E2E odaklı doğrulama için:"
-    echo "    bash run_tests.sh --stage e2e   # tests/e2e/{agents,cli,web}"
-    echo "  Performans/benchmark doğrulaması için:"
-    echo "    RUN_BENCHMARKS=required bash run_tests.sh"
-    echo "  uv run python github_upload.py   — projeyi GitHub'a yükle"
-    if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
-        echo "  Alembic migrasyonları kurulum sırasında tamamlandı."
-    else
-        echo "  uv run alembic upgrade head  — DB hazır olduktan sonra migrasyonu çalıştırın"
-    fi
-    if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
-        echo "  Smoke testler: başarılı (tests/smoke)."
-        echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
-    elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "  Smoke testler: hata var. Tekrar için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
-    else
-        echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
-    fi
-    if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
-        echo "  API entegrasyon testleri: başarılı (tests/integration/api)."
-    elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-        echo "  API entegrasyon testleri: hata var. Tekrar için: uv run pytest tests/integration/api --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-    else
-        echo "  API entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
-        echo "  Tüm entegrasyon/CLI/DB/workflow kapsamı için: bash run_tests.sh --stage integration"
-    fi
-    if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
-        echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
-    elif [[ "$RUN_AUDIT" == true ]]; then
-        echo "  Test artifact audit: ${AUDIT_STATUS}."
-    else
-        echo "  Test artifact audit: atlandı. Çalıştırmak için: ./install_sidar.sh --audit"
-    fi
-    if [[ "$AUTONOMOUS_CRON_STATUS" == "systemd_timer" ]]; then
-        echo "  Otonom döngü zamanlayıcısı: systemd user timer aktif (sidar-autonomous-loop.timer)."
-    elif [[ "$AUTONOMOUS_CRON_STATUS" == "crontab" ]]; then
-        echo "  Otonom döngü zamanlayıcısı: kullanıcı crontab satırı aktif."
-    elif [[ "$AUTONOMOUS_CRON_STATUS" == "manuel_gerekli" ]]; then
-        echo "  Otonom döngü zamanlayıcısı: otomatik kurulamadı; autonomous_loop.sh için manuel systemd/crontab planı ekleyin."
-    else
-        echo "  Otonom döngü zamanlayıcısı: opt-in kapalı. Etkinleştirmek için: ./install_sidar.sh --enable-autonomous-cron"
-    fi
-    echo "  ollama serve              — Ollama servisini başlat"
-    if [[ "$SKIP_MODELS" == true ]]; then
-        echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
-    fi
-    echo "  docker compose up sidar-gpu     — Docker GPU modu"
-    echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
-    echo ""
-    echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
-    echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
-    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
-    echo "  Prometheus paneli : http://localhost:9090"
-    echo "  Jaeger UI         : http://localhost:16686"
-    echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
-    echo "  Güvenlik notu: Üretimde ACCESS_LEVEL ayarını dikkatle yapılandırın."
-    echo ""
-}
+# Özet ve kapanış yardımcıları scripts/install_modules/phases/07_finish.sh içinden yüklenir.
 
 # ── Post-install servis / runtime / alt komut yardımcıları ───────────────────
 # Post-install yardımcıları scripts/install_modules/phases/11_post_install.sh içinden yüklenir.
