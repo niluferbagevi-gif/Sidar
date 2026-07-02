@@ -18,6 +18,16 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+sidar_pretrap_on_error() {
+    local exit_code=$?
+    local failed_line="${1:-unknown}"
+    local failed_cmd="${2:-unknown}"
+    echo "PRETRAP satır=${failed_line} cmd=${failed_cmd} exit=${exit_code}" >&2
+    exit "$exit_code"
+}
+
+trap 'sidar_pretrap_on_error "$LINENO" "$BASH_COMMAND"' ERR
+
 # Güvenlik/operasyon guard: root ile çalıştırılan kurulum .venv sahipliğini bozup
 # sonraki uv run çağrılarında Permission denied zinciri üretebilir.
 if [[ "${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
@@ -71,6 +81,7 @@ if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
     fi
     export INSTALL_SIDAR_VERSION
     unset _sidar_probe_source _sidar_probe_dir _sidar_probe_line
+    trap - ERR
     return 0 2>/dev/null || exit 0
 fi
 
@@ -7366,6 +7377,7 @@ main() {
     fi
 
     sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system
+    cleanup_bootstrap_script_copy
     sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites
     sidar_run_install_phase "04_workspace" sidar_phase_workspace_config
     sidar_run_install_phase "05_frontend" sidar_phase_frontend_assets

@@ -773,6 +773,27 @@ def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_sh
     )
 
 
+def test_install_sidar_probe_only_source_does_not_leave_pretrap_installed(
+    tmp_path: Path,
+) -> None:
+    result = _run_bash_smoke(
+        """
+        set +e
+        export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
+        source ./install_sidar.sh >/dev/null
+        unset SIDAR_INSTALL_VERSION_PROBE_ONLY
+        set +e
+        false
+        status=$?
+        test "$status" -eq 1
+        """,
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PRETRAP satır=" not in result.stderr
+
+
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
@@ -784,6 +805,9 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
 
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
+    strict_mode_idx = installer_text.index("set -Eeuo pipefail")
+    pretrap_func_idx = installer_text.index("sidar_pretrap_on_error()")
+    pretrap_idx = installer_text.index('trap \'sidar_pretrap_on_error "$LINENO" "$BASH_COMMAND"\' ERR')
     blank_idx = installer_text.index("is_blank()")
     resolve_idx = installer_text.index("resolve_install_sidar_version()")
     validate_idx = installer_text.index("validate_install_utility_modules()")
@@ -797,6 +821,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
         resolve_idx,
     )
     assert early_probe_idx < blank_idx
+    assert strict_mode_idx < pretrap_func_idx < pretrap_idx < early_probe_idx
     assert "Ultra fast-path: smoke/version probe akışı" in installer_text[early_probe_idx - 500 : early_probe_idx]
     assert resolve_idx < validate_idx < probe_idx < validate_call_idx
     probe_only_guard = 'if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then'
@@ -819,6 +844,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert 'return 0' in installer_text[bash_resolve_idx:python_probe_idx]
     assert "sed -nE" not in installer_text[resolve_idx:python_probe_idx]
     assert installer_text.count('if is_blank "$INSTALL_SIDAR_VERSION"; then') == 3
+    assert 'trap - ERR\n    return 0 2>/dev/null || exit 0' in installer_text
     assert 'return 0 2>/dev/null || exit 0' in installer_text
     assert 'INSTALL_SIDAR_VERSION//[[:space:]]' not in installer_text
     assert "load_install_phase_modules\n# END_BUNDLE_MODULES" in installer_text
@@ -826,6 +852,11 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert "mask_install_log_stream | tee" in installer_text
     assert "export INSTALL_SIDAR_VERSION" in installer_text
     assert "uv venv" in installer_text
+    assert (
+        'sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system\n'
+        "    cleanup_bootstrap_script_copy\n"
+        '    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites'
+    ) in installer_text
     assert "Accepted values:" in installer_text
     assert "  Commands: doctor | prepare-system" in installer_text
     assert "Kabul edilen değerler:" in installer_text
