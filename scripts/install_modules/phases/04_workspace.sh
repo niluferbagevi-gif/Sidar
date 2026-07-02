@@ -12,6 +12,70 @@ sidar_precheck_workspace_ownership() {
     fi
 }
 
+# ── 9. Dizinleri oluştur ──────────────────────────────────────────────────────
+create_directories() {
+    step "Proje Dizinleri"
+    for dir in "${REQUIRED_DIRS[@]}"; do
+        mkdir -p "$SCRIPT_DIR/$dir"
+        chmod 755 "$SCRIPT_DIR/$dir" 2>/dev/null || true
+    done
+
+    # Tam Docker modunda container kullanıcı UID/GID (10001) bind-mount dizinlerine
+    # yazabilmelidir; aksi halde /app/logs gibi yolarda Permission denied oluşur.
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+    if [[ "$runtime_mode" == "docker" ]]; then
+        local -a docker_bind_dirs=(logs data temp sessions)
+        local bind_dir=""
+        for bind_dir in "${docker_bind_dirs[@]}"; do
+            mkdir -p "$SCRIPT_DIR/$bind_dir"
+            chown 10001:10001 "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            chmod u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            if command -v setfacl &>/dev/null; then
+                setfacl -m u:10001:rwx "$SCRIPT_DIR/$bind_dir" 2>/dev/null || true
+            fi
+        done
+    fi
+
+    local log_file="$SCRIPT_DIR/logs/sidar_system.log"
+    if [[ -f "$log_file" && ! -w "$log_file" ]]; then
+        if [[ "${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}" == "docker" ]]; then
+            chown 10001:10001 "$log_file" 2>/dev/null || true
+            if command -v setfacl &>/dev/null; then
+                setfacl -m u:10001:rw "$log_file" 2>/dev/null || true
+            fi
+        else
+            chown "$(id -u):$(id -g)" "$log_file" 2>/dev/null || true
+        fi
+        chmod u+rw "$log_file" 2>/dev/null || true
+    fi
+
+    if [[ -f "$SCRIPT_DIR/run_tests.sh" ]]; then
+        chmod +x "$SCRIPT_DIR/run_tests.sh"
+    fi
+    ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
+}
+
+# ── VS Code Çalışma Alanı Hazırlığı ──────────────────────────────────────────
+setup_vscode_workspace() {
+    step "VS Code Çalışma Alanı Hazırlığı"
+    local vscode_dir="$SCRIPT_DIR/.vscode"
+
+    mkdir -p "$vscode_dir"
+
+    local python_path="$SCRIPT_DIR/.venv/bin/python"
+
+    cat > "$vscode_dir/settings.json" <<EOF
+{
+    "python.defaultInterpreterPath": "${python_path}",
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.defaultProfile.linux": "bash"
+}
+EOF
+
+    ok "VS Code çalışma alanı yapılandırıldı (.vscode/settings.json)."
+}
+
+
 sidar_phase_workspace_config() {
     sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" "env_utils.sh"
     sidar_precheck_workspace_ownership
