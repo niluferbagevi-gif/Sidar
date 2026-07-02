@@ -31,7 +31,7 @@ run_migrations() {
         DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
     fi
 
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || exit
 
     ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
@@ -207,13 +207,16 @@ PY
                 fi
 
                 if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    # shellcheck disable=SC2034 # read by scripts/install_modules/phases/06_services.sh and install_sidar.sh
                     DB_PASSWORD_HARDENED=true
+                    # shellcheck disable=SC2034 # read by scripts/install_modules/utils/database_url.sh and install_sidar.sh
                     POSTGRES_VOLUME_RESET_DONE=false
                     if ! maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis; then
                         MIGRATION_STATUS="db_auth_hatasi"
                         fail "PostgreSQL volume sıfırlanamadı; eski parola ile çalışan volume nedeniyle migrasyon güvenli şekilde durduruldu."
                     fi
                     start_docker_services_or_fail "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis
+                    # shellcheck disable=SC2034 # read by install_sidar.sh
                     DOCKER_DB_SERVICES_STARTED=true
                     wait_for_compose_services_health "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
                     wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sırasında cache/bağlantı hataları görülebilir."
@@ -268,6 +271,7 @@ PY
         warn "Alembic migrasyonu başarısız oldu. Hata özeti (son 120 satır):"
         tail -n 120 "$alembic_output_file" || true
         rm -f "$alembic_output_file"
+        # shellcheck disable=SC2034 # read by install_sidar.sh
         MIGRATION_STATUS="hata"
         fail "Migrasyon başarısız. Log'ları kontrol edin ve hatayı düzeltmeden kuruluma devam etmeyin."
     fi

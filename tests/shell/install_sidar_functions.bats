@@ -651,7 +651,7 @@ ENV
   grep -q "^run_migrations()" "$root/scripts/install_modules/phases/12_alembic.sh"
   grep -q "^is_alembic_at_head()" "$root/scripts/install_modules/phases/12_alembic.sh"
   grep -q "^ensure_postgres_databases_exist()" "$root/scripts/install_modules/phases/12_alembic.sh"
-  ! grep -q "^run_migrations()" "$root/install_sidar.sh"
+  run ! grep -q "^run_migrations()" "$root/install_sidar.sh"
   ! grep -q "^is_alembic_at_head()" "$root/install_sidar.sh"
 }
 
@@ -676,7 +676,7 @@ ENV
   grep -q "^ensure_database_url_defaults()" "$root/scripts/install_modules/utils/database_url.sh"
   grep -q "^write_generated_default_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
   grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
-  ! grep -q "^ensure_database_url_defaults()" "$root/install_sidar.sh"
+  run ! grep -q "^ensure_database_url_defaults()" "$root/install_sidar.sh"
   ! grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/db_credentials.sh"
 }
 
