@@ -467,7 +467,7 @@ INSTALL_REMOTE_MODULES=(
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
 f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
 eb93ab9d8ff921fec94eaf21dcf022dfadb844d6eb235e8e56a5e4686d41fec1  scripts/install_modules/phases/01_context.sh
-b919fc80c3ab8e9438c75fd7fc5fef16d6ed2cfc50f8b10542cc6db11c54025b  scripts/install_modules/phases/02_repo.sh
+ec93f5b76108f5391845f3c0224bdaf672f69b2778bf3224cf87a6a330d8b46e  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 5adf830b32b274ede1a501014a6c98a8737a8e823463811d80a7ed45d53f5519  scripts/install_modules/phases/03_system.sh
@@ -3151,158 +3151,8 @@ log_host_ollama_runtime_diagnostics() {
     fi
 }
 
-deploy_with_helm() {
-    step "Kubernetes/Helm Dağıtımı"
-    local chart_dir="$SCRIPT_DIR/helm/sidar"
-    local helm_cmd=(helm upgrade --install "$HELM_RELEASE_NAME" "$chart_dir" --namespace "$HELM_NAMESPACE" --create-namespace)
-
-    if ! command -v helm &>/dev/null; then
-        fail "helm bulunamadı. Kurulum için: https://helm.sh/docs/intro/install/"
-    fi
-
-    if [[ ! -f "$chart_dir/Chart.yaml" ]]; then
-        fail "Helm chart bulunamadı: $chart_dir/Chart.yaml"
-    fi
-
-    if [[ -n "$HELM_VALUES_FILE" ]]; then
-        if [[ ! -f "$SCRIPT_DIR/$HELM_VALUES_FILE" && ! -f "$HELM_VALUES_FILE" ]]; then
-            fail "--values ile verilen dosya bulunamadı: $HELM_VALUES_FILE"
-        fi
-        if [[ -f "$SCRIPT_DIR/$HELM_VALUES_FILE" ]]; then
-            HELM_VALUES_FILE="$SCRIPT_DIR/$HELM_VALUES_FILE"
-        fi
-        helm_cmd+=(--values "$HELM_VALUES_FILE")
-    fi
-
-    info "Helm chart doğrulaması çalıştırılıyor..."
-    helm lint "$chart_dir"
-
-    info "Helm release kuruluyor/güncelleniyor: release=$HELM_RELEASE_NAME namespace=$HELM_NAMESPACE"
-    "${helm_cmd[@]}"
-    ok "Helm dağıtımı tamamlandı."
-
-    if command -v kubectl &>/dev/null; then
-        info "Servisleri doğrulamak için:"
-        echo "       kubectl get pods -n $HELM_NAMESPACE"
-        echo "       kubectl get svc -n $HELM_NAMESPACE"
-    else
-        warn "kubectl bulunamadı. Cluster doğrulaması için kubectl kurmanız önerilir."
-    fi
-}
-
-report_repo_lookup_context() {
-    local current_pwd
-    current_pwd="$(pwd)"
-
-    info "Kurulum çalışma dizini: $current_pwd"
-    info "Sidar deposu hedef dizini: $TARGET_DIR"
-
-    if [[ "$current_pwd" == /mnt/* ]]; then
-        warn "Kurulum /mnt altında çalışıyor. Windows dosya sistemi önceki Sidar klasörünü koruyor olabilir."
-        info "Temiz kurulum için öneri: cd \"$HOME\" && ./Sidar/install_sidar.sh veya doğrudan cd \"$TARGET_DIR\"."
-    fi
-}
-
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
-sync_repo() {
-    step "Sidar projesi GitHub'dan çekiliyor"
-
-    if [[ "$OFFLINE_MODE" == true ]]; then
-        if [[ -d "$SCRIPT_DIR/.git" ]]; then
-            TARGET_DIR="$SCRIPT_DIR"
-            ok "Çevrimdışı mod: mevcut repo kullanılacak (git clone/pull atlandı): $SCRIPT_DIR"
-            return
-        fi
-
-        if [[ -d "$TARGET_DIR/.git" ]]; then
-            SCRIPT_DIR="$TARGET_DIR"
-            ok "Çevrimdışı mod: mevcut hedef repo kullanılacak (git clone/pull atlandı): $TARGET_DIR"
-            return
-        fi
-
-        fail "Çevrimdışı modda git clone yapılamaz. Lütfen repo içinden çalıştırın veya $TARGET_DIR altında önceden klonlanmış repo sağlayın."
-    fi
-
-    # Bu adım git clone/pull çalıştırdığı için, akış sırası değişse bile
-    # git erişimi burada da kesin olarak doğrulanır.
-    if ! command -v git &>/dev/null; then
-        fail "git komutu bulunamadı. Önce sistem bağımlılıklarını kurun (install_system_dependencies)."
-    fi
-
-    if [[ "$SCRIPT_DIR" == "$TARGET_DIR" && -d "$SCRIPT_DIR/.git" ]]; then
-        ok "Kurulum betiği zaten $TARGET_DIR içinde çalışıyor."
-        return
-    fi
-
-    if [[ ! -d "$TARGET_DIR/.git" ]]; then
-        info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone "$REPO_URL" --depth=1 --branch "${REPO_BRANCH:-main}" "$TARGET_DIR"
-    else
-        warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
-        info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
-        (
-            cd "$TARGET_DIR"
-            local STASHED_CHANGES=false
-            local INSTALL_STASH_REF=""
-            local INSTALL_STASH_MESSAGE=""
-            if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-                INSTALL_STASH_MESSAGE="sidar-install-auto-stash-$(date +%Y%m%d_%H%M%S)"
-                info "Lokal değişiklikler geçici olarak stash'e alınıyor."
-                git stash push -u -m "$INSTALL_STASH_MESSAGE" >/dev/null 2>&1 || fail "Lokal değişiklikler yedek stash'e alınamadı; git güncellemesi güvenli şekilde durduruldu."
-                INSTALL_STASH_REF="$(git stash list --format='%gd:%gs' | awk -F: -v msg="$INSTALL_STASH_MESSAGE" '$0 ~ msg {print $1; exit}')"
-                INSTALL_STASH_REF="${INSTALL_STASH_REF:-stash@{0}}"
-                STASHED_CHANGES=true
-                ok "Lokal değişiklikler yedek stash'e alındı: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-            fi
-
-            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
-
-            if [[ "$STASHED_CHANGES" == true ]]; then
-                # `apply` kullanıyoruz; başarı kesinleşmeden stash'i drop etmeyerek
-                # reset/clean gibi yıkıcı kurtarma adımlarında kullanıcı çalışmasını
-                # geri alınabilir bir stash referansıyla koruyoruz.
-                if git stash apply "$INSTALL_STASH_REF" >/dev/null 2>&1; then
-                    git stash drop "$INSTALL_STASH_REF" >/dev/null 2>&1 || warn "Uygulanan stash otomatik silinemedi; manuel kontrol edin: ${INSTALL_STASH_REF}"
-                    ok "Lokal değişiklikler stash'ten geri yüklendi."
-                else
-                    warn "Stash apply sırasında çakışma oluştu; yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-                    git merge --abort >/dev/null 2>&1 || true
-                    git rebase --abort >/dev/null 2>&1 || true
-                    if [[ "$NO_INTERACTION" == true ]]; then
-                        fail "Git çalışma ağacı çakışmalı durumda kaldı. --no-interaction modunda otomatik kurtarma yapılmadı. Yerel çalışma yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Manuel çözün veya stash'i doğruladıktan sonra reset/clean işlemini bilinçli çalıştırın."
-                    fi
-
-                    echo ""
-                    warn "Yerel değişiklikler yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-                    warn "Yalnız bu stash referansını doğruladıktan sonra çalışma ağacını origin/main durumuna sıfırlayabilirsiniz."
-                    local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Yedek stash doğrulandı. Çakışmayı temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
-                    case "${recovery_reply:-H}" in
-                        [EeYy]*)
-                            if [[ -z "$INSTALL_STASH_REF" ]] || ! git rev-parse -q --verify "${INSTALL_STASH_REF}^{commit}" >/dev/null; then
-                                fail "Yıkıcı git kurtarma reddedildi: geçerli yedek stash referansı bulunamadı. git clean -fd çalıştırılmadı."
-                            fi
-                            warn "Kurtarma adımı uygulanıyor. Yerel çalışma yedek stash'te korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu. Yedek stash: ${INSTALL_STASH_REF}"
-                            git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Yedek stash: ${INSTALL_STASH_REF}"
-                            ok "Repo origin/main durumuna sıfırlandı. Yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Geri almak için: git stash apply ${INSTALL_STASH_REF}"
-                            ;;
-                        *)
-                            fail "Git çalışma ağacı çakışmalı durumda kaldı. Yerel çalışma yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Lütfen '$TARGET_DIR' içinde çakışmaları manuel çözün veya stash'i doğruladıktan sonra reset/clean işlemini bilinçli çalıştırın."
-                            ;;
-                    esac
-                fi
-            fi
-        )
-    fi
-
-    SCRIPT_DIR="$TARGET_DIR"
-    refresh_install_sidar_version_from_repo
-    ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
-    info "Installer sürümü repo kaynaklarından yenilendi: v$INSTALL_SIDAR_VERSION"
-    banner
-}
+# Repo/Helm bootstrap yardımcıları scripts/install_modules/phases/02_repo.sh içinden yüklenir.
 
 # ── Sistem / donanım / NVIDIA yardımcıları ───────────────────────────────────
 # Sistem bağımlılığı ve GPU yardımcıları scripts/install_modules/phases/03_system.sh içinden yüklenir.
