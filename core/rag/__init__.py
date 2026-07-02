@@ -67,6 +67,8 @@ from .facade import (
 from .facade import (
     embed_texts_for_semantic_cache as embed_texts_for_semantic_cache,
 )
+from .formatting import extract_snippet as _extract_snippet_impl
+from .formatting import format_results_from_struct as _format_results_from_struct_impl
 from .graph import (
     LLM_ENTITY_EXTRACTION_TODO as LLM_ENTITY_EXTRACTION_TODO,
 )
@@ -1685,43 +1687,13 @@ class DocumentStore:
     def _format_results_from_struct(
         self, results: list[dict[str, Any]], query: str, source_name: str
     ) -> tuple[bool, str]:
-        """Ortak sonuç biçimlendirici."""
-        if not results:
-            return False, f"'{query}' için belge deposunda ilgili sonuç bulunamadı."
-
-        lines = [f"[RAG Arama: {query}] (Motor: {source_name})", ""]
-        for res in results:
-            lines.append(f"**[{res['id']}] {res['title']}**")
-            if res["source"]:
-                lines.append(f"  Kaynak: {res['source']}")
-
-            # Snippet uzunluğunu sınırla ve satır sonlarını temizle
-            snippet = res["snippet"].replace("\n", " ").strip()
-            if len(snippet) > 400:
-                snippet = snippet[:400] + "..."
-
-            lines.append(f"  {snippet}")
-            lines.append("")
-
-        return True, "\n".join(lines)
+        """Backwards-compatible facade for extracted result formatting."""
+        return _format_results_from_struct_impl(results, query, source_name)
 
     @staticmethod
     def _extract_snippet(content: str, query: str, window: int = 400) -> str:
-        """Sorgudaki ilk anahtar kelimenin etrafındaki metni çıkar (BM25 ve Keyword için)."""
-        keywords = query.lower().split()
-        content_lower = content.lower()
-
-        # Önce tam eşleşme ara
-        for kw in keywords:
-            idx = content_lower.find(kw)
-            if idx != -1:
-                start = max(0, idx - 100)
-                end = min(len(content), idx + window)
-                snippet = content[start:end].strip()
-                return f"...{snippet}..." if start > 0 else snippet
-
-        # Bulunamazsa baş tarafı döndür
-        return content[:window] + ("..." if len(content) > window else "")
+        """Backwards-compatible facade for extracted snippet selection."""
+        return _extract_snippet_impl(content, query, window)
 
     # ─────────────────────────────────────────────
     #  LİSTELEME & STATÜ
