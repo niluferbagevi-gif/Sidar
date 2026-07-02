@@ -6980,7 +6980,7 @@ print_summary() {
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
     echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
-    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  Grafana paneli    : http://localhost:3000 (admin / .env → GRAFANA_ADMIN_PASSWORD)"
     echo "  Prometheus paneli : http://localhost:9090"
     echo "  Jaeger UI         : http://localhost:16686"
     echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
