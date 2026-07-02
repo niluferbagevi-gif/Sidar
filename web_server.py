@@ -629,9 +629,10 @@ async def get_agent() -> SidarAgent:
     _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
     global _agent, _agent_lock
     runtime_state = _runtime_state()
-    if runtime_state is not None and getattr(runtime_state, "agent", None) is not None:
-        _agent = runtime_state.agent
-        return _agent
+    runtime_agent = getattr(runtime_state, "agent", None) if runtime_state is not None else None
+    if isinstance(runtime_agent, SidarAgent):
+        _agent = runtime_agent
+        return runtime_agent
     if _agent is not None:
         if runtime_state is not None:
             runtime_state.agent = _agent
