@@ -1,6 +1,997 @@
 #!/usr/bin/env bash
 
 
+validate_monitoring_mount_paths() {
+    local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
+    local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
+    local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
+    local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
+    local -a errors=()
+
+    if [[ -d "$prometheus_cfg" ]]; then
+        warn "Docker Desktop bug'ı tespit edildi: $prometheus_cfg bir klasör olarak oluşturulmuş. Silinip dosya olarak yeniden oluşturulacak."
+        rm -rf "$prometheus_cfg"
+    fi
+
+    if [[ ! -e "$prometheus_cfg" ]]; then
+        warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
+        mkdir -p "$(dirname "$prometheus_cfg")"
+        cat > "$prometheus_cfg" <<'EOF'
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+EOF
+    elif [[ ! -f "$prometheus_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $prometheus_cfg")
+    fi
+
+    if [[ ! -e "$grafana_provisioning_dir" ]]; then
+        warn "Grafana provisioning dizini bulunamadı, oluşturuluyor: $grafana_provisioning_dir"
+        mkdir -p "$grafana_provisioning_dir"
+    elif [[ ! -d "$grafana_provisioning_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_provisioning_dir")
+    fi
+
+    if [[ ! -e "$grafana_dashboards_dir" ]]; then
+        warn "Grafana dashboards dizini bulunamadı, oluşturuluyor: $grafana_dashboards_dir"
+        mkdir -p "$grafana_dashboards_dir"
+    elif [[ ! -d "$grafana_dashboards_dir" ]]; then
+        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_dashboards_dir")
+    fi
+
+    if [[ -d "$grafana_provisioning_dir" ]] && [[ ! -e "$grafana_datasource_cfg" ]]; then
+        warn "Grafana Prometheus datasource tanımı bulunamadı, varsayılan dosya oluşturuluyor: $grafana_datasource_cfg"
+        mkdir -p "$(dirname "$grafana_datasource_cfg")"
+        cat > "$grafana_datasource_cfg" <<'EOF'
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+EOF
+    elif [[ -e "$grafana_datasource_cfg" ]] && [[ ! -f "$grafana_datasource_cfg" ]]; then
+        errors+=("Dosya bekleniyordu ancak farklı tipte: $grafana_datasource_cfg")
+    fi
+
+    if (( ${#errors[@]} > 0 )); then
+        printf ' - %s\n' "${errors[@]}" >&2
+        fail "Docker Compose monitoring bind-mount sanity check başarısız. Lütfen eksik/yanlış tipte yolları düzeltin."
+    fi
+}
+
+start_docker_services_or_fail() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local stderr_file
+    stderr_file=$(mktemp)
+
+    if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
+        fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
+    fi
+
+    if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
+        rm -f "$stderr_file"
+        return 0
+    fi
+
+    local compose_err=""
+    compose_err="$(<"$stderr_file")"
+    rm -f "$stderr_file"
+
+    if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
+        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
+    fi
+
+    fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
+}
+
+wait_for_compose_services_health() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local service_name=""
+    local container_id=""
+    local state=""
+
+    [[ ${#services[@]} -gt 0 ]] || return 0
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; compose health bekleme adımı atlanıyor."
+        return 0
+    fi
+
+    local health_timeout_seconds="${COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS:-90}"
+    local health_poll_seconds="${COMPOSE_HEALTH_WAIT_POLL_SECONDS:-2}"
+    local health_deadline=0
+    local now=0
+
+    if ! [[ "$health_timeout_seconds" =~ ^[0-9]+$ ]] || (( health_timeout_seconds < 1 )); then
+        health_timeout_seconds=90
+    fi
+    if ! [[ "$health_poll_seconds" =~ ^[0-9]+$ ]] || (( health_poll_seconds < 1 )); then
+        health_poll_seconds=2
+    fi
+
+    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]}, timeout=${health_timeout_seconds}s, poll=${health_poll_seconds}s)..."
+    for service_name in "${services[@]}"; do
+        container_id="$("${compose_cmd[@]}" ps -q "$service_name" 2>/dev/null | head -n1 || true)"
+        if [[ -z "$container_id" ]]; then
+            warn "Servis için container ID alınamadı: ${service_name} (health bekleme atlandı)."
+            continue
+        fi
+
+        health_deadline=$(( $(date +%s) + health_timeout_seconds ))
+        while true; do
+            state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+            case "$state" in
+                healthy|running)
+                    ok "Servis hazır: ${service_name} (${state})"
+                    break
+                    ;;
+                unhealthy|exited|dead)
+                    warn "Servis sağlıksız durumda: ${service_name} (${state})"
+                    return 1
+                    ;;
+            esac
+            now="$(date +%s)"
+            if (( now >= health_deadline )); then
+                break
+            fi
+            sleep "$health_poll_seconds"
+        done
+
+        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
+        if [[ "$state" != "healthy" && "$state" != "running" ]]; then
+            warn "Servis health timeout: ${service_name} (son durum: ${state}, timeout=${health_timeout_seconds}s)"
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+phase06_docker_daemon_gate_or_fail() {
+    local max_attempts=3
+    local attempt=1
+    local integration_autofix_sentinel="${TMPDIR:-/tmp}/sidar_wsl_integration_applied"
+
+    while (( attempt <= max_attempts )); do
+        if docker info >/dev/null 2>&1; then
+            if (( attempt > 1 )); then
+                ok "Docker daemon doğrulaması ${attempt}. denemede başarılı."
+            fi
+            return 0
+        fi
+
+        warn "Phase 06 öncesi Docker daemon erişilemiyor (deneme ${attempt}/${max_attempts})."
+        if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "$integration_autofix_sentinel") ]]; then
+            info "Bu oturumda WSL integration autofix uygulandı; Docker Desktop açılışı gecikmiş olabilir."
+        fi
+
+        if (( attempt >= max_attempts )); then
+            break
+        fi
+
+        if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
+            info "Etkileşimsiz mod: yeniden deneme öncesi 10sn bekleniyor."
+            sleep 10
+        else
+            info "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
+            clear_stdin_buffer
+            read -r -p "Devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
+        fi
+
+        ((attempt += 1))
+    done
+
+    fail "Phase 06 öncesi Docker daemon doğrulanamadı (${max_attempts} deneme). Docker Compose adımlarına geçilmeden kurulum durduruldu."
+}
+
+
+sidar_add_unique_value() {
+    local array_name="$1"
+    local value="${2:-}"
+    local existing=""
+
+    [[ -n "$value" ]] || return 0
+    local -n target_array="$array_name"
+    for existing in "${target_array[@]}"; do
+        [[ "$existing" == "$value" ]] && return 0
+    done
+    target_array+=("$value")
+}
+
+sidar_normalize_compose_project_name() {
+    local raw="${1:-}"
+    raw="${raw,,}"
+    raw="$(printf '%s' "$raw" | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')"
+    printf '%s' "$raw"
+}
+
+sidar_volume_name_matches_suffix() {
+    local docker_volume_name="$1"
+    local volume_suffix="$2"
+    local compose_project_candidate="${3:-}"
+    local normalized_project=""
+    local lower_volume_name="${docker_volume_name,,}"
+    local lower_volume_suffix="${volume_suffix,,}"
+
+    [[ -n "$docker_volume_name" && -n "$volume_suffix" ]] || return 1
+
+    if [[ "$docker_volume_name" == "$volume_suffix" || "$lower_volume_name" == "$lower_volume_suffix" ]]; then
+        return 0
+    fi
+
+    if [[ -n "$compose_project_candidate" ]]; then
+        normalized_project="$(sidar_normalize_compose_project_name "$compose_project_candidate")"
+        if [[ "$docker_volume_name" == "${compose_project_candidate}_${volume_suffix}" || "$lower_volume_name" == "${compose_project_candidate,,}_${lower_volume_suffix}" ]]; then
+            return 0
+        fi
+        if [[ -n "$normalized_project" && ( "$lower_volume_name" == "${normalized_project}_${lower_volume_suffix}" || "$lower_volume_name" == "${normalized_project}-${lower_volume_suffix//_/-}" ) ]]; then
+            return 0
+        fi
+    fi
+
+    # Sidar'ın eski/yeniden klonlanmış dizinlerinden kalmış, compose label'ı olmayan
+    # volume adlarını da yakala. Başka projelerin genel postgres_data volume'lerini
+    # proje adı bilinçli olarak Sidar ile ilişkilendirilemediği sürece kapsam dışında bırakır.
+    if [[ "$lower_volume_name" =~ (^|[_-])sidar([_-].*)?([_-])(postgres|pg)([_-])?data$ ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+sidar_volume_has_matching_compose_labels() {
+    local docker_volume_name="$1"
+    local volume_suffix="$2"
+    shift 2
+    local -a compose_project_candidates=("$@")
+    local label_output=""
+    local label_project=""
+    local label_volume=""
+    local candidate=""
+
+    label_output=$(docker volume inspect "$docker_volume_name" --format '{{ index .Labels "com.docker.compose.project" }}|{{ index .Labels "com.docker.compose.volume" }}' 2>/dev/null || true)
+    [[ -n "$label_output" ]] || return 1
+    label_project="${label_output%%|*}"
+    label_volume="${label_output#*|}"
+    [[ "$label_project" != "<no value>" ]] || label_project=""
+    [[ "$label_volume" != "<no value>" ]] || label_volume=""
+
+    [[ "$label_volume" == "$volume_suffix" || "${label_volume,,}" == "${volume_suffix,,}" ]] || return 1
+    for candidate in "${compose_project_candidates[@]}"; do
+        if [[ "$label_project" == "$candidate" || "${label_project,,}" == "${candidate,,}" || "${label_project,,}" == "$(sidar_normalize_compose_project_name "$candidate")" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+sidar_discover_postgres_volumes() {
+    local compose_project_name="${1:-}"
+    shift || true
+    local -a candidate_volume_suffixes=("$@")
+    local -a compose_project_candidates=()
+    local docker_volume_name=""
+    local volume_suffix=""
+    local project_candidate=""
+    local script_project_name=""
+    local matched_volume=false
+
+    sidar_add_unique_value compose_project_candidates "$compose_project_name"
+    sidar_add_unique_value compose_project_candidates "$(sidar_normalize_compose_project_name "$compose_project_name")"
+    script_project_name="$(basename "$SCRIPT_DIR")"
+    sidar_add_unique_value compose_project_candidates "$script_project_name"
+    sidar_add_unique_value compose_project_candidates "$(sidar_normalize_compose_project_name "$script_project_name")"
+    sidar_add_unique_value compose_project_candidates "sidar"
+
+    if mapfile -t docker_volume_names < <(docker volume ls --format '{{.Name}}' 2>/dev/null); then
+        for docker_volume_name in "${docker_volume_names[@]}"; do
+            matched_volume=false
+            for volume_suffix in "${candidate_volume_suffixes[@]}"; do
+                for project_candidate in "${compose_project_candidates[@]}"; do
+                    if sidar_volume_name_matches_suffix "$docker_volume_name" "$volume_suffix" "$project_candidate"; then
+                        printf '%s\n' "$docker_volume_name"
+                        matched_volume=true
+                        break 2
+                    fi
+                done
+                if sidar_volume_has_matching_compose_labels "$docker_volume_name" "$volume_suffix" "${compose_project_candidates[@]}"; then
+                    printf '%s\n' "$docker_volume_name"
+                    matched_volume=true
+                    break
+                fi
+            done
+            if [[ "$matched_volume" == true ]]; then
+                continue
+            fi
+        done
+    fi
+}
+maybe_reset_postgres_volume_after_password_hardening() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+    local reset_attempted=false
+
+    if [[ "$DB_PASSWORD_HARDENED" != true || "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    local includes_postgres=false
+    for service in "${services[@]}"; do
+        if [[ "$service" == "postgres" ]]; then
+            includes_postgres=true
+            break
+        fi
+    done
+    [[ "$includes_postgres" == true ]] || return 0
+
+    local env_file="$SCRIPT_DIR/.env"
+    local sidar_env="development"
+    if [[ -f "$env_file" ]]; then
+        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    fi
+    sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
+
+    local allow_production_volume_reset="${ALLOW_PRODUCTION_DB_VOLUME_RESET:-0}"
+    case "$sidar_env" in
+        development|dev|local|test)
+            ;;
+        production|prod|staging|preprod)
+            if [[ "$allow_production_volume_reset" != "1" ]]; then
+                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için PostgreSQL volume otomatik sıfırlanmadı (güvenlik freni)."
+                warn "Sadece bilinçli operasyonlarda ALLOW_PRODUCTION_DB_VOLUME_RESET=1 ile açıkça izin verin."
+                return 0
+            fi
+            warn "ALLOW_PRODUCTION_DB_VOLUME_RESET=1 verildi; SIDAR_ENV=${sidar_env} için PostgreSQL volume sıfırlama güvenlik freni operatör onayıyla bypass edildi."
+            ;;
+        *)
+            warn "SIDAR_ENV='${sidar_env}' tanınmadı; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı."
+            return 0
+            ;;
+    esac
+
+    if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
+        warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
+        return 0
+    fi
+
+    if ! command -v docker &>/dev/null; then
+        warn "DB parola hardening algılandı ancak docker CLI bulunamadı; PostgreSQL volume otomatik sıfırlanamadı."
+        return 0
+    fi
+
+    local -a candidate_volume_suffixes=()
+    local compose_project_name="${COMPOSE_PROJECT_NAME:-}"
+    local compose_arg=""
+    local consume_next_as_project_name=false
+    for compose_arg in "${compose_cmd[@]}"; do
+        if [[ "$consume_next_as_project_name" == true ]]; then
+            compose_project_name="$compose_arg"
+            consume_next_as_project_name=false
+            continue
+        fi
+        case "$compose_arg" in
+            -p|--project-name)
+                consume_next_as_project_name=true
+                ;;
+            -p=*|--project-name=*)
+                compose_project_name="${compose_arg#*=}"
+                ;;
+        esac
+    done
+
+    if [[ -z "$compose_project_name" ]]; then
+        compose_project_name=$(read_env_value_from_file "COMPOSE_PROJECT_NAME" "$env_file")
+    fi
+    compose_project_name=$(echo "${compose_project_name:-}" | tr -d '"'\''[:space:]')
+    if mapfile -t compose_volumes < <("${compose_cmd[@]}" config --volumes 2>/dev/null); then
+        for volume_name in "${compose_volumes[@]}"; do
+            if [[ "$volume_name" =~ (^|_)postgres_data$ ]]; then
+                candidate_volume_suffixes+=("$volume_name")
+            fi
+        done
+    fi
+
+    # docker compose config --volumes çoğunlukla kısa adı (örn: postgres_data) döndürür.
+    # Gerçek Docker volume adı ise çoğu zaman proje önekli olur (örn: sidar_postgres_data).
+    # Bu nedenle kısa adları suffix olarak ele alıp docker volume ls çıktısından gerçek adları çözüyoruz.
+    if [[ ${#candidate_volume_suffixes[@]} -eq 0 ]]; then
+        candidate_volume_suffixes+=("postgres_data")
+    fi
+
+    local -a existing_pg_volumes=()
+    if mapfile -t existing_pg_volumes < <(sidar_discover_postgres_volumes "$compose_project_name" "${candidate_volume_suffixes[@]}"); then
+        :
+    fi
+
+    if [[ ${#existing_pg_volumes[@]} -gt 1 ]]; then
+        local -A unique_existing_pg_volumes=()
+        local -a deduped_existing_pg_volumes=()
+        for volume_name in "${existing_pg_volumes[@]}"; do
+            if [[ -z "${unique_existing_pg_volumes[$volume_name]:-}" ]]; then
+                unique_existing_pg_volumes["$volume_name"]=1
+                deduped_existing_pg_volumes+=("$volume_name")
+            fi
+        done
+        existing_pg_volumes=("${deduped_existing_pg_volumes[@]}")
+    fi
+
+    if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
+        if "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
+            if mapfile -t existing_pg_volumes < <(sidar_discover_postgres_volumes "$compose_project_name" "${candidate_volume_suffixes[@]}"); then
+                :
+            fi
+            if [[ ${#existing_pg_volumes[@]} -eq 0 ]]; then
+                POSTGRES_VOLUME_RESET_DONE=true
+                return 0
+            fi
+            warn "Fallback sonrası PostgreSQL volume adayları bulundu: ${existing_pg_volumes[*]}"
+        else
+            warn "docker compose down --volumes --remove-orphans fallback'i çalıştırılamadı; volume adı eşleşmesi bulunamazsa kurulum güvenli uyarıyla devam edecek."
+        fi
+    fi
+
+    local should_reset="E"
+    if [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "true" ]]; then
+        should_reset="E"
+        info "AUTO_INSTALL: RESET_DB=true olduğu için PostgreSQL volume sıfırlama onayı otomatik verildi."
+    elif [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "false" ]]; then
+        should_reset="H"
+        info "AUTO_INSTALL: RESET_DB=false olduğu için PostgreSQL volume sıfırlama atlandı."
+    elif [[ "$NO_INTERACTION" != true ]]; then
+        should_reset=$(prompt_yes_no_with_timeout_default_no \
+            "DB şifresi güncellendi. Eski PostgreSQL volume'leri (${existing_pg_volumes[*]}) şimdi sıfırlansın mı? [e/H] ")
+    fi
+
+    local strict_postgres_reset_on_password_change="${STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE:-${STRICT_POSTGRES_VOLUME_RESET:-0}}"
+
+    case "${should_reset:-E}" in
+        E|e)
+            reset_attempted=true
+            warn "DB parola hardening sonrası eski kimlik bilgisi riskine karşı PostgreSQL volume sıfırlanıyor: ${existing_pg_volumes[*]}"
+            if ! backup_postgres_before_volume_reset "${compose_cmd[@]}"; then
+                warn "PostgreSQL yedeği alınamadı; volume yine de sıfırlanıyor (geliştirme ortamı — veri kurtarılamaz durumda)."
+            fi
+            local -a postgres_service_container_ids=()
+            if mapfile -t postgres_service_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
+                if [[ ${#postgres_service_container_ids[@]} -gt 0 ]]; then
+                    warn "postgres servisine ait mevcut container(lar) doğrudan kaldırılıyor."
+                    docker stop "${postgres_service_container_ids[@]}" >/dev/null 2>&1 || true
+                    docker rm -f "${postgres_service_container_ids[@]}" >/dev/null 2>&1 || warn "postgres container kaldırma adımı tamamlanamadı."
+                fi
+            fi
+            if ! "${compose_cmd[@]}" down --volumes --remove-orphans >/dev/null 2>&1; then
+                warn "docker compose down --volumes --remove-orphans komutu başarısız oldu; volume kilidi manuel olarak çözülecek."
+            fi
+            if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
+                warn "Agresif container temizliği etkin: projeye ait asılı kalan container'lar zorla kaldırılıyor."
+                local -a project_container_ids=()
+                if [[ -n "$compose_project_name" ]]; then
+                    if mapfile -t project_container_ids < <(docker ps -a --filter "label=com.docker.compose.project=${compose_project_name}" --format '{{.ID}}' 2>/dev/null); then
+                        if [[ ${#project_container_ids[@]} -gt 0 ]]; then
+                            docker rm -f "${project_container_ids[@]}" >/dev/null 2>&1 || warn "Projeye ait bazı container'lar zorla kaldırılamadı."
+                        fi
+                    fi
+                fi
+            fi
+            local removed_any=false
+            for volume_name in "${existing_pg_volumes[@]}"; do
+                local -a volume_container_ids=()
+                if mapfile -t volume_container_ids < <(docker ps -a --filter "volume=${volume_name}" --format '{{.ID}}' 2>/dev/null); then
+                    if [[ ${#volume_container_ids[@]} -gt 0 ]]; then
+                        warn "Volume bağlı container(lar) bulundu (${volume_name}); zorla kaldırılıyor."
+                        docker rm -f "${volume_container_ids[@]}" >/dev/null 2>&1 || warn "Volume kullanan container'lar kaldırılamadı: ${volume_name}"
+                    fi
+                fi
+                if [[ "$FORCE_POSTGRES_VOLUME_CLEANUP" == true ]]; then
+                    local -a dangling_by_name_container_ids=()
+                    if mapfile -t dangling_by_name_container_ids < <(docker ps -a --filter "name=${volume_name}" --format '{{.ID}}' 2>/dev/null); then
+                        if [[ ${#dangling_by_name_container_ids[@]} -gt 0 ]]; then
+                            warn "Agresif mod: volume adıyla eşleşen asılı container(lar) kaldırılıyor (${volume_name})."
+                            docker rm -f "${dangling_by_name_container_ids[@]}" >/dev/null 2>&1 || warn "Volume adına göre bulunan container'lar kaldırılamadı: ${volume_name}"
+                        fi
+                    fi
+                fi
+                if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
+                    ok "PostgreSQL volume temizlendi: ${volume_name}"
+                    removed_any=true
+                else
+                    warn "PostgreSQL volume otomatik silinemedi (${volume_name}). Geliştirme ortamında manuel olarak sıfırlayın."
+                fi
+            done
+            if [[ "$removed_any" == true ]]; then
+                POSTGRES_VOLUME_RESET_DONE=true
+            fi
+            ;;
+        *)
+            warn "PostgreSQL volume sıfırlama kullanıcı tercihiyle atlandı; eski parola kaynaklı auth hatası oluşabilir."
+            ;;
+    esac
+
+    if [[ "$POSTGRES_VOLUME_RESET_DONE" == true ]]; then
+        return 0
+    fi
+
+    if [[ "$reset_attempted" == true && "${DB_PASSWORD_HARDENED:-false}" == true ]]; then
+        warn "Volume temizliği tamamlanamadı; kilitli Docker artefaktlarını çözmek için docker system prune -f çalıştırılıyor."
+        docker system prune -f >/dev/null 2>&1 || warn "docker system prune -f adımı tamamlanamadı."
+
+        local removed_after_prune=false
+        for volume_name in "${existing_pg_volumes[@]}"; do
+            if docker volume rm "$volume_name" -f >/dev/null 2>&1; then
+                ok "PostgreSQL volume prune sonrası temizlendi: ${volume_name}"
+                removed_after_prune=true
+            fi
+        done
+        if [[ "$removed_after_prune" == true ]]; then
+            POSTGRES_VOLUME_RESET_DONE=true
+            return 0
+        fi
+    fi
+
+    warn "PostgreSQL volume sıfırlama tamamlanamadı; bağlantı hatası olursa docker compose down --volumes --remove-orphans && docker volume rm sidar_postgres_data -f komutlarını çalıştırın."
+    if [[ "$reset_attempted" == true ]]; then
+        if [[ "$strict_postgres_reset_on_password_change" == "1" ]]; then
+            return 1
+        fi
+        warn "Kurulum durdurulmadan devam ediliyor (STRICT_POSTGRES_VOLUME_RESET=1 veya STRICT_POSTGRES_VOLUME_RESET_ON_PASSWORD_CHANGE=1 ayarlanırsa bu durumda fail edilir)."
+        return 0
+    fi
+    return 0
+}
+
+backup_postgres_before_volume_reset() {
+    local -a compose_cmd=("$@")
+    local postgres_container_id=""
+    local backup_dir="$SCRIPT_DIR/backups"
+    local backup_file=""
+    local dump_error_file=""
+    local dump_ok=false
+    local candidate_db_user=""
+    local -a candidate_db_users=()
+    local candidate_db_users_seen="|"
+    local env_db_user=""
+    local env_postgres_user=""
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; volume sıfırlama öncesi PostgreSQL yedeği alınamadı."
+        return 0
+    fi
+
+    if mapfile -t _postgres_container_ids < <("${compose_cmd[@]}" ps -q postgres 2>/dev/null); then
+        if [[ ${#_postgres_container_ids[@]} -gt 0 ]]; then
+            postgres_container_id="${_postgres_container_ids[0]}"
+        fi
+    fi
+
+    if [[ -z "$postgres_container_id" ]]; then
+        warn "postgres container bulunamadı; volume sıfırlama öncesi pg_dumpall yedeği alınamadı (kurulum otomatik devam edecek)."
+        return 1
+    fi
+
+    mkdir -p "$backup_dir"
+    backup_file="$backup_dir/postgres_before_volume_reset_$(date +%Y%m%d_%H%M%S).sql"
+    dump_error_file="$(mktemp)"
+
+    # Önce container içi yapılandırmadan ve .env dosyasından özel kullanıcı adlarını dene.
+    env_postgres_user="$(docker exec "$postgres_container_id" sh -lc 'printenv POSTGRES_USER' 2>/dev/null || true)"
+    env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+    if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+        candidate_db_users+=("$env_postgres_user")
+        candidate_db_users_seen+="${env_postgres_user}|"
+    fi
+
+    if [[ -n "${ENV_FILE:-}" && -f "${ENV_FILE:-}" ]]; then
+        env_postgres_user="$(read_env_value_from_file "POSTGRES_USER" "$ENV_FILE")"
+        env_postgres_user="$(echo "$env_postgres_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_postgres_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_postgres_user}|"* ]]; then
+            candidate_db_users+=("$env_postgres_user")
+            candidate_db_users_seen+="${env_postgres_user}|"
+        fi
+        local env_database_url=""
+        env_database_url="$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")"
+        if [[ "$env_database_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@ ]]; then
+            env_db_user="${BASH_REMATCH[2]}"
+        fi
+        env_db_user="$(echo "$env_db_user" | tr -d '"'\''[:space:]')"
+        if [[ -n "$env_db_user" ]] && [[ "$candidate_db_users_seen" != *"|${env_db_user}|"* ]]; then
+            candidate_db_users+=("$env_db_user")
+            candidate_db_users_seen+="${env_db_user}|"
+        fi
+    fi
+
+    # Varsayılan fallback kullanıcılarını en sona ekle.
+    if [[ "$candidate_db_users_seen" != *"|postgres|"* ]]; then
+        candidate_db_users+=("postgres")
+        candidate_db_users_seen+="postgres|"
+    fi
+    if [[ "$candidate_db_users_seen" != *"|sidar|"* ]]; then
+        candidate_db_users+=("sidar")
+        candidate_db_users_seen+="sidar|"
+    fi
+
+    for candidate_db_user in "${candidate_db_users[@]}"; do
+        if docker exec "$postgres_container_id" sh -lc "pg_dumpall -U ${candidate_db_user}" >"$backup_file" 2>"$dump_error_file"; then
+            local backup_size=0
+            backup_size=$(stat -c%s "$backup_file" 2>/dev/null || echo 0)
+            if [[ -s "$backup_file" && "$backup_size" -gt 512 ]] && grep -qE '^(CREATE|INSERT|--.*PostgreSQL)' "$backup_file" 2>/dev/null; then
+                dump_ok=true
+                break
+            fi
+        fi
+    done
+
+    if [[ "$dump_ok" == true ]]; then
+        ok "PostgreSQL hızlı yedek alındı: ${backup_file}"
+        info "Eski verileriniz ${backup_file} olarak kaydedildi, volume sıfırlanıyor."
+        rm -f "$dump_error_file"
+        return 0
+    fi
+
+    rm -f "$backup_file"
+    warn "Volume sıfırlama öncesi pg_dumpall yedeği alınamadı. Detay: $(cat "$dump_error_file" 2>/dev/null || echo 'bilinmeyen_hata')"
+    rm -f "$dump_error_file"
+    return 1
+}
+
+wait_for_postgres_ready_after_docker_start() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    local max_attempts="${6:-30}"
+    local sleep_seconds="${7:-2}"
+    local stable_auth_checks_required="${POSTGRES_READY_STABLE_AUTH_CHECKS:-2}"
+    local stable_auth_checks_passed=0
+
+    info "PostgreSQL'in tabloları ve kullanıcıları oluşturması bekleniyor (${db_host}:${db_port}/${db_name})..."
+    for ((attempt=1; attempt<=max_attempts; attempt++)); do
+        if pg_isready -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" >/dev/null 2>&1; then
+            local auth_rc=0
+            verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" || auth_rc=$?
+            case "$auth_rc" in
+                0)
+                    ((stable_auth_checks_passed+=1))
+                    if (( stable_auth_checks_passed >= stable_auth_checks_required )); then
+                        ok "PostgreSQL tam olarak hazır ve kimlik doğrulaması başarılı."
+                        return 0
+                    fi
+                    info "Kimlik doğrulaması başarılı (denge kontrolü ${stable_auth_checks_passed}/${stable_auth_checks_required}); kısa bir doğrulama daha yapılacak..."
+                    ;;
+                10)
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL henüz hazır değil veya parola senkronize değil (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-password authentication failed}"
+                    ;;
+                2)
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL erişilebilir, ancak psql/asyncpg ile auth doğrulaması yapılamadı (${attempt}/${max_attempts})."
+                    warn "Auth doğrulaması yapılamadığından DB hazır kabul ediliyor; Alembic adımında yeniden doğrulanacak."
+                    return 0
+                    ;;
+                *)
+                    stable_auth_checks_passed=0
+                    warn "PostgreSQL bağlantı kontrolü başarısız (${attempt}/${max_attempts}): ${POSTGRES_AUTH_CHECK_ERROR:-bilinmeyen_hata}"
+                    ;;
+            esac
+        else
+            stable_auth_checks_passed=0
+            info "⏳ Veritabanı başlatılıyor... (${attempt}/${max_attempts})"
+        fi
+        sleep "$sleep_seconds"
+    done
+
+    warn "PostgreSQL ${max_attempts} denemede tam hazır hale gelmedi."
+    return 1
+}
+
+wait_for_redis_ready_after_docker_start() {
+    local env_file="$SCRIPT_DIR/.env"
+    local redis_url=""
+    local redis_host="localhost"
+    local redis_port="6379"
+    local -a python_cmd=()
+
+    if [[ -f "$env_file" ]]; then
+        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+    fi
+    if [[ -z "$redis_url" ]]; then
+        redis_url="redis://localhost:6379/0"
+    fi
+
+    if command -v python3 &>/dev/null; then
+        python_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        python_cmd=(python)
+    fi
+
+    if [[ ${#python_cmd[@]} -gt 0 ]]; then
+        if mapfile -t redis_conn < <("${python_cmd[@]}" - "$redis_url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+url = (sys.argv[1] or "").strip() or "redis://localhost:6379/0"
+parsed = urlparse(url)
+print(parsed.hostname or "localhost")
+print(str(parsed.port or 6379))
+PY
+); then
+            redis_host="${redis_conn[0]:-localhost}"
+            redis_port="${redis_conn[1]:-6379}"
+        fi
+    fi
+
+    info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
+    for _ in {1..30}; do
+        if command -v redis-cli &>/dev/null; then
+            if redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
+        elif command -v timeout &>/dev/null; then
+            # Hafif fallback: her döngüde python process spawn etmek yerine bash /dev/tcp kullan.
+            if timeout 1 bash -c "</dev/tcp/$redis_host/$redis_port" >/dev/null 2>&1; then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
+        elif [[ ${#python_cmd[@]} -gt 0 ]]; then
+            # timeout yoksa son çare olarak tek TCP connect kontrolü.
+            if "${python_cmd[@]}" - "$redis_host" "$redis_port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+host = sys.argv[1]
+port = int(sys.argv[2])
+with socket.create_connection((host, port), timeout=1.0):
+    pass
+PY
+            then
+                ok "Redis erişilebilir hale geldi."
+                return 0
+            fi
+        else
+            warn "redis-cli veya python bulunamadı; Redis hazır kontrolü atlanıyor."
+            return 0
+        fi
+        sleep 2
+    done
+
+    warn "Redis ${redis_host}:${redis_port} 60 saniye içinde hazır olmadı."
+    return 1
+}
+
+verify_postgres_auth_with_psql() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    POSTGRES_AUTH_CHECK_ERROR=""
+
+    if ! command -v psql &>/dev/null; then
+        POSTGRES_AUTH_CHECK_ERROR="psql_missing"
+        return 2
+    fi
+
+    local psql_output=""
+    if psql_output=$(
+        PGPASSWORD="$db_password" psql \
+            "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+            -w \
+            -tAc "SELECT 1" 2>&1
+    ); then
+        return 0
+    fi
+
+    POSTGRES_AUTH_CHECK_ERROR="$psql_output"
+    if [[ "$psql_output" == *"password authentication failed"* ]]; then
+        return 10
+    fi
+    return 1
+}
+
+verify_postgres_auth_with_python() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+    local -a py_cmd=()
+    local py_output=""
+    POSTGRES_AUTH_CHECK_ERROR=""
+
+    if command -v python3 &>/dev/null; then
+        py_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        py_cmd=(python)
+    else
+        POSTGRES_AUTH_CHECK_ERROR="python_missing"
+        return 2
+    fi
+
+    if py_output=$("${py_cmd[@]}" - "$db_host" "$db_port" "$db_user" "$db_name" "$db_password" <<'PY' 2>&1
+import asyncio
+import sys
+
+host, port, user, database, password = sys.argv[1:6]
+
+async def main():
+    try:
+        import asyncpg
+    except Exception as exc:
+        print(f"asyncpg_missing:{exc}")
+        raise SystemExit(2)
+
+    try:
+        conn = await asyncpg.connect(
+            host=host,
+            port=int(port),
+            user=user,
+            password=password,
+            database=database,
+            timeout=5,
+        )
+        try:
+            await conn.fetchval("SELECT 1")
+        finally:
+            await conn.close()
+        print("ok")
+        raise SystemExit(0)
+    except Exception as exc:
+        print(str(exc))
+        raise
+
+try:
+    asyncio.run(main())
+except SystemExit:
+    raise
+except Exception:
+    raise SystemExit(1)
+PY
+); then
+        return 0
+    fi
+
+    local py_rc=$?
+    POSTGRES_AUTH_CHECK_ERROR="$py_output"
+    if [[ "$py_output" == *"password authentication failed"* || "$py_output" == *"InvalidPasswordError"* ]]; then
+        return 10
+    fi
+    if [[ "$py_rc" -eq 2 ]]; then
+        return 2
+    fi
+    return 1
+}
+
+verify_postgres_auth() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local db_password="$5"
+
+    verify_postgres_auth_with_psql "$db_host" "$db_port" "$db_user" "$db_name" "$db_password"
+    local auth_rc=$?
+    if [[ "$auth_rc" -ne 2 ]]; then
+        return "$auth_rc"
+    fi
+
+    verify_postgres_auth_with_python "$db_host" "$db_port" "$db_user" "$db_name" "$db_password"
+    return $?
+}
+
+try_recover_postgres_password_with_alter_user() {
+    local db_host="$1"
+    local db_port="$2"
+    local db_user="$3"
+    local db_name="$4"
+    local new_password="$5"
+    shift 5
+    local -a old_password_candidates=("$@")
+
+    local candidate=""
+    local escape_sql_literal_password="${new_password//\'/\'\'}"
+    local escape_sql_identifier_user="${db_user//\"/\"\"}"
+    local -A seen_candidates=()
+
+    for candidate in "${old_password_candidates[@]}"; do
+        [[ -n "$candidate" ]] || continue
+        if [[ -n "${seen_candidates[$candidate]:-}" ]]; then
+            continue
+        fi
+        seen_candidates["$candidate"]=1
+        if [[ "$candidate" == "$new_password" ]]; then
+            continue
+        fi
+
+        if verify_postgres_auth "$db_host" "$db_port" "$db_user" "$db_name" "$candidate"; then
+            info "Eski parola ile erişim doğrulandı; ALTER USER ile parola güncellemesi deneniyor."
+
+            if command -v psql &>/dev/null; then
+                if PGPASSWORD="$candidate" psql \
+                    "host=$db_host port=$db_port user=$db_user dbname=$db_name connect_timeout=5" \
+                    -w \
+                    -v ON_ERROR_STOP=1 \
+                    -c "ALTER USER \"${escape_sql_identifier_user}\" WITH PASSWORD '${escape_sql_literal_password}';" \
+                    >/dev/null 2>&1; then
+                    ok "ALTER USER ile PostgreSQL parolası güncellendi."
+                    return 0
+                fi
+            fi
+
+            local -a py_cmd=()
+            if command -v python3 &>/dev/null; then
+                py_cmd=(python3)
+            elif command -v python &>/dev/null; then
+                py_cmd=(python)
+            fi
+
+            if [[ ${#py_cmd[@]} -gt 0 ]]; then
+                if "${py_cmd[@]}" - "$db_host" "$db_port" "$db_user" "$db_name" "$candidate" "$new_password" <<'PY' >/dev/null 2>&1
+import asyncio
+import sys
+
+host, port, user, database, old_password, new_password = sys.argv[1:7]
+
+async def main():
+    import asyncpg
+    conn = await asyncpg.connect(
+        host=host,
+        port=int(port),
+        user=user,
+        password=old_password,
+        database=database,
+        timeout=5,
+    )
+    try:
+        await conn.execute(f'ALTER USER "{user.replace(chr(34), chr(34)*2)}" WITH PASSWORD $1', new_password)
+    finally:
+        await conn.close()
+
+asyncio.run(main())
+PY
+                then
+                    ok "ALTER USER (python/asyncpg) ile PostgreSQL parolası güncellendi."
+                    return 0
+                fi
+            fi
+        fi
+    done
+
+    return 1
+}
+
+
 seed_rag_in_docker_after_startup() {
     if [[ "${SIDAR_INSTALL_TEST_MODE:-}" == "1" ]]; then
         info "Test modu: RAG warmup seed atlandı."
