@@ -13,7 +13,6 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
 import asyncio
 import builtins
-import hashlib
 import importlib
 import ipaddress
 import json
@@ -24,7 +23,6 @@ import tempfile
 import threading
 import time
 import urllib.parse
-import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -80,6 +78,21 @@ from .graph import (
     KnowledgeGraphNode,
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
+from .metadata import (
+    build_chunk_ids as _build_chunk_ids_impl,
+)
+from .metadata import (
+    build_chunk_metadatas as _build_chunk_metadatas_impl,
+)
+from .metadata import (
+    build_document_identity as _build_document_identity_impl,
+)
+from .metadata import (
+    build_index_metadata as _build_index_metadata_impl,
+)
+from .metadata import (
+    now_timestamp as _now_timestamp_impl,
+)
 from .pgvector_helpers import (
     is_valid_pgvector_identifier as _is_valid_pgvector_identifier_impl,
 )
@@ -834,44 +847,35 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> str:
-        doc_id = uuid.uuid4().hex[:12]
-        parent_id = hashlib.md5(f"{title}{source}".encode(), usedforsecurity=False).hexdigest()[:12]
+        doc_id, parent_id = _build_document_identity_impl(title, source)
         tags = tags or []
-        now = time.time()
+        now = _now_timestamp_impl()
 
         chunks = self._chunk_text(content)
-        ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-        metadatas = [
-            {
-                "source": source,
-                "title": title,
-                "tags": ",".join(tags),
-                "parent_id": parent_id,
-                "chunk_index": i,
-                "session_id": session_id,
-                "created_at": now,
-                "last_accessed_at": now,
-                "access_count": 0,
-            }
-            for i in range(len(chunks))
-        ]
+        ids = _build_chunk_ids_impl(doc_id, len(chunks))
+        metadatas = _build_chunk_metadatas_impl(
+            chunk_count=len(chunks),
+            source=source,
+            title=title,
+            tags=tags,
+            parent_id=parent_id,
+            session_id=session_id,
+            timestamp=now,
+        )
 
         with self._write_lock:
             doc_file = self.store_dir / f"{doc_id}.txt"
             doc_file.write_text(content, encoding="utf-8")
 
-            self._index[doc_id] = {
-                "title": title,
-                "source": source,
-                "tags": tags,
-                "size": len(content),
-                "preview": content[:300],
-                "parent_id": parent_id,
-                "session_id": session_id,
-                "created_at": now,
-                "last_accessed_at": now,
-                "access_count": 0,
-            }
+            self._index[doc_id] = _build_index_metadata_impl(
+                title=title,
+                source=source,
+                tags=tags,
+                content=content,
+                parent_id=parent_id,
+                session_id=session_id,
+                timestamp=now,
+            )
             self._save_index()
             self._update_bm25_cache_on_add(doc_id, content)
 
