@@ -469,7 +469,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 c5716ef0bcc8cf9d859e6e8d3db820da58e741c5ea12d8763aef3cae3ac0fc42  scripts/install_modules/phases/05_frontend.sh
 580260c3492497e7874d33c5f409cbc7f1a09d74ecb56ab19dea2debd7d40d1d  scripts/install_modules/phases/06_services.sh
 ce6e8c08be964b2db6972d6bdda5893949913eec434f7d75afe81bc49ea1bb2f  scripts/install_modules/phases/07_finish.sh
-a2c5fdc6ebcf718128274a40a081f92ed339a9cc41764b7425749ca565b07fd7  scripts/install_modules/phases/12_alembic.sh
+a56e8f6f56e22057e6bdfe7ac5e3e53104423cf40b266f4abd10a62f2a4581bd  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
 0607926653d6e9be9957c662f48dc8db686fa51ad54ee84503ff0237c3c1290b  scripts/install_modules/utils/database_url.sh
@@ -6980,7 +6980,7 @@ print_summary() {
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
     echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
-    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  Grafana paneli    : http://localhost:3000 (admin / .env → GRAFANA_ADMIN_PASSWORD)"
     echo "  Prometheus paneli : http://localhost:9090"
     echo "  Jaeger UI         : http://localhost:16686"
     echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."
