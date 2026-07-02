@@ -512,8 +512,8 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*", "web*"]
-exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
+include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*", "web*", "scripts"]
+exclude = ["tests*", "docs*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
 include-package-data = true
