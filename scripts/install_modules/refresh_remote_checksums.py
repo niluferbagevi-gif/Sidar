@@ -34,7 +34,8 @@ def fetch_remote_bytes(url: str) -> bytes:
             "User-Agent": "Sidar remote checksum refresh/1.0",
         },
     )
-    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - pinned installer refresh utility
+    # Fixed https:// URLs from REMOTE_SCRIPT_PINS only; never user-controlled input.
+    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 # nosec B310
         return response.read()
 
 
