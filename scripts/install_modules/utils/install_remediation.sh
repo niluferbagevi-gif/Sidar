@@ -125,6 +125,25 @@ sidar_is_non_retryable_failure_signal() {
     esac
 }
 
+sidar_non_retryable_failure_guidance() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"environmentfilenotfound"*|*"environment.yml"*)
+            cat <<'EOF'
+Bu imza eski conda tabanlı kurulumdan kalma olabilir. Güncel Sidar installer akışı uv kullanır; ~/Sidar veya PATH üzerinde stale install_sidar.sh kopyası olup olmadığını kontrol edin ve kurulumu repo kökündeki ./install_sidar.sh ile yeniden başlatın.
+EOF
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 sidar_is_installer_smoke_gate_failure() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
@@ -528,6 +547,11 @@ sidar_handle_install_failure() {
     fi
     if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
         warn "Auto-heal: ${phase} fazında öğrenilmiş kalıcı hata imzası algılandı; retry/resume atlanıyor."
+        local non_retryable_guidance=""
+        non_retryable_guidance="$(sidar_non_retryable_failure_guidance "$failed_cmd" "$reason" || true)"
+        if [[ -n "$non_retryable_guidance" ]]; then
+            warn "Auto-heal: ${non_retryable_guidance}"
+        fi
         sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;signature=${failure_signature}"
         return 1
     fi

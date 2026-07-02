@@ -984,6 +984,33 @@ def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> N
     assert "sidar_handle_install_failure 1" not in result.stderr
 
 
+def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            warn() { printf 'WARN:%s\\n' "$*"; }
+            sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
+            export SIDAR_CURRENT_INSTALL_PHASE=06_services
+            sidar_handle_install_failure 1 42 'conda env create' 'EnvironmentFileNotFound: environment.yml'
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "öğrenilmiş kalıcı hata imzası" in result.stdout
+    assert "eski conda tabanlı kurulumdan kalma olabilir" in result.stdout
+    assert "~/Sidar veya PATH üzerinde stale install_sidar.sh" in result.stdout
+    assert "repo kökündeki ./install_sidar.sh" in result.stdout
+    assert "REPORT:06_services|learned-non-retryable-failure|" in result.stdout
+
+
 def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight() -> None:
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
