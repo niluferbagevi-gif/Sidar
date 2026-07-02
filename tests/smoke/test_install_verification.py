@@ -375,6 +375,104 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
     )
 
 
+
+def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: Path) -> None:
+    """A stale $HOME/Sidar installer must not be re-execed silently."""
+    repo_root = Path(os.getcwd())
+    host = tmp_path / "home"
+    run_dir = tmp_path / "run"
+    stale_repo = host / "Sidar"
+    host.mkdir()
+    run_dir.mkdir()
+    (stale_repo / ".git").mkdir(parents=True)
+    stale_installer = stale_repo / "install_sidar.sh"
+    stale_installer.write_text(
+        "#!/usr/bin/env bash\necho stale-installer-ran >&2\nexit 42\n",
+        encoding="utf-8",
+    )
+    stale_installer.chmod(0o755)
+
+    standalone = run_dir / "install_sidar.sh"
+    shutil.copy2(repo_root / "install_sidar.sh", standalone)
+    standalone.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "HOME": str(host),
+        "PWD": str(run_dir),
+        "TMPDIR": str(tmp_path),
+        "SIDAR_INSTALL_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE": "1",
+    }
+
+    result = subprocess.run(
+        ["bash", str(standalone)],
+        cwd=run_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    combined = result.stdout + result.stderr
+
+    assert result.returncode != 42, (
+        "Stale $HOME/Sidar/install_sidar.sh çalıştırılmamalıydı.\n"
+        f"--- combined ---\n{combined}"
+    )
+    assert result.returncode != 0, "Hash drift guard stale re-exec yolunu durdurmalıydı."
+    assert "Mevcut" in combined and "re-exec install_sidar.sh SHA256 farklı" in combined
+    assert "stale-installer-ran" not in combined
+
+
+def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_path: Path) -> None:
+    """Bootstrap clone must fail closed when the cloned installer differs from the raw installer."""
+    repo_root = Path(os.getcwd())
+    origin = tmp_path / "origin"
+    branch = _build_synthetic_bootstrap_origin(repo_root, origin)
+
+    tampered = origin / "install_sidar.sh"
+    tampered.write_text(
+        tampered.read_text(encoding="utf-8") + "\n# smoke-test installer drift\n",
+        encoding="utf-8",
+    )
+    git = ["git", "-C", str(origin)]
+    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper installer drift"], check=True)
+
+    host = tmp_path / "host"
+    host.mkdir()
+    standalone = host / "install_sidar.sh"
+    shutil.copy2(repo_root / "install_sidar.sh", standalone)
+    standalone.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "HOME": str(host),
+        "PWD": str(host),
+        "TMPDIR": str(tmp_path),
+        "SIDAR_INSTALL_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+        "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
+        "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
+        "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
+        "SIDAR_BOOTSTRAP_CLONE_REF": branch,
+        "SIDAR_REPO_BRANCH": branch,
+    }
+
+    result = subprocess.run(
+        ["bash", str(standalone)],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    combined = result.stdout + result.stderr
+
+    assert result.returncode != 0, "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
+    assert "Bootstrap clone re-exec install_sidar.sh SHA256 farklı" in combined
+    assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC=1" in combined
+
 def test_install_sidar_embedded_manifest_temp_cleanup_trap_is_registered() -> None:
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
 

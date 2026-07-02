@@ -584,6 +584,30 @@ download_remote_install_modules() {
     done
 }
 
+verify_reexec_installer_or_fail() {
+    local next_script="$1"
+    local reexec_label="$2"
+    local current_sha="bilinmiyor"
+    local next_sha="bilinmiyor"
+
+    [[ -f "$next_script" ]] || fail "${reexec_label} hedef install_sidar.sh bulunamadı: $next_script"
+
+    current_sha="$(compute_sha256 "$ORIGINAL_SCRIPT_PATH" 2>/dev/null || echo bilinmiyor)"
+    next_sha="$(compute_sha256 "$next_script" 2>/dev/null || echo bilinmiyor)"
+
+    if [[ "$current_sha" == "bilinmiyor" || "$next_sha" == "bilinmiyor" ]]; then
+        fail "${reexec_label} install_sidar.sh SHA256 doğrulaması yapılamadı (mevcut=${current_sha}, hedef=${next_sha}). Güvenli re-exec için sha256sum/shasum erişimini düzeltin."
+    fi
+
+    if [[ "$current_sha" != "$next_sha" ]]; then
+        if [[ "${SIDAR_INSTALL_ALLOW_STALE_REEXEC:-0}" == "1" ]]; then
+            warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
+            return 0
+        fi
+        fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. Hedef repoyu güncelleyin ya da bilinçli olarak SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
+    fi
+}
+
 bootstrap_clone_and_reexec() {
     local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
     local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
@@ -631,6 +655,7 @@ bootstrap_clone_and_reexec() {
     else
         installer_sha_relation="farklı"
     fi
+    verify_reexec_installer_or_fail "$next_script" "Bootstrap clone re-exec"
     chmod +x "$next_script" || true
     cd "$clone_target" || fail "Clone sonrası dizine geçilemedi: $clone_target"
     export SIDAR_BOOTSTRAP_REEXEC_TARGET="$clone_target"
@@ -652,8 +677,9 @@ if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
     fi
     info "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
 
-    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
+    if { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" == "1" ]]; } && [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
         info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
+        verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"
         cd "$HOME/Sidar" || fail "Mevcut repo dizinine geçilemedi: $HOME/Sidar"
         exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
     fi
