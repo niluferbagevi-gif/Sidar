@@ -591,7 +591,7 @@ def _run_bash_smoke(
     if timeout_seconds is None:
         timeout_seconds = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "30"))
     try:
-        return subprocess.run(
+        result = subprocess.run(
             ["bash", "-c", guarded_script],
             cwd=Path(os.getcwd()),
             env=smoke_env,
@@ -600,6 +600,15 @@ def _run_bash_smoke(
             timeout=timeout_seconds,
             stdin=subprocess.DEVNULL,
         )
+        if result.returncode != 0 and not result.stdout and not result.stderr:
+            diagnostic = _diagnose_silent_bash_smoke_failure(guarded_script, tmp_path)
+            return subprocess.CompletedProcess(
+                args=result.args,
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=diagnostic,
+            )
+        return result
     except subprocess.TimeoutExpired as exc:
         out = _decode_timeout_stream(exc.stdout)
         err = _decode_timeout_stream(exc.stderr)
@@ -626,6 +635,14 @@ def _run_bash_smoke(
             f"{diag_text}"
         ) from exc
 
+
+def _diagnose_silent_bash_smoke_failure(guarded_script: str, tmp_path: Path) -> str:
+    return (
+        "--- silent _run_bash_smoke failure diagnostic ---\n"
+        "The bash smoke subprocess exited non-zero with empty stdout/stderr.\n"
+        f"--- guarded_script ---\n{guarded_script}\n"
+        f"--- sourced install/version diagnostics ---\n{_diagnose_sourced_install_version(tmp_path)}"
+    )
 
 def _fake_python3_fails_snippet() -> str:
     return """
@@ -682,6 +699,17 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
         f"--- diagnosis stdout ---\n{diagnosis.stdout!r}\n"
         f"--- diagnosis stderr ---\n{diagnosis.stderr!r}\n"
     )
+
+
+def test_run_bash_smoke_silent_failure_includes_diagnostics(tmp_path: Path) -> None:
+    result = _run_bash_smoke("set -euo pipefail\nfalse", tmp_path)
+
+    assert result.returncode == 1
+    assert "silent _run_bash_smoke failure diagnostic" in result.stderr
+    assert "--- guarded_script ---" in result.stderr
+    assert "--- sourced install/version diagnostics ---" in result.stderr
+    assert "which python3:" in result.stderr
+    assert "--- timed probe ---" in result.stderr
 
 
 def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path: Path) -> None:
