@@ -668,14 +668,22 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     printf 'which python3: '; which python3 2>&1 || true
     printf 'command -v python3: '; command -v python3 2>&1 || true
     printf 'type -a python3:\n'; type -a python3 2>&1 || true
+    printf 'command -v install_sidar.sh: '; command -v install_sidar.sh 2>&1 || true
+    printf 'repo ./install_sidar.sh: '; readlink -f ./install_sidar.sh 2>&1 || true
     printf 'command -v sha256sum: '; command -v sha256sum 2>&1 || true
     printf 'command -v readlink: '; command -v readlink 2>&1 || true
     printf 'command -v sed: '; command -v sed 2>&1 || true
     echo '--- timed probe ---'
     {_fake_python3_fails_snippet()}
     TIMEFORMAT='probe real=%3R user=%3U sys=%3S'
-    time bash -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"'
+    time bash -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"'
     printf 'timed_probe_status=%s\n' "$?"
+    echo '--- xtrace probe ---'
+    trace_file="$TMPDIR/install-sidar-source-xtrace.log"
+    PS4='+${{BASH_SOURCE}}:${{LINENO}}:${{FUNCNAME[0]:-main}}: '
+    BASH_XTRACEFD=2 bash -x -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"' 2>"$trace_file"
+    printf 'xtrace_probe_status=%s\n' "$?"
+    tail -n 80 "$trace_file" 2>/dev/null || true
     """
     try:
         diagnosis = subprocess.run(
@@ -716,8 +724,11 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
     diagnosis = _diagnose_sourced_install_version(tmp_path)
 
     assert "which python3:" in diagnosis
+    assert "command -v install_sidar.sh:" in diagnosis
+    assert "repo ./install_sidar.sh:" in diagnosis
     assert "command -v sha256sum:" in diagnosis
     assert "--- timed probe ---" in diagnosis
+    assert "--- xtrace probe ---" in diagnosis
     assert (
         "probe real=" in diagnosis
         or "--- diagnosis timeout ---" in diagnosis
@@ -726,6 +737,40 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
         "timed_probe_status=" in diagnosis
         or "--- diagnosis timeout ---" in diagnosis
     ), diagnosis
+    assert (
+        "xtrace_probe_status=" in diagnosis
+        or "--- diagnosis timeout ---" in diagnosis
+    ), diagnosis
+
+
+def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_shadowed(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    shadow_installer = fake_bin / "install_sidar.sh"
+    shadow_installer.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo 'PATH shadow install_sidar.sh should not be sourced' >&2\n"
+        "exit 99\n",
+        encoding="utf-8",
+    )
+    shadow_installer.chmod(0o755)
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        export PATH={shlex.quote(str(fake_bin))}:$PATH
+        source ./install_sidar.sh >/dev/null
+        test -n "${{INSTALL_SIDAR_VERSION:-}}"
+        """,
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PATH shadow install_sidar.sh should not be sourced" not in (
+        result.stdout + result.stderr
+    )
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
@@ -822,7 +867,7 @@ def test_install_sidar_test_mode_source_resolves_pyproject_version_without_pytho
         export SIDAR_INSTALL_TEST_MODE=1
         unset SIDAR_INSTALL_VERSION
         {_fake_python3_fails_snippet()}
-        source install_sidar.sh >/dev/null
+        source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
           echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
           exit 1
@@ -849,7 +894,7 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         set -euo pipefail
         export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
         {_fake_python3_fails_snippet()}
-        source install_sidar.sh >/dev/null
+        source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
           echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
           exit 1
@@ -871,7 +916,7 @@ def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> Non
     result = _run_bash_smoke(
         """
         set -euo pipefail
-        source install_sidar.sh >/dev/null
+        source ./install_sidar.sh >/dev/null
         is_blank ""
         is_blank "   "
         is_blank $'\\t\\n'
@@ -891,7 +936,7 @@ def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> N
     result = _run_bash_smoke(
         """
         set -euo pipefail
-        source install_sidar.sh >/dev/null
+        source ./install_sidar.sh >/dev/null
         sidar_handle_install_failure() {
           printf 'handler_cmd=%s\\n' "$3"
           printf 'handler_reason=%s\\n' "$4"
@@ -944,7 +989,7 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "sidar_phase06_cleanup_pre_service_smoke_log || true" in installer
     assert "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor" in version_contract_block
     assert "Source/export doğrulaması CI smoke testi kapsamındadır" in version_contract_block
-    assert "source install_sidar.sh" not in version_contract_block
+    assert "source ./install_sidar.sh" not in version_contract_block
     assert "sidar_smoke_version" not in version_contract_block
     assert "bash --norc --noprofile -c" not in version_contract_block
     assert "env -i" not in version_contract_block
@@ -1074,7 +1119,7 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
     assert result.returncode == 0, combined_output
     assert "Smoke gate version preflight stderr" not in combined_output
     assert "Tanılayıcı bash -x re-run" not in combined_output
-    assert "source install_sidar.sh" not in combined_output
+    assert "source ./install_sidar.sh" not in combined_output
     assert "Servis öncesi installer smoke gate başarılı" in combined_output
 
 
@@ -1115,7 +1160,7 @@ def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         f"""
         set -euo pipefail
-        source install_sidar.sh > "$TMPDIR/source-install.out" 2>&1
+        source ./install_sidar.sh > "$TMPDIR/source-install.out" 2>&1
         if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" "$TMPDIR/source-install.out"; then
           echo "install_sidar.sh source işlemi main() kurulum akışını tetikledi" >&2
           cat "$TMPDIR/source-install.out" >&2
@@ -1152,7 +1197,7 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
     result = _run_bash_smoke(
         f"""
         set -euo pipefail
-        source install_sidar.sh
+        source ./install_sidar.sh
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         export SCRIPT_DIR
         unset DATABASE_URL
@@ -1170,14 +1215,14 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
 def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
-    source_check = _run_bash_smoke("set -euo pipefail; source install_sidar.sh; type sidar_user_api_key_names >/dev/null", tmp_path)
+    source_check = _run_bash_smoke("set -euo pipefail; source ./install_sidar.sh; type sidar_user_api_key_names >/dev/null", tmp_path)
     if source_check.returncode != 0:
         pytest.skip(
             "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
             f"{source_check.stdout}{source_check.stderr}"
         )
 
-    key_script = "source install_sidar.sh; sidar_user_api_key_names"
+    key_script = "source ./install_sidar.sh; sidar_user_api_key_names"
     keys_result = _run_bash_smoke(key_script, tmp_path)
     assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
     keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
@@ -1191,7 +1236,7 @@ def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         f"""
         set -euo pipefail
-        source install_sidar.sh
+        source ./install_sidar.sh
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         ENV_FILE="$SCRIPT_DIR/.env"
         NO_INTERACTION=true
@@ -1262,7 +1307,7 @@ def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
         export PATH={shlex.quote(str(fake_bin))}:$PATH
         export COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS=1
         export COMPOSE_HEALTH_WAIT_POLL_SECONDS=1
-        source install_sidar.sh
+        source ./install_sidar.sh
         if wait_for_compose_services_health compose -- postgres; then
           echo "timeout was expected" >&2
           exit 1
