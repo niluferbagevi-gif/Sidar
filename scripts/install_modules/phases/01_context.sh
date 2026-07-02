@@ -1,5 +1,115 @@
 #!/usr/bin/env bash
 
+normalize_bool() {
+    local value="${1:-}"
+    value=$(echo "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$value" in
+        1|true|yes|y|evet|e) echo "true" ;;
+        0|false|no|n|hayir|h|hayır) echo "false" ;;
+        *) echo "" ;;
+    esac
+}
+
+resolve_runtime_mode_choice() {
+    local raw="${1:-}"
+    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$raw" in
+        1|local|dev|developer|gelistirici|geliştirici) echo "local" ;;
+        2|docker|full|full-docker|tam-docker) echo "docker" ;;
+        *) echo "ask" ;;
+    esac
+}
+
+resolve_env_type_choice() {
+    local raw="${1:-}"
+    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+    case "$raw" in
+        1|dev|development|gelistirme|geliştirme) echo "development" ;;
+        2|prod|production|canli|canlı) echo "production" ;;
+        *) echo "ask" ;;
+    esac
+}
+
+_visible_width() {
+    local value="${1-}"
+    python3 - "$value" <<'PY'
+import sys
+import unicodedata
+
+text = sys.argv[1] if len(sys.argv) > 1 else ""
+width = 0
+for ch in text:
+    if unicodedata.combining(ch):
+        continue
+    width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+print(width)
+PY
+}
+
+_pad_visible() {
+    local value="${1-}" target_width="${2:-0}"
+    local current_width pad_len
+    current_width="$(_visible_width "$value")"
+    pad_len=$(( target_width - current_width ))
+    if (( pad_len < 0 )); then
+        pad_len=0
+    fi
+    printf '%s%*s' "$value" "$pad_len" ""
+}
+
+_center_visible() {
+    local value="${1-}" target_width="${2:-60}"
+    local current_width left_pad right_pad
+    current_width="$(_visible_width "$value")"
+    left_pad=$(( (target_width - current_width) / 2 ))
+    (( left_pad < 0 )) && left_pad=0
+    right_pad=$(( target_width - current_width - left_pad ))
+    (( right_pad < 0 )) && right_pad=0
+    printf '%*s%s%*s' "$left_pad" "" "$value" "$right_pad" ""
+}
+
+banner() {
+
+    local version_suffix=""
+    local banner_text=""
+    local centered_banner=""
+    if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
+        version_suffix=" (v$INSTALL_SIDAR_VERSION)"
+    fi
+    banner_text="$(sidar_t banner_title)${version_suffix}"
+    centered_banner="$(_center_visible "$banner_text" 60)"
+
+    echo -e "${BOLD}${BLUE}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    printf "║%s║\n" "$(_pad_visible "$centered_banner" 60)"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+ensure_noninteractive_sudo_ready() {
+    if [[ "$EUID" -eq 0 ]]; then
+        info "$(sidar_t root_install)"
+        return 0
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
+            fail "$(sidar_t sudo_missing_noninteractive)"
+        fi
+        return 0
+    fi
+
+    if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
+        if sudo -n -v >/dev/null 2>&1; then
+            ok "$(sidar_t sudo_ready)"
+        else
+            fail "$(sidar_t sudo_blocked)"
+        fi
+    fi
+}
+
+
+
 sidar_fail_if_wsl_integration_autofix_applied_current_session() {
     if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied") ]]; then
         fail "WSL integration ilk defa açıldı. Lütfen Windows'tan wsl --shutdown çalıştırın, Ubuntu'ya yeniden girin ve ./install_sidar.sh komutunu tekrar başlatın."

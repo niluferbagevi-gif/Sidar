@@ -6,6 +6,28 @@ SIDAR_INSTALL_UTIL_ENV_UTILS_SH_LOADED=1
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
 
+read_env_value_from_file() {
+    local key="$1"
+    local file_path="$2"
+    [[ -f "$file_path" ]] || return 0
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*#/ { next }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            line = $0
+            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            gsub(/\r/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            gsub(/^'\''|'\''$/, "", line)
+            print line
+            exit
+        }
+    ' "$file_path"
+}
+
+
 sync_database_env_chain_after_setup() {
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."

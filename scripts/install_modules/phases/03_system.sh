@@ -368,6 +368,35 @@ ensure_docker_cli_available() {
 }
 
 
+# shellcheck disable=SC2120 # opsiyonel pozisyonel argümanlar; testler özel dosya yolu geçebilir.
+persist_run_gpu_stress_dotenv() {
+    [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
+
+    local target_env_file="${1:-${SCRIPT_DIR}/.env.development}"
+    local example_env_file="${2:-${SCRIPT_DIR}/.env.development.example}"
+    local target_label
+    target_label="$(basename "$target_env_file")"
+
+    if [[ ! -f "$target_env_file" ]]; then
+        if [[ -f "$example_env_file" ]]; then
+            cp "$example_env_file" "$target_env_file"
+            ok "${target_label} dosyası $(basename "$example_env_file") üzerinden RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
+        else
+            mkdir -p "$(dirname "$target_env_file")"
+            : > "$target_env_file"
+            ok "${target_label} dosyası RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
+        fi
+    fi
+
+    if grep -q '^RUN_GPU_STRESS=' "$target_env_file" 2>/dev/null; then
+        sed_inplace 's|^RUN_GPU_STRESS=.*|RUN_GPU_STRESS=1|' "$target_env_file"
+    else
+        printf '\nRUN_GPU_STRESS=1\n' >> "$target_env_file"
+    fi
+    ok "${target_label}: RUN_GPU_STRESS=1 kalıcı hale getirildi."
+}
+
+
 # ── Sistem ve Donanım Bağımlılıkları ──────────────────────────────────────────
 install_system_dependencies() {
     step "Temel Sistem Paketlerinin Kurulumu"

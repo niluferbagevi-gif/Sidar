@@ -466,17 +466,17 @@ INSTALL_REMOTE_MODULES=(
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
 f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
-eb93ab9d8ff921fec94eaf21dcf022dfadb844d6eb235e8e56a5e4686d41fec1  scripts/install_modules/phases/01_context.sh
+7e4ecc4d6bfa1ec5ac772d598df7b21cc047a4a9b24de13a336ceff0eca8138f  scripts/install_modules/phases/01_context.sh
 ec93f5b76108f5391845f3c0224bdaf672f69b2778bf3224cf87a6a330d8b46e  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
-8ee8ddb8917da76f05ee04b4a950fcd5b14f3db43434aafacb330c45f636fd01  scripts/install_modules/phases/03_system.sh
+7cc88392c68cab19d649c7771af034e658f9f06357490901794e42d315c0d811  scripts/install_modules/phases/03_system.sh
 d79dab59a438e7cc8ddf9ce171fc474227cc1d1978bbb8aae3391b679bcc8207  scripts/install_modules/phases/04_workspace.sh
 63748f5fe9313bc0f64b29694ba80e7d937823952f2c8b57a3332e3d71a94ea0  scripts/install_modules/phases/05_frontend.sh
 74e0214378689ceacbb321cd7af6d135dc8334b0b4d2dd7b4a5aaf26bda1f054  scripts/install_modules/phases/06_services.sh
 5c137834a3ea3af832276618535dc75d05fa1444bd33b4545a5c6e2941fa630c  scripts/install_modules/phases/07_finish.sh
 30ff1a79b83f83c36809b57266fcdb5e28e53d9b6545d661182ce50afe90c03a  scripts/install_modules/phases/08_env.sh
-6d8e91ad6b318d22cc175740f765e7b7c1115debe28465281362d107876d42bf  scripts/install_modules/phases/09_ollama_models.sh
+a5ed55e0d24f7c50feb43a8998de3a3e9e00fee1c8012f84d3403787a58c0029  scripts/install_modules/phases/09_ollama_models.sh
 41b6b56db34e867a57317b557685a30d69ff0284266792c09dbc49249e24cc1a  scripts/install_modules/phases/10_validation.sh
 629e7f0a29de6c5a175743f59759b52c619be79311e0cca417b53f110d3c5bab  scripts/install_modules/phases/11_post_install.sh
 8b253cdfe6ea41260af4d6110af27aae69905543548578112b5db208c2c6e251  scripts/install_modules/phases/12_alembic.sh
@@ -484,7 +484,7 @@ d79dab59a438e7cc8ddf9ce171fc474227cc1d1978bbb8aae3391b679bcc8207  scripts/instal
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
 0607926653d6e9be9957c662f48dc8db686fa51ad54ee84503ff0237c3c1290b  scripts/install_modules/utils/database_url.sh
 6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
-1ece3283a172a1dc195c0e931672eb4df1578e5b1a7a1791783ed2cc1da9293b  scripts/install_modules/utils/env_utils.sh
+61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
 9ee4ccc2cc93f3ce212fb4e9521e1aa0f8811a9ba2c00f0fb8da874676cb3c34  scripts/install_modules/utils/gpu_utils.sh
 9b0468f312ac4cfb4f5081eb1a58c128de6f9376ca0483ac1abfd14a889396fb  scripts/install_modules/utils/install_remediation.sh
 addbd87b75e7678972798935cb5ad694d6cb827a4a134ac3097cc24709cbb67f  scripts/install_modules/utils/ollama_models.sh
@@ -1412,36 +1412,6 @@ for arg in "$@"; do
     esac
 done
 
-normalize_bool() {
-    local value="${1:-}"
-    value=$(echo "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-    case "$value" in
-        1|true|yes|y|evet|e) echo "true" ;;
-        0|false|no|n|hayir|h|hayır) echo "false" ;;
-        *) echo "" ;;
-    esac
-}
-
-resolve_runtime_mode_choice() {
-    local raw="${1:-}"
-    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-    case "$raw" in
-        1|local|dev|developer|gelistirici|geliştirici) echo "local" ;;
-        2|docker|full|full-docker|tam-docker) echo "docker" ;;
-        *) echo "ask" ;;
-    esac
-}
-
-resolve_env_type_choice() {
-    local raw="${1:-}"
-    raw=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-    case "$raw" in
-        1|dev|development|gelistirme|geliştirme) echo "development" ;;
-        2|prod|production|canli|canlı) echo "production" ;;
-        *) echo "ask" ;;
-    esac
-}
-
 AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
 STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
@@ -1544,262 +1514,13 @@ REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuo
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 
-_visible_width() {
-    local value="${1-}"
-    python3 - "$value" <<'PY'
-import sys
-import unicodedata
+# Context/helper seçim ve banner yardımcıları scripts/install_modules/phases/01_context.sh içinden yüklenir.
 
-text = sys.argv[1] if len(sys.argv) > 1 else ""
-width = 0
-for ch in text:
-    if unicodedata.combining(ch):
-        continue
-    width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
-print(width)
-PY
-}
+# GPU stress dotenv yardımcıları scripts/install_modules/phases/03_system.sh içinden yüklenir.
 
-_pad_visible() {
-    local value="${1-}" target_width="${2:-0}"
-    local current_width pad_len
-    current_width="$(_visible_width "$value")"
-    pad_len=$(( target_width - current_width ))
-    if (( pad_len < 0 )); then
-        pad_len=0
-    fi
-    printf '%s%*s' "$value" "$pad_len" ""
-}
+# .env dosya okuma yardımcıları scripts/install_modules/utils/env_utils.sh içinden yüklenir.
 
-_center_visible() {
-    local value="${1-}" target_width="${2:-60}"
-    local current_width left_pad right_pad
-    current_width="$(_visible_width "$value")"
-    left_pad=$(( (target_width - current_width) / 2 ))
-    (( left_pad < 0 )) && left_pad=0
-    right_pad=$(( target_width - current_width - left_pad ))
-    (( right_pad < 0 )) && right_pad=0
-    printf '%*s%s%*s' "$left_pad" "" "$value" "$right_pad" ""
-}
-
-banner() {
-
-    local version_suffix=""
-    local banner_text=""
-    local centered_banner=""
-    if [[ "$INSTALL_SIDAR_VERSION" != "0.0.0" ]]; then
-        version_suffix=" (v$INSTALL_SIDAR_VERSION)"
-    fi
-    banner_text="$(sidar_t banner_title)${version_suffix}"
-    centered_banner="$(_center_visible "$banner_text" 60)"
-
-    echo -e "${BOLD}${BLUE}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    printf "║%s║\n" "$(_pad_visible "$centered_banner" 60)"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-}
-
-ensure_noninteractive_sudo_ready() {
-    if [[ "$EUID" -eq 0 ]]; then
-        info "$(sidar_t root_install)"
-        return 0
-    fi
-
-    if ! command -v sudo >/dev/null 2>&1; then
-        if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
-            fail "$(sidar_t sudo_missing_noninteractive)"
-        fi
-        return 0
-    fi
-
-    if [[ "$NO_INTERACTION" == true || "$SILENT_MODE" == true || "$AUTO_INSTALL" == true ]]; then
-        if sudo -n -v >/dev/null 2>&1; then
-            ok "$(sidar_t sudo_ready)"
-        else
-            fail "$(sidar_t sudo_blocked)"
-        fi
-    fi
-}
-
-
-# shellcheck disable=SC2120 # opsiyonel pozisyonel argümanlar; testler özel dosya yolu geçebilir.
-persist_run_gpu_stress_dotenv() {
-    [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
-
-    local target_env_file="${1:-${SCRIPT_DIR}/.env.development}"
-    local example_env_file="${2:-${SCRIPT_DIR}/.env.development.example}"
-    local target_label
-    target_label="$(basename "$target_env_file")"
-
-    if [[ ! -f "$target_env_file" ]]; then
-        if [[ -f "$example_env_file" ]]; then
-            cp "$example_env_file" "$target_env_file"
-            ok "${target_label} dosyası $(basename "$example_env_file") üzerinden RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
-        else
-            mkdir -p "$(dirname "$target_env_file")"
-            : > "$target_env_file"
-            ok "${target_label} dosyası RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
-        fi
-    fi
-
-    if grep -q '^RUN_GPU_STRESS=' "$target_env_file" 2>/dev/null; then
-        sed_inplace 's|^RUN_GPU_STRESS=.*|RUN_GPU_STRESS=1|' "$target_env_file"
-    else
-        printf '\nRUN_GPU_STRESS=1\n' >> "$target_env_file"
-    fi
-    ok "${target_label}: RUN_GPU_STRESS=1 kalıcı hale getirildi."
-}
-
-read_env_value_from_file() {
-    local key="$1"
-    local file_path="$2"
-    [[ -f "$file_path" ]] || return 0
-
-    awk -F= -v key="$key" '
-        /^[[:space:]]*#/ { next }
-        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
-            line = $0
-            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
-            sub(/[[:space:]]+#.*/, "", line)
-            gsub(/\r/, "", line)
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-            gsub(/^"|"$/, "", line)
-            gsub(/^'\''|'\''$/, "", line)
-            print line
-            exit
-        }
-    ' "$file_path"
-}
-
-normalize_ollama_base_url() {
-    local raw="${1:-}"
-    local normalized="$raw"
-
-    normalized="${normalized%/}"
-    normalized="${normalized%/api}"
-    if [[ -z "$normalized" ]]; then
-        echo "http://localhost:11434"
-        return
-    fi
-    if [[ "$normalized" != http://* && "$normalized" != https://* ]]; then
-        normalized="http://$normalized"
-    fi
-    echo "$normalized"
-}
-
-resolve_ollama_base_url() {
-    local env_file="${1:-$SCRIPT_DIR/.env}"
-    local detected="${OLLAMA_BASE_URL:-}"
-
-    if [[ -z "$detected" ]]; then
-        detected="${OLLAMA_HOST:-}"
-    fi
-    if [[ -z "$detected" && -f "$env_file" ]]; then
-        detected=$(read_env_value_from_file "OLLAMA_BASE_URL" "$env_file")
-    fi
-    if [[ -z "$detected" && -f "$env_file" ]]; then
-        detected=$(read_env_value_from_file "OLLAMA_HOST" "$env_file")
-    fi
-
-    normalize_ollama_base_url "$detected"
-}
-
-resolve_ollama_version_url() {
-    local env_file="${1:-$SCRIPT_DIR/.env}"
-    local base_url
-    base_url=$(resolve_ollama_base_url "$env_file")
-    echo "${base_url}/api/version"
-}
-
-is_local_ollama_url() {
-    local url="$1"
-    [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
-}
-
-wait_for_ollama_api_ready() {
-    local version_url="$1"
-    local max_wait_seconds="${2:-10}"
-    local poll_interval_seconds="${3:-1}"
-    local elapsed=0
-
-    while (( elapsed < max_wait_seconds )); do
-        if curl -sf "$version_url" &>/dev/null; then
-            return 0
-        fi
-        sleep "$poll_interval_seconds"
-        elapsed=$((elapsed + poll_interval_seconds))
-    done
-
-    return 1
-}
-
-check_host_ollama_healthy() {
-    local env_file="${1:-$SCRIPT_DIR/.env}"
-    local version_url=""
-    version_url=$(resolve_ollama_version_url "$env_file")
-    curl -sf "$version_url" >/dev/null 2>&1
-}
-
-log_host_ollama_runtime_diagnostics() {
-    local env_file="${1:-$SCRIPT_DIR/.env}"
-    local base_url=""
-    local host=""
-
-    base_url=$(resolve_ollama_base_url "$env_file")
-    host="${base_url#http://}"
-    host="${host#https://}"
-    host="${host%%/*}"
-    host="${host%%:*}"
-
-    info "Host Ollama çalışma tanısı toplanıyor (GPU kullanımı opsiyonel kontrol)."
-    local ollama_ps_reports_gpu=false
-
-    if command -v ollama &>/dev/null; then
-        if ollama ps >/tmp/sidar_ollama_ps.log 2>&1; then
-            info "Host Ollama modelleri (ollama ps):"
-            sed 's/^/       /' /tmp/sidar_ollama_ps.log
-            if awk 'NR==1 {for (i=1;i<=NF;i++) if ($i=="PROCESSOR") c=i; next} c && toupper($c) ~ /GPU/ {found=1} END {exit !found}' /tmp/sidar_ollama_ps.log; then
-                ollama_ps_reports_gpu=true
-                info "ollama ps PROCESSOR sütunu GPU gösteriyor; host Ollama GPU üzerinde çalışıyor."
-            fi
-        else
-            warn "ollama ps komutu çalıştırılamadı; host Ollama GPU durumu CLI üzerinden doğrulanamadı."
-        fi
-    else
-        warn "ollama CLI bulunamadı; host Ollama GPU kullanımı için ollama ps çıktısı alınamadı."
-    fi
-
-    if [[ -z "$host" || "$host" == "localhost" || "$host" == "127.0.0.1" ]]; then
-        local smi_cmd=""
-        if command -v nvidia-smi &>/dev/null; then
-            smi_cmd="nvidia-smi"
-        elif command -v nvidia-smi.exe &>/dev/null; then
-            smi_cmd="nvidia-smi.exe"
-        fi
-
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2: ollama ps doğrulaması yeterli; nvidia-smi compute-apps sorgusu atlandı."
-        elif [[ "$ollama_ps_reports_gpu" == true ]]; then
-            info "GPU kullanımı ollama ps ile doğrulandı; nvidia-smi compute-apps sorgusu atlandı."
-        elif [[ -n "$smi_cmd" ]]; then
-            if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
-                if awk -F, 'tolower($2) ~ /ollama/ {found=1} END {exit !found}' /tmp/sidar_ollama_gpu_apps.log; then
-                    info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
-                    awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
-                else
-                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
-                fi
-            else
-                warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
-            fi
-        else
-            info "nvidia-smi bulunamadı; host Ollama GPU süreci doğrulaması atlandı."
-        fi
-    else
-        info "Host Ollama uzak bir adreste (${base_url}); yerel nvidia-smi ile GPU süreci doğrulaması atlandı."
-    fi
-}
+# Ollama URL ve host tanı yardımcıları scripts/install_modules/phases/09_ollama_models.sh içinden yüklenir.
 
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 # Repo/Helm bootstrap yardımcıları scripts/install_modules/phases/02_repo.sh içinden yüklenir.

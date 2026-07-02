@@ -1,6 +1,136 @@
 #!/usr/bin/env bash
 # Sidar installer phase: Ollama model runtime defaults and provisioning helpers.
 
+normalize_ollama_base_url() {
+    local raw="${1:-}"
+    local normalized="$raw"
+
+    normalized="${normalized%/}"
+    normalized="${normalized%/api}"
+    if [[ -z "$normalized" ]]; then
+        echo "http://localhost:11434"
+        return
+    fi
+    if [[ "$normalized" != http://* && "$normalized" != https://* ]]; then
+        normalized="http://$normalized"
+    fi
+    echo "$normalized"
+}
+
+resolve_ollama_base_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local detected="${OLLAMA_BASE_URL:-}"
+
+    if [[ -z "$detected" ]]; then
+        detected="${OLLAMA_HOST:-}"
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_BASE_URL" "$env_file")
+    fi
+    if [[ -z "$detected" && -f "$env_file" ]]; then
+        detected=$(read_env_value_from_file "OLLAMA_HOST" "$env_file")
+    fi
+
+    normalize_ollama_base_url "$detected"
+}
+
+resolve_ollama_version_url() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local base_url
+    base_url=$(resolve_ollama_base_url "$env_file")
+    echo "${base_url}/api/version"
+}
+
+is_local_ollama_url() {
+    local url="$1"
+    [[ "$url" == http://localhost:* || "$url" == https://localhost:* || "$url" == http://127.0.0.1:* || "$url" == https://127.0.0.1:* ]]
+}
+
+wait_for_ollama_api_ready() {
+    local version_url="$1"
+    local max_wait_seconds="${2:-10}"
+    local poll_interval_seconds="${3:-1}"
+    local elapsed=0
+
+    while (( elapsed < max_wait_seconds )); do
+        if curl -sf "$version_url" &>/dev/null; then
+            return 0
+        fi
+        sleep "$poll_interval_seconds"
+        elapsed=$((elapsed + poll_interval_seconds))
+    done
+
+    return 1
+}
+
+check_host_ollama_healthy() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local version_url=""
+    version_url=$(resolve_ollama_version_url "$env_file")
+    curl -sf "$version_url" >/dev/null 2>&1
+}
+
+log_host_ollama_runtime_diagnostics() {
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local base_url=""
+    local host=""
+
+    base_url=$(resolve_ollama_base_url "$env_file")
+    host="${base_url#http://}"
+    host="${host#https://}"
+    host="${host%%/*}"
+    host="${host%%:*}"
+
+    info "Host Ollama çalışma tanısı toplanıyor (GPU kullanımı opsiyonel kontrol)."
+    local ollama_ps_reports_gpu=false
+
+    if command -v ollama &>/dev/null; then
+        if ollama ps >/tmp/sidar_ollama_ps.log 2>&1; then
+            info "Host Ollama modelleri (ollama ps):"
+            sed 's/^/       /' /tmp/sidar_ollama_ps.log
+            if awk 'NR==1 {for (i=1;i<=NF;i++) if ($i=="PROCESSOR") c=i; next} c && toupper($c) ~ /GPU/ {found=1} END {exit !found}' /tmp/sidar_ollama_ps.log; then
+                ollama_ps_reports_gpu=true
+                info "ollama ps PROCESSOR sütunu GPU gösteriyor; host Ollama GPU üzerinde çalışıyor."
+            fi
+        else
+            warn "ollama ps komutu çalıştırılamadı; host Ollama GPU durumu CLI üzerinden doğrulanamadı."
+        fi
+    else
+        warn "ollama CLI bulunamadı; host Ollama GPU kullanımı için ollama ps çıktısı alınamadı."
+    fi
+
+    if [[ -z "$host" || "$host" == "localhost" || "$host" == "127.0.0.1" ]]; then
+        local smi_cmd=""
+        if command -v nvidia-smi &>/dev/null; then
+            smi_cmd="nvidia-smi"
+        elif command -v nvidia-smi.exe &>/dev/null; then
+            smi_cmd="nvidia-smi.exe"
+        fi
+
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2: ollama ps doğrulaması yeterli; nvidia-smi compute-apps sorgusu atlandı."
+        elif [[ "$ollama_ps_reports_gpu" == true ]]; then
+            info "GPU kullanımı ollama ps ile doğrulandı; nvidia-smi compute-apps sorgusu atlandı."
+        elif [[ -n "$smi_cmd" ]]; then
+            if "$smi_cmd" --query-compute-apps=pid,process_name,used_gpu_memory --format=csv,noheader,nounits >/tmp/sidar_ollama_gpu_apps.log 2>&1; then
+                if awk -F, 'tolower($2) ~ /ollama/ {found=1} END {exit !found}' /tmp/sidar_ollama_gpu_apps.log; then
+                    info "nvidia-smi üzerinde Ollama süreçleri (PID, süreç, VRAM MiB):"
+                    awk -F, 'tolower($2) ~ /ollama/ {gsub(/^ +| +$/, "", $1); gsub(/^ +| +$/, "", $2); gsub(/^ +| +$/, "", $3); printf "       %s, %s, %s MiB\n", $1, $2, $3}' /tmp/sidar_ollama_gpu_apps.log
+                else
+                    warn "nvidia-smi çalıştı ancak Ollama süreci görünmedi; host Ollama CPU modunda olabilir."
+                fi
+            else
+                warn "nvidia-smi compute-apps sorgusu başarısız; host Ollama GPU süreci doğrulanamadı."
+            fi
+        else
+            info "nvidia-smi bulunamadı; host Ollama GPU süreci doğrulaması atlandı."
+        fi
+    else
+        info "Host Ollama uzak bir adreste (${base_url}); yerel nvidia-smi ile GPU süreci doğrulaması atlandı."
+    fi
+}
+
+
 # ── 11. Ollama modelleri ─────────────────────────────────────────────────────
 
 SIDAR_OLLAMA_DEFAULT_NUM_CTX="${SIDAR_OLLAMA_DEFAULT_NUM_CTX:-8192}"
