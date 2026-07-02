@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from core.db.auth import AuthTokenRecord, UserRecord
 from core.db.coverage import CoverageFindingRecord, CoverageTaskRecord
-from core.db.monolith import (
+from core.db.records import (
     AccessPolicyRecord,
     AuditLogRecord,
     ContentAssetRecord,

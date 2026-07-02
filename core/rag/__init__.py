@@ -45,6 +45,16 @@ from .backends import bm25 as bm25_backend
 from .backends import chroma as chroma_backend
 from .backends import keyword as keyword_backend
 from .backends import pgvector as pgvector_backend
+from .chunking import recursive_chunk_text as _recursive_chunk_text_impl
+from .entity_helpers import (
+    clean_entity_value as _clean_entity_value_impl,
+)
+from .entity_helpers import (
+    entity_id as _entity_id_impl,
+)
+from .entity_helpers import (
+    entity_slug as _entity_slug_impl,
+)
 from .facade import (
     _build_embedding_function as _build_embedding_function,
 )
@@ -68,6 +78,12 @@ from .graph import (
     KnowledgeGraphNode,
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
+from .pgvector_helpers import (
+    is_valid_pgvector_identifier as _is_valid_pgvector_identifier_impl,
+)
+from .pgvector_helpers import (
+    pgvector_failure_action_message as _pgvector_failure_action_message_impl,
+)
 from .query import GraphRAGSearchPlan
 from .query import build_query_candidates as build_query_candidates
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
@@ -98,21 +114,13 @@ def build_embedding_function(
 
 
 def _is_valid_pgvector_identifier(identifier: str) -> bool:
-    """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
-    return pgvector_backend.is_valid_pgvector_identifier(identifier)
+    """Backwards-compatible facade for the extracted pgvector identifier helper."""
+    return _is_valid_pgvector_identifier_impl(identifier)
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
-    """Return a single-line pgvector fallback message using DB diagnostics."""
-
-    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
-    if "yetki/parola" in diagnosis:
-        return (
-            "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL "
-            "ve POSTGRES_PASSWORD değerleriyle parola/yetki ayarlarını "
-            f"kontrol edin. Teşhis: {diagnosis}."
-        )
-    return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
+    """Backwards-compatible facade for the extracted pgvector diagnostic helper."""
+    return _pgvector_failure_action_message_impl(exc, diagnosis_func=postgres_failure_diagnosis)
 
 
 class DocumentStore:
@@ -454,20 +462,18 @@ class DocumentStore:
 
     @staticmethod
     def _entity_slug(value: str) -> str:
-        normalized = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
-        normalized = normalized.strip("-")
-        if normalized:
-            return normalized[:80]
-        return hashlib.md5(str(value).encode(), usedforsecurity=False).hexdigest()[:12]
+        """Backwards-compatible facade for extracted GraphRAG entity slugging."""
+        return _entity_slug_impl(value)
 
     @classmethod
     def _entity_id(cls, label: str, name: str) -> str:
-        return f"{label.lower()}:{cls._entity_slug(name)}"
+        """Backwards-compatible facade for extracted GraphRAG entity ids."""
+        return _entity_id_impl(label, name)
 
     @staticmethod
     def _clean_entity_value(value: Any) -> str:
-        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n-–—:|,.;")
-        return cleaned[:180]
+        """Backwards-compatible facade for extracted entity value cleanup."""
+        return _clean_entity_value_impl(value)
 
     def _load_entity_graph(self) -> dict[str, Any]:
         graph_file = getattr(self, "entity_graph_file", self.store_dir / "entity_graph.json")
@@ -790,68 +796,8 @@ class DocumentStore:
     # ─────────────────────────────────────────────
 
     def _recursive_chunk_text(self, text: str, size: int, overlap: int) -> builtins.list[str]:
-        """
-        Metni kod yapısına uygun ayırıcılarla (separators) mantıksal parçalara böler.
-        LangChain'in RecursiveCharacterTextSplitter mantığını simüle eder.
-        """
-        if not text or size <= 0:
-            return []
-        overlap = max(0, int(overlap or 0))
-        if overlap >= size:
-            overlap = max(0, size - 1)
-
-        # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
-        separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
-
-        def _split(text_part: str, sep_idx: int) -> builtins.list[str]:
-            """Recursive bölme fonksiyonu"""
-            if len(text_part) <= size:
-                return [text_part]
-
-            if sep_idx >= len(separators):
-                # Hiçbir ayırıcı ile bölünemiyorsa zorla böl (character limit)
-                step = max(1, size - overlap)
-                return [text_part[i : i + size] for i in range(0, len(text_part), step)]
-
-            sep = separators[sep_idx]
-            # Ayırıcıya göre böl (ayırıcı başta kalsın diye lookahead simülasyonu yapılabilir ama basit split yeterli)
-            # Not: Python split ayırıcıyı yutar, tekrar eklemek gerekebilir.
-            # Burada basit split kullanıyoruz, bağlam kaybı olmaması için overlap önemli.
-            if sep == "":
-                parts = list(text_part)  # Karakter karakter
-            else:
-                parts = text_part.split(sep)
-                # Ayırıcıyı parçalara geri ekleyelim (özellikle class/def için önemli)
-                parts = [parts[0]] + [sep + p for p in parts[1:]] if parts else []
-
-            new_chunks = []
-            current_chunk = ""
-
-            for part in parts:
-                # Eğer parça tek başına bile çok büyükse, bir sonraki ayırıcı ile böl
-                if len(part) > size:
-                    if current_chunk:
-                        new_chunks.append(current_chunk)
-                        current_chunk = ""
-                    sub_chunks = _split(part, sep_idx + 1)
-                    new_chunks.extend(sub_chunks)
-                    continue
-
-                # Mevcut parça ile limiti aşıyor mu?
-                if len(current_chunk) + len(part) > size:
-                    new_chunks.append(current_chunk)
-                    # Overlap mekanizması: Bir önceki chunk'ın sonundan biraz al
-                    overlap_len = min(len(current_chunk), overlap)
-                    current_chunk = current_chunk[-overlap_len:] + part
-                else:
-                    current_chunk += part
-
-            if current_chunk:
-                new_chunks.append(current_chunk)
-
-            return new_chunks
-
-        return _split(text, 0)
+        """Backwards-compatible facade for extracted recursive chunking."""
+        return _recursive_chunk_text_impl(text, size, overlap, list_factory=list)
 
     def _chunk_text(
         self,

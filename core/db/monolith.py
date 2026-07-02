@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import inspect
 import logging
 import random
 import sqlite3
-import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -87,6 +84,41 @@ from core.db.coverage import (
 from core.db.coverage import (
     CoverageTaskRecord as CoverageTaskRecord,
 )
+from core.db.diagnostics import (
+    _doctor_database_env_failure_reason as _doctor_database_env_failure_reason,
+)
+from core.db.diagnostics import (
+    postgres_failure_diagnosis as _postgres_failure_diagnosis_impl,
+)
+from core.db.diagnostics import (
+    postgres_user_action_message as _postgres_user_action_message_impl,
+)
+from core.db.helpers import (
+    json_dumps as _json_dumps,
+)
+from core.db.helpers import (
+    new_entity_id as _new_entity_id,
+)
+from core.db.helpers import (
+    parse_iso_datetime as _parse_iso_datetime,
+)
+from core.db.helpers import (
+    sqlite_fetchone as _sqlite_fetchone,
+)
+from core.db.helpers import (
+    utc_now_iso as _utc_now_iso,
+)
+from core.db.helpers import (
+    utc_now_pair as _utc_now_pair,
+)
+from core.db.records import (
+    AccessPolicyRecord,
+    AuditLogRecord,
+    ContentAssetRecord,
+    MarketingCampaignRecord,
+    OperationChecklistRecord,
+    PromptRecord,
+)
 from core.db.session import (
     MessageRecord as MessageRecord,
 )
@@ -105,85 +137,25 @@ from core.db_components.dialect import (
 from core.db_components.migrations import run_alembic_upgrade_head
 from sidar_assets.paths import alembic_ini_path, migrations_path
 
-logger = logging.getLogger(__name__)
-_ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
-_T = TypeVar("_T")
-
-
-def _doctor_database_env_failure_reason() -> str:
-    """Return Doctor/database_env failure context without raising from fallback paths."""
-    try:
-        from core.doctor import check_database_env
-
-        check = check_database_env()
-    except Exception as exc:  # pragma: no cover - defensive diagnostic path
-        logger.debug("Doctor/database_env teşhisi alınamadı: %s", exc)
-        return ""
-
-    status = str(getattr(check, "status", "") or "").lower()
-    if status != "fail":
-        return ""
-    details = getattr(check, "details", {}) or {}
-    if isinstance(details, dict):
-        failure_reason = str(details.get("failure_reason", "") or "").strip()
-        if failure_reason:
-            return failure_reason
-    return str(getattr(check, "message", "") or "").strip()
-
 
 def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) -> str:
-    """Return a concise, shared PostgreSQL failure diagnosis for DB and RAG fallbacks."""
-    doctor_reason = _doctor_database_env_failure_reason()
-    doctor_reason_lower = doctor_reason.lower()
-    if doctor_reason and (
-        "database_url was lost" in doctor_reason_lower
-        or "database_url is not set" in doctor_reason_lower
-    ):
-        return "DATABASE_URL yok/kayboldu"
-
-    combined = f"{type(exc).__name__ if exc else ''} {reason} {exc or ''}".lower()
-    if any(
-        marker in combined
-        for marker in (
-            "password authentication failed",
-            "authentication failed",
-            "invalid password",
-            "invalidpassword",
-            "invalidpassworderror",
-            "28p01",
-            "permission denied",
-            "auth",
-        )
-    ):
-        return "asyncpg auth reddi / yetki/parola hatası"
-    if any(marker in combined for marker in ("timeout", "timed out", "zaman aş", "pool timeout")):
-        return "TCP timeout / bağlantı havuzu zaman aşımı"
-    if "asyncpg" in combined:
-        return "asyncpg bağımlılığı kullanılamıyor"
-    if "pool" in combined:
-        return "bağlantı havuzu oluşturulamadı"
-    if any(
-        marker in combined
-        for marker in (
-            "connection refused",
-            "could not connect",
-            "server closed",
-            "connection failed",
-            "connection reset",
-            "bağlantı",
-        )
-    ):
-        return "TCP bağlantısı kurulamadı veya koptu"
-    if "extension" in combined or "vector" in combined:
-        return "pgvector hazırlığı / extension-migrasyon tamamlanamadı"
-    if doctor_reason:
-        return f"Doctor/database_env: {doctor_reason}"
-    return "PostgreSQL bağlantı nedeni sınıflandırılamadı"
+    """Backwards-compatible wrapper that preserves legacy monkeypatch hooks."""
+    original_doctor = _postgres_failure_diagnosis_impl.__globals__.get(
+        "_doctor_database_env_failure_reason"
+    )
+    _postgres_failure_diagnosis_impl.__globals__[
+        "_doctor_database_env_failure_reason"
+    ] = _doctor_database_env_failure_reason
+    try:
+        return _postgres_failure_diagnosis_impl(reason, exc)
+    finally:
+        _postgres_failure_diagnosis_impl.__globals__[
+            "_doctor_database_env_failure_reason"
+        ] = original_doctor
 
 
 def _postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:
-    """PostgreSQL hatasını kullanıcıya yönelik, sır sızdırmayan aksiyon mesajına çevir."""
-
+    """Backwards-compatible wrapper that preserves legacy diagnosis monkeypatch hooks."""
     diagnosis = postgres_failure_diagnosis(reason, exc)
     if diagnosis == "DATABASE_URL yok/kayboldu":
         return (
@@ -191,137 +163,11 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "Doctor/database_env sonucunu ve dotenv reload zincirini kontrol edin. "
             "SQLite degraded mode aktif edildi."
         )
-    if diagnosis == "asyncpg auth reddi / yetki/parola hatası":
-        return (
-            "PostgreSQL bağlantısı başarısız (yetki/parola hatası). "
-            ".env dosyanızdaki DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve "
-            "POSTGRES_PASSWORD değerlerinin aynı olduğundan emin olun. "
-            f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
-        )
-    if diagnosis == "TCP timeout / bağlantı havuzu zaman aşımı":
-        return (
-            "PostgreSQL bağlantısı zaman aşımına uğradı. Veritabanı servisinin çalıştığını, "
-            "host/port değerlerini ve ağ erişimini kontrol edin. "
-            f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
-        )
-    if diagnosis == "TCP bağlantısı kurulamadı veya koptu":
-        return (
-            "PostgreSQL (asyncpg) bağlantısı kurulamadı veya bağlantı koptu. Veritabanı servisinin "
-            "çalıştığını, DATABASE_URL host/port bilgisini ve container ağını kontrol edin. "
-            f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
-        )
-    if diagnosis == "asyncpg bağımlılığı kullanılamıyor":
-        return (
-            "PostgreSQL bağlantısı için asyncpg bağımlılığı kullanılamıyor. "
-            "Kurulumu `uv sync --all-extras` ile tamamlayın veya postgres extras kurulumunu doğrulayın. "
-            f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
-        )
-    if diagnosis == "bağlantı havuzu oluşturulamadı":
-        return (
-            "PostgreSQL bağlantı havuzu kullanılamıyor/oluşturulamadı. "
-            "DB_POOL_SIZE, POSTGRES_MAX_CONNECTIONS "
-            f"ve veritabanı erişimini kontrol edin. Teşhis: {diagnosis}. "
-            "SQLite degraded mode aktif edildi."
-        )
-    return (
-        "PostgreSQL bağlantısı başarısız. .env dosyanızdaki DATABASE_URL/POSTGRES_* değerlerini "
-        f"ve veritabanı servis durumunu kontrol edin. Teşhis: {diagnosis}. "
-        "SQLite degraded mode aktif edildi."
-    )
+    return _postgres_user_action_message_impl(reason, exc)
 
-
-@dataclass
-class AccessPolicyRecord:
-    id: int
-    user_id: str
-    tenant_id: str
-    resource_type: str
-    resource_id: str
-    action: str
-    effect: str
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class PromptRecord:
-    id: int
-    role_name: str
-    prompt_text: str
-    version: int
-    is_active: bool
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class AuditLogRecord:
-    id: int
-    user_id: str
-    tenant_id: str
-    action: str
-    resource: str
-    ip_address: str
-    allowed: bool
-    timestamp: str
-
-
-@dataclass
-class MarketingCampaignRecord:
-    id: int
-    tenant_id: str
-    name: str
-    channel: str
-    objective: str
-    status: str
-    owner_user_id: str
-    budget: float
-    metadata_json: str
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class ContentAssetRecord:
-    id: int
-    campaign_id: int
-    tenant_id: str
-    asset_type: str
-    title: str
-    content: str
-    channel: str
-    metadata_json: str
-    created_at: str
-    updated_at: str
-
-
-@dataclass
-class OperationChecklistRecord:
-    id: int
-    campaign_id: int | None
-    tenant_id: str
-    title: str
-    items_json: str
-    status: str
-    owner_user_id: str
-    created_at: str
-    updated_at: str
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _utc_now_pair() -> tuple[datetime, str]:
-    now_dt = datetime.now(UTC)
-    return now_dt, now_dt.isoformat()
-
-
-def _parse_iso_datetime(value: str) -> datetime:
-    parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+logger = logging.getLogger(__name__)
+_ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
+_T = TypeVar("_T")
 
 
 def _quote_sql_identifier(identifier: str) -> str:
@@ -329,36 +175,10 @@ def _quote_sql_identifier(identifier: str) -> str:
     return _quote_sql_identifier_impl(identifier)
 
 
-def _json_dumps(payload: Any) -> str:
-    import json
-
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
-
-
-def _new_entity_id() -> str:
-    """Tercihen zaman-sıralı UUID üretir; bulunamazsa UUIDv4'e geri döner."""
-    uuid7_builtin = getattr(uuid, "uuid7", None)
-    if callable(uuid7_builtin):
-        return str(uuid7_builtin())
-
-    try:
-        uuid6_module = importlib.import_module("uuid6")
-        uuid7_external = getattr(uuid6_module, "uuid7", None)
-        if callable(uuid7_external):
-            return str(uuid7_external())
-    except Exception as exc:
-        logger.debug("uuid6 modülü kullanılamadı, uuid4 fallback kullanılacak: %s", exc)
-
-    return str(uuid.uuid4())
-
-
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
     """Backwards-compatible facade for the extracted asyncpg tag parser."""
     return _parse_asyncpg_affected_rows_impl(command_tag, pattern=_ASYNCPG_COMMAND_TAG_COUNT_RE)
 
-
-def _sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
-    return cast(sqlite3.Row | None, cursor.fetchone())
 
 
 class Database:
