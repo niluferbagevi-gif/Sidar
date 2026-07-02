@@ -36,9 +36,9 @@ def test_config_uses_split_domain_modules() -> None:
 
 def test_config_legacy_import_surface_survives_split() -> None:
     from config import (  # noqa: PLC0415 - verifies public compatibility import path.
-        Config,
         OLLAMA_BATCH_POLICY,
         SANDBOX_LIMITS,
+        Config,
         get_config,
         get_dotenv_load_report,
         register_config_reload_callback,
