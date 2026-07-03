@@ -516,7 +516,22 @@ exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "sidar_version", "github_upload"]
+py-modules = [
+  "cli",
+  "main",
+  "web_server",
+  "gui_launcher",
+  "config",
+  "config_autonomy",
+  "config_database",
+  "config_gpu",
+  "config_llm",
+  "config_rag",
+  "config_security",
+  "scripts.version_probe",
+  "sidar_version",
+  "github_upload",
+]
 
 
 [tool.setuptools.package-data]
