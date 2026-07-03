@@ -78,6 +78,8 @@ from .graph import (
     KnowledgeGraphNode,
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
+from .graph_formatting import format_graph_impact_analysis as _format_graph_impact_analysis_impl
+from .graph_formatting import format_graph_search_results as _format_graph_search_results_impl
 from .metadata import (
     build_chunk_ids as _build_chunk_ids_impl,
 )
@@ -1211,43 +1213,13 @@ class DocumentStore:
                 f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi.",
             )
 
-        lines = [f"[GraphRAG: {query}]", ""]
-        if entity_results:
-            lines.append("İlişkisel bellek entity sonuçları:")
-            graph = self._ensure_entity_graph()
-            graph_nodes = graph["nodes"]
-            for item in entity_results:
-                node = item["node"]
-                lines.append(
-                    f"- {node.get('label')}: {node.get('name')} "
-                    f"(score={item['score']}, id={node.get('id')})"
-                )
-                for relation in item.get("relations", [])[:4]:
-                    source_node = graph_nodes.get(str(relation.get("source")), {})
-                    target_node = graph_nodes.get(str(relation.get("target")), {})
-                    lines.append(
-                        "  "
-                        f"{source_node.get('name', relation.get('source'))} "
-                        f"-[{relation.get('relation')}]-> "
-                        f"{target_node.get('name', relation.get('target'))}"
-                    )
-            lines.append("")
-
-        if results:
-            lines.append("Kod bağımlılık grafı sonuçları:")
-        for item in results:
-            lines.append(f"- {item['id']} (score={item['score']})")
-            neighbors_raw = item.get("neighbors") or []
-            neighbors_iter = neighbors_raw if isinstance(neighbors_raw, list | tuple | set) else []
-            neighbors = [str(n) for n in neighbors_iter]
-            if neighbors:
-                lines.append(f"  Komşular: {', '.join(neighbors)}")
-            reverse_raw = item.get("reverse_neighbors") or []
-            reverse_iter = reverse_raw if isinstance(reverse_raw, list | tuple | set) else []
-            reverse_neighbors = [str(n) for n in reverse_iter]
-            if reverse_neighbors:
-                lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
-        return True, "\n".join(lines)
+        graph_nodes = self._ensure_entity_graph()["nodes"] if entity_results else {}
+        return True, _format_graph_search_results_impl(
+            query,
+            code_results=results,
+            entity_results=entity_results,
+            graph_nodes=graph_nodes,
+        )
 
     def explain_dependency_path(self, source: str, target: str) -> tuple[bool, str]:
         """İki modül arasındaki en kısa bağımlılık yolunu açıklar."""
@@ -1272,36 +1244,7 @@ class DocumentStore:
 
         if not isinstance(analysis, dict):
             return False, "Graph impact analizi beklenen formatta dönmedi."
-        lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
-        impacted_endpoints = analysis.get("impacted_endpoints") or []
-        impacted_endpoint_handlers = analysis.get("impacted_endpoint_handlers") or []
-        caller_files = analysis.get("caller_files") or []
-        direct_dependents = analysis.get("direct_dependents") or []
-        dependencies = analysis.get("dependencies") or []
-        review_targets = analysis.get("review_targets") or []
-        dependency_paths = analysis.get("dependency_paths") or []
-
-        lines.append(f"- Düğüm tipi: {analysis.get('node_type', 'file')}")
-        lines.append(f"- Risk seviyesi: {analysis.get('risk_level', 'low')}")
-        if direct_dependents:
-            lines.append(f"- Doğrudan bağımlılar: {', '.join(direct_dependents)}")
-        if dependencies:
-            lines.append(f"- Aşağı akış bağımlılıklar: {', '.join(dependencies)}")
-        if impacted_endpoints:
-            lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
-        if impacted_endpoint_handlers:
-            lines.append(
-                f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}"
-            )
-        if caller_files:
-            lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
-        if review_targets:
-            lines.append(f"- Reviewer için önerilen hedefler: {', '.join(review_targets)}")
-        if dependency_paths:
-            lines.append("- Örnek etki zincirleri:")
-            for idx, path in enumerate(dependency_paths, start=1):
-                lines.append(f"  {idx}. {' -> '.join(path)}")
-        return True, "\n".join(lines)
+        return True, _format_graph_impact_analysis_impl(analysis)
 
     def graph_impact_details(
         self, target: str, top_k: int = 10

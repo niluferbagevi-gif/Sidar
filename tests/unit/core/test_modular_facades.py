@@ -140,3 +140,40 @@ def test_rag_session_document_helpers_select_and_format_documents() -> None:
     assert "[Belge Deposu — 1 belge] (pgvector pasif)" in format_document_listing(
         {"old": index["old"]}, vector_backend="pgvector", pgvector_available=False
     )
+
+
+def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
+    from core.rag.graph_formatting import format_graph_impact_analysis, format_graph_search_results
+
+    graph_text = format_graph_search_results(
+        "auth",
+        code_results=[{"id": "core/auth.py", "score": 3, "neighbors": {"core/db.py"}}],
+        entity_results=[
+            {
+                "score": 2,
+                "node": {"id": "entity:auth", "label": "Feature", "name": "Auth"},
+                "relations": [
+                    {"source": "entity:auth", "target": "entity:db", "relation": "USES"}
+                ],
+            }
+        ],
+        graph_nodes={"entity:auth": {"name": "Auth"}, "entity:db": {"name": "DB"}},
+    )
+
+    assert "[GraphRAG: auth]" in graph_text
+    assert "Auth -[USES]-> DB" in graph_text
+    assert "Komşular: core/db.py" in graph_text
+
+    impact_text = format_graph_impact_analysis(
+        {
+            "target": "web_server.py",
+            "node_type": "file",
+            "risk_level": "high",
+            "direct_dependents": ["tests/unit/root/test_web_server.py"],
+            "dependency_paths": [["web_server.py", "web/routes/ws_chat.py"]],
+        }
+    )
+
+    assert "[GraphRAG Impact] web_server.py" in impact_text
+    assert "- Risk seviyesi: high" in impact_text
+    assert "1. web_server.py -> web/routes/ws_chat.py" in impact_text
