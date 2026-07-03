@@ -173,7 +173,8 @@ def test_release_quality_runs_helm_install_dry_run_with_injected_secret():
 
     assert "Helm install dry-run validation" in workflow
     assert "helm install sidar helm/sidar --dry-run --debug" in workflow
-    assert "--set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345" in workflow
+    assert "--set postgresql.existingSecret.name=ci-postgresql-secret" in workflow
+    assert "postgresql.password" not in workflow
 
 
 def test_release_quality_runs_benchmark_coverage_trend_gate():

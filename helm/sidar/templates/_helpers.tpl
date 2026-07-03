@@ -19,9 +19,5 @@
 {{- end -}}
 
 {{- define "sidar.postgresqlSecretName" -}}
-{{- if .Values.postgresql.existingSecret.name -}}
-{{- .Values.postgresql.existingSecret.name -}}
-{{- else -}}
-{{- printf "%s-postgresql" (include "sidar.fullname" .) -}}
-{{- end -}}
+{{- required "postgresql.existingSecret.name must reference a Kubernetes Secret or ExternalSecret-managed Secret" .Values.postgresql.existingSecret.name -}}
 {{- end -}}

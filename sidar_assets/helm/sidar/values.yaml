@@ -48,7 +48,15 @@ postgresql:
   port: 5432
   database: sidar
   username: sidar
-  password: sidar
+  # Do not commit database passwords or inline them through values.
+  # Create a Kubernetes Secret or ExternalSecret that contains DATABASE_URL
+  # plus the POSTGRES_* keys below, then set existingSecret.name to that Secret.
+  existingSecret:
+    name: ""
+    databaseUrlKey: DATABASE_URL
+    databaseKey: POSTGRES_DB
+    usernameKey: POSTGRES_USER
+    passwordKey: POSTGRES_PASSWORD
   storage:
     size: 10Gi
     storageClassName: ""

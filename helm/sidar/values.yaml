@@ -48,11 +48,9 @@ postgresql:
   port: 5432
   database: sidar
   username: sidar
-  # Do not commit database passwords. For the bundled PostgreSQL chart path,
-  # pass --set postgresql.password=<strong-secret> or use a private values file.
-  # For ExternalSecret/Vault-managed credentials, set existingSecret.name and
-  # ensure it contains DATABASE_URL plus POSTGRES_* keys below.
-  password: ""
+  # Do not commit database passwords or inline them through values.
+  # Create a Kubernetes Secret or ExternalSecret that contains DATABASE_URL
+  # plus the POSTGRES_* keys below, then set existingSecret.name to that Secret.
   existingSecret:
     name: ""
     databaseUrlKey: DATABASE_URL

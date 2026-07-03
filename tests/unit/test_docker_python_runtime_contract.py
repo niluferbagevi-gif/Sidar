@@ -78,28 +78,60 @@ def test_prod_staging_helm_values_do_not_pin_python_312_images():
         assert "python:3.12-slim" not in text, path
 
 
-def test_helm_values_use_real_entrypoints_and_no_committed_postgres_passwords():
-    values = _read("helm/sidar/values.yaml")
-    staging_values = _read("helm/sidar/values-staging.yaml")
+def test_helm_values_use_external_postgresql_secrets_only():
+    value_paths = (
+        "helm/sidar/values.yaml",
+        "helm/sidar/values-prod.yaml",
+        "helm/sidar/values-staging.yaml",
+        "sidar_assets/helm/sidar/values.yaml",
+        "sidar_assets/helm/sidar/values-prod.yaml",
+        "sidar_assets/helm/sidar/values-staging.yaml",
+    )
 
+    values = _read("helm/sidar/values.yaml")
     assert 'command: ["python", "main.py", "--quick", "web"]' in values
     assert "sidar.py" not in values
-    assert "password: sidar" not in values
-    assert "password: staging-secret" not in staging_values
-    assert "existingSecret:" in values
-    assert "databaseUrlKey: DATABASE_URL" in values
+
+    for rel_path in value_paths:
+        document = yaml.safe_load((ROOT / rel_path).read_text())
+        postgresql = document["postgresql"]
+        assert "password" not in postgresql
+        assert "existingSecret" in postgresql
+
+    base_values = yaml.safe_load((ROOT / "helm/sidar/values.yaml").read_text())
+    assert base_values["postgresql"]["existingSecret"] == {
+        "name": "",
+        "databaseUrlKey": "DATABASE_URL",
+        "databaseKey": "POSTGRES_DB",
+        "usernameKey": "POSTGRES_USER",
+        "passwordKey": "POSTGRES_PASSWORD",
+    }
 
 
 def test_helm_deployments_read_database_url_from_secret():
     for rel_path in (
         "helm/sidar/templates/deployment-web.yaml",
         "helm/sidar/templates/deployment-ai-worker.yaml",
+        "sidar_assets/helm/sidar/templates/deployment-web.yaml",
+        "sidar_assets/helm/sidar/templates/deployment-ai-worker.yaml",
     ):
         template = _read(rel_path)
         assert "valueFrom:" in template
         assert "secretKeyRef:" in template
         assert "key: {{ .Values.postgresql.existingSecret.databaseUrlKey | quote }}" in template
-        assert "postgresql.password" not in template
+        assert ".Values.postgresql.password" not in template
+
+
+def test_helm_chart_rejects_inline_postgresql_password_generation():
+    for rel_path in (
+        "helm/sidar/templates/secret-postgresql.yaml",
+        "sidar_assets/helm/sidar/templates/secret-postgresql.yaml",
+    ):
+        template = _read(rel_path)
+        assert "kind: Secret" not in template
+        assert "fail " in template
+        assert "postgresql.existingSecret.name" in template
+        assert ".Values.postgresql.password" not in template
 
 
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():

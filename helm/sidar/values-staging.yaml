@@ -36,7 +36,8 @@ database:
 
 postgresql:
   # Staging secret is supplied by CI/ExternalSecret/private values, never committed.
-  password: ""
+  existingSecret:
+    name: ""
   storage:
     size: 5Gi
     storageClassName: standard

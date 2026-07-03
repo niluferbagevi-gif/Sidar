@@ -35,7 +35,8 @@ database:
   poolSize: 30
 
 postgresql:
-  password: ""  # ExternalSecret / Vault Secret referansıyla sağlanır (boş bırakın)
+  existingSecret:
+    name: ""  # ExternalSecret / Vault Secret adını burada belirtin.
   storage:
     size: 50Gi
     storageClassName: ssd

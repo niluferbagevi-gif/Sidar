@@ -22,17 +22,17 @@ jobs:
       - name: Helm lint
         run: >-
           helm lint helm/sidar
-          --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345
+          --set postgresql.existingSecret.name=ci-postgresql-secret
       - name: Helm template validation
         run: |
           helm template sidar helm/sidar --values helm/sidar/values.yaml \
-            --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345 \
+            --set postgresql.existingSecret.name=ci-postgresql-secret \
             >/tmp/sidar-rendered.yaml
           test -s /tmp/sidar-rendered.yaml
       - name: Helm install dry-run validation
         run: >-
           helm install sidar helm/sidar --dry-run --debug
-          --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345
+          --set postgresql.existingSecret.name=ci-postgresql-secret
 
   sbom-and-sign:
     name: SBOM and signing gate
