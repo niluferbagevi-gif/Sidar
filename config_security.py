@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from core.config_env_helpers import get_int_env
+from core.config_secrets import is_weak_secret
 
 
 @dataclass(frozen=True)
@@ -50,16 +51,22 @@ def get_missing_security_runtime_keys(
     jwt_secret_key_explicitly_configured: bool,
     is_production: bool,
     is_test_env: bool,
+    web_concurrency: int = 1,
+    postgres_password: str = "",
 ) -> list[str]:
     """Return unresolved security keys that should block runtime startup."""
     missing: list[str] = []
+    requires_stable_jwt = is_production or int(web_concurrency or 1) > 1
     if (
         not str(jwt_secret_key or "").strip()
-        or (is_production and not jwt_secret_key_explicitly_configured)
+        or (requires_stable_jwt and not jwt_secret_key_explicitly_configured)
     ) and not is_test_env:
         missing.append("JWT_SECRET_KEY")
 
     if is_production and not str(api_key or "").strip():
         missing.append("API_KEY")
+
+    if is_production and is_weak_secret(postgres_password):
+        missing.append("POSTGRES_PASSWORD")
 
     return missing

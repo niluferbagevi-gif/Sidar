@@ -37,7 +37,7 @@ def test_missing_security_runtime_keys_requires_explicit_production_secrets():
         jwt_secret_key_explicitly_configured=False,
         is_production=True,
         is_test_env=False,
-    ) == ["JWT_SECRET_KEY", "API_KEY"]
+    ) == ["JWT_SECRET_KEY", "API_KEY", "POSTGRES_PASSWORD"]
 
     assert (
         config_security.get_missing_security_runtime_keys(
@@ -46,6 +46,29 @@ def test_missing_security_runtime_keys_requires_explicit_production_secrets():
             jwt_secret_key_explicitly_configured=True,
             is_production=True,
             is_test_env=False,
+            postgres_password="H7sQ9vL2mR5xT8nB3kY6pW1zC4aD!",
         )
         == []
+    )
+
+
+def test_missing_security_runtime_keys_requires_explicit_jwt_for_multi_worker():
+    assert config_security.get_missing_security_runtime_keys(
+        api_key="dev-api",
+        jwt_secret_key="runtime-generated",
+        jwt_secret_key_explicitly_configured=False,
+        is_production=False,
+        is_test_env=False,
+        web_concurrency=2,
+    ) == ["JWT_SECRET_KEY"]
+
+
+def test_missing_security_runtime_keys_rejects_weak_production_postgres_password():
+    assert "POSTGRES_PASSWORD" in config_security.get_missing_security_runtime_keys(
+        api_key="api-ok",
+        jwt_secret_key="jwt-ok",
+        jwt_secret_key_explicitly_configured=True,
+        is_production=True,
+        is_test_env=False,
+        postgres_password="sidar",
     )

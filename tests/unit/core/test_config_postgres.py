@@ -26,3 +26,15 @@ def test_database_url_helpers_return_explicit_urls():
         config_postgres.get_container_database_url(getenv=getenv)
         == "postgresql+asyncpg://u:p@postgres:5432/app"
     )
+
+
+def test_postgres_password_drift_messages_detects_url_password_mismatch():
+    values = {
+        "POSTGRES_PASSWORD": "strong-password-1234567890!Aa",
+        "DATABASE_URL": "postgresql+asyncpg://sidar:old@127.0.0.1:5432/sidar",
+        "SIDAR_CONTAINER_DATABASE_URL": "postgresql+asyncpg://sidar:strong-password-1234567890%21Aa@postgres:5432/sidar",
+    }
+
+    assert config_postgres.postgres_password_drift_messages(
+        getenv=lambda k, d=None: values.get(k, d)
+    ) == ["DATABASE_URL parolası POSTGRES_PASSWORD ile senkron değil."]

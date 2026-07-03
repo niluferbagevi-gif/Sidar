@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
 GetEnv = Callable[[str, str | None], str | None]
 GetIntEnv = Callable[[str, int], int]
@@ -67,6 +67,36 @@ def build_postgres_dsn(*, host: str | None = None, getenv: GetEnv = os.getenv) -
     quoted_password = quote(password, safe="")
     quoted_database = quote(database, safe="")
     return f"postgresql+asyncpg://{quoted_user}:{quoted_password}@{resolved_host}:{port}/{quoted_database}"
+
+
+def postgres_password_drift_messages(*, getenv: GetEnv = os.getenv) -> list[str]:
+    """Return DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL password drift messages.
+
+    Explicit PostgreSQL URLs and POSTGRES_PASSWORD are two credential entry
+    points; boot-time validation uses this lightweight check to catch stale URL
+    passwords without invoking the dotenv sync script.
+    """
+    postgres_password = _read_env(getenv, "POSTGRES_PASSWORD", "")
+    if not postgres_password:
+        return []
+
+    messages: list[str] = []
+    for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"):
+        raw_url = _read_env(getenv, key, "").strip()
+        if not raw_url:
+            continue
+        parsed = urlsplit(raw_url)
+        if not parsed.scheme.startswith("postgresql"):
+            continue
+        url_password = parsed.password
+        if url_password is None:
+            messages.append(
+                f"{key} PostgreSQL URL parolası içermiyor; POSTGRES_PASSWORD ile senkron değil."
+            )
+            continue
+        if unquote(url_password) != postgres_password:
+            messages.append(f"{key} parolası POSTGRES_PASSWORD ile senkron değil.")
+    return messages
 
 
 def get_database_url(*, getenv: GetEnv = os.getenv) -> str:

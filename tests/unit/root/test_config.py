@@ -109,7 +109,9 @@ def test_agent_max_react_steps_aliases_legacy_default() -> None:
 
 def test_swarm_timeout_config_exposes_model_and_ollama_overrides() -> None:
     assert config.Config.SWARM_TASK_TIMEOUT_BY_MODEL == ""
-    assert config.Config.SWARM_TASK_TIMEOUT_SECONDS_OLLAMA == config.Config.SWARM_TASK_TIMEOUT_SECONDS
+    assert (
+        config.Config.SWARM_TASK_TIMEOUT_SECONDS_OLLAMA == config.Config.SWARM_TASK_TIMEOUT_SECONDS
+    )
 
 
 def test_gpu_mixed_precision_defaults_to_true_only_for_production(monkeypatch):
@@ -1739,7 +1741,9 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
 
     assert "JWT_SECRET_KEY" in missing
     assert "API_KEY" in missing
-    with pytest.raises(ValueError, match="JWT_SECRET_KEY, API_KEY boş bırakılamaz"):
+    with pytest.raises(
+        ValueError, match="JWT_SECRET_KEY, API_KEY, POSTGRES_PASSWORD boş bırakılamaz"
+    ):
         config.Config()
 
 
@@ -1941,6 +1945,7 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     monkeypatch.setenv("SIDAR_ENV", "production")
     assert config.Config.get_missing_critical_runtime_keys() == [
         "API_KEY",
+        "POSTGRES_PASSWORD",
         "LITELLM_GATEWAY_URL",
         "MEMORY_ENCRYPTION_KEY",
     ]

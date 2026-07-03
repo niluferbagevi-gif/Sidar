@@ -26,7 +26,7 @@ from config_security import (
     get_missing_security_runtime_keys,
     load_security_settings,
 )
-from core import config_dotenv
+from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
@@ -437,122 +437,90 @@ def _is_wsl2() -> bool:
         return False
 
 
-def check_hardware() -> HardwareInfo:
-    """GPU/CPU donanımını tespit eder; PyTorch yoksa sessizce devam eder."""
-    info = HardwareInfo(has_cuda=False, gpu_name="N/A")
-
-    try:
-        import multiprocessing
-
-        info.cpu_count = multiprocessing.cpu_count()
-    except Exception:
-        info.cpu_count = 1
-
-    wsl2 = _is_wsl2()
-    if wsl2:
-        _log_first_load_info(
-            "ℹ️  WSL2 ortamı tespit edildi — CUDA, Windows sürücüsü üzerinden erişilecek."
-        )
-
-    if not get_bool_env("USE_GPU", True):
-        logger.info("ℹ️  GPU kullanımı .env ile devre dışı bırakıldı.")
-        info.gpu_name = "Devre Dışı (Kullanıcı)"
-        return info
+def _apply_vram_memory_fraction(info: HardwareInfo) -> None:
+    """Apply Sidar's VRAM-fraction policy after the shared GPU probe succeeds."""
+    if not info.has_cuda:
+        if _is_wsl2() and info.gpu_name == "CUDA Bulunamadı":
+            logger.warning(
+                "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
+                "Windows NVIDIA sürücüsü güncel mi? "
+                "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
+                "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
+                ", ".join(PYTORCH_STABLE_CUDA_WHEEL_TAGS),
+                PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
+            )
+        return
 
     try:
         import torch
-
-        if torch.cuda.is_available():
-            info.has_cuda = True
-            info.gpu_count = torch.cuda.device_count()
-            info.gpu_name = torch.cuda.get_device_name(0)
-            info.cuda_version = torch.version.cuda or "N/A"
-            try:
-                props = torch.cuda.get_device_properties(0)
-                info.gpu_vram_mb = int(getattr(props, "total_memory", 0) or 0) // (1024 * 1024)
-            except Exception:
-                info.gpu_vram_mb = 0
-            _log_first_load_info(
-                "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, Torch CUDA build %s)",
-                info.gpu_name,
-                info.gpu_count,
-                info.cuda_version,
-            )
-            # VRAM fraksiyonu: geriye dönük GPU_MEMORY_FRACTION + opsiyonel LLM/RAG ayrımı
-            legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-            llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
-            rag_frac = get_float_env(
-                "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35))
-            )
-            if (
-                os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
-                or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
-            ):
-                vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
-                frac = float(
-                    vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"]
-                )
-                if vram_budget["normalized"]:
-                    logger.warning(
-                        "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize edilmiş bütçeyi uyguluyor "
-                        "(LLM=%.2f, RAG=%.2f).",
-                        vram_budget["original_total"],
-                        vram_budget["gpu"],
-                        vram_budget["llm"],
-                        vram_budget["rag"],
-                    )
-            else:
-                frac = legacy_frac
-            if not (0.1 <= frac < 1.0):
-                logger.warning(
-                    "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) "
-                    "— varsayılan 0.8 kullanılıyor.",
-                    frac,
-                )
-                frac = 0.8
-            multi_gpu = get_bool_env("MULTI_GPU", False)
-            target_device = max(0, get_int_env("GPU_DEVICE", 0))
-            try:
-                if multi_gpu and info.gpu_count > 1:
-                    for device_idx in range(info.gpu_count):
-                        torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
-                    _log_first_load_info(
-                        "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
-                        frac * 100,
-                        info.gpu_count,
-                    )
-                else:
-                    if info.gpu_count > 0:
-                        target_device = min(target_device, info.gpu_count - 1)
-                    torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
-                    _log_first_load_info(
-                        "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)",
-                        frac * 100,
-                        target_device,
-                    )
-            except Exception as exc:
-                logger.debug("VRAM fraksiyon ayarı atlandı: %s", exc)
-        else:
-            if wsl2:
-                logger.warning(
-                    "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
-                    "Windows NVIDIA sürücüsü güncel mi? "
-                    "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
-                    "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
-                    ", ".join(PYTORCH_STABLE_CUDA_WHEEL_TAGS),
-                    PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
-                )
-            else:
-                logger.info("ℹ️  CUDA bulunamadı — CPU modunda çalışılacak.")
-            info.gpu_name = "CUDA Bulunamadı"
-    except ImportError:
-        logger.warning("⚠️  PyTorch kurulu değil; GPU kontrolü atlanıyor.")
-        info.gpu_name = "PyTorch Yok"
     except Exception as exc:
-        logger.warning("⚠️  Donanım kontrolü hatası: %s", exc)
-        info.gpu_name = "Tespit Edilemedi"
+        logger.debug("VRAM fraksiyon ayarı için torch yeniden açılamadı: %s", exc)
+        return
 
-    # sürücü sürümü — nvidia-ml-py varsa al
+    legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
+    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
+    rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
+    if (
+        os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
+        or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
+    ):
+        vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
+        frac = float(vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"])
+        if vram_budget["normalized"]:
+            logger.warning(
+                "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize edilmiş bütçeyi uyguluyor "
+                "(LLM=%.2f, RAG=%.2f).",
+                vram_budget["original_total"],
+                vram_budget["gpu"],
+                vram_budget["llm"],
+                vram_budget["rag"],
+            )
+    else:
+        frac = legacy_frac
+    if not (0.1 <= frac < 1.0):
+        logger.warning(
+            "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) — varsayılan 0.8 kullanılıyor.",
+            frac,
+        )
+        frac = 0.8
+    multi_gpu = get_bool_env("MULTI_GPU", False)
+    target_device = max(0, get_int_env("GPU_DEVICE", 0))
+    try:
+        if multi_gpu and info.gpu_count > 1:
+            for device_idx in range(info.gpu_count):
+                torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
+            _log_first_load_info(
+                "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
+                frac * 100,
+                info.gpu_count,
+            )
+        else:
+            if info.gpu_count > 0:
+                target_device = min(target_device, info.gpu_count - 1)
+            torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
+            _log_first_load_info(
+                "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)", frac * 100, target_device
+            )
+    except Exception as exc:
+        logger.debug("VRAM fraksiyon ayarı atlandı: %s", exc)
+
+
+def check_hardware() -> HardwareInfo:
+    """GPU/CPU donanımını shared probe ile tespit eder, sadece VRAM fraksiyonunu burada uygular."""
+    original_is_wsl2 = config_gpu_detect.is_wsl2
+    config_gpu_detect.is_wsl2 = _is_wsl2
+    try:
+        info = config_gpu_detect.detect_gpu(
+            get_bool_env=get_bool_env,
+            get_int_env=get_int_env,
+            get_float_env=get_float_env,
+            logger=logger,
+        )
+    finally:
+        config_gpu_detect.is_wsl2 = original_is_wsl2
+
+    _apply_vram_memory_fraction(info)
+
     try:
         import pynvml
 
@@ -1061,9 +1029,7 @@ class Config:
     PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
     TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
     ENABLE_AUTONOMOUS_CRON: bool = _ORCHESTRATOR_SETTINGS.enable_autonomous_cron
-    AUTONOMOUS_CRON_INTERVAL_SECONDS: int = (
-        _ORCHESTRATOR_SETTINGS.autonomous_cron_interval_seconds
-    )
+    AUTONOMOUS_CRON_INTERVAL_SECONDS: int = _ORCHESTRATOR_SETTINGS.autonomous_cron_interval_seconds
     AUTONOMOUS_CRON_PROMPT: str = _ORCHESTRATOR_SETTINGS.autonomous_cron_prompt
     ENABLE_NIGHTLY_MEMORY_PRUNING: bool = get_bool_env("ENABLE_NIGHTLY_MEMORY_PRUNING", False)
     NIGHTLY_MEMORY_INTERVAL_SECONDS: int = get_int_env("NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400)
@@ -1131,6 +1097,8 @@ class Config:
                 jwt_secret_key_explicitly_configured=cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED,
                 is_production=is_production,
                 is_test_env=cls._is_test_env(),
+                web_concurrency=get_int_env("WEB_CONCURRENCY", 1),
+                postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
             )
         )
 
@@ -1213,7 +1181,9 @@ class Config:
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()
         missing_keys = self.__class__.get_missing_critical_runtime_keys()
-        blocking_missing = [key for key in ("JWT_SECRET_KEY", "API_KEY") if key in missing_keys]
+        blocking_missing = [
+            key for key in ("JWT_SECRET_KEY", "API_KEY", "POSTGRES_PASSWORD") if key in missing_keys
+        ]
         if blocking_missing:
             self.__class__._log_dotenv_load_status(missing_keys=missing_keys)
             missing_label = ", ".join(blocking_missing)
@@ -1407,6 +1377,13 @@ class Config:
             is_valid = False
 
         is_valid = cls._validate_ai_provider_settings() and is_valid
+
+        for drift_message in config_postgres.postgres_password_drift_messages():
+            logger.error(
+                "❌ %s Önce scripts/sync_database_passwords.py veya POSTGRES_* tek kaynak akışını kullanın.",
+                drift_message,
+            )
+            is_valid = False
 
         memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
 
@@ -1698,9 +1675,9 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
 ConfigReloadCallback = Callable[["Config"], None]
 
 
-def _restore_reload_registry_from_previous_module() -> (
-    tuple[list["ConfigReloadCallback"], "Config | None"]
-):
+def _restore_reload_registry_from_previous_module() -> tuple[
+    list["ConfigReloadCallback"], "Config | None"
+]:
     """`importlib.reload(config)` çağrısı sonrası callback registry'sini koru.
 
     Modül yeniden çalıştırıldığında modül globalleri sıfırlanır; bu durum
