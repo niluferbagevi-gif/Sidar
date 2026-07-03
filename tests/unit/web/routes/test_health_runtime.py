@@ -75,6 +75,66 @@ async def test_build_health_response_hides_exception_details_by_default() -> Non
     assert logger.messages
 
 
+@pytest.mark.asyncio
+async def test_build_status_response_reports_actual_memory_encryption_state() -> None:
+    class _Availability:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+        @staticmethod
+        def status() -> dict[str, str]:
+            return {"status": "ok"}
+
+    class _Memory:
+        def __init__(self, encryption_enabled: bool) -> None:
+            self.encryption_enabled = encryption_enabled
+
+        def __len__(self) -> int:
+            return 0
+
+    async def _resolve_agent(encryption_enabled: bool) -> object:
+        return SimpleNamespace(
+            VERSION="test",
+            cfg=SimpleNamespace(
+                AI_PROVIDER="ollama",
+                CODING_MODEL="qwen2.5-coder:7b",
+                MEMORY_ENCRYPTION_KEY="configured-but-not-authoritative",
+                USE_GPU=False,
+                GPU_INFO={},
+                GPU_COUNT=0,
+                CUDA_VERSION="",
+                ACCESS_LEVEL="sandbox",
+            ),
+            health=_Health(),
+            memory=_Memory(encryption_enabled),
+            github=_Availability(),
+            web=_Availability(),
+            docs=_Availability(),
+            pkg=_Availability(),
+        )
+
+    async def resolve_plain() -> object:
+        return await _resolve_agent(False)
+
+    response = await health_runtime.build_status_response(
+        resolve_agent_instance=resolve_plain, metrics_snapshot=lambda: {}, start_time=0.0
+    )
+    payload = json.loads(response.body)
+    assert payload["memory"]["encrypted"] is False
+    assert payload["memory"]["encryption_status"] == "disabled"
+
+    async def resolve_encrypted() -> object:
+        return await _resolve_agent(True)
+
+    response = await health_runtime.build_status_response(
+        resolve_agent_instance=resolve_encrypted, metrics_snapshot=lambda: {}, start_time=0.0
+    )
+    payload = json.loads(response.body)
+    assert payload["memory"]["encrypted"] is True
+    assert payload["memory"]["encryption_status"] == "enabled"
+
+
 def test_domain_config_loaders_preserve_defaults() -> None:
     from core.config_app import load_app_runtime_settings
     from core.config_observability import load_observability_settings

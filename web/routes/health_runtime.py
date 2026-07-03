@@ -124,7 +124,12 @@ async def build_status_response(
         },
         "memory": {
             "turns": len(getattr(agent, "memory", [])),
-            "encrypted": bool(getattr(cfg_obj, "MEMORY_ENCRYPTION_KEY", "")),
+            "encrypted": bool(getattr(getattr(agent, "memory", None), "encryption_enabled", False)),
+            "encryption_status": (
+                "enabled"
+                if bool(getattr(getattr(agent, "memory", None), "encryption_enabled", False))
+                else "disabled"
+            ),
         },
         "access_level": getattr(cfg_obj, "ACCESS_LEVEL", ""),
         "services": {
