@@ -482,6 +482,86 @@ async def test_document_store_validate_url_safe_accepts_and_blocks() -> None:
         rag.DocumentStore._validate_url_safe("http://[fd00::1]/private-v6")
 
 
+async def test_document_store_validate_url_safe_resolves_dns_to_public_addresses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _public_getaddrinfo(*_args, **_kwargs):
+        return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _public_getaddrinfo)
+
+    rag.DocumentStore._validate_url_safe("https://public.example/resource", resolve_dns=True)
+
+
+async def test_document_store_validate_url_safe_blocks_dns_private_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _private_getaddrinfo(*_args, **_kwargs):
+        return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("169.254.169.254", 80))]
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _private_getaddrinfo)
+
+    with pytest.raises(ValueError, match="public olmayan"):
+        rag.DocumentStore._validate_url_safe("http://metadata-proxy.example", resolve_dns=True)
+
+
+async def test_document_store_add_url_blocks_redirect_to_private_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    add_calls: list[tuple[str, str, str]] = []
+
+    async def _add_document(title: str, content: str, source: str, *_args, **_kwargs) -> str:
+        add_calls.append((title, content, source))
+        return "doc-1"
+
+    store.add_document = _add_document  # type: ignore[method-assign]
+
+    def _getaddrinfo(host: str, port: int, *_args, **_kwargs):
+        if host == "public.example":
+            return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+        if host == "169.254.169.254":
+            return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("169.254.169.254", port))]
+        raise AssertionError(f"unexpected host: {host}")
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _getaddrinfo)
+
+    class _Response:
+        def __init__(self, url: str, status_code: int, *, location: str = "", text: str = ""):
+            self.url = url
+            self.status_code = status_code
+            self.headers = {"Location": location} if location else {}
+            self.text = text
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+    class _AsyncClient:
+        def __init__(self, **_kwargs):
+            self.calls: list[str] = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str):
+            self.calls.append(url)
+            return _Response(url, 302, location="http://169.254.169.254/latest/meta-data")
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _AsyncClient)
+
+    ok, message = await store.add_document_from_url("https://public.example/start")
+
+    assert ok is False
+    assert "İç ağ" in message or "Engellenen hostname" in message
+    assert add_calls == []
+
+
 async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> None:
     store = _make_store_stub(tmp_path)
 

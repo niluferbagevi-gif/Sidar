@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -965,8 +966,18 @@ class DocumentStore:
         )
 
     @staticmethod
-    def _validate_url_safe(url: str) -> None:
+    def _is_public_ip_address(address: str) -> bool:
+        """Return whether an IP address is globally routable for URL ingestion."""
+
+        try:
+            return ipaddress.ip_address(address).is_global
+        except ValueError:
+            return False
+
+    @classmethod
+    def _validate_url_safe(cls, url: str, *, resolve_dns: bool = False) -> None:
         """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
+
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(
@@ -975,17 +986,35 @@ class DocumentStore:
         hostname = parsed.hostname or ""
         if not hostname:
             raise ValueError("URL geçerli bir hostname içermiyor.")
+
+        normalized_hostname = hostname.rstrip(".").lower()
+        blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
+        if normalized_hostname in blocked_hosts:
+            raise ValueError(f"Engellenen hostname: {hostname}")
+
         try:
             addr = ipaddress.ip_address(hostname)
-            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-                raise ValueError(f"İç ağ adresine erişim engellendi: {hostname}")
-        except ValueError as exc:
-            # ip_address() hata fırlattıysa ama "İç ağ" mesajımız değilse → hostname (DNS adı)
-            if "İç ağ" in str(exc):
-                raise
-        blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
-        if hostname.lower() in blocked_hosts:
-            raise ValueError(f"Engellenen hostname: {hostname}")
+        except ValueError:
+            addr = None
+        if addr is not None and not addr.is_global:
+            raise ValueError(f"İç ağ adresine erişim engellendi: {hostname}")
+
+        if not resolve_dns or addr is not None:
+            return
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            resolved = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f"Hostname çözümlenemedi: {hostname}") from exc
+        if not resolved:
+            raise ValueError(f"Hostname çözümlenemedi: {hostname}")
+        for family_info in resolved:
+            resolved_address = str(family_info[4][0])
+            if not cls._is_public_ip_address(resolved_address):
+                raise ValueError(
+                    f"Hostname public olmayan adrese çözümlendi: {hostname} -> {resolved_address}"
+                )
 
     async def add_document_from_url(
         self,
@@ -997,22 +1026,33 @@ class DocumentStore:
         import httpx
 
         try:
-            self._validate_url_safe(url)
+            current_url = url
+            max_redirects = 5
             async with httpx.AsyncClient(
                 timeout=15,
-                follow_redirects=True,
-                max_redirects=5,
+                follow_redirects=False,
                 headers={"User-Agent": "Mozilla/5.0"},
             ) as client:
-                resp = await client.get(url)
+                for _redirect_count in range(max_redirects + 1):
+                    self._validate_url_safe(current_url, resolve_dns=True)
+                    resp = await client.get(current_url)
+                    if not 300 <= resp.status_code < 400:
+                        break
+                    location = resp.headers.get("Location", "")
+                    if not location:
+                        raise ValueError("Redirect yanıtında Location başlığı yok.")
+                    current_url = urllib.parse.urljoin(str(resp.url), location)
+                else:
+                    raise ValueError(f"Redirect limiti aşıldı: {max_redirects}")
+            self._validate_url_safe(str(resp.url), resolve_dns=True)
             resp.raise_for_status()
             content = self._clean_html(resp.text)
 
             if not title:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
-                title = m.group(1).strip() if m else url.split("/")[-1] or url
+                title = m.group(1).strip() if m else str(resp.url).rstrip("/").split("/")[-1] or url
 
-            doc_id = await self.add_document(title, content, url, tags, session_id)
+            doc_id = await self.add_document(title, content, str(resp.url), tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
