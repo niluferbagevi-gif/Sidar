@@ -17,7 +17,7 @@ services:
       - redis_data:/data
 
   postgres:
-    image: pgvector/pgvector:0.8.1-pg16
+    image: pgvector/pgvector:0.8.4-pg16
     container_name: sidar_postgres
     restart: unless-stopped
     command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
@@ -367,7 +367,7 @@ services:
 
   jaeger:
     profiles: ["observability"]
-    image: jaegertracing/all-in-one:1.63.0
+    image: jaegertracing/all-in-one:1.76.0
     container_name: sidar_jaeger
     restart: unless-stopped
     ports:
@@ -376,7 +376,7 @@ services:
 
   redis-exporter:
     profiles: ["observability"]
-    image: oliver006/redis_exporter:v1.67.0
+    image: oliver006/redis_exporter:v1.86.0
     container_name: sidar_redis_exporter
     restart: unless-stopped
     environment:
@@ -386,7 +386,7 @@ services:
 
   postgres-exporter:
     profiles: ["observability"]
-    image: prometheuscommunity/postgres-exporter:v0.15.0
+    image: prometheuscommunity/postgres-exporter:v0.20.0
     container_name: sidar_postgres_exporter
     restart: unless-stopped
     environment:
@@ -397,7 +397,7 @@ services:
 
   cadvisor:
     profiles: ["observability"]
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
     container_name: sidar_cadvisor
     restart: unless-stopped
     privileged: true
