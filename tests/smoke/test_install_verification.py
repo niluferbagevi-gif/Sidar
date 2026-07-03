@@ -1200,10 +1200,16 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
     assert "Servis öncesi installer smoke gate başarılı" in combined_output
 
 
-def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
+def test_install_alembic_head_check_after_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://ambient-user:ambient-pass@ambient-host:5432/ambient-db",
+    )
     (script_dir / ".env").write_text(
         "DATABASE_URL= postgresql://sidar:sidar@localhost:5432/sidar \n",
         encoding="utf-8",
@@ -1246,6 +1252,7 @@ def test_install_alembic_head_check_after_migration(tmp_path: Path) -> None:
         test "${{LOG_FILE:-}}" = ""
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         export SCRIPT_DIR
+        unset DATABASE_URL
         if ! is_alembic_at_head; then
           echo "is_alembic_at_head failed" >&2
           exit 1
