@@ -99,3 +99,44 @@ def test_code_helper_modules_are_usable_without_code_manager(tmp_path: Path) -> 
     )
     assert [path.suffix for path in windows_candidates[:4]] == [".cmd", ".exe", ".bat", ""]
     assert tmp_path / ".venv" / "Scripts" / "ruff.cmd" in windows_candidates
+
+
+def test_rag_session_document_helpers_select_and_format_documents() -> None:
+    from core.rag.session_documents import (
+        build_session_summary_lines,
+        documents_for_session,
+        format_document_listing,
+        nightly_digest_document_ids,
+        select_removable_session_documents,
+    )
+
+    index = {
+        "recent": {"title": "Recent", "session_id": "s1", "created_at": 3, "size": 1024},
+        "old": {
+            "title": "Old",
+            "session_id": "s1",
+            "created_at": 1,
+            "preview": "legacy",
+            "size": 512,
+        },
+        "pinned": {"title": "Pinned", "session_id": "s1", "created_at": 0, "tags": ["pinned"]},
+        "digest": {"title": "Digest", "session_id": "s1", "source": "memory://nightly-digest/1"},
+        "other": {"title": "Other", "session_id": "s2"},
+    }
+
+    docs = documents_for_session(index, "s1")
+    assert [doc_id for doc_id, _meta in docs] == ["recent", "old", "pinned", "digest"]
+    assert [doc_id for doc_id, _meta in select_removable_session_documents(docs, keep_recent_docs=1)] == [
+        "old",
+        "digest",
+    ]
+    assert nightly_digest_document_ids(docs) == ["digest"]
+    assert build_session_summary_lines("s1", [("old", index["old"])]) == [
+        "Oturum: s1",
+        "Konsolide edilen belge sayısı: 1",
+        "Öne çıkan eski belge özetleri:",
+        "- [old] Old :: legacy",
+    ]
+    assert "[Belge Deposu — 1 belge] (pgvector pasif)" in format_document_listing(
+        {"old": index["old"]}, vector_backend="pgvector", pgvector_available=False
+    )

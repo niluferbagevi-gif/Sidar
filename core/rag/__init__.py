@@ -101,6 +101,24 @@ from .pgvector_helpers import (
 )
 from .query import GraphRAGSearchPlan
 from .query import build_query_candidates as build_query_candidates
+from .session_documents import (
+    build_session_summary_lines as _build_session_summary_lines_impl,
+)
+from .session_documents import (
+    documents_for_session as _documents_for_session_impl,
+)
+from .session_documents import (
+    format_document_listing as _format_document_listing_impl,
+)
+from .session_documents import (
+    nightly_digest_document_ids as _nightly_digest_document_ids_impl,
+)
+from .session_documents import (
+    normalize_session_id as _normalize_session_id_impl,
+)
+from .session_documents import (
+    select_removable_session_documents as _select_removable_session_documents_impl,
+)
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
 
 _BLEACH_AVAILABLE = True
@@ -1710,12 +1728,8 @@ class DocumentStore:
         keep_recent_docs: int = 2,
     ) -> dict[str, Any]:
         """Oturumdaki eski RAG belgelerini özetleyip düşük değerli embedding'leri temizler."""
-        normalized_session = str(session_id or "").strip() or "global"
-        docs = [
-            (doc_id, dict(meta))
-            for doc_id, meta in self._index.items()
-            if meta.get("session_id", "global") == normalized_session
-        ]
+        normalized_session = _normalize_session_id_impl(session_id)
+        docs = _documents_for_session_impl(self._index, normalized_session)
         keep_count = max(1, int(keep_recent_docs or 1))
         if len(docs) <= keep_count:
             return {
@@ -1725,22 +1739,7 @@ class DocumentStore:
                 "summary_doc_id": "",
             }
 
-        sorted_docs = sorted(
-            docs,
-            key=lambda item: (
-                float(item[1].get("last_accessed_at", item[1].get("created_at", 0.0)) or 0.0),
-                int(item[1].get("access_count", 0) or 0),
-            ),
-            reverse=True,
-        )
-        removable: builtins.list[tuple[str, dict[str, Any]]] = []
-        for doc_id, meta in sorted_docs[keep_count:]:
-            tags = {str(tag).strip().lower() for tag in list(meta.get("tags", []) or [])}
-            if "pinned" in tags or "memory-summary" in tags:
-                continue
-            if int(meta.get("access_count", 0) or 0) > 1:
-                continue
-            removable.append((doc_id, meta))
+        removable = _select_removable_session_documents_impl(docs, keep_recent_docs=keep_count)
 
         if not removable:
             return {
@@ -1750,19 +1749,10 @@ class DocumentStore:
                 "summary_doc_id": "",
             }
 
-        for doc_id, meta in list(docs):
-            if str(meta.get("source", "") or "").startswith("memory://nightly-digest"):
-                self.delete_document(doc_id, normalized_session)
+        for doc_id in _nightly_digest_document_ids_impl(docs):
+            self.delete_document(doc_id, normalized_session)
 
-        summary_lines = [
-            f"Oturum: {normalized_session}",
-            f"Konsolide edilen belge sayısı: {len(removable)}",
-            "Öne çıkan eski belge özetleri:",
-        ]
-        for doc_id, meta in removable[:8]:
-            summary_lines.append(
-                f"- [{doc_id}] {meta.get('title', doc_id)} :: {str(meta.get('preview', '') or '')[:160]}"
-            )
+        summary_lines = _build_session_summary_lines_impl(normalized_session, removable)
         summary_doc_id = self._add_document_sync(
             title=f"Nightly Memory Digest ({normalized_session})",
             content="\n".join(summary_lines),
@@ -1789,23 +1779,11 @@ class DocumentStore:
             for k, v in self._index.items()
             if session_id is None or v.get("session_id", "global") == session_id
         }
-        if not docs:
-            return "Belge deposu boş veya bu oturum için belge bulunamadı."
-
-        backend_note = ""
-        if getattr(self, "_vector_backend", "bm25") == "pgvector" and not getattr(
-            self, "_pgvector_available", False
-        ):
-            backend_note = " (pgvector pasif)"
-        lines = [f"[Belge Deposu — {len(docs)} belge]{backend_note}", ""]
-        for doc_id, meta in docs.items():
-            tags = ", ".join(meta.get("tags", [])) or "-"
-            size_kb = meta.get("size", 0) / 1024
-            lines.append(f"  [{doc_id}] {meta['title']}")
-            lines.append(
-                f"    Kaynak: {meta.get('source', '-')} | Boyut: {size_kb:.1f} KB | Etiketler: {tags}"
-            )
-        return "\n".join(lines)
+        return _format_document_listing_impl(
+            docs,
+            vector_backend=getattr(self, "_vector_backend", "bm25"),
+            pgvector_available=getattr(self, "_pgvector_available", False),
+        )
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR

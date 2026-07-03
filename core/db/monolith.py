@@ -93,6 +93,15 @@ from core.db.diagnostics import (
 from core.db.diagnostics import (
     postgres_user_action_message as _postgres_user_action_message_impl,
 )
+from core.db.dialect import (
+    ASYNCPG_COMMAND_TAG_COUNT_RE as _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE,
+)
+from core.db.dialect import (
+    parse_asyncpg_affected_rows as _parse_asyncpg_affected_rows_impl,
+)
+from core.db.dialect import (
+    quote_sql_identifier as _quote_sql_identifier_impl,
+)
 from core.db.helpers import (
     json_dumps as _json_dumps,
 )
@@ -124,15 +133,6 @@ from core.db.session import (
 )
 from core.db.session import (
     SessionRecord as SessionRecord,
-)
-from core.db_components.dialect import (
-    ASYNCPG_COMMAND_TAG_COUNT_RE as _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE,
-)
-from core.db_components.dialect import (
-    parse_asyncpg_affected_rows as _parse_asyncpg_affected_rows_impl,
-)
-from core.db_components.dialect import (
-    quote_sql_identifier as _quote_sql_identifier_impl,
 )
 from core.db_components.migrations import run_alembic_upgrade_head
 from sidar_assets.paths import alembic_ini_path, migrations_path
@@ -177,7 +177,7 @@ def _quote_sql_identifier(identifier: str) -> str:
 
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
     """Backwards-compatible facade for the extracted asyncpg tag parser."""
-    return _parse_asyncpg_affected_rows_impl(command_tag, pattern=_ASYNCPG_COMMAND_TAG_COUNT_RE)
+    return _parse_asyncpg_affected_rows_impl(command_tag)
 
 
 
