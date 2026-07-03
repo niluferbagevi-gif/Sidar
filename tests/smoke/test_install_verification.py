@@ -22,8 +22,6 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     (script_dir / "assets" / "dark_mode.css").write_text(
         source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    (script_dir / "web_ui").mkdir(parents=True)
-    (script_dir / "web_ui" / "style.css").write_text("/* light-mode */\n", encoding="utf-8")
 
     repo_phase_script = textwrap.dedent(
         """
@@ -48,9 +46,11 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
         check=True,
     )
 
-    style_css = script_dir / "web_ui" / "style.css"
-    assert style_css.exists()
-    assert "background-color" in style_css.read_text(encoding="utf-8")
+    coverage_css = script_dir / "htmlcov" / "assets" / "dark_mode.css"
+    artifact_coverage_css = script_dir / "artifacts" / "htmlcov" / "assets" / "dark_mode.css"
+    assert coverage_css.exists()
+    assert artifact_coverage_css.exists()
+    assert "background-color" in coverage_css.read_text(encoding="utf-8")
 
 
 def test_python_version() -> None:

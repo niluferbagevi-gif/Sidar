@@ -101,7 +101,7 @@ export function PromptAdminPanel() {
         </div>
       </div>
 
-      {error && <div className="banner banner--error">{error}</div>}
+      {error && <div className="banner banner--error" role="alert">{error}</div>}
       {feedback && <div className="banner banner--success">{feedback}</div>}
 
       <div className="grid-2">

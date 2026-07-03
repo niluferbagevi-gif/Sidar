@@ -73,7 +73,7 @@ export function AgentManagerPanel() {
         </div>
       </div>
 
-      {error && <div className="banner banner--error">{error}</div>}
+      {error && <div className="banner banner--error" role="alert">{error}</div>}
       {result && (
         <div className="banner banner--success">
           <strong>{result.role_name}</strong> ajanı yüklendi. Sürüm: {result.version}

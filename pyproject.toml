@@ -455,7 +455,6 @@ omit = [
   ".env",
   "setup.py",
   "web_ui_react/*",
-  "web_ui/*",
   "tests/*",
 ]
 
@@ -531,7 +530,6 @@ sidar_assets = [
 ]
 
 [tool.setuptools.data-files]
-"share/sidar/web_ui" = ["web_ui/*.html", "web_ui/*.css", "web_ui/*.js"]
 "share/sidar/launcher_gui" = ["launcher_gui/*.html", "launcher_gui/*.css", "launcher_gui/*.js"]
 "share/sidar/helm" = [
   "helm/sidar/Chart.yaml",
@@ -663,7 +661,6 @@ exclude = [
   "^temp/",
   "^migrations/",
   "^build/",
-  "^web_ui/",
   "^web_ui_react/",
   "^launcher_gui/",
   "^\\.venv/",

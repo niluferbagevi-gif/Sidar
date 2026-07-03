@@ -114,7 +114,7 @@ export default function App() {
       <main className="app__main">
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<ChatPanel />} />
+          <Route path="/chat" element={withPanelErrorBoundary(<ChatPanel />)} />
           <Route path="/p2p" element={withLazyPanel(<P2PDialoguePanel />)} />
           <Route path="/swarm" element={withLazyPanel(<SwarmFlowPanel />)} />
           <Route path="/ops-qa" element={withLazyPanel(<OperationsQaPanel />)} />

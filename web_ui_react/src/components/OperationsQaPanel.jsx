@@ -102,7 +102,7 @@ export function OperationsQaPanel() {
         </div>
       </div>
 
-      {error && <div className="banner banner--error">{error}</div>}
+      {error && <div className="banner banner--error" role="alert">{error}</div>}
       {status && <div className="banner banner--success">{status}</div>}
 
       <div className="grid-2 grid-2--wide">

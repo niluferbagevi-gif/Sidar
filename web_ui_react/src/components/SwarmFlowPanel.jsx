@@ -743,7 +743,7 @@ export function SwarmFlowPanel() {
         </div>
       </div>
 
-      {error && <div className="banner banner--error">{error}</div>}
+      {error && <div className="banner banner--error" role="alert">{error}</div>}
 
       <div className="grid-2 grid-2--wide">
         <TaskEditor

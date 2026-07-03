@@ -2,7 +2,6 @@
 
 sidar_phase_apply_coverage_dark_mode_assets() {
     local source_css="$SCRIPT_DIR/assets/dark_mode.css"
-    local web_ui_css="$SCRIPT_DIR/web_ui/style.css"
     local -a coverage_asset_dirs=(
         "$SCRIPT_DIR/htmlcov/assets"
         "$SCRIPT_DIR/artifacts/htmlcov/assets"
@@ -17,13 +16,6 @@ sidar_phase_apply_coverage_dark_mode_assets() {
     if [[ ! -f "$source_css" ]]; then
         warn "Coverage dark-mode CSS bulunamadı: $source_css"
         return 0
-    fi
-
-    if [[ -f "$web_ui_css" ]]; then
-        cp -f "$source_css" "$web_ui_css"
-        info "Dark-mode CSS web_ui/style.css üzerine port edildi."
-    else
-        warn "web_ui/style.css bulunamadı, frontend dark-mode port adımı atlandı."
     fi
 
     for assets_dir in "${coverage_asset_dirs[@]}"; do
