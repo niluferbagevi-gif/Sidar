@@ -67,6 +67,7 @@ def _build_auth_exports(db: Any) -> dict[str, Any]:
         issue_auth_token=_issue_auth_token,
         serialize_prompt=lambda _prompt: {},
         serialize_policy=lambda _policy: {},
+        serialize_audit_log=lambda _audit_log: {},
         register_request_model=_RegisterRequest,
         login_request_model=_LoginRequest,
         prompt_upsert_request_model=_PromptRequest,
@@ -114,6 +115,21 @@ async def test_register_user_maps_database_exception_to_conflict() -> None:
         await register_user({"username": "alice", "password": "secret1"})
 
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_user_rejects_reserved_default_admin_without_db_call() -> None:
+    def _register_user(**_kwargs: Any) -> Any:
+        raise AssertionError("reserved usernames must be rejected before database registration")
+
+    register_user = _build_auth_exports(SimpleNamespace(register_user=_register_user))[
+        "register_user"
+    ]
+
+    with pytest.raises(HTTPException, match="rezerve") as exc:
+        await register_user({"username": "  DEFAULT_ADMIN  ", "password": "secret1"})
+
+    assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio

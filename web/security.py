@@ -115,12 +115,26 @@ def get_request_user(request: Request) -> Any:
     return user
 
 
+RESERVED_USERNAMES = frozenset({"default_admin"})
+
+
+def normalize_username(value: Any) -> str:
+    """Return a canonical username for security-sensitive comparisons."""
+
+    return str(value or "").strip().lower()
+
+
+def is_reserved_username(username: Any) -> bool:
+    """Return whether a username is reserved for Sidar internals/bootstrap flows."""
+
+    return normalize_username(username) in RESERVED_USERNAMES
+
+
 def is_admin_user(user: Any) -> bool:
     """Return whether the request user has Sidar admin privileges."""
 
     role = str(getattr(user, "role", "") or "").strip().lower()
-    username = str(getattr(user, "username", "") or "").strip()
-    return role == "admin" or username == "default_admin"
+    return role == "admin"
 
 
 def require_admin_user(user: Any = Depends(get_request_user)) -> Any:

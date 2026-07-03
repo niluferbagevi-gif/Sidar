@@ -155,7 +155,7 @@ def test_room_id_normalization_and_validation():
 
 def test_require_admin_and_metrics_access_paths(monkeypatch):
     user = SimpleNamespace(id="u1", username="normal", role="user")
-    admin = SimpleNamespace(id="a1", username="default_admin", role="user")
+    admin = SimpleNamespace(id="a1", username="root", role="admin")
 
     with pytest.raises(HTTPException):
         web_server._require_admin_user(user)
@@ -1641,7 +1641,7 @@ def test_request_user_admin_and_metrics_guards():
     req.state.user = SimpleNamespace(id="u1", username="ada", role="admin")
     assert web_server._get_request_user(req).id == "u1"
     assert web_server._is_admin_user(SimpleNamespace(role="admin", username="x")) is True
-    assert web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is True
+    assert web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is False
     assert web_server._is_admin_user(SimpleNamespace(role="user", username="ada")) is False
 
     user = SimpleNamespace(role="user", username="ada")

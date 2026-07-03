@@ -8,6 +8,7 @@ from fastapi import Body, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
+from web.security import is_reserved_username
 
 
 def _parse_payload(model: type[Any], payload: Any) -> Any:
@@ -65,6 +66,8 @@ def build_auth_admin_router(
         tenant_id = data.tenant_id.strip() or "default"
         if len(username) < 3 or len(password) < 6:
             raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
+        if is_reserved_username(username):
+            raise HTTPException(status_code=400, detail="Bu kullanıcı adı rezerve edilmiştir")
 
         agent = await resolve_agent_instance()
         try:
