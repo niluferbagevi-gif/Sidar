@@ -50,9 +50,7 @@ def _describe_entry_drift(label: str, actual_payload: str, expected_payload: str
         expected_hash = expected_entries.get(rel, "<eksik>")
         actual_hash = actual_entries.get(rel, "<eksik>")
         if actual_hash != expected_hash:
-            details.append(
-                f"- {label}: {rel} beklenen={expected_hash} mevcut={actual_hash}"
-            )
+            details.append(f"- {label}: {rel} beklenen={expected_hash} mevcut={actual_hash}")
     return details
 
 

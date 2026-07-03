@@ -120,7 +120,7 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
     assert "uv run mypy --strict core/ agent/ web/ managers/" in script
     assert "uv run bandit -r . -c pyproject.toml" in script
     assert 'MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"' in script
-    assert 'minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}' in script
+    assert "minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}" in script
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
 
 
@@ -150,7 +150,7 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
 def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
     script = _script()
 
-    assert 'RUN_ALEMBIC_DOWNGRADE_CHECK:-1' in script
+    assert "RUN_ALEMBIC_DOWNGRADE_CHECK:-1" in script
     assert "uv run alembic downgrade base" in script
     assert "uv run alembic upgrade head" in script
     assert "downgrade/upgrade zinciri doğrulanıyor" in script
@@ -165,6 +165,7 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
     assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
     assert "Aşama 1 unit fazı artık pytest-xdist mevcutsa" in notes
     assert "Unit ağırlığı" in notes
+
 
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
     script = _script()
@@ -734,13 +735,13 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
     ) < testing_doc.index("uv sync --frozen --all-extras", testing_prereq_start)
 
 
-
 def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config() -> None:
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
     assert "ignore::pydantic.warnings.PydanticDeprecatedSince20" not in pyproject
     assert "ignore::DeprecationWarning:pydantic.*" in pyproject
     assert "pytest should reach tests/conftest.py" in pyproject
+
 
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
@@ -758,7 +759,10 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "MISSING_PACKAGES=()" in installer
     assert "CHECK_ONLY=false" in installer
     assert 'if [[ "${1:-}" == "--check" ]]; then' in installer
-    assert "Supported package manager not found (apt-get, dnf, zypper, pacman, or brew required)." in installer
+    assert (
+        "Supported package manager not found (apt-get, dnf, zypper, pacman, or brew required)."
+        in installer
+    )
     assert "PACKAGES=(portaudio-devel ShellCheck bats)" in installer
     assert "PACKAGES=(portaudio shellcheck bats)" in installer
     assert "PACKAGES=(portaudio shellcheck bats-core)" in installer
@@ -775,7 +779,6 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
         '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
         in installer
     )
-
 
 
 def test_ci_system_dependency_installer_check_mode_reports_apt_missing(tmp_path: Path) -> None:
@@ -1115,9 +1118,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
         encoding="utf-8"
     )
-    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
-        encoding="utf-8"
-    )
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(encoding="utf-8")
     remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
         encoding="utf-8"
     )
@@ -1128,9 +1129,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(
         encoding="utf-8"
     )
-    db_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
-        encoding="utf-8"
-    )
+    db_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(encoding="utf-8")
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
     env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
     ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(
@@ -1170,7 +1169,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         "sync_database_passwords_before_smoke_tests"
     ) < services_phase.index("run_smoke_tests")
     assert "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor" in services_phase
-    assert "for module in (\"pytest\", \"pydantic\", \"pydantic_settings\")" in services_phase
+    assert 'for module in ("pytest", "pydantic", "pydantic_settings")' in services_phase
     assert "uv sync --frozen --extra dev-light" in services_phase
     assert "Manuel doğrulama: uv sync --frozen --extra dev-light" in services_phase
     assert services_phase.index(
@@ -1266,7 +1265,7 @@ def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade()
     assert "maybe_upgrade_npm_latest()" in react_phase
     assert "SIDAR_UPGRADE_NPM_LATEST" in react_phase
     assert "UPGRADE_NPM_LATEST" in react_phase
-    assert 'install -g npm@latest --no-audit --no-fund' in react_phase
+    assert "install -g npm@latest --no-audit --no-fund" in react_phase
     assert "npm_config_update_notifier=false" in react_phase
     assert "NPM_CONFIG_UPDATE_NOTIFIER=false" in react_phase
     assert react_phase.index("maybe_upgrade_npm_latest") < react_phase.index("npm ci")
@@ -1780,14 +1779,12 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
     assert "tekrar menü göstermeden" in launch_body
 
 
-
 def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operator_env(
     tmp_path: Path,
 ) -> None:
     checksum_file = tmp_path / "remote_checksums.env"
     checksum_file.write_text(
-        ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n'
-        ': "${UV_INSTALL_SHA256:=file-uv}"\n',
+        ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n' ': "${UV_INSTALL_SHA256:=file-uv}"\n',
         encoding="utf-8",
     )
 
@@ -1816,6 +1813,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
     assert "ollama=operator-ollama" in result.stdout
     assert "uv=file-uv" in result.stdout
     assert "remote_checksums.env" in result.stderr
+
 
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
@@ -2101,13 +2099,11 @@ def test_run_tests_warns_and_skips_when_bats_is_missing() -> None:
     assert "⚠️ bats yok — shell testleri atlandı" in bats_block
     assert "bash scripts/install_ci_system_deps.sh" in bats_block
     missing_bats_start = bats_block.index(
-        'if ! command -v bats >/dev/null 2>&1; then',
-        bats_block.index('try_auto_install_ci_system_deps || true'),
+        "if ! command -v bats >/dev/null 2>&1; then",
+        bats_block.index("try_auto_install_ci_system_deps || true"),
     )
     missing_bats_block = bats_block[
-        missing_bats_start : bats_block.index(
-            'echo "🐚 BATS shell testleri çalıştırılıyor..."'
-        )
+        missing_bats_start : bats_block.index('echo "🐚 BATS shell testleri çalıştırılıyor..."')
     ]
     assert 'record_backend_failure "bats_missing"' not in missing_bats_block
     assert "BACKEND_EXIT_CODE=1" not in missing_bats_block
@@ -2525,7 +2521,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "ws: true" in vite
     assert "changeOrigin: true" in vite
     assert "proxyReqWs" in vite
-    assert 'sec-websocket-protocol' in vite
+    assert "sec-websocket-protocol" in vite
     assert "localhost:7860" not in vite
     assert "optimizeDeps:" in vite
     assert '"index.html"' in vite
@@ -2772,13 +2768,15 @@ def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_b
 ) -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     package_dir = tmp_path / "playwright"
-    host_platform = package_dir / "driver" / "package" / "lib" / "server" / "utils" / "hostPlatform.js"
+    host_platform = (
+        package_dir / "driver" / "package" / "lib" / "server" / "utils" / "hostPlatform.js"
+    )
     mock_python = tmp_path / "mock-python.sh"
     os_release = tmp_path / "os-release"
     host_platform.parent.mkdir(parents=True)
     (package_dir / "__init__.py").write_text("# fake playwright\n", encoding="utf-8")
     host_platform.write_text(
-        "module.exports = { known: [\"ubuntu22.04-x64\", \"ubuntu24.04-x64\", \"ubuntu26.04-x64\"] };",
+        'module.exports = { known: ["ubuntu22.04-x64", "ubuntu24.04-x64", "ubuntu26.04-x64"] };',
         encoding="utf-8",
     )
     mock_python.write_text(
@@ -2819,7 +2817,7 @@ def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override()
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; tmp="$(mktemp)"; printf "ID=ubuntu\nVERSION_ID=\"32.04\"\n" > "$tmp"; ! is_playwright_ubuntu_override_recommended "$tmp"',
+            'set -Eeuo pipefail; source "$1"; tmp="$(mktemp)"; printf "ID=ubuntu\nVERSION_ID="32.04"\n" > "$tmp"; ! is_playwright_ubuntu_override_recommended "$tmp"',
             "bash",
             str(helper),
         ],

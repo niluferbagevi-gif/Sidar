@@ -65,7 +65,9 @@ def main() -> None:
         raise SystemExit(2) from exc
     args.host = validated_host
     display_host = "localhost" if is_unspecified_bind(validated_host) else validated_host
-    agent_version = getattr(web_server._agent, "VERSION", "") if web_server._agent is not None else ""
+    agent_version = (
+        getattr(web_server._agent, "VERSION", "") if web_server._agent is not None else ""
+    )
     version_label = f"v{agent_version}" if agent_version else f"v{getattr(cfg, 'VERSION', '?')}"
 
     print()

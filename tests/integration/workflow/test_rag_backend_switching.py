@@ -27,7 +27,9 @@ async def test_rag_auto_search_switches_pgvector_chroma_bm25_consistently(tmp_pa
         DATABASE_URL="postgresql://user:pass@localhost/db",
     )
     store = DocumentStore(tmp_path / "rag_switch", cfg=cfg, initialize_vector=False)
-    store._add_document_sync("Switch Doc", "alpha beta gamma", source="test://switch", session_id="s1")
+    store._add_document_sync(
+        "Switch Doc", "alpha beta gamma", source="test://switch", session_id="s1"
+    )
 
     store._vector_backend = "pgvector"
     store._pgvector_available = True
@@ -73,7 +75,9 @@ async def test_rag_auto_search_falls_through_failed_vectors_to_bm25(tmp_path) ->
         DATABASE_URL="postgresql://user:pass@localhost/db",
     )
     store = DocumentStore(tmp_path / "rag_failover", cfg=cfg, initialize_vector=False)
-    store._add_document_sync("Fallback Doc", "delta epsilon", source="test://fallback", session_id="s1")
+    store._add_document_sync(
+        "Fallback Doc", "delta epsilon", source="test://fallback", session_id="s1"
+    )
     store._pgvector_available = True
     store._chroma_available = True
     store.collection = object()

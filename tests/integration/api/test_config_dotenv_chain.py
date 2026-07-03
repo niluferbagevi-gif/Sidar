@@ -84,7 +84,9 @@ print(json.dumps({
 
 
 @pytest.mark.integration
-def test_reload_dotenv_chain_applies_full_five_layer_precedence(monkeypatch, tmp_path: Path) -> None:
+def test_reload_dotenv_chain_applies_full_five_layer_precedence(
+    monkeypatch, tmp_path: Path
+) -> None:
     """Exercise base -> advanced -> environment -> explicit -> secret dotenv precedence."""
 
     import config

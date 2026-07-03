@@ -1675,9 +1675,9 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
 ConfigReloadCallback = Callable[["Config"], None]
 
 
-def _restore_reload_registry_from_previous_module() -> tuple[
-    list["ConfigReloadCallback"], "Config | None"
-]:
+def _restore_reload_registry_from_previous_module() -> (
+    tuple[list["ConfigReloadCallback"], "Config | None"]
+):
     """`importlib.reload(config)` çağrısı sonrası callback registry'sini koru.
 
     Modül yeniden çalıştırıldığında modül globalleri sıfırlanır; bu durum

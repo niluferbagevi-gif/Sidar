@@ -360,7 +360,10 @@ async def test_run_task_general_prompt_returns_plain_llm_response(coder_module):
 
     agent.call_llm = fake_call_llm
 
-    assert await agent.run_task("bir özellik implement et") == "Kod değişikliği için önce dosya yolu gerekli."
+    assert (
+        await agent.run_task("bir özellik implement et")
+        == "Kod değişikliği için önce dosya yolu gerekli."
+    )
 
 
 @pytest.mark.asyncio

@@ -169,9 +169,7 @@ def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
-    monkeypatch.setattr(
-        gu, "sync_install_manifests_before_commit", lambda: (False, "sync failed")
-    )
+    monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (False, "sync failed"))
 
     MainHarness(
         monkeypatch,

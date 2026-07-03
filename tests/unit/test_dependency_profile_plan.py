@@ -16,8 +16,12 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     assert plan["status"] == "phase-1-dev-split"
     profile_names = {item["name"] for item in plan["profiles"]}
     assert {"runtime", "dev", "all", "production"} <= profile_names
-    assert "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
-    assert pyproject["project"]["optional-dependencies"]["production-minimal"] == ["sidar[postgres]"]
+    assert (
+        "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
+    )
+    assert pyproject["project"]["optional-dependencies"]["production-minimal"] == [
+        "sidar[postgres]"
+    ]
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
@@ -127,9 +131,7 @@ def test_ci_has_non_blocking_production_profile_dry_run() -> None:
 
 def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"][
-        "torch_upgrade_reminder"
-    ]
+    reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
     calendar = Path(reminder["calendar_file"])
     calendar_text = calendar.read_text(encoding="utf-8")
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")

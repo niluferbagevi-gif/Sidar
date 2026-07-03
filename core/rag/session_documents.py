@@ -79,7 +79,10 @@ def build_session_summary_lines(
 
 
 def format_document_listing(
-    docs: dict[str, dict[str, Any]], *, vector_backend: str = "bm25", pgvector_available: bool = True
+    docs: dict[str, dict[str, Any]],
+    *,
+    vector_backend: str = "bm25",
+    pgvector_available: bool = True,
 ) -> str:
     """Format RAG document metadata using the legacy user-facing text shape."""
     if not docs:

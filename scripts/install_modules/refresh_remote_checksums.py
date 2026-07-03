@@ -68,8 +68,12 @@ def build_pull_request_body(pins: dict[str, str]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--file", type=Path, default=Path("scripts/install_modules/remote_checksums.env"))
-    parser.add_argument("--check", action="store_true", help="verify that all managed pins are non-empty")
+    parser.add_argument(
+        "--file", type=Path, default=Path("scripts/install_modules/remote_checksums.env")
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="verify that all managed pins are non-empty"
+    )
     parser.add_argument("--pr-body", type=Path, help="write a suggested pull request body")
     args = parser.parse_args()
 
@@ -77,7 +81,9 @@ def main() -> int:
     pins: dict[str, str] = {}
     for pin in REMOTE_SCRIPT_PINS:
         if args.check:
-            match = re.search(rf'^: "\$\{{{re.escape(pin.env_var)}:=([0-9a-f]{{64}})\}}"$', content, re.MULTILINE)
+            match = re.search(
+                rf'^: "\$\{{{re.escape(pin.env_var)}:=([0-9a-f]{{64}})\}}"$', content, re.MULTILINE
+            )
             if not match:
                 print(f"{pin.env_var} is not pinned with a 64-character SHA-256", file=sys.stderr)
                 return 1

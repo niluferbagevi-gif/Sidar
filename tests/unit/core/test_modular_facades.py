@@ -126,7 +126,9 @@ def test_rag_session_document_helpers_select_and_format_documents() -> None:
 
     docs = documents_for_session(index, "s1")
     assert [doc_id for doc_id, _meta in docs] == ["recent", "old", "pinned", "digest"]
-    assert [doc_id for doc_id, _meta in select_removable_session_documents(docs, keep_recent_docs=1)] == [
+    assert [
+        doc_id for doc_id, _meta in select_removable_session_documents(docs, keep_recent_docs=1)
+    ] == [
         "old",
         "digest",
     ]
@@ -152,9 +154,7 @@ def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
             {
                 "score": 2,
                 "node": {"id": "entity:auth", "label": "Feature", "name": "Auth"},
-                "relations": [
-                    {"source": "entity:auth", "target": "entity:db", "relation": "USES"}
-                ],
+                "relations": [{"source": "entity:auth", "target": "entity:db", "relation": "USES"}],
             }
         ],
         graph_nodes={"entity:auth": {"name": "Auth"}, "entity:db": {"name": "DB"}},
@@ -225,9 +225,13 @@ def test_rag_projection_helper_builds_document_entity_and_code_nodes() -> None:
 
     node_ids = {node.id for node in payload["nodes"]}
     edge_relations = {edge.relation for edge in payload["edges"]}
-    assert {"doc:doc1", "session:s1", "source:file://doc1", "entity:feature", "code:core/db.py"}.issubset(
-        node_ids
-    )
+    assert {
+        "doc:doc1",
+        "session:s1",
+        "source:file://doc1",
+        "entity:feature",
+        "code:core/db.py",
+    }.issubset(node_ids)
     assert "doc:doc2" not in node_ids
     assert {"CONTAINS_DOCUMENT", "DERIVED_FROM", "TARGETS", "IMPORTS"}.issubset(edge_relations)
     assert payload["vector_backend"] == "pgvector"

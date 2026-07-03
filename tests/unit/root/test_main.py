@@ -1599,7 +1599,9 @@ def test_request_user_admin_and_metrics_guards():
     req.state.user = SimpleNamespace(id="u1", username="ada", role="admin")
     assert web_server._get_request_user(req).id == "u1"
     assert web_server._is_admin_user(SimpleNamespace(role="admin", username="x")) is True
-    assert web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is False
+    assert (
+        web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is False
+    )
     assert web_server._is_admin_user(SimpleNamespace(role="user", username="ada")) is False
 
     user = SimpleNamespace(role="user", username="ada")

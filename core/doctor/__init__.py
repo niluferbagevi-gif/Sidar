@@ -84,9 +84,7 @@ def validate_doctor_check_contract(check: DoctorCheckContract) -> DoctorCheckCon
     if not isinstance(getattr(check, "name", None), str) or not check.name.strip():
         raise TypeError("Doctor check contract violation: non-empty string name is required")
     if getattr(check, "status", None) not in _STATUS_VALUES:
-        raise ValueError(
-            "Doctor check contract violation: status must be one of pass, warn, fail"
-        )
+        raise ValueError("Doctor check contract violation: status must be one of pass, warn, fail")
     if not isinstance(getattr(check, "message", None), str):
         raise TypeError("Doctor check contract violation: string message is required")
     if not isinstance(getattr(check, "details", None), dict):
@@ -113,7 +111,10 @@ def validate_auto_fix_command(auto_fix: str) -> list[str]:
             if not _AUTO_FIX_ARG_RE.fullmatch(arg):
                 raise ValueError(f"Doctor auto_fix argument is not safe: {arg}")
         return tokens
-    if tokens[:2] == ["docker", "compose"] and tuple(tokens[2:]) in _ALLOWED_DOCKER_COMPOSE_AUTO_FIXES:
+    if (
+        tokens[:2] == ["docker", "compose"]
+        and tuple(tokens[2:]) in _ALLOWED_DOCKER_COMPOSE_AUTO_FIXES
+    ):
         return tokens
     raise ValueError("Doctor auto_fix command is not allowlisted for sandboxed execution")
 

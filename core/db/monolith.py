@@ -153,15 +153,15 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
     original_doctor = _postgres_failure_diagnosis_impl.__globals__.get(
         "_doctor_database_env_failure_reason"
     )
-    _postgres_failure_diagnosis_impl.__globals__[
-        "_doctor_database_env_failure_reason"
-    ] = _doctor_database_env_failure_reason
+    _postgres_failure_diagnosis_impl.__globals__["_doctor_database_env_failure_reason"] = (
+        _doctor_database_env_failure_reason
+    )
     try:
         return _postgres_failure_diagnosis_impl(reason, exc)
     finally:
-        _postgres_failure_diagnosis_impl.__globals__[
-            "_doctor_database_env_failure_reason"
-        ] = original_doctor
+        _postgres_failure_diagnosis_impl.__globals__["_doctor_database_env_failure_reason"] = (
+            original_doctor
+        )
 
 
 def _postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:
@@ -174,6 +174,7 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
             "SQLite degraded mode aktif edildi."
         )
     return _postgres_user_action_message_impl(reason, exc)
+
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
@@ -188,7 +189,6 @@ def _quote_sql_identifier(identifier: str) -> str:
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
     """Backwards-compatible facade for the extracted asyncpg tag parser."""
     return _parse_asyncpg_affected_rows_impl(command_tag)
-
 
 
 class Database:

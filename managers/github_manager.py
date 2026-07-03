@@ -580,15 +580,26 @@ class GitHubManager:
             merged = bool(getattr(result, "merged", True))
             message = str(getattr(result, "message", "") or "").strip()
             if not merged:
-                return False, f"PR #{number} merge edilemedi: {message or 'GitHub merge kabul etmedi.'}"
-            return True, f"✓ PR #{number} merge edildi ({safe_method}): {message or getattr(pr, 'html_url', '')}"
+                return (
+                    False,
+                    f"PR #{number} merge edilemedi: {message or 'GitHub merge kabul etmedi.'}",
+                )
+            return (
+                True,
+                f"✓ PR #{number} merge edildi ({safe_method}): {message or getattr(pr, 'html_url', '')}",
+            )
         except Exception as exc:
             status = getattr(exc, "status", None)
             text = str(exc)
             lowered = text.lower()
             if status in {403, 405} or any(
                 token in lowered
-                for token in ("protected branch", "branch protection", "required status", "required checks")
+                for token in (
+                    "protected branch",
+                    "branch protection",
+                    "required status",
+                    "required checks",
+                )
             ):
                 return False, f"PR #{number} branch protection nedeniyle merge edilemedi: {text}"
             return False, f"PR merge hatası: {exc}"

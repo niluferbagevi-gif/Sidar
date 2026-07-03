@@ -208,7 +208,9 @@ def build_knowledge_graph_projection_payload(
         max_items=max_items,
     )
     if include_code_graph and graph_rag_enabled and graph_index is not None:
-        append_code_graph_projection(nodes=nodes, edges=edges, graph_index=graph_index, max_items=max_items)
+        append_code_graph_projection(
+            nodes=nodes, edges=edges, graph_index=graph_index, max_items=max_items
+        )
 
     return {
         "nodes": dedupe_projection_nodes(nodes),

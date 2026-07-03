@@ -49,7 +49,9 @@ def build_memory_feedback_router(
 
     def require_owner(user_id: str, user: Any) -> None:
         if str(getattr(user, "id", "") or "") != str(user_id):
-            raise HTTPException(status_code=403, detail="Bu kullanıcı belleğine erişim yetkiniz yok")
+            raise HTTPException(
+                status_code=403, detail="Bu kullanıcı belleğine erişim yetkiniz yok"
+            )
 
     async def get_feedback_store() -> Any:
         if feedback_store_cache.get("instance") is None:

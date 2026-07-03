@@ -72,7 +72,9 @@ def format_graph_impact_analysis(analysis: dict[str, Any]) -> str:
     if impacted_endpoints:
         lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
     if impacted_endpoint_handlers:
-        lines.append(f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}")
+        lines.append(
+            f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}"
+        )
     if caller_files:
         lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
     if review_targets:

@@ -48,7 +48,9 @@ async def test_self_heal_patch_apply_then_rollback_with_real_file_io(tmp_path) -
     target_path = str(target)
     plan = {
         "summary": "Update value",
-        "operations": [{"path": target_path, "target": "VALUE = 'old'", "replacement": "VALUE = 'new'"}],
+        "operations": [
+            {"path": target_path, "target": "VALUE = 'old'", "replacement": "VALUE = 'new'"}
+        ],
         "validation_commands": ["uv run pytest tests/unit/agent -q"],
     }
     remediation_loop = {"scope_paths": [target_path]}

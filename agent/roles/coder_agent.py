@@ -169,8 +169,8 @@ class CoderAgent(BaseAgent):
             "Kullanabileceğin araçlar: "
             f"{tool_names}. "
             "Yanıtını JSON olarak ver. Araç gerekiyorsa "
-            "{\"tool_calls\":[{\"name\":\"read_file\",\"arg\":\"path\"}],\"final\":\"\"}; "
-            "iş bittiyse {\"final\":\"özet ve yapılanlar\"}. "
+            '{"tool_calls":[{"name":"read_file","arg":"path"}],"final":""}; '
+            'iş bittiyse {"final":"özet ve yapılanlar"}. '
             "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra patch_file/write_file kullan."
         )
 
@@ -196,10 +196,7 @@ class CoderAgent(BaseAgent):
         messages: list[dict[str, str]] = [
             {
                 "role": "user",
-                "content": (
-                    f"{self._format_tool_contract()}\n\n"
-                    f"Görev: {prompt}"
-                ),
+                "content": (f"{self._format_tool_contract()}\n\n" f"Görev: {prompt}"),
             }
         ]
         last_final = ""
