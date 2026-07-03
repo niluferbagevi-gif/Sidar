@@ -195,27 +195,37 @@ if [[ "\$*" == "-m playwright install-deps chromium" ]]; then
   echo "0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded."
 fi
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
     cat > "$tmpdir/bin/dpkg-query" <<EOF
 #!/usr/bin/env bash
 printf "ii "
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # playwright_linux_dependencies_ready() consults the mocked apt (which
+    # reports nothing installed) and falls through to the mocked dpkg-query
+    # (which reports every package as "ii", i.e. installed) so the apt
+    # pre-check short-circuits before install-deps chromium ever runs; only
+    # -c import playwright, the host-support probe, the latest-supported
+    # Ubuntu probe and the override chromium install invoke python.
     [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
     sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
     sed -n "2p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
-    sed -n "3p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
-    sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
+    sed -n "3p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
+    sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"en yakın desteklenen Ubuntu OS override kurulumu doğrudan deneniyor"* ]]
   [[ "$output" == *"Chromium override browser downloaded"* ]]
-  [[ "$output" == *"install-deps ile doğrulandı"* ]]
+  [[ "$output" == *"apt ön taramasında hazır görünüyor"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
   [[ "$output" != *"0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded"* ]]
   [[ "$output" != *"Solving dependencies"* ]]
@@ -241,24 +251,44 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
     cat > "$tmpdir/bin/apt-cache" <<EOF
 #!/usr/bin/env bash
 [[ "\$*" == "show libgtk-3-0t64" ]]
 EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt/dpkg-query report every dependency missing, so the apt pre-check
+    # is not ready; the proactive fixed apt-list attempt (1st sudo call)
+    # deliberately fails so install-deps chromium actually runs, fails, and
+    # the fixed apt dependency list is retried (2nd sudo call) and succeeds.
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
+  [[ "$output" == *"apt ön taraması eksik Chromium bağımlılıkları buldu"* ]]
   [[ "$output" == *"Ubuntu 26.04 için sabit Chromium apt bağımlılık listesi deneniyor"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
@@ -286,17 +316,41 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/apt-cache" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "show libgtk-3-0t64" ]]
+EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt pre-check is forced not-ready, the proactive fixed apt-list attempt
+    # (1st sudo call) deliberately fails so install-deps chromium actually
+    # runs and returns its exit-zero-but-actually-failed BEWARE/Cannot output,
+    # which must still be treated as a failure requiring the fixed apt list
+    # fallback (2nd sudo call, which succeeds).
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
@@ -324,21 +378,41 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
     cat > "$tmpdir/bin/dpkg-query" <<EOF
 #!/usr/bin/env bash
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt-cache" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "show libgtk-3-0t64" ]]
+EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt pre-check is forced not-ready throughout (both before and after
+    # install-deps), the proactive fixed apt-list attempt (1st sudo call)
+    # deliberately fails so install-deps chromium actually runs; it exits 0
+    # silently but the post-install readiness re-check still reports missing
+    # libraries, so the fixed apt list is retried (2nd sudo call) and succeeds.
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
@@ -506,13 +580,25 @@ API_KEY=example_api_key
 ENV
     done
 
+    # PostgreSQL credential rewriting itself is delegated to the idempotent
+    # scripts.sync_database_passwords Python helper (see
+    # tests/unit/scripts/test_sync_database_passwords.py for its coverage),
+    # invoked unconditionally via sync_database_env_chain_after_setup at the
+    # end of propagate_shared_secrets_to_env_variants. Stub that call out
+    # here so this bats test stays hermetic (no real uv/python invocation
+    # against a fake SCRIPT_DIR) while still asserting the delegation always
+    # happens exactly once, alongside the direct bash-level shared secret
+    # (API_KEY etc.) propagation.
+    sync_database_env_chain_after_setup() {
+      echo "called" >> "$tmpdir/db-sync-calls"
+    }
+
     SCRIPT_DIR="$tmpdir"
     propagate_shared_secrets_to_env_variants "$tmpdir/.env"
 
+    [[ "$(wc -l < "$tmpdir/db-sync-calls")" -eq 1 ]]
+
     for variant in .env.development .env.test .env.advanced; do
-      grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
-      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
-      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
       grep -q "^API_KEY=${preserved_api_key}$" "$tmpdir/$variant"
     done
   '
@@ -626,12 +712,17 @@ ENV
   local root
   root="$(repo_root)"
 
-  grep -q "bash run_tests.sh --stage all" "$root/install_sidar.sh"
-  grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
-  grep -q "bash run_tests.sh --stage e2e" "$root/install_sidar.sh"
-  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/install_sidar.sh"
-  grep -q "./install_sidar.sh --ci-full" "$root/install_sidar.sh"
-  grep -q "📊 Kurulum doğrulama kapsamı" "$root/install_sidar.sh"
+  # Kurulum özeti/kapanış rehberliği scripts/install_modules/phases/07_finish.sh
+  # ve tam doğrulama kapsamı özeti scripts/install_modules/phases/10_validation.sh
+  # içine modülerize edildi; install_sidar.sh yalnızca bu fazları yükler.
+  grep -q "bash run_tests.sh --stage all" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "bash run_tests.sh --stage integration" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "bash run_tests.sh --stage e2e" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "./install_sidar.sh --ci-full" "$root/scripts/install_modules/phases/10_validation.sh"
+  grep -q "📊 Kurulum doğrulama kapsamı" "$root/scripts/install_modules/phases/10_validation.sh"
+  grep -q "scripts/install_modules/phases/07_finish.sh" "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/10_validation.sh" "$root/install_sidar.sh"
 }
 
 @test "Playwright browser installer lives in a dedicated phase module" {
@@ -1000,7 +1091,7 @@ EOF
     setup_env_file() { events+=(setup_env_file); }
 
     sidar_phase_workspace_config
-    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
+    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1020,7 +1111,7 @@ EOF
     setup_env_file() { events+=(setup_env_file); }
 
     sidar_phase_workspace_config
-    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
+    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1335,6 +1426,7 @@ EOF
     phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
     run_pre_service_installer_smoke_gate() { events+=(run_pre_service_installer_smoke_gate); }
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
+    ensure_postgres_databases_exist() { events+=(ensure_postgres_databases_exist); }
     run_migrations() { events+=(run_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
@@ -1344,7 +1436,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
