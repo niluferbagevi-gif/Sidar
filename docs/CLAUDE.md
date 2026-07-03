@@ -4,7 +4,7 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 
 ## 📌 Proje Bağlamı (Güncel Durum)
 
-- **Üretim Omurgası:** `v4.3.0` runtime + paket baseline aktif; dokümantasyon anlatısı `v3.2.0` Autonomous LLMOps ve `v4.2.0` operasyonel kapanış notlarını, güncel metrik/sürüm senkronizasyonuyla birlikte taşır.
+- **Üretim Omurgası:** Güncel runtime + paket baseline `sidar_version.py` üzerinden çözülen `v5.2.0` sürümüdür; Docker build arg, Helm chart ve dokümantasyon sürüm sözleşmesi bu tek kaynakla CI smoke kontrolünde senkron tutulur.
 - **Mimari:** Multi-Agent Supervisor + doğrudan P2P handoff destekli Swarm, FastAPI, async DB erişimi, Redis/Prometheus/Grafana observability.
 - **Kalite Durumu:** Açık kritik / yüksek / orta / düşük audit bulgusu yok; Zero-Debt hedefi korunur.
 

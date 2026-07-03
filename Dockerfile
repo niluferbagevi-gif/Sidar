@@ -2,15 +2,17 @@
 
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
-# Sürüm: 5.3.1  (GPU varsayılan, CPU fallback destekli)
+# Sürüm: sidar_version.py / pyproject.toml kaynaklı SIDAR_VERSION build arg
+# CI/build örneği: --build-arg SIDAR_VERSION="$(python -c 'from sidar_version import PRODUCT_VERSION; print(PRODUCT_VERSION)')"
 #
 #  CPU modu (varsayılan):
-#    docker build -t sidar:latest .
+#    docker build --build-arg SIDAR_VERSION="$(python -c 'from sidar_version import PRODUCT_VERSION; print(PRODUCT_VERSION)')" -t sidar:latest .
 #
 #  GPU modu (NVIDIA CUDA 13.0 — RTX 30xx/40xx, Driver ≥595):
 #    docker build \
 #      --build-arg BASE_IMAGE=nvidia/cuda:13.0.0-runtime-ubuntu22.04 \
 #      --build-arg GPU_ENABLED=true \
+#      --build-arg SIDAR_VERSION="$(python -c 'from sidar_version import PRODUCT_VERSION; print(PRODUCT_VERSION)')" \
 #      -t sidar-gpu:latest .
 #
 #  WSL2 + Docker GPU notu:
@@ -25,15 +27,18 @@
 ARG PYTHON_VERSION=3.11
 ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
+ARG SIDAR_VERSION=5.2.0
 
 FROM ${BASE_IMAGE}
 
 # FROM öncesi ARG değerini build katmanlarında da kullanmak için yeniden tanımla.
 ARG PYTHON_VERSION=3.11
+ARG SIDAR_VERSION=5.2.0
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
-LABEL version="5.3.1"
+LABEL version="${SIDAR_VERSION}"
+LABEL org.opencontainers.image.version="${SIDAR_VERSION}"
 LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 
 # Çevresel değişkenler
@@ -48,6 +53,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     VIRTUAL_ENV=/app/.venv \
     PYTHONPATH=/app \
+    SIDAR_VERSION=${SIDAR_VERSION} \
     ACCESS_LEVEL=sandbox \
     USE_GPU=${GPU_ENABLED} \
     MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY} \
