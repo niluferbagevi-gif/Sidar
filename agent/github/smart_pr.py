@@ -16,7 +16,8 @@ class _CodeManagerLike(Protocol):
 
 
 class _GitHubManagerLike(Protocol):
-    default_branch: str
+    @property
+    def default_branch(self) -> str: ...
 
     def is_available(self) -> bool: ...
 

@@ -631,7 +631,8 @@ async def get_agent() -> SidarAgent:
     runtime_state = _runtime_state()
     if runtime_state is not None and getattr(runtime_state, "agent", None) is not None:
         _agent = runtime_state.agent
-        return _agent
+        if _agent is not None:
+            return _agent
     if _agent is not None:
         if runtime_state is not None:
             runtime_state.agent = _agent

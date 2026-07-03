@@ -144,7 +144,8 @@ class ConversationMemory:
         if self._fernet is None:
             raise MemoryAuthError("Encrypted memory content requires MEMORY_ENCRYPTION_KEY.")
         token = value.removeprefix(_ENCRYPTED_CONTENT_PREFIX).encode("utf-8")
-        return self._fernet.decrypt(token).decode("utf-8")
+        decrypted: bytes = self._fernet.decrypt(token)
+        return decrypted.decode("utf-8")
 
     def _message_plain_content(self, message: MessageRecord) -> str:
         """Return decrypted message content for DB-backed memory rows."""
@@ -473,7 +474,7 @@ class ConversationMemory:
         kept_messages = messages[-keep_count:] if keep_count > 0 else []
         plain_messages = [
             MessageRecord(
-                id=getattr(item, "id", ""),
+                id=getattr(item, "id", 0),
                 session_id=getattr(item, "session_id", session_id),
                 role=str(getattr(item, "role", "") or ""),
                 content=self._message_plain_content(item),

@@ -8,7 +8,7 @@ import logging
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -56,4 +56,5 @@ def new_entity_id() -> str:
 
 def sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
     """Fetch one SQLite row while preserving the legacy typed helper contract."""
-    return cursor.fetchone()
+    row = cursor.fetchone()
+    return cast("sqlite3.Row | None", row)

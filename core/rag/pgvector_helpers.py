@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from core.db import postgres_failure_diagnosis
 from core.rag.backends import pgvector as pgvector_backend
 
@@ -11,7 +13,10 @@ def is_valid_pgvector_identifier(identifier: str) -> bool:
     return pgvector_backend.is_valid_pgvector_identifier(identifier)
 
 
-def pgvector_failure_action_message(exc: BaseException, diagnosis_func=postgres_failure_diagnosis) -> str:
+def pgvector_failure_action_message(
+    exc: BaseException,
+    diagnosis_func: Callable[[str, BaseException | None], str] = postgres_failure_diagnosis,
+) -> str:
     """Return a single-line pgvector fallback message using shared DB diagnostics."""
 
     diagnosis = diagnosis_func("pgvector backend başlatılamadı", exc)
