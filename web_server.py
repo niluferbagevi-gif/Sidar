@@ -166,10 +166,10 @@ logger = logging.getLogger(__name__)
 print = builtins.print
 
 
-
 def _resolve_psutil_module() -> Any:
     """Resolve psutil through Python import hooks for testable fallback behavior."""
     return importlib.import_module("psutil")
+
 
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
@@ -1374,7 +1374,6 @@ def _runtime_state(application: FastAPI | None = None) -> Any:
     return _app_factory.get_runtime_state(application or app)
 
 
-@app.middleware("http")
 async def basic_auth_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -1624,6 +1623,7 @@ def _serialize_audit_log(record: Any) -> dict[str, Any]:
         "allowed": bool(getattr(record, "allowed", False)),
         "timestamp": str(getattr(record, "timestamp", "") or ""),
     }
+
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:
     prompt_id = getattr(record, "id", 0)
@@ -2377,7 +2377,6 @@ def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
     return f"ip:{fallback_ip}"
 
 
-@app.middleware("http")
 async def ddos_rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -2393,7 +2392,6 @@ async def ddos_rate_limit_middleware(
     )
 
 
-@app.middleware("http")
 async def rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -2409,6 +2407,14 @@ async def rate_limit_middleware(
         get_io_paths=_RATE_GET_IO_PATHS,
         get_rate_limit_key=_get_rate_limit_key,
     )
+
+
+# Starlette inserts function middleware at the front of ``app.user_middleware``.
+# Keep DDoS throttling outermost, then authenticate, then apply user-scoped
+# rate limits and fine-grained ACL checks with ``request.state.user`` populated.
+app.middleware("http")(rate_limit_middleware)
+app.middleware("http")(basic_auth_middleware)
+app.middleware("http")(ddos_rate_limit_middleware)
 
 
 async def _close_redis_client() -> None:
@@ -3000,9 +3006,7 @@ async def api_entity_get_profile(user_id: str, user: Any = Depends(_get_request_
     return await memory_feedback_router.legacy_exports["api_entity_get_profile"](user_id, user)
 
 
-async def api_entity_delete(
-    user_id: str, key: str, user: Any = Depends(_get_request_user)
-) -> Any:
+async def api_entity_delete(user_id: str, key: str, user: Any = Depends(_get_request_user)) -> Any:
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
     return await memory_feedback_router.legacy_exports["api_entity_delete"](user_id, key, user)
@@ -3027,9 +3031,7 @@ async def _prime_slack_manager_cache() -> None:
     _slack_mgr_cache["instance"] = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
 
 
-async def api_slack_send(
-    req: _SlackSendRequest, user: Any = Depends(_require_admin_user)
-) -> Any:
+async def api_slack_send(req: _SlackSendRequest, user: Any = Depends(_require_admin_user)) -> Any:
     await _prime_slack_manager_cache()
     return await integrations_router.legacy_exports["api_slack_send"](req, user)
 
@@ -3063,9 +3065,7 @@ def _prime_teams_manager_cache() -> None:
     _teams_mgr_cache["instance"] = _get_teams_manager()
 
 
-async def api_teams_send(
-    req: _TeamsSendRequest, user: Any = Depends(_require_admin_user)
-) -> Any:
+async def api_teams_send(req: _TeamsSendRequest, user: Any = Depends(_require_admin_user)) -> Any:
     _prime_teams_manager_cache()
     return await integrations_router.legacy_exports["api_teams_send"](req, user)
 

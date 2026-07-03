@@ -3,6 +3,7 @@ import json
 import re
 import sys
 import types
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -45,7 +46,12 @@ def test_web_server_uses_canonical_agent_contracts_only():
 
 def _test_client(*args, **kwargs):
     """Import TestClient lazily so unrelated tests remain collectable without its extras."""
-    from fastapi.testclient import TestClient
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Using `httpx` with `starlette.testclient` is deprecated.*",
+        )
+        from fastapi.testclient import TestClient
 
     return TestClient(*args, **kwargs)
 
@@ -1654,7 +1660,9 @@ def test_request_user_admin_and_metrics_guards():
     req.state.user = SimpleNamespace(id="u1", username="ada", role="admin")
     assert web_server._get_request_user(req).id == "u1"
     assert web_server._is_admin_user(SimpleNamespace(role="admin", username="x")) is True
-    assert web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is False
+    assert (
+        web_server._is_admin_user(SimpleNamespace(role="user", username="default_admin")) is False
+    )
     assert web_server._is_admin_user(SimpleNamespace(role="user", username="ada")) is False
 
     user = SimpleNamespace(role="user", username="ada")
@@ -2335,9 +2343,7 @@ def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch
 def test_get_client_ip_accepts_trusted_proxy_cidr(monkeypatch):
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"10.0.0.0/24"})
 
-    req = _make_request(
-        "/x", headers={"X-Forwarded-For": "2001:db8::1"}, client_ip="10.0.0.42"
-    )
+    req = _make_request("/x", headers={"X-Forwarded-For": "2001:db8::1"}, client_ip="10.0.0.42")
 
     assert web_server._get_client_ip(req) == "2001:db8::1"
 
@@ -3627,6 +3633,59 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
     assert (
         await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
     ).status_code == 200
+
+
+def test_http_middleware_chain_applies_acl_after_auth_and_user_rate_limit(monkeypatch):
+    calls = {"policies": [], "rate_keys": [], "active_users": []}
+    user = SimpleNamespace(id="u-chain", username="lin", role="user", tenant_id="tenant-a")
+
+    async def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return user
+
+    async def _check_access_policy(**kwargs):
+        calls["policies"].append(kwargs)
+        return False
+
+    async def _set_active_user(user_id, username):
+        calls["active_users"].append((user_id, username))
+
+    async def _resolve_agent():
+        return SimpleNamespace(
+            memory=SimpleNamespace(
+                set_active_user=_set_active_user,
+                db=SimpleNamespace(check_access_policy=_check_access_policy),
+            )
+        )
+
+    async def _not_limited(namespace, key, limit, window_sec):
+        calls["rate_keys"].append((namespace, key, limit, window_sec))
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **_kwargs: None)
+
+    client = _test_client(web_server.app)
+    response = client.get("/rag/docs", headers={"Authorization": "Bearer good-token"})
+
+    assert response.status_code == 403
+    assert response.json()["resource"] == "rag"
+    assert calls["active_users"] == [("u-chain", "lin")]
+    assert calls["policies"] == [
+        {
+            "user_id": "u-chain",
+            "tenant_id": "tenant-a",
+            "resource_type": "rag",
+            "action": "read",
+            "resource_id": "*",
+        }
+    ]
+    assert any(
+        key == "user:tenant-a:u-chain" for _namespace, key, _limit, _window in calls["rate_keys"]
+    )
+    assert not any(key.startswith("ip:") for _namespace, key, _limit, _window in calls["rate_keys"])
 
 
 @pytest.mark.asyncio
