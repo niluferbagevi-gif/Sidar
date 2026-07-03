@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import warnings
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -9,7 +10,12 @@ import pytest
 import pytest_asyncio
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="Using `httpx` with `starlette.testclient` is deprecated.*",
+    )
+    from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -78,6 +84,76 @@ async def web_api_client(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database):
             yield client, sqlite_db, fake_agent
         finally:
             app.dependency_overrides = original_overrides
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_asgi_middleware_chain_enforces_acl_without_dependency_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise auth, user rate-limit, and ACL middleware through real ASGI dispatch."""
+
+    calls = {"policies": [], "rate_keys": [], "active_users": []}
+    user = SimpleNamespace(id="u-asgi", username="ada", role="user", tenant_id="tenant-asgi")
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides.clear()
+
+    async def _resolve_user(_agent, token):
+        assert token == "good-token"
+        return user
+
+    async def _set_active_user(user_id, username):
+        calls["active_users"].append((user_id, username))
+
+    async def _check_access_policy(**kwargs):
+        calls["policies"].append(kwargs)
+        return False
+
+    async def _resolve_agent():
+        return SimpleNamespace(
+            memory=SimpleNamespace(
+                set_active_user=_set_active_user,
+                db=SimpleNamespace(check_access_policy=_check_access_policy),
+            )
+        )
+
+    async def _not_limited(namespace, key, limit, window_sec):
+        calls["rate_keys"].append((namespace, key, limit, window_sec))
+        return False
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(web_server, "_schedule_access_audit_log", lambda **_kwargs: None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        try:
+            response = await client.get(
+                "/rag/docs", headers={"Authorization": "Bearer good-token"}
+            )
+        finally:
+            app.dependency_overrides = original_overrides
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "Yetki yok", "resource": "rag", "action": "read"}
+    assert calls["active_users"] == [("u-asgi", "ada")]
+    assert calls["policies"] == [
+        {
+            "user_id": "u-asgi",
+            "tenant_id": "tenant-asgi",
+            "resource_type": "rag",
+            "action": "read",
+            "resource_id": "*",
+        }
+    ]
+    assert any(
+        key == "user:tenant-asgi:u-asgi" for _namespace, key, _limit, _window in calls["rate_keys"]
+    )
+    assert not any(
+        key.startswith("ip:") and namespace == "user"
+        for namespace, key, _limit, _window in calls["rate_keys"]
+    )
 
 
 @pytest.mark.integration
