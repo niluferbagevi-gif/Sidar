@@ -2052,6 +2052,7 @@ def test_validate_plugin_source_rejects_chained_banned_module_calls():
     assert exc.value.status_code == 400
     assert "tehlikeli modül" in exc.value.detail
 
+
 def test_build_restricted_plugin_builtins_strips_dangerous_names():
     """Defense-in-depth: tehlikeli built-in'ler plugin namespace'inde bulunmamalı."""
     import builtins as _b
