@@ -239,6 +239,18 @@ jobs:
           tests/quality/test_llm_quality_gate.py
           tests/quality/test_shellcheck_quality_gate.py
 
+      # Must run before any smoke/test step below: tests/smoke/test_boot.py
+      # connects to the sidar_test database, so it has to exist first.
+      - name: Prepare isolated test database (sidar_test) + Alembic upgrade
+        env:
+          PGPASSWORD: sidar
+        run: |
+          psql -h localhost -U sidar -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS sidar_test WITH (FORCE);" \
+            -c "CREATE DATABASE sidar_test;" \
+            -c "GRANT ALL PRIVILEGES ON DATABASE sidar_test TO sidar;"
+          uv run alembic upgrade head
+
       - name: Run critical smoke import gates with exit-first
         run: >-
           uv run pytest -q -x --no-cov
@@ -255,16 +267,6 @@ jobs:
         run: |
           shopt -s globstar nullglob
           uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
-
-      - name: Prepare isolated test database (sidar_test) + Alembic upgrade
-        env:
-          PGPASSWORD: sidar
-        run: |
-          psql -h localhost -U sidar -d postgres -v ON_ERROR_STOP=1 \
-            -c "DROP DATABASE IF EXISTS sidar_test WITH (FORCE);" \
-            -c "CREATE DATABASE sidar_test;" \
-            -c "GRANT ALL PRIVILEGES ON DATABASE sidar_test TO sidar;"
-          uv run alembic upgrade head
 
       - name: Run test suite (single pass + coverage gate)
         env:
