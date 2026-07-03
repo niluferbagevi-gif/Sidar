@@ -30,6 +30,10 @@ from agent.core.contracts_fallback import (
     bind_fallback_contracts,
     default_derive_correlation_id,
 )
+from agent.github import smart_pr as github_smart_pr
+from agent.maintenance.nightly import (
+    run_nightly_memory_maintenance as run_nightly_memory_maintenance_service,
+)
 from agent.self_heal.executor import (
     execute_self_heal_plan as execute_self_heal_plan_service,
 )
@@ -99,11 +103,11 @@ CONTEXT_GEMINI_MODEL_LABEL = "Gemini Modeli"
 CONTEXT_GITHUB_CONNECTED_PREFIX = "Bağlı — "
 CONTEXT_TASK_LIST_HEADER = "[Aktif Görev Listesi]"
 SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
-GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."  # nosec B105
-GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
-GITHUB_SMART_PR_NO_CHANGES_MESSAGE = "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
-GITHUB_SMART_PR_CREATE_FAILED_PREFIX = "✗ PR oluşturulamadı:"
-GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX = "✓ PR oluşturuldu:"
+GITHUB_SMART_PR_NO_TOKEN_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_TOKEN_MESSAGE
+GITHUB_SMART_PR_NO_BRANCH_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_BRANCH_MESSAGE
+GITHUB_SMART_PR_NO_CHANGES_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_CHANGES_MESSAGE
+GITHUB_SMART_PR_CREATE_FAILED_PREFIX = github_smart_pr.GITHUB_SMART_PR_CREATE_FAILED_PREFIX
+GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX = github_smart_pr.GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX
 
 
 class ToolCall(BaseModel):
@@ -773,8 +777,7 @@ class SidarAgent:
                     "handoff",
                     status="pending",
                     detail=(
-                        "Maksimum self-heal plan retry limiti aşıldı; "
-                        "insan müdahalesi gerekiyor."
+                        "Maksimum self-heal plan retry limiti aşıldı; insan müdahalesi gerekiyor."
                     ),
                 )
             self._update_remediation_step(
@@ -1085,123 +1088,12 @@ class SidarAgent:
         reason: str = "nightly_idle",
     ) -> dict[str, Any]:
         """Uzun süreli kullanım için sohbet/RAG belleğini sıkıştırır ve temizler."""
-        await self.initialize()
-        if not bool(getattr(self.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
-            return {"status": "disabled", "reason": "config_disabled"}
-
-        idle_seconds = max(60, int(getattr(self.cfg, "NIGHTLY_MEMORY_IDLE_SECONDS", 1800) or 1800))
-        idle_for = self.seconds_since_last_activity()
-        if not force and idle_for < idle_seconds:
-            return {
-                "status": "skipped",
-                "reason": "not_idle",
-                "idle_for_seconds": round(idle_for, 2),
-                "idle_threshold_seconds": idle_seconds,
-            }
-
-        if self._nightly_maintenance_lock is None:
-            self._nightly_maintenance_lock = asyncio.Lock()
-        if self._nightly_maintenance_lock.locked():
-            return {
-                "status": "skipped",
-                "reason": "already_running",
-                "idle_for_seconds": round(idle_for, 2),
-            }
-
-        async with self._nightly_maintenance_lock:
-            distributed_lease, distributed_skip = await self._acquire_nightly_distributed_lease()
-            if distributed_skip is not None:
-                distributed_skip.setdefault("idle_for_seconds", round(idle_for, 2))
-                return distributed_skip
-
-            try:
-                entity_report: dict[str, Any] = {"purged": 0, "status": "disabled"}
-                try:
-                    entity_memory = get_entity_memory(self.cfg)
-                    await entity_memory.initialize()
-                    entity_report = {
-                        "status": "completed",
-                        "purged": await entity_memory.purge_expired(),
-                    }
-                except Exception as exc:
-                    entity_report = {"status": "failed", "error": str(exc), "purged": 0}
-
-                memory_report = await self.memory.run_nightly_consolidation(
-                    keep_recent_sessions=max(
-                        0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
-                    ),
-                    min_messages=max(
-                        2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
-                    ),
-                )
-
-                rag_reports: list[dict[str, Any]] = []
-                keep_recent_docs = max(
-                    1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
-                )
-                raw_session_ids = memory_report.get("session_ids", [])
-                session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
-                for session_id in session_ids:
-                    report = await asyncio.to_thread(
-                        self.docs.consolidate_session_documents,
-                        str(session_id),
-                        keep_recent_docs=keep_recent_docs,
-                    )
-                    rag_reports.append(report)
-
-                removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
-                raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
-                sessions_compacted = (
-                    raw_sessions_compacted
-                    if isinstance(raw_sessions_compacted, int)
-                    else int(raw_sessions_compacted)
-                    if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
-                    else 0
-                )
-                result: dict[str, Any] = {
-                    "status": "completed",
-                    "reason": reason,
-                    "idle_for_seconds": round(idle_for, 2),
-                    "memory_report": memory_report,
-                    "entity_report": entity_report,
-                    "rag_reports": rag_reports,
-                    "sessions_compacted": sessions_compacted,
-                    "rag_docs_pruned": removed_docs,
-                    "distributed_lock": (
-                        {"backend": distributed_lease.backend, "key": distributed_lease.key}
-                        if distributed_lease is not None
-                        else {"backend": "local"}
-                    ),
-                }
-                self._last_nightly_maintenance_ts = time.time()
-                await self._append_autonomy_history(
-                    {
-                        "trigger_id": f"nightly-{int(self._last_nightly_maintenance_ts)}",
-                        "source": "nightly_memory",
-                        "event_name": "memory_consolidation",
-                        "status": result["status"],
-                        "summary": (
-                            f"Nightly maintenance tamamlandı: "
-                            f"{result['sessions_compacted']} oturum sıkıştırıldı, "
-                            f"{removed_docs} RAG dokümanı budandı, "
-                            f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
-                        ),
-                        "payload": {
-                            "reason": reason,
-                            "idle_for_seconds": round(idle_for, 2),
-                        },
-                        "meta": {
-                            "kind": "nightly_memory_maintenance",
-                            "force": str(bool(force)).lower(),
-                            "distributed_lock_backend": result["distributed_lock"]["backend"],
-                        },
-                        "created_at": self._last_nightly_maintenance_ts,
-                        "completed_at": self._last_nightly_maintenance_ts,
-                    }
-                )
-                return result
-            finally:
-                await self._release_nightly_distributed_lease(distributed_lease)
+        return await run_nightly_memory_maintenance_service(
+            self,
+            force=force,
+            reason=reason,
+            entity_memory_factory=get_entity_memory,
+        )
 
     def get_autonomy_activity(self, limit: int = 20) -> dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
@@ -1701,56 +1593,7 @@ class SidarAgent:
         return SUBTASK_MAX_STEPS_MESSAGE
 
     async def _tool_github_smart_pr(self, arg: str) -> str:
-        if not self.github.is_available():
-            return GITHUB_SMART_PR_NO_TOKEN_MESSAGE
-
-        parts = [p.strip() for p in (arg or "").split("|||")]
-        title = parts[0] if len(parts) > 0 and parts[0] else "Otomatik PR"
-        base = parts[1] if len(parts) > 1 and parts[1] else ""
-        notes = parts[2] if len(parts) > 2 else ""
-
-        ok, branch = self.code.run_shell("git branch --show-current")
-        head = (branch or "").strip() if ok else ""
-        if not head:
-            return GITHUB_SMART_PR_NO_BRANCH_MESSAGE
-
-        if not base:
-            try:
-                base = self.github.default_branch
-            except Exception:
-                base = "main"
-
-        ok_status, status_out = self.code.run_shell("git status --short")
-        if not ok_status or not str(status_out).strip():
-            return GITHUB_SMART_PR_NO_CHANGES_MESSAGE
-
-        self.code.run_shell("git diff --stat HEAD")
-        ok_diff, diff_out = self.code.run_shell("git diff --no-color HEAD")
-        diff_text = str(diff_out or "") if ok_diff else ""
-        max_diff_chars = 10000
-        if len(diff_text) > max_diff_chars:
-            diff_text = (
-                diff_text[:max_diff_chars]
-                + "\n\n[Not] Diff çok büyük olduğu için geri kalanı kırpıldı."
-            )
-
-        _ok_log, commits = self.code.run_shell(f"git log --oneline {base}..HEAD")
-        body = (
-            f"{notes}\n\n"
-            f"### Commitler\n{commits}\n\n"
-            f"### Diff Özeti\n```diff\n{diff_text}\n```"
-        )
-        try:
-            ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
-        except TimeoutError:
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} zaman aşımı"
-        except Exception as exc:
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {exc}"
-
-        if not ok_pr:
-            reason = str(pr_out or "bilinmeyen hata")
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {reason}"
-        return f"{GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} {pr_out}"
+        return await github_smart_pr.create_smart_pr(arg=arg, code=self.code, github=self.github)
 
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
