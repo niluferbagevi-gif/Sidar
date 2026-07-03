@@ -158,12 +158,7 @@ def ensure_html_dark_mode_css(
     """Ensure ``tool.coverage.html.extra_css`` points to Sidar dark mode stylesheet."""
 
     data = tomllib.loads(coverage_config_path.read_text(encoding="utf-8"))
-    current = (
-        data.get("tool", {})
-        .get("coverage", {})
-        .get("html", {})
-        .get("extra_css", "")
-    )
+    current = data.get("tool", {}).get("coverage", {}).get("html", {}).get("extra_css", "")
     if str(current).strip() == css_path:
         return False
 

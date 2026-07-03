@@ -1727,7 +1727,6 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
     assert activated.id == 4
 
 
-
 @pytest.mark.asyncio
 async def test_sqlite_password_hash_and_verify_run_off_event_loop_thread(
     sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
