@@ -93,11 +93,18 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
     project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    testing_docs = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    module_index = Path("docs/module-notes/INDEX.md").read_text(encoding="utf-8")
 
     assert "güncel repo gate: `%90`" in coverage_agent_docs
     assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
     assert "Coverage Quality Gate" in project_report
-    assert "fail_under=90" in project_report or "fail_under = 90" in project_report
+    assert "pyproject.toml fail_under=90" in project_report
+    assert "tek doğruluk kaynağı `pyproject.toml`" in testing_docs
+    assert "repoda ayrı bir `.coveragerc` dosyası tutulmaz" in testing_docs
+    assert "pyproject.toml` coverage config" in module_index
+    assert Path("docs/module-notes/coverage-config.md").exists()
+    assert not Path("docs/module-notes/coveragerc.md").exists()
     assert not any(
         line.strip() == "pyproject.toml"
         for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()

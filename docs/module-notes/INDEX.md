@@ -7,7 +7,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - **Tests dosya sayısı (tek notta özetlenen):** 93
 
 ## Not dosyaları
-- `.coveragerc` → `docs/module-notes/coveragerc.md`
+- `pyproject.toml` coverage config → `docs/module-notes/coverage-config.md`
 - `.env.example` → `docs/module-notes/env.example.md`
 - `.github/workflows/ci.yml` → `docs/module-notes/.github/workflows/ci.yml.md`
 - `.github/workflows/migration-cutover-checks.yml` → `docs/module-notes/.github/workflows/migration-cutover-checks.yml.md`
