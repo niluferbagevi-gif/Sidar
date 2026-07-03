@@ -1389,9 +1389,16 @@ async def basic_auth_middleware(
         "/auth/login",
         "/auth/register",
     }
+    webhook_signature_paths = {"/api/webhook"}
+    webhook_signature_prefixes = ("/api/autonomy/webhook/",)
+    is_signature_verified_webhook = request.method == "POST" and (
+        request.url.path in webhook_signature_paths
+        or request.url.path.startswith(webhook_signature_prefixes)
+    )
     if (
         request.method == "OPTIONS"
         or request.url.path in open_paths
+        or is_signature_verified_webhook
         or request.url.path.startswith("/static/")
         or request.url.path.startswith("/vendor/")
         or request.url.path == "/favicon.ico"
