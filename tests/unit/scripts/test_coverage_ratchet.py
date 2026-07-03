@@ -46,7 +46,9 @@ def test_ratchet_coverage_gate_updates_coverage_config_preserving_comments(tmp_p
     )
     _write_coverage_json(coverage_json, 23.7)
 
-    result = ratchet_coverage_gate(coverage_config_path=coverage_config, coverage_json_path=coverage_json)
+    result = ratchet_coverage_gate(
+        coverage_config_path=coverage_config, coverage_json_path=coverage_json
+    )
 
     assert result.updated is True
     assert result.current_gate == 5
@@ -63,7 +65,9 @@ def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reache
     coverage_config.write_text("[tool.coverage.report]\nfail_under = 30\n", encoding="utf-8")
     _write_coverage_json(coverage_json, 30.9)
 
-    result = ratchet_coverage_gate(coverage_config_path=coverage_config, coverage_json_path=coverage_json)
+    result = ratchet_coverage_gate(
+        coverage_config_path=coverage_config, coverage_json_path=coverage_json
+    )
 
     assert result.updated is False
     assert result.target_gate == 30
@@ -110,7 +114,7 @@ def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_
 
     coverage_config = tmp_path / "pyproject.toml"
     coverage_config.write_text(
-        '[tool.coverage.report]\nshow_missing = true\n'
+        "[tool.coverage.report]\nshow_missing = true\n"
         '[tool.coverage.html]\ndirectory = "htmlcov"\n',
         encoding="utf-8",
     )
@@ -119,7 +123,9 @@ def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_
 
     coverage_config.write_text("[tool.coverage.run]\nbranch = true", encoding="utf-8")
     write_fail_under(coverage_config, 7)
-    assert coverage_config.read_text(encoding="utf-8").endswith("\n[tool.coverage.report]\nfail_under = 7\n")
+    assert coverage_config.read_text(encoding="utf-8").endswith(
+        "\n[tool.coverage.report]\nfail_under = 7\n"
+    )
 
 
 def test_main_prints_updated_and_unchanged_results(
@@ -132,10 +138,16 @@ def test_main_prints_updated_and_unchanged_results(
     coverage_config.write_text("[tool.coverage.report]\nfail_under = 5\n", encoding="utf-8")
     _write_coverage_json(coverage_json, 10.1)
 
-    assert main(["--coverage-config", str(coverage_config), "--coverage-json", str(coverage_json)]) == 0
+    assert (
+        main(["--coverage-config", str(coverage_config), "--coverage-json", str(coverage_json)])
+        == 0
+    )
     assert "Coverage gate ratcheted" in capsys.readouterr().out
 
-    assert main(["--coverage-config", str(coverage_config), "--coverage-json", str(coverage_json)]) == 0
+    assert (
+        main(["--coverage-config", str(coverage_config), "--coverage-json", str(coverage_json)])
+        == 0
+    )
     assert "Coverage gate unchanged" in capsys.readouterr().out
 
 
@@ -143,9 +155,13 @@ def test_write_fail_under_appends_to_report_at_end(tmp_path: Path) -> None:
     from scripts.coverage_ratchet import write_fail_under
 
     coverage_config = tmp_path / "pyproject.toml"
-    coverage_config.write_text("[tool.coverage.run]\nbranch = true\n\n[tool.coverage.report]\n", encoding="utf-8")
+    coverage_config.write_text(
+        "[tool.coverage.run]\nbranch = true\n\n[tool.coverage.report]\n", encoding="utf-8"
+    )
     write_fail_under(coverage_config, 8)
-    assert coverage_config.read_text(encoding="utf-8").endswith("[tool.coverage.report]\nfail_under = 8\n")
+    assert coverage_config.read_text(encoding="utf-8").endswith(
+        "[tool.coverage.report]\nfail_under = 8\n"
+    )
 
 
 def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_path: Path) -> None:
@@ -154,7 +170,9 @@ def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_
     coverage_config = tmp_path / "pyproject.toml"
     coverage_config.write_text("[tool.coverage.run]\nbranch = true\n", encoding="utf-8")
     write_fail_under(coverage_config, 9)
-    assert "\n[tool.coverage.report]\nfail_under = 9\n" in coverage_config.read_text(encoding="utf-8")
+    assert "\n[tool.coverage.report]\nfail_under = 9\n" in coverage_config.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_ensure_html_dark_mode_css_adds_missing_html_section(tmp_path: Path) -> None:
@@ -175,8 +193,7 @@ def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text(
-        '[tool.coverage.report]\nfail_under = 5\n'
-        '[tool.coverage.html]\ndirectory = "htmlcov"\n',
+        "[tool.coverage.report]\nfail_under = 5\n" '[tool.coverage.html]\ndirectory = "htmlcov"\n',
         encoding="utf-8",
     )
     _write_coverage_json(coverage_json, 6.2)

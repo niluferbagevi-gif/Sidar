@@ -129,9 +129,7 @@ async def test_asgi_middleware_chain_enforces_acl_without_dependency_overrides(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         try:
-            response = await client.get(
-                "/rag/docs", headers={"Authorization": "Bearer good-token"}
-            )
+            response = await client.get("/rag/docs", headers={"Authorization": "Bearer good-token"})
         finally:
             app.dependency_overrides = original_overrides
 

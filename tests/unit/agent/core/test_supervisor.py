@@ -349,9 +349,7 @@ def test_route_p2p_uses_shared_turn_budget_for_chained_handoffs() -> None:
         intent="p2p",
     )
 
-    result = asyncio.run(
-        sup._route_p2p(req, max_hops=5, max_turns=10, consume_turn=_consume_turn)
-    )
+    result = asyncio.run(sup._route_p2p(req, max_hops=5, max_turns=10, consume_turn=_consume_turn))
 
     assert calls == ["reviewer"]
     assert result.status == "failed"

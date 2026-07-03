@@ -54,16 +54,22 @@ def _check_dockerfile(version: str, errors: list[str]) -> None:
     )
     forbidden_literals = {"5.3.1", "5.1.0", "4.3.0"} - {version}
     for literal in sorted(forbidden_literals):
-        _expect(literal not in dockerfile, f"Dockerfile still contains stale version {literal}", errors)
+        _expect(
+            literal not in dockerfile, f"Dockerfile still contains stale version {literal}", errors
+        )
 
 
 def _check_chart(relative_path: str, version: str, errors: list[str]) -> None:
     text = _read_text(relative_path)
     version_match = re.search(r"^version:\s*([^\n#]+)", text, flags=re.MULTILINE)
     app_version_match = re.search(r"^appVersion:\s*['\"]?([^'\"\n#]+)", text, flags=re.MULTILINE)
-    found_version = version_match.group(1).strip().strip('"\'') if version_match else ""
+    found_version = version_match.group(1).strip().strip("\"'") if version_match else ""
     found_app_version = app_version_match.group(1).strip() if app_version_match else ""
-    _expect(found_version == version, f"{relative_path} version={found_version!r}, expected {version}", errors)
+    _expect(
+        found_version == version,
+        f"{relative_path} version={found_version!r}, expected {version}",
+        errors,
+    )
     _expect(
         found_app_version == version,
         f"{relative_path} appVersion={found_app_version!r}, expected {version}",
@@ -73,7 +79,9 @@ def _check_chart(relative_path: str, version: str, errors: list[str]) -> None:
 
 def _check_docs(version: str, errors: list[str]) -> None:
     docs = _read_text("docs/CLAUDE.md")
-    _expect("sidar_version.py" in docs, "docs/CLAUDE.md must cite sidar_version.py as source", errors)
+    _expect(
+        "sidar_version.py" in docs, "docs/CLAUDE.md must cite sidar_version.py as source", errors
+    )
     _expect(f"v{version}" in docs, f"docs/CLAUDE.md must mention current v{version}", errors)
     for stale in ("v4.3.0", "v5.1.0", "v5.3.1"):
         if stale != f"v{version}":
