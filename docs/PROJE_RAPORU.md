@@ -620,7 +620,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (local `fail_under=90`, CI `COVERAGE_FAIL_UNDER_CI=95`, campaign `%100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
+| Coverage Quality Gate (local/CI ortak ratchet tabanı `fail_under=5`, campaign `%100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
@@ -635,13 +635,14 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
 gate ailesidir (detay için bkz. `AGENTS.md §2.5.4`):
 
-- **Local profile (`TEST_PROFILE=local`)** — `.coveragerc [report].fail_under = 90`
-  stabil ve ulaşılabilir tabandır; `coverage_ratchet.py` step `%1` ile bu değeri
+- **Local profile (`TEST_PROFILE=local`)** — `.coveragerc [report].fail_under = 5`
+  bootstrap tabanıdır; `coverage_ratchet.py` step `%1` ile bu değeri
   yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=99` ile bir puanlık
   tampon bırakır. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
-- **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` ana test
-  job'unda `COVERAGE_FAIL_UNDER_CI=95` ile lokal tabanın üzerine sıkı
-  pre-merge eşiği bindirir.
+- **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` artık ayrı
+  bir `COVERAGE_FAIL_UNDER_CI` sabiti set etmiyor; CI de local ile aynı
+  ratchet edilmiş tabanı kullanır. Gerekirse `COVERAGE_FAIL_UNDER_CI` envi ile
+  yine üstüne yazılabilir.
 - **Coverage campaign** — `COVERAGE_CAMPAIGN=1` veya
   `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile devreye girer,
   `COVERAGE_FAIL_UNDER_CAMPAIGN` varsayılan `%100` aspirasyonel hedefi
