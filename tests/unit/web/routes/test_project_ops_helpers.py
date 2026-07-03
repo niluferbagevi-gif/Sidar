@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -185,6 +186,16 @@ async def test_project_session_handlers_cover_create_load_list_and_delete(tmp_pa
     }
     assert _json_body(await exports["delete_session"]("s1", request, user)) == {"success": True}
     assert (await exports["delete_session"]("missing", request, user)).status_code == 500
+
+
+def test_project_file_handlers_require_authenticated_user_dependency(tmp_path: Path) -> None:
+    exports = _build_project_exports(tmp_path, SimpleNamespace())
+
+    list_user_default = inspect.signature(exports["list_project_files"]).parameters["_user"].default
+    content_user_default = inspect.signature(exports["file_content"]).parameters["_user"].default
+
+    assert getattr(list_user_default, "dependency", None) is not None
+    assert getattr(content_user_default, "dependency", None) is not None
 
 
 @pytest.mark.asyncio

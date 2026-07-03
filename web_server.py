@@ -1388,8 +1388,6 @@ async def basic_auth_middleware(
         "/openapi.json",
         "/auth/login",
         "/auth/register",
-        "/files",
-        "/file-content",
     }
     if (
         request.method == "OPTIONS"

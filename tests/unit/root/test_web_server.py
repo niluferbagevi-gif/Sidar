@@ -994,6 +994,15 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     assert denied.status_code == 401
     assert b"Yetkisiz" in denied.body
 
+    files_denied = await web_server.basic_auth_middleware(
+        _make_request("/files", method="GET"), _ok_next
+    )
+    assert files_denied.status_code == 401
+    file_content_denied = await web_server.basic_auth_middleware(
+        _make_request("/file-content", method="GET"), _ok_next
+    )
+    assert file_content_denied.status_code == 401
+
     empty_token_req = _make_request("/secure", method="GET", headers={"Authorization": "Bearer   "})
     empty_token_res = await web_server.basic_auth_middleware(empty_token_req, _ok_next)
     assert empty_token_res.status_code == 401

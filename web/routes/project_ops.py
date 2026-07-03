@@ -172,7 +172,7 @@ def build_project_ops_router(
         return JSONResponse({"success": False, "error": "Silinemedi."}, status_code=500)
 
     @router.get("/files")
-    async def list_project_files(path: str = "") -> Any:
+    async def list_project_files(path: str = "", _user: Any = Depends(get_request_user)) -> Any:
         root = resolve_server_root()
         root = root.resolve()
         target = (root / path).resolve()
@@ -204,7 +204,7 @@ def build_project_ops_router(
         )
 
     @router.get("/file-content")
-    async def file_content(path: str) -> Any:
+    async def file_content(path: str, _user: Any = Depends(get_request_user)) -> Any:
         root = resolve_server_root()
         root = root.resolve()
         target = (root / path).resolve()
