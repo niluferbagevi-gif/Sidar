@@ -1214,6 +1214,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
     touch "$tmpdir/alembic.ini"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
@@ -1247,6 +1248,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
     touch "$tmpdir/alembic.ini"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
