@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
@@ -44,6 +45,20 @@ _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
 
 
+def _federation_env_name(cfg: Any) -> str:
+    return str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
+
+
+def _resolve_federation_secret(cfg: Any) -> str:
+    secret = str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or "")
+    if not secret and _federation_env_name(cfg) == "production":
+        raise HTTPException(
+            status_code=401,
+            detail="SWARM_FEDERATION_SHARED_SECRET yapılandırılmadığı için federation imzası doğrulanamadı.",
+        )
+    return secret
+
+
 def configure_federation_dependencies(deps_factory: Callable[[], Any]) -> None:
     global _deps_factory
     _deps_factory = deps_factory
@@ -77,7 +92,7 @@ async def swarm_federation_execute(
     raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
     deps.verify_hmac_signature(
         raw_body,
-        str(getattr(deps.cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
+        _resolve_federation_secret(deps.cfg),
         x_sidar_signature,
         label="Federation",
     )
@@ -154,7 +169,7 @@ async def swarm_federation_feedback(
     raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
     deps.verify_hmac_signature(
         raw_body,
-        str(getattr(deps.cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
+        _resolve_federation_secret(deps.cfg),
         x_sidar_signature,
         label="Federation feedback",
     )

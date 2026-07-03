@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 
 from web.routes import autonomy, federation
 
@@ -118,3 +119,79 @@ async def test_federation_execute_builds_autonomy_payload() -> None:
     assert response.status_code == 200
     assert calls[0]["trigger_source"] == "federation:external"
     assert calls[0]["payload"]["federation_task"]["task_id"] == "task-1"
+
+
+@pytest.mark.asyncio
+async def test_federation_execute_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production federation request must not dispatch")
+
+    federation.configure_federation_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_SWARM_FEDERATION=True,
+                SIDAR_ENV="production",
+                SWARM_FEDERATION_SHARED_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            federation_task_envelope_cls=_Envelope,
+            federation_task_result_cls=_Result,
+            normalize_federation_protocol=lambda protocol: protocol or "federation.v1",
+            legacy_federation_protocol_v1="v1",
+            dispatch_autonomy_trigger=_dispatch,
+            action_feedback_cls=None,
+            derive_correlation_id=lambda *parts: "corr",
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await federation.swarm_federation_execute(
+            federation.FederationTaskRequest(
+                task_id="task-prod",
+                source_system="external",
+                source_agent="crew",
+                goal="run it",
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "SWARM_FEDERATION_SHARED_SECRET" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_federation_feedback_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production federation feedback must not dispatch")
+
+    federation.configure_federation_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_SWARM_FEDERATION=True,
+                SIDAR_ENV="production",
+                SWARM_FEDERATION_SHARED_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            federation_task_envelope_cls=_Envelope,
+            federation_task_result_cls=_Result,
+            normalize_federation_protocol=lambda protocol: protocol or "federation.v1",
+            legacy_federation_protocol_v1="v1",
+            dispatch_autonomy_trigger=_dispatch,
+            action_feedback_cls=None,
+            derive_correlation_id=lambda *parts: "corr",
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await federation.swarm_federation_feedback(
+            federation.FederationFeedbackRequest(
+                feedback_id="fb-prod",
+                source_system="external",
+                source_agent="crew",
+                action_name="deploy",
+                status="done",
+                summary="ok",
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "SWARM_FEDERATION_SHARED_SECRET" in str(exc_info.value.detail)
