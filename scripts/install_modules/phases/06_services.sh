@@ -1435,6 +1435,7 @@ PY
         SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="tamamlandi"
         sidar_phase06_cleanup_pre_service_smoke_log
     else
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/10_validation.sh reads this sourced state.
         SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="hata"
         local persisted_smoke_log=""
         persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"

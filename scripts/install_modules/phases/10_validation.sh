@@ -410,6 +410,7 @@ run_test_artifact_audit() {
         ok "Test artifact denetimi başarıyla tamamlandı."
         AUDIT_STATUS="tamamlandi"
     else
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
         AUDIT_STATUS="hata"
         fail "Test artifact denetimi başarısız oldu. Boş/uygunsuz test dosyalarını düzeltip tekrar deneyin."
     fi

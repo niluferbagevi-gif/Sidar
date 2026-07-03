@@ -265,6 +265,7 @@ if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
     # WSL integration autofix sentinel should not leak across reinstall attempts.
     rm -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied" 2>/dev/null || true
     ORIGINAL_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+    # shellcheck disable=SC2034  # scripts/install_modules/{phases/08_env.sh,phases/11_post_install.sh,install_helpers.sh} read this sourced state.
     ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 fi
 # shellcheck disable=SC2034  # consumed by install_remediation.sh after it is sourced.
@@ -467,19 +468,19 @@ INSTALL_REMOTE_MODULES=(
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
 f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
 7e4ecc4d6bfa1ec5ac772d598df7b21cc047a4a9b24de13a336ceff0eca8138f  scripts/install_modules/phases/01_context.sh
-babc9b99677864ba276dbd175301a96c8a9e5877905dc5e037aa45be4dcd766c  scripts/install_modules/phases/02_repo.sh
+57e71d61437133d573eec64c81749610f5d5ce60017f9e49aa3a17c671159019  scripts/install_modules/phases/02_repo.sh
 f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 7cc88392c68cab19d649c7771af034e658f9f06357490901794e42d315c0d811  scripts/install_modules/phases/03_system.sh
 d79dab59a438e7cc8ddf9ce171fc474227cc1d1978bbb8aae3391b679bcc8207  scripts/install_modules/phases/04_workspace.sh
-63748f5fe9313bc0f64b29694ba80e7d937823952f2c8b57a3332e3d71a94ea0  scripts/install_modules/phases/05_frontend.sh
-780196c4a9162a98f2ba490cc04f05c5f05b3180fa45d37d1de159608dba9618  scripts/install_modules/phases/06_services.sh
+47635c14eeda2fd630a38ae71659219c86a5e7d9775414685b9aa14ea8b5972a  scripts/install_modules/phases/05_frontend.sh
+8928106a8bb5309945024e8e8a4672079070a2b76d80325dcc7c940192eb7582  scripts/install_modules/phases/06_services.sh
 179f368aa1d3bd859331ddb6a9cb8e3cce1c76817ff5cbb92a7b00f01a0d716d  scripts/install_modules/phases/07_finish.sh
-30ff1a79b83f83c36809b57266fcdb5e28e53d9b6545d661182ce50afe90c03a  scripts/install_modules/phases/08_env.sh
+32e44dd98310e384e02f12227217a1c6860d7bf276325cb2d2a64fdcaacaff77  scripts/install_modules/phases/08_env.sh
 a5ed55e0d24f7c50feb43a8998de3a3e9e00fee1c8012f84d3403787a58c0029  scripts/install_modules/phases/09_ollama_models.sh
-fff5feb6a37c90d81906dced36aedefa5bce18c9035be45fa0866a48be01e4f2  scripts/install_modules/phases/10_validation.sh
-8056b80c8e905fc02b07262f9d231e0baecd6f33f6c6427dc30870aacc64b09a  scripts/install_modules/phases/11_post_install.sh
-8b253cdfe6ea41260af4d6110af27aae69905543548578112b5db208c2c6e251  scripts/install_modules/phases/12_alembic.sh
+4030828cc9b26ce34ae4b77bf770b5a0dbc7259d6aa600775da24e659b4e7e4f  scripts/install_modules/phases/10_validation.sh
+d15361999ab21b0ca5e8b04fbb5f0eccfebaaaa895d882d75f627d83bddcb618  scripts/install_modules/phases/11_post_install.sh
+2f4784f18bf595a953cddc29dece235b52bf1e472a096cd1e50afdb6d5403036  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
 0607926653d6e9be9957c662f48dc8db686fa51ad54ee84503ff0237c3c1290b  scripts/install_modules/utils/database_url.sh
@@ -1204,25 +1205,41 @@ CLI_RESET_POSTGRES_VOLUMES="ask"
 CLI_START_DOCKER_SERVICES="ask"
 CLI_OPEN_VSCODE="ask"
 SILENT_MODE=false
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 REACT_UI_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,12_alembic.sh} read this sourced state.
 MIGRATION_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,10_validation.sh} read this sourced state.
 SMOKE_TEST_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,10_validation.sh} read this sourced state.
 INTEGRATION_TEST_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/10_validation.sh reads this sourced state.
 CI_FULL_VALIDATION_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 AUDIT_STATUS="atlandı"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 AUTONOMOUS_CRON_STATUS="atlandı"
 # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced state.
 MIGRATION_DOCKER_POLICY="auto"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/{10_validation.sh,11_post_install.sh} read this sourced state.
 DOCKER_DB_SERVICES_STARTED=false
+# shellcheck disable=SC2034  # scripts/install_modules/{phases/06_services.sh,utils/database_url.sh} read this sourced state.
 DB_PASSWORD_HARDENED=false
+# shellcheck disable=SC2034  # scripts/install_modules/phases/06_services.sh reads this sourced state.
 POSTGRES_VOLUME_RESET_DONE=false
 # shellcheck disable=SC2034  # scripts/install_modules/{phases/12_alembic.sh,utils/db_credentials.sh} read this sourced state.
 PRE_HARDEN_DB_PASSWORD=""
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 AUDIO_SESSION_RESTART_RECOMMENDED=false
+# shellcheck disable=SC2034  # multiple sourced phase/util scripts read this runtime flag (e.g. 03_system.sh, 06_services.sh, gpu_utils.sh).
 WSL2=false
+# shellcheck disable=SC2034  # scripts/install_modules/{phases/{07_finish.sh,09_ollama_models.sh,10_validation.sh},utils/ollama_models.sh} read this sourced state.
 WSLCONFIG_CHANGED=false
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 ENV_API_KEYS_TOTAL=0
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 ENV_API_KEYS_FILLED=0
+# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
 ENV_API_KEYS_MISSING=()
 
 print_install_help() {
@@ -1422,6 +1439,7 @@ fi
 
 OFFLINE_MODE_RAW="$(normalize_bool "${OFFLINE_INSTALL:-${AIR_GAPPED_INSTALL:-}}")"
 if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
+    # shellcheck disable=SC2034  # multiple sourced phase/util scripts read this runtime flag (e.g. 02_repo.sh, utils/python_env.sh).
     OFFLINE_MODE=true
 fi
 
@@ -1510,6 +1528,7 @@ DEFAULT_DATABASE_URL=""
 # Örnek: export SIDAR_REPO_URL=https://github.com/<org>/Sidar.git
 REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"
 TARGET_DIR="$HOME/Sidar"
+# shellcheck disable=SC2034  # scripts/install_modules/phases/04_workspace.sh reads this sourced state.
 REQUIRED_DIRS=(data logs temp sessions data/rag data/lora_adapters data/continuous_learning)
 # shellcheck disable=SC2034  # used by offline bundle flows when modules are sourced.
 OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"

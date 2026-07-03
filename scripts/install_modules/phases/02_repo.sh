@@ -121,7 +121,7 @@ sync_repo() {
         warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
         info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
         (
-            cd "$TARGET_DIR"
+            cd "$TARGET_DIR" || fail "Depo dizinine geçilemedi: $TARGET_DIR"
             local STASHED_CHANGES=false
             local INSTALL_STASH_REF=""
             local INSTALL_STASH_MESSAGE=""

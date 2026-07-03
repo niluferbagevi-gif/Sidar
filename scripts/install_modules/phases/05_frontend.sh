@@ -86,6 +86,7 @@ ASOUNDRC
             fi
         done
         if [[ "$audio_restart_needed" == true ]]; then
+            # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
             AUDIO_SESSION_RESTART_RECOMMENDED=true
         fi
         # Mevcut oturum için de hemen ayarla
@@ -602,6 +603,7 @@ WSLCFG
             esac
 
             if [[ "$changed" == true ]]; then
+                # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
                 WSLCONFIG_CHANGED=true
                 info "Değişiklik sonrası PowerShell'de 'wsl --shutdown' çalıştırıp dağıtımı yeniden başlatın."
             fi

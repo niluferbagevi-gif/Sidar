@@ -78,6 +78,7 @@ harden_database_credentials() {
                     else
                         echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
                     fi
+                    # shellcheck disable=SC2034  # scripts/install_modules/{phases/06_services.sh,phases/12_alembic.sh,utils/database_url.sh} read this sourced state.
                     DB_PASSWORD_HARDENED=true
                     ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
                     info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
@@ -447,6 +448,7 @@ report_env_api_key_status() {
     local -a key_order=()
     mapfile -t key_order < <(sidar_user_api_key_names)
 
+    # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
     ENV_API_KEYS_TOTAL="${#key_order[@]}"
     ENV_API_KEYS_FILLED=0
     ENV_API_KEYS_MISSING=()
@@ -598,9 +600,9 @@ ensure_auto_secrets() {
     # urlsafe token üretici (python3 → openssl fallback)
     _gen_urlsafe() {
         local n="$1"
-        local candidate attempt
+        local candidate
         if command -v python3 &>/dev/null; then
-            for attempt in {1..10}; do
+            for _ in {1..10}; do
                 candidate="$(python3 -c "import secrets; print(secrets.token_urlsafe($n))" 2>/dev/null || true)"
                 [[ -n "$candidate" ]] || continue
                 if ! is_weak_secret_value "$candidate"; then
@@ -609,7 +611,7 @@ ensure_auto_secrets() {
                 fi
             done
         elif command -v openssl &>/dev/null; then
-            for attempt in {1..10}; do
+            for _ in {1..10}; do
                 candidate="$(openssl rand -base64 "$n" 2>/dev/null | tr '+/' '-_' | tr -d '\n=' || true)"
                 [[ -n "$candidate" ]] || continue
                 if ! is_weak_secret_value "$candidate"; then
@@ -623,9 +625,9 @@ ensure_auto_secrets() {
     # hex token üretici
     _gen_hex() {
         local bits="$1"
-        local candidate attempt
+        local candidate
         if command -v python3 &>/dev/null; then
-            for attempt in {1..10}; do
+            for _ in {1..10}; do
                 candidate="$(python3 -c "import secrets; print(secrets.token_hex($((bits / 2))))" 2>/dev/null || true)"
                 [[ -n "$candidate" ]] || continue
                 if ! is_weak_secret_value "$candidate"; then
@@ -634,7 +636,7 @@ ensure_auto_secrets() {
                 fi
             done
         elif command -v openssl &>/dev/null; then
-            for attempt in {1..10}; do
+            for _ in {1..10}; do
                 candidate="$(openssl rand -hex "$((bits / 2))" 2>/dev/null | tr -d '\n' || true)"
                 [[ -n "$candidate" ]] || continue
                 if ! is_weak_secret_value "$candidate"; then
@@ -647,8 +649,8 @@ ensure_auto_secrets() {
 
     # Fernet anahtarı üretici
     _gen_fernet() {
-        local candidate attempt
-        for attempt in {1..10}; do
+        local candidate
+        for _ in {1..10}; do
             candidate="$(python3 - 2>/dev/null <<'PY' || true
 try:
     from cryptography.fernet import Fernet

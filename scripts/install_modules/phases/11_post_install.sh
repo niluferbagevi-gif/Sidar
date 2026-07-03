@@ -288,7 +288,7 @@ EOF
 
 run_doctor_phase() {
     step "Sidar Doctor"
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     mkdir -p artifacts/install
     local -a doctor_cmd=()
     if command -v uv &>/dev/null; then
@@ -310,7 +310,7 @@ run_doctor_phase() {
 run_prepare_system_phase() {
     install_system_dependencies
     sync_repo
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     ensure_prerequisites
     select_runtime_mode
     detect_gpu
@@ -321,7 +321,7 @@ run_prepare_system_phase() {
 }
 
 run_sync_deps_phase() {
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     ensure_prerequisites
     select_runtime_mode
     detect_gpu
@@ -334,7 +334,7 @@ run_sync_deps_phase() {
 }
 
 run_provision_models_phase() {
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     ensure_prerequisites
     detect_gpu
     setup_env_file
@@ -343,7 +343,7 @@ run_provision_models_phase() {
 }
 
 run_smoke_phase() {
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     ensure_prerequisites
     detect_gpu
     prepare_docker_for_migrations

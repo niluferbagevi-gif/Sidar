@@ -31,7 +31,7 @@ run_migrations() {
         DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
     fi
 
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
 
     ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
@@ -207,7 +207,9 @@ PY
                 fi
 
                 if [[ ("$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1") && ${#DOCKER_COMPOSE_CMD[@]} -gt 0 ]]; then
+                    # shellcheck disable=SC2034  # scripts/install_modules/{phases/06_services.sh,utils/database_url.sh} read this sourced state.
                     DB_PASSWORD_HARDENED=true
+                    # shellcheck disable=SC2034  # scripts/install_modules/phases/06_services.sh reads this sourced state.
                     POSTGRES_VOLUME_RESET_DONE=false
                     if ! maybe_reset_postgres_volume_after_password_hardening "${DOCKER_COMPOSE_CMD[@]}" -- postgres redis; then
                         MIGRATION_STATUS="db_auth_hatasi"
@@ -457,6 +459,7 @@ prepare_docker_for_migrations() {
             ;;
         *)
             start_docker_services_or_fail "${docker_compose_cmd[@]}" -- postgres redis
+            # shellcheck disable=SC2034  # scripts/install_modules/phases/{10_validation.sh,11_post_install.sh} read this sourced state.
             DOCKER_DB_SERVICES_STARTED=true
             wait_for_compose_services_health "${docker_compose_cmd[@]}" -- postgres redis || warn "Compose healthcheck bekleme başarısız; klasik bağlantı kontrolleriyle devam edilecek."
             wait_for_redis_ready_after_docker_start || warn "Redis hazır kontrolü başarısız; migrasyon sonrası test akışı etkilenebilir."
