@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -208,18 +209,41 @@ class SupervisorAgent(BaseAgent):
         return "code"
 
     @staticmethod
-    def _review_requires_revision(review_summary: str) -> bool:
+    def _extract_review_decision(review_summary: object) -> str | None:
+        """Return a normalized reviewer decision when the summary carries one."""
+
+        text = str(review_summary or "").strip()
+        if not text:
+            return None
+        body = text.split("|", 1)[1].strip() if text.startswith("qa_feedback|") else text
+        if body.startswith("{"):
+            try:
+                parsed = json.loads(body)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                decision = str(parsed.get("decision", "") or "").strip().lower()
+                return decision or None
+        match = re.search(r"\bdecision\s*[:=]\s*[\"']?([a-z_-]+)", body, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip().lower()
+        return None
+
+    @classmethod
+    def _review_requires_revision(cls, review_summary: str) -> bool:
+        decision = cls._extract_review_decision(review_summary)
+        if decision in {"reject", "rejected", "fail", "failed", "rework_required"}:
+            return True
+        if decision in {"approve", "approved", "pass", "passed"}:
+            return False
+
         text = (review_summary or "").lower()
         revision_signals = (
             "fail(",
             "[test:fail",
             "[test:fail-closed",
-            "regresyon",
-            "hata",
             "risk: yüksek",
             "iyileştirme gerekli",
-            "düzelt",
-            "decision=reject",
             "rework_required",
         )
         return any(sig in text for sig in revision_signals)

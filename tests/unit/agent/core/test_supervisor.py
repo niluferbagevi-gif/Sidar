@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import sys
 import types
 from collections.abc import Iterator
@@ -201,12 +202,25 @@ def test_intent_classification(prompt: str, expected_intent: str) -> None:
     ("summary", "expected"),
     [
         ("decision=reject", True),
+        ("decision=approve; summary=Dinamik + regresyon denetimleri değerlendirildi", False),
+        ('qa_feedback|{"decision":"APPROVE","summary":"regresyon kelimesi sabit şablonda"}', False),
+        ('{"decision":"REJECT","summary":"düzeltme gerekli"}', True),
         ("risk: yüksek", True),
         ("Tüm testler geçti", False),
     ],
 )
 def test_review_requires_revision(summary: str, expected: bool) -> None:
     assert SupervisorAgent._review_requires_revision(summary) is expected
+
+
+def test_extract_review_decision_prefers_structured_signal_over_summary_words() -> None:
+    payload = {
+        "decision": "APPROVE",
+        "summary": "[REVIEW:PASS] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi.",
+    }
+
+    assert SupervisorAgent._extract_review_decision(json.dumps(payload)) == "approve"
+    assert SupervisorAgent._review_requires_revision(json.dumps(payload)) is False
 
 
 @pytest.mark.parametrize(
