@@ -118,7 +118,8 @@ print_summary() {
     echo -e "  3️⃣  Arka plan servisleri durumu:"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
         echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
-        echo "       Altyapı servisleri: docker compose up -d postgres redis jaeger prometheus grafana"
+        echo "       Altyapı servisleri: docker compose up -d postgres redis"
+        echo "       İzleme gerekiyorsa: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
         echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
         echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
     else
@@ -234,7 +235,7 @@ print_summary() {
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
-    echo "  İzleme servislerini başlat: docker compose up -d jaeger prometheus grafana"
+    echo "  İzleme servislerini başlat: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
     echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
     echo "  Prometheus paneli : http://localhost:9090"
     echo "  Jaeger UI         : http://localhost:16686"

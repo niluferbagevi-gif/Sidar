@@ -7,7 +7,8 @@ launch_docker_services() {
     local compose_profiles=""
     local env_file="$SCRIPT_DIR/.env"
     local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-docker}}"
-    local -a infra_services=(postgres redis jaeger prometheus grafana)
+    local include_observability="${SIDAR_START_OBSERVABILITY_STACK:-false}"
+    local -a infra_services=(postgres redis)
 
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
         docker_compose_cmd=(docker compose)
@@ -27,6 +28,9 @@ launch_docker_services() {
         else
             compose_profiles="cpu"
         fi
+    fi
+    if [[ "$include_observability" == "true" && ",$compose_profiles," != *",observability,"* ]]; then
+        compose_profiles="${compose_profiles},observability"
     fi
 
     if [[ "$runtime_mode" == "ask" ]]; then
@@ -70,8 +74,13 @@ launch_docker_services() {
             fi
 
             info "Docker Compose servisleri başlatılıyor..."
-            info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
-            validate_monitoring_mount_paths
+            if [[ "$include_observability" == "true" ]]; then
+                infra_services+=(jaeger prometheus grafana)
+                info "Monitoring konfigürasyon dosyaları için bind-mount sanity check çalıştırılıyor..."
+                validate_monitoring_mount_paths
+            else
+                info "Gözlemlenebilirlik yığını varsayılan kurulumda başlatılmayacak. Etkinleştirmek için SIDAR_START_OBSERVABILITY_STACK=true kullanın."
+            fi
             if [[ "$runtime_mode" == "local" ]]; then
                 info "Seçilen çalışma modu: local (uygulama local + altyapı Docker)"
                 if ! check_host_ollama_healthy "$env_file"; then
@@ -98,9 +107,9 @@ launch_docker_services() {
             ;;
         *)
             if [[ "$runtime_mode" == "local" ]]; then
-                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]})"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]}; gözlemlenebilirlik için: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana)"
             else
-                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d)"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d; gözlemlenebilirlik için profile'a observability ekleyin)"
             fi
             ;;
     esac
