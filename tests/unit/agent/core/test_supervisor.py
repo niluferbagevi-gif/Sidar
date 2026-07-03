@@ -316,6 +316,48 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
     assert len(calls) == expected_delegate_calls
 
 
+def test_route_p2p_uses_shared_turn_budget_for_chained_handoffs() -> None:
+    sup = _build_supervisor()
+    remaining_turns = 1
+    calls: list[str] = []
+
+    def _consume_turn() -> bool:
+        nonlocal remaining_turns
+        remaining_turns -= 1
+        return remaining_turns >= 0
+
+    async def _delegate(receiver: str, *_args: object, **_kwargs: object) -> TaskResult:
+        calls.append(receiver)
+        return TaskResult(
+            task_id=f"hop-{len(calls)}",
+            status="done",
+            summary=DelegationRequest(
+                task_id=f"next-{len(calls)}",
+                reply_to=receiver,
+                target_agent="reviewer",
+                payload="devam",
+                intent="p2p",
+            ),
+        )
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="coder",
+        target_agent="reviewer",
+        payload="ilk",
+        intent="p2p",
+    )
+
+    result = asyncio.run(
+        sup._route_p2p(req, max_hops=5, max_turns=10, consume_turn=_consume_turn)
+    )
+
+    assert calls == ["reviewer"]
+    assert result.status == "failed"
+    assert "maksimum tur limiti" in str(result.summary)
+
+
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
     sup = _build_supervisor(max_qa_retries=0)
 

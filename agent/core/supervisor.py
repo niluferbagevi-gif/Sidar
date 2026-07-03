@@ -390,8 +390,14 @@ class SupervisorAgent(BaseAgent):
         parent_task_id: str | None = None,
         max_hops: int = 4,
         max_turns: int | None = None,
+        consume_turn: Callable[[], bool] | None = None,
     ) -> TaskResult:
-        """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
+        """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü.
+
+        ``consume_turn`` shares the caller's cumulative turn budget with recursive
+        P2P hops. When omitted, direct callers get a local budget for backwards
+        compatibility with focused router tests.
+        """
         if max_turns is None:
             turn_limit = self._max_turns()
         else:
@@ -399,10 +405,28 @@ class SupervisorAgent(BaseAgent):
                 turn_limit = max(0, int(max_turns))
             except (TypeError, ValueError):
                 turn_limit = self._max_turns()
+        local_turns = 0
+
+        def _consume_route_turn() -> bool:
+            nonlocal local_turns
+            if consume_turn is not None:
+                return consume_turn()
+            local_turns += 1
+            return local_turns <= turn_limit
+
         hop = 0
         qa_retries = 0
         current = request
-        while hop < max_hops and hop < turn_limit:
+        while hop < max_hops:
+            if not _consume_route_turn():
+                return TaskResult(
+                    task_id=str(uuid.uuid4()),
+                    status="failed",
+                    summary=(
+                        "[P2P:STOP] Circuit breaker tetiklendi: "
+                        f"maksimum tur limiti aşıldı ({turn_limit})."
+                    ),
+                )
             hop += 1
             missing = self._validate_p2p_request(current)
             if missing:
@@ -449,11 +473,7 @@ class SupervisorAgent(BaseAgent):
                 current = next_request
                 continue
             return result
-        stop_reason = (
-            f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({turn_limit})."
-            if hop >= turn_limit
-            else "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
-        )
+        stop_reason = "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
         return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary=stop_reason)
 
     async def run_task(self, task_prompt: str) -> str:
@@ -482,7 +502,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -494,7 +517,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -506,7 +532,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -519,7 +548,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -531,7 +563,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -544,7 +579,10 @@ class SupervisorAgent(BaseAgent):
         delegated = self._coerce_delegation_request(code_result.summary)
         if delegated is not None:
             code_result = await self._route_p2p(
-                delegated, parent_task_id=code_result.task_id, max_turns=max_turns
+                delegated,
+                parent_task_id=code_result.task_id,
+                max_turns=max_turns,
+                consume_turn=_consume_turn,
             )
 
         code_summary = str(code_result.summary)
@@ -569,7 +607,10 @@ class SupervisorAgent(BaseAgent):
         delegated = self._coerce_delegation_request(review_result.summary)
         if delegated is not None:
             review_result = await self._route_p2p(
-                delegated, parent_task_id=review_result.task_id, max_turns=max_turns
+                delegated,
+                parent_task_id=review_result.task_id,
+                max_turns=max_turns,
+                consume_turn=_consume_turn,
             )
 
         review_summary = str(review_result.summary)
@@ -608,7 +649,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(next_code.summary)
             if delegated is not None:
                 next_code = await self._route_p2p(
-                    delegated, parent_task_id=next_code.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=next_code.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
 
             latest_code_summary = str(next_code.summary)
@@ -624,7 +668,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(review_result.summary)
             if delegated is not None:
                 review_result = await self._route_p2p(
-                    delegated, parent_task_id=review_result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=review_result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             review_summary = str(review_result.summary)
 
