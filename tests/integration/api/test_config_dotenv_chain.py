@@ -36,6 +36,7 @@ def test_production_explicit_dotenv_satisfies_critical_keys_when_sidar_keys_file
                 "JWT_SECRET_KEY=jwt-from-explicit-dotenv",
                 "API_KEY=api-from-explicit-dotenv",
                 "MEMORY_ENCRYPTION_KEY=memory-key-from-explicit-dotenv",
+                "DATABASE_URL=postgresql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!@db.example.test:5432/sidar",
                 f"AI_PROVIDER={provider}",
                 f"{provider_key}={provider_value}",
                 "",

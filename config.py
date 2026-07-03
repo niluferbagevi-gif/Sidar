@@ -1099,6 +1099,7 @@ class Config:
                 is_test_env=cls._is_test_env(),
                 web_concurrency=get_int_env("WEB_CONCURRENCY", 1),
                 postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
+                database_url=cls.DATABASE_URL,
             )
         )
 

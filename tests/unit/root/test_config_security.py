@@ -72,3 +72,21 @@ def test_missing_security_runtime_keys_rejects_weak_production_postgres_password
         is_test_env=False,
         postgres_password="sidar",
     )
+
+
+def test_missing_security_runtime_keys_accepts_strong_database_url_password():
+    assert (
+        config_security.get_missing_security_runtime_keys(
+            api_key="api-ok",
+            jwt_secret_key="jwt-ok",
+            jwt_secret_key_explicitly_configured=True,
+            is_production=True,
+            is_test_env=False,
+            postgres_password="",
+            database_url=(
+                "postgresql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!"
+                "@db.example.test:5432/sidar"
+            ),
+        )
+        == []
+    )
