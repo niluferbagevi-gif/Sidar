@@ -1060,6 +1060,11 @@ sidar_phase_local_migrations_and_models() {
 
 
 sidar_phase06_run_database_password_sync_all_envs() {
+    if [[ "${SIDAR_PHASE06_DATABASE_PASSWORDS_SYNCED_FOR:-}" == "$SCRIPT_DIR" ]]; then
+        info "PostgreSQL dotenv profilleri bu kurulum turunda zaten eşitlendi; tekrar senkronizasyon atlandı."
+        return 0
+    fi
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; smoke test öncesi PostgreSQL dotenv senkronizasyonu atlandı."
         return 1
@@ -1070,7 +1075,11 @@ sidar_phase06_run_database_password_sync_all_envs() {
         return 1
     fi
 
-    (cd "$SCRIPT_DIR" && uv run python scripts/sync_database_passwords.py --all-envs >/dev/null 2>&1)
+    if (cd "$SCRIPT_DIR" && uv run python scripts/sync_database_passwords.py --all-envs >/dev/null 2>&1); then
+        SIDAR_PHASE06_DATABASE_PASSWORDS_SYNCED_FOR="$SCRIPT_DIR"
+        return 0
+    fi
+    return 1
 }
 
 sidar_phase06_cleanup_pre_service_smoke_log() {
@@ -1404,7 +1413,6 @@ PY
         ok "Servis öncesi installer smoke gate bağımlılıkları dev-light profiliyle hazırlandı."
     fi
 
-    unset SIDAR_DATABASE_ENV_CHAIN_SYNCED || true
     info "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor..."
     if sidar_phase06_run_database_password_sync_all_envs; then
         ok "Servis öncesi installer smoke gate dotenv profilleri eşitlendi."
