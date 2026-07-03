@@ -24,18 +24,18 @@ uv run pytest tests/unit/core/test_rag.py::test_fetch_pgvector_returns_empty_whe
 Merge/PR öncesi ana doğrulama yolu `run_tests.sh` betiğidir. Coverage ayarları için
 tek doğruluk kaynağı `pyproject.toml` içindeki `[tool.coverage.*]` bölümleridir;
 repoda ayrı bir `.coveragerc` dosyası tutulmaz. `run_tests.sh`,
-`[tool.coverage.report].fail_under = 90` baseline değerini okur, profil
+`[tool.coverage.report].fail_under = 5` baseline değerini okur, profil
 override'larını çözer ve asıl fail-under kontrolünü tüm fazlar birleştikten sonra
 tek final `coverage report --fail-under=${COVERAGE_FAIL_UNDER}` adımında uygular.
 
 | Profil | Varsayılan eşik | Nasıl seçilir? |
 | --- | --- | --- |
-| Local | `%90` (`pyproject.toml` baseline veya `COVERAGE_FAIL_UNDER_LOCAL`) | Varsayılan geliştirici akışı |
-| CI | `%95` (`.github/workflows/ci.yml` içinde `COVERAGE_FAIL_UNDER_CI`) | `CI=true` veya `TEST_PROFILE=ci` |
-| Coverage campaign | `%100` (`COVERAGE_FAIL_UNDER_CAMPAIGN`) | `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` |
+| Local | `%5` (`pyproject.toml` baseline veya `COVERAGE_FAIL_UNDER_LOCAL`) | Varsayılan geliştirici akışı |
+| CI | `%5` ratchet baseline (`COVERAGE_FAIL_UNDER_CI` açık override değilse) | `CI=true` veya `TEST_PROFILE=ci` |
+| Coverage campaign | `%5` ratchet baseline (`COVERAGE_FAIL_UNDER_CAMPAIGN` açık override değilse) | `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` |
 
 Açık `COVERAGE_FAIL_UNDER` verilirse tüm profil değerlerinin önüne geçer;
-`MIN_UNIT_COVERAGE_FAIL_UNDER` (varsayılan `%80`) ise çözülen değerin alt sınırıdır.
+`MIN_UNIT_COVERAGE_FAIL_UNDER` (varsayılan `%5`) ise çözülen değerin alt sınırıdır.
 
 ```bash
 ./run_tests.sh

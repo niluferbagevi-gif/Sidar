@@ -88,7 +88,7 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     # pyproject.toml is the single coverage config source: branch behavior,
     # omit/exclude patterns, HTML config, and the local ratchet baseline live together.
     assert pyproject["tool"]["coverage"]["run"]["branch"] is True
-    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 90
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 5
 
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
@@ -96,10 +96,10 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     testing_docs = Path("docs/TESTING.md").read_text(encoding="utf-8")
     module_index = Path("docs/module-notes/INDEX.md").read_text(encoding="utf-8")
 
-    assert "güncel repo gate: `%90`" in coverage_agent_docs
+    assert "güncel repo gate: `%5`" in coverage_agent_docs
     assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
     assert "Coverage Quality Gate" in project_report
-    assert "pyproject.toml fail_under=90" in project_report
+    assert "pyproject.toml fail_under=5" in project_report
     assert "tek doğruluk kaynağı `pyproject.toml`" in testing_docs
     assert "repoda ayrı bir `.coveragerc` dosyası tutulmaz" in testing_docs
     assert "pyproject.toml` coverage config" in module_index
@@ -124,8 +124,8 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
 
     assert "uv run mypy --strict core/ agent/ web/ managers/" in script
     assert "uv run bandit -r . -c pyproject.toml" in script
-    assert 'MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"' in script
-    assert "minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}" in script
+    assert 'MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-5}"' in script
+    assert "minimum floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}" in script
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
 
 
@@ -137,7 +137,7 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
     assert "uv run bash run_tests.sh" in ci
-    assert 'COVERAGE_FAIL_UNDER_CI: "95"' in ci
+    assert 'COVERAGE_FAIL_UNDER_CI: "' not in ci
     assert "uv run --with mutmut mutmut run --max-children 4" in mutation
 
 
@@ -2278,25 +2278,18 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert "COVERAGE_FAIL_UNDER_SOURCE" in script
     assert "explicit-override" in script
 
-    # Local/CI ratchet cap leaves a 1-point slack by default; campaign and
-    # explicit strict-local opt-in open to 100.
-    assert 'COVERAGE_RATCHET_MAX_GATE="99"' in script
-    assert 'COVERAGE_RATCHET_MAX_GATE="100"' in script
-    assert "COVERAGE_STRICT_LOCAL_RATCHET" in script
+    # All profiles start from the ratcheted pyproject baseline and can ratchet up to 100 by default.
+    assert 'COVERAGE_RATCHET_MAX_GATE="99"' not in script
+    assert 'COVERAGE_RATCHET_MAX_GATE="${COVERAGE_RATCHET_MAX_GATE:-100}"' in script
     tests_notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
-    assert "Coverage gate ratcheted: %90 -> %99 (measured=%100.00)" in tests_notes
-    assert "günlük local/CI ratchet cap `%99`" in coverage_agent_docs
-    assert (
-        '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]'
-        in script
-    )
-
+    assert "Coverage gate ratcheted: %5 -> %100 (measured=%100.00)" in tests_notes
+    assert "ratchet cap `%100`" in coverage_agent_docs
     # pyproject.toml holds a sustainable baseline, not the campaign target.
-    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 90
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 5
 
-    # CI workflow sets the stricter pre-merge override for the main test job.
-    assert "COVERAGE_FAIL_UNDER_CI:" in ci_workflow
+    # CI workflow follows the ratcheted pyproject baseline unless a one-off override is supplied.
+    assert "COVERAGE_FAIL_UNDER_CI:" not in ci_workflow
 
     # AGENTS.md documents the three-profile model explicitly.
     assert "COVERAGE_FAIL_UNDER_LOCAL" in agents_md

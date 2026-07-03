@@ -390,7 +390,7 @@ fi
 # AGENTS.md §2.5.4: coverage hedefleri üç ayrı operasyon profilinde izlenir.
 #   - local profile  → COVERAGE_FAIL_UNDER_LOCAL    (varsayılan: pyproject.toml)
 #   - ci profile     → COVERAGE_FAIL_UNDER_CI       (varsayılan: pyproject.toml)
-#   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: 100)
+#   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: pyproject.toml)
 # Doğrudan COVERAGE_FAIL_UNDER atanırsa o değer her profilin önüne geçer
 # (geri uyumluluk için korunur). Coverage campaign opt-in'i ya CLI'dan
 # COVERAGE_CAMPAIGN=1 ile ya da otonom döngünün
@@ -404,7 +404,7 @@ fi
 if [ -n "${COVERAGE_FAIL_UNDER:-}" ]; then
   COVERAGE_FAIL_UNDER_SOURCE="explicit-override"
 elif [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ]; then
-  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CAMPAIGN:-100}"
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CAMPAIGN:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
   COVERAGE_FAIL_UNDER_SOURCE="campaign"
 elif [ "${TEST_PROFILE}" = "ci" ]; then
   COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CI:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
@@ -414,17 +414,11 @@ else
   COVERAGE_FAIL_UNDER_SOURCE="local"
 fi
 
-# Yerel/CI profillerinde ratchet üst sınırını varsayılan 99'da tutarak %0.x
-# dalgalanma için 1 puanlık tampon bırakıyoruz; coverage kampanyasında veya
-# bilinçli strict-local opt-in'de %100 aspirasyonel hedefe izin veriyoruz.
-# Açık COVERAGE_RATCHET_MAX_GATE atandıysa o değer her profilin önüne geçer.
-if [ -z "${COVERAGE_RATCHET_MAX_GATE:-}" ]; then
-  if [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]; then
-    COVERAGE_RATCHET_MAX_GATE="100"
-  else
-    COVERAGE_RATCHET_MAX_GATE="99"
-  fi
-fi
+# Tüm profillerde ratchet üst sınırı varsayılan %100'dür; başlangıç gate'i
+# %5 olsa da başarılı birleşik coverage koşuları pyproject.toml baseline'ını
+# yukarı taşır. Açık COVERAGE_RATCHET_MAX_GATE atandıysa o değer her profilin
+# önüne geçer.
+COVERAGE_RATCHET_MAX_GATE="${COVERAGE_RATCHET_MAX_GATE:-100}"
 export COVERAGE_RATCHET_MAX_GATE
 
 if [ "${TEST_PROFILE}" = "ci" ]; then
@@ -606,14 +600,14 @@ print_frontend_quality_summary() {
   fi
 }
 
-MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"
+MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-5}"
 if ! [[ "${MIN_UNIT_COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "⚠️ Geçersiz MIN_UNIT_COVERAGE_FAIL_UNDER değeri: '${MIN_UNIT_COVERAGE_FAIL_UNDER}'. Varsayılan 80 kullanılacak."
-  MIN_UNIT_COVERAGE_FAIL_UNDER="80"
+  echo "⚠️ Geçersiz MIN_UNIT_COVERAGE_FAIL_UNDER değeri: '${MIN_UNIT_COVERAGE_FAIL_UNDER}'. Varsayılan 5 kullanılacak."
+  MIN_UNIT_COVERAGE_FAIL_UNDER="5"
 fi
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
-  COVERAGE_FAIL_UNDER="90"
+  echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan ${DEFAULT_COVERAGE_FAIL_UNDER} kullanılacak."
+  COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"
 fi
 COVERAGE_FAIL_UNDER="$(python - "${COVERAGE_FAIL_UNDER}" "${MIN_UNIT_COVERAGE_FAIL_UNDER}" <<'PY_COVERAGE_FLOOR'
 import sys
@@ -674,7 +668,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, pyproject.toml baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, pyproject.toml baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 

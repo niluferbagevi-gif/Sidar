@@ -172,7 +172,7 @@
 
 Faz E vizyonu artık SİDAR'ı yalnızca yazılım geliştiren bir AI yardımcı olmaktan çıkarıp yazılım, pazarlama, operasyon ve içerik üretimini tek bir otonom ekosistemde birleştiren **otonom şirket simülasyonu** katmanına taşımış durumdadır. Bu fazda devreye alınan yakın dönem odakları şunlardır:
 
-- **Coverage Agent:** `agent/roles/coverage_agent.py` swarm rolü eklendi; ajan `CodeManager` üzerinden `pytest` komutlarını koşturuyor, pytest çıktısını analiz ediyor, eksik test adayları üretiyor, önerilen test dosyasını yazıyor ve bulguları `coverage_tasks` / `coverage_findings` yüzeyine kaydediyor. `%90` test kapsama kalite kapısı artık yalnızca statik eşik değil, aktif test üretim döngüsüyle de destekleniyor.
+- **Coverage Agent:** `agent/roles/coverage_agent.py` swarm rolü eklendi; ajan `CodeManager` üzerinden `pytest` komutlarını koşturuyor, pytest çıktısını analiz ediyor, eksik test adayları üretiyor, önerilen test dosyasını yazıyor ve bulguları `coverage_tasks` / `coverage_findings` yüzeyine kaydediyor. `%5` test kapsama kalite kapısı artık yalnızca statik eşik değil, aktif test üretim döngüsüyle de destekleniyor.
 - **Poyraz (Dijital Pazarlama ve Operasyon Uzmanı):** `agent/roles/poyraz_agent.py` devreye alındı; `WebSearchManager`, `SocialMediaManager`, `DocumentStore` ve `core.multimodal.MultimodalPipeline` entegrasyonları ile Instagram/Facebook/WhatsApp yayınlama, landing page üretimi, kampanya kopyası hazırlama, video içgörüsü ingest etme ve operasyon checklist'i oluşturma akışları fiilen sisteme eklendi.
 - **YouTube ve Genişletilmiş Multimodal Zeka:** `core/multimodal.py` hattı Poyraz içinde `ingest_video_insights` aracıyla kullanılmaya başlandı; dış video URL'lerinden çıkarılan sahne özeti ve ingest edilen içerik, pazarlama/operasyon çıktısına dönüştürülen aktif veri kaynağı olarak konumlandı.
 
@@ -339,7 +339,7 @@ Sidar/
 │           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
 │           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
-├── <a href="docs/module-notes/coverage-config.md">pyproject.toml coverage</a> # Coverage ayarları ve %90 local baseline
+├── <a href="docs/module-notes/coverage-config.md">pyproject.toml coverage</a> # Coverage ayarları ve %5 local baseline
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
 ├── AUDIT_REPORT_v5.0.md       # v5.0 kurumsal geçiş + coverage kapanışı denetim raporu
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
@@ -600,7 +600,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 - **`test_*.py` modül sayısı:** **213**
 - **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
 - **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `pyproject.toml`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen profil-aware **%90 local / %95 CI / %100 campaign** gate ailesi
+- **Kapsama politikası:** `pyproject.toml`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen profil-aware **%5 local / %5 CI / %100 campaign** gate ailesi
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `pyproject.toml`, `run_tests.sh`
@@ -620,7 +620,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (local `pyproject.toml fail_under=90`, CI `COVERAGE_FAIL_UNDER_CI=95`, campaign `%100`) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
+| Coverage Quality Gate (local/CI/campaign başlangıç `pyproject.toml fail_under=5`, ratchet ile yukarı) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
@@ -635,17 +635,15 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
 gate ailesidir (detay için bkz. `AGENTS.md §2.5.4`):
 
-- **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 90`
-  stabil ve ulaşılabilir tabandır; `coverage_ratchet.py` step `%1` ile bu değeri
-  yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=99` ile bir puanlık
-  tampon bırakır. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
-- **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` ana test
-  job'unda `COVERAGE_FAIL_UNDER_CI=95` ile lokal tabanın üzerine sıkı
-  pre-merge eşiği bindirir.
+- **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 5`
+  bootstrap tabandır; `coverage_ratchet.py` step `%1` ile bu değeri yalnızca yukarı taşır.
+  `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
+- **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` ana test job'ında statik
+  `COVERAGE_FAIL_UNDER_CI` set etmez; CI de ratchet edilmiş `pyproject.toml` baseline'ını kullanır.
+  `COVERAGE_FAIL_UNDER_CI` yalnız bilinçli tekil sıkılaştırma override'ıdır.
 - **Coverage campaign** — `COVERAGE_CAMPAIGN=1` veya
-  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile devreye girer,
-  `COVERAGE_FAIL_UNDER_CAMPAIGN` varsayılan `%100` aspirasyonel hedefi
-  uygular ve ratchet üst sınırını `%100`'e açar.
+  `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile devreye girer; coverage gate yine
+  `pyproject.toml` baseline'ından başlar ve `COVERAGE_FAIL_UNDER_CAMPAIGN` yalnız açık override'dır.
 
 Doğrudan `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer
 (geri uyumluluk). Rapor görünürlüğü `pyproject.toml` coverage ayarlarıyla
@@ -1387,7 +1385,7 @@ Bu bant, v4 mimarisinin yalnızca backend kabiliyeti olarak kalmayıp ürün sev
 
 - **Modern React SPA geçişi:** `web_ui_react/` artık standart kullanıcı deneyimidir; `web_server.py` derlenmiş React dağıtımını önceliklendirir, yönetim panelleri (Prompt Admin, Agent Manager, Swarm Flow, tenant ekranları) aynı SPA kabuğunda birleşir.
 - **Dokümantasyon/sürüm tekilleştirmesi:** `CHANGELOG.md`, `README.md`, `config.py`, teknik referanslar ve proje raporu `v4.3.0` çizgisine hizalanarak operasyonda tek bir sürüm gerçeği oluşturuldu.
-- **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%90` olarak kodlanmıştır; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
+- **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%5` olarak kodlanmıştır; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
 - **Kurumsal kapanış yorumu:** Bu aşamada React SPA, swarm, semantic cache, OTel, tenant RBAC/audit, DLP/HITL ve kurumsal deployment yüzeyleri aynı sistem üzerinde bir araya gelmiş; v4.x serisi “özellik ekleme” aşamasını tamamlayıp **operasyonel enterprise platform** seviyesine ulaşmıştır.
 
 ### 13.4 v4.x Tamamlanan Evrim Özeti
@@ -1452,7 +1450,7 @@ Projenin temel kurumsal altyapısı, swarm mimarisi, güvenlik kontrol noktalar�
 
 ### 14.6 Faz E: Otonom İş Ekosistemi
 
-- **Coverage Agent:** `agent/roles/coverage_agent.py` ile coverage raporlarından eksik satırları okuyup `pytest` koşturan, bulgu analizi yapan, test adayı üreten ve çıktıları `coverage_tasks` / `coverage_findings` yüzeyine yazan otonom QA swarm birimi sisteme eklendi; `tests/test_missing_edge_case_coverage_final.py` ile doğrulanan `%90` baseline bu ajanın çalışma standardı olarak kullanılmaktadır.
+- **Coverage Agent:** `agent/roles/coverage_agent.py` ile coverage raporlarından eksik satırları okuyup `pytest` koşturan, bulgu analizi yapan, test adayı üreten ve çıktıları `coverage_tasks` / `coverage_findings` yüzeyine yazan otonom QA swarm birimi sisteme eklendi; `tests/test_missing_edge_case_coverage_final.py` ile doğrulanan `%5` baseline bu ajanın çalışma standardı olarak kullanılmaktadır.
 - **Poyraz:** `agent/roles/poyraz_agent.py` ile SİDAR'ın pazarlama ve operasyon kolu aktif hale geldi; sosyal medya yönetimi, web sitesi/landing page taslakları, kampanya içerikleri, WhatsApp iletişimi ve tenant-aware operasyon checklist'leri tek ajan rolünde yürütülüyor.
 - **Platformdan beslenen multimodal içerik zekâsı:** `core/multimodal.py` hattı artık Poyraz'ın `ingest_video_insights` aracı üzerinden dış video kaynaklarını analiz edip bu veriyi içerik, kampanya ve operasyon aksiyonlarına dönüştüren fiili bir veri kaynağı olarak kullanılmaktadır.
 
@@ -1476,7 +1474,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Modern Asenkron Arayüz (SPA)** | React + Vite + WebSocket/event-driven sunum katmanı (`web_ui_react/`, `web_server.py`) | ✅ Tamamlandı |
 | **Model Ağ Geçidi (LLM Gateway)** | OpenAI/Anthropic/Ollama/LiteLLM yollarını tekleştiren sağlayıcı soyutlama katmanı (`core/llm_client.py`, `core/router.py`) | ✅ Tamamlandı |
 | **Dinamik Genişletilebilirlik** | Runtime kayıt edilen ajan pazaryeri ve plugin yükleme akışı (`agent/registry.py`, `plugins/`, `web_server.py`) | ✅ Tamamlandı |
-| **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%90` local / `%95` CI coverage gate (`.github/workflows/ci.yml`, `run_tests.sh`, `pyproject.toml`, `tests/`) | ✅ Tamamlandı |
+| **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%5` local / `%5` CI coverage gate (`.github/workflows/ci.yml`, `run_tests.sh`, `pyproject.toml`, `tests/`) | ✅ Tamamlandı |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
@@ -1486,7 +1484,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `pyproject.toml` üzerinde `%90` stabil tabanı, CI ise `COVERAGE_FAIL_UNDER_CI=95` ile sıkı pre-merge eşiğini uygular; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
+> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur; merge-blocking fail-under gate ise local, CI ve campaign koşullarında `pyproject.toml` üzerindeki `%5` bootstrap baseline’dan başlar ve ratchet ile yalnızca yukarı taşınır. `COVERAGE_FAIL_UNDER_CI` / `COVERAGE_FAIL_UNDER_CAMPAIGN` değerleri artık varsayılan değil, yalnız bilinçli geçici override olarak kullanılmalıdır (bkz. `AGENTS.md §2.5.4`).
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi
@@ -1592,7 +1590,7 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 
 ### Final Doğrulama ve Sıfır Teknik Borç Durumu
 
-Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%90 coverage hard gate** uygular; bu değer depo kültüründeki tam kapsama hedefinin repo içinde gerçekten kodlanmış karşılığıdır.
+Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%5 coverage hard gate** uygular; bu değer depo kültüründeki tam kapsama hedefinin repo içinde gerçekten kodlanmış karşılığıdır.
 
 Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v5.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
 

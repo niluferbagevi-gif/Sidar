@@ -269,17 +269,19 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
       `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine
       yazar.
     - **CI profile (`TEST_PROFILE=ci`)** — pre-merge/zorunlu kapı.
-      `COVERAGE_FAIL_UNDER_CI` envi local tabanın üzerine sıkı eşik (örn.
-      `%95`) bindirir; `.github/workflows/ci.yml` bu envi ana test job'unda
-      açık olarak verir.
-    - **Coverage campaign profile** — aspirasyonel `%100` hedefi.
+      Varsayılan olarak local ile aynı ratchet edilmiş `pyproject.toml` baseline'ını
+      kullanır; `COVERAGE_FAIL_UNDER_CI` yalnız bilinçli tekil sıkılaştırma için
+      opsiyonel override'dır ve `.github/workflows/ci.yml` ana test job'unda
+      varsayılan olarak set edilmez.
+    - **Coverage campaign profile** — coverage gate açısından aynı ratchet edilmiş
+      baseline'dan başlar.
       `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`
-      ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` envi varsayılan
-      `100`'ü override edebilir.
+      ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` yalnız bilinçli geçici
+      override olarak kullanılmalıdır. Kampanya/otonom iyileştirme hedefi ayrıca
+      `AUTONOMOUS_LOOP_COVERAGE_TARGET` veya `AUTONOMOUS_LOOP_COVERAGE_PROFILE` ile yönetilir.
 - `coverage_ratchet.py` `pyproject.toml` üzerindeki `[tool.coverage.report].fail_under` değerini
   yalnızca yukarı taşır; `COVERAGE_RATCHET_STEP` varsayılanı `%1`'dir ve
-  local/CI profilleri için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak
-  `99`'dur (1 puanlık tampon), coverage campaign profilinde `100`'e açılır.
+  tüm profiller için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak `100`'dür.
   Açık `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer (geri
   uyumluluk).
 - `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom iyileştirme

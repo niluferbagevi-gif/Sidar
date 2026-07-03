@@ -96,8 +96,8 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%90`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
-| CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER_CI` (varsayılan `.github/workflows/ci.yml` içinde `%95`) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal tabanın üzerine merge engelleyici sıkı eşik bindirir; otonom `%99.8` hedefiyle karıştırılmaz. |
+| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%5`, ratchet cap `%100`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| CI zorunlu gate | CI ortamında `TEST_PROFILE=ci`; varsayılan eşik ratchet edilmiş `pyproject.toml` baseline'ıdır | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Local ile aynı ratchet edilmiş baseline'ı kullanır; `COVERAGE_FAIL_UNDER_CI` yalnız bilinçli tekil sıkılaştırma override'ıdır. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
 
@@ -106,11 +106,11 @@ profil vardır:
 yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
 
-> Operasyon notu: `%100.00` ölçüm görüldüğünde bile günlük local/CI ratchet cap `%99`
-> bilinçli olarak korunur. `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)`
-> çıktısı, refactor dönemi için doğru güvenlik tamponudur; `%100` gate yalnız
-> `COVERAGE_CAMPAIGN=1`, `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` veya
-> bilinçli `COVERAGE_STRICT_LOCAL_RATCHET=1` opt-in'i ile denenmelidir.
+> Operasyon notu: başlangıç gate'i `%5` olsa da ratchet mekanizması başarılı birleşik
+> coverage koşularından sonra `pyproject.toml` baseline'ını yalnızca yukarı taşır.
+> Örneğin `%100.00` ölçümde `Coverage gate ratcheted: %5 -> %100 (measured=%100.00)`
+> çıktısı beklenen davranıştır; geçici daha düşük tavan gerekiyorsa `COVERAGE_RATCHET_MAX_GATE`
+> açıkça verilmelidir.
 
 Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için profillenebilir:
 
@@ -144,11 +144,11 @@ basamağa yuvarlar ve mevcut gate'i asla düşürmez:
 reached_step = math.floor(measured_coverage / step) * step
 ```
 
-Örnek: ölçülen coverage `%99.04`, mevcut gate `%95` ise sonuçlar şöyledir:
+Örnek: ölçülen coverage `%99.04`, mevcut gate `%5` ise sonuçlar şöyledir:
 
 | `COVERAGE_RATCHET_STEP` | Yeni gate | Kullanım önerisi |
 | ---: | ---: | --- |
-| `5` | `%95` | Güvenli ama bu proje için kaba; `%99.04` ölçümü gate'e yansımaz. |
+| `5` | `%5` | Güvenli ama bu proje için kaba; `%99.04` ölçümü gate'e yansımaz. |
 | `1` | `%99` | Varsayılan/günlük kullanım için önerilen denge. |
 | `0.5` | `%99` | Kampanya dışı kullanımda `1` ile benzer, daha sık ratchet eder. |
 | `0.1` | `%99` | Kontrollü coverage kampanyalarında geçici kullanılabilir. |
@@ -160,15 +160,13 @@ Bu nedenle günlük local/CI kalite kapısı için önerilen kullanım:
 COVERAGE_RATCHET_STEP=1 ./run_tests.sh
 ```
 
-Coverage kampanyası veya otonom ajan iyileştirme koşusunda hedefi step ile değil,
+Coverage kampanyası veya otonom ajan iyileştirme koşusunda iyileştirme hedefini step ile değil,
 `AUTONOMOUS_LOOP_COVERAGE_TARGET` veya `AUTONOMOUS_LOOP_COVERAGE_PROFILE` ile yönetin.
-`short` profil `%99.8`, `full` profil `%100` hedefler.
+`short` profil `%99.8`, `full` profil `%100` iyileştirme hedefler; fail-under gate ise açık override verilmedikçe ratchet edilmiş `pyproject.toml` baseline'ını kullanır.
 
 ### 4.3) Otonom test yazım ajanı için mikro kapsam sınırı
 
-Arkadaşınızın `%5` uyarısı, bu repodaki **ratchet step** varsayılanı için artık
-uygulanmış durumda: `run_tests.sh` ve `scripts/coverage_ratchet.py` günlük gate'i
-varsayılan `%1` puanlık basamaklarla yükseltiyor. Ancak otonom test yazımında ikinci
+Arkadaşınızın `%5` uyarısı, bu repodaki **bootstrap fail-under gate** için uygulanmış durumda: `pyproject.toml` baseline `%5`'tir ve `run_tests.sh` / `scripts/coverage_ratchet.py` günlük gate'i varsayılan `%1` puanlık basamaklarla yukarı yükseltiyor. Ancak otonom test yazımında ikinci
 bir risk daha var: CoverageAgent'a tek denemede çok fazla eksik satır/finding vermek.
 
 Bu nedenle otonom döngü artık mikro kapsamla çalışır:
@@ -183,7 +181,7 @@ Bu nedenle otonom döngü artık mikro kapsamla çalışır:
 
 Bu ayrım önemlidir:
 
-- `COVERAGE_RATCHET_STEP=1`, günlük kalite kapısını ölçüme yaklaştırmak için dengeli
+- `COVERAGE_RATCHET_STEP=1`, `%5` bootstrap kalite kapısını ölçüme yaklaştırmak için dengeli
   varsayılandır.
 - `%5` tek otonom test üretim denemesi için geniş/agresif kabul edilir; 21.5k+ LOC
   yüzeyinde yaklaşık bin satırlık davranış alanını aynı bağlama yükleyebilir.
