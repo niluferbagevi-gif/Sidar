@@ -74,8 +74,12 @@ from .graph import (
     ExtractedKnowledgeEntity,
     ExtractedKnowledgeRelation,
     GraphIndex,
-    KnowledgeGraphEdge,
-    KnowledgeGraphNode,
+)
+from .graph import (
+    KnowledgeGraphEdge as KnowledgeGraphEdge,
+)
+from .graph import (
+    KnowledgeGraphNode as KnowledgeGraphNode,
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
 from .graph_formatting import format_graph_impact_analysis as _format_graph_impact_analysis_impl
@@ -100,6 +104,9 @@ from .pgvector_helpers import (
 )
 from .pgvector_helpers import (
     pgvector_failure_action_message as _pgvector_failure_action_message_impl,
+)
+from .projection import (
+    build_knowledge_graph_projection_payload as _build_knowledge_graph_projection_payload_impl,
 )
 from .query import GraphRAGSearchPlan
 from .query import build_query_candidates as build_query_candidates
@@ -1275,145 +1282,19 @@ class DocumentStore:
         Neo4j gibi bir katmana doğrudan yazmak yerine, önce taşınabilir bir projection
         üretir. Böylece ileride GraphRAG için `MERGE` tabanlı sync işleri kolaylaşır.
         """
-        max_items = max(1, min(int(limit or 100), 1000))
-        nodes: builtins.list[KnowledgeGraphNode] = []
-        edges: builtins.list[KnowledgeGraphEdge] = []
-
-        doc_items = list(self._index.items())[:max_items]
-        for doc_id, meta in doc_items:
-            doc_session = str(meta.get("session_id", "global") or "global")
-            if session_id != "global" and doc_session != session_id:
-                continue
-            title = str(meta.get("title", "") or "")
-            source = str(meta.get("source", "") or "")
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"doc:{doc_id}",
-                    label="Document",
-                    properties={
-                        "doc_id": doc_id,
-                        "title": title,
-                        "source": source,
-                        "session_id": doc_session,
-                        "vector_backend": "pgvector"
-                        if getattr(self, "_pgvector_available", False)
-                        else getattr(self, "_vector_backend", "bm25"),
-                    },
-                )
-            )
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"session:{doc_session}",
-                    label="Session",
-                    properties={"session_id": doc_session},
-                )
-            )
-            edges.append(
-                KnowledgeGraphEdge(
-                    source=f"session:{doc_session}",
-                    target=f"doc:{doc_id}",
-                    relation="CONTAINS_DOCUMENT",
-                )
-            )
-            if source:
-                nodes.append(
-                    KnowledgeGraphNode(
-                        id=f"source:{source}",
-                        label="Source",
-                        properties={"source": source},
-                    )
-                )
-                edges.append(
-                    KnowledgeGraphEdge(
-                        source=f"doc:{doc_id}",
-                        target=f"source:{source}",
-                        relation="DERIVED_FROM",
-                    )
-                )
-
-        entity_graph = self._ensure_entity_graph()
-        for node_id, node in list(entity_graph["nodes"].items())[:max_items]:
-            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
-            node_session = str(properties.get("session_id", "global") or "global")
-            if session_id != "global" and node_session not in {session_id, "global"}:
-                continue
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"entity:{node_id}",
-                    label=str(node.get("label") or "Entity"),
-                    properties={
-                        **properties,
-                        "entity_id": node_id,
-                        "name": str(node.get("name") or ""),
-                    },
-                )
-            )
-        entity_edge_count = 0
-        for edge in entity_graph["edges"]:
-            if entity_edge_count >= max_items:
-                break
-            edge_session = str(edge.get("session_id", "global") or "global")
-            if session_id != "global" and edge_session not in {session_id, "global"}:
-                continue
-            source_id = str(edge.get("source") or "")
-            target_id = str(edge.get("target") or "")
-            if not source_id or not target_id:
-                continue
-            entity_edge_count += 1
-            edges.append(
-                KnowledgeGraphEdge(
-                    source=f"entity:{source_id}",
-                    target=f"entity:{target_id}",
-                    relation=str(edge.get("relation") or "RELATED_TO"),
-                    properties=dict(edge.get("properties") or {}),
-                )
-            )
-
         if include_code_graph and self._graph_rag_enabled:
             self._ensure_graph_ready()
-            for node_id, attrs in list(self._graph_index.nodes.items())[:max_items]:
-                nodes.append(
-                    KnowledgeGraphNode(
-                        id=f"code:{node_id}",
-                        label="CodeNode",
-                        properties=dict(attrs),
-                    )
-                )
-            edge_count = 0
-            for source_id, targets in self._graph_index.edges.items():
-                for target_id in sorted(targets):
-                    edge_count += 1
-                    if edge_count > max_items:
-                        break
-                    edge_kinds = sorted(
-                        self._graph_index.edge_kinds.get((source_id, target_id), {"RELATED_TO"})
-                    )
-                    edges.append(
-                        KnowledgeGraphEdge(
-                            source=f"code:{source_id}",
-                            target=f"code:{target_id}",
-                            relation=edge_kinds[0],
-                            properties={"edge_kinds": edge_kinds},
-                        )
-                    )
-                if edge_count > max_items:
-                    break
-
-        unique_nodes = list({(node.id, node.label): node for node in nodes}.values())
-        cypher_hint = (
-            "UNWIND $nodes AS node MERGE (n:KG {id: node.id}) "
-            "SET n += node.properties, n.label = node.label "
-            "WITH n UNWIND $edges AS edge MATCH (s:KG {id: edge.source}), (t:KG {id: edge.target}) "
-            "MERGE (s)-[r:RELATED {relation: edge.relation}]->(t) SET r += edge.properties"
+        return _build_knowledge_graph_projection_payload_impl(
+            index=self._index,
+            entity_graph=self._ensure_entity_graph(),
+            graph_index=self._graph_index,
+            session_id=session_id,
+            include_code_graph=include_code_graph,
+            graph_rag_enabled=self._graph_rag_enabled,
+            pgvector_available=getattr(self, "_pgvector_available", False),
+            vector_backend=getattr(self, "_vector_backend", "bm25"),
+            limit=limit,
         )
-        return {
-            "nodes": unique_nodes,
-            "edges": edges,
-            "cypher_hint": cypher_hint,
-            "vector_backend": "pgvector"
-            if getattr(self, "_pgvector_available", False)
-            else getattr(self, "_vector_backend", "bm25"),
-        }
 
     def build_graphrag_search_plan(
         self,

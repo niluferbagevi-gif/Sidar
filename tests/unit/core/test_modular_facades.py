@@ -177,3 +177,58 @@ def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
     assert "[GraphRAG Impact] web_server.py" in impact_text
     assert "- Risk seviyesi: high" in impact_text
     assert "1. web_server.py -> web/routes/ws_chat.py" in impact_text
+
+
+def test_rag_projection_helper_builds_document_entity_and_code_nodes() -> None:
+    from types import SimpleNamespace
+
+    from core.rag.projection import build_knowledge_graph_projection_payload
+
+    graph_index = SimpleNamespace(
+        nodes={"core/db.py": {"type": "file"}},
+        edges={"core/db.py": {"core/rag.py"}},
+        edge_kinds={("core/db.py", "core/rag.py"): {"IMPORTS"}},
+    )
+    payload = build_knowledge_graph_projection_payload(
+        index={
+            "doc1": {
+                "title": "Doc 1",
+                "source": "file://doc1",
+                "session_id": "s1",
+            },
+            "doc2": {"title": "Doc 2", "session_id": "s2"},
+        },
+        entity_graph={
+            "nodes": {
+                "feature": {
+                    "label": "Feature",
+                    "name": "Campaign",
+                    "properties": {"session_id": "s1"},
+                }
+            },
+            "edges": [
+                {
+                    "source": "feature",
+                    "target": "audience",
+                    "relation": "TARGETS",
+                    "session_id": "s1",
+                    "properties": {"confidence": 1.0},
+                }
+            ],
+        },
+        graph_index=graph_index,
+        session_id="s1",
+        pgvector_available=True,
+        vector_backend="bm25",
+        limit=10,
+    )
+
+    node_ids = {node.id for node in payload["nodes"]}
+    edge_relations = {edge.relation for edge in payload["edges"]}
+    assert {"doc:doc1", "session:s1", "source:file://doc1", "entity:feature", "code:core/db.py"}.issubset(
+        node_ids
+    )
+    assert "doc:doc2" not in node_ids
+    assert {"CONTAINS_DOCUMENT", "DERIVED_FROM", "TARGETS", "IMPORTS"}.issubset(edge_relations)
+    assert payload["vector_backend"] == "pgvector"
+    assert "UNWIND $nodes" in payload["cypher_hint"]
