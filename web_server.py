@@ -1822,6 +1822,34 @@ def _execute_validated_plugin_source(
     exec(code, namespace)  # nosec B102
 
 
+def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
+    """Validate plugin source and execute it with restricted builtins only."""
+
+    try:
+        _validate_plugin_source(source_code)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
+
+    # Defense-in-depth: AST doğrulamasının yanında runtime namespace'ini de daraltıyoruz.
+    # Tehlikeli built-in'ler (`exec`, `eval`, `compile`, `open`, `input`, `breakpoint`, ...)
+    # plugin koduna sızdırılmadığı için statik kontrol bypass edilse bile çağrı yapılamaz.
+    namespace: dict[str, Any] = {
+        "__name__": module_label,
+        "__builtins__": _build_restricted_plugin_builtins(),
+    }
+    try:
+        _execute_validated_plugin_source(source_code, module_label, namespace)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
+        ) from exc
+    return namespace
+
+
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
@@ -1870,28 +1898,7 @@ def _load_plugin_agent_class(
                 return True
         return False
 
-    try:
-        _validate_plugin_source(source_code)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
-
-    # Defense-in-depth: AST doğrulamasının yanında runtime namespace'ini de daraltıyoruz.
-    # Tehlikeli built-in'ler (`exec`, `eval`, `compile`, `open`, `input`, `breakpoint`, ...)
-    # plugin koduna sızdırılmadığı için statik kontrol bypass edilse bile çağrı yapılamaz.
-    namespace: dict[str, Any] = {
-        "__name__": module_label,
-        "__builtins__": _build_restricted_plugin_builtins(),
-    }
-    try:
-        _execute_validated_plugin_source(source_code, module_label, namespace)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
-        ) from exc
+    namespace = _run_plugin_source_in_sandbox(source_code, module_label)
 
     if class_name:
         candidate = namespace.get(class_name)
@@ -1915,7 +1922,11 @@ def _load_plugin_agent_class(
     return discovered[0]
 
 
-def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: str) -> Path:
+def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
+    """Validate uploaded plugin source in the shared sandbox before persisting it."""
+
+    _run_plugin_source_in_sandbox(source_code, module_label)
+
     safe_name = Path(filename or "plugin.py").name
     if not safe_name.endswith(".py"):
         safe_name = f"{safe_name}.py"
@@ -1923,20 +1934,18 @@ def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: st
     plugins_dir = Path("plugins")
     plugins_dir.mkdir(parents=True, exist_ok=True)
     plugin_path = plugins_dir / safe_name
-    plugin_path.write_bytes(data)
-
-    spec = importlib.util.spec_from_file_location(module_label, plugin_path)
-    if spec is None or spec.loader is None:
-        raise HTTPException(status_code=400, detail="Plugin modülü import edilemedi")
-
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Plugin dosyası import edilemedi: {exc}"
-        ) from exc
+    plugin_path.write_text(source_code, encoding="utf-8")
     return plugin_path
+
+
+def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: str) -> Path:
+    """Backward-compatible secure wrapper for router-level uploaded plugin persistence."""
+
+    try:
+        source_code = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Plugin dosyası UTF-8 olmalıdır") from exc
+    return _validate_and_persist_plugin_file(filename, source_code, module_label)
 
 
 PLUGIN_SOURCE_DIR = Path(__file__).parent / "plugins"
@@ -2843,7 +2852,7 @@ async def register_agent_plugin_file(
     parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
     target_role_name = role_name.strip() or Path(file.filename or "").stem
     module_label = f"sidar_uploaded_plugin_{secrets.token_hex(4)}"
-    _persist_and_import_plugin_file(file.filename or target_role_name, data, module_label)
+    _validate_and_persist_plugin_file(file.filename or target_role_name, source_code, module_label)
     result = _register_plugin_agent(
         role_name=target_role_name,
         source_code=source_code,

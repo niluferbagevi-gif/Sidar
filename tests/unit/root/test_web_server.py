@@ -7214,11 +7214,28 @@ async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
         )
     assert utf_exc.value.status_code == 400
 
+    unsafe_path = Path("plugins") / "unsafe_upload.py"
+    if unsafe_path.exists():
+        unsafe_path.unlink()
+
+    def _unexpected_register(**_kwargs):
+        raise AssertionError("unsafe uploaded plugin must not reach registration")
+
+    monkeypatch.setattr(web_server, "_register_plugin_agent", _unexpected_register)
+    with pytest.raises(HTTPException) as unsafe_exc:
+        await web_server.register_agent_plugin_file(
+            _Upload("unsafe_upload.py", b"import os\nos.system('id')\n"),
+            _user=SimpleNamespace(role="admin"),
+        )
+    assert unsafe_exc.value.status_code == 400
+    assert "güvenlik politikası" in str(unsafe_exc.value.detail)
+    assert not unsafe_path.exists()
+
     captured = {}
     monkeypatch.setattr(web_server.secrets, "token_hex", lambda _: "beefbeef")
     monkeypatch.setattr(
         web_server,
-        "_persist_and_import_plugin_file",
+        "_validate_and_persist_plugin_file",
         lambda *args: captured.setdefault("persist", args),
     )
 
