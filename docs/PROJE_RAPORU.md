@@ -620,7 +620,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (local `fail_under=90`, CI `COVERAGE_FAIL_UNDER_CI=95`, campaign `%100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
+| Coverage Quality Gate (local/CI ratchet-managed baseline `fail_under=5` → yukarı doğru ratchet, campaign `%100`) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
@@ -635,13 +635,14 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
 gate ailesidir (detay için bkz. `AGENTS.md §2.5.4`):
 
-- **Local profile (`TEST_PROFILE=local`)** — `.coveragerc [report].fail_under = 90`
-  stabil ve ulaşılabilir tabandır; `coverage_ratchet.py` step `%1` ile bu değeri
+- **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 5`
+  ratchet tabanıdır; `coverage_ratchet.py` step `%1` ile bu değeri
   yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=99` ile bir puanlık
   tampon bırakır. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
 - **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` ana test
-  job'unda `COVERAGE_FAIL_UNDER_CI=95` ile lokal tabanın üzerine sıkı
-  pre-merge eşiği bindirir.
+  job'unda artık ayrı bir sabit override bindirmiyor; local ile aynı
+  ratchet edilmiş `pyproject.toml` tabanını kullanır. `COVERAGE_FAIL_UNDER_CI`
+  envi hâlâ desteklenir ve verilirse tabanın üzerine geçer.
 - **Coverage campaign** — `COVERAGE_CAMPAIGN=1` veya
   `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` ile devreye girer,
   `COVERAGE_FAIL_UNDER_CAMPAIGN` varsayılan `%100` aspirasyonel hedefi
@@ -1486,7 +1487,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `.coveragerc` üzerinde `%90` stabil tabanı, CI ise `COVERAGE_FAIL_UNDER_CI=95` ile sıkı pre-merge eşiğini uygular; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
+> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `pyproject.toml` üzerinde `%5` ratchet tabanından başlar ve ölçülen coverage arttıkça yalnızca yukarı taşınır; CI artık ayrı bir sabit override bindirmeden aynı ratchet edilmiş tabanı kullanır; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi

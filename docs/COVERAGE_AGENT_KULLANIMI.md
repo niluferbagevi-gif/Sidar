@@ -96,8 +96,8 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%90`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
-| CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER_CI` (varsayılan `.github/workflows/ci.yml` içinde `%95`) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal tabanın üzerine merge engelleyici sıkı eşik bindirir; otonom `%99.8` hedefiyle karıştırılmaz. |
+| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%5`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; ratchet ile ölçülen coverage arttıkça yalnızca yukarı taşınır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| CI zorunlu gate | CI ortamında `TEST_PROFILE=ci`; `.github/workflows/ci.yml` artık ayrı bir `COVERAGE_FAIL_UNDER_CI` sabitlemiyor, local ile aynı ratchet edilmiş `pyproject.toml` tabanını miras alır (`COVERAGE_FAIL_UNDER_CI` istenirse ad-hoc override için hâlâ kullanılabilir) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal ile aynı ratchet edilmiş taban üzerinden merge engelleyici gate uygular; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
 

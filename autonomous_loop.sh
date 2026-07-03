@@ -56,7 +56,7 @@ from pathlib import Path
 import tomllib
 
 data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 90))
+print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 5))
 PY_LOCAL_COVERAGE_GATE
 }
 

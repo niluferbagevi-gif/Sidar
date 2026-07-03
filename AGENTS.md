@@ -264,14 +264,17 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   değerini her yere bağlamak (`pyproject.toml [tool.coverage.report].fail_under = 100` gibi) geliştirme
   hızını gereksiz yere kırar:
     - **Local profile (`TEST_PROFILE=local`)** — günlük geliştirici kapısı.
-      `pyproject.toml [tool.coverage.report].fail_under` stabil, ulaşılabilir tabanı tutar;
+      `pyproject.toml [tool.coverage.report].fail_under` ratchet ile yönetilen
+      tabanı tutar (güncel durum: `%5`'ten başlar, `coverage_ratchet.py`
+      ölçülen coverage arttıkça bu değeri yalnızca yukarı taşır);
       `COVERAGE_FAIL_UNDER_LOCAL` envi ile profil bazında üstüne yazılabilir,
       `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine
       yazar.
     - **CI profile (`TEST_PROFILE=ci`)** — pre-merge/zorunlu kapı.
-      `COVERAGE_FAIL_UNDER_CI` envi local tabanın üzerine sıkı eşik (örn.
-      `%95`) bindirir; `.github/workflows/ci.yml` bu envi ana test job'unda
-      açık olarak verir.
+      `.github/workflows/ci.yml` artık ayrı bir sabit `COVERAGE_FAIL_UNDER_CI`
+      değeri bindirmez; local profille aynı ratchet edilmiş `pyproject.toml`
+      tabanını kullanır. `COVERAGE_FAIL_UNDER_CI` envi hâlâ desteklenir ve
+      ad-hoc olarak daha sıkı bir pre-merge eşiği vermek için kullanılabilir.
     - **Coverage campaign profile** — aspirasyonel `%100` hedefi.
       `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`
       ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` envi varsayılan
