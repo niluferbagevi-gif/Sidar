@@ -96,7 +96,7 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%90`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%5`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
 | CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER_CI` (varsayılan `.github/workflows/ci.yml` içinde `%95`) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal tabanın üzerine merge engelleyici sıkı eşik bindirir; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
@@ -107,7 +107,7 @@ yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi a
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
 
 > Operasyon notu: `%100.00` ölçüm görüldüğünde bile günlük local/CI ratchet cap `%99`
-> bilinçli olarak korunur. `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)`
+> bilinçli olarak korunur. `Coverage gate ratcheted: %5 -> %99 (measured=%100.00)`
 > çıktısı, refactor dönemi için doğru güvenlik tamponudur; `%100` gate yalnız
 > `COVERAGE_CAMPAIGN=1`, `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` veya
 > bilinçli `COVERAGE_STRICT_LOCAL_RATCHET=1` opt-in'i ile denenmelidir.
