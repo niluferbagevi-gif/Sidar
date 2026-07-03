@@ -2778,12 +2778,14 @@ async def test_entity_and_feedback_store_endpoints(monkeypatch):
         async def stats(self):
             return {"count": 1}
 
+    user = SimpleNamespace(id="u1", username="ada", role="user")
     web_server._entity_memory_instance = _EntityMem()
     upsert = await web_server.api_entity_upsert(
-        web_server._EntityUpsertRequest(user_id="u1", key="skill", value="python", ttl_days=7)
+        web_server._EntityUpsertRequest(user_id="u1", key="skill", value="python", ttl_days=7),
+        user,
     )
-    get_profile = await web_server.api_entity_get_profile("u1")
-    delete = await web_server.api_entity_delete("u1", "skill")
+    get_profile = await web_server.api_entity_get_profile("u1", user)
+    delete = await web_server.api_entity_delete("u1", "skill", user)
     assert upsert.status_code == 200
     assert b'"success":true' in get_profile.body
     assert b'"name":"Ada"' in get_profile.body
@@ -2791,9 +2793,10 @@ async def test_entity_and_feedback_store_endpoints(monkeypatch):
 
     web_server._feedback_store_instance = _Feedback()
     record = await web_server.api_feedback_record(
-        web_server._FeedbackRecordRequest(user_id="u1", prompt="p", response="r", rating=5)
+        web_server._FeedbackRecordRequest(user_id="u1", prompt="p", response="r", rating=5),
+        user,
     )
-    stats = await web_server.api_feedback_stats()
+    stats = await web_server.api_feedback_stats(user)
     assert record.status_code == 200
     assert b'"count":1' in stats.body
 

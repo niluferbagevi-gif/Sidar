@@ -2911,6 +2911,7 @@ memory_feedback_router = memory_feedback_routes.build_memory_feedback_router(
     cfg=cfg,
     entity_memory_cache=_entity_memory_cache,
     feedback_store_cache=_feedback_store_cache,
+    get_request_user=_get_request_user,
 )
 integrations_router = integrations_routes.build_integrations_router(
     cfg_provider=lambda: cfg,
@@ -2985,34 +2986,40 @@ def _get_teams_manager() -> Any:
     return result
 
 
-async def api_entity_upsert(req: _EntityUpsertRequest) -> Any:
+async def api_entity_upsert(
+    req: _EntityUpsertRequest, user: Any = Depends(_get_request_user)
+) -> Any:
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
-    return await memory_feedback_router.legacy_exports["api_entity_upsert"](req)
+    return await memory_feedback_router.legacy_exports["api_entity_upsert"](req, user)
 
 
-async def api_entity_get_profile(user_id: str) -> Any:
+async def api_entity_get_profile(user_id: str, user: Any = Depends(_get_request_user)) -> Any:
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
-    return await memory_feedback_router.legacy_exports["api_entity_get_profile"](user_id)
+    return await memory_feedback_router.legacy_exports["api_entity_get_profile"](user_id, user)
 
 
-async def api_entity_delete(user_id: str, key: str) -> Any:
+async def api_entity_delete(
+    user_id: str, key: str, user: Any = Depends(_get_request_user)
+) -> Any:
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
-    return await memory_feedback_router.legacy_exports["api_entity_delete"](user_id, key)
+    return await memory_feedback_router.legacy_exports["api_entity_delete"](user_id, key, user)
 
 
-async def api_feedback_record(req: _FeedbackRecordRequest) -> Any:
+async def api_feedback_record(
+    req: _FeedbackRecordRequest, user: Any = Depends(_get_request_user)
+) -> Any:
     if _feedback_store_instance is not None:
         _feedback_store_cache["instance"] = _feedback_store_instance
-    return await memory_feedback_router.legacy_exports["api_feedback_record"](req)
+    return await memory_feedback_router.legacy_exports["api_feedback_record"](req, user)
 
 
-async def api_feedback_stats() -> Any:
+async def api_feedback_stats(user: Any = Depends(_get_request_user)) -> Any:
     if _feedback_store_instance is not None:
         _feedback_store_cache["instance"] = _feedback_store_instance
-    return await memory_feedback_router.legacy_exports["api_feedback_stats"]()
+    return await memory_feedback_router.legacy_exports["api_feedback_stats"](user)
 
 
 async def _prime_slack_manager_cache() -> None:

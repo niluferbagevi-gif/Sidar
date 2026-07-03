@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -25,7 +26,11 @@ class FeedbackRecordRequest(BaseModel):
 
 
 def build_memory_feedback_router(
-    *, cfg: Any, entity_memory_cache: dict[str, Any], feedback_store_cache: dict[str, Any]
+    *,
+    cfg: Any,
+    entity_memory_cache: dict[str, Any],
+    feedback_store_cache: dict[str, Any],
+    get_request_user: Callable[..., Any],
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
@@ -42,6 +47,10 @@ def build_memory_feedback_router(
                 ) from exc
         return entity_memory_cache["instance"]
 
+    def require_owner(user_id: str, user: Any) -> None:
+        if str(getattr(user, "id", "") or "") != str(user_id):
+            raise HTTPException(status_code=403, detail="Bu kullanıcı belleğine erişim yetkiniz yok")
+
     async def get_feedback_store() -> Any:
         if feedback_store_cache.get("instance") is None:
             try:
@@ -56,7 +65,10 @@ def build_memory_feedback_router(
         return feedback_store_cache["instance"]
 
     @router.post("/api/memory/entity/upsert", summary="Varlık Belleği Yaz", tags=["EntityMemory"])
-    async def api_entity_upsert(req: EntityUpsertRequest) -> Any:
+    async def api_entity_upsert(
+        req: EntityUpsertRequest, user: Any = Depends(get_request_user)
+    ) -> Any:
+        require_owner(req.user_id, user)
         mem = await get_entity_memory()
         await mem.upsert(user_id=req.user_id, key=req.key, value=req.value, ttl_days=req.ttl_days)
         return JSONResponse({"success": True})
@@ -64,7 +76,8 @@ def build_memory_feedback_router(
     @router.get(
         "/api/memory/entity/{user_id}", summary="Varlık Belleği Profili", tags=["EntityMemory"]
     )
-    async def api_entity_get_profile(user_id: str) -> Any:
+    async def api_entity_get_profile(user_id: str, user: Any = Depends(get_request_user)) -> Any:
+        require_owner(user_id, user)
         mem = await get_entity_memory()
         profile = await mem.get_profile(user_id=user_id)
         return JSONResponse({"success": True, "user_id": user_id, "profile": profile})
@@ -72,13 +85,19 @@ def build_memory_feedback_router(
     @router.delete(
         "/api/memory/entity/{user_id}/{key}", summary="Varlık Belleği Sil", tags=["EntityMemory"]
     )
-    async def api_entity_delete(user_id: str, key: str) -> Any:
+    async def api_entity_delete(
+        user_id: str, key: str, user: Any = Depends(get_request_user)
+    ) -> Any:
+        require_owner(user_id, user)
         mem = await get_entity_memory()
         deleted = await mem.delete(user_id=user_id, key=key)
         return JSONResponse({"success": deleted})
 
     @router.post("/api/feedback/record", summary="Geri Bildirim Kaydet", tags=["ActiveLearning"])
-    async def api_feedback_record(req: FeedbackRecordRequest) -> Any:
+    async def api_feedback_record(
+        req: FeedbackRecordRequest, user: Any = Depends(get_request_user)
+    ) -> Any:
+        require_owner(req.user_id, user)
         store = await get_feedback_store()
         await store.record(
             user_id=req.user_id,
@@ -92,7 +111,7 @@ def build_memory_feedback_router(
     @router.get(
         "/api/feedback/stats", summary="Geri Bildirim İstatistikleri", tags=["ActiveLearning"]
     )
-    async def api_feedback_stats() -> Any:
+    async def api_feedback_stats(_user: Any = Depends(get_request_user)) -> Any:
         store = await get_feedback_store()
         stats = await store.stats()
         return JSONResponse({"success": True, "stats": stats})
