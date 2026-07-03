@@ -163,6 +163,90 @@ class CoderAgent(BaseAgent):
             result[key.strip().lower()] = value.strip()
         return result
 
+    def _format_tool_contract(self) -> str:
+        tool_names = ", ".join(sorted(getattr(self, "tools", {})))
+        return (
+            "Kullanabileceğin araçlar: "
+            f"{tool_names}. "
+            "Yanıtını JSON olarak ver. Araç gerekiyorsa "
+            "{\"tool_calls\":[{\"name\":\"read_file\",\"arg\":\"path\"}],\"final\":\"\"}; "
+            "iş bittiyse {\"final\":\"özet ve yapılanlar\"}. "
+            "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra patch_file/write_file kullan."
+        )
+
+    @staticmethod
+    def _parse_llm_tool_plan(raw: str) -> dict[str, Any]:
+        text = (raw or "").strip()
+        if not text:
+            return {"final": ""}
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE).strip()
+            text = re.sub(r"\s*```$", "", text).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {"final": raw}
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"tool_calls": parsed, "final": ""}
+        return {"final": str(parsed)}
+
+    async def _run_llm_tool_loop(self, prompt: str) -> str:
+        messages: list[dict[str, str]] = [
+            {
+                "role": "user",
+                "content": (
+                    f"{self._format_tool_contract()}\n\n"
+                    f"Görev: {prompt}"
+                ),
+            }
+        ]
+        last_final = ""
+        for _step in range(3):
+            raw = await self.call_llm(
+                messages, system_prompt=self.SYSTEM_PROMPT, temperature=0.2, json_mode=True
+            )
+            plan = self._parse_llm_tool_plan(raw)
+            final = str(plan.get("final", "") or "").strip()
+            if final:
+                last_final = final
+
+            tool_calls = plan.get("tool_calls") or plan.get("tools") or []
+            if isinstance(tool_calls, dict):
+                tool_calls = [tool_calls]
+            if not isinstance(tool_calls, list) or not tool_calls:
+                return last_final or str(raw).strip() or "[CODER:EMPTY_LLM_RESPONSE]"
+
+            tool_results: list[dict[str, str]] = []
+            for item in tool_calls[:5]:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or item.get("tool") or "").strip()
+                arg = str(item.get("arg") or item.get("args") or item.get("input") or "")
+                if name not in getattr(self, "tools", {}):
+                    tool_results.append({"tool": name, "result": f"[HATA] Bilinmeyen araç: {name}"})
+                    continue
+                result = await self.call_tool(name, arg)
+                tool_results.append({"tool": name, "result": result})
+
+            if not tool_results:
+                return last_final or str(raw).strip() or "[CODER:NO_VALID_TOOL_CALLS]"
+
+            messages.append({"role": "assistant", "content": raw})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Araç sonuçları:\n"
+                        f"{json.dumps(tool_results, ensure_ascii=False)}\n"
+                        "Bu sonuçlara göre devam et veya final JSON döndür."
+                    ),
+                }
+            )
+
+        return last_final or "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
@@ -229,7 +313,7 @@ class CoderAgent(BaseAgent):
             content = m.group(2)
             return await self.call_tool("write_file", f"{path}|{content}")
 
-        return f"[LEGACY_FALLBACK] coder_unhandled task={prompt}"
+        return await self._run_llm_tool_loop(prompt)
 
     @staticmethod
     async def _call_maybe_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

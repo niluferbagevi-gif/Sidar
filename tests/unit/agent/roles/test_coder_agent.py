@@ -301,11 +301,66 @@ async def test_run_task_paths(monkeypatch, coder_module):
     nl = await agent.run_task("foo.py isimli bir dosyaya 'hello' yaz")
     assert nl == "tool:write_file:foo.py|hello"
 
+    async def fake_call_llm(messages, **kwargs):
+        assert "unknown command" in messages[-1]["content"]
+        assert kwargs["json_mode"] is True
+        return '{"final":"LLM handled unknown command"}'
+
+    agent.call_llm = fake_call_llm
     fallback = await agent.run_task("unknown command")
-    assert fallback == "[LEGACY_FALLBACK] coder_unhandled task=unknown command"
+    assert fallback == "LLM handled unknown command"
 
     assert len(agent.events.messages) >= 1
     assert all(role == "coder" for role, _ in agent.events.messages)
+
+
+@pytest.mark.asyncio
+async def test_run_task_general_prompt_uses_llm_tool_loop(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    calls: list[tuple[str, str]] = []
+    llm_messages: list[list[dict[str, str]]] = []
+    agent.tools = {"read_file": agent._tool_read_file, "patch_file": agent._tool_patch_file}
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"result:{name}:{arg}"
+
+    responses = iter(
+        [
+            '{"tool_calls":[{"name":"read_file","arg":"src/app.py"}],"final":""}',
+            '{"tool_calls":[{"name":"patch_file","arg":"src/app.py|old|new"}],"final":"patched"}',
+            '{"final":"Implemented requested change"}',
+        ]
+    )
+
+    async def fake_call_llm(messages, **kwargs):
+        llm_messages.append(messages)
+        assert kwargs["json_mode"] is True
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    result = await agent.run_task("Implement the requested app change")
+
+    assert result == "Implemented requested change"
+    assert calls == [("read_file", "src/app.py"), ("patch_file", "src/app.py|old|new")]
+    assert "Araç sonuçları" in llm_messages[-1][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_general_prompt_returns_plain_llm_response(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {}
+
+    async def fake_call_llm(messages, **kwargs):
+        assert "Kullanabileceğin araçlar" in messages[0]["content"]
+        assert kwargs["json_mode"] is True
+        return "Kod değişikliği için önce dosya yolu gerekli."
+
+    agent.call_llm = fake_call_llm
+
+    assert await agent.run_task("bir özellik implement et") == "Kod değişikliği için önce dosya yolu gerekli."
 
 
 @pytest.mark.asyncio
