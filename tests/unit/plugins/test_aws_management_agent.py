@@ -3,6 +3,7 @@ import importlib
 import subprocess
 import sys
 import types
+from types import SimpleNamespace
 
 # Test ortamında ağır bağımlılıkları atlamak için minimal BaseAgent stub'ı.
 if "agent.base_agent" not in sys.modules:
@@ -17,8 +18,10 @@ if "agent.base_agent" not in sys.modules:
 from plugins.aws_management_agent import AWSManagementAgent
 
 
-def _agent() -> AWSManagementAgent:
-    return AWSManagementAgent.__new__(AWSManagementAgent)
+def _agent(access_level: str = "full") -> AWSManagementAgent:
+    agent = AWSManagementAgent.__new__(AWSManagementAgent)
+    agent.cfg = SimpleNamespace(ACCESS_LEVEL=access_level, BASE_DIR=".", PROMPT_GUARD_ENABLED=False)
+    return agent
 
 
 def test_select_command_detects_supported_keywords() -> None:
@@ -52,6 +55,15 @@ def test_run_task_requires_prompt() -> None:
     agent = _agent()
 
     assert asyncio.run(agent.run_task("  ")) == "AWS işlemi için görev açıklaması gerekli."
+
+
+def test_run_task_rejects_shell_when_access_level_is_not_full(monkeypatch) -> None:
+    agent = _agent(access_level="sandbox")
+    monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
+
+    result = asyncio.run(agent.run_task("ec2 list"))
+
+    assert "ACCESS_LEVEL=full" in result
 
 
 def test_run_task_requires_aws_cli(monkeypatch) -> None:

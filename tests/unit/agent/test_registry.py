@@ -155,6 +155,40 @@ def test_register_type_create_and_unregister_roundtrip() -> None:
     assert AgentCatalog.get("tmp_dummy") is None
 
 
+def test_create_external_side_effect_plugin_requires_full_access() -> None:
+    role_name = "aws_management"
+    snapshot = dict(AgentCatalog._registry)
+
+    class ExternalPluginAgent:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+    AgentCatalog.unregister(role_name)
+    try:
+        AgentCatalog.register_type(
+            role_name=role_name,
+            agent_class=ExternalPluginAgent,
+            capabilities=["aws_management"],
+            is_builtin=False,
+        )
+        spec = AgentCatalog.get(role_name)
+        assert spec is not None
+        assert spec.side_effect_level == "external_read"
+
+        sandbox_cfg = SimpleNamespace(
+            ACCESS_LEVEL="sandbox", BASE_DIR=".", PROMPT_GUARD_ENABLED=False
+        )
+        with pytest.raises(PermissionError, match="side_effect_level='external_read'"):
+            AgentCatalog.create(role_name, cfg=sandbox_cfg)
+
+        full_cfg = SimpleNamespace(ACCESS_LEVEL="full", BASE_DIR=".", PROMPT_GUARD_ENABLED=False)
+        created = AgentCatalog.create(role_name, cfg=full_cfg)
+        assert isinstance(created, ExternalPluginAgent)
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
 def test_create_unknown_role_raises_keyerror() -> None:
     with pytest.raises(KeyError):
         AgentCatalog.create("definitely_missing_role")

@@ -28,6 +28,7 @@ class AgentSpec:
     description: str = ""
     version: str = "1.0.0"
     is_builtin: bool = True
+    side_effect_level: str = "none"
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,49 @@ def _builtin_contract_by_role(role_name: str) -> BuiltinRoleContract | None:
         if contract.role_name == role_name:
             return contract
     return None
+
+
+def _plugin_manifest_side_effect_level(role_name: str) -> str:
+    """Return the manifest side-effect level for a plugin role, if declared."""
+
+    try:
+        from plugins.manifest import PLUGIN_MANIFESTS
+    except Exception as exc:  # pragma: no cover - optional plugin package guard
+        logger.debug("Plugin manifest side-effect lookup skipped: %s", exc)
+        return "none"
+
+    for manifest in PLUGIN_MANIFESTS.values():
+        if manifest.role_name == role_name:
+            return str(manifest.side_effect_level)
+    return "none"
+
+
+def _side_effect_requires_shell_gate(side_effect_level: str) -> bool:
+    """Return whether the side effect level must pass shell-access authorization."""
+
+    return str(side_effect_level or "none").startswith("external_")
+
+
+def _assert_runtime_side_effect_allowed(spec: AgentSpec, cfg: Any | None = None) -> None:
+    """Fail closed when a plugin manifest declares host/external side effects."""
+
+    if spec.is_builtin or not _side_effect_requires_shell_gate(spec.side_effect_level):
+        return
+    try:
+        from config import Config
+        from managers.security import SecurityManager
+
+        security = SecurityManager(cfg=cfg or Config())
+    except Exception as exc:  # pragma: no cover - fail-closed defensive branch
+        raise PermissionError(
+            f"'{spec.role_name}' ajanı için güvenlik yöneticisi başlatılamadı; "
+            "external side-effect plugin oluşturma reddedildi."
+        ) from exc
+    if not security.can_run_shell():
+        raise PermissionError(
+            f"'{spec.role_name}' ajanı side_effect_level={spec.side_effect_level!r} bildiriyor; "
+            "ACCESS_LEVEL=full olmadan çalışma zamanı oluşturma reddedildi."
+        )
 
 
 def _resolve_canonical_builtin_class(
@@ -209,6 +253,7 @@ class AgentCatalog:
         description: str = "",
         version: str = "1.0.0",
         is_builtin: bool = True,
+        side_effect_level: str | None = None,
     ) -> None:
         """Register an agent type programmatically.
 
@@ -218,6 +263,11 @@ class AgentCatalog:
         resolved_agent_class = _resolve_canonical_builtin_class(
             role_name=role_name, agent_class=agent_class, is_builtin=is_builtin
         )
+        resolved_side_effect_level = (
+            "none"
+            if is_builtin
+            else (side_effect_level or _plugin_manifest_side_effect_level(role_name))
+        )
         spec = AgentSpec(
             role_name=role_name,
             agent_class=resolved_agent_class,
@@ -225,6 +275,7 @@ class AgentCatalog:
             description=description,
             version=version,
             is_builtin=is_builtin,
+            side_effect_level=resolved_side_effect_level,
         )
         cls._registry[role_name] = spec
         logger.debug("AgentCatalog: '%s' kaydedildi (yetenekler: %s)", role_name, capabilities)
@@ -268,6 +319,9 @@ class AgentCatalog:
             raise KeyError(
                 f"'{role_name}' ajan tipi kayıt defterinde bulunamadı. Mevcut tipler: {available}"
             )
+        cfg = kwargs.get("cfg")
+        _assert_runtime_side_effect_allowed(spec, cfg=cfg)
+
         if spec.agent_class is not None:
             return spec.agent_class(**kwargs)
 
