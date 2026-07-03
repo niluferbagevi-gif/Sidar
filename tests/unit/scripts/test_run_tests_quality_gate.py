@@ -80,19 +80,15 @@ def test_mypy_is_strict_python_311() -> None:
 
 def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     script = _script()
-    coveragerc = Path(".coveragerc")
+    pyproject_path = Path("pyproject.toml")
 
-    assert coveragerc.exists()
-    content = coveragerc.read_text(encoding="utf-8")
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject_path.exists()
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
 
-    assert "[report]" in content
-    # .coveragerc is the *local* baseline (stable, achievable); the campaign
-    # target lives in the COVERAGE_CAMPAIGN profile, not in this file.
-    assert "fail_under = 90" in content
-    assert "fail_under = 100" not in content
+    # pyproject.toml is the single coverage config source: branch behavior,
+    # omit/exclude patterns, HTML config, and the local ratchet baseline live together.
     assert pyproject["tool"]["coverage"]["run"]["branch"] is True
-    assert "fail_under" not in pyproject["tool"]["coverage"]["report"]
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 90
 
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
@@ -103,14 +99,16 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert "Coverage Quality Gate" in project_report
     assert "fail_under=90" in project_report or "fail_under = 90" in project_report
     assert not any(
-        line.strip() == ".coveragerc"
+        line.strip() == "pyproject.toml"
         for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
     )
-    assert 'COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-.coveragerc}"' in script
+    assert 'COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-pyproject.toml}"' in script
     assert "validate_coverage_ratchet_state()" in script
     assert 'if [ ! -f "${COVERAGE_RATCHET_STATE_FILE}" ]; then' in script
     assert "Coverage ratchet state dosyası bulunamadı" in script
     assert "Coverage ratchet baseline sıfırlanmış olabilir" in script
+    assert "[tool.coverage.report] fail_under" in script
+    assert "coverage debug config" in script
     assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
 
 
@@ -143,7 +141,7 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
     # The user-facing echo surfaces both the baseline source and the resolved
     # profile so a developer can tell which gate they are running against.
-    assert ".coveragerc baseline=" in script
+    assert "pyproject.toml baseline=" in script
     assert "profile=${COVERAGE_FAIL_UNDER_SOURCE}" in script
 
 
@@ -2245,7 +2243,7 @@ def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() ->
 def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     """Coverage thresholds must be selectable per operational profile.
 
-    AGENTS.md §2.5.4 separates the daily local gate (`.coveragerc` baseline),
+    AGENTS.md §2.5.4 separates the daily local gate (`pyproject.toml` baseline),
     the stricter CI pre-merge gate, and the aspirational %100 coverage
     campaign. The script must surface all three knobs so a developer can run
     a fast local pass without colliding with the campaign target, while CI
@@ -2254,7 +2252,7 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
 
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    coveragerc = Path(".coveragerc").read_text(encoding="utf-8")
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     agents_md = Path("AGENTS.md").read_text(encoding="utf-8")
 
     # Three profile-specific override envs are documented in the script.
@@ -2287,9 +2285,8 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
         in script
     )
 
-    # .coveragerc holds a sustainable baseline, not the campaign target.
-    assert "fail_under = 90" in coveragerc
-    assert "fail_under = 100" not in coveragerc
+    # pyproject.toml holds a sustainable baseline, not the campaign target.
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 90
 
     # CI workflow sets the stricter pre-merge override for the main test job.
     assert "COVERAGE_FAIL_UNDER_CI:" in ci_workflow

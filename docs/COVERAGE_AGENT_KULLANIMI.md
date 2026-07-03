@@ -7,7 +7,7 @@ Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre *
 - Proje kökünde ol:
   - `cd ~/Sidar`
 - Testlerden sonra `coverage.xml` üretilmiş olmalı.
-- Backend tarafında coverage hedefi `.coveragerc` içindeki güncel `fail_under` değeri veya açıkça verilen `COVERAGE_FAIL_UNDER` ile aktiftir.
+- Backend tarafında coverage hedefi `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeri veya açıkça verilen `COVERAGE_FAIL_UNDER` ile aktiftir.
 
 > Not: Gönderdiğin çıktıda backend toplam coverage `%40.11`, frontend `%91.55` görünüyor. Sorun backend tarafındaki coverage açığıdır.
 
@@ -37,7 +37,7 @@ coverage.xml üzerinden eksik testleri üret
 ### Aşama A — Coverage raporunu analiz et
 
 ```bash
-uv run python cli.py -c 'analyze_coverage_report|{"coverage_xml":"coverage.xml","coveragerc":".coveragerc","limit":10}'
+uv run python cli.py -c 'analyze_coverage_report|{"coverage_xml":"coverage.xml","coveragerc":"pyproject.toml","limit":10}'
 ```
 
 Bu komut sana şunları döndürür:
@@ -96,12 +96,12 @@ profil vardır:
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `.coveragerc` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%90`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%90`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; stabil ve ulaşılabilir tabandır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
 | CI zorunlu gate | CI ortamında `TEST_PROFILE=ci` + `COVERAGE_FAIL_UNDER_CI` (varsayılan `.github/workflows/ci.yml` içinde `%95`) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal tabanın üzerine merge engelleyici sıkı eşik bindirir; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
 
-`./autonomous_loop.sh`, CI kalite kapısını değiştirmez; `run_tests.sh` ve `.coveragerc`
+`./autonomous_loop.sh`, CI kalite kapısını değiştirmez; `run_tests.sh` ve `pyproject.toml`
 üzerindeki eşikler aynen korunur. Loglarda artık `local gate` ve `otonom hedef` ayrı
 yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
@@ -133,8 +133,8 @@ veya `coverage-campaign` bağlamında etiketlenmesini sağlar.
 ### 4.2) Coverage ratchet step neyi kontrol eder?
 
 `COVERAGE_RATCHET_STEP`, otonom coverage hedefi değildir; `run_tests.sh` sonunda
-`.coveragerc` içindeki günlük kalite kapısının kaç yüzde puanlık basamaklarla yukarı
-taşınacağını belirler. `.coveragerc` aynı zamanda ratchet state dosyasıdır; repo'da
+`pyproject.toml` içindeki günlük kalite kapısının kaç yüzde puanlık basamaklarla yukarı
+taşınacağını belirler. `pyproject.toml` aynı zamanda coverage ratchet state kaynağıdır; repo'da
 commitli olmalı ve eksik/sıfırlanmış gate durumunda `run_tests.sh` fail-closed davranmalıdır.
 Hesaplama `scripts/coverage_ratchet.py` içindeki
 `compute_next_gate(...)` fonksiyonunda ölçülen coverage'ı aşağıdaki formülle ulaşılan
@@ -226,7 +226,7 @@ uv run pytest -q tests/unit/core/test_llm_client.py
 Eğer testler geçiyor ama coverage artmıyorsa:
 - yanlış modül/path hedeflenmiş olabilir,
 - branch yolları tetiklenmemiş olabilir,
-- `omit/include` ayarları `.coveragerc` içinde filtreliyor olabilir.
+- `omit/include` ayarları `pyproject.toml` `[tool.coverage.*]` içinde filtreliyor olabilir.
 
 ## 7) Sık yapılan hata
 

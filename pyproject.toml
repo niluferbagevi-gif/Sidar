@@ -459,8 +459,10 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Coverage gate threshold is intentionally owned by .coveragerc [report].fail_under.
-# run_tests.sh reads that value and applies it once at the final combined report.
+# Stable, achievable daily local quality gate baseline. run_tests.sh reads this
+# pyproject-owned value and applies profile overrides only at the final combined
+# report. Coverage campaign remains an opt-in profile, not this default gate.
+fail_under = 90
 show_missing = true
 skip_covered = true
 precision = 2

@@ -261,10 +261,10 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 #### 2.5.4 Coverage odaklı otonom iyileştirme
 
 - Coverage eşikleri operasyonel olarak üç ayrı profilde izlenir; aynı eşik
-  değerini her yere bağlamak (`.coveragerc fail_under = 100` gibi) geliştirme
+  değerini her yere bağlamak (`pyproject.toml [tool.coverage.report].fail_under = 100` gibi) geliştirme
   hızını gereksiz yere kırar:
     - **Local profile (`TEST_PROFILE=local`)** — günlük geliştirici kapısı.
-      `.coveragerc [report].fail_under` stabil, ulaşılabilir tabanı tutar;
+      `pyproject.toml [tool.coverage.report].fail_under` stabil, ulaşılabilir tabanı tutar;
       `COVERAGE_FAIL_UNDER_LOCAL` envi ile profil bazında üstüne yazılabilir,
       `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine
       yazar.
@@ -276,7 +276,7 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
       `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`
       ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` envi varsayılan
       `100`'ü override edebilir.
-- `coverage_ratchet.py` `.coveragerc` üzerindeki `fail_under` değerini
+- `coverage_ratchet.py` `pyproject.toml` üzerindeki `[tool.coverage.report].fail_under` değerini
   yalnızca yukarı taşır; `COVERAGE_RATCHET_STEP` varsayılanı `%1`'dir ve
   local/CI profilleri için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak
   `99`'dur (1 puanlık tampon), coverage campaign profilinde `100`'e açılır.

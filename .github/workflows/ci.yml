@@ -274,7 +274,7 @@ jobs:
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
           # CI applies a stricter pre-merge coverage gate than the daily local
-          # baseline in .coveragerc — see AGENTS.md §2.5.4.
+          # baseline in pyproject.toml — see AGENTS.md §2.5.4.
           COVERAGE_FAIL_UNDER_CI: "95"
           BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
           BENCHMARK_TREND_COMPARE: "1"

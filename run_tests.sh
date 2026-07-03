@@ -330,7 +330,7 @@ cleanup_zone_identifier_artifacts || exit 1
 
 run_precommit_autofix || exit 1
 
-COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-.coveragerc}"
+COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-pyproject.toml}"
 COVERAGE_RATCHET_MIN_EXISTING_GATE="${COVERAGE_RATCHET_MIN_EXISTING_GATE:-5}"
 
 validate_coverage_ratchet_state() {
@@ -342,19 +342,20 @@ validate_coverage_ratchet_state() {
   fi
 
   python - "${COVERAGE_RATCHET_STATE_FILE}" "${COVERAGE_RATCHET_MIN_EXISTING_GATE}" <<'PY_RATCHET_STATE'
-from configparser import ConfigParser
 from pathlib import Path
 import sys
+import tomllib
 
 state_path = Path(sys.argv[1])
 min_gate = float(sys.argv[2])
-cfg = ConfigParser()
-cfg.read(state_path)
-if not cfg.has_section("report") or not cfg.has_option("report", "fail_under"):
-    raise SystemExit(f"{state_path} içinde [report] fail_under bulunamadı")
+data = tomllib.loads(state_path.read_text(encoding="utf-8"))
 try:
-    gate = float(cfg.get("report", "fail_under"))
-except ValueError as exc:
+    raw_gate = data["tool"]["coverage"]["report"]["fail_under"]
+except KeyError as exc:
+    raise SystemExit(f"{state_path} içinde [tool.coverage.report] fail_under bulunamadı") from exc
+try:
+    gate = float(raw_gate)
+except (TypeError, ValueError) as exc:
     raise SystemExit(f"{state_path} içindeki fail_under sayısal değil") from exc
 if gate < min_gate:
     raise SystemExit(
@@ -387,8 +388,8 @@ if [ "${TEST_PROFILE}" != "ci" ] && [ "${TEST_PROFILE}" != "local" ]; then
 fi
 
 # AGENTS.md §2.5.4: coverage hedefleri üç ayrı operasyon profilinde izlenir.
-#   - local profile  → COVERAGE_FAIL_UNDER_LOCAL    (varsayılan: .coveragerc)
-#   - ci profile     → COVERAGE_FAIL_UNDER_CI       (varsayılan: .coveragerc)
+#   - local profile  → COVERAGE_FAIL_UNDER_LOCAL    (varsayılan: pyproject.toml)
+#   - ci profile     → COVERAGE_FAIL_UNDER_CI       (varsayılan: pyproject.toml)
 #   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: 100)
 # Doğrudan COVERAGE_FAIL_UNDER atanırsa o değer her profilin önüne geçer
 # (geri uyumluluk için korunur). Coverage campaign opt-in'i ya CLI'dan
@@ -673,7 +674,7 @@ configure_local_bats_shell_tests() {
   esac
 }
 
-echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, .coveragerc baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
+echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, pyproject.toml baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
 
@@ -1454,9 +1455,12 @@ PY
   # her çağrıda kesin yüklenmesi garanti edilir. Doğrudan/tekil pytest debug
   # çağrıları yanıltıcı coverage gate hatası üretmesin diye coverage seçenekleri
   # pyproject addopts yerine yalnız bu kalite kapısı içinde açıkça verilir.
-  # Faz bazlı pytest-cov raporları .coveragerc fail_under değerini kullanarak
+  # Faz bazlı pytest-cov raporları pyproject.toml fail_under değerini kullanarak
   # erken başarısız olmasın diye burada 0 ile nötrlenir; asıl kalite kapısı
   # tüm fazlar birleştirildikten sonra coverage report --fail-under ile uygulanır.
+  echo "🔎 Active coverage.py config doğrulanıyor: coverage debug config"
+  uv run python -m coverage debug config || true
+
   local coverage_pytest_opts=(
     --cov=agent
     --cov=core
@@ -1758,19 +1762,18 @@ update_progressive_coverage_gate() {
 
   echo "📈 Coverage ratcheting kontrolü çalıştırılıyor (step=${COVERAGE_RATCHET_STEP:-1}, min=${COVERAGE_RATCHET_MIN_GATE:-5}, max=${COVERAGE_RATCHET_MAX_GATE:-100})..."
   if uv run python scripts/coverage_ratchet.py \
-    --coveragerc "${COVERAGE_RATCHET_STATE_FILE}" \
+    --coverage-config "${COVERAGE_RATCHET_STATE_FILE}" \
     --coverage-json coverage.json \
     --step "${COVERAGE_RATCHET_STEP:-1}" \
     --min-gate "${COVERAGE_RATCHET_MIN_GATE:-5}" \
     --max-gate "${COVERAGE_RATCHET_MAX_GATE:-100}"; then
     DEFAULT_COVERAGE_FAIL_UNDER="$(python - "${COVERAGE_RATCHET_STATE_FILE}" <<'PY_RATCHET_GATE'
-from configparser import ConfigParser
 from pathlib import Path
 import sys
+import tomllib
 
-cfg = ConfigParser()
-cfg.read(Path(sys.argv[1]))
-print(cfg.get("report", "fail_under", fallback="5"))
+data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 5))
 PY_RATCHET_GATE
 )"
     COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"

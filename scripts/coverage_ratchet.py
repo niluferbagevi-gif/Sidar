@@ -1,7 +1,7 @@
 """Progressively ratchet the repository coverage quality gate.
 
-The local and CI coverage gate is stored in ``.coveragerc`` under
-``[report] fail_under``.  This helper reads the latest coverage.py JSON report
+The local and CI coverage gate is stored in ``pyproject.toml`` under
+``[tool.coverage.report] fail_under``.  This helper reads the latest coverage.py JSON report
 and raises that gate to the highest configured step that has already been
 reached, without ever lowering the existing threshold.  The default one-point
 step is intentionally for the daily local/CI quality gate; autonomous coverage
@@ -14,7 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
-from configparser import ConfigParser
+import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,12 +45,12 @@ def _parse_percentage(value: Any, *, field_name: str) -> float:
     return min(100.0, percentage)
 
 
-def read_fail_under(coveragerc_path: Path) -> float:
-    """Read ``[report] fail_under`` from a coverage.py config file."""
+def read_fail_under(coverage_config_path: Path) -> float:
+    """Read ``[tool.coverage.report] fail_under`` from pyproject coverage config."""
 
-    cfg = ConfigParser()
-    cfg.read(coveragerc_path, encoding="utf-8")
-    return _parse_percentage(cfg.get("report", "fail_under", fallback="0"), field_name="fail_under")
+    data = tomllib.loads(coverage_config_path.read_text(encoding="utf-8"))
+    raw_value = data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0)
+    return _parse_percentage(raw_value, field_name="fail_under")
 
 
 def read_total_coverage(coverage_json_path: Path) -> float:
@@ -101,72 +102,96 @@ def _format_gate(value: float) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def write_fail_under(coveragerc_path: Path, new_gate: float) -> None:
-    """Update only the ``fail_under`` line while preserving the rest of the file."""
+def _upsert_toml_key(lines: list[str], section: str, key: str, value: str) -> list[str]:
+    """Return TOML lines with a scalar key updated in the requested section."""
 
-    lines = coveragerc_path.read_text(encoding="utf-8").splitlines(keepends=True)
-    formatted = _format_gate(new_gate)
-    in_report = False
-    inserted = False
+    section_header = f"[{section}]"
+    key_pattern = re.compile(rf"^(?P<prefix>\s*){re.escape(key)}\s*=")
     output: list[str] = []
+    in_section = False
+    section_seen = False
+    inserted = False
 
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
-            if in_report and not inserted:
-                output.append(f"fail_under = {formatted}\n")
+            if in_section and not inserted:
+                output.append(f"{key} = {value}\n")
                 inserted = True
-            in_report = stripped.lower() == "[report]"
+            in_section = stripped == section_header
+            section_seen = section_seen or in_section
 
-        if in_report and stripped.lower().startswith("fail_under") and "=" in stripped:
-            prefix = line[: len(line) - len(line.lstrip())]
+        if in_section and key_pattern.match(line):
+            prefix = key_pattern.match(line).group("prefix")  # type: ignore[union-attr]
             newline = "\n" if line.endswith("\n") else ""
-            output.append(f"{prefix}fail_under = {formatted}{newline}")
+            output.append(f"{prefix}{key} = {value}{newline}")
             inserted = True
             continue
         output.append(line)
 
-    if in_report and not inserted:
-        output.append(f"fail_under = {formatted}\n")
+    if in_section and not inserted:
+        output.append(f"{key} = {value}\n")
         inserted = True
-    if not inserted:
+    if not section_seen:
         if output and not output[-1].endswith("\n"):
             output[-1] += "\n"
-        output.extend(["[report]\n", f"fail_under = {formatted}\n"])
+        output.extend([f"\n{section_header}\n", f"{key} = {value}\n"])
+    return output
 
-    coveragerc_path.write_text("".join(output), encoding="utf-8")
+
+def write_fail_under(coverage_config_path: Path, new_gate: float) -> None:
+    """Update only ``tool.coverage.report.fail_under`` while preserving TOML comments."""
+
+    lines = coverage_config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    output = _upsert_toml_key(
+        lines,
+        "tool.coverage.report",
+        "fail_under",
+        _format_gate(new_gate),
+    )
+    coverage_config_path.write_text("".join(output), encoding="utf-8")
 
 
 def ensure_html_dark_mode_css(
-    coveragerc_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS
+    coverage_config_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS
 ) -> bool:
-    """Ensure ``[html] extra_css`` points to Sidar dark mode stylesheet."""
+    """Ensure ``tool.coverage.html.extra_css`` points to Sidar dark mode stylesheet."""
 
-    cfg = ConfigParser()
-    cfg.read(coveragerc_path, encoding="utf-8")
-    if not cfg.has_section("html"):
-        cfg.add_section("html")
-    current = cfg.get("html", "extra_css", fallback="").strip()
-    if current == css_path:
+    data = tomllib.loads(coverage_config_path.read_text(encoding="utf-8"))
+    current = (
+        data.get("tool", {})
+        .get("coverage", {})
+        .get("html", {})
+        .get("extra_css", "")
+    )
+    if str(current).strip() == css_path:
         return False
-    cfg.set("html", "extra_css", css_path)
-    with coveragerc_path.open("w", encoding="utf-8") as handle:
-        cfg.write(handle)
+
+    lines = coverage_config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    output = _upsert_toml_key(
+        lines,
+        "tool.coverage.html",
+        "extra_css",
+        json.dumps(css_path),
+    )
+    coverage_config_path.write_text("".join(output), encoding="utf-8")
     return True
 
 
 def ratchet_coverage_gate(
     *,
-    coveragerc_path: Path,
+    coverage_config_path: Path | None = None,
     coverage_json_path: Path,
     step: float = 1.0,
     min_gate: float = 5.0,
     max_gate: float = 100.0,
+    coveragerc_path: Path | None = None,
 ) -> RatchetResult:
     """Raise ``fail_under`` to the reached step if coverage improved enough."""
 
-    ensure_html_dark_mode_css(coveragerc_path)
-    current_gate = read_fail_under(coveragerc_path)
+    coverage_config_path = coverage_config_path or coveragerc_path or Path("pyproject.toml")
+    ensure_html_dark_mode_css(coverage_config_path)
+    current_gate = read_fail_under(coverage_config_path)
     measured_coverage = read_total_coverage(coverage_json_path)
     target_gate = compute_next_gate(
         measured_coverage,
@@ -177,7 +202,7 @@ def ratchet_coverage_gate(
     )
     updated = target_gate > current_gate
     if updated:
-        write_fail_under(coveragerc_path, target_gate)
+        write_fail_under(coverage_config_path, target_gate)
     return RatchetResult(
         current_gate=current_gate,
         measured_coverage=measured_coverage,
@@ -188,7 +213,13 @@ def ratchet_coverage_gate(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Coverage gate ratcheting helper for Sidar.")
-    parser.add_argument("--coveragerc", default=".coveragerc", type=Path)
+    parser.add_argument(
+        "--coverage-config",
+        "--coveragerc",
+        dest="coverage_config",
+        default="pyproject.toml",
+        type=Path,
+    )
     parser.add_argument("--coverage-json", default="coverage.json", type=Path)
     parser.add_argument(
         "--step",
@@ -204,7 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     result = ratchet_coverage_gate(
-        coveragerc_path=args.coveragerc,
+        coverage_config_path=args.coverage_config,
         coverage_json_path=args.coverage_json,
         step=args.step,
         min_gate=args.min_gate,

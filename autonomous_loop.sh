@@ -52,12 +52,11 @@ AUTONOMOUS_BANDIT_REPORT="${AUTONOMOUS_LOOP_BANDIT_REPORT:-${AUTONOMOUS_REPORTS_
 
 resolve_local_coverage_gate() {
   python - <<'PY_LOCAL_COVERAGE_GATE'
-from configparser import ConfigParser
 from pathlib import Path
+import tomllib
 
-cfg = ConfigParser()
-cfg.read(Path(".coveragerc"))
-print(cfg.get("report", "fail_under", fallback="90"))
+data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 90))
 PY_LOCAL_COVERAGE_GATE
 }
 
@@ -205,7 +204,7 @@ fi
 
 echo "[INFO] Otonom döngü başlıyor. Toplam tekrar: $ITERATIONS"
 echo "[INFO] Coverage operasyon profili: ${AUTONOMOUS_OPERATION_PROFILE}."
-echo "[INFO] Günlük local kalite kapısı: run_tests.sh / .coveragerc / COVERAGE_FAIL_UNDER => %${LOCAL_COVERAGE_GATE}."
+echo "[INFO] Günlük local kalite kapısı: run_tests.sh / pyproject.toml / COVERAGE_FAIL_UNDER => %${LOCAL_COVERAGE_GATE}."
 echo "[INFO] Otonom coverage iyileştirme hedefi: AUTONOMOUS_LOOP_COVERAGE_PROFILE=${AUTONOMOUS_COVERAGE_PROFILE} => %${AUTONOMOUS_COVERAGE_TARGET}."
 echo "[INFO] CoverageAgent mikro kapsamı: limit=${AUTONOMOUS_COVERAGE_AGENT_LIMIT}, batch_size=${AUTONOMOUS_COVERAGE_AGENT_BATCH_SIZE}, max_missing_lines=${AUTONOMOUS_COVERAGE_MAX_MISSING_LINES}, max_missing_branches=${AUTONOMOUS_COVERAGE_MAX_MISSING_BRANCHES}."
 echo "[INFO] CI zorunlu gate ayrı profildir: CI=true TEST_PROFILE=ci ./run_tests.sh (AUTONOMOUS_LOOP hedefi CI gate değildir)."
@@ -552,7 +551,7 @@ async def main() -> int:
     # run_autonomous_coverage_batch içeride CoverageAgent write_missing_tests aracını çağırır.
     result = await agent.run_autonomous_coverage_batch(
         coverage_xml=coverage_xml,
-        coveragerc=".coveragerc",
+        coveragerc="pyproject.toml",
         limit=limit,
         batch_size=batch_size,
         append=True,
