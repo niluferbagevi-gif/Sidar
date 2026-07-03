@@ -1,3 +1,4 @@
+import inspect
 import sys
 import types
 
@@ -66,8 +67,24 @@ def _exports(*, slack=None, jira=None, teams=None):
         slack_cache={"instance": slack},
         jira_cache={"instance": jira},
         teams_cache={"instance": teams},
+        require_admin_user=lambda: None,
     )
     return router.legacy_exports
+
+
+def test_integrations_router_endpoints_require_admin_dependency():
+    exports = _exports(slack=_Slack(), jira=_Jira(), teams=_Teams())
+    protected = {
+        "api_slack_send": "_user",
+        "api_slack_channels": "_user",
+        "api_jira_create_issue": "_user",
+        "api_jira_search_issues": "_user",
+        "api_teams_send": "_user",
+    }
+
+    for export_name, parameter_name in protected.items():
+        default = inspect.signature(exports[export_name]).parameters[parameter_name].default
+        assert getattr(default, "dependency", None) is not None
 
 
 @pytest.mark.asyncio
@@ -172,6 +189,7 @@ def test_integrations_router_uses_live_cfg_provider_for_jira_manager(monkeypatch
         slack_cache={},
         jira_cache={},
         teams_cache={},
+        require_admin_user=lambda: None,
     )
 
     cfg.JIRA_DEFAULT_PROJECT = "SIDAR"

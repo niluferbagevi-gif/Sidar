@@ -1392,7 +1392,6 @@ async def basic_auth_middleware(
     if (
         request.method == "OPTIONS"
         or request.url.path in open_paths
-        or request.url.path.startswith("/api/plugin-marketplace/")
         or request.url.path.startswith("/static/")
         or request.url.path.startswith("/vendor/")
         or request.url.path == "/favicon.ico"
@@ -2918,6 +2917,7 @@ integrations_router = integrations_routes.build_integrations_router(
     slack_cache=_slack_mgr_cache,
     jira_cache=_jira_mgr_cache,
     teams_cache=_teams_mgr_cache,
+    require_admin_user=_require_admin_user,
 )
 _app_factory.register_routers(app, [vision_router, memory_feedback_router, integrations_router])
 
@@ -3027,29 +3027,35 @@ async def _prime_slack_manager_cache() -> None:
     _slack_mgr_cache["instance"] = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
 
 
-async def api_slack_send(req: _SlackSendRequest) -> Any:
+async def api_slack_send(
+    req: _SlackSendRequest, user: Any = Depends(_require_admin_user)
+) -> Any:
     await _prime_slack_manager_cache()
-    return await integrations_router.legacy_exports["api_slack_send"](req)
+    return await integrations_router.legacy_exports["api_slack_send"](req, user)
 
 
-async def api_slack_channels() -> Any:
+async def api_slack_channels(user: Any = Depends(_require_admin_user)) -> Any:
     await _prime_slack_manager_cache()
-    return await integrations_router.legacy_exports["api_slack_channels"]()
+    return await integrations_router.legacy_exports["api_slack_channels"](user)
 
 
 def _prime_jira_manager_cache() -> None:
     _jira_mgr_cache["instance"] = _get_jira_manager()
 
 
-async def api_jira_create_issue(req: _JiraCreateRequest) -> Any:
+async def api_jira_create_issue(
+    req: _JiraCreateRequest, user: Any = Depends(_require_admin_user)
+) -> Any:
     _prime_jira_manager_cache()
-    return await integrations_router.legacy_exports["api_jira_create_issue"](req)
+    return await integrations_router.legacy_exports["api_jira_create_issue"](req, user)
 
 
-async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
+async def api_jira_search_issues(
+    jql: str = "", max_results: int = 20, user: Any = Depends(_require_admin_user)
+) -> Any:
     _prime_jira_manager_cache()
     return await integrations_router.legacy_exports["api_jira_search_issues"](
-        jql=jql, max_results=max_results
+        jql=jql, max_results=max_results, _user=user
     )
 
 
@@ -3057,9 +3063,11 @@ def _prime_teams_manager_cache() -> None:
     _teams_mgr_cache["instance"] = _get_teams_manager()
 
 
-async def api_teams_send(req: _TeamsSendRequest) -> Any:
+async def api_teams_send(
+    req: _TeamsSendRequest, user: Any = Depends(_require_admin_user)
+) -> Any:
     _prime_teams_manager_cache()
-    return await integrations_router.legacy_exports["api_teams_send"](req)
+    return await integrations_router.legacy_exports["api_teams_send"](req, user)
 
 
 # Operations/Poyraz/Coverage HTTP request models and route handlers live in
