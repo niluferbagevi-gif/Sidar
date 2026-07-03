@@ -110,7 +110,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
 
 ## Coverage ratchet eşik davranışı
 
-- Güncel gate ve ratchet state `.coveragerc` içindeki `[report] fail_under` değeridir. Bu dosya
+- Güncel gate ve ratchet state `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeridir. Bu dosya
   repo'ya commitli kalmalıdır; `run_tests.sh` dosya yoksa veya gate beklenen minimumun altındaysa
   baseline kaybını önlemek için kalite akışını fail-closed durdurur. Ratchet yalnız başarılı
   birleşik coverage koşusundan sonra ve ölçüm bir sonraki basamağa gerçekten ulaştığında yükselir.
@@ -124,7 +124,7 @@ tek seferlik/geçici dosya adlarını referans almaz.
   (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
   `%100` olarak açar.
 - Ölçüm `%100.00` olsa bile refactor dönemi günlük gate'inde ratchet cap `%99` korunur; örneğin
-  `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
+  `Coverage gate ratcheted: %5 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
   otomatik terfi sinyali değildir. `%100` yalnız coverage-campaign/strict-local opt-in ile denenmelidir.
 
 ## Performance benchmark baseline yönetimi

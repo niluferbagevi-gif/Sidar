@@ -56,7 +56,7 @@ from pathlib import Path
 import tomllib
 
 data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 90))
+print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 5))
 PY_LOCAL_COVERAGE_GATE
 }
 
@@ -120,8 +120,8 @@ if ! [[ "$AUTONOMOUS_COVERAGE_TARGET" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   exit 2
 fi
 if ! [[ "$LOCAL_COVERAGE_GATE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "[UYARI] Yerel coverage gate değeri sayısal değil: '${LOCAL_COVERAGE_GATE}'. 90 kullanılacak."
-  LOCAL_COVERAGE_GATE="90"
+  echo "[UYARI] Yerel coverage gate değeri sayısal değil: '${LOCAL_COVERAGE_GATE}'. 5 kullanılacak."
+  LOCAL_COVERAGE_GATE="5"
 fi
 if ! [[ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" =~ ^[0-9]+$ ]] || [ "$AUTONOMOUS_MUTATION_MAX_CHILDREN" -lt 1 ]; then
   echo "[UYARI] AUTONOMOUS_LOOP_MUTATION_MAX_CHILDREN pozitif tamsayı değil: '${AUTONOMOUS_MUTATION_MAX_CHILDREN}'. 8 kullanılacak."

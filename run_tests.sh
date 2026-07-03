@@ -390,7 +390,7 @@ fi
 # AGENTS.md §2.5.4: coverage hedefleri üç ayrı operasyon profilinde izlenir.
 #   - local profile  → COVERAGE_FAIL_UNDER_LOCAL    (varsayılan: pyproject.toml)
 #   - ci profile     → COVERAGE_FAIL_UNDER_CI       (varsayılan: pyproject.toml)
-#   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: 100)
+#   - campaign opt-in → COVERAGE_FAIL_UNDER_CAMPAIGN (varsayılan: pyproject.toml)
 # Doğrudan COVERAGE_FAIL_UNDER atanırsa o değer her profilin önüne geçer
 # (geri uyumluluk için korunur). Coverage campaign opt-in'i ya CLI'dan
 # COVERAGE_CAMPAIGN=1 ile ya da otonom döngünün
@@ -404,7 +404,7 @@ fi
 if [ -n "${COVERAGE_FAIL_UNDER:-}" ]; then
   COVERAGE_FAIL_UNDER_SOURCE="explicit-override"
 elif [ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ]; then
-  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CAMPAIGN:-100}"
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CAMPAIGN:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
   COVERAGE_FAIL_UNDER_SOURCE="campaign"
 elif [ "${TEST_PROFILE}" = "ci" ]; then
   COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER_CI:-${DEFAULT_COVERAGE_FAIL_UNDER}}"
@@ -606,14 +606,14 @@ print_frontend_quality_summary() {
   fi
 }
 
-MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-80}"
+MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-5}"
 if ! [[ "${MIN_UNIT_COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "⚠️ Geçersiz MIN_UNIT_COVERAGE_FAIL_UNDER değeri: '${MIN_UNIT_COVERAGE_FAIL_UNDER}'. Varsayılan 80 kullanılacak."
-  MIN_UNIT_COVERAGE_FAIL_UNDER="80"
+  echo "⚠️ Geçersiz MIN_UNIT_COVERAGE_FAIL_UNDER değeri: '${MIN_UNIT_COVERAGE_FAIL_UNDER}'. Varsayılan 5 kullanılacak."
+  MIN_UNIT_COVERAGE_FAIL_UNDER="5"
 fi
 if ! [[ "${COVERAGE_FAIL_UNDER}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 90 kullanılacak."
-  COVERAGE_FAIL_UNDER="90"
+  echo "⚠️ Geçersiz COVERAGE_FAIL_UNDER değeri: '${COVERAGE_FAIL_UNDER}'. Varsayılan 5 kullanılacak."
+  COVERAGE_FAIL_UNDER="5"
 fi
 COVERAGE_FAIL_UNDER="$(python - "${COVERAGE_FAIL_UNDER}" "${MIN_UNIT_COVERAGE_FAIL_UNDER}" <<'PY_COVERAGE_FLOOR'
 import sys

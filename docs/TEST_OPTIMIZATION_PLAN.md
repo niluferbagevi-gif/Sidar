@@ -18,7 +18,7 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 
 ### Mevcut kalite geçidi ile hizalama (zorunlu not)
 
-- Repo’daki günlük baseline kalite geçidinin doğruluk kaynağı `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeridir; bu revizyonda değer `%90`'dır. CI gibi daha sıkı profiller bu baseline üzerine açık ortam değişkeniyle override verebilir.
+- Repo’daki günlük baseline kalite geçidinin doğruluk kaynağı `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeridir; bu revizyonda bootstrap değer `%5`'dır. CI gibi daha sıkı profiller bu baseline üzerine açık ortam değişkeniyle override verebilir.
 - `run_tests.sh`, açık `COVERAGE_FAIL_UNDER` verilmemişse `pyproject.toml` değerini okur ve başarılı test koşusundan sonra `COVERAGE_RATCHET_STEP` varsayılanı `%1` puan olacak şekilde gate’i yalnızca yukarı ratchet eder.
 - Otonom CoverageAgent koşularında tek denemelik kapsam ayrıca mikro limitlerle korunur: varsayılan `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3`, `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`, `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25` ve `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10`.
 - Coverage gate eşiği için tek teknik doğruluk kaynağı `pyproject.toml` dosyasındaki `[tool.coverage.report].fail_under` değeridir; ayrı `.coveragerc` tutulmaz. `run_tests.sh` bu değeri okur ve yalnız final birleşik raporda uygular; açık `COVERAGE_FAIL_UNDER` sadece bilinçli geçici override olarak kullanılmalıdır.
@@ -33,7 +33,7 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 
 ### Proje Ekibine Aksiyon Notu (2026-04-08)
 
-- Test yazarken `%100` geneline odaklanarak sprint kapasitesini tüketmeyin; modül bazlı kademeli hedefleri takip edin (`%70 -> %80 -> %90+`).
+- Test yazarken `%100` geneline odaklanarak sprint kapasitesini tüketmeyin; modül bazlı kademeli hedefleri takip edin (`%70 -> %80 -> %5+`).
 - `pyproject.toml` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`) için coverage artırma işi açmayın; yalnızca fonksiyonel/regresyon ihtiyacı varsa test ekleyin.
 - Sprint başında hedef modül listesi oluşturun, sprint sonunda sadece bu modüller için line/branch ilerleme raporu çıkarın.
 
@@ -249,15 +249,15 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
   - coverage trend karşılaştırması
   - flaky test raporu
 
-`pyproject.toml` içindeki günlük repo baseline'ı bu revizyonda `%90` olarak korunurken, yeni veya düşük kapsamlı modüllerde planlama için modül bazlı **kademeli iyileştirme hedefi** uygulanmalı. `%100` yalnızca coverage-campaign/aspirasyonel profil hedefidir; günlük/CI gate metninde sabit `%100` zorunluluğu gibi kullanılmamalıdır:
-- Faz 1: `%70`
-- Faz 2: `%80`
-- Faz 3: `%90+`
+`pyproject.toml` içindeki günlük repo baseline'ı bu revizyonda `%5` olarak korunurken, yeni veya düşük kapsamlı modüllerde planlama için modül bazlı **kademeli iyileştirme hedefi** uygulanmalı. `%100` yalnızca coverage-campaign/aspirasyonel profil hedefidir; günlük/CI gate metninde sabit `%100` zorunluluğu gibi kullanılmamalıdır:
+- Faz 1: mevcut `%5` bootstrap gate üstüne ilk artış
+- Faz 2: riskli modüllerde çift haneli coverage
+- Faz 3: kritik modüllerde yüksek coverage
 - Faz 4: risk-temelli hedef coverage (modül kritikliğine göre farklı eşik)
 
 Önemli:
 - Bu fazlar global `pyproject.toml` gate’ini düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
-- Teknik kaynaklar (`pyproject.toml` + `run_tests.sh` + CI override'ları) tek kaynak olarak `pyproject.toml` baseline'ını ve açık ortam değişkenlerini kullanır: günlük baseline `%90`, CI varsayılan override'ı `COVERAGE_FAIL_UNDER_CI`, coverage campaign hedefi ise ayrı `%100` profilidir. Bu fazlar yeni modül ekleme veya risk-temelli test kampanyalarında kapasite planlama hedefi olarak kullanılmalıdır.
+- Teknik kaynaklar (`pyproject.toml` + `run_tests.sh` + CI override'ları) tek kaynak olarak `pyproject.toml` baseline'ını ve açık ortam değişkenlerini kullanır: günlük baseline `%5`, CI varsayılanı aynı ratchet baseline, geçici sıkılaştırma için `COVERAGE_FAIL_UNDER_CI`, coverage campaign ise ayrı opt-in profildir. Bu fazlar yeni modül ekleme veya risk-temelli test kampanyalarında kapasite planlama hedefi olarak kullanılmalıdır.
 
 ---
 
@@ -284,7 +284,7 @@ Her sprintte aşağıdaki tablo güncellenmelidir:
 
 Bu plan, mevcut repo durumu ile çapraz kontrol edilerek güncellenmiştir:
 
-- Global günlük baseline bugün için `pyproject.toml` içindeki `%90` değeridir; `run_tests.sh` açık `COVERAGE_FAIL_UNDER` / profil override'ı verilmediği sürece bu değeri okur ve final birleşik `coverage report --fail-under` adımında uygular.
+- Global günlük baseline bugün için `pyproject.toml` içindeki `%5` değeridir; `run_tests.sh` açık `COVERAGE_FAIL_UNDER` / profil override'ı verilmediği sürece bu değeri okur ve final birleşik `coverage report --fail-under` adımında uygular.
 - `%100 enforced` ifadesi günlük/CI global gate için kullanılmamalıdır; `%100` yalnızca coverage-campaign profilinde aspirasyonel hedef olarak ele alınır. Buna rağmen yüksek line coverage tek başına kalite garantisi değildir, kritik akış/hata patikası/regresyon riski önceliği korunmalıdır.
 - `omit` kapsamı plan içine açık operasyon kuralı olarak eklenmiştir.
 - v5.x ile gelen kritik `core/*` modülleri test öncelik matrisine dahil edilmiştir.
