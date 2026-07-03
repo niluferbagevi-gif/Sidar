@@ -7,6 +7,7 @@ import json
 import logging
 import sqlite3
 import sys
+import threading
 import types
 import uuid
 from dataclasses import dataclass
@@ -1724,6 +1725,78 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
     activated = await db.activate_prompt(4)
     assert activated is not None
     assert activated.id == 4
+
+
+
+@pytest.mark.asyncio
+async def test_sqlite_password_hash_and_verify_run_off_event_loop_thread(
+    sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    event_loop_thread = threading.get_ident()
+    hash_threads: list[int] = []
+    verify_threads: list[int] = []
+
+    def _fake_hash(password: str) -> str:
+        hash_threads.append(threading.get_ident())
+        return f"sqlite-hashed::{password}"
+
+    def _fake_verify(password: str, encoded: str) -> bool:
+        verify_threads.append(threading.get_ident())
+        return encoded == f"sqlite-hashed::{password}"
+
+    monkeypatch.setattr(core_db, "_hash_password", _fake_hash)
+    monkeypatch.setattr(core_db, "_verify_password", _fake_verify)
+
+    created = await sqlite_db.create_user("sqlite-thread-user", password="pw")
+    authenticated = await sqlite_db.authenticate_user(created.username, "pw")
+
+    assert authenticated is not None
+    assert hash_threads and all(thread_id != event_loop_thread for thread_id in hash_threads)
+    assert verify_threads and all(thread_id != event_loop_thread for thread_id in verify_threads)
+
+
+@pytest.mark.asyncio
+async def test_password_hash_and_verify_are_offloaded_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((getattr(func, "__name__", repr(func)), args))
+        return func(*args, **kwargs)
+
+    def _fake_hash(password: str) -> str:
+        return f"hashed::{password}"
+
+    def _fake_verify(password: str, encoded: str) -> bool:
+        return encoded == f"hashed::{password}"
+
+    monkeypatch.setattr(core_db.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(core_db, "_hash_password", _fake_hash)
+    monkeypatch.setattr(core_db, "_verify_password", _fake_verify)
+
+    created = await db.create_user("thread-user", password="pw", tenant_id="tenant-thread")
+    assert created.username == "thread-user"
+    assert fake_pg.conn.execute.await_args.args[3] == "hashed::pw"
+
+    fake_pg.conn.fetchrow = AsyncMock(
+        return_value={
+            "id": "u-thread",
+            "username": "thread-user",
+            "password_hash": "hashed::pw",
+            "role": "user",
+            "created_at": "created",
+            "tenant_id": "tenant-thread",
+        }
+    )
+    authenticated = await db.authenticate_user("thread-user", "pw")
+
+    assert authenticated is not None
+    assert authenticated.id == "u-thread"
+    assert calls == [("_fake_hash", ("pw",)), ("_fake_verify", ("pw", "hashed::pw"))]
 
 
 @pytest.mark.asyncio

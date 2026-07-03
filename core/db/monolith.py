@@ -1072,7 +1072,9 @@ class Database:
     ) -> UserRecord:
         user_id = _new_entity_id()
         created_at_dt, created_at = _utc_now_pair()
-        password_hash = _hash_password(password) if password else None
+        password_hash = (
+            await asyncio.to_thread(_hash_password, password) if password else None
+        )
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None
@@ -1122,7 +1124,9 @@ class Database:
                 )
             if not row or not row["password_hash"]:
                 return None
-            if not _verify_password(password, str(row["password_hash"])):
+            if not await asyncio.to_thread(
+                _verify_password, password, str(row["password_hash"])
+            ):
                 return None
             return UserRecord(
                 id=str(row["id"]),
@@ -1147,7 +1151,9 @@ class Database:
         row = await self._run_sqlite_op(_run)
         if not row or not row["password_hash"]:
             return None
-        if not _verify_password(password, str(row["password_hash"])):
+        if not await asyncio.to_thread(
+            _verify_password, password, str(row["password_hash"])
+        ):
             return None
         return UserRecord(
             id=str(row["id"]),
