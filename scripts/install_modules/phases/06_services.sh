@@ -1424,8 +1424,10 @@ PY
         ) 2>&1 | tee "$smoke_log"
     ); then
         ok "Servis öncesi installer smoke gate başarılı."
+        SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="tamamlandi"
         sidar_phase06_cleanup_pre_service_smoke_log
     else
+        SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="hata"
         local persisted_smoke_log=""
         persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"
         warn "Smoke gate çıktısı: $smoke_log"

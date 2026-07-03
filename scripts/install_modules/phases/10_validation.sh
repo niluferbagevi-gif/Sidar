@@ -188,6 +188,11 @@ run_smoke_tests() {
         return
     fi
 
+    if [[ "${SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS:-}" == "tamamlandi" ]]; then
+        pytest_smoke_args+=(--ignore="$smoke_dir/test_install_verification.py")
+        info "Servis öncesi installer smoke gate test_install_verification.py dosyasını zaten doğruladı; smoke tekrarında bu dosya atlanacak."
+    fi
+
     if [[ "$RUN_SMOKE_TESTS_MODE" == "always" ]]; then
         should_run=true
     else
@@ -478,4 +483,3 @@ print_install_validation_coverage() {
         echo "   veya yalnızca:  ./run_tests.sh --stage all"
     fi
 }
-
