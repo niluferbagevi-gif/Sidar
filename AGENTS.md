@@ -269,13 +269,11 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
       `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine
       yazar.
     - **CI profile (`TEST_PROFILE=ci`)** — pre-merge/zorunlu kapı.
-      `COVERAGE_FAIL_UNDER_CI` envi local tabanın üzerine sıkı eşik (örn.
-      `%95`) bindirir; `.github/workflows/ci.yml` bu envi ana test job'unda
-      açık olarak verir.
-    - **Coverage campaign profile** — aspirasyonel `%100` hedefi.
+      `COVERAGE_FAIL_UNDER_CI` envi varsayılan olarak `pyproject.toml` ratchet baselineını kullanır; geçici sıkılaştırma gerekiyorsa bu env açıkça verilebilir.
+    - **Coverage campaign profile** — planlı/aspirasyonel iyileştirme profili.
       `COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`
       ile devreye girer; `COVERAGE_FAIL_UNDER_CAMPAIGN` envi varsayılan
-      `100`'ü override edebilir.
+      `pyproject.toml` baselineını override edebilir; verilmezse aynı ratchet baseline kullanılır.
 - `coverage_ratchet.py` `pyproject.toml` üzerindeki `[tool.coverage.report].fail_under` değerini
   yalnızca yukarı taşır; `COVERAGE_RATCHET_STEP` varsayılanı `%1`'dir ve
   local/CI profilleri için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak
