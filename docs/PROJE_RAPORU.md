@@ -1265,7 +1265,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `ACCESS_LEVEL` | `.env.example`: `sandbox`, `config.py` fallback: `full` | Araç/yürütme erişim seviyesi: `restricted`, `sandbox`, `full` |
+| `ACCESS_LEVEL` | `.env.example`: `sandbox`, `config_security.py` fallback: `sandbox` | Araç/yürütme erişim seviyesi: `restricted`, `sandbox`, `full`. `full` yalnız `SIDAR_ALLOW_FULL_ACCESS=true` açık onayıyla geçerlidir; aksi durumda başlangıç doğrulaması reddeder. |
 | `API_KEY` | `""` | Web/API için opsiyonel ek anahtar tabanlı koruma |
 | `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_TTL_DAYS` | `""` / `HS256` / `7` | SPA/API oturumları için JWT imzalama ve yaşam süresi ayarları |
 | `DLP_ENABLED` / `DLP_LOG_DETECTIONS` | `true` / `false` | PII/hassas veri maskeleme ve maskeleme loglama davranışı |
