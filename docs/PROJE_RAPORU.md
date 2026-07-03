@@ -339,7 +339,7 @@ Sidar/
 │           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
 │           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
-├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%90 eşik)
+├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%5 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
 ├── AUDIT_REPORT_v5.0.md       # v5.0 kurumsal geçiş + coverage kapanışı denetim raporu
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
@@ -600,7 +600,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 - **`test_*.py` modül sayısı:** **213**
 - **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
 - **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%5 local bootstrap gate**
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -620,7 +620,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (local `fail_under=90`, CI `COVERAGE_FAIL_UNDER_CI=95`, campaign `%100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
+| Coverage Quality Gate (local `fail_under=5`, CI `COVERAGE_FAIL_UNDER_CI=95`, campaign `%100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
@@ -635,7 +635,7 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
 gate ailesidir (detay için bkz. `AGENTS.md §2.5.4`):
 
-- **Local profile (`TEST_PROFILE=local`)** — `.coveragerc [report].fail_under = 90`
+- **Local profile (`TEST_PROFILE=local`)** — `.coveragerc [report].fail_under = 5`
   stabil ve ulaşılabilir tabandır; `coverage_ratchet.py` step `%1` ile bu değeri
   yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=99` ile bir puanlık
   tampon bırakır. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
@@ -1486,7 +1486,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `.coveragerc` üzerinde `%90` stabil tabanı, CI ise `COVERAGE_FAIL_UNDER_CI=95` ile sıkı pre-merge eşiğini uygular; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
+> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `.coveragerc` üzerinde `%5` bootstrap tabanı, CI ise `COVERAGE_FAIL_UNDER_CI=95` ile sıkı pre-merge eşiğini uygular; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi
@@ -1592,7 +1592,7 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 
 ### Final Doğrulama ve Sıfır Teknik Borç Durumu
 
-Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%90 coverage hard gate** uygular; bu değer depo kültüründeki tam kapsama hedefinin repo içinde gerçekten kodlanmış karşılığıdır.
+Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. Local kalite hattı `run_tests.sh` üzerinden **%5 local coverage bootstrap gate** uygular; CI hattı ise `.github/workflows/ci.yml` içindeki `COVERAGE_FAIL_UNDER_CI=95` override değeriyle daha sıkı pre-merge eşiğini korur.
 
 Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v5.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
 
