@@ -1787,6 +1787,32 @@ def _validate_plugin_source(source_code: str) -> None:
     }
     banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
     banned_attribute_roots = banned_import_roots | {"builtins", "importlib", "pathlib", "shutil"}
+    banned_introspection_attrs = {
+        "__base__",
+        "__bases__",
+        "__class__",
+        "__closure__",
+        "__code__",
+        "__dict__",
+        "__getattribute__",
+        "__globals__",
+        "__mro__",
+        "__subclasses__",
+    }
+
+    def _attribute_root_name(expr: ast.AST) -> str:
+        """Return the left-most name in a chained attribute expression, if any."""
+        current = expr
+        while isinstance(current, ast.Attribute):
+            current = current.value
+        if isinstance(current, ast.Name):
+            return current.id
+        if isinstance(current, ast.Call):
+            return _attribute_root_name(current.func)
+        if isinstance(current, ast.Subscript):
+            return _attribute_root_name(current.value)
+        return ""
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import | ast.ImportFrom):
             modules = []
@@ -1799,12 +1825,18 @@ def _validate_plugin_source(source_code: str) -> None:
                     status_code=400,
                     detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
                 )
+        if isinstance(node, ast.Attribute) and node.attr in banned_introspection_attrs:
+            raise HTTPException(
+                status_code=400,
+                detail="Plugin güvenlik politikası: tehlikeli introspection erişimi engellendi.",
+            )
         if isinstance(node, ast.Call):
             fn_name = ""
             if isinstance(node.func, ast.Name):
                 fn_name = node.func.id
-            elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-                fn_name = f"{node.func.value.id}.{node.func.attr}"
+            elif isinstance(node.func, ast.Attribute):
+                root_name = _attribute_root_name(node.func)
+                fn_name = f"{root_name}.{node.func.attr}" if root_name else node.func.attr
             if fn_name in banned_calls or fn_name.endswith(".exec") or fn_name.endswith(".eval"):
                 raise HTTPException(
                     status_code=400,
@@ -1812,8 +1844,7 @@ def _validate_plugin_source(source_code: str) -> None:
                 )
             if (
                 isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in banned_attribute_roots
+                and _attribute_root_name(node.func) in banned_attribute_roots
             ):
                 raise HTTPException(
                     status_code=400,

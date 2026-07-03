@@ -2027,6 +2027,31 @@ def test_validate_plugin_source_rejects_banned_import_statements():
     web_server._validate_plugin_source("import math\nfrom typing import Any\n")
 
 
+def test_validate_plugin_source_rejects_chained_introspection_escape():
+    exploit = "classes = ().__class__.__bases__[0].__subclasses__()"
+
+    with pytest.raises(HTTPException) as exc:
+        web_server._validate_plugin_source(exploit)
+
+    assert exc.value.status_code == 400
+    assert "introspection" in exc.value.detail
+
+
+def test_validate_plugin_source_rejects_introspection_attribute_without_call():
+    with pytest.raises(HTTPException) as exc:
+        web_server._validate_plugin_source("leak = (lambda: 1).__globals__")
+
+    assert exc.value.status_code == 400
+    assert "introspection" in exc.value.detail
+
+
+def test_validate_plugin_source_rejects_chained_banned_module_calls():
+    with pytest.raises(HTTPException) as exc:
+        web_server._validate_plugin_source("import importlib\nimportlib.resources.files('os')")
+
+    assert exc.value.status_code == 400
+    assert "tehlikeli modül" in exc.value.detail
+
 def test_build_restricted_plugin_builtins_strips_dangerous_names():
     """Defense-in-depth: tehlikeli built-in'ler plugin namespace'inde bulunmamalı."""
     import builtins as _b
