@@ -1616,6 +1616,18 @@ class _SwarmExecuteRequest(BaseModel):
     max_concurrency: int = Field(default=4, ge=1, le=16)
 
 
+def _serialize_audit_log(record: Any) -> dict[str, Any]:
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "user_id": str(getattr(record, "user_id", "") or ""),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "action": str(getattr(record, "action", "") or ""),
+        "resource": str(getattr(record, "resource", "") or ""),
+        "ip_address": str(getattr(record, "ip_address", "") or ""),
+        "allowed": bool(getattr(record, "allowed", False)),
+        "timestamp": str(getattr(record, "timestamp", "") or ""),
+    }
+
 def _serialize_prompt(record: Any) -> dict[str, Any]:
     prompt_id = getattr(record, "id", 0)
     serialized_id: int | str
@@ -2599,6 +2611,7 @@ auth_admin_router = build_auth_admin_router(
     issue_auth_token=lambda agent, user: _issue_auth_token(agent, user),
     serialize_prompt=_serialize_prompt,
     serialize_policy=_serialize_policy,
+    serialize_audit_log=_serialize_audit_log,
     get_admin_stats=lambda agent: agent.memory.db.get_admin_stats(),
     register_request_model=_RegisterRequest,
     login_request_model=_LoginRequest,

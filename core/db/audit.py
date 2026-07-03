@@ -69,23 +69,31 @@ async def list_audit_logs(
     *,
     record_cls: type[Any],
     user_id: str | None = None,
+    tenant_id: str | None = None,
     limit: int = 100,
 ) -> list[Any]:
     max_items = max(1, min(int(limit or 100), 1000))
     normalized_user = (user_id or "").strip() or None
+    normalized_tenant = (tenant_id or "").strip() or None
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
             "SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp "
             "FROM audit_logs"
         )
-        args: tuple[Any, ...]
+        conditions: list[str] = []
+        args_list: list[Any] = []
         if normalized_user is not None:
-            query += " WHERE user_id=$1 ORDER BY timestamp DESC LIMIT $2"
-            args = (normalized_user, max_items)
-        else:
-            query += " ORDER BY timestamp DESC LIMIT $1"
-            args = (max_items,)
+            args_list.append(normalized_user)
+            conditions.append(f"user_id=${len(args_list)}")
+        if normalized_tenant is not None:
+            args_list.append(normalized_tenant)
+            conditions.append(f"tenant_id=${len(args_list)}")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        args_list.append(max_items)
+        query += f" ORDER BY timestamp DESC LIMIT ${len(args_list)}"
+        args = tuple(args_list)
         async with db._pg_pool.acquire() as conn:
             rows = await conn.fetch(query, *args)
     else:
@@ -93,27 +101,23 @@ async def list_audit_logs(
 
         def _run() -> list[Any]:
             assert db._sqlite_conn is not None
+            conditions: list[str] = []
+            params: list[Any] = []
             if normalized_user is not None:
-                cur = db._sqlite_conn.execute(
-                    """
-                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
-                    FROM audit_logs
-                    WHERE user_id=?
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                    """,
-                    (normalized_user, max_items),
-                )
-            else:
-                cur = db._sqlite_conn.execute(
-                    """
-                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
-                    FROM audit_logs
-                    ORDER BY timestamp DESC
-                    LIMIT ?
-                    """,
-                    (max_items,),
-                )
+                conditions.append("user_id=?")
+                params.append(normalized_user)
+            if normalized_tenant is not None:
+                conditions.append("tenant_id=?")
+                params.append(normalized_tenant)
+            query = (
+                "SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp "
+                "FROM audit_logs"
+            )
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(max_items)
+            cur = db._sqlite_conn.execute(query, tuple(params))
             return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)

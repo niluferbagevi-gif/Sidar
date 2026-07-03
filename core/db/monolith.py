@@ -1518,10 +1518,15 @@ class Database:
         self,
         *,
         user_id: str | None = None,
+        tenant_id: str | None = None,
         limit: int = 100,
     ) -> list[AuditLogRecord]:
         return await db_audit.list_audit_logs(
-            self, record_cls=AuditLogRecord, user_id=user_id, limit=limit
+            self,
+            record_cls=AuditLogRecord,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            limit=limit,
         )
 
     async def upsert_marketing_campaign(

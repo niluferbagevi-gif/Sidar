@@ -1,72 +1,104 @@
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TenantAdminPanel } from "./TenantAdminPanel.jsx";
+import { fetchJson } from "../lib/api.js";
+
+vi.mock("../lib/api.js", () => ({
+  fetchJson: vi.fn(),
+}));
+
+const policiesPayload = {
+  items: [
+    {
+      id: 1,
+      user_id: "user-1",
+      tenant_id: "acme",
+      resource_type: "rag",
+      resource_id: "*",
+      action: "read",
+      effect: "allow",
+    },
+  ],
+};
+
+const auditPayload = {
+  items: [
+    {
+      id: 10,
+      user_id: "user-1",
+      tenant_id: "acme",
+      action: "read",
+      resource: "rag:*",
+      allowed: true,
+      timestamp: "2026-07-03T10:00:00Z",
+    },
+    {
+      id: 11,
+      user_id: "user-2",
+      tenant_id: "acme",
+      action: "manage",
+      resource: "admin:*",
+      allowed: false,
+      timestamp: "2026-07-03T10:05:00Z",
+    },
+  ],
+};
+
+function mockFetchJson(url, options = {}) {
+  if (url.startsWith("/admin/audit-logs")) return Promise.resolve(auditPayload);
+  if (url.startsWith("/admin/policies/user-1") && !options.method) return Promise.resolve(policiesPayload);
+  if (url === "/admin/policies" && options.method === "POST") return Promise.resolve(policiesPayload);
+  return Promise.resolve({ items: [] });
+}
 
 describe("TenantAdminPanel", () => {
-  it("adds a tenant and clears the input", async () => {
+  beforeEach(() => {
+    fetchJson.mockImplementation(mockFetchJson);
+  });
+
+  it("loads tenant audit logs from backend on initial render", async () => {
+    render(<TenantAdminPanel />);
+
+    expect(await screen.findByText("Audit Trail")).toBeInTheDocument();
+    expect(await screen.findByText("rag:*")).toBeInTheDocument();
+    expect(screen.getByText("admin:*")).toBeInTheDocument();
+    expect(screen.getByText("İzinli audit").previousSibling).toHaveTextContent("1");
+    expect(screen.getByText("Reddedilen audit").previousSibling).toHaveTextContent("1");
+    expect(fetchJson).toHaveBeenCalledWith("/admin/audit-logs?tenant_id=default&limit=50");
+  });
+
+  it("lists policies for the selected user and tenant", async () => {
     const user = userEvent.setup();
     render(<TenantAdminPanel />);
 
-    const input = screen.getByLabelText("Yeni tenant adı");
-    await user.type(input, "Helios Enerji");
-    await user.click(screen.getByRole("button", { name: "Tenant Ekle" }));
+    await user.clear(screen.getByLabelText("Tenant ID"));
+    await user.type(screen.getByLabelText("Tenant ID"), "acme");
+    await user.type(screen.getByLabelText("Kullanıcı ID"), "user-1");
 
-    expect(screen.getByRole("heading", { name: "Helios Enerji" })).toBeInTheDocument();
-    expect(input).toHaveValue("");
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith("/admin/policies/user-1?tenant_id=acme");
+    });
+    const policyCard = await screen.findByText("ALLOW · rag:*");
+    expect(policyCard).toBeInTheDocument();
+    expect(within(policyCard.closest(".policy-item")).getByText(/tenant:acme/)).toBeInTheDocument();
   });
 
-  it("does not add tenant when input is blank/whitespace", async () => {
+  it("upserts a real RBAC policy through the admin policy API", async () => {
     const user = userEvent.setup();
     render(<TenantAdminPanel />);
 
-    const initialCards = screen.getAllByRole("heading", { level: 3 }).length;
-    const input = screen.getByLabelText("Yeni tenant adı");
+    await user.clear(screen.getByLabelText("Tenant ID"));
+    await user.type(screen.getByLabelText("Tenant ID"), "acme");
+    await user.type(screen.getByLabelText("Kullanıcı ID"), "user-1");
+    await user.click(screen.getByRole("button", { name: "Politikayı Kaydet" }));
 
-    await user.type(input, "   ");
-    await user.click(screen.getByRole("button", { name: "Tenant Ekle" }));
-
-    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(initialCards);
-  });
-
-  it("toggles the tenant status label in both directions (active <-> paused)", async () => {
-    const user = userEvent.setup();
-    render(<TenantAdminPanel />);
-
-    // --- 1. YÖN: Active -> Paused (True Dalı) ---
-    // Acme Finans başlangıçta "active"dir, "Duraklat" butonuna tıklıyoruz.
-    const pauseButtons = screen.getAllByRole("button", { name: "Duraklat" });
-    await user.click(pauseButtons[0]);
-
-    // Ekrandaki "Aktifleştir" butonu sayısı artmış olmalı (Başlangıçta sadece Nova Lojistik için vardı, şimdi Acme için de var)
-    expect(screen.getAllByRole("button", { name: "Aktifleştir" })).toHaveLength(2);
-
-    // --- 2. YÖN: Paused -> Active (False Dalı - Eksik Olan Satır 33 İçin) ---
-    // Şimdi ekrandaki herhangi bir "Aktifleştir" butonuna tıklıyoruz.
-    const activateButtons = screen.getAllByRole("button", { name: "Aktifleştir" });
-    await user.click(activateButtons[0]);
-
-    // Tıkladığımız tenant yeniden aktif olduğu için "Duraklat" butonlarının sayısı da doğru şekilde güncellenmiş olmalı.
-    expect(screen.getAllByRole("button", { name: "Duraklat" })).toHaveLength(2);
-  });
-
-  it("new tenant gets Starter plan and quota of 5 by default", async () => {
-    const user = userEvent.setup();
-    render(<TenantAdminPanel />);
-
-    await user.type(screen.getByLabelText("Yeni tenant adı"), "Test Firma");
-    await user.click(screen.getByRole("button", { name: "Tenant Ekle" }));
-
-    const newTenantCard = screen.getByRole("heading", { name: "Test Firma" }).closest(".tenant-card");
-    expect(newTenantCard).not.toBeNull();
-    expect(within(newTenantCard).getByText("Plan: Starter")).toBeInTheDocument();
-    expect(within(newTenantCard).getByText("Ajan kotası: 5")).toBeInTheDocument();
-  });
-
-  it("shows Aktif and Duraklatıldı status labels correctly", () => {
-    render(<TenantAdminPanel />);
-
-    expect(screen.getAllByText("Aktif")).toHaveLength(2);
-    expect(screen.getAllByText("Duraklatıldı")).toHaveLength(1);
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith("/admin/policies", expect.objectContaining({ method: "POST" }));
+    });
+    const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
+    expect(JSON.parse(request.body)).toMatchObject({ user_id: "user-1", tenant_id: "acme", resource_type: "rag" });
+    expect(await screen.findByText("acme tenant erişim politikası kaydedildi.")).toBeInTheDocument();
   });
 });

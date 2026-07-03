@@ -46,6 +46,7 @@ def build_auth_admin_router(
     issue_auth_token: Callable[[Any, Any], Awaitable[str]],
     serialize_prompt: Callable[[Any], dict[str, Any]],
     serialize_policy: Callable[[Any], dict[str, Any]],
+    serialize_audit_log: Callable[[Any], dict[str, Any]],
     get_admin_stats: Callable[[Any], Awaitable[dict[str, Any]] | dict[str, Any]] | None = None,
     register_request_model: type[Any],
     login_request_model: type[Any],
@@ -189,6 +190,21 @@ def build_auth_admin_router(
         )
         return JSONResponse({"items": [serialize_policy(r) for r in records]})
 
+    @router.get("/admin/audit-logs")
+    async def admin_list_audit_logs(
+        user_id: str = "",
+        tenant_id: str = "",
+        limit: int = 100,
+        _user: Any = Depends(require_admin_user),
+    ) -> JSONResponse:
+        agent = await resolve_agent_instance()
+        records = await agent.memory.db.list_audit_logs(
+            user_id=user_id.strip() or None,
+            tenant_id=tenant_id.strip() or None,
+            limit=limit,
+        )
+        return JSONResponse({"items": [serialize_audit_log(r) for r in records]})
+
     @router.post("/admin/policies")
     async def admin_upsert_policy(
         payload: Annotated[dict[str, Any], Body()],
@@ -219,6 +235,7 @@ def build_auth_admin_router(
         "admin_upsert_prompt": admin_upsert_prompt,
         "admin_activate_prompt": admin_activate_prompt,
         "admin_list_policies": admin_list_policies,
+        "admin_list_audit_logs": admin_list_audit_logs,
         "admin_upsert_policy": admin_upsert_policy,
     }
     return router
