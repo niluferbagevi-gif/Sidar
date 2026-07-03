@@ -950,6 +950,7 @@ async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_c
         ):
             assert messages[0]["content"] == "hello"
             if stream:
+
                 async def _stream():
                     yield "strategy"
                     yield "-ok"
@@ -961,7 +962,9 @@ async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_c
     llm_client.LLMClient.register_provider("strategy", StrategyClient)
 
     client = llm_client.LLMClient("strategy", mock_config())
-    chunks = [chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])]
+    chunks = [
+        chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])
+    ]
     assert chunks == ["strategy", "-ok"]
 
 
@@ -2880,7 +2883,7 @@ async def test_ollama_stream_trailing_decoder_branch(
             return " \n"
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -3101,7 +3104,7 @@ async def test_ollama_stream_additional_json_branches(
             return '{"message":{"content":""}}\n'
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -3352,7 +3355,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
             return "" if final else '{"message":{"content":""}}'
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderA())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _DecoderA()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -3366,7 +3369,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
             return "" if final else "{not-json"
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderB())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _DecoderB()
     )
     assert (
         await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1)))
@@ -3699,7 +3702,7 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3729,7 +3732,7 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3759,7 +3762,7 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3788,7 +3791,7 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -4581,3 +4584,78 @@ async def test_ollama_stream_without_gpu_limiter_returns_traced_stream(
 
     assert [chunk async for chunk in stream] == ["chunk-cpu"]
     assert key not in llm_client._OLLAMA_GPU_LIMITERS
+
+
+@pytest.mark.asyncio
+async def test_anthropic_non_stream_closes_client(monkeypatch) -> None:
+    class _Response:
+        usage = SimpleNamespace(input_tokens=1, output_tokens=2)
+        content = [SimpleNamespace(text='{"tool":"final_answer","argument":"ok","thought":"done"}')]
+
+    class _Messages:
+        async def create(self, **_kwargs):
+            return _Response()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    raw_client = _Client()
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: raw_client)
+
+    result = await client.chat([{"role": "user", "content": "x"}], json_mode=False)
+
+    assert result == '{"tool":"final_answer","argument":"ok","thought":"done"}'
+    assert raw_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_closes_client_after_iteration(monkeypatch) -> None:
+    class _Event:
+        type = "content_block_delta"
+        delta = SimpleNamespace(type="text_delta", text="chunk")
+
+    class _CM:
+        async def __aenter__(self):
+            async def _stream():
+                yield _Event()
+
+            return _stream()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Messages:
+        def stream(self, **_kwargs):
+            return _CM()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    raw_client = _Client()
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: raw_client)
+
+    stream = await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    assert [chunk async for chunk in stream] == ["chunk"]
+    assert raw_client.closed is True

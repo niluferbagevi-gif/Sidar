@@ -63,6 +63,27 @@ def _trace_stream_metrics(
     return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
 
 
+async def _close_anthropic_client(client: Any) -> None:
+    """Close Anthropic async client instances when the SDK exposes a close hook."""
+    close = getattr(client, "aclose", None) or getattr(client, "close", None)
+    if close is None:
+        return
+    result = close()
+    if hasattr(result, "__await__"):
+        await result
+
+
+async def _closing_stream(
+    stream_iter: AsyncIterator[str], client: Any
+) -> AsyncGenerator[str, None]:
+    """Yield a stream and close its Anthropic client when iteration finishes."""
+    try:
+        async for chunk in stream_iter:
+            yield chunk
+    finally:
+        await _close_anthropic_client(client)
+
+
 class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""
 
@@ -155,8 +176,9 @@ class AnthropicClient(BaseLLMClient):
                         temperature=temperature,
                         json_mode=json_mode,
                     )
+                    closing_stream = _closing_stream(stream_iter, client)
                     tracked_stream: AsyncIterator[str] = _track_stream_completion(
-                        stream_iter,
+                        closing_stream,
                         provider="anthropic",
                         model=model_name,
                         started_at=started_at,
@@ -174,29 +196,34 @@ class AnthropicClient(BaseLLMClient):
                         request_kwargs["system"] = system_prompt
                     return await client.messages.create(**request_kwargs)
 
-                response = await _retry_with_backoff(
-                    "anthropic",
-                    _do_request,
-                    config=self.config,
-                    retry_hint="Anthropic isteği başarısız",
-                )
-                usage = getattr(response, "usage", None)
-                prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-                completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-                text = "".join(
-                    getattr(block, "text", "") for block in getattr(response, "content", [])
-                )
-                _record_llm_metric(
-                    provider="anthropic",
-                    model=model_name,
-                    started_at=started_at,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    success=True,
-                )
-                if span is not None:
-                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                return await _ensure_json_text_async(text, "Anthropic") if json_mode else text
+                try:
+                    response = await _retry_with_backoff(
+                        "anthropic",
+                        _do_request,
+                        config=self.config,
+                        retry_hint="Anthropic isteği başarısız",
+                    )
+                    usage = getattr(response, "usage", None)
+                    prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+                    completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+                    text = "".join(
+                        getattr(block, "text", "") for block in getattr(response, "content", [])
+                    )
+                    _record_llm_metric(
+                        provider="anthropic",
+                        model=model_name,
+                        started_at=started_at,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        success=True,
+                    )
+                    if span is not None:
+                        span.set_attribute(
+                            "sidar.llm.total_ms", (time.monotonic() - started_at) * 1000
+                        )
+                    return await _ensure_json_text_async(text, "Anthropic") if json_mode else text
+                finally:
+                    await _close_anthropic_client(client)
             except LLMAPIError as exc:
                 if stream and span is not None:
                     span.end()

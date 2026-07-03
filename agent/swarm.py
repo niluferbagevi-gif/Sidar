@@ -28,6 +28,7 @@ import logging
 import sys
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -371,7 +372,24 @@ class SwarmOrchestrator:
         self.router = TaskRouter()
         self._active_agents: dict[str, object] = {}  # task_id → agent instance
         self.delegation_backend: AsyncDelegationBackend | None = None
-        self._distributed_idempotency_cache: dict[str, BrokerTaskResult] = {}
+        self._distributed_idempotency_cache: OrderedDict[str, BrokerTaskResult] = OrderedDict()
+        self._distributed_idempotency_cache_max = max(
+            1, int(getattr(cfg, "SWARM_IDEMPOTENCY_CACHE_MAX", 1024) or 1024)
+        )
+
+    def _get_distributed_idempotency_cache(self, key: str) -> BrokerTaskResult | None:
+        """Return cached dispatch result and refresh LRU position when present."""
+        cached = self._distributed_idempotency_cache.get(key)
+        if cached is not None:
+            self._distributed_idempotency_cache.move_to_end(key)
+        return cached
+
+    def _remember_distributed_idempotency_result(self, key: str, result: BrokerTaskResult) -> None:
+        """Store distributed dispatch result in a bounded LRU cache."""
+        self._distributed_idempotency_cache[key] = result
+        self._distributed_idempotency_cache.move_to_end(key)
+        while len(self._distributed_idempotency_cache) > self._distributed_idempotency_cache_max:
+            self._distributed_idempotency_cache.popitem(last=False)
 
     def configure_delegation_backend(self, backend: AsyncDelegationBackend | None) -> None:
         """Broker tabanlı delegasyon backend'ini enjekte eder."""
@@ -491,7 +509,7 @@ class SwarmOrchestrator:
         idempotency_key = self._distributed_idempotency_key(
             task, session_id=session_id, receiver=spec.role_name
         )
-        cached_result = self._distributed_idempotency_cache.get(idempotency_key)
+        cached_result = self._get_distributed_idempotency_cache(idempotency_key)
         if cached_result is not None:
             return cached_result
 
@@ -516,7 +534,7 @@ class SwarmOrchestrator:
             headers={"session_id": session_id},
         )
         result = await self.delegation_backend.dispatch(broker_envelope)
-        self._distributed_idempotency_cache[idempotency_key] = result
+        self._remember_distributed_idempotency_result(idempotency_key, result)
         return result
 
     def _loop_repeat_limit(self) -> int:
@@ -972,9 +990,19 @@ class SwarmOrchestrator:
                         )
                     break
                 except TimeoutError as exc:
-                    raise TimeoutError(
-                        f"Swarm task timeout exceeded ({task_timeout:.3f}s)."
-                    ) from exc
+                    last_exc = TimeoutError(f"Swarm task timeout exceeded ({task_timeout:.3f}s).")
+                    if attempt >= max_retries:
+                        raise last_exc from exc
+                    logger.warning(
+                        "SwarmOrchestrator: [%s] timeout retry %d/%d [%s] timeout=%.3fs",
+                        task.task_id,
+                        attempt + 1,
+                        max_retries,
+                        spec.role_name,
+                        task_timeout,
+                    )
+                    if retry_delay_ms > 0:
+                        await asyncio.sleep(retry_delay_ms / 1000)
                 except Exception as exc:  # pragma: no cover - branch specific tests verify behavior
                     last_exc = exc
                     if attempt >= max_retries:

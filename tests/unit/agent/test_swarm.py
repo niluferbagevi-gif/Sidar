@@ -176,9 +176,9 @@ def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch):
     monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
     monkeypatch.setattr(
         "agent.swarm.AgentCatalog.create",
-        lambda role_name, **_kwargs: _RunTaskAgent("legacy ok")
-        if role_name == "researcher"
-        else None,
+        lambda role_name, **_kwargs: (
+            _RunTaskAgent("legacy ok") if role_name == "researcher" else None
+        ),
     )
 
     result = __import__("asyncio").run(
@@ -315,15 +315,11 @@ def test_task_timeout_prefers_task_model_provider_then_global():
     orchestrator = SwarmOrchestrator(cfg=cfg)
 
     assert (
-        orchestrator._task_timeout_seconds(
-            SwarmTask(goal="x", context={"timeout_seconds": "5"})
-        )
+        orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"timeout_seconds": "5"}))
         == 5
     )
     assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 12
-    assert (
-        orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"model": "other"})) == 8
-    )
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"model": "other"})) == 8
 
 
 def test_execute_task_runs_rollback_hook_on_failure(monkeypatch):
@@ -1119,3 +1115,57 @@ def test_execute_task_times_out_hanging_legacy_run_task_agent(monkeypatch):
 
     assert result.status == "failed"
     assert "Swarm task timeout exceeded" in result.summary
+
+
+def test_distributed_idempotency_cache_is_bounded_lru(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace(SWARM_IDEMPOTENCY_CACHE_MAX=2))
+    backend = InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: reviewer)
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: reviewer)
+
+    for key in ("delivery-1", "delivery-2", "delivery-3"):
+        __import__("asyncio").run(
+            orchestrator.dispatch_distributed(
+                SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": key}),
+                session_id="sess-42",
+                sender="supervisor",
+            )
+        )
+
+    assert list(orchestrator._distributed_idempotency_cache) == ["delivery-2", "delivery-3"]
+    assert len(backend.dispatched) == 3
+
+
+def test_execute_task_retries_timeout_before_success(monkeypatch):
+    cfg = SimpleNamespace(
+        SWARM_TASK_TIMEOUT_SECONDS=0.001,
+        SWARM_TASK_MAX_RETRIES=1,
+        SWARM_TASK_RETRY_DELAY_MS=0,
+    )
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _TimeoutThenSuccessAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            if self.calls == 1:
+                await __import__("asyncio").sleep(1)
+            return TaskResult(
+                task_id="retry-ok", status="success", summary="recovered", evidence=[]
+            )
+
+    agent = _TimeoutThenSuccessAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "success"
+    assert result.summary == "recovered"
+    assert agent.calls == 2
