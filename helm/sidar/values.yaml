@@ -24,7 +24,7 @@ web:
 aIWorker:
   enabled: true
   replicaCount: 1
-  command: ["python", "sidar.py"]
+  command: ["python", "main.py", "--quick", "web"]
   resources:
     requests:
       cpu: 500m
@@ -48,7 +48,17 @@ postgresql:
   port: 5432
   database: sidar
   username: sidar
-  password: sidar
+  # Do not commit database passwords. For the bundled PostgreSQL chart path,
+  # pass --set postgresql.password=<strong-secret> or use a private values file.
+  # For ExternalSecret/Vault-managed credentials, set existingSecret.name and
+  # ensure it contains DATABASE_URL plus POSTGRES_* keys below.
+  password: ""
+  existingSecret:
+    name: ""
+    databaseUrlKey: DATABASE_URL
+    databaseKey: POSTGRES_DB
+    usernameKey: POSTGRES_USER
+    passwordKey: POSTGRES_PASSWORD
   storage:
     size: 10Gi
     storageClassName: ""

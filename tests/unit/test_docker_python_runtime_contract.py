@@ -78,6 +78,30 @@ def test_prod_staging_helm_values_do_not_pin_python_312_images():
         assert "python:3.12-slim" not in text, path
 
 
+def test_helm_values_use_real_entrypoints_and_no_committed_postgres_passwords():
+    values = _read("helm/sidar/values.yaml")
+    staging_values = _read("helm/sidar/values-staging.yaml")
+
+    assert 'command: ["python", "main.py", "--quick", "web"]' in values
+    assert "sidar.py" not in values
+    assert "password: sidar" not in values
+    assert "password: staging-secret" not in staging_values
+    assert "existingSecret:" in values
+    assert "databaseUrlKey: DATABASE_URL" in values
+
+
+def test_helm_deployments_read_database_url_from_secret():
+    for rel_path in (
+        "helm/sidar/templates/deployment-web.yaml",
+        "helm/sidar/templates/deployment-ai-worker.yaml",
+    ):
+        template = _read(rel_path)
+        assert "valueFrom:" in template
+        assert "secretKeyRef:" in template
+        assert "key: {{ .Values.postgresql.existingSecret.databaseUrlKey | quote }}" in template
+        assert "postgresql.password" not in template
+
+
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     services = compose["services"]

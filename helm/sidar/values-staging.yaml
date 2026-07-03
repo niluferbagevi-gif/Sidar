@@ -35,7 +35,8 @@ database:
   poolSize: 8
 
 postgresql:
-  password: staging-secret  # Üretimde ExternalSecret / Vault referansıyla değiştirin
+  # Staging secret is supplied by CI/ExternalSecret/private values, never committed.
+  password: ""
   storage:
     size: 5Gi
     storageClassName: standard

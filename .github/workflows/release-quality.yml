@@ -20,11 +20,19 @@ jobs:
         with:
           version: v3.15.4
       - name: Helm lint
-        run: helm lint helm/sidar
+        run: >-
+          helm lint helm/sidar
+          --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345
       - name: Helm template validation
         run: |
-          helm template sidar helm/sidar --values helm/sidar/values.yaml >/tmp/sidar-rendered.yaml
+          helm template sidar helm/sidar --values helm/sidar/values.yaml \
+            --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345 \
+            >/tmp/sidar-rendered.yaml
           test -s /tmp/sidar-rendered.yaml
+      - name: Helm install dry-run validation
+        run: >-
+          helm install sidar helm/sidar --dry-run --debug
+          --set postgresql.password=CIOnlyStrongPostgresPassword_ChangeMe_12345
 
   sbom-and-sign:
     name: SBOM and signing gate

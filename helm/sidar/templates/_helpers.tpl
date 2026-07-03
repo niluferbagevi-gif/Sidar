@@ -17,3 +17,11 @@
 {{- default "http://jaeger:4317" .Values.env.OTEL_EXPORTER_ENDPOINT -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "sidar.postgresqlSecretName" -}}
+{{- if .Values.postgresql.existingSecret.name -}}
+{{- .Values.postgresql.existingSecret.name -}}
+{{- else -}}
+{{- printf "%s-postgresql" (include "sidar.fullname" .) -}}
+{{- end -}}
+{{- end -}}

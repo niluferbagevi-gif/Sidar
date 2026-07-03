@@ -24,7 +24,7 @@ spec:
               containerPort: {{ .Values.postgresql.port }}
           envFrom:
             - secretRef:
-                name: {{ include "sidar.fullname" . }}-postgresql
+                name: {{ include "sidar.postgresqlSecretName" . }}
           volumeMounts:
             - name: postgresql-data
               mountPath: /var/lib/postgresql/data
