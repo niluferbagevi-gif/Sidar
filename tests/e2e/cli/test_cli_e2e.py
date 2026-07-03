@@ -12,6 +12,19 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_CLI_ENV_ALLOWLIST = (
+    "PATH",
+    "PYTHONIOENCODING",
+    "PYTHONUTF8",
+    "LANG",
+    "LC_ALL",
+    "SSL_CERT_FILE",
+    "REQUESTS_CA_BUNDLE",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
 
 
 def _ollama_response_payload(argument: str) -> dict:
@@ -52,6 +65,29 @@ class _ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 
+def _isolated_cli_env(
+    *, tmp_path: Path, mock_ollama_server: _ThreadedTCPServer, memory_encryption_key: str
+) -> dict[str, str]:
+    """Build a minimal subprocess env so local Ollama/proxy settings cannot leak in."""
+    db_path = tmp_path / "sidar_cli_e2e.db"
+    env = {key: os.environ[key] for key in _CLI_ENV_ALLOWLIST if key in os.environ}
+    env.update(
+        {
+            "PYTHONPATH": str(PROJECT_ROOT),
+            "SIDAR_SKIP_DEFAULT_DOTENV": "1",
+            "SIDAR_KEYS_FILE": str(tmp_path / "missing-sidar-keys.env"),
+            "USE_GPU": "false",
+            "REQUIRE_GPU": "false",
+            "OLLAMA_URL": f"http://127.0.0.1:{mock_ollama_server.server_address[1]}",
+            "NO_PROXY": "127.0.0.1,localhost",
+            "no_proxy": "127.0.0.1,localhost",
+            "DATABASE_URL": f"sqlite:///{db_path}",
+            "MEMORY_ENCRYPTION_KEY": memory_encryption_key,
+        }
+    )
+    return env
+
+
 @pytest.fixture
 def mock_ollama_server():
     server = _ThreadedTCPServer(("127.0.0.1", 0), _MockOllamaHandler)
@@ -71,26 +107,12 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
     if importlib.util.find_spec("pydantic") is None:
         pytest.skip("pydantic kurulu değil; gerçek ajan CLI e2e testi atlanıyor.")
 
-    db_path = tmp_path / "sidar_cli_e2e.db"
-    env = os.environ.copy()
     from cryptography.fernet import Fernet
 
-    # config.py loads .env.{SIDAR_ENV} and DOTENV_FILE with override=True, which
-    # would clobber the OLLAMA_URL / MEMORY_ENCRYPTION_KEY values we inject below
-    # (the .env.test template ships an invalid Fernet placeholder and points at
-    # the real Ollama). Remove those triggers so the subprocess respects our env.
-    for key in ("SIDAR_ENV", "DOTENV_FILE"):
-        env.pop(key, None)
-
-    env.update(
-        {
-            "PYTHONPATH": str(PROJECT_ROOT),
-            "USE_GPU": "false",
-            "REQUIRE_GPU": "false",
-            "OLLAMA_URL": f"http://127.0.0.1:{mock_ollama_server.server_address[1]}",
-            "DATABASE_URL": f"sqlite:///{db_path}",
-            "MEMORY_ENCRYPTION_KEY": Fernet.generate_key().decode("utf-8"),
-        }
+    env = _isolated_cli_env(
+        tmp_path=tmp_path,
+        mock_ollama_server=mock_ollama_server,
+        memory_encryption_key=Fernet.generate_key().decode("utf-8"),
     )
 
     result = subprocess.run(
@@ -123,6 +145,30 @@ def test_ollama_response_payload_wraps_argument() -> None:
     assert content["thought"] == "CLI e2e mock response"
     assert content["tool"] == "final_answer"
     assert content["argument"] == "echo-value"
+
+
+def test_isolated_cli_env_blocks_ambient_ollama_and_proxy_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server
+) -> None:
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+    monkeypatch.setenv("SIDAR_ENV", "test")
+    monkeypatch.setenv("DOTENV_FILE", ".env.test")
+
+    env = _isolated_cli_env(
+        tmp_path=tmp_path,
+        mock_ollama_server=mock_ollama_server,
+        memory_encryption_key="test-fernet-key",
+    )
+
+    assert env["OLLAMA_URL"] == f"http://127.0.0.1:{mock_ollama_server.server_address[1]}"
+    assert "OLLAMA_HOST" not in env
+    assert "HTTP_PROXY" not in env
+    assert "SIDAR_ENV" not in env
+    assert "DOTENV_FILE" not in env
+    assert env["SIDAR_SKIP_DEFAULT_DOTENV"] == "1"
+    assert env["NO_PROXY"] == "127.0.0.1,localhost"
 
 
 def test_cli_command_skips_when_pydantic_missing(
