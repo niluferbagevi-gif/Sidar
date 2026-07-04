@@ -365,9 +365,30 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             if ctx_token is not None:
                 deps.reset_current_metrics_user_id(ctx_token)
 
+    ws_auth_timeout_seconds = int(
+        getattr(getattr(deps, "cfg", None), "WS_AUTH_TIMEOUT_SECONDS", 15) or 15
+    )
+    ws_auth_deadline = asyncio.get_event_loop().time() + ws_auth_timeout_seconds
+
     try:
         while True:
-            data = await websocket.receive_text()
+            if ws_authenticated:
+                data = await websocket.receive_text()
+            else:
+                # Kimlik doğrulanmamış bir istemci bağlantıyı süresiz açık tutamaz
+                # (yavaş DoS / kaynak tükenmesi) — ne sessiz kalarak ne de ardı
+                # ardına geçersiz/auth-olmayan mesaj göndererek. Zaman aşımı
+                # bağlantının kabulünden itibaren sabit bir mutlak son tarihtir;
+                # her mesajda sıfırlanmaz.
+                remaining = ws_auth_deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                except TimeoutError:
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:

@@ -2539,6 +2539,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         broadcast_room_payload=_broadcast_room_payload,
         build_collaboration_prompt=_build_collaboration_prompt,
         build_room_message=_build_room_message,
+        cfg=cfg,
         collaboration_command_requires_write=_collaboration_command_requires_write,
         collaboration_now_iso=_collaboration_now_iso,
         collaboration_rooms=_collaboration_rooms,

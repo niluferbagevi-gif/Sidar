@@ -1019,6 +1019,7 @@ class Config:
     VOICE_VAD_INTERRUPT_MIN_BYTES: int = get_int_env("VOICE_VAD_INTERRUPT_MIN_BYTES", 384)
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     VOICE_WS_MAX_BYTES: int = get_int_env("VOICE_WS_MAX_BYTES", 10485760)
+    WS_AUTH_TIMEOUT_SECONDS: int = get_int_env("WS_AUTH_TIMEOUT_SECONDS", 15)
     BROWSER_PROVIDER: str = os.getenv("BROWSER_PROVIDER", "auto")
     BROWSER_HEADLESS: bool = get_bool_env("BROWSER_HEADLESS", True)
     BROWSER_TIMEOUT_MS: int = get_int_env("BROWSER_TIMEOUT_MS", 15000)

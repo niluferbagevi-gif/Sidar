@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import builtins
 from types import SimpleNamespace
 
@@ -32,6 +33,24 @@ class _Ws:
             return next(self._messages)
         except StopIteration as exc:
             raise ws_voice.WebSocketDisconnect() from exc
+
+
+class _NeverSendsWs(_Ws):
+    """A websocket that accepts the connection but never sends any message."""
+
+    async def receive(self) -> dict[str, object]:
+        await asyncio.sleep(999)
+        return {"type": "websocket.receive", "text": "{}"}  # pragma: no cover - unreachable
+
+
+class _RepeatedGarbageWs(_Ws):
+    """A websocket that keeps sending unparseable junk fast enough to reset
+
+    a naive per-message timeout, without ever authenticating."""
+
+    async def receive(self) -> dict[str, object]:
+        await asyncio.sleep(0.001)
+        return {"text": "not json"}
 
 
 class _Logger:
@@ -130,6 +149,68 @@ async def test_websocket_voice_rejects_binary_before_auth(monkeypatch) -> None:
 
     assert ws.accepted == [None]
     assert ws.closed == [(1008, "Authentication required")]
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_closes_idle_unauthenticated_connection_after_timeout(
+    monkeypatch,
+) -> None:
+    """Regression test: an unauthenticated client that never sends anything
+
+    must not keep the connection open forever (slow DoS / resource exhaustion).
+    """
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=_MultimodalPipeline)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=_VoicePipeline)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    ws = _NeverSendsWs()
+
+    await asyncio.wait_for(
+        ws_voice.websocket_voice(
+            ws, _deps(cfg=SimpleNamespace(VOICE_WS_MAX_BYTES=8, WS_AUTH_TIMEOUT_SECONDS=0.05))
+        ),
+        timeout=5,
+    )
+
+    assert ws.accepted == [None]
+    assert ws.closed == [(1008, "Authentication timeout")]
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_auth_timeout_is_absolute_not_reset_by_junk_messages(
+    monkeypatch,
+) -> None:
+    """Regression test: repeatedly sending unparseable junk must not let an
+
+    unauthenticated client reset the auth timeout and stay connected forever.
+    """
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=_MultimodalPipeline)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=_VoicePipeline)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    ws = _RepeatedGarbageWs()
+
+    await asyncio.wait_for(
+        ws_voice.websocket_voice(
+            ws, _deps(cfg=SimpleNamespace(VOICE_WS_MAX_BYTES=8, WS_AUTH_TIMEOUT_SECONDS=0.05))
+        ),
+        timeout=5,
+    )
+
+    assert ws.accepted == [None]
+    assert ws.closed == [(1008, "Authentication timeout")]
 
 
 @pytest.mark.asyncio
