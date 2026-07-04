@@ -9,6 +9,11 @@ import pytest
 from core import doctor
 from core.doctor import DoctorCheck
 
+# scripts.secret_strength.is_weak_secret rejects low-uniqueness/repeated-character
+# strings (e.g. "a" * 24), so fixtures standing in for a genuinely strong secret
+# need real entropy instead of a repeated filler character.
+_STRONG_TEST_PASSWORD = "Dk4uZsySGysqYRv0MtiFeJIgI69s"
+
 
 @pytest.fixture(autouse=True)
 def _isolate_database_env(monkeypatch):
@@ -144,7 +149,7 @@ def test_status_and_secret_helpers_cover_pass_warn_fail():
     assert doctor._status_from_bool(False) == "fail"
     assert doctor._is_weak_secret(None) is True
     assert doctor._is_weak_secret("password") is True
-    assert doctor._is_weak_secret("x" * 24) is False
+    assert doctor._is_weak_secret(_STRONG_TEST_PASSWORD) is False
 
 
 def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
@@ -260,7 +265,7 @@ def test_database_env_derives_urls_when_missing_but_postgres_password_present(mo
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("POSTGRES_USER", "sidar")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
 
     check = doctor.check_database_env()
@@ -339,7 +344,7 @@ def test_database_env_fails_when_local_and_container_passwords_drift_without_pos
 
 
 def test_database_env_warns_when_local_and_container_database_names_drift(monkeypatch):
-    password = "a" * 24
+    password = _STRONG_TEST_PASSWORD
     monkeypatch.delenv("POSTGRES_DB", raising=False)
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
     monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
@@ -355,9 +360,11 @@ def test_database_env_warns_when_local_and_container_database_names_drift(monkey
 
 def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypatch):
     monkeypatch.setenv("POSTGRES_USER", "sidar")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/other")
+    monkeypatch.setenv(
+        "DATABASE_URL", f"postgresql://sidar:{_STRONG_TEST_PASSWORD}@localhost:5432/other"
+    )
 
     check = doctor.check_database_env()
 
@@ -368,7 +375,7 @@ def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypa
 def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/sidar.db")
     monkeypatch.setenv("POSTGRES_USER", "sidar")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
 
     check = doctor.check_database_env()
@@ -391,7 +398,7 @@ def test_database_env_fails_when_database_url_user_differs_from_postgres_user(mo
 
 
 def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
-    password = "a" * 24
+    password = _STRONG_TEST_PASSWORD
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
