@@ -98,6 +98,50 @@ services:
     entrypoint: []
     command: ["uv", "run", "alembic", "upgrade", "head"]
 
+  # ── Docker Socket Proxy ─────────────────────────────────────────
+  # sidar-ai/sidar-gpu içindeki CodeManager, AI-üretimi kodu izole "sibling"
+  # container'larda çalıştırmak için Docker daemon'ına ihtiyaç duyar. Ham
+  # /var/run/docker.sock'u doğrudan mount etmek host-root-eşdeğeri erişim
+  # verir (container escape) — bu, ACCESS_LEVEL=sandbox adlandırmasıyla
+  # çelişir. Bunun yerine yalnızca container create/start/stop/logs gibi
+  # gerekli uçları açan, exec/privileged/host-mount gibi tehlikeli uçları
+  # kapatan bir proxy üzerinden erişim veriyoruz; ham socket yalnızca bu
+  # proxy'ye salt-okunur mount edilir ve proxy host'a hiçbir port açmaz.
+  docker-socket-proxy:
+    profiles: ["cpu", "gpu"]
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: sidar_docker_socket_proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - INFO=1
+      - PING=1
+      - VERSION=1
+      - POST=1
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTARTS=1
+      - AUTH=0
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+      - EXEC=0
+      - EVENTS=0
+      - NETWORKS=0
+      - NODES=0
+      - PLUGINS=0
+      - SECRETS=0
+      - SERVICES=0
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - TASKS=0
+      - VOLUMES=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
     profiles: ["cpu"]
@@ -128,6 +172,8 @@ services:
         condition: service_started
       sidar-migrate:
         condition: service_completed_successfully
+      docker-socket-proxy:
+        condition: service_started
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -136,6 +182,8 @@ services:
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
+      # Ham host socket'i yerine kısıtlı docker-socket-proxy'e bağlan (bkz. yukarıdaki servis notu).
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
 
     env_file:
       - .env
@@ -144,7 +192,6 @@ services:
       - ${SIDAR_DATA_MOUNT:-./data}:/app/data
       - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
       - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
-      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -195,6 +242,8 @@ services:
         condition: service_started
       sidar-migrate:
         condition: service_completed_successfully
+      docker-socket-proxy:
+        condition: service_started
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -209,6 +258,8 @@ services:
       - GPU_MIXED_PRECISION=${GPU_MIXED_PRECISION:-true}   # Ampere+ (RTX 30xx/40xx) FP16 destekler; eski GPU için .env'de false yapın
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Ham host socket'i yerine kısıtlı docker-socket-proxy'e bağlan (bkz. servis notu).
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
 
     env_file:
       - .env
@@ -217,7 +268,6 @@ services:
       - ${SIDAR_DATA_MOUNT:-./data}:/app/data
       - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
       - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
-      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"

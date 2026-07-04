@@ -483,6 +483,8 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 > - `DOCKER_CLI_INSTALL_MODE=auto|always|never`: Varsayılan `auto` (Linux hostta eksik CLI için tamamlamayı dener, WSL2'de entegrasyon öncelikli), `always` (WSL2 dahil APT kurulumunu zorlar), `never` (otomatik CLI kurulumu kapalı).
 > - Geriye dönük uyumluluk için `DOCKER_CLI_INSTALL=always`/`true` kullanımları `always` olarak yorumlanır; yeni dokümantasyonda kanonik değişken `DOCKER_CLI_INSTALL_MODE` kullanılmalıdır.
 
+> **Docker Socket Proxy notu:** `sidar-ai`/`sidar-gpu` (CLI modu), AI-üretimi kodu izole "sibling" container'larda çalıştırmak için Docker daemon'ına erişir. Ham `/var/run/docker.sock`'u doğrudan mount etmek host-root-eşdeğeri erişim (container escape) verir ve `ACCESS_LEVEL=sandbox` adlandırmasıyla çelişir; bu yüzden `docker-compose.yml` bu servisleri host socket'ine değil, aradaki `docker-socket-proxy` servisine (`tecnativa/docker-socket-proxy`) bağlar. Proxy yalnızca container create/start/stop/logs uçlarını açar; `EXEC`, `VOLUMES`, `NETWORKS`, `SYSTEM` gibi tehlikeli uçları kapatır ve host'a hiçbir port açmaz — ham socket yalnızca proxy'ye salt-okunur (`:ro`) mount edilir.
+>
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 >
 > **⚠️ Kritik uyarı:** `wsl --unregister docker-desktop` komutunu **ASLA** çalıştırmayın. Bu komut Docker Desktop'ın engine backend dağıtımını siler; genellikle yalnızca **Docker Desktop → Settings → Troubleshoot → Reset to factory defaults** veya Docker Desktop'ı tamamen yeniden kurma ile geri gelir.
@@ -879,7 +881,7 @@ Sidar/
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
-├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
+├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
 ├── PROJE_RAPORU.md         # Mimari + kalite raporu
 ├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu

@@ -170,6 +170,37 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
 
 
+def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
+    """Fail-closed regression: sidar-ai/sidar-gpu must never mount the raw host
+    Docker socket directly. Doing so grants host-root-equivalent access
+    (container escape via `docker run --privileged -v /:/host`), contradicting
+    their `ACCESS_LEVEL=sandbox` label. They must instead reach the daemon
+    through docker-socket-proxy, which only exposes the container
+    create/start/stop/logs operations CodeManager actually needs.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    proxy = services["docker-socket-proxy"]
+    assert proxy["volumes"] == ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    assert "ports" not in proxy
+    proxy_env = set(proxy["environment"])
+    assert "EXEC=0" in proxy_env
+    assert "VOLUMES=0" in proxy_env
+    assert "NETWORKS=0" in proxy_env
+    assert "SYSTEM=0" in proxy_env
+    assert "CONTAINERS=1" in proxy_env
+    assert "POST=1" in proxy_env
+
+    for name in ("sidar-ai", "sidar-gpu"):
+        service = services[name]
+        volume_sources = [str(v) for v in service.get("volumes") or []]
+        assert not any("docker.sock" in v for v in volume_sources), name
+        env = service.get("environment") or []
+        assert any(str(item).startswith("DOCKER_HOST=") for item in env), name
+        assert "docker-socket-proxy" in service["depends_on"], name
+
+
 def test_prometheus_scrapes_sidar_and_infra_exporters():
     prometheus = yaml.safe_load((ROOT / "docker_setup/prometheus/prometheus.yml").read_text())
     scrape_targets = {
