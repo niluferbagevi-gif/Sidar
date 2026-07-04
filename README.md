@@ -628,7 +628,7 @@ doğrulamasını bypass etmez.
 Ne yapmalısınız:
 
 - **Normal kullanıcı**: Kurulumu zorlamayın. Güncellenmiş installer/release'in
-  yayınlanmasını bekleyin veya bakım ekibinin önerdiği belirli commit/tag üzerinden
+  yayınlanmasını bekleyin veya bakım ekibinin önerdiği belirli bir commit/tag üzerinden
   kurulum yapın. Main dalındaki manifest senkronizasyonu düzeltilmeden temiz kurulum
   güvenlik nedeniyle durmaya devam eder.
 - **Geliştirici (repo üzerinde çalışıyorsanız)**: Çekirdek manifesti senkronlayıp

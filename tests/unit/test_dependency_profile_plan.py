@@ -225,8 +225,8 @@ def test_production_profile_excludes_dev_quality_tools() -> None:
 
     assert production_dependencies == {"sidar[postgres,telemetry]"}
     assert (
-        "production profili `sidar[postgres,telemetry]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar"
-        in docs
+        "production profili `sidar[postgres,telemetry]`, production-minimal profili ise "
+        "`sidar[postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar" in docs
     )
     assert "P2 structural hardening" in docs
     for package_prefix in ("pytest", "ruff", "mypy", "pyright", "bandit", "safety"):
