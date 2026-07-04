@@ -14,6 +14,7 @@ from web.routes.project_ops import (
     _is_allowed_git_command,
     _resolve_web_server_helper,
     build_project_ops_router,
+    is_valid_git_ref_name,
 )
 
 
@@ -22,6 +23,32 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
         _is_allowed_git_command(["git", "remote", "get-url", "origin\x00--upload-pack=evil"])
         is False
     )
+
+
+@pytest.mark.parametrize(
+    "branch_name",
+    [
+        "-upload-pack=evil",
+        "--upload-pack=evil",
+        "-rf",
+        "-B",
+    ],
+)
+def test_is_valid_git_ref_name_rejects_leading_dash_argument_injection(branch_name: str) -> None:
+    """Regression test: a branch name starting with "-" must be rejected — git
+
+    subprocess calls use argv (shell=False) so shell metacharacters are already
+    safe, but a leading "-" lets git itself misinterpret the value as a flag
+    (e.g. `git checkout -upload-pack=evil`). This is the same validator
+    github_upload.py already used (managers.code.git_validation), now shared
+    with web/routes/project_ops.py's /set-branch endpoint.
+    """
+    assert is_valid_git_ref_name(branch_name) is False
+
+
+def test_is_valid_git_ref_name_accepts_normal_branch_names() -> None:
+    for branch_name in ("feature/safe-branch_1", "main", "release-1.0"):
+        assert is_valid_git_ref_name(branch_name) is True
 
 
 def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -241,6 +268,9 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     assert branches == {"branches": ["feature", "main"], "current": "feature"}
     assert (await exports["set_branch"](_JsonRequest({"branch": " "}))).status_code == 400
     assert (await exports["set_branch"](_JsonRequest({"branch": "bad branch"}))).status_code == 400
+    assert (
+        await exports["set_branch"](_JsonRequest({"branch": "-upload-pack=evil"}))
+    ).status_code == 400
 
     monkeypatch.setattr("subprocess.check_output", lambda *_args, **_kwargs: b"")
     assert _json_body(await exports["set_branch"](_JsonRequest({"branch": "feature"}))) == {

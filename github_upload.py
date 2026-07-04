@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from config import Config
+from managers.code.git_validation import is_valid_git_ref_name
 
 cfg = Config()
 
@@ -83,21 +84,12 @@ def _is_valid_repo_url(url: str) -> bool:
 
 
 def _is_valid_branch_name(branch_name: str) -> bool:
-    """Git branch adını komut argümanı olarak güvenli ve geçerli olacak şekilde denetler."""
-    normalized = str(branch_name or "").strip()
-    if not normalized or normalized.startswith("-") or normalized in {".", "..", "@"}:
-        return False
-    if normalized.endswith("/") or normalized.endswith(".") or normalized.endswith(".lock"):
-        return False
-    if normalized.startswith("/") or normalized.startswith("."):
-        return False
-    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in normalized):
-        return False
-    forbidden_fragments = ("..", "//", "@{")
-    forbidden_chars = set("~^:?*[\\]")
-    return not any(fragment in normalized for fragment in forbidden_fragments) and not any(
-        char in forbidden_chars for char in normalized
-    )
+    """Git branch adını komut argümanı olarak güvenli ve geçerli olacak şekilde denetler.
+
+    Backwards-compatible facade for managers.code.git_validation.is_valid_git_ref_name,
+    the single source of truth shared with web/routes/project_ops.py.
+    """
+    return is_valid_git_ref_name(branch_name)
 
 
 def _normalize_path(path: str) -> str:
