@@ -39,6 +39,21 @@ _DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+async def _path_exists(path: Path) -> bool:
+    """Return whether an image path exists without blocking the event loop."""
+    return await asyncio.to_thread(path.exists)
+
+
+async def _path_size(path: Path) -> int:
+    """Return image file size without blocking the event loop."""
+    return await asyncio.to_thread(lambda: path.stat().st_size)
+
+
+async def _read_bytes(path: Path) -> bytes:
+    """Read image bytes without blocking the event loop."""
+    return await asyncio.to_thread(path.read_bytes)
+
+
 async def load_image_as_base64(
     path: str | Path, *, max_bytes: int = _DEFAULT_MAX_BYTES
 ) -> tuple[str, str]:
@@ -47,7 +62,7 @@ async def load_image_as_base64(
     Hatalı format veya boyut aşımında ValueError fırlatır.
     """
     p = Path(path)
-    exists = await asyncio.to_thread(p.exists)
+    exists = await _path_exists(p)
     if not exists:
         raise FileNotFoundError(f"Görsel bulunamadı: {path}")
 
@@ -57,8 +72,13 @@ async def load_image_as_base64(
             f"Desteklenmeyen görsel formatı: {mime_type}. Desteklenenler: {SUPPORTED_MIME_TYPES}"
         )
 
-    raw = await asyncio.to_thread(p.read_bytes)
     limit = max(1, int(max_bytes or _DEFAULT_MAX_BYTES))
+    file_size = await _path_size(p)
+    if file_size > limit:
+        mb = file_size / (1024 * 1024)
+        raise ValueError(f"Görsel çok büyük: {mb:.1f} MB (limit: {limit / 1024 / 1024:.0f} MB)")
+
+    raw = await _read_bytes(p)
     if len(raw) > limit:
         mb = len(raw) / (1024 * 1024)
         raise ValueError(f"Görsel çok büyük: {mb:.1f} MB (limit: {limit / 1024 / 1024:.0f} MB)")
