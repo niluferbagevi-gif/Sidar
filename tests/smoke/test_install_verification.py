@@ -768,7 +768,7 @@ def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_sh
     )
 
 
-def test_install_sidar_probe_only_source_does_not_leave_pretrap_installed(
+def test_install_sidar_probe_only_source_does_not_leave_error_trap_installed(
     tmp_path: Path,
 ) -> None:
     result = _run_bash_smoke(
@@ -786,7 +786,7 @@ def test_install_sidar_probe_only_source_does_not_leave_pretrap_installed(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PRETRAP satır=" not in result.stderr
+    assert "install_sidar.sh: satır=" not in result.stderr
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
@@ -803,10 +803,8 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
     assert 'main "$@"' in installer_text
     strict_mode_idx = installer_text.index("set -Eeuo pipefail")
-    pretrap_func_idx = installer_text.index("sidar_pretrap_on_error()")
-    pretrap_idx = installer_text.index(
-        'trap \'sidar_pretrap_on_error "$LINENO" "$BASH_COMMAND"\' ERR'
-    )
+    pretrap_func_idx = installer_text.index("on_install_error()")
+    pretrap_idx = installer_text.index('trap \'on_install_error "$LINENO" "$BASH_COMMAND"\' ERR')
     blank_idx = installer_text.index("is_blank()")
     resolve_idx = installer_text.index("resolve_install_sidar_version()")
     validate_idx = installer_text.index("validate_install_utility_modules()")

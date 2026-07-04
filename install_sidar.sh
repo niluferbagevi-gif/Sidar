@@ -18,15 +18,30 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
-sidar_pretrap_on_error() {
+# Tek ERR trap handler'ı: sidar_t/warn/LOG_FILE gibi loglama yardımcıları
+# script'in ilerleyen satırlarına (~300+) kadar tanımlı değildir, bu yüzden
+# bootstrap aşamasında (örn. probe-only fast-path) bu fonksiyonlar henüz
+# yokken çağrılmamaları için önce varlıkları kontrol edilir.
+on_install_error() {
     local exit_code=$?
     local failed_line="${1:-unknown}"
     local failed_cmd="${2:-unknown}"
-    echo "PRETRAP satır=${failed_line} cmd=${failed_cmd} exit=${exit_code}" >&2
+
+    if ! declare -F sidar_t >/dev/null 2>&1; then
+        echo "install_sidar.sh: satır=${failed_line} cmd=${failed_cmd} exit=${exit_code}" >&2
+        exit "$exit_code"
+    fi
+
+    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
+        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
+    fi
+    echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
+    sidar_t failed_command "$failed_cmd" >&2
+    sidar_t check_log "$LOG_FILE" >&2
     exit "$exit_code"
 }
 
-trap 'sidar_pretrap_on_error "$LINENO" "$BASH_COMMAND"' ERR
+trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 # Güvenlik/operasyon guard: root ile çalıştırılan kurulum .venv sahipliğini bozup
 # sonraki uv run çağrılarında Permission denied zinciri üretebilir.
@@ -1090,21 +1105,6 @@ prompt_yes_no_with_timeout_default_no() {
 
     echo "$reply"
 }
-
-on_install_error() {
-    local exit_code=$?
-    local failed_line="${1:-unknown}"
-    local failed_cmd="${2:-unknown}"
-    if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
-        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
-    fi
-    echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
-    sidar_t failed_command "$failed_cmd" >&2
-    sidar_t check_log "$LOG_FILE" >&2
-    exit "$exit_code"
-}
-
-trap 'on_install_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup_temp_install_modules_if_needed() {
     local exit_code="${1:-0}"

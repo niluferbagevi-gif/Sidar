@@ -1940,7 +1940,9 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
         )
     ]
     default_no = script[
-        script.index("prompt_yes_no_with_timeout_default_no()") : script.index("on_install_error()")
+        script.index("prompt_yes_no_with_timeout_default_no()") : script.index(
+            "cleanup_temp_install_modules_if_needed()"
+        )
     ]
     assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_yes
     assert 'clear_stdin_buffer\n    if read -r -t "$timeout_seconds"' in default_no
