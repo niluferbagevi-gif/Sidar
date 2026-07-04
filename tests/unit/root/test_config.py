@@ -1716,11 +1716,14 @@ def test_trusted_proxies_defaults_to_loopback(monkeypatch) -> None:
 
 
 def test_jwt_secret_no_longer_falls_back_to_api_key(monkeypatch):
-    # Prevent a developer's real dotenv chain (.env/.env.advanced/.env.development,
-    # all loaded with override=True for the environment-specific file, plus
-    # ~/.sidar_keys.env which is always loaded with override=True) from
-    # clobbering the API_KEY set below on reload.
+    # Prevent a developer's real dotenv chain from clobbering the API_KEY set
+    # below on reload: base/.env.advanced/.env.{SIDAR_ENV} (SIDAR_SKIP_DEFAULT_DOTENV
+    # skips all three), the explicit DOTENV_FILE layer (run_tests.sh sets this
+    # to .env.test for the whole pytest process, and that file also gets a
+    # real synced API_KEY via install_sidar.sh), and ~/.sidar_keys.env — the
+    # last two are always loaded with override=True regardless of the skip flag.
     monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.setenv("API_KEY", "api-key-must-not-sign-jwt")
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
