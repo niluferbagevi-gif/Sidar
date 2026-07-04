@@ -99,3 +99,57 @@ download_verified_script() {
 
     DOWNLOADED_SCRIPT_FILE="$script_file"
 }
+
+# download_verified_script'in "soft" (fail-kapatmayan) sürümü. Kurulumun tek
+# yolu olmayan, en az bir sonraki fallback katmanı bulunan best-effort
+# kurulumlar için kullanılır (ör. Volta -> NVM -> apt NodeSource): checksum
+# doğrulanamazsa/reddedilirse tüm kurulumu `fail` ile durdurmak yerine sadece
+# uyarı basıp 1 döner, böylece çağıran taraf bir sonraki fallback'e geçebilir.
+download_verified_script_soft() {
+    local script_url="$1"
+    local expected_sha="$2"
+    local script_label="$3"
+    local script_file
+    script_file=$(mktemp)
+
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        rm -f "$script_file"
+        warn "${script_label}: --offline/--air-gapped modunda uzak betik indirilemez (${script_url})."
+        return 1
+    fi
+
+    if ! curl -fsSL --retry 3 --retry-all-errors \
+        -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+        "$script_url" -o "$script_file"; then
+        rm -f "$script_file"
+        warn "${script_label} indirilemedi: ${script_url}"
+        return 1
+    fi
+
+    local actual_sha
+    actual_sha=$(compute_sha256 "$script_file")
+
+    local checksum_accepted=false
+    if [[ -z "$expected_sha" ]]; then
+        if review_and_pin_remote_script_checksum "$script_file" "$script_url" "$script_label" "$actual_sha"; then
+            checksum_accepted=true
+            ok "${script_label} checksum interaktif review-and-pin ile doğrulandı."
+        elif [[ "${ALLOW_UNVERIFIED_REMOTE_SCRIPTS:-0}" != "1" ]]; then
+            warn "$(remote_script_checksum_hint "$script_url" "$script_label")"
+            rm -f "$script_file"
+            return 1
+        fi
+        if [[ "$checksum_accepted" != true ]]; then
+            warn "${script_label} checksum doğrulaması atlandı (ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1)."
+        fi
+    elif [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -f "$script_file"
+        warn "${script_label} checksum doğrulaması başarısız! Beklenen=${expected_sha}, Gelen=${actual_sha}"
+        return 1
+    else
+        ok "${script_label} checksum doğrulaması başarılı."
+    fi
+
+    DOWNLOADED_SCRIPT_FILE="$script_file"
+    return 0
+}

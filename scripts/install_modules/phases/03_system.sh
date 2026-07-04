@@ -456,7 +456,17 @@ install_system_dependencies() {
                 info "Volta bulundu, Node.js ${node_target_major}.x kurulumu güncelleniyor..."
             else
                 info "Volta bulunamadı; kullanıcı dizinine kuruluyor (${volta_home})."
-                curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://get.volta.sh | bash || warn "Volta kurulumu başarısız oldu; NVM fallback denenecek."
+                DOWNLOADED_SCRIPT_FILE=""
+                if download_verified_script_soft \
+                    "https://get.volta.sh" \
+                    "${VOLTA_INSTALL_SHA256:-}" \
+                    "volta_install" \
+                    && validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "volta_install"; then
+                    bash "$DOWNLOADED_SCRIPT_FILE" || warn "Volta kurulumu başarısız oldu; NVM fallback denenecek."
+                    rm -f "$DOWNLOADED_SCRIPT_FILE"
+                else
+                    warn "Volta kurulum betiği doğrulanamadı; NVM fallback denenecek."
+                fi
             fi
 
             if [[ -x "${volta_home}/bin/volta" ]]; then
@@ -477,7 +487,17 @@ install_system_dependencies() {
                 if [[ -s "${nvm_dir}/nvm.sh" ]]; then
                     debug "NVM zaten kurulu görünüyor: ${nvm_dir}"
                 else
-                    curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash || warn "NVM kurulumu başarısız oldu."
+                    DOWNLOADED_SCRIPT_FILE=""
+                    if download_verified_script_soft \
+                        "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh" \
+                        "${NVM_INSTALL_SHA256:-}" \
+                        "nvm_install" \
+                        && validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "nvm_install"; then
+                        bash "$DOWNLOADED_SCRIPT_FILE" || warn "NVM kurulumu başarısız oldu."
+                        rm -f "$DOWNLOADED_SCRIPT_FILE"
+                    else
+                        warn "NVM kurulum betiği doğrulanamadı."
+                    fi
                 fi
 
                 if [[ -s "${nvm_dir}/nvm.sh" ]]; then

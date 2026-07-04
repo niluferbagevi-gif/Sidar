@@ -1903,6 +1903,95 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     assert "scripts/install_modules/remote_checksums.env" in modular_note
 
 
+def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell() -> None:
+    """Regression test: Volta/NVM installs must not use an unverified
+
+    `curl ... | bash` pipe (supply-chain risk); they must go through the
+    checksum-verified download flow, same as Ollama/uv, but via the
+    non-fatal `download_verified_script_soft` variant so the existing
+    Volta -> NVM -> apt NodeSource fallback chain still degrades gracefully
+    instead of aborting the whole installer on a missing/rejected checksum.
+    """
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(
+        encoding="utf-8"
+    )
+    remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "get.volta.sh | bash" not in system_phase
+    assert "nvm-sh/nvm/v0.40.3/install.sh | bash" not in system_phase
+    assert '"https://get.volta.sh"' in system_phase
+    assert '"https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh"' in system_phase
+    assert '"${VOLTA_INSTALL_SHA256:-}"' in system_phase
+    assert '"${NVM_INSTALL_SHA256:-}"' in system_phase
+    assert system_phase.count("download_verified_script_soft") == 2
+    assert "download_verified_script_soft()" in remote_script_util
+
+
+def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl_log = tmp_path / "curl.log"
+    downloaded_body = "#!/usr/bin/env bash\necho downloaded-ok\n"
+    curl_script = fake_bin / "curl"
+    curl_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"printf '%s\\n' \"$*\" >> {curl_log!s}\n"
+        "out=''\n"
+        "while [[ $# -gt 0 ]]; do\n"
+        '  if [[ "$1" == \'-o\' ]]; then shift; out="$1"; fi\n'
+        "  shift || true\n"
+        "done\n"
+        '[[ -n "$out" ]]\n'
+        f"cat > \"$out\" <<'REMOTE_SCRIPT'\n{downloaded_body}REMOTE_SCRIPT\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    curl_script.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            export SIDAR_INSTALL_TEST_MODE=1
+            set --
+            source ./install_sidar.sh
+            OFFLINE_MODE=false
+            unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
+            if download_verified_script_soft 'https://example.invalid/install.sh' '' 'probe_install'; then
+                echo "unexpected-success"
+            else
+                echo "soft-failure-rc=$?"
+            fi
+            echo "script-still-running"
+            """,
+        ],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert curl_log.exists()
+    assert "soft-failure-rc=1" in result.stdout
+    assert "script-still-running" in result.stdout
+    assert "PROBE_INSTALL_SHA256" in result.stderr
+
+
+def test_remote_checksums_env_pins_volta_and_nvm_defaults() -> None:
+    checksums = Path("scripts/install_modules/remote_checksums.env").read_text(encoding="utf-8")
+
+    assert ': "${VOLTA_INSTALL_SHA256:=}"' in checksums
+    assert ': "${NVM_INSTALL_SHA256:=}"' in checksums
+
+
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
