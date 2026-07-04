@@ -93,6 +93,62 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
 
 
 @pytest.mark.asyncio
+async def test_semantic_cache_get_batches_reads_into_single_pipeline(
+    fake_redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: get() must not issue one sequential hgetall await per
+
+    cached item (N Redis round-trips for N items); it should batch all reads
+    for the candidate keys into a single pipelined round-trip instead.
+    """
+    manager = SemanticCacheManager(_cfg())
+    manager._get_redis = AsyncMock(return_value=fake_redis)
+
+    embeddings = {
+        "prompt one": [1.0, 0.0, 0.0],
+        "prompt two": [0.9, 0.1, 0.0],
+        "prompt three": [0.8, 0.2, 0.0],
+        "query": [1.0, 0.0, 0.0],
+    }
+    monkeypatch.setattr(manager, "_embed_prompt", lambda prompt: embeddings.get(prompt, []))
+
+    for prompt in ("prompt one", "prompt two", "prompt three"):
+        await manager.set(prompt, f"{prompt}-answer")
+
+    direct_hgetall_calls = {"count": 0}
+    original_hgetall = type(fake_redis).hgetall
+
+    async def _counting_hgetall(self, *args, **kwargs):
+        direct_hgetall_calls["count"] += 1
+        return await original_hgetall(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(fake_redis), "hgetall", _counting_hgetall)
+
+    pipeline_execute_calls = {"count": 0}
+    original_pipeline = fake_redis.pipeline
+
+    def _counting_pipeline(*args, **kwargs):
+        pipe = original_pipeline(*args, **kwargs)
+        original_execute = pipe.execute
+
+        async def _counting_execute(*e_args, **e_kwargs):
+            pipeline_execute_calls["count"] += 1
+            return await original_execute(*e_args, **e_kwargs)
+
+        pipe.execute = _counting_execute
+        return pipe
+
+    monkeypatch.setattr(fake_redis, "pipeline", _counting_pipeline)
+
+    hit = await manager.get("query")
+
+    assert hit == "prompt one-answer"
+    assert direct_hgetall_calls["count"] == 0
+    assert pipeline_execute_calls["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

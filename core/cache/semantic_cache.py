@@ -178,10 +178,14 @@ class SemanticCacheManager:
                 return None
             set_cache_items(len(keys))
 
+            async with redis_client.pipeline(transaction=False) as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                all_raw = await pipe.execute()
+
             best_sim = -1.0
             best_response: str | None = None
-            for key in keys:
-                raw = await redis_client.hgetall(key)
+            for raw in all_raw:
                 if not raw:
                     continue
                 try:
