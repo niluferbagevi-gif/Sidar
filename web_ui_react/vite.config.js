@@ -61,6 +61,15 @@ export function createSidarProxyConfig(
       target: webSocketUrl,
       ws: true,
       changeOrigin: true,
+      configure: (proxy) => {
+        proxy.on("proxyReqWs", (proxyReq, req) => {
+          const protocol = req.headers["sec-websocket-protocol"];
+          if (protocol) {
+            proxyReq.setHeader("sec-websocket-protocol", protocol);
+          }
+          proxyReq.setHeader("origin", backendUrl);
+        });
+      },
     },
     "/admin": { target: backendUrl, changeOrigin: true },
     "/sessions": { target: backendUrl, changeOrigin: true },

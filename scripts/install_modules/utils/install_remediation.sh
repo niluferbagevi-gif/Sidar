@@ -300,7 +300,9 @@ sidar_fix_pep639_legacy_license_classifier() {
     fi
 
     cp "$pyproject_file" "artifacts/install/remediation/pyproject.toml.$(date +%Y%m%d_%H%M%S).bak"
-    sed -i "/${legacy_classifier//\//\\/}/d" "$pyproject_file"
+    local pyproject_tmp="${pyproject_file}.tmp"
+    awk -v pattern="$legacy_classifier" 'index($0, pattern) == 0 { print }' "$pyproject_file" > "$pyproject_tmp"
+    mv "$pyproject_tmp" "$pyproject_file"
     warn "Auto-heal: PEP 639 uyumsuzluğu algılandı; legacy license classifier pyproject.toml dosyasından kaldırıldı."
     if [[ -n "$action_ref" ]]; then
         printf -v "$action_ref" '%s+pep639-license-classifier-removed' "${!action_ref}"
