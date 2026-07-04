@@ -1716,6 +1716,9 @@ def test_trusted_proxies_defaults_to_loopback(monkeypatch) -> None:
 
 
 def test_jwt_secret_no_longer_falls_back_to_api_key(monkeypatch):
+    # Prevent a developer's real ~/.sidar_keys.env (loaded with override=True)
+    # from clobbering the API_KEY set below on reload.
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.setenv("API_KEY", "api-key-must-not-sign-jwt")
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     monkeypatch.setenv("SIDAR_ENV", "development")
@@ -1733,6 +1736,10 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    # get_missing_critical_runtime_keys() reads POSTGRES_PASSWORD straight from
+    # os.environ, so a developer's real process env would otherwise mask it
+    # from the expected missing-keys list below.
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "generated-runtime-secret")
     monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
