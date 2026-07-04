@@ -20,6 +20,7 @@ import config_autonomy
 import config_database
 import config_gpu
 import config_llm
+import config_quality
 import config_rag
 import core.logging_config as logging_config
 from config_security import (
@@ -333,6 +334,11 @@ LLM_SETTINGS = config_llm.load_llm_settings(
 )
 SUPPORTED_AI_PROVIDERS = config_llm.SUPPORTED_AI_PROVIDERS
 _PROVIDER_REQUIRED_SETTINGS = config_llm.PROVIDER_REQUIRED_SETTINGS
+
+QualityGateSettings = config_quality.QualityGateSettings
+_QUALITY_GATE_SETTINGS = config_quality.load_quality_gate_settings(
+    env_path=ENV_PATH, skip_default_dotenv=_SKIP_DEFAULT_DOTENV
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -907,36 +913,21 @@ class Config:
     REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "uv run pytest")
 
     # ─── DLP — Veri Kaybı Önleme ─────────────────────────────
-    DLP_ENABLED: bool = get_bool_env("DLP_ENABLED", True)
+    DLP_ENABLED: bool = _QUALITY_GATE_SETTINGS.DLP_ENABLED
     DLP_LOG_DETECTIONS: bool = _OBSERVABILITY_SETTINGS.dlp_log_detections
 
     # ─── HITL — Human-in-the-Loop Onay Geçidi ────────────────
-    HITL_ENABLED: bool = get_bool_env("HITL_ENABLED", False)
-    HITL_TIMEOUT_SECONDS: int = get_int_env("HITL_TIMEOUT_SECONDS", 120)
+    HITL_ENABLED: bool = _QUALITY_GATE_SETTINGS.HITL_ENABLED
+    HITL_TIMEOUT_SECONDS: int = _QUALITY_GATE_SETTINGS.HITL_TIMEOUT_SECONDS
 
     # ─── LLM-as-a-Judge Kalite Değerlendirmesi ────────────────
-    JUDGE_ENABLED: bool = get_bool_prefixed_env("SIDAR_JUDGE_ENABLED", "JUDGE_ENABLED", False)
-    JUDGE_MODEL: str = get_prefixed_env("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "")
-    JUDGE_PROVIDER: str = get_prefixed_env("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "ollama")
-    JUDGE_SAMPLE_RATE: float = max(
-        0.0,
-        min(1.0, get_float_prefixed_env("SIDAR_JUDGE_SAMPLE_RATE", "JUDGE_SAMPLE_RATE", 0.2)),
-    )
-    JUDGE_AUTO_FEEDBACK_ENABLED: bool = get_bool_prefixed_env(
-        "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED", "JUDGE_AUTO_FEEDBACK_ENABLED", True
-    )
-    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = max(
-        0.0,
-        min(
-            10.0,
-            get_float_prefixed_env(
-                "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD", "JUDGE_AUTO_FEEDBACK_THRESHOLD", 8.0
-            ),
-        ),
-    )
-    JUDGE_RESPONSE_MODEL: str = get_prefixed_env(
-        "SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", ""
-    )
+    JUDGE_ENABLED: bool = _QUALITY_GATE_SETTINGS.JUDGE_ENABLED
+    JUDGE_MODEL: str = _QUALITY_GATE_SETTINGS.JUDGE_MODEL
+    JUDGE_PROVIDER: str = _QUALITY_GATE_SETTINGS.JUDGE_PROVIDER
+    JUDGE_SAMPLE_RATE: float = _QUALITY_GATE_SETTINGS.JUDGE_SAMPLE_RATE
+    JUDGE_AUTO_FEEDBACK_ENABLED: bool = _QUALITY_GATE_SETTINGS.JUDGE_AUTO_FEEDBACK_ENABLED
+    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = _QUALITY_GATE_SETTINGS.JUDGE_AUTO_FEEDBACK_THRESHOLD
+    JUDGE_RESPONSE_MODEL: str = _QUALITY_GATE_SETTINGS.JUDGE_RESPONSE_MODEL
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
     ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)

@@ -1,0 +1,74 @@
+"""DLP/HITL/LLM-judge quality-gate configuration for Sidar."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class QualityGateSettings(BaseSettings):
+    """DLP/HITL/LLM-judge ortam değişkenlerini tip güvenli şekilde yükler."""
+
+    model_config = SettingsConfigDict(env_file=None, env_file_encoding="utf-8", extra="ignore")
+
+    DLP_ENABLED: bool = True
+    HITL_ENABLED: bool = False
+    HITL_TIMEOUT_SECONDS: int = 120
+
+    JUDGE_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SIDAR_JUDGE_ENABLED", "JUDGE_ENABLED"),
+    )
+    JUDGE_MODEL: str = Field(
+        default="",
+        validation_alias=AliasChoices("SIDAR_JUDGE_MODEL", "JUDGE_MODEL"),
+    )
+    JUDGE_PROVIDER: str = Field(
+        default="ollama",
+        validation_alias=AliasChoices("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER"),
+    )
+    JUDGE_SAMPLE_RATE: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices("SIDAR_JUDGE_SAMPLE_RATE", "JUDGE_SAMPLE_RATE"),
+    )
+    JUDGE_AUTO_FEEDBACK_ENABLED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED", "JUDGE_AUTO_FEEDBACK_ENABLED"
+        ),
+    )
+    JUDGE_AUTO_FEEDBACK_THRESHOLD: float = Field(
+        default=8.0,
+        ge=0.0,
+        le=10.0,
+        validation_alias=AliasChoices(
+            "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD", "JUDGE_AUTO_FEEDBACK_THRESHOLD"
+        ),
+    )
+    JUDGE_RESPONSE_MODEL: str = Field(
+        default="",
+        validation_alias=AliasChoices("SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL"),
+    )
+
+
+def load_quality_gate_settings(*, env_path: Path, skip_default_dotenv: bool) -> QualityGateSettings:
+    """Load quality-gate settings with the same dotenv precedence as the config facade."""
+    env_file = str(env_path) if env_path.exists() and not skip_default_dotenv else None
+    if env_file is None:
+        return QualityGateSettings()
+
+    scoped_settings_type: type[QualityGateSettings] = type(
+        "ScopedQualityGateSettings",
+        (QualityGateSettings,),
+        {
+            "__module__": __name__,
+            "model_config": SettingsConfigDict(
+                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
+            ),
+        },
+    )
+    return scoped_settings_type()

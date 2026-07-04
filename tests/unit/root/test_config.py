@@ -14,6 +14,7 @@ import config_autonomy
 import config_database
 import config_gpu
 import config_llm
+import config_quality
 import config_rag
 from core import config_env_helpers, config_validators
 
@@ -32,6 +33,7 @@ def test_config_uses_split_domain_modules() -> None:
     assert config.gpu_mixed_precision_default is config_gpu.gpu_mixed_precision_default
     assert config.Config.SEMANTIC_CACHE_THRESHOLD == config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT
     assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
+    assert config.QualityGateSettings is config_quality.QualityGateSettings
 
 
 def test_config_legacy_import_surface_survives_split() -> None:
@@ -266,6 +268,131 @@ def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
     settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=True)
 
     assert settings.OLLAMA_TIMEOUT == 600
+
+
+_QUALITY_GATE_ENV_KEYS = (
+    "DLP_ENABLED",
+    "HITL_ENABLED",
+    "HITL_TIMEOUT_SECONDS",
+    "SIDAR_JUDGE_ENABLED",
+    "JUDGE_ENABLED",
+    "SIDAR_JUDGE_MODEL",
+    "JUDGE_MODEL",
+    "SIDAR_JUDGE_PROVIDER",
+    "JUDGE_PROVIDER",
+    "SIDAR_JUDGE_SAMPLE_RATE",
+    "JUDGE_SAMPLE_RATE",
+    "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED",
+    "JUDGE_AUTO_FEEDBACK_ENABLED",
+    "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD",
+    "JUDGE_AUTO_FEEDBACK_THRESHOLD",
+    "SIDAR_JUDGE_RESPONSE_MODEL",
+    "JUDGE_RESPONSE_MODEL",
+)
+
+
+def _clear_quality_gate_env(monkeypatch) -> None:
+    for key in _QUALITY_GATE_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_quality_gate_settings_defaults_match_original_hardcoded_values(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.DLP_ENABLED is True
+    assert settings.HITL_ENABLED is False
+    assert settings.HITL_TIMEOUT_SECONDS == 120
+    assert settings.JUDGE_ENABLED is False
+    assert settings.JUDGE_MODEL == ""
+    assert settings.JUDGE_PROVIDER == "ollama"
+    assert settings.JUDGE_SAMPLE_RATE == 0.2
+    assert settings.JUDGE_AUTO_FEEDBACK_ENABLED is True
+    assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 8.0
+    assert settings.JUDGE_RESPONSE_MODEL == ""
+
+
+def test_quality_gate_settings_sidar_prefix_takes_precedence_over_legacy(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_ENABLED", "false")
+    monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0.9")
+    monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "0.3")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_ENABLED is True
+    assert settings.JUDGE_SAMPLE_RATE == 0.3
+
+
+def test_quality_gate_settings_legacy_env_var_works_without_prefix(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0.5")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_ENABLED is True
+    assert settings.JUDGE_SAMPLE_RATE == 0.5
+
+
+@pytest.mark.parametrize(
+    "env_key,env_value",
+    [
+        ("JUDGE_SAMPLE_RATE", "1.5"),
+        ("JUDGE_SAMPLE_RATE", "-0.1"),
+        ("JUDGE_AUTO_FEEDBACK_THRESHOLD", "10.1"),
+        ("JUDGE_AUTO_FEEDBACK_THRESHOLD", "-1"),
+    ],
+)
+def test_quality_gate_settings_rejects_out_of_range_values(monkeypatch, env_key, env_value):
+    """Regression test: out-of-range values now fail fast via pydantic Field
+
+    constraints instead of being silently clamped into range, replacing the
+    manual `max(0.0, min(1.0, ...))`-style validation the fields used before.
+    """
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv(env_key, env_value)
+
+    with pytest.raises(Exception, match="(?i)validation error"):
+        config_quality.QualityGateSettings()
+
+
+def test_quality_gate_settings_accepts_boundary_values(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0")
+    monkeypatch.setenv("JUDGE_AUTO_FEEDBACK_THRESHOLD", "10")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_SAMPLE_RATE == 0.0
+    assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 10.0
+
+
+def test_load_quality_gate_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(
+    tmp_path, monkeypatch
+):
+    _clear_quality_gate_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text("HITL_TIMEOUT_SECONDS=321\n", encoding="utf-8")
+
+    settings = config_quality.load_quality_gate_settings(
+        env_path=env_path, skip_default_dotenv=False
+    )
+
+    assert settings.HITL_TIMEOUT_SECONDS == 321
+
+
+def test_load_quality_gate_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text("HITL_TIMEOUT_SECONDS=321\n", encoding="utf-8")
+
+    settings = config_quality.load_quality_gate_settings(
+        env_path=env_path, skip_default_dotenv=True
+    )
+
+    assert settings.HITL_TIMEOUT_SECONDS == 120
 
 
 def test_ollama_batch_policy_centralizes_runtime_bounds():
