@@ -902,12 +902,13 @@ def test_build_user_from_jwt_payload_defaults_and_missing_values():
     assert web_server._build_user_from_jwt_payload({"sub": "1", "username": ""}) is None
 
 
-def test_get_jwt_secret_fallback_logs_critical(monkeypatch):
+def test_get_jwt_secret_fails_closed_instead_of_dev_fallback(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "")
     critical_messages = []
     monkeypatch.setattr(web_server.logger, "critical", lambda msg: critical_messages.append(msg))
 
-    assert web_server._get_jwt_secret() == "sidar-dev-secret"
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        web_server._get_jwt_secret()
     assert critical_messages
 
 
@@ -1169,7 +1170,7 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
     monkeypatch.setattr(web_server.asyncio, "to_thread", _to_thread)
     monkeypatch.setattr(web_server.cfg, "ENABLE_AUTONOMOUS_CRON", True)
     monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
-    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: None))
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: True))
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: [])
 
     async with web_server._app_lifespan(web_server.FastAPI()):
@@ -1213,7 +1214,7 @@ async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatc
     monkeypatch.setattr(web_server, "_autonomy_cron_stop", None)
     monkeypatch.setattr(web_server, "_nightly_memory_task", None)
     monkeypatch.setattr(web_server, "_nightly_memory_stop", None)
-    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: None))
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", staticmethod(lambda: True))
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: [])
 
     async with web_server._app_lifespan(web_server.FastAPI()):

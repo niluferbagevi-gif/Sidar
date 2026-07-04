@@ -68,10 +68,11 @@ def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -
     assert protocol is None
 
 
-def test_get_jwt_secret_uses_development_fallback_and_logs() -> None:
+def test_get_jwt_secret_fails_closed_instead_of_dev_fallback() -> None:
     logger = _Logger()
 
-    assert security.get_jwt_secret(SimpleNamespace(JWT_SECRET_KEY=""), logger) == "sidar-dev-secret"
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        security.get_jwt_secret(SimpleNamespace(JWT_SECRET_KEY=""), logger)
     assert logger.critical_messages
 
 

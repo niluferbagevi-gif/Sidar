@@ -159,7 +159,7 @@ async def test_boot_fastapi_app_healthz_starts_with_mocked_agent(
     close_redis = AsyncMock(return_value=None)
     shutdown_local_llm = AsyncMock(return_value=None)
 
-    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: None)
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: True)
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
     monkeypatch.setattr(web_server, "_close_redis_client", close_redis)
     monkeypatch.setattr(web_server, "_async_force_shutdown_local_llm_processes", shutdown_local_llm)
@@ -199,7 +199,7 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
 
     redis_rate_limiter = AsyncMock(return_value=False)
 
-    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: None)
+    monkeypatch.setattr(web_server.Config, "validate_critical_settings", lambda: True)
     monkeypatch.setattr(web_server, "_reload_persisted_marketplace_plugins", lambda: None)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", redis_rate_limiter)
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)

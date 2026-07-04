@@ -191,6 +191,25 @@ def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
     return _parse_asyncpg_affected_rows_impl(command_tag)
 
 
+def _require_jwt_secret(cfg: Any) -> str:
+    """Read the JWT secret from cfg; fail closed instead of using a known constant.
+
+    Mirrors ``web.security.get_jwt_secret`` — a missing JWT_SECRET_KEY must never
+    silently fall back to a hardcoded, source-visible secret.
+    """
+    key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "")
+    if not key:
+        logger.critical(
+            "JWT_SECRET_KEY yapılandırılmamış! Tahmin edilebilir sabit bir anahtara "
+            "sessizce düşmek yerine JWT imzalama/doğrulama reddediliyor. .env dosyasına "
+            "güçlü bir JWT_SECRET_KEY değeri eklemelisiniz."
+        )
+        raise RuntimeError(
+            "JWT_SECRET_KEY yapılandırılmamış; JWT imzalama/doğrulama güvenli değil."
+        )
+    return key
+
+
 class Database:
     """Asenkron veritabanı erişim katmanı.
 
@@ -1293,7 +1312,7 @@ class Database:
             "iat": int(datetime.now(UTC).timestamp()),
             "exp": int((datetime.now(UTC) + timedelta(days=ttl)).timestamp()),
         }
-        secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+        secret_key = _require_jwt_secret(self.cfg)
         algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
         token = jwt.encode(payload, secret_key, algorithm=algorithm)
         return AuthTokenRecord(
@@ -1302,7 +1321,7 @@ class Database:
 
     def verify_auth_token(self, token: str) -> UserRecord | None:
         try:
-            secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+            secret_key = _require_jwt_secret(self.cfg)
             algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
             payload = jwt.decode(token, secret_key, algorithms=[algorithm])
         except jwt.PyJWTError:

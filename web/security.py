@@ -57,16 +57,18 @@ def build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
 
 
 def get_jwt_secret(config: Any, logger_obj: Any) -> str:
-    """Read the JWT secret from config and log a critical development fallback warning."""
+    """Read the JWT secret from config; fail closed instead of using a known constant."""
 
     key = str(getattr(config, "JWT_SECRET_KEY", "") or "")
     if not key:
         logger_obj.critical(
-            "JWT_SECRET_KEY yapılandırılmamış! Geliştirme ortamında geçici bir "
-            "anahtar kullanılıyor. Üretim ortamında .env dosyasına güçlü bir "
-            "JWT_SECRET_KEY değeri eklemelisiniz."
+            "JWT_SECRET_KEY yapılandırılmamış! Tahmin edilebilir sabit bir anahtara "
+            "sessizce düşmek yerine JWT imzalama/doğrulama reddediliyor. .env dosyasına "
+            "güçlü bir JWT_SECRET_KEY değeri eklemelisiniz."
         )
-        key = "sidar-dev-secret"
+        raise RuntimeError(
+            "JWT_SECRET_KEY yapılandırılmamış; JWT imzalama/doğrulama güvenli değil."
+        )
     return key
 
 

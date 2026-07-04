@@ -637,6 +637,26 @@ async def test_jwt_token_flow_prefers_db_user(sqlite_db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_and_verify_auth_token_fail_closed_without_jwt_secret(
+    sqlite_db: Database,
+) -> None:
+    """Regression test: an empty JWT_SECRET_KEY must never fall back to a known constant.
+
+    Mirrors the fix applied to web.security.get_jwt_secret — a missing secret should
+    raise instead of silently signing/verifying with the hardcoded "sidar-dev-secret".
+    """
+    sqlite_db.cfg.JWT_SECRET_KEY = ""
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        await sqlite_db.create_auth_token(
+            "u1", role="admin", username="jwt-user", tenant_id="tenant-a"
+        )
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        sqlite_db.verify_auth_token("irrelevant-token")
+
+
+@pytest.mark.asyncio
 async def test_run_sqlite_op_requires_initialized_connection(tmp_path) -> None:
     cfg = DummyCfg(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",

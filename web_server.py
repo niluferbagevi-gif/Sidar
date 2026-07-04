@@ -1301,7 +1301,17 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     runtime_state.redis_lock = _redis_lock
     runtime_state.local_rate_lock = _local_rate_lock
     # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
-    await asyncio.to_thread(Config.validate_critical_settings)
+    settings_valid = await asyncio.to_thread(Config.validate_critical_settings)
+    skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if not settings_valid and not skip_boot_checks:
+        raise RuntimeError(
+            "Kritik yapılandırma doğrulaması başarısız; web sunucusu başlatılamıyor. "
+            "Detaylar için loglara bakın (SIDAR_SKIP_BOOT_CHECKS=1 ile bilinçli olarak atlanabilir)."
+        )
     await asyncio.to_thread(_reload_persisted_marketplace_plugins)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
     runtime_state.rag_prewarm_task = _rag_prewarm_task
