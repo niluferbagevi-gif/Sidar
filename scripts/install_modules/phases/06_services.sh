@@ -330,6 +330,47 @@ sidar_discover_postgres_volumes() {
         done
     fi
 }
+
+# DB parola hardening sonrası PostgreSQL volume sıfırlamanın mevcut SIDAR_ENV
+# için güvenli olup olmadığına karar verir. SIDAR_ENV tanımsız/boşsa (ör.
+# eksik/yarım .env dosyası) güvenli tarafta kalıp reddeder — "development"a
+# sessizce düşmez. Bu karar birden fazla çağıran (parola değişimi sonrası ilk
+# reset denemesi ve smoke test öncesi zorunlu reset doğrulaması) tarafından
+# paylaşılır; ikisi de aynı güvenlik frenine tabi olmalıdır.
+sidar_postgres_volume_reset_allowed_for_env() {
+    local env_file="$1"
+    local sidar_env=""
+    if [[ -f "$env_file" ]]; then
+        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
+    fi
+    sidar_env=$(echo "$sidar_env" | tr -d '"'\''[:space:]')
+
+    local allow_production_volume_reset="${ALLOW_PRODUCTION_DB_VOLUME_RESET:-0}"
+    case "$sidar_env" in
+        development|dev|local|test)
+            return 0
+            ;;
+        production|prod|staging|preprod)
+            if [[ "$allow_production_volume_reset" != "1" ]]; then
+                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için PostgreSQL volume otomatik sıfırlanmadı (güvenlik freni)."
+                warn "Sadece bilinçli operasyonlarda ALLOW_PRODUCTION_DB_VOLUME_RESET=1 ile açıkça izin verin."
+                return 1
+            fi
+            warn "ALLOW_PRODUCTION_DB_VOLUME_RESET=1 verildi; SIDAR_ENV=${sidar_env} için PostgreSQL volume sıfırlama güvenlik freni operatör onayıyla bypass edildi."
+            return 0
+            ;;
+        "")
+            warn "SIDAR_ENV tanımlı değil veya boş; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı (güvenli varsayılan: reddet)."
+            warn "Geliştirme ortamındaysanız .env dosyanızda SIDAR_ENV=development ayarlayın."
+            return 1
+            ;;
+        *)
+            warn "SIDAR_ENV='${sidar_env}' tanınmadı; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı."
+            return 1
+            ;;
+    esac
+}
+
 maybe_reset_postgres_volume_after_password_hardening() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -357,29 +398,7 @@ maybe_reset_postgres_volume_after_password_hardening() {
     [[ "$includes_postgres" == true ]] || return 0
 
     local env_file="$SCRIPT_DIR/.env"
-    local sidar_env="development"
-    if [[ -f "$env_file" ]]; then
-        sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
-    fi
-    sidar_env=$(echo "${sidar_env:-development}" | tr -d '"'\''[:space:]')
-
-    local allow_production_volume_reset="${ALLOW_PRODUCTION_DB_VOLUME_RESET:-0}"
-    case "$sidar_env" in
-        development|dev|local|test)
-            ;;
-        production|prod|staging|preprod)
-            if [[ "$allow_production_volume_reset" != "1" ]]; then
-                warn "DB parola hardening algılandı ancak SIDAR_ENV=${sidar_env} olduğu için PostgreSQL volume otomatik sıfırlanmadı (güvenlik freni)."
-                warn "Sadece bilinçli operasyonlarda ALLOW_PRODUCTION_DB_VOLUME_RESET=1 ile açıkça izin verin."
-                return 0
-            fi
-            warn "ALLOW_PRODUCTION_DB_VOLUME_RESET=1 verildi; SIDAR_ENV=${sidar_env} için PostgreSQL volume sıfırlama güvenlik freni operatör onayıyla bypass edildi."
-            ;;
-        *)
-            warn "SIDAR_ENV='${sidar_env}' tanınmadı; veri kaybını önlemek için PostgreSQL volume otomatik sıfırlanmadı."
-            return 0
-            ;;
-    esac
+    sidar_postgres_volume_reset_allowed_for_env "$env_file" || return 0
 
     if [[ "${AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE:-1}" != "1" ]]; then
         warn "AUTO_RESET_POSTGRES_VOLUME_ON_PASSWORD_CHANGE=1 olmadığı için PostgreSQL volume otomatik sıfırlanmadı."
@@ -1227,6 +1246,11 @@ ensure_postgres_volume_reset_before_smoke_tests() {
 
     if [[ "${POSTGRES_VOLUME_RESET_DONE:-false}" == true ]]; then
         ok "PostgreSQL volume reset daha önce tamamlanmış olarak işaretli; smoke öncesi ek reset gerekmiyor."
+        return 0
+    fi
+
+    if ! sidar_postgres_volume_reset_allowed_for_env "$SCRIPT_DIR/.env"; then
+        warn "Smoke test öncesi PostgreSQL volume reset, SIDAR_ENV güvenlik freni nedeniyle atlanıyor; smoke testler mevcut volume ile devam edecek."
         return 0
     fi
 

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import textwrap
 import tomllib
 from pathlib import Path
 
@@ -1517,6 +1518,114 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
 
     assert "reason=ollama-install-retry" in result.stdout
     assert "action=rerun-install-script;refresh-sudo" in result.stdout
+
+
+def _extract_services_phase_function(name: str, next_marker: str) -> str:
+    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
+        encoding="utf-8"
+    )
+    start = services_phase.index(f"{name}() {{")
+    end = services_phase.index(next_marker, start)
+    return services_phase[start:end]
+
+
+def test_postgres_volume_reset_env_gate_rejects_missing_or_unrecognized_sidar_env(
+    tmp_path: Path,
+) -> None:
+    """Regression test: SIDAR_ENV unset/empty/unrecognized must fail closed
+
+    (reject the volume reset) instead of silently defaulting to "development"
+    and allowing a destructive `docker volume rm -f` to proceed.
+    """
+    gate_fn = _extract_services_phase_function(
+        "sidar_postgres_volume_reset_allowed_for_env",
+        "\nmaybe_reset_postgres_volume_after_password_hardening() {",
+    )
+    env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
+
+    harness = tmp_path / "gate_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'warn() { printf "WARN\\n" >&2; }\n'
+        + env_utils
+        + gate_fn
+        + textwrap.dedent(
+            """
+            probe() {
+                local label="$1"
+                local env_file="$2"
+                if sidar_postgres_volume_reset_allowed_for_env "$env_file"; then
+                    echo "${label}=allowed"
+                else
+                    echo "${label}=rejected"
+                fi
+            }
+
+            probe no_env_file "$1/nonexistent.env"
+
+            printf 'SOME_OTHER_VAR=x\\n' > "$1/.env"
+            probe sidar_env_missing_key "$1/.env"
+
+            printf 'SIDAR_ENV=""\\n' > "$1/.env"
+            probe sidar_env_empty_quoted "$1/.env"
+
+            printf 'SIDAR_ENV=development\\n' > "$1/.env"
+            probe development "$1/.env"
+
+            printf 'SIDAR_ENV=production\\n' > "$1/.env"
+            unset ALLOW_PRODUCTION_DB_VOLUME_RESET
+            probe production_no_bypass "$1/.env"
+
+            export ALLOW_PRODUCTION_DB_VOLUME_RESET=1
+            probe production_with_bypass "$1/.env"
+            unset ALLOW_PRODUCTION_DB_VOLUME_RESET
+
+            printf 'SIDAR_ENV=garbage\\n' > "$1/.env"
+            probe unrecognized "$1/.env"
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+    env_dir = tmp_path / "envs"
+    env_dir.mkdir()
+
+    result = subprocess.run(
+        ["bash", str(harness), str(env_dir)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "no_env_file=rejected",
+        "sidar_env_missing_key=rejected",
+        "sidar_env_empty_quoted=rejected",
+        "development=allowed",
+        "production_no_bypass=rejected",
+        "production_with_bypass=allowed",
+        "unrecognized=rejected",
+    ]
+
+
+def test_both_postgres_volume_reset_callers_share_the_same_env_gate() -> None:
+    """Regression test: both the password-hardening reset path and the
+
+    smoke-test-forced reset path must go through the same SIDAR_ENV safety
+    gate, so the smoke-test path can't bypass a brake the other one enforced.
+    """
+    services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "sidar_postgres_volume_reset_allowed_for_env() {" in services_phase
+    assert (
+        'sidar_postgres_volume_reset_allowed_for_env "$env_file" || return 0' in services_phase
+    )
+    assert (
+        'sidar_postgres_volume_reset_allowed_for_env "$SCRIPT_DIR/.env"' in services_phase
+    )
+    assert services_phase.count("sidar_postgres_volume_reset_allowed_for_env") == 3
 
 
 def test_install_sidar_download_verified_script_fails_after_http_200_when_checksum_missing(
