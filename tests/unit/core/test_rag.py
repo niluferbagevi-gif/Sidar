@@ -46,6 +46,7 @@ def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
     store._pg_table = "rag_embeddings"
     store._pg_embedding_dim = 384
     store._pg_embedding_model_name = "all-MiniLM-L6-v2"
+    store._graph_index = rag.GraphIndex(tmp_path)
     return store
 
 
@@ -2530,6 +2531,9 @@ async def test_document_store_url_file_delete_and_graph_branches(
 
     class _Resp:
         text = "<html><body>x</body></html>"
+        status_code = 200
+        url = "https://example.com/x"
+        headers: dict[str, str] = {}
 
         def raise_for_status(self):
             return None
