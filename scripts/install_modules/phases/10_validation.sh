@@ -472,7 +472,7 @@ print_install_validation_coverage() {
             echo "   ⏭️  Integration:  ATLANDI (kapsam: api/cli/db/managers/web/workflow)"
         fi
         echo "   ⏭️  E2E:          ATLANDI (kapsam: agents/cli/web)"
-        echo "   ⏭️  Benchmark:    ATLANDI"
+        echo "   ⏭️  Benchmark:    ATLANDI (çalıştırmak için: ./run_tests.sh --stage benchmark)"
     fi
 
     if [[ "$CI_FULL_VALIDATION_STATUS" == "hata" ]]; then
@@ -482,5 +482,6 @@ print_install_validation_coverage() {
         echo ""
         echo "   Tam doğrulama: ./install_sidar.sh --ci-full"
         echo "   veya yalnızca:  ./run_tests.sh --stage all"
+        echo "   hedefli:        ./run_tests.sh --stage integration | ./run_tests.sh --stage e2e | ./run_tests.sh --stage benchmark"
     fi
 }

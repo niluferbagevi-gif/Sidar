@@ -3004,7 +3004,7 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
     script = _script()
 
     assert (
-        "Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]"
+        "Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats|benchmark[,..]]"
         in script
     )
     assert "normalize_test_stages()" in script
@@ -3012,6 +3012,8 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
     assert "stage_selected()" in script
     assert "backend_infra_required_for_stage()" in script
     assert "SIDAR_RUN_BACKEND_PYTEST=0" in script
+    assert "if stage_selected benchmark; then" in script
+    assert "RUN_BENCHMARKS=required" in script
     assert (
         "if stage_selected backend || stage_selected unit || stage_selected integration || stage_selected smoke || stage_selected e2e; then"
         in script
