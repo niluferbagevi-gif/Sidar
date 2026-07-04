@@ -1628,6 +1628,78 @@ def test_both_postgres_volume_reset_callers_share_the_same_env_gate() -> None:
     assert services_phase.count("sidar_postgres_volume_reset_allowed_for_env") == 3
 
 
+def test_create_directories_permission_steps_no_longer_swallow_errors_silently() -> None:
+    """Regression test: chmod/chown/setfacl failures in create_directories()
+
+    must surface a diagnostic warning instead of being fully swallowed via
+    `2>/dev/null || true`, so permission issues can actually be diagnosed.
+    """
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
+        encoding="utf-8"
+    )
+
+    create_directories_block = workspace_phase[
+        workspace_phase.index("create_directories() {") : workspace_phase.index(
+            "setup_vscode_workspace() {"
+        )
+    ]
+
+    assert "2>/dev/null || true" not in create_directories_block
+    assert "sidar_run_or_warn() {" in workspace_phase
+    for expected_call in (
+        'sidar_run_or_warn "chmod 755 \\"$SCRIPT_DIR/$dir\\"" chmod 755 "$SCRIPT_DIR/$dir"',
+        'sidar_run_or_warn "chown 10001:10001 \\"$SCRIPT_DIR/$bind_dir\\"" chown 10001:10001'
+        ' "$SCRIPT_DIR/$bind_dir"',
+        'sidar_run_or_warn "chmod u+rwx,g+rx,o+rx \\"$SCRIPT_DIR/$bind_dir\\"" chmod'
+        ' u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir"',
+        'sidar_run_or_warn "setfacl -m u:10001:rwx \\"$SCRIPT_DIR/$bind_dir\\"" setfacl -m'
+        ' u:10001:rwx "$SCRIPT_DIR/$bind_dir"',
+        'sidar_run_or_warn "chown 10001:10001 \\"$log_file\\"" chown 10001:10001 "$log_file"',
+        'sidar_run_or_warn "setfacl -m u:10001:rw \\"$log_file\\"" setfacl -m u:10001:rw'
+        ' "$log_file"',
+        'sidar_run_or_warn "chmod u+rw \\"$log_file\\"" chmod u+rw "$log_file"',
+    ):
+        assert expected_call in create_directories_block, expected_call
+
+
+def test_sidar_run_or_warn_surfaces_error_and_stays_non_fatal(tmp_path: Path) -> None:
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
+        encoding="utf-8"
+    )
+    helper_fn = workspace_phase[
+        workspace_phase.index("sidar_run_or_warn() {") : workspace_phase.index(
+            "sidar_precheck_workspace_ownership() {"
+        )
+    ]
+
+    harness = tmp_path / "run_or_warn_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
+        'warn() { printf "WARN: %s\\n" "$*" >&2; }\n'
+        + helper_fn
+        + textwrap.dedent(
+            """
+            tmp_file="$(mktemp)"
+            sidar_run_or_warn "chmod ok" chmod 644 "$tmp_file"
+            echo "after-success"
+
+            sidar_run_or_warn "chmod missing" chmod 644 "/nonexistent/path/xyz" || true
+            echo "after-failure-with-or-true"
+            """
+        ),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    result = subprocess.run(["bash", str(harness)], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "after-success" in result.stdout
+    assert "after-failure-with-or-true" in result.stdout
+    assert "chmod missing başarısız oldu:" in result.stderr
+    assert "No such file or directory" in result.stderr
+
+
 def test_install_sidar_download_verified_script_fails_after_http_200_when_checksum_missing(
     tmp_path: Path,
 ) -> None:
