@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import logging
 import sqlite3
 from pathlib import Path
@@ -154,30 +155,34 @@ async def upsert_prompt(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
-            current_version = await conn.fetchval(
-                "SELECT COALESCE(MAX(version), 0) FROM prompt_registry WHERE role_name=$1",
-                role,
-            )
-            new_version = int(current_version or 0) + 1
-            if activate:
-                await conn.execute(
-                    "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+            tx_ctx = conn.transaction()
+            if inspect.isawaitable(tx_ctx):
+                tx_ctx = await tx_ctx
+            async with tx_ctx:
+                current_version = await conn.fetchval(
+                    "SELECT COALESCE(MAX(version), 0) FROM prompt_registry WHERE role_name=$1",
                     role,
+                )
+                new_version = int(current_version or 0) + 1
+                if activate:
+                    await conn.execute(
+                        "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+                        role,
+                        now_dt,
+                    )
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING {PROMPT_REGISTRY_COLUMNS}
+                    """,
+                    role,
+                    text,
+                    new_version,
+                    activate,
+                    now_dt,
                     now_dt,
                 )
-            row = await conn.fetchrow(
-                f"""
-                INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING {PROMPT_REGISTRY_COLUMNS}
-                """,
-                role,
-                text,
-                new_version,
-                activate,
-                now_dt,
-                now_dt,
-            )
         return _prompt_record(prompt_record_cls, row)
 
     assert db._sqlite_conn is not None
@@ -227,23 +232,27 @@ async def activate_prompt(db: Any, prompt_id: int, *, prompt_record_cls: type[An
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, role_name FROM prompt_registry WHERE id=$1",
-                target_id,
-            )
-            if not row:
-                return None
-            role = str(row["role_name"])
-            await conn.execute(
-                "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
-                role,
-                now_dt,
-            )
-            await conn.execute(
-                "UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1",
-                target_id,
-                now_dt,
-            )
+            tx_ctx = conn.transaction()
+            if inspect.isawaitable(tx_ctx):
+                tx_ctx = await tx_ctx
+            async with tx_ctx:
+                row = await conn.fetchrow(
+                    "SELECT id, role_name FROM prompt_registry WHERE id=$1",
+                    target_id,
+                )
+                if not row:
+                    return None
+                role = str(row["role_name"])
+                await conn.execute(
+                    "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+                    role,
+                    now_dt,
+                )
+                await conn.execute(
+                    "UPDATE prompt_registry SET is_active=TRUE, updated_at=$2 WHERE id=$1",
+                    target_id,
+                    now_dt,
+                )
         return await db.get_active_prompt(role)
 
     assert db._sqlite_conn is not None
