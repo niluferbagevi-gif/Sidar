@@ -894,7 +894,7 @@ def normalize_self_heal_plan(
             action = "patch"
         if action != "patch" or not path or not target or path.startswith("/") or ".." in path:
             continue
-        if allowed_paths and path not in allowed_paths:
+        if path not in allowed_paths:
             continue
         operations.append(
             {

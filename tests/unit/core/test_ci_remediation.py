@@ -385,6 +385,25 @@ def test_normalize_self_heal_plan_with_invalid_input_uses_defaults() -> None:
     assert normalized["summary"]
 
 
+def test_normalize_self_heal_plan_drops_patches_when_scope_paths_is_empty() -> None:
+    """Fail-closed regression test: an empty scope must reject every patch operation,
+
+    not silently accept unrestricted file paths. Mirrors the fail-open bug fixed in
+    ``agent/self_heal/executor.py`` where ``allowed_paths and path not in allowed_paths``
+    short-circuited to False (and thus skipped the check) whenever scope_paths was empty.
+    """
+    normalized = ci.normalize_self_heal_plan(
+        {
+            "operations": [
+                {"action": "patch", "path": "anywhere.py", "target": "old", "replacement": "new"}
+            ],
+        },
+        scope_paths=[],
+        fallback_validation_commands=[],
+    )
+    assert normalized["operations"] == []
+
+
 def test_normalize_self_heal_plan_handles_non_json_fence_and_bad_json() -> None:
     raw_non_json_fence = """```text
     not-json-body

@@ -71,9 +71,14 @@ async def execute_self_heal_plan(
         for item in operations
         if str(item.get("path") or "").strip()
     ]
-    out_of_scope_paths = sorted(
-        {path for path in operation_paths if allowed_paths and path not in allowed_paths}
-    )
+    if not allowed_paths:
+        result["status"] = "blocked"
+        result["summary"] = (
+            "Self-heal planı engellendi: remediation_loop içinde scope_paths tanımlı değil "
+            "(fail-closed varsayılan; boş kapsam sınırsız dosya erişimi anlamına gelmez)."
+        )
+        return result
+    out_of_scope_paths = sorted({path for path in operation_paths if path not in allowed_paths})
     if out_of_scope_paths:
         result["status"] = "blocked"
         result["summary"] = (

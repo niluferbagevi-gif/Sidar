@@ -1881,8 +1881,24 @@ async def test_execute_self_heal_plan_skipped_blocked_and_backup_failure(
     )
     assert blocked["status"] == "blocked"
 
-    reverted = await agent._execute_self_heal_plan(
+    # Fail-closed: an empty/missing scope_paths must block every patch, not allow
+    # unrestricted file access. Regression test for the fail-open bug where
+    # `allowed_paths and path not in allowed_paths` skipped the scope check
+    # entirely whenever remediation_loop had no scope_paths configured.
+    blocked_empty_scope = await agent._execute_self_heal_plan(
         remediation_loop={},
+        plan={
+            "operations": [{"path": "a.py", "target": "x", "replacement": "y"}],
+            "validation_commands": ["pytest -q"],
+        },
+    )
+    assert blocked_empty_scope["status"] == "blocked"
+    assert "scope_paths" in blocked_empty_scope["summary"]
+    code.read_file.assert_not_called()
+    code.patch_file.assert_not_called()
+
+    reverted = await agent._execute_self_heal_plan(
+        remediation_loop={"scope_paths": ["a.py"]},
         plan={
             "operations": [{"path": "a.py", "target": "x", "replacement": "y"}],
             "validation_commands": ["pytest -q"],
