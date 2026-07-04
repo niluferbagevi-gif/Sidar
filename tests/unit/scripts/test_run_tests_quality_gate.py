@@ -26,6 +26,56 @@ def _extract_run_tests_function(name: str) -> str:
     return script[start:next_function]
 
 
+def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
+    """Regression test: run_tests.sh intentionally runs without `set -e` (it must
+
+    keep running later test phases/quality gates even after an earlier one
+    fails, then aggregate a combined exit code), but every command whose exit
+    code feeds into that aggregate must go through the shared run_checked()
+    helper instead of ad hoc, inconsistent `cmd; x=$?` / `cmd || true` patterns.
+    """
+    script = _script()
+
+    assert script.splitlines()[1] == "set -uo pipefail"
+
+    run_checked_block = script[script.index("run_checked() {") : script.index("RUN_TESTS_STAGE=")]
+    assert run_checked_block.strip().splitlines()[1:] == ['  "$@"', "  return $?", "}"]
+
+    for consequential_call in (
+        'run_checked "${DOCKER_COMPOSE_CMD[@]}" stop redis postgres',
+        'run_checked "${phase1_cmd[@]}"\n    phase1_exit=$?',
+        'run_checked "${phase2_cmd[@]}"\n    phase2_exit=$?',
+        'run_checked "${benchmark_cmd[@]}"\n    BENCHMARK_EXIT_CODE=$?',
+        "run_checked npm ci",
+        "run_checked npm install",
+        "run_checked npm run audit:high",
+        "run_checked npm run lint",
+        "run_checked npm run test:coverage",
+        "run_checked run_frontend_e2e_with_retry",
+    ):
+        assert consequential_call in script, consequential_call
+
+
+def test_run_checked_propagates_exit_code_and_passes_through_stdio(tmp_path) -> None:
+    script = _script()
+    helper = tmp_path / "run_checked_probe.sh"
+    helper.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        + script[script.index("run_checked() {") : script.index("RUN_TESTS_STAGE=")]
+        + '\necho "before"\n'
+        + 'run_checked bash -c "echo mid; exit 7"\n'
+        + 'echo "captured=$?"\n'
+        + 'echo "after"\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+
+    result = subprocess.run([str(helper)], capture_output=True, text=True)
+
+    assert result.returncode == 0
+    assert result.stdout == "before\nmid\ncaptured=7\nafter\n"
+
+
 def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports(tmp_path) -> None:
     coverage_dir = tmp_path / "coverage"
     nested_dir = coverage_dir / "components" / "button"

@@ -4,6 +4,17 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}" || exit 1
 
+# `set -e` bilinçli olarak KULLANILMIYOR: bu script birden çok bağımsız test/
+# kalite fazını (unit, integration/smoke/e2e, benchmark, frontend lint/coverage/
+# e2e) art arda çalıştırıp sonuçlarını sonda birleştirir; bir fazın başarısız
+# olması sonraki fazların da çalışıp raporlanmasını engellememelidir. Bu yüzden
+# sonucu final çıkış koduna dahil edilen her komut, çıkış kodunu tutarlı şekilde
+# yakalayabilmek için run_checked ile çağrılır.
+run_checked() {
+  "$@"
+  return $?
+}
+
 RUN_TESTS_STAGE="${RUN_TESTS_STAGE:-all}"
 print_usage() {
   cat <<'USAGE'
@@ -1387,8 +1398,9 @@ cleanup_test_services() {
   fi
 
   echo "🧹 Test sonrası docker servisleri durduruluyor: redis, postgres"
-  "${DOCKER_COMPOSE_CMD[@]}" stop redis postgres >/dev/null 2>&1 || \
+  if ! run_checked "${DOCKER_COMPOSE_CMD[@]}" stop redis postgres >/dev/null 2>&1; then
     echo "⚠️ Redis/PostgreSQL servisleri durdurulurken hata oluştu."
+  fi
 }
 
 trap cleanup_test_services EXIT
@@ -1546,7 +1558,7 @@ PY
   if [ "${run_unit_phase}" -eq 1 ]; then
     local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
     echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
-    "${phase1_cmd[@]}"
+    run_checked "${phase1_cmd[@]}"
     phase1_exit=$?
   else
     echo "ℹ️ Aşama 1 (Unit) atlandı (--stage=${RUN_TESTS_STAGE})."
@@ -1578,7 +1590,7 @@ PY
     fi
     phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")
     echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
-    "${phase2_cmd[@]}"
+    run_checked "${phase2_cmd[@]}"
     phase2_exit=$?
   else
     echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."
@@ -1882,7 +1894,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
     echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
-    "${benchmark_cmd[@]}"
+    run_checked "${benchmark_cmd[@]}"
     BENCHMARK_EXIT_CODE=$?
   fi
 
@@ -2077,10 +2089,10 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
       # Yerel ortamda yavaşlığı önlemek için CI değişkenine göre davran.
       if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
         echo "ℹ️ CI ortamı tespit edildi, 'npm ci' çalıştırılıyor..."
-        npm ci
+        run_checked npm ci
       else
         echo "ℹ️ Yerel ortam tespit edildi, 'npm install' çalıştırılıyor..."
-        npm install
+        run_checked npm install
       fi
       local_npm_ci_exit=$?
       if [ "${local_npm_ci_exit}" -ne 0 ]; then
@@ -2089,21 +2101,21 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         resolve_local_frontend_e2e_mode
         echo "🔐 Frontend dependency audit kalite kapısı çalıştırılıyor: npm run audit:high"
         FRONTEND_NPM_AUDIT_RAN=1
-        npm run audit:high
+        run_checked npm run audit:high
         FRONTEND_NPM_AUDIT_EXIT_CODE=$?
         if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then
           FRONTEND_EXIT_CODE=${FRONTEND_NPM_AUDIT_EXIT_CODE}
         else
           echo "🧹 Frontend lint kalite kapısı çalıştırılıyor: npm run lint"
           FRONTEND_LINT_RAN=1
-          npm run lint
+          run_checked npm run lint
           FRONTEND_LINT_EXIT_CODE=$?
           if [ "${FRONTEND_LINT_EXIT_CODE}" -ne 0 ]; then
             FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
           else
             echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
             FRONTEND_COVERAGE_RAN=1
-            npm run test:coverage
+            run_checked npm run test:coverage
             FRONTEND_COVERAGE_EXIT_CODE=$?
             FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
             if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -eq 0 ] && [ ! -f "coverage/index.html" ]; then
@@ -2114,7 +2126,7 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
             if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
               if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
                 FRONTEND_E2E_RAN=1
-                run_frontend_e2e_with_retry
+                run_checked run_frontend_e2e_with_retry
                 FRONTEND_E2E_EXIT_CODE=$?
               else
                 echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
