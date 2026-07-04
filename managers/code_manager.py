@@ -52,7 +52,7 @@ from managers.code.pytest_parser import (
     command_requires_uv_tooling,
     extract_pytest_args,
 )
-from managers.code.runner import build_sanitized_shell_args
+from managers.code.runner import build_sanitized_shell_args, find_destructive_shell_pattern
 from managers.code.security_adapter import CodeSecurityAdapter
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
@@ -773,29 +773,19 @@ class CodeManager:
                 "Gerekliyse allow_shell_features=True ile tekrar deneyin."
             )
 
-        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle
-        _BLOCKED_SHELL_PATTERNS = (
-            "rm -rf /",
-            "rm -fr /",
-            ":(){ :|:& };",
-            "> /dev/sda",
-            "dd if=/dev/zero of=/dev/",
-            "mkfs",
-            "chmod -R 777 /",
-            "chown -R root /",
-            "> /etc/passwd",
-            "> /etc/shadow",
-            "shred /dev/",
-            "wipefs /dev/",
-        )
+        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle.
+        # find_destructive_shell_pattern token bazlı analiz yapar (bayrak sırası/
+        # boşluk/uzun-form varyasyonlarına dayanıklı) ve statik olarak çözülemeyen
+        # değişken/komut ikamesi içeren segmentleri fail-closed engeller — ama bu
+        # yalnızca kazara/dikkatsiz yıkıcı komutlara karşı bir güvenlik ağıdır,
+        # bilinçli atlatmaya karşı tam bir sınır DEĞİLDİR (bkz. managers/code/runner.py).
         if allow_shell_features:
-            cmd_lower = command.lower()
-            for _pat in _BLOCKED_SHELL_PATTERNS:
-                if _pat in cmd_lower:
-                    return False, (
-                        f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_pat!r}). "
-                        "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
-                    )
+            _detected_pattern = find_destructive_shell_pattern(command)
+            if _detected_pattern is not None:
+                return False, (
+                    f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_detected_pattern!r}). "
+                    "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
+                )
 
         try:
             if allow_shell_features:

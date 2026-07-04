@@ -600,6 +600,54 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
     assert ok and out == "hello"
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Boşluk/bayrak sırası varyasyonları — eski sabit alt-dizge kontrolü
+        # ("rm -rf /" in command.lower()) bunları atlıyordu.
+        "rm  -rf  /",
+        "rm -r -f /",
+        "rm -fr /",
+        "rm --recursive --force /",
+        "rm -Rf /",
+        # Değişken/komut ikamesi — gerçek kabuk (bash -lc) çalışma zamanında
+        # çözülür, statik metin üzerinde hiç görünmez.
+        "x=/; rm -rf $x",
+        "rm -rf $TARGET",
+        "rm -rf `echo /`",
+        "rm -rf $(echo /)",
+        # Diğer yıkıcı komut aileleri, aynı bayrak/hedef varyasyonlarıyla.
+        "chmod --recursive 777 /",
+        "chown -R root /",
+    ],
+)
+def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):
+    """Regression test: the destructive-pattern check must not be defeated by
+
+    whitespace/flag-order variations or by hiding the target behind shell
+    variable/command substitution (see managers/code/runner.py's
+    find_destructive_shell_pattern for the documented limits of this check).
+    """
+    ok, msg = manager.run_shell(command, allow_shell_features=True)
+    assert not ok and "Engellendi" in msg, (command, msg)
+
+
+def test_run_shell_allows_non_destructive_shell_features(manager, monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="ok", stderr=""),
+    )
+    for command in (
+        "rm -rf ./build",
+        "rm -rf node_modules",
+        "chmod 755 ./scripts",
+        "echo hello && git status",
+    ):
+        ok, _ = manager.run_shell(command, allow_shell_features=True)
+        assert ok, command
+
+
 def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
     (tmp_path / "a.py").write_text("print('x')\nneedle\n", encoding="utf-8")
     (tmp_path / "b.txt").write_text("needle\n", encoding="utf-8")
