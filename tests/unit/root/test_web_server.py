@@ -147,9 +147,18 @@ def _reset_collaboration_state(monkeypatch, tmp_path):
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
+    # web_server.app is a module-level singleton, so its app-scoped runtime
+    # state (agent/agent_lock/etc., see web/app_factory.py) persists across
+    # tests unless cleared here; otherwise whichever test first populates it
+    # leaks a stale agent/lock into every later test that only patches the
+    # legacy web_server._agent/_agent_lock globals.
+    if hasattr(web_server.app.state, "sidar_runtime"):
+        del web_server.app.state.sidar_runtime
     yield
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
+    if hasattr(web_server.app.state, "sidar_runtime"):
+        del web_server.app.state.sidar_runtime
 
 
 def test_room_id_normalization_and_validation():
@@ -402,6 +411,9 @@ async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
 
         def cancel(self):
             cancelled["value"] = True
+
+        def __await__(self):
+            return iter(())
 
     web_server._collaboration_rooms["team:cleanup"] = web_server._CollaborationRoom(
         room_id="team:cleanup",
@@ -1897,21 +1909,18 @@ def test_persist_and_import_plugin_file_paths(monkeypatch, tmp_path):
     assert imported.name == "demo.py"
     assert imported.exists()
 
-    monkeypatch.setattr(web_server.importlib.util, "spec_from_file_location", lambda *_: None)
+    # Plugin persistence now validates/executes source through the sandbox in
+    # _run_plugin_source_in_sandbox instead of importlib; static AST rejection
+    # (banned call) surfaces as an HTTPException before anything is executed.
     with pytest.raises(HTTPException):
-        web_server._persist_and_import_plugin_file("demo2.py", b"x=1\n", "plugin_bad")
+        web_server._persist_and_import_plugin_file("demo2.py", b"eval('1')\n", "plugin_bad")
 
-    class _Loader:
-        def exec_module(self, module):
-            raise RuntimeError("boom")
-
-    class _Spec:
-        loader = _Loader()
-
-    monkeypatch.setattr(web_server.importlib.util, "spec_from_file_location", lambda *_: _Spec())
-    monkeypatch.setattr(web_server.importlib.util, "module_from_spec", lambda _spec: object())
+    # Source that passes static validation but raises when actually executed
+    # is caught by the sandbox's generic except-clause and converted too.
     with pytest.raises(HTTPException):
-        web_server._persist_and_import_plugin_file("demo3.py", b"x=1\n", "plugin_boom")
+        web_server._persist_and_import_plugin_file(
+            "demo3.py", b"raise RuntimeError('boom')\n", "plugin_boom"
+        )
 
 
 def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
@@ -2663,7 +2672,7 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
     assert len(calls) == 1
 
     def _raise(*_args, **_kwargs):
-        raise RuntimeError("boom")
+        raise OSError("boom")
 
     monkeypatch.setattr(web_server.subprocess, "check_output", _raise)
     assert web_server._git_run(["git"], ".") == ""
@@ -6065,6 +6074,9 @@ async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(mon
 
         def cancel(self):
             state["cancelled"] = True
+
+        def __await__(self):
+            return iter(())
 
     class _Ws:
         def __init__(self):
@@ -10040,6 +10052,9 @@ async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_clo
             cancelled_flags[self._key] = True
             self._done = True
 
+        def __await__(self):
+            return iter(())
+
     class _Memory:
         async def set_active_user(self, *_):
             return None
@@ -10827,6 +10842,9 @@ async def test_websocket_chat_anyio_closed_cancels_active_task(monkeypatch):
 
         def cancel(self):
             cancelled["value"] = True
+
+        def __await__(self):
+            return iter(())
 
     async def _resolve_agent():
         return _Agent()
