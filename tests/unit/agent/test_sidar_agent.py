@@ -305,7 +305,9 @@ async def test_execute_self_heal_plan_reverts_on_patch_error(
         "operations": [{"path": "a.py", "target": "A", "replacement": "B"}],
         "validation_commands": ["pytest -q"],
     }
-    result = await agent._execute_self_heal_plan(remediation_loop={}, plan=plan)
+    result = await agent._execute_self_heal_plan(
+        remediation_loop={"scope_paths": ["a.py"]}, plan=plan
+    )
     assert result["status"] == "reverted"
     assert result["reverted"] is True
     assert restored == {"a.py": "old:a.py"}
@@ -2505,7 +2507,7 @@ async def test_runtime_helpers_and_self_heal_validation_failure(
     agent.code = code
     _override_cfg(agent, BASE_DIR=str(tmp_path))
     reverted = await agent._execute_self_heal_plan(
-        remediation_loop={"validation_commands": ["pytest -q"]},
+        remediation_loop={"scope_paths": ["a.py"], "validation_commands": ["pytest -q"]},
         plan={"operations": [{"path": "a.py", "target": "a", "replacement": "b"}]},
     )
     assert reverted["status"] == "reverted"
@@ -2963,9 +2965,9 @@ async def test_execute_self_heal_plan_applied_with_existing_backup(
         ],
         "validation_commands": ["pytest -q"],
     }
-    assert (await agent._execute_self_heal_plan(remediation_loop={}, plan=plan))[
-        "status"
-    ] == "applied"
+    assert (
+        await agent._execute_self_heal_plan(remediation_loop={"scope_paths": ["a.py"]}, plan=plan)
+    )["status"] == "applied"
 
 
 async def test_tool_subtask_exception_path_records_failed_metrics(
