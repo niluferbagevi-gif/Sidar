@@ -186,7 +186,7 @@ print_summary() {
     echo "  E2E odaklı doğrulama için:"
     echo "    bash run_tests.sh --stage e2e   # tests/e2e/{agents,cli,web}"
     echo "  Performans/benchmark doğrulaması için:"
-    echo "    RUN_BENCHMARKS=required bash run_tests.sh"
+    echo "    bash run_tests.sh --stage benchmark"
     echo "  uv run python github_upload.py   — projeyi GitHub'a yükle"
     if [[ "$MIGRATION_STATUS" == "tamamlandi" ]]; then
         echo "  Alembic migrasyonları kurulum sırasında tamamlandı."

@@ -7,12 +7,13 @@ cd "${SCRIPT_DIR}" || exit 1
 RUN_TESTS_STAGE="${RUN_TESTS_STAGE:-all}"
 print_usage() {
   cat <<'USAGE'
-Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]
+Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats|benchmark[,..]]
 
 Stage examples:
   bash run_tests.sh --stage static
   bash run_tests.sh --stage unit
   bash run_tests.sh --stage integration,smoke
+  bash run_tests.sh --stage benchmark
 USAGE
 }
 
@@ -55,7 +56,7 @@ normalize_test_stages() {
   IFS=',' read -ra _stage_items <<< "${raw}"
   for item in "${_stage_items[@]}"; do
     case "${item}" in
-      all|static|unit|integration|smoke|e2e|backend|frontend|bats)
+      all|static|unit|integration|smoke|e2e|backend|frontend|bats|benchmark)
         normalized+="${item},"
         ;;
       "")
@@ -476,6 +477,9 @@ if ! stage_all_selected; then
   fi
   if stage_selected frontend; then
     RUN_FRONTEND_E2E=1
+  fi
+  if stage_selected benchmark; then
+    RUN_BENCHMARKS=required
   fi
 fi
 
