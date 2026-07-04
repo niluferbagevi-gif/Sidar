@@ -449,38 +449,49 @@ run_install_ci_full_validation() {
 }
 
 print_install_validation_coverage() {
+    local full_coverage_reached=false
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]] && full_coverage_reached=true
+
     echo ""
     echo -e "${BOLD}📊 Kurulum doğrulama kapsamı:${NC}"
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
-        echo "   ✅ Smoke:        TAMAMLANDI (kapsam: tests/smoke)"
+        echo -e "   ${GREEN}✅ Smoke:        TAMAMLANDI (kapsam: tests/smoke)${NC}"
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
-        echo "   ❌ Smoke:        HATA"
+        echo -e "   ${RED}❌ Smoke:        HATA${NC}"
     else
-        echo "   ⏭️  Smoke:        ATLANDI (${SMOKE_TEST_STATUS})"
+        echo -e "   ${YELLOW}⏭️  Smoke:        ATLANDI (${SMOKE_TEST_STATUS})${NC}"
     fi
 
-    if [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]; then
-        echo "   ✅ Integration:  TAMAMLANDI (kapsam: api/cli/db/managers/web/workflow)"
-        echo "   ✅ E2E:          TAMAMLANDI (kapsam: agents/cli/web)"
-        echo "   ✅ Benchmark:    TAMAMLANDI"
+    if [[ "$full_coverage_reached" == true ]]; then
+        echo -e "   ${GREEN}✅ Integration:  TAMAMLANDI (kapsam: api/cli/db/managers/web/workflow)${NC}"
+        echo -e "   ${GREEN}✅ E2E:          TAMAMLANDI (kapsam: agents/cli/web)${NC}"
+        echo -e "   ${GREEN}✅ Benchmark:    TAMAMLANDI${NC}"
     else
         if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
-            echo "   ✅ Integration:  API TAMAMLANDI; TAM KAPSAM ATLANDI (api/cli/db/managers/web/workflow)"
+            echo -e "   ${YELLOW}⚠️  Integration:  API TAMAMLANDI; TAM KAPSAM ATLANDI (api/cli/db/managers/web/workflow)${NC}"
         elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-            echo "   ❌ Integration:  API HATA; tam kapsam için run_tests.sh --stage integration"
+            echo -e "   ${RED}❌ Integration:  API HATA; tam kapsam için run_tests.sh --stage integration${NC}"
         else
-            echo "   ⏭️  Integration:  ATLANDI (kapsam: api/cli/db/managers/web/workflow)"
+            echo -e "   ${YELLOW}⏭️  Integration:  ATLANDI (kapsam: api/cli/db/managers/web/workflow)${NC}"
         fi
-        echo "   ⏭️  E2E:          ATLANDI (kapsam: agents/cli/web)"
-        echo "   ⏭️  Benchmark:    ATLANDI"
+        echo -e "   ${YELLOW}⏭️  E2E:          ATLANDI (kapsam: agents/cli/web)${NC}"
+        echo -e "   ${YELLOW}⏭️  Benchmark:    ATLANDI${NC}"
     fi
 
     if [[ "$CI_FULL_VALIDATION_STATUS" == "hata" ]]; then
         echo ""
-        echo "   Tam doğrulama sonucu: HATA"
-    elif [[ "$CI_FULL_VALIDATION_STATUS" != "tamamlandi" ]]; then
+        echo -e "   ${RED}Tam doğrulama sonucu: HATA${NC}"
+    elif [[ "$full_coverage_reached" != true ]]; then
         echo ""
-        echo "   Tam doğrulama: ./install_sidar.sh --ci-full"
-        echo "   veya yalnızca:  ./run_tests.sh --stage all"
+        echo -e "   ${YELLOW}${BOLD}⚠️  UYARI: Bu kurulum yalnızca smoke testleri (boot/GPU/import/kilit/WSL) kapsar.${NC}"
+        echo -e "   ${YELLOW}   Agent orkestrasyonu, gerçek DB migrasyonları, WebSocket oturumları ve plugin sandbox'ı${NC}"
+        echo -e "   ${YELLOW}   gibi kritik yollar bu aşamada DOĞRULANMADI. \"Smoke testler geçti\" mesajı, tam${NC}"
+        echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
+        echo ""
+        echo -e "   ${BOLD}➡️  Zorunlu sonraki adım: production'a geçmeden veya kod üzerinde çalışmaya devam${NC}"
+        echo -e "   ${BOLD}   etmeden önce en az bir kez şunu çalıştırın:${NC}"
+        echo -e "   ${BOLD}   ./run_tests.sh --stage integration${NC}"
+        echo "   Tam doğrulama (integration + e2e + benchmark): ./install_sidar.sh --ci-full"
+        echo "   veya yalnızca:                                  ./run_tests.sh --stage all"
     fi
 }
