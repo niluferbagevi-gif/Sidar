@@ -2,54 +2,9 @@
 # Sidar installer phase: CUDA, smoke, integration, audit and CI validation helpers.
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
-# CUDA wheel tag selection is sourced from scripts/install_modules/utils/python_env.sh.
-sync_pytorch_cuda_wheels() {
-    local cuda_tag="${1:-}"
-    [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
-    local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local -a pip_args=(
-        install
-        --reinstall
-        --reinstall-package torch
-        --index-url "$index_url"
-        torch
-        torchvision
-        torchaudio
-    )
-
-    info "PyTorch CUDA wheel seçimi uv run python -m pip ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv run python -m pip "${pip_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv run python -m pip ile güncellenemedi (${cuda_tag})."
-    fi
-}
-
-verify_torch_cuda() {
-    if [[ "$GPU_AVAILABLE" == true ]]; then
-        step "PyTorch CUDA Doğrulaması"
-        if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                CUDA_OK=$(python -c "
-import torch
-avail = torch.cuda.is_available()
-ver   = torch.version.cuda or 'N/A'
-dev   = torch.cuda.get_device_name(0) if avail else 'N/A'
-print(f'available={avail} cuda={ver} device={dev}')
-" 2>/dev/null || echo "available=true cuda=N/A device=N/A")
-            TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
-            TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
-            ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
-        else
-            warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-            info "GPU wheel için PyTorch yeniden kuruluyor (GPU compute capability/CUDA sürümüne göre dinamik index seçilecek)..."
-            sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
-
-            if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
-            else
-                fail "PyTorch CUDA kurulumu yine başarısız oldu. Lütfen manuel kontrol edin."
-            fi
-        fi
-    fi
-}
+# select_pytorch_cuda_wheel_tag(), sync_pytorch_cuda_wheels() and verify_torch_cuda()
+# are defined in scripts/install_modules/utils/python_env.sh, sourced before phase
+# modules; kept single-sourced here to avoid two implementations silently diverging.
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
 wait_for_redis_before_smoke_tests() {

@@ -188,7 +188,7 @@ def _quote_sql_identifier(identifier: str) -> str:
 
 def _parse_asyncpg_affected_rows(command_tag: Any) -> int:
     """Backwards-compatible facade for the extracted asyncpg tag parser."""
-    return _parse_asyncpg_affected_rows_impl(command_tag)
+    return _parse_asyncpg_affected_rows_impl(command_tag, pattern=_ASYNCPG_COMMAND_TAG_COUNT_RE)
 
 
 class Database:

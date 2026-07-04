@@ -1956,6 +1956,10 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
     monkeypatch.setenv("SIDAR_ENV", "production")
+    # get_missing_critical_runtime_keys() reads POSTGRES_PASSWORD straight from
+    # os.environ, so a developer's real process env would otherwise mask it
+    # from the expected missing-keys list below.
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     assert config.Config.get_missing_critical_runtime_keys() == [
         "API_KEY",
         "POSTGRES_PASSWORD",
