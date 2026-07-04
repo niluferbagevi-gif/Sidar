@@ -1700,6 +1700,117 @@ def test_sidar_run_or_warn_surfaces_error_and_stays_non_fatal(tmp_path: Path) ->
     assert "No such file or directory" in result.stderr
 
 
+def _extract_ini_set_key_once() -> str:
+    frontend_phase = Path("scripts/install_modules/phases/05_frontend.sh").read_text(
+        encoding="utf-8"
+    )
+    start = frontend_phase.index("ini_set_key_once() {")
+    end = frontend_phase.index('if [[ -n "$wslconfig_path" ]]; then', start)
+    return frontend_phase[start:end]
+
+
+def test_wslconfig_ini_helpers_consolidated_into_one_function() -> None:
+    """Regression test: the three near-duplicate awk-based .wslconfig helpers
+
+    (_ensure_wsl2_key_once, _ensure_ini_key_once, _set_wsl2_key_value) must be
+    consolidated into a single parameterized ini_set_key_once, with every call
+    site migrated to it.
+    """
+    frontend_phase = Path("scripts/install_modules/phases/05_frontend.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "_ensure_wsl2_key_once" not in frontend_phase
+    assert "_ensure_ini_key_once" not in frontend_phase
+    assert "_set_wsl2_key_value" not in frontend_phase
+    assert "ini_set_key_once() {" in frontend_phase
+    assert frontend_phase.count("ini_set_key_once ") == 7
+
+
+def test_ini_set_key_once_ensure_mode_preserves_existing_value(tmp_path: Path) -> None:
+    harness = tmp_path / "ini_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+    cfg = tmp_path / ".wslconfig"
+
+    cfg.write_text("[wsl2]\nmemory=16GB\nmemory=99GB\nswap=4GB\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", "-c", f'source {harness}; ini_set_key_once "{cfg}" wsl2 memory 32GB'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    content = cfg.read_text(encoding="utf-8")
+    assert content.count("memory=") == 1
+    assert "memory=16GB" in content
+
+    cfg.write_text("[wsl2]\nswap=4GB\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", "-c", f'source {harness}; ini_set_key_once "{cfg}" wsl2 memory 16GB'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "memory=16GB" in cfg.read_text(encoding="utf-8")
+
+
+def test_ini_set_key_once_force_mode_overwrites_and_dedups(tmp_path: Path) -> None:
+    harness = tmp_path / "ini_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+    cfg = tmp_path / ".wslconfig"
+
+    cfg.write_text("[wsl2]\nmemory=16GB\nmemory=99GB\nswap=4GB\n", encoding="utf-8")
+    result = subprocess.run(
+        ["bash", "-c", f'source {harness}; ini_set_key_once "{cfg}" wsl2 memory 32GB force'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    content = cfg.read_text(encoding="utf-8")
+    assert content.count("memory=") == 1
+    assert "memory=32GB" in content
+
+    result = subprocess.run(
+        ["bash", "-c", f'source {harness}; ini_set_key_once "{cfg}" wsl2 memory 32GB force'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+
+
+def test_ini_set_key_once_creates_missing_section(tmp_path: Path) -> None:
+    harness = tmp_path / "ini_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+    cfg = tmp_path / ".wslconfig"
+    cfg.write_text("[wsl2]\nmemory=16GB\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; ini_set_key_once "{cfg}" experimental sparseVhd true',
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    content = cfg.read_text(encoding="utf-8")
+    assert "[experimental]" in content
+    assert "sparseVhd=true" in content
+
+
 def test_install_sidar_download_verified_script_fails_after_http_200_when_checksum_missing(
     tmp_path: Path,
 ) -> None:

@@ -255,67 +255,20 @@ ASOUNDRC
     local target_sparse_vhd="true"
     info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap}, processors=${target_processors}, kernelCommandLine=${target_kernel_command_line}, sparseVhd=${target_sparse_vhd} (host RAM: ${host_ram_gb}GB, logical processors: ${host_processors})."
 
-    # [wsl2] bölümünde bir anahtarın tekil olmasını sağlar; yoksa ekler.
-    # Değer zaten varsa korur, yinelenen satırları temizler.
-    _ensure_wsl2_key_once() {
-        local cfg_file="$1"
-        local cfg_key="$2"
-        local cfg_value="$3"
-        local tmp_file
-        tmp_file=$(mktemp)
-
-        awk -v key="$cfg_key" -v value="$cfg_value" '
-            BEGIN { in_wsl2=0; seen_key=0 }
-            {
-                if ($0 ~ /^\[.*\]$/) {
-                    if (in_wsl2 && !seen_key) {
-                        print key "=" value
-                        seen_key=1
-                    }
-                    in_wsl2 = ($0 == "[wsl2]")
-                    print
-                    next
-                }
-
-                if (in_wsl2 && $0 ~ ("^" key "=")) {
-                    if (!seen_key) {
-                        print
-                        seen_key=1
-                    }
-                    next
-                }
-
-                print
-            }
-            END {
-                if (in_wsl2 && !seen_key) {
-                    print key "=" value
-                }
-            }
-        ' "$cfg_file" > "$tmp_file"
-
-        if ! cmp -s "$cfg_file" "$tmp_file"; then
-            if mv "$tmp_file" "$cfg_file" 2>/dev/null || { cp "$tmp_file" "$cfg_file" && rm -f "$tmp_file"; }; then
-                return 0
-            fi
-            rm -f "$tmp_file"
-            return 2
-        fi
-
-        rm -f "$tmp_file"
-        return 1
-    }
-
-    # Belirli bir INI bölümünde anahtarın tekil olmasını sağlar; yoksa ekler.
-    _ensure_ini_key_once() {
+    # Genel INI anahtar-değer yardımcı fonksiyonu. Belirtilen bölümde anahtarı
+    # tekilleştirir (yinelenen satırları temizler); bölüm dosyada yoksa sonuna
+    # oluşturur. mode="ensure" (varsayılan) mevcut değeri korur, sadece eksikse
+    # ekler/tekilleştirir. mode="force" mevcut değeri yeni değerle değiştirir.
+    ini_set_key_once() {
         local cfg_file="$1"
         local cfg_section="$2"
         local cfg_key="$3"
         local cfg_value="$4"
+        local mode="${5:-ensure}"
         local tmp_file
         tmp_file=$(mktemp)
 
-        awk -v section="$cfg_section" -v key="$cfg_key" -v value="$cfg_value" '
+        awk -v section="$cfg_section" -v key="$cfg_key" -v value="$cfg_value" -v mode="$mode" '
             BEGIN { in_section=0; seen_section=0; seen_key=0 }
             {
                 if ($0 ~ /^\[.*\]$/) {
@@ -331,7 +284,11 @@ ASOUNDRC
 
                 if (in_section && $0 ~ ("^" key "=")) {
                     if (!seen_key) {
-                        print
+                        if (mode == "force") {
+                            print key "=" value
+                        } else {
+                            print
+                        }
                         seen_key=1
                     }
                     next
@@ -364,53 +321,6 @@ ASOUNDRC
         return 1
     }
 
-    # [wsl2] bölümünde anahtar değerini zorla günceller (ilkini değiştirir, tekrarları temizler).
-    _set_wsl2_key_value() {
-        local cfg_file="$1"
-        local cfg_key="$2"
-        local cfg_value="$3"
-        local tmp_file
-        tmp_file=$(mktemp)
-
-        awk -v key="$cfg_key" -v value="$cfg_value" '
-            BEGIN { in_wsl2=0; set_key=0 }
-            {
-                if ($0 ~ /^\[.*\]$/) {
-                    if (in_wsl2 && !set_key) {
-                        print key "=" value
-                        set_key=1
-                    }
-                    in_wsl2 = ($0 == "[wsl2]")
-                    print
-                    next
-                }
-                if (in_wsl2 && $0 ~ ("^" key "=")) {
-                    if (!set_key) {
-                        print key "=" value
-                        set_key=1
-                    }
-                    next
-                }
-                print
-            }
-            END {
-                if (in_wsl2 && !set_key) {
-                    print key "=" value
-                }
-            }
-        ' "$cfg_file" > "$tmp_file"
-
-        if ! cmp -s "$cfg_file" "$tmp_file"; then
-            if mv "$tmp_file" "$cfg_file" 2>/dev/null || { cp "$tmp_file" "$cfg_file" && rm -f "$tmp_file"; }; then
-                return 0
-            fi
-            rm -f "$tmp_file"
-            return 2
-        fi
-        rm -f "$tmp_file"
-        return 1
-    }
-
     if [[ -n "$wslconfig_path" ]]; then
         if [[ ! -f "$wslconfig_path" ]]; then
             cat > "$wslconfig_path" <<'WSLCFG'
@@ -439,7 +349,7 @@ WSLCFG
 
             # [wsl2] altındaki memory= satırını tekilleştir; yoksa ekle
             local ensure_memory_rc=0
-            _ensure_wsl2_key_once "$wslconfig_path" "memory" "$target_memory" || ensure_memory_rc=$?
+            ini_set_key_once "$wslconfig_path" "wsl2" "memory" "$target_memory" || ensure_memory_rc=$?
             case $ensure_memory_rc in
                 0)
                     ok "WSL2: .wslconfig içinde memory satırı düzenlendi/eklendi."
@@ -475,7 +385,7 @@ WSLCFG
                 fi
                 if [[ "$should_upgrade_mem" == true ]]; then
                     local set_memory_rc=0
-                    _set_wsl2_key_value "$wslconfig_path" "memory" "$target_memory" || set_memory_rc=$?
+                    ini_set_key_once "$wslconfig_path" "wsl2" "memory" "$target_memory" force || set_memory_rc=$?
                     case $set_memory_rc in
                         0)
                             ok "WSL2: .wslconfig memory ${cur_mem} -> ${target_memory} olarak yükseltildi."
@@ -500,7 +410,7 @@ WSLCFG
 
             # [wsl2] altındaki swap= satırını tekilleştir; yoksa ekle
             local ensure_swap_rc=0
-            _ensure_wsl2_key_once "$wslconfig_path" "swap" "$target_swap" || ensure_swap_rc=$?
+            ini_set_key_once "$wslconfig_path" "wsl2" "swap" "$target_swap" || ensure_swap_rc=$?
             case $ensure_swap_rc in
                 0)
                     ok "WSL2: .wslconfig içinde swap satırı düzenlendi/eklendi."
@@ -536,7 +446,7 @@ WSLCFG
                 fi
                 if [[ "$should_upgrade_swap" == true ]]; then
                     local set_swap_rc=0
-                    _set_wsl2_key_value "$wslconfig_path" "swap" "$target_swap" || set_swap_rc=$?
+                    ini_set_key_once "$wslconfig_path" "wsl2" "swap" "$target_swap" force || set_swap_rc=$?
                     case $set_swap_rc in
                         0)
                             ok "WSL2: .wslconfig swap ${cur_swap} -> ${target_swap} olarak yükseltildi."
@@ -558,7 +468,7 @@ WSLCFG
             fi
 
             local ensure_processors_rc=0
-            _ensure_wsl2_key_once "$wslconfig_path" "processors" "$target_processors" || ensure_processors_rc=$?
+            ini_set_key_once "$wslconfig_path" "wsl2" "processors" "$target_processors" || ensure_processors_rc=$?
             case $ensure_processors_rc in
                 0)
                     ok "WSL2: .wslconfig içinde processors=${target_processors} satırı eklendi/tekilleştirildi."
@@ -573,7 +483,7 @@ WSLCFG
             esac
 
             local ensure_kernel_rc=0
-            _ensure_wsl2_key_once "$wslconfig_path" "kernelCommandLine" "$target_kernel_command_line" || ensure_kernel_rc=$?
+            ini_set_key_once "$wslconfig_path" "wsl2" "kernelCommandLine" "$target_kernel_command_line" || ensure_kernel_rc=$?
             case $ensure_kernel_rc in
                 0)
                     ok "WSL2: .wslconfig içinde kernelCommandLine=${target_kernel_command_line} satırı eklendi/tekilleştirildi."
@@ -588,7 +498,7 @@ WSLCFG
             esac
 
             local ensure_sparse_vhd_rc=0
-            _ensure_ini_key_once "$wslconfig_path" "experimental" "sparseVhd" "$target_sparse_vhd" || ensure_sparse_vhd_rc=$?
+            ini_set_key_once "$wslconfig_path" "experimental" "sparseVhd" "$target_sparse_vhd" || ensure_sparse_vhd_rc=$?
             case $ensure_sparse_vhd_rc in
                 0)
                     ok "WSL2: .wslconfig içinde [experimental] sparseVhd=${target_sparse_vhd} satırı eklendi/tekilleştirildi."
