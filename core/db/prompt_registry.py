@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import logging
 import sqlite3
@@ -27,7 +28,8 @@ def _prompt_record(prompt_record_cls: type[Any], row: Any, *, sqlite_bool: bool 
 
 
 async def ensure_default_prompt_registry(db: Any, *, prompt_record_cls: type[Any]) -> None:
-    definitions_path = Path(__file__).resolve().parents[2] / "agent" / "definitions.py"
+    module_path = await asyncio.to_thread(Path(__file__).resolve)
+    definitions_path = module_path.parents[2] / "agent" / "definitions.py"
     spec = importlib.util.spec_from_file_location("sidar_agent_definitions", definitions_path)
     default_prompt = ""
     if spec and spec.loader:
