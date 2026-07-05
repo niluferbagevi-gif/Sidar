@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import warnings
+
+logger = logging.getLogger(__name__)
 
 
 def get_bool_env(key: str, default: bool = False) -> bool:
@@ -50,18 +53,36 @@ def get_web_scrape_max_chars(default: int = 12000) -> int:
 
 
 def get_int_env(key: str, default: int = 0) -> int:
-    """Return an integer environment value, falling back on malformed input."""
+    """Return an integer environment value, warning and falling back on malformed input."""
+    raw_val = os.getenv(key)
+    if raw_val is None or not raw_val.strip():
+        return default
     try:
-        return int(os.getenv(key, str(default)))
+        return int(raw_val)
     except (ValueError, TypeError):
+        logger.warning(
+            "%s ortam değişkeni geçerli bir tam sayı değil (%r); varsayılan %r kullanılacak.",
+            key,
+            raw_val,
+            default,
+        )
         return default
 
 
 def get_float_env(key: str, default: float = 0.0) -> float:
-    """Return a float environment value, falling back on malformed input."""
+    """Return a float environment value, warning and falling back on malformed input."""
+    raw_val = os.getenv(key)
+    if raw_val is None or not raw_val.strip():
+        return default
     try:
-        return float(os.getenv(key, str(default)))
+        return float(raw_val)
     except (ValueError, TypeError):
+        logger.warning(
+            "%s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r kullanılacak.",
+            key,
+            raw_val,
+            default,
+        )
         return default
 
 
@@ -92,20 +113,38 @@ def get_optional_prefixed_env(prefix_key: str, legacy_key: str) -> str | None:
 
 
 def get_int_prefixed_env(prefix_key: str, legacy_key: str, default: int = 0) -> int:
-    """Read a prefixed/legacy integer environment value."""
-    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    """Read a prefixed/legacy integer environment value, warning on malformed input."""
+    raw_value = get_optional_prefixed_env(prefix_key, legacy_key)
+    if raw_value is None or not raw_value.strip():
+        return default
     try:
         return int(raw_value)
     except (ValueError, TypeError):
+        logger.warning(
+            "%s / %s ortam değişkeni geçerli bir tam sayı değil (%r); varsayılan %r kullanılacak.",
+            prefix_key,
+            legacy_key,
+            raw_value,
+            default,
+        )
         return default
 
 
 def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.0) -> float:
-    """Read a prefixed/legacy float environment value."""
-    raw_value = get_prefixed_env(prefix_key, legacy_key, str(default))
+    """Read a prefixed/legacy float environment value, warning on malformed input."""
+    raw_value = get_optional_prefixed_env(prefix_key, legacy_key)
+    if raw_value is None or not raw_value.strip():
+        return default
     try:
         return float(raw_value)
     except (ValueError, TypeError):
+        logger.warning(
+            "%s / %s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r kullanılacak.",
+            prefix_key,
+            legacy_key,
+            raw_value,
+            default,
+        )
         return default
 
 

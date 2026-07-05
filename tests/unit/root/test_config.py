@@ -423,6 +423,43 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_EMPTY", None) == []
 
 
+def test_get_int_and_float_env_warn_on_malformed_value(monkeypatch, caplog):
+    monkeypatch.setenv("INT_OK", "42")
+    monkeypatch.setenv("INT_BAD", "abc")
+    monkeypatch.setenv("FLOAT_OK", "3.14")
+    monkeypatch.setenv("FLOAT_BAD", "-")
+    monkeypatch.delenv("INT_MISSING", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="core.config_env_helpers"):
+        assert config.get_int_env("INT_OK", 7) == 42
+        assert config.get_int_env("INT_MISSING", 7) == 7
+        assert config.get_int_env("INT_BAD", 7) == 7
+        assert config.get_float_env("FLOAT_OK", 1.2) == 3.14
+        assert config.get_float_env("FLOAT_BAD", 1.2) == 1.2
+
+    assert "INT_OK" not in caplog.text
+    assert "INT_MISSING" not in caplog.text
+    assert "INT_BAD ortam değişkeni geçerli bir tam sayı değil" in caplog.text
+    assert "FLOAT_BAD ortam değişkeni geçerli bir ondalık sayı değil" in caplog.text
+
+
+def test_get_int_and_float_prefixed_env_warn_on_malformed_value(monkeypatch, caplog):
+    monkeypatch.setenv("SIDAR_INT_BAD", "not-a-number")
+    monkeypatch.setenv("SIDAR_FLOAT_BAD", "not-a-float")
+
+    with caplog.at_level(logging.WARNING, logger="core.config_env_helpers"):
+        assert config.get_int_prefixed_env("SIDAR_INT_BAD", "LEGACY_INT_BAD", 7) == 7
+        assert config.get_float_prefixed_env("SIDAR_FLOAT_BAD", "LEGACY_FLOAT_BAD", 1.5) == 1.5
+
+    assert (
+        "SIDAR_INT_BAD / LEGACY_INT_BAD ortam değişkeni geçerli bir tam sayı değil" in caplog.text
+    )
+    assert (
+        "SIDAR_FLOAT_BAD / LEGACY_FLOAT_BAD ortam değişkeni geçerli bir ondalık sayı değil"
+        in caplog.text
+    )
+
+
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE_PER_CORE", "3")
     monkeypatch.setenv("POSTGRES_MAX_CONNECTIONS", "60")
