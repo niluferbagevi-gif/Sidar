@@ -110,10 +110,15 @@ def test_packaged_pgvector_upgrade_emits_postgresql_vector_schema(monkeypatch) -
 
     module.upgrade()
 
-    sql = op_mock.execute.call_args.args[0]
-    assert "CREATE TABLE IF NOT EXISTS rag_embeddings" in sql
-    assert "embedding vector(384)" in sql
-    assert "idx_rag_embeddings_embedding_hnsw" in sql
+    statements = [call.args[0] for call in op_mock.execute.call_args_list]
+    combined_sql = "\n".join(statements)
+    assert "CREATE TABLE IF NOT EXISTS rag_embeddings" in combined_sql
+    assert "embedding vector(384)" in combined_sql
+    assert any(
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_embedding_hnsw" in stmt
+        for stmt in statements
+    )
+    assert op_mock.get_context.return_value.autocommit_block.call_count == 3
 
 
 def test_packaged_pgvector_downgrade_skips_non_postgresql(monkeypatch) -> None:
