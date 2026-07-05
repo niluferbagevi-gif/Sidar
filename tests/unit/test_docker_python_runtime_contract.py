@@ -122,6 +122,31 @@ def test_helm_deployments_read_database_url_from_secret():
         assert ".Values.postgresql.password" not in template
 
 
+def test_helm_deployments_share_hardened_security_context():
+    # ai-worker runs more capable tooling (docker CLI for sandboxed code
+    # execution, git for project ops) than web, so it must be at least as
+    # hardened, not less — a reviewer previously found ai-worker shipped
+    # with no securityContext at all while web had one.
+    expected_container_security_context = (
+        "securityContext:\n"
+        "            allowPrivilegeEscalation: false\n"
+        "            readOnlyRootFilesystem: false\n"
+        "            runAsNonRoot: true\n"
+        "            runAsUser: 1000\n"
+        "            capabilities:\n"
+        '              drop: ["ALL"]'
+    )
+    for rel_path in (
+        "helm/sidar/templates/deployment-web.yaml",
+        "helm/sidar/templates/deployment-ai-worker.yaml",
+        "sidar_assets/helm/sidar/templates/deployment-web.yaml",
+        "sidar_assets/helm/sidar/templates/deployment-ai-worker.yaml",
+    ):
+        template = _read(rel_path)
+        assert expected_container_security_context in template, rel_path
+        assert "fsGroup: 1000" in template, rel_path
+
+
 def test_helm_chart_rejects_inline_postgresql_password_generation():
     for rel_path in (
         "helm/sidar/templates/secret-postgresql.yaml",

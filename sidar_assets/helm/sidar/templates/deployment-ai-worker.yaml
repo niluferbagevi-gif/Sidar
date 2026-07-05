@@ -54,4 +54,13 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.aIWorker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+      securityContext:
+        fsGroup: 1000
 {{- end }}
