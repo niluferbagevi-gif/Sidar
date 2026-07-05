@@ -2059,6 +2059,64 @@ def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, cap
     assert "SIDAR_KEYS_FILE" in caplog.text
 
 
+def test_config_init_warns_on_unconfigured_jwt_secret_outside_test_env(monkeypatch, caplog):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "H7sQ9vL2mR5xT8nB3kY6pW1zC4aD!")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "runtime-generated-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config,
+        "DATABASE_URL",
+        "postgresql://sidar:H7sQ9vL2mR5xT8nB3kY6pW1zC4aD!@127.0.0.1:5432/sidar",
+    )
+
+    config.Config()
+
+    assert "JWT_SECRET_KEY tanımlanmamış" in caplog.text
+    assert "geçersiz olacaktır" in caplog.text
+    assert "POSTGRES_PASSWORD zayıf" not in caplog.text
+
+
+def test_config_init_warns_on_weak_postgres_password_outside_production(monkeypatch, caplog):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "explicit-strong-jwt-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    config.Config()
+
+    assert "POSTGRES_PASSWORD zayıf" in caplog.text
+    assert "JWT_SECRET_KEY tanımlanmamış" not in caplog.text
+
+
+def test_config_init_skips_silent_fallback_warnings_in_test_env(monkeypatch, caplog):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "test_config_init_skips_silent_fallback_warnings")
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "runtime-generated-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    config.Config()
+
+    assert "JWT_SECRET_KEY tanımlanmamış" not in caplog.text
+    assert "POSTGRES_PASSWORD zayıf" not in caplog.text
+
+
 def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     before = len(config.get_dotenv_load_report())
     assert (

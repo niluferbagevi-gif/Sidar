@@ -68,7 +68,7 @@ def get_missing_security_runtime_keys(
     if is_production and not str(api_key or "").strip():
         missing.append("API_KEY")
 
-    if is_production and _has_weak_postgres_runtime_secret(
+    if is_production and has_weak_postgres_runtime_secret(
         postgres_password=postgres_password,
         database_url=database_url,
     ):
@@ -77,7 +77,7 @@ def get_missing_security_runtime_keys(
     return missing
 
 
-def _has_weak_postgres_runtime_secret(*, postgres_password: str, database_url: str) -> bool:
+def has_weak_postgres_runtime_secret(*, postgres_password: str, database_url: str) -> bool:
     """Return whether production lacks a strong PostgreSQL credential."""
     if not is_weak_secret(postgres_password):
         return False

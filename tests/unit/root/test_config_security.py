@@ -90,3 +90,19 @@ def test_missing_security_runtime_keys_accepts_strong_database_url_password():
         )
         == []
     )
+
+
+def test_has_weak_postgres_runtime_secret_flags_missing_and_default_password():
+    assert config_security.has_weak_postgres_runtime_secret(postgres_password="", database_url="")
+    assert config_security.has_weak_postgres_runtime_secret(
+        postgres_password="sidar", database_url=""
+    )
+
+
+def test_has_weak_postgres_runtime_secret_accepts_strong_embedded_url_password():
+    assert not config_security.has_weak_postgres_runtime_secret(
+        postgres_password="",
+        database_url=(
+            "postgresql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!@db.example.test:5432/sidar"
+        ),
+    )

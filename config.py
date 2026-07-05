@@ -25,6 +25,7 @@ import config_rag
 import core.logging_config as logging_config
 from config_security import (
     get_missing_security_runtime_keys,
+    has_weak_postgres_runtime_secret,
     load_security_settings,
 )
 from core import config_dotenv, config_gpu_detect, config_postgres
@@ -1110,6 +1111,36 @@ class Config:
         return missing
 
     @classmethod
+    def _warn_on_silent_security_fallbacks(cls) -> None:
+        """Log otherwise-silent JWT/PostgreSQL credential fallbacks.
+
+        `get_missing_critical_runtime_keys` only blocks startup for these in
+        production (or multi-worker for JWT); outside that, the ephemeral JWT
+        secret and the "sidar" PostgreSQL default are used without any log
+        trace. Skipped in test runs to avoid log noise across the suite.
+        """
+        if cls._is_test_env():
+            return
+        if not cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED:
+            logger.warning(
+                "JWT_SECRET_KEY tanımlanmamış; bu process için rastgele ve kalıcı olmayan bir "
+                "secret üretildi. Process yeniden başladığında mevcut tüm JWT token'lar sessizce "
+                "geçersiz olacaktır. Kalıcı oturumlar için .env/DOTENV_FILE/SIDAR_KEYS_FILE içine "
+                "sabit bir JWT_SECRET_KEY tanımlayın."
+            )
+
+        is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
+        if not is_production and has_weak_postgres_runtime_secret(
+            postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
+            database_url=cls.DATABASE_URL,
+        ):
+            logger.warning(
+                'POSTGRES_PASSWORD zayıf/varsayılan bir değerde (ör. "sidar"); bu yalnızca '
+                "production'da engellenir. Staging/test ortamlarında da güçlü bir parola "
+                "tanımlamanız önerilir."
+            )
+
+    @classmethod
     def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
         """Log the effective dotenv load chain and actionable missing-key guidance."""
         global _FIRST_CONFIG_LOAD_LOGGED, _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
@@ -1183,6 +1214,7 @@ class Config:
             raise ValueError(
                 f"{missing_label} boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme sırasını kontrol edin."
             )
+        self.__class__._warn_on_silent_security_fallbacks()
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
