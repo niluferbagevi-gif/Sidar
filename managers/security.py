@@ -46,6 +46,39 @@ _PROMPT_INJECTION_PATTERNS = [
     re.compile(r"(do not follow|stop following).*(policy|rules|instructions)", re.IGNORECASE),
     re.compile(r"(act as|pretend to be).*(system|developer|admin)", re.IGNORECASE),
     re.compile(r"(exfiltrate|leak).*(secret|token|credential|api key|password)", re.IGNORECASE),
+    # Türkçe eşdeğerleri — ürün Türkçe pazar için üretildiğinden İngilizce kalıplar
+    # yeterli değil. Türkçe SOV cümle yapısı nedeniyle nesne genelde fiilden önce
+    # gelir (İngilizce kalıplardaki fiil-önce sırasının tersi); ekler \w* ile
+    # (çekim/iyelik) kabaca kapsanır — tam bir morfolojik analiz değildir.
+    re.compile(
+        r"(önceki|tüm|bütün|herhangi bir)\s+(talimat|kural|komut|prompt)\w*"
+        r"(?:\s+\w+){0,3}\s+(unut\w*|yok\s*say\w*|dikkate\s*alma\w*|görmezden\s*gel\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(sistem\s*prompt\w*|gizli\s*talimat\w*|geliştirici\s*mesaj\w*)"
+        r"(?:\s+\w+){0,4}\s+(göster\w*|yazdır\w*|paylaş\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(güvenlik\s*önlem\w*|güvenlik\w*|politika\w*|kısıtlama\w*|koruma\w*)"
+        r"(?:\s+\w+){0,3}\s+(aş\w*|atla\w*|bypass\w*|devre\s*dışı\s*bırak\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(kural\w*|talimat\w*|komut\w*)(?:\s+\w+){0,3}\s+(uyma\b|uymayın\b|dinleme\b|dinlemeyin\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(sistem|geliştirici|yönetici|admin)\s*(gibi|rolü\w*)"
+        r"(?:\s+\w+){0,2}\s+(davran\w*|ol\w*|yap\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(gizli\s*anahtar\w*|şifre\w*|parola\w*|api\s*anahtar\w*|token\w*)"
+        r"(?:\s+\w+){0,3}\s+(sız\w*|ifşa\s*et\w*|paylaş\w*)",
+        re.IGNORECASE,
+    ),
 ]
 
 _SUSPICIOUS_OUTPUT_PATTERNS = [
