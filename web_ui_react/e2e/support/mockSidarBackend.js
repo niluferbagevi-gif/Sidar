@@ -40,6 +40,23 @@ const pendingHitl = [
 ];
 
 export async function startMockSidarBackend({ port = 0 } = {}) {
+  const pluginCatalog = [
+    {
+      plugin_id: "e2e-sample-plugin",
+      name: "E2E Sample Plugin",
+      category: "automation",
+      summary: "Mock marketplace girdisi.",
+      description: "Yalnızca e2e testleri için sağlanan örnek plugin.",
+      role_name: "e2e_sample",
+      version: "1.0.0",
+      entrypoint: "e2e_sample_plugin.py",
+      capabilities: ["automation"],
+      installed: false,
+      live_registered: false,
+    },
+  ];
+  const rbacPolicies = [];
+
   const server = http.createServer(async (req, res) => {
     if (req.url === "/healthz") {
       sendJson(res, 200, { ok: true });
@@ -48,6 +65,68 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
 
     if (req.method === "GET" && req.url === "/api/hitl/pending") {
       sendJson(res, 200, { pending: pendingHitl });
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/api/plugin-marketplace/catalog") {
+      sendJson(res, 200, { items: pluginCatalog });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/plugin-marketplace/install") {
+      const body = await readJson(req);
+      const entry = pluginCatalog.find((item) => item.plugin_id === body.plugin_id);
+      if (entry) {
+        entry.installed = true;
+        entry.live_registered = true;
+      }
+      sendJson(res, 200, { success: true, plugin_id: body.plugin_id });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/plugin-marketplace/reload") {
+      const body = await readJson(req);
+      sendJson(res, 200, { success: true, plugin_id: body.plugin_id });
+      return;
+    }
+
+    if (req.method === "DELETE" && req.url?.startsWith("/api/plugin-marketplace/install/")) {
+      const pluginId = decodeURIComponent(req.url.split("/").pop() || "");
+      const entry = pluginCatalog.find((item) => item.plugin_id === pluginId);
+      if (entry) {
+        entry.installed = false;
+        entry.live_registered = false;
+      }
+      sendJson(res, 200, { success: true, plugin_id: pluginId });
+      return;
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/admin/audit-logs")) {
+      sendJson(res, 200, { items: [] });
+      return;
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/admin/policies/")) {
+      const userId = decodeURIComponent(req.url.split("?")[0].split("/").pop() || "");
+      sendJson(res, 200, { items: rbacPolicies.filter((item) => item.user_id === userId) });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/admin/policies") {
+      const body = await readJson(req);
+      const policy = {
+        id: `policy-e2e-${rbacPolicies.length + 1}`,
+        user_id: body.user_id || "",
+        tenant_id: body.tenant_id || "default",
+        resource_type: body.resource_type || "rag",
+        resource_id: body.resource_id || "*",
+        action: body.action || "read",
+        effect: body.effect || "allow",
+      };
+      rbacPolicies.push(policy);
+      sendJson(res, 200, {
+        items: rbacPolicies.filter((item) => item.user_id === policy.user_id),
+      });
       return;
     }
 
