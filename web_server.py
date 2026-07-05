@@ -33,7 +33,6 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, cast
@@ -99,6 +98,7 @@ from web.routes import integrations as integrations_routes
 from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
 from web.routes import operations_models as operations_route_models
+from web.routes import plugin_marketplace as plugin_marketplace_routes
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -2024,181 +2024,78 @@ def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: st
     return _validate_and_persist_plugin_file(filename, source_code, module_label)
 
 
-PLUGIN_SOURCE_DIR = Path(__file__).parent / "plugins"
-
-
-PLUGIN_MARKETPLACE_CATALOG: dict[str, dict[str, Any]] = {
-    "aws_management": {
-        "plugin_id": "aws_management",
-        "name": "AWS Operations Agent",
-        "summary": "EC2, S3 ve CloudWatch keşfi için hot-load edilebilen AWS operasyon ajanı.",
-        "description": (
-            "AWS CLI veya boto3 kuruluysa temel envanter ve operasyon komutlarını "
-            "yerinde çalıştırır; yoksa gerekli kurulum adımlarını açıklar."
-        ),
-        "role_name": "aws_management",
-        "class_name": "AWSManagementAgent",
-        "capabilities": ["aws_management", "cloud_ops", "infra_observability"],
-        "version": "1.0.0",
-        "category": "Cloud",
-        "entrypoint": PLUGIN_SOURCE_DIR / "aws_management_agent.py",
-    },
-    "slack_notifications": {
-        "plugin_id": "slack_notifications",
-        "name": "Slack Notification Agent",
-        "summary": "Webhook veya bot token ile Slack bildirimleri gönderen ajan.",
-        "description": (
-            "Slack webhook/bot ayarlarını kullanarak anlık durum güncellemesi, "
-            "incident bildirimi ve kanal mesajı akışlarını tetikler."
-        ),
-        "role_name": "slack_notifications",
-        "class_name": "SlackNotificationAgent",
-        "capabilities": ["slack_notification", "notifications", "ops_alerting"],
-        "version": "1.0.0",
-        "category": "Collaboration",
-        "entrypoint": PLUGIN_SOURCE_DIR / "slack_notification_agent.py",
-    },
-}
+# Plugin marketplace catalog/state-persistence/(un)install orchestration lives in
+# web/routes/plugin_marketplace.py. These wrappers stay so every existing
+# monkeypatch target (web_server.PLUGIN_MARKETPLACE_CATALOG, web_server.
+# _read_plugin_marketplace_state, etc.) keeps working: each wrapper resolves its
+# sibling collaborators as bare globals at call time and threads them through as
+# explicit arguments, so patching one wrapper is observed by every other wrapper
+# that calls it, exactly as before the extraction.
+PLUGIN_SOURCE_DIR = plugin_marketplace_routes.PLUGIN_SOURCE_DIR
+PLUGIN_MARKETPLACE_CATALOG = plugin_marketplace_routes.PLUGIN_MARKETPLACE_CATALOG
 
 
 def _plugin_marketplace_state_path() -> Path:
-    plugins_dir = Path("plugins")
-    plugins_dir.mkdir(parents=True, exist_ok=True)
-    return plugins_dir / ".marketplace_state.json"
+    return plugin_marketplace_routes.plugin_marketplace_state_path()
 
 
 def _read_plugin_marketplace_state() -> dict[str, Any]:
-    path = _plugin_marketplace_state_path()
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        logger.warning("Plugin marketplace state JSON olarak okunamadı: %s (%s)", path, exc)
-        return {}
-    except OSError as exc:
-        logger.warning("Plugin marketplace state dosyası okunamadı: %s (%s)", path, exc)
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    return payload
+    return plugin_marketplace_routes.read_plugin_marketplace_state(logger_obj=logger)
 
 
 def _write_plugin_marketplace_state(state: dict[str, Any]) -> None:
-    path = _plugin_marketplace_state_path()
-    path.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-    )
+    plugin_marketplace_routes.write_plugin_marketplace_state(state)
 
 
 def _get_plugin_marketplace_entry(plugin_id: str) -> dict[str, Any]:
-    normalized = (plugin_id or "").strip().lower()
-    entry = PLUGIN_MARKETPLACE_CATALOG.get(normalized)
-    if not entry:
-        raise HTTPException(status_code=404, detail="Plugin marketplace girdisi bulunamadı")
-    return entry
+    return plugin_marketplace_routes.get_plugin_marketplace_entry(
+        plugin_id, catalog=PLUGIN_MARKETPLACE_CATALOG
+    )
 
 
 def _serialize_marketplace_plugin(
     plugin_id: str, *, installed_state: dict[str, Any] | None = None
 ) -> dict[str, Any]:
-    entry = _get_plugin_marketplace_entry(plugin_id)
-    state = installed_state or _read_plugin_marketplace_state().get(plugin_id, {})
-    spec = AgentRegistry.get(str(entry["role_name"]))
-    installed = bool(state)
-    entrypoint = Path(entry["entrypoint"])
-    return {
-        "plugin_id": str(entry["plugin_id"]),
-        "id": str(entry["plugin_id"]),
-        "name": str(entry["name"]),
-        "summary": str(entry["summary"]),
-        "description": str(entry["description"]),
-        "category": str(entry["category"]),
-        "role_name": str(entry["role_name"]),
-        "class_name": str(entry["class_name"]),
-        "capabilities": list(entry.get("capabilities", []) or []),
-        "version": str(entry["version"]),
-        "entrypoint": str(entrypoint),
-        "entrypoint_exists": bool(entrypoint.exists()),
-        "installed": installed,
-        "installed_at": str(state.get("installed_at", "") or ""),
-        "last_reloaded_at": str(state.get("last_reloaded_at", "") or ""),
-        "live_registered": spec is not None,
-        "agent": None
-        if spec is None
-        else {
-            "role_name": str(getattr(spec, "role_name", entry["role_name"])),
-            "description": str(getattr(spec, "description", entry["description"])),
-            "capabilities": list(
-                getattr(spec, "capabilities", entry.get("capabilities", [])) or []
-            ),
-            "version": str(getattr(spec, "version", entry["version"])),
-            "is_builtin": bool(getattr(spec, "is_builtin", False)),
-        },
-    }
+    return plugin_marketplace_routes.serialize_marketplace_plugin(
+        plugin_id,
+        catalog=PLUGIN_MARKETPLACE_CATALOG,
+        agent_registry=AgentRegistry,
+        read_state=lambda: _read_plugin_marketplace_state(),
+        installed_state=installed_state,
+    )
 
 
 def _install_marketplace_plugin(plugin_id: str, *, persist: bool = True) -> dict[str, Any]:
-    entry = _get_plugin_marketplace_entry(plugin_id)
-    source_path = Path(entry["entrypoint"])
-    if not source_path.exists():
-        raise HTTPException(status_code=500, detail=f"Plugin kaynağı bulunamadı: {source_path}")
-    source_code = source_path.read_text(encoding="utf-8")
-    AgentRegistry.unregister(str(entry["role_name"]))
-    agent_meta = _register_plugin_agent(
-        role_name=str(entry["role_name"]),
-        source_code=source_code,
-        class_name=str(entry["class_name"]),
-        capabilities=list(entry.get("capabilities", []) or []),
-        description=str(entry["description"]),
-        version=str(entry["version"]),
+    return plugin_marketplace_routes.install_marketplace_plugin(
+        plugin_id,
+        catalog=PLUGIN_MARKETPLACE_CATALOG,
+        agent_registry=AgentRegistry,
+        register_plugin_agent=lambda **kwargs: _register_plugin_agent(**kwargs),
+        read_state=lambda: _read_plugin_marketplace_state(),
+        write_state=lambda state: _write_plugin_marketplace_state(state),
+        serialize=lambda plugin_id: _serialize_marketplace_plugin(plugin_id),
+        persist=persist,
     )
-    if persist:
-        state = _read_plugin_marketplace_state()
-        now = datetime.now(UTC).isoformat()
-        previous = dict(state.get(plugin_id, {}) or {})
-        previous.update(
-            {
-                "installed_at": previous.get("installed_at") or now,
-                "last_reloaded_at": now,
-                "role_name": str(entry["role_name"]),
-                "entrypoint": str(source_path),
-            }
-        )
-        state[plugin_id] = previous
-        _write_plugin_marketplace_state(state)
-    return {
-        "success": True,
-        "plugin": _serialize_marketplace_plugin(plugin_id),
-        "agent": agent_meta,
-    }
 
 
 def _uninstall_marketplace_plugin(plugin_id: str) -> dict[str, Any]:
-    entry = _get_plugin_marketplace_entry(plugin_id)
-    removed = AgentRegistry.unregister(str(entry["role_name"]))
-    state = _read_plugin_marketplace_state()
-    state.pop(plugin_id, None)
-    _write_plugin_marketplace_state(state)
-    return {
-        "success": True,
-        "removed": removed,
-        "plugin": _serialize_marketplace_plugin(plugin_id),
-    }
+    return plugin_marketplace_routes.uninstall_marketplace_plugin(
+        plugin_id,
+        catalog=PLUGIN_MARKETPLACE_CATALOG,
+        agent_registry=AgentRegistry,
+        read_state=lambda: _read_plugin_marketplace_state(),
+        write_state=lambda state: _write_plugin_marketplace_state(state),
+        serialize=lambda plugin_id: _serialize_marketplace_plugin(plugin_id),
+    )
 
 
 def _reload_persisted_marketplace_plugins() -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    for plugin_id in list(_read_plugin_marketplace_state().keys()):
-        if plugin_id not in PLUGIN_MARKETPLACE_CATALOG:
-            continue
-        try:
-            results.append(_install_marketplace_plugin(plugin_id))
-        except HTTPException as exc:
-            logger.warning("Marketplace plugin '%s' yeniden yüklenemedi: %s", plugin_id, exc.detail)
-        except Exception as exc:
-            logger.warning("Marketplace plugin '%s' yeniden yüklenemedi: %s", plugin_id, exc)
-    return results
+    return plugin_marketplace_routes.reload_persisted_marketplace_plugins(
+        catalog=PLUGIN_MARKETPLACE_CATALOG,
+        read_state=lambda: _read_plugin_marketplace_state(),
+        install=lambda plugin_id: _install_marketplace_plugin(plugin_id),
+        logger_obj=logger,
+    )
 
 
 def _register_plugin_agent(

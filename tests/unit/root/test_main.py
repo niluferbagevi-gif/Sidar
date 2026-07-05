@@ -4,6 +4,7 @@ import re
 import sys
 import types
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8822,7 +8823,7 @@ async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_syst
             self.role_name = role_name
             self.prompt_text = "kept"
             self.is_active = True
-            self.created_at = web_server.datetime.now(web_server.UTC)
+            self.created_at = datetime.now(UTC)
             self.updated_at = self.created_at
 
     class _Db:
