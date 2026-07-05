@@ -1,4 +1,10 @@
-"""Backend E2E coverage for booting the app and streaming chat over WebSocket."""
+"""Backend integration coverage for app boot + WebSocket chat streaming.
+
+Exercises a real FastAPI app boot and a real WebSocket connection/protocol
+end-to-end, but the agent/LLM and the database are test doubles (Mock/
+SimpleNamespace) rather than real infrastructure — this is an integration
+test of the web layer's wiring, not a full-stack e2e test.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +30,7 @@ import web_server
 from web_server import app
 
 
-class _E2EMemory:
+class _FakeChatMemory:
     def __init__(self, db: Database) -> None:
         self.db = db
         self.active_user: tuple[str, str] | None = None
@@ -50,7 +56,7 @@ def test_boot_health_then_chat_websocket_tool_call_and_response(
     """Exercise app boot, WebSocket auth, tool-call streaming, and final response."""
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(
-        memory=_E2EMemory(mock_db),
+        memory=_FakeChatMemory(mock_db),
         system_prompt="",
         cfg=SimpleNamespace(AI_PROVIDER="openai"),
         health=SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": True}),
