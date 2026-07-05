@@ -235,8 +235,17 @@ def test_prometheus_scrapes_sidar_and_infra_exporters():
 
     assert scrape_targets == {
         "sidar-web": ["sidar-web:7860"],
+        "sidar-gpu": ["sidar-web:7860"],
         "redis-exporter": ["redis-exporter:9121"],
         "postgres-exporter": ["postgres-exporter:9187"],
         "cadvisor": ["cadvisor:8080"],
     }
-    assert prometheus["scrape_configs"][0]["metrics_path"] == "/metrics/llm/prometheus"
+    metrics_paths = {
+        config["job_name"]: config["metrics_path"]
+        for config in prometheus["scrape_configs"]
+        if "metrics_path" in config
+    }
+    assert metrics_paths == {
+        "sidar-web": "/metrics/llm/prometheus",
+        "sidar-gpu": "/metrics",
+    }

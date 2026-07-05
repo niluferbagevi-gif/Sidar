@@ -499,11 +499,29 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
 
     memory = _Memory()
     collector = SimpleNamespace(snapshot=lambda: {"totals": {"calls": 3, "total_tokens": 9}})
+    health = SimpleNamespace(
+        get_gpu_info=lambda: {
+            "available": True,
+            "devices": [
+                {
+                    "id": 0,
+                    "name": "RTX 4090",
+                    "utilization_pct": 97,
+                    "temperature_c": 68,
+                    "mem_utilization_pct": 80,
+                    "total_vram_gb": 24.0,
+                    "allocated_gb": 19.2,
+                }
+            ],
+        },
+        check_ollama=lambda: True,
+    )
     agent = SimpleNamespace(
         VERSION="test",
         docs=SimpleNamespace(doc_count=5),
         memory=memory,
         cfg=SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=True),
+        health=health,
     )
     router = build_metrics_router(
         require_metrics_access=lambda: {"id": "metrics-user"},
@@ -523,6 +541,13 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
     prometheus_response = client.get("/metrics", headers={"Accept": "text/plain"})
     assert prometheus_response.status_code == 200
     assert "sidar_sessions_total 4" in prometheus_response.text
+    assert "sidar_gpu_available 1" in prometheus_response.text
+    assert "sidar_ollama_online 1" in prometheus_response.text
+    assert "sidar_gpu_utilization_percent 97" in prometheus_response.text
+    assert "sidar_gpu_temperature_celsius 68" in prometheus_response.text
+    assert "sidar_gpu_memory_utilization_percent 80" in prometheus_response.text
+    assert "sidar_gpu_vram_total_gb 24.0" in prometheus_response.text
+    assert "sidar_gpu_vram_allocated_gb 19.2" in prometheus_response.text
     assert memory.active_user_id == "previous-user"
     assert memory.active_username == "previous-name"
     assert reset_tokens == ["token:metrics-user"]
@@ -530,6 +555,79 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
     assert client.get("/metrics/llm/prometheus").text == "calls 3\n"
     assert client.get("/metrics/llm").json()["totals"]["total_tokens"] == 9
     assert client.get("/api/budget").json()["totals"]["calls"] == 3
+
+
+def test_metrics_router_prometheus_reports_no_gpu_without_health_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+    make_test_client,
+) -> None:
+    """A CPU-only agent (or a test double without a `health` attribute at all)
+    must still render valid Prometheus output, with gpu_available/ollama_online
+    at 0 and no device-specific gauges emitted."""
+    monkeypatch.delitem(sys.modules, "web_server", raising=False)
+
+    prometheus_mod = ModuleType("prometheus_client")
+
+    class _Registry:
+        def __init__(self) -> None:
+            self.values: dict[str, float] = {}
+
+    class _Gauge:
+        def __init__(self, name: str, _description: str, *, registry: _Registry) -> None:
+            self.name = name
+            self.registry = registry
+
+        def set(self, value: float) -> None:
+            self.registry.values[self.name] = value
+
+    prometheus_api = cast(Any, prometheus_mod)
+    prometheus_api.CONTENT_TYPE_LATEST = "text/plain"
+    prometheus_api.CollectorRegistry = _Registry
+    prometheus_api.Gauge = _Gauge
+    prometheus_api.generate_latest = lambda registry: "\n".join(
+        f"{name} {value}" for name, value in registry.values.items()
+    ).encode()
+    monkeypatch.setitem(sys.modules, "prometheus_client", prometheus_mod)
+
+    class _Memory:
+        active_user_id = None
+        active_username = None
+
+        def get_all_sessions(self) -> list[str]:
+            return []
+
+        def __len__(self) -> int:
+            return 0
+
+    agent = SimpleNamespace(
+        VERSION="test",
+        docs=SimpleNamespace(doc_count=0),
+        memory=_Memory(),
+        cfg=SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False),
+    )
+    router = build_metrics_router(
+        require_metrics_access=lambda: {"id": "metrics-user"},
+        resolve_agent_instance=lambda: _async_value(agent),
+        start_time=0.0,
+        local_rate_limits=lambda: {},
+        get_llm_metrics_collector=lambda: SimpleNamespace(
+            snapshot=lambda: {"totals": {"calls": 0, "total_tokens": 0}}
+        ),
+        render_llm_metrics_prometheus=lambda _snapshot: "",
+        set_current_metrics_user_id=lambda user_id: f"token:{user_id}",
+        reset_current_metrics_user_id=lambda _token: None,
+        logger=SimpleNamespace(debug=lambda *_: None),
+    )
+    app = FastAPI()
+    app.include_router(router)
+    client = make_test_client(app)
+
+    response = client.get("/metrics", headers={"Accept": "text/plain"})
+    assert response.status_code == 200
+    assert "sidar_gpu_available 0" in response.text
+    assert "sidar_ollama_online 0" in response.text
+    assert "sidar_gpu_utilization_percent" not in response.text
+    assert "sidar_gpu_temperature_celsius" not in response.text
 
 
 def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
