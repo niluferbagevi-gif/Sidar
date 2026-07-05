@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib.util
+import inspect
 import json
 import logging
 import sqlite3
@@ -2827,3 +2828,37 @@ def test_verify_password_records_error_latency_when_digest_fails(
         db_auth._verify_password("pw", "pbkdf2_sha256$700000$salt$digest")
 
     assert records == [("verify", "error")]
+
+
+def test_database_delegates_user_crud_to_core_db_users_module() -> None:
+    """Regression test: user account CRUD (ensure_user/create_user/
+
+    authenticate_user/_get_user_by_id/ensure_user_id/register_user) must stay
+    delegated to core.db.users instead of being reinlined into Database's
+    ~2400-line body, mirroring the existing sessions.py/prompt_registry.py
+    extraction pattern.
+    """
+    import core.db.users as db_users
+
+    for name in (
+        "ensure_user",
+        "create_user",
+        "register_user",
+        "authenticate_user",
+        "get_user_by_id",
+        "ensure_user_id",
+    ):
+        assert callable(getattr(db_users, name)), name
+
+    assert core_db.users is db_users
+
+    for method_name, module_call in (
+        ("ensure_user", "db_users.ensure_user"),
+        ("create_user", "db_users.create_user"),
+        ("register_user", "db_users.register_user"),
+        ("authenticate_user", "db_users.authenticate_user"),
+        ("_get_user_by_id", "db_users.get_user_by_id"),
+        ("ensure_user_id", "db_users.ensure_user_id"),
+    ):
+        source = inspect.getsource(getattr(Database, method_name))
+        assert module_call in source, f"{method_name} should delegate via {module_call}"

@@ -60,6 +60,7 @@ for _submodule in (
     "prompt_registry",
     "session",
     "sessions",
+    "users",
 ):
     try:
         setattr(_monolith, _submodule, _importlib.import_module(f"{__name__}.{_submodule}"))
