@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 
 export function P2PDialoguePanel() {
-  const { telemetryEvents } = useChatStore();
+  const telemetryEvents = useChatStore((s) => s.telemetryEvents);
   const dialogue = useMemo(
     () => telemetryEvents.filter((evt) => evt.kind === "status" || evt.kind === "thought" || evt.kind === "tool_call").slice(-16),
     [telemetryEvents],

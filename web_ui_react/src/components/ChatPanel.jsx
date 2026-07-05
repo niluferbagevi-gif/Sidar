@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ChatWindow } from "./ChatWindow.jsx";
 import { ChatInput } from "./ChatInput.jsx";
 import { StatusBar } from "./StatusBar.jsx";
@@ -24,7 +25,25 @@ export function ChatPanel() {
     addTelemetryEvent,
     newSession,
     participants,
-  } = useChatStore();
+  } = useChatStore(
+    useShallow((s) => ({
+      sessionId: s.sessionId,
+      roomId: s.roomId,
+      displayName: s.displayName,
+      setRoomId: s.setRoomId,
+      setDisplayName: s.setDisplayName,
+      hydrateRoom: s.hydrateRoom,
+      updateParticipants: s.updateParticipants,
+      pushRoomMessage: s.pushRoomMessage,
+      startAssistantStream: s.startAssistantStream,
+      appendChunk: s.appendChunk,
+      commitAssistantMessage: s.commitAssistantMessage,
+      setError: s.setError,
+      addTelemetryEvent: s.addTelemetryEvent,
+      newSession: s.newSession,
+      participants: s.participants,
+    })),
+  );
 
   const { send, status } = useWebSocket(sessionId, {
     roomId,

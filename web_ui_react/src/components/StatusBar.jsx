@@ -2,6 +2,7 @@
  * StatusBar — WS bağlantı durumu ve oturum bilgisi.
  */
 
+import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "../hooks/useChatStore.js";
 
 const STATUS_LABEL = {
@@ -14,7 +15,9 @@ const STATUS_LABEL = {
 };
 
 export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır", roomId = "", collaborators = 0 }) {
-  const { sessionId, messages } = useChatStore();
+  const { sessionId, messages } = useChatStore(
+    useShallow((s) => ({ sessionId: s.sessionId, messages: s.messages })),
+  );
   const { icon, text } = STATUS_LABEL[wsStatus] ?? STATUS_LABEL.disconnected;
 
   return (

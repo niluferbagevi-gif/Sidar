@@ -22,9 +22,10 @@ const { telemetryState } = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => ({
-    telemetryEvents: telemetryState.events,
-  }),
+  useChatStore: (selector) => {
+    const state = { telemetryEvents: telemetryState.events };
+    return typeof selector === "function" ? selector(state) : state;
+  },
 }));
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));

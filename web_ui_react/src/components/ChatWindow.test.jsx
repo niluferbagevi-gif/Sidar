@@ -24,7 +24,7 @@ const mockStore = {
 };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => mockStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
 }));
 
 describe("ChatWindow — boş durum", () => {

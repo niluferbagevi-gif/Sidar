@@ -104,7 +104,7 @@ export const inferHitlActionFromNode = (node) => {
 };
 
 export function SwarmFlowPanel() {
-  const { telemetryEvents } = useChatStore();
+  const telemetryEvents = useChatStore((s) => s.telemetryEvents);
   const [tasks, setTasks] = useState(DEFAULT_TASKS);
   const [mode, setMode] = useState("parallel");
   const [sessionId, setSessionId] = useState("ui-swarm-session");

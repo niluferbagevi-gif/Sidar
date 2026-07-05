@@ -6,7 +6,7 @@ import { ChatInput } from "./ChatInput.jsx";
 const mockStore = { isStreaming: false };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => mockStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
 }));
 
 describe("ChatInput", () => {

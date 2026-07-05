@@ -22,7 +22,7 @@ const chatStore = {
 };
 
 vi.mock("./hooks/useChatStore.js", () => ({
-  useChatStore: () => chatStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(chatStore) : chatStore),
 }));
 
 vi.mock("./hooks/useVoiceAssistant.js", () => ({

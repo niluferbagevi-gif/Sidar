@@ -4,11 +4,19 @@
  */
 
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "../hooks/useChatStore.js";
 import { ChatMessage } from "./ChatMessage.jsx";
 
 export function ChatWindow() {
-  const { messages, streamingText, isStreaming, error } = useChatStore();
+  const { messages, streamingText, isStreaming, error } = useChatStore(
+    useShallow((s) => ({
+      messages: s.messages,
+      streamingText: s.streamingText,
+      isStreaming: s.isStreaming,
+      error: s.error,
+    })),
+  );
   const bottomRef = useRef(null);
 
   // Yeni içerik gelince alta kaydır

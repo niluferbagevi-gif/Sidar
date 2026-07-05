@@ -6,7 +6,10 @@ const { useChatStoreMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => useChatStoreMock(),
+  useChatStore: (selector) => {
+    const state = useChatStoreMock();
+    return typeof selector === "function" ? selector(state) : state;
+  },
 }));
 
 describe("P2PDialoguePanel", () => {

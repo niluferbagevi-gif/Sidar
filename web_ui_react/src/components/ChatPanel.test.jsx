@@ -33,7 +33,7 @@ let webSocketOptions = {};
 let voiceAssistantOptions = {};
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => store,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(store) : store),
 }));
 
 // 2. ADIM: useWebSocket mock'unu options'ı yakalayacak şekilde güncelliyoruz

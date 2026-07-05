@@ -9,7 +9,7 @@ import { useChatStore } from "../hooks/useChatStore.js";
 export function ChatInput({ onSend, disabled = false }) {
   const [text, setText] = useState("");
   const textareaRef = useRef(null);
-  const { isStreaming } = useChatStore();
+  const isStreaming = useChatStore((s) => s.isStreaming);
 
   const handleSubmit = useCallback(() => {
     const trimmed = text.trim();
