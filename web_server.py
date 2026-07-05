@@ -1700,6 +1700,27 @@ def _plugin_source_filename(module_label: str) -> str:
     return f"<sidar-plugin:{safe_label}>"
 
 
+# ─────────────────────────────────────────────
+#  PLUGIN AGENT SANDBOX — bilinen kapsam sınırlaması
+# ─────────────────────────────────────────────
+# Bu sandbox bir AST kara listesi + kısıtlı `__builtins__` haritasıdır; işletim
+# sistemi/process seviyesinde GERÇEK bir izolasyon SAĞLAMAZ. Statik izin/red
+# listeleri tarihsel olarak bypass edilebilir (dolaylı öznitelik zincirleri,
+# izin verilen modüller üzerinden erişilen üçüncü parti kod, bytecode/marshal
+# manipülasyonu vb.). Buradaki gerçek güvenlik sınırı, bu yola erişimin
+# `require_admin_user`'a (bkz. web/routes/agent.py) sıkı biçimde bağlı olması
+# ve dolayısıyla sadece zaten güvenilen adminlerin plugin kodu
+# kaydedebilmesidir — AST/builtins kısıtlaması burada savunma-derinliği
+# katmanıdır, birincil güvenlik sınırı değildir.
+#
+# Gerçek izolasyon (plugin kodunu ayrı bir subprocess/container'da çalıştırıp
+# orchestration'a IPC üzerinden bağlamak) kasıtlı olarak bu bulgunun kapsamı
+# dışında bırakıldı: plugin sınıfları şu an AgentRegistry'ye doğrudan
+# in-process yükleniyor ve `BaseAgent` arayüzü üzerinden diğer agent'larla aynı
+# çağrı yüzeyini (memory, tool çağrıları, event bus) paylaşıyor. Süreç/container
+# izolasyonuna geçmek bu çalışma modelini IPC tabanlı mesajlaşmaya taşımayı
+# gerektiren ayrı, büyük bir mimari değişikliktir ve ayrı bir proje olarak takip
+# edilmelidir.
 _PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
     {
         "exec",
@@ -1872,7 +1893,13 @@ def _execute_validated_plugin_source(
 
 
 def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
-    """Validate plugin source and execute it with restricted builtins only."""
+    """Validate plugin source and execute it with restricted builtins only.
+
+    Not a process/container-level sandbox — see the "PLUGIN AGENT SANDBOX"
+    note above `_PLUGIN_BANNED_BUILTINS` for the residual risk this accepts
+    and why the admin-only gate on the callers of this function is the real
+    security boundary.
+    """
 
     try:
         _validate_plugin_source(source_code)
