@@ -90,8 +90,13 @@ export function buildAuthHeaders(extraHeaders = {}) {
 }
 
 export async function fetchJson(url, options = {}) {
+  // Bearer token (Authorization header) is the only auth model this backend
+  // uses — it never sets or reads cookies (no Set-Cookie anywhere in the
+  // API). Requesting `credentials: "include"` anyway would needlessly widen
+  // the CSRF surface by asking the browser to also send whatever cookies
+  // exist for this origin (including any future/unrelated ones) on every
+  // request, mixing two authentication models for no benefit.
   const response = await fetch(url, {
-    credentials: "include",
     ...options,
     headers: {
       ...(options.headers || {}),

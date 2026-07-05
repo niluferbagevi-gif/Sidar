@@ -280,7 +280,9 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
 
     await fetchJson("/api/secure");
     const [, options] = fetchMock.mock.calls[0];
-    expect(options.credentials).toBe("include");
+    // Bearer token is the only auth model — no cookie-based credentials
+    // should ever be requested alongside it (see fetchJson's comment).
+    expect(options.credentials).toBeUndefined();
     expect(options.headers["Authorization"]).toBe("Bearer test-tok");
   });
 
@@ -389,10 +391,7 @@ describe("agent API bridge helpers", () => {
 
     await getCurrentUser();
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/auth/me",
-      expect.objectContaining({ credentials: "include", headers: {} }),
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/auth/me", expect.objectContaining({ headers: {} }));
   });
 
   it("posts Poyraz operation payloads to operation endpoints", async () => {
@@ -483,7 +482,7 @@ describe("agent API bridge helpers", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/qa/coverage/tasks",
-      expect.objectContaining({ credentials: "include", headers: {} }),
+      expect.objectContaining({ headers: {} }),
     );
   });
 
