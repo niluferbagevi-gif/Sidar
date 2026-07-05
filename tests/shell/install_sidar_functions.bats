@@ -1634,6 +1634,11 @@ EOF
 
 @test "postgres password hardening reset runs compose down fallback when no volume is directly detected" {
   run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    echo "SIDAR_ENV=development" > "$tmpdir/.env"
+    SCRIPT_DIR="$tmpdir"
+
     down_called=false
     fake_compose() {
       case "$1" in
