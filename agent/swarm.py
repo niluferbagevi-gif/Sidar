@@ -605,6 +605,22 @@ class SwarmOrchestrator:
             return True
         return False
 
+    def _remaining_supervisor_turn_budget(self, route_trace: list[str]) -> int:
+        """Cap the supervisor fallback's turn budget by hops the swarm already spent.
+
+        Without this, a supervisor fallback after N swarm hops would always start
+        a brand-new SupervisorAgent.MAX_TURNS budget from zero, so a single failing
+        task could cost up to (swarm hops already spent + a full supervisor turn
+        budget) LLM calls instead of one shared budget across both stages.
+        """
+        from agent.core.supervisor import SupervisorAgent
+
+        default_max_turns = getattr(SupervisorAgent, "MAX_TURNS", 10)
+        full_budget = max(
+            0, int(getattr(self.cfg, "MAX_TURNS", default_max_turns) or default_max_turns)
+        )
+        return max(1, full_budget - len(route_trace))
+
     async def _run_supervisor_fallback(
         self,
         task: SwarmTask,
@@ -620,7 +636,8 @@ class SwarmOrchestrator:
 
         supervisor = SupervisorAgent(self.cfg)
         fallback_prompt = self._compose_goal_with_context(task.goal, task.context)
-        fallback_output = await supervisor.run_task(fallback_prompt)
+        remaining_turns = self._remaining_supervisor_turn_budget(route_trace)
+        fallback_output = await supervisor.run_task(fallback_prompt, max_turns=remaining_turns)
         if not isinstance(fallback_output, str) or not fallback_output.strip():
             raise RuntimeError("Supervisor fallback geçerli bir çıktı üretemedi.")
 

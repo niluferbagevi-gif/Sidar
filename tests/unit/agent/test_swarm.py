@@ -520,11 +520,16 @@ def test_loop_repeat_limit_honors_provider_and_floor():
 
 
 def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
+    received_max_turns = []
+
     class _Supervisor:
+        MAX_TURNS = 10
+
         def __init__(self, _cfg):
             pass
 
-        async def run_task(self, _prompt):
+        async def run_task(self, _prompt, *, max_turns=None):
+            received_max_turns.append(max_turns)
             return "fallback yaniti"
 
     monkeypatch.setitem(
@@ -545,9 +550,12 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
     )
     assert ok.status == "success"
     assert ok.agent_role == "supervisor"
+    # Remaining budget = MAX_TURNS (10) - hops already spent (len(route_trace)=1) = 9,
+    # not a fresh 10-turn budget on top of the swarm hops already spent.
+    assert received_max_turns == [9]
 
     class _EmptySupervisor(_Supervisor):
-        async def run_task(self, _prompt):
+        async def run_task(self, _prompt, *, max_turns=None):
             return "   "
 
     monkeypatch.setitem(
@@ -567,6 +575,36 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
                 reason="fallback:JSONDecodeError",
             )
         )
+
+
+def test_remaining_supervisor_turn_budget_deducts_hops_already_spent(monkeypatch):
+    class _Supervisor:
+        MAX_TURNS = 10
+
+    monkeypatch.setitem(
+        sys.modules, "agent.core.supervisor", types.SimpleNamespace(SupervisorAgent=_Supervisor)
+    )
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    assert orch._remaining_supervisor_turn_budget([]) == 10
+    assert orch._remaining_supervisor_turn_budget(["a", "b", "c"]) == 7
+    # Never goes below 1, even if hops already spent exceed the full budget.
+    assert orch._remaining_supervisor_turn_budget([f"step{i}" for i in range(20)]) == 1
+
+    orch_with_cfg_override = SwarmOrchestrator(cfg=SimpleNamespace(MAX_TURNS=4))
+    assert orch_with_cfg_override._remaining_supervisor_turn_budget(["a"]) == 3
+
+    # Tolerates a SupervisorAgent test double with no MAX_TURNS attribute.
+    class _SupervisorWithoutMaxTurns:
+        pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "agent.core.supervisor",
+        types.SimpleNamespace(SupervisorAgent=_SupervisorWithoutMaxTurns),
+    )
+    orch_no_cfg = SwarmOrchestrator(cfg=SimpleNamespace())
+    assert orch_no_cfg._remaining_supervisor_turn_budget(["a", "b"]) == 8
 
 
 def test_run_autonomous_feedback_low_score_flags_and_handles_errors(monkeypatch):

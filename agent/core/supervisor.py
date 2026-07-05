@@ -485,11 +485,24 @@ class SupervisorAgent(BaseAgent):
         stop_reason = "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
         return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary=stop_reason)
 
-    async def run_task(self, task_prompt: str) -> str:
+    async def run_task(self, task_prompt: str, *, max_turns: int | None = None) -> str:
+        """Run a task, optionally capping this call's own turn budget.
+
+        ``max_turns`` lets a caller that already spent part of a shared budget
+        (e.g. SwarmOrchestrator's supervisor fallback after N handoff hops)
+        hand over what's left instead of this call always starting a fresh
+        ``MAX_TURNS`` budget from zero.
+        """
         await self.events.publish("supervisor", "Görev analiz ediliyor...")
         intent = self._intent(task_prompt)
         self.memory_hub.add_global(task_prompt)
-        max_turns = self._max_turns()
+        if max_turns is None:
+            max_turns = self._max_turns()
+        else:
+            try:
+                max_turns = max(0, int(max_turns))
+            except (TypeError, ValueError):
+                max_turns = self._max_turns()
         turn_count = 0
 
         if intent == "chat":
