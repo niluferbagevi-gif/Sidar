@@ -1619,12 +1619,8 @@ def test_both_postgres_volume_reset_callers_share_the_same_env_gate() -> None:
     )
 
     assert "sidar_postgres_volume_reset_allowed_for_env() {" in services_phase
-    assert (
-        'sidar_postgres_volume_reset_allowed_for_env "$env_file" || return 0' in services_phase
-    )
-    assert (
-        'sidar_postgres_volume_reset_allowed_for_env "$SCRIPT_DIR/.env"' in services_phase
-    )
+    assert 'sidar_postgres_volume_reset_allowed_for_env "$env_file" || return 0' in services_phase
+    assert 'sidar_postgres_volume_reset_allowed_for_env "$SCRIPT_DIR/.env"' in services_phase
     assert services_phase.count("sidar_postgres_volume_reset_allowed_for_env") == 3
 
 
@@ -2204,9 +2200,7 @@ def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell
     Volta -> NVM -> apt NodeSource fallback chain still degrades gracefully
     instead of aborting the whole installer on a missing/rejected checksum.
     """
-    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(
-        encoding="utf-8"
-    )
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
     remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
         encoding="utf-8"
     )
