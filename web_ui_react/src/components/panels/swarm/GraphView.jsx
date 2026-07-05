@@ -1,6 +1,61 @@
 import React from "react";
 
-export function GraphView({
+const GraphNode = React.memo(function GraphNode({
+  node,
+  isSelected,
+  nodeWidth,
+  nodeHeight,
+  actionBusy,
+  running,
+  onSelectNode,
+  onRunSelectedNode,
+  onAddDraftTaskFromSelected,
+}) {
+  const handleSelect = () => onSelectNode(node.id);
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelectNode(node.id);
+    }
+  };
+  const handleRunNode = (event) => {
+    event.stopPropagation();
+    void onRunSelectedNode();
+  };
+  const handleAddDraftTask = (event) => {
+    event.stopPropagation();
+    onAddDraftTaskFromSelected();
+  };
+
+  return (
+    <article
+      className={`swarm-graph__node swarm-graph__node--${node.type} ${isSelected ? "swarm-graph__node--selected" : ""}`}
+      style={{ left: `${node.x}px`, top: `${node.y}px`, width: `${nodeWidth}px`, minHeight: `${nodeHeight}px` }}
+      onClick={handleSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="swarm-graph__node-header">
+        <strong>{node.title}</strong>
+        <span>{node.subtitle}</span>
+      </div>
+      <p>{node.body}</p>
+      {isSelected && (
+        <div className="swarm-graph__node-actions">
+          <button type="button" className="button-secondary" onClick={handleRunNode} disabled={actionBusy || running}>
+            Run node
+          </button>
+          <button type="button" className="button-secondary" onClick={handleAddDraftTask} disabled={actionBusy}>
+            Task’e ekle
+          </button>
+        </div>
+      )}
+    </article>
+  );
+});
+
+export const GraphView = React.memo(function GraphView({
   graphData,
   graphEdges,
   selectedNode,
@@ -71,42 +126,18 @@ export function GraphView({
           ))}
 
           {graphData.nodes.map((node) => (
-            <article
+            <GraphNode
               key={node.id}
-              className={`swarm-graph__node swarm-graph__node--${node.type} ${selectedNodeId === node.id ? "swarm-graph__node--selected" : ""}`}
-              style={{ left: `${node.x}px`, top: `${node.y}px`, width: `${nodeWidth}px`, minHeight: `${nodeHeight}px` }}
-              onClick={() => onSelectNode(node.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelectNode(node.id);
-                }
-              }}
-            >
-              <div className="swarm-graph__node-header">
-                <strong>{node.title}</strong>
-                <span>{node.subtitle}</span>
-              </div>
-              <p>{node.body}</p>
-              {selectedNodeId === node.id && (
-                <div className="swarm-graph__node-actions">
-                  <button type="button" className="button-secondary" onClick={(event) => {
-                    event.stopPropagation();
-                    void onRunSelectedNode();
-                  }} disabled={actionBusy || running}>
-                    Run node
-                  </button>
-                  <button type="button" className="button-secondary" onClick={(event) => {
-                    event.stopPropagation();
-                    onAddDraftTaskFromSelected();
-                  }} disabled={actionBusy}>
-                    Task’e ekle
-                  </button>
-                </div>
-              )}
-            </article>
+              node={node}
+              isSelected={selectedNodeId === node.id}
+              nodeWidth={nodeWidth}
+              nodeHeight={nodeHeight}
+              actionBusy={actionBusy}
+              running={running}
+              onSelectNode={onSelectNode}
+              onRunSelectedNode={onRunSelectedNode}
+              onAddDraftTaskFromSelected={onAddDraftTaskFromSelected}
+            />
           ))}
         </div>
       </div>
@@ -166,4 +197,4 @@ export function GraphView({
       </div>
     </div>
   );
-}
+});
