@@ -3102,11 +3102,13 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
         _make_request("/set-repo", "POST"), _call_next
     )
     get_block = await web_server.rate_limit_middleware(_make_request("/files", "GET"), _call_next)
-    non_io_get = await web_server.rate_limit_middleware(_make_request("/status", "GET"), _call_next)
+    exempt_get = await web_server.rate_limit_middleware(
+        _make_request("/metrics", "GET"), _call_next
+    )
     assert ws_block.status_code == 429
     assert post_block.status_code == 429
     assert get_block.status_code == 429
-    assert non_io_get.status_code == 200
+    assert exempt_get.status_code == 200
     assert "Çok fazla istek" in ws_block.body.decode("utf-8")
     assert "Çok fazla işlem isteği" in post_block.body.decode("utf-8")
     assert "Çok fazla sorgu isteği" in get_block.body.decode("utf-8")
@@ -8642,13 +8644,8 @@ async def test_ddos_rate_limit_middleware_get_non_io_path_skips_get_bucket(monke
         headers={},
         client=SimpleNamespace(host="1.1.1.1"),
     )
-    original_paths = list(web_server._RATE_GET_IO_PATHS)
-    try:
-        web_server._RATE_GET_IO_PATHS = ["/api/heavy"]
-        monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
-        response = await web_server.ddos_rate_limit_middleware(request, _next)
-    finally:
-        web_server._RATE_GET_IO_PATHS = original_paths
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _rate_limited)
+    response = await web_server.ddos_rate_limit_middleware(request, _next)
     assert response.status_code == 200
     assert calls == []
 

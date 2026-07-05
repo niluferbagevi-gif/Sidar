@@ -2205,17 +2205,18 @@ _RATE_LIMIT = cfg.RATE_LIMIT_CHAT
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS
 _RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO
 _RATE_WINDOW = cfg.RATE_LIMIT_WINDOW
-_RATE_GET_IO_PATHS = (
-    "/git-info",
-    "/git-branches",
-    "/files",
-    "/file-content",
-    "/github-prs",
-    "/github-repos",
-    "/todo",
-    "/rag/",
-    "/sessions",
+# GET requests are rate-limited by default; only cheap/frequently-polled paths
+# below are exempt. This mirrors the mutation-limit branch just above, which
+# already applies to every POST/DELETE path with no opt-in list, so a new GET
+# endpoint can't silently fall back to only the much looser global DDoS bucket.
+_RATE_GET_IO_EXEMPT_PATHS = (
+    "/health",
+    "/healthz",
+    "/readyz",
+    "/metrics",
+    "/favicon.ico",
 )
+_RATE_GET_IO_EXEMPT_PREFIXES = ("/ui/", "/static/", "/vendor/")
 
 _redis_client: Redis | None = None
 _redis_lock: asyncio.Lock | None = None
@@ -2386,7 +2387,8 @@ async def rate_limit_middleware(
         mutation_limit=_RATE_LIMIT_MUTATIONS,
         get_io_limit=_RATE_LIMIT_GET_IO,
         window_sec=_RATE_WINDOW,
-        get_io_paths=_RATE_GET_IO_PATHS,
+        get_io_exempt_paths=_RATE_GET_IO_EXEMPT_PATHS,
+        get_io_exempt_prefixes=_RATE_GET_IO_EXEMPT_PREFIXES,
         get_rate_limit_key=_get_rate_limit_key,
     )
 
