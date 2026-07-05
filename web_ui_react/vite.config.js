@@ -105,17 +105,17 @@ export default defineConfig(() => {
       css: false,
       globals: true,
       pool: "forks",
-      include: ["src/**/*.{test,spec}.{js,jsx}"],
+      include: ["src/**/*.{test,spec}.{js,jsx,ts,tsx}"],
       exclude: ["e2e/**", "dist/**", "node_modules/**"],
       coverage: {
         provider: "v8",
         reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"],
         skipFull: false,
-        include: ["src/**/*.{js,jsx}"],
+        include: ["src/**/*.{js,jsx,ts,tsx}"],
         exclude: [
           "src/test/setup.js",
           "src/main.jsx",
-          "src/**/*.test.{js,jsx}",
+          "src/**/*.test.{js,jsx,ts,tsx}",
           "src/test/**",
           "src/components/PanelErrorBoundary.jsx", // minimal fallback boundary; behavior is covered by dedicated tests
           "src/lib/routerShim.jsx", // shim behavior is covered by dedicated router tests

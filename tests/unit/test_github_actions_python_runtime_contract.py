@@ -168,6 +168,16 @@ def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> N
     assert "core/multimodal.py" in readme
 
 
+def test_ci_runs_frontend_typecheck_gate_after_lint() -> None:
+    workflow = (WORKFLOW_DIR / "ci.yml").read_text()
+
+    assert "Run frontend type-check gate (tsc)" in workflow
+    assert "npm run typecheck" in workflow
+    assert workflow.index("Run frontend lint gate (eslint)") < workflow.index(
+        "Run frontend type-check gate (tsc)"
+    )
+
+
 def test_release_quality_runs_helm_install_dry_run_with_injected_secret():
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 

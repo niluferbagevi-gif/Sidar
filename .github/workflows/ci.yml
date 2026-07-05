@@ -182,6 +182,11 @@ jobs:
           npm ci
           npm run lint
 
+      - name: Run frontend type-check gate (tsc)
+        run: |
+          cd web_ui_react
+          npm run typecheck
+
       - name: Run frontend dependency audit gate
         env:
           FRONTEND_NPM_AUDIT_LEVEL: high
