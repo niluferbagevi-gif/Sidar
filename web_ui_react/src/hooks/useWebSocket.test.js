@@ -141,7 +141,7 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String));
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
   });
 
   it("starts a connection on token-change events when no previous socket exists", () => {
@@ -155,7 +155,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(1, expect.any(String));
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
   });
 
   it("cleans up an open previous socket before restarting for the token-change event", () => {
@@ -177,7 +177,7 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String));
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
   });
 
   it("restarts the connection for a cross-tab storage event affecting the token", () => {
@@ -195,7 +195,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(firstSocket.close).toHaveBeenCalledTimes(1);
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String));
+    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
   });
 
   it("ignores cross-tab storage events for unrelated keys", () => {
@@ -566,7 +566,7 @@ describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
     localStorage.setItem("sidar_access_token", "tok");
     renderHook(() => useWebSocket("s1", {}));
 
-    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat?token=tok");
+    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
 
     globalThis.location = originalLocation;
   });

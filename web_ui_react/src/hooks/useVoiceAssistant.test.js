@@ -2334,7 +2334,7 @@ describe("useVoiceAssistant — ek hedefli branch testleri", () => {
     await act(async () => {
       await result.current.start();
     });
-    expect(wsCtor).toHaveBeenCalledWith("wss://example.test/ws/voice?token=token", ["token"]);
+    expect(wsCtor).toHaveBeenCalledWith("wss://example.test/ws/voice", ["token"]);
 
     Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
   });

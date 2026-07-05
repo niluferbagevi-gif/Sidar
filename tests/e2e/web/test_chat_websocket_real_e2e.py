@@ -101,16 +101,19 @@ def mock_ollama_server():
     thread.join(timeout=2)
 
 
-def test_register_login_and_chat_flow_over_real_agent_and_websocket(
+def _build_real_agent_and_register_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mock_ollama_server: _ThreadedTCPServer,
-) -> None:
-    """Register a real user, log in for a real JWT, then drive a full chat turn."""
+    *,
+    db_filename: str,
+    username: str,
+    password: str,
+) -> tuple[SidarAgent, TestClient]:
     from cryptography.fernet import Fernet
 
     cfg = Config()
-    cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / 'real_e2e_ws.db').as_posix()}"
+    cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / db_filename).as_posix()}"
     cfg.AI_PROVIDER = "ollama"
     cfg.OLLAMA_URL = f"http://127.0.0.1:{mock_ollama_server.server_address[1]}"
     cfg.JWT_SECRET_KEY = "test-secret-for-real-e2e-ws-flow-not-used-in-prod"
@@ -125,17 +128,34 @@ def test_register_login_and_chat_flow_over_real_agent_and_websocket(
 
     monkeypatch.setattr(web_server, "get_agent", _get_real_agent)
 
+    client = TestClient(app)
+    register_response = client.post(
+        "/auth/register",
+        json={"username": username, "password": password, "tenant_id": "default"},
+    )
+    assert register_response.status_code == 200, register_response.text
+    assert register_response.json()["user"]["username"] == username
+    return real_agent, client
+
+
+def test_register_login_and_chat_flow_over_real_agent_and_websocket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_ollama_server: _ThreadedTCPServer,
+) -> None:
+    """Register a real user, log in for a real JWT, then drive a full chat turn."""
     username = "real_e2e_user"
     password = "s3cure-real-e2e-pass!"
+    real_agent, client = _build_real_agent_and_register_user(
+        tmp_path,
+        monkeypatch,
+        mock_ollama_server,
+        db_filename="real_e2e_ws.db",
+        username=username,
+        password=password,
+    )
 
-    with TestClient(app) as client:
-        register_response = client.post(
-            "/auth/register",
-            json={"username": username, "password": password, "tenant_id": "default"},
-        )
-        assert register_response.status_code == 200, register_response.text
-        assert register_response.json()["user"]["username"] == username
-
+    with client:
         login_response = client.post(
             "/auth/login",
             json={"username": username, "password": password},
@@ -174,3 +194,52 @@ def test_register_login_and_chat_flow_over_real_agent_and_websocket(
     )
     assert persisted_user is not None
     assert persisted_user.username == username
+
+
+def test_chat_flow_authenticates_via_websocket_subprotocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_ollama_server: _ThreadedTCPServer,
+) -> None:
+    """The real frontend (web_ui_react's useWebSocket.js) authenticates by
+    passing the bearer token as the WebSocket subprotocol — never as a query
+    string, which would leak into proxy access logs and browser history (see
+    web/security.py's extract_ws_header_token, which never reads a query
+    parameter). This exercises that exact transport against the real agent/
+    DB stack, rather than only the `{"action": "auth", ...}` JSON-message
+    fallback the sibling test above uses.
+    """
+    username = "real_e2e_subprotocol_user"
+    password = "s3cure-real-e2e-pass!"
+    _real_agent, client = _build_real_agent_and_register_user(
+        tmp_path,
+        monkeypatch,
+        mock_ollama_server,
+        db_filename="real_e2e_ws_subprotocol.db",
+        username=username,
+        password=password,
+    )
+
+    with client:
+        login_response = client.post(
+            "/auth/login",
+            json={"username": username, "password": password},
+        )
+        assert login_response.status_code == 200, login_response.text
+        token = login_response.json()["access_token"]
+        assert token
+
+        with client.websocket_connect("/ws/chat", subprotocols=[token]) as websocket:
+            assert websocket.receive_json() == {"auth_ok": True}
+
+            websocket.send_json({"message": "Bu konuyu araştır ve kaynakları özetle."})
+
+            chunks: list[str] = []
+            done = False
+            while not done:
+                event = websocket.receive_json()
+                if "chunk" in event:
+                    chunks.append(event["chunk"])
+                done = bool(event.get("done"))
+
+    assert _RESPONSE_ARGUMENT in "".join(chunks)
