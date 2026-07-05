@@ -1,4 +1,3 @@
-import React from "react";
 
 export function AutonomyTimeline({ autonomySummary, autonomyActivity, steps, formatTime }) {
   return (

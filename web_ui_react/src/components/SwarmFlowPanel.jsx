@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 import { fetchJson } from "../lib/api.js";
 import { AutonomyTimeline } from "./panels/swarm/AutonomyTimeline.jsx";

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 
 export function P2PDialoguePanel() {

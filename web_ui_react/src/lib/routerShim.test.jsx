@@ -1,4 +1,3 @@
-import React, { useContext } from "react";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -19,13 +18,6 @@ function renderWithRouter(ui, initialPath = "/") {
   window.history.replaceState({}, "", initialPath);
   return render(<BrowserRouter>{ui}</BrowserRouter>);
 }
-
-/** RouterContext değerini okuyan test bileşeni. */
-const RouterContextConsumer = ({ onValue }) => {
-  // BrowserRouter tarafından expose edilen context değerini dışarı taşır
-  // (routerShim'in context'i private; dolaylı olarak NavLink/Routes davranışından test ederiz)
-  return null;
-};
 
 // ─────────────────────────────────────────────────────────
 // BrowserRouter
@@ -230,7 +222,7 @@ describe("Routes", () => {
 
     render(
       <BrowserRouter>
-        <NavLink to="/ayarlar">Ayarlar'a git</NavLink>
+        <NavLink to="/ayarlar">Ayarlar&apos;a git</NavLink>
         <Routes>
           <Route path="/chat" element={<div>Chat Sayfası</div>} />
           <Route path="/ayarlar" element={<div>Ayarlar Sayfası</div>} />

@@ -1,4 +1,3 @@
-import React from "react";
 
 export function VoiceAssistantPanel({ voice }) {
   const { state, statusLabel, toggle, interrupt, supported } = voice;

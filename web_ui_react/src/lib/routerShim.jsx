@@ -1,4 +1,13 @@
-import React, { Children, createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  Children,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 
 const RouterContext = createContext({
   location: "/",
@@ -20,26 +29,32 @@ function useBrowserRouterState() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  const navigate = (to, { replace = false } = {}) => {
-    const nextPath = normalizePath(to);
-    if (nextPath === location) return;
-    window.history[replace ? "replaceState" : "pushState"]({}, "", nextPath);
-    setLocation(nextPath);
-  };
+  const navigate = useCallback(
+    (to, { replace = false } = {}) => {
+      const nextPath = normalizePath(to);
+      if (nextPath === location) return;
+      window.history[replace ? "replaceState" : "pushState"]({}, "", nextPath);
+      setLocation(nextPath);
+    },
+    [location]
+  );
 
-  return useMemo(() => ({ location, navigate }), [location]);
+  return useMemo(() => ({ location, navigate }), [location, navigate]);
 }
 
 function useMemoryRouterState(initialEntries = ["/"]) {
   const [location, setLocation] = useState(() => normalizePath(initialEntries[0] || "/"));
 
-  const navigate = (to) => {
-    const nextPath = normalizePath(to);
-    if (nextPath === location) return;
-    setLocation(nextPath);
-  };
+  const navigate = useCallback(
+    (to) => {
+      const nextPath = normalizePath(to);
+      if (nextPath === location) return;
+      setLocation(nextPath);
+    },
+    [location]
+  );
 
-  return useMemo(() => ({ location, navigate }), [location]);
+  return useMemo(() => ({ location, navigate }), [location, navigate]);
 }
 
 export function BrowserRouter({ children }) {

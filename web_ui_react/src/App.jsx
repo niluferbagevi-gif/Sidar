@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";

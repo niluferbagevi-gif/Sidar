@@ -2,7 +2,6 @@
  * StatusBar — WS bağlantı durumu ve oturum bilgisi.
  */
 
-import React from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 
 const STATUS_LABEL = {

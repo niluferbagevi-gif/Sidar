@@ -1,4 +1,3 @@
-import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OperationsQaPanel } from "./OperationsQaPanel.jsx";
@@ -23,8 +22,6 @@ vi.mock("../hooks/useWebSocket.js", () => ({
     return { send: vi.fn(), status: wsState.status };
   },
 }));
-
-const resolved = (payload) => Promise.resolve(payload);
 
 async function renderOperationsQaPanel() {
   const view = render(<OperationsQaPanel />);

@@ -9,7 +9,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSidarHighlight from "../lib/rehypeSidarHighlight.js";
 
 const markdownRenderers = {
-  pre: ({ node, ...props }) => (
+  pre: ({ node: _node, ...props }) => (
     <div className="code-block-wrapper">
       <pre {...props} />
     </div>

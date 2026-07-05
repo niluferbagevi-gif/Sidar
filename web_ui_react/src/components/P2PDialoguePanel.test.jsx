@@ -1,4 +1,3 @@
-import React from "react";
 import { render, screen } from "@testing-library/react";
 import { P2PDialoguePanel } from "./P2PDialoguePanel.jsx";
 

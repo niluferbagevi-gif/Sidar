@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import { useCallback } from "react";
 import { ChatWindow } from "./ChatWindow.jsx";
 import { ChatInput } from "./ChatInput.jsx";
 import { StatusBar } from "./StatusBar.jsx";

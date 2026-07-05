@@ -1,4 +1,3 @@
-import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentManagerPanel } from "./AgentManagerPanel.jsx";
@@ -18,7 +17,7 @@ describe("AgentManagerPanel", () => {
   });
 
   it("shows a validation error when no python file is selected", async () => {
-    const { container } = render(<AgentManagerPanel />);
+    render(<AgentManagerPanel />);
     fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
 
     expect(screen.getByText("Lütfen bir Python ajan dosyası seçin.")).toBeInTheDocument();

@@ -3,7 +3,7 @@
  * Enter gönderir, Shift+Enter yeni satır ekler.
  */
 
-import React, { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 
 export function ChatInput({ onSend, disabled = false }) {

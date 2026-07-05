@@ -35,6 +35,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": ">=1.60.0 <1.62.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -44,6 +45,8 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.0.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.1",
     "rollup-plugin-visualizer": "^6.0.11",
     "typescript": "^6.0.3",

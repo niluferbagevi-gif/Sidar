@@ -3,7 +3,7 @@
  * Yeni mesaj geldiğinde alt kısma otomatik kaydırır.
  */
 
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 import { ChatMessage } from "./ChatMessage.jsx";
 

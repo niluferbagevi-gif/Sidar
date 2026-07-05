@@ -41,7 +41,10 @@ describe("selectOption — state machine", () => {
   });
 
   it("exposes selectOption globally", () => {
-    expect(typeof window.selectOption ?? typeof selectOption).toBe("function");
+    // `typeof x` always returns a string, so `typeof x ?? y` never falls
+    // through to `y` — the previous `?? typeof selectOption` fallback was
+    // dead code (caught by eslint's no-constant-binary-expression).
+    expect(typeof window.selectOption).toBe("function");
   });
 });
 
