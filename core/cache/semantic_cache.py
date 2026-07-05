@@ -165,7 +165,7 @@ class SemanticCacheManager:
             return None
         redis_client = cast(Any, redis)
 
-        query_vector = self._embed_prompt(prompt)
+        query_vector = await asyncio.to_thread(self._embed_prompt, prompt)
         if not query_vector:
             return None
 
@@ -222,7 +222,7 @@ class SemanticCacheManager:
             return
         redis_client = cast(Any, redis)
 
-        vector = self._embed_prompt(prompt)
+        vector = await asyncio.to_thread(self._embed_prompt, prompt)
         if not vector:
             return
 
