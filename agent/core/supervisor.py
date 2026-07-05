@@ -29,6 +29,15 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+# TODO(test-isolation-cleanup): This re-imports agent.core.contracts and, if the
+# module's DelegationRequest looks unhealthy, patches a compat stand-in directly
+# onto sys.modules — a defensive workaround for tests that leave that module
+# swapped with stubs/mocks, not something normal runtime operation needs.
+# tests/conftest.py's autouse `_isolate_contracts_module` fixture now restores
+# sys.modules["agent.core.contracts"] after every test, which addresses the same
+# root cause at the fixture level. Before deleting this function (and the
+# matching one in agent/swarm.py), confirm the full test suite still passes
+# without it in an environment where the whole suite can actually run.
 def _ensure_delegation_request_shape() -> type[DelegationRequest]:
     contracts_mod = importlib.import_module("agent.core.contracts")
     req_cls = getattr(contracts_mod, "DelegationRequest", None)

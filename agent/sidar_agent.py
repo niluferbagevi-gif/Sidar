@@ -1125,6 +1125,11 @@ class SidarAgent:
             # import eder ve modülü cache'te bırakabilir. Bu durumda gerçek role-agent
             # zinciri yerine `stub:*` çıktıları dönebilir. Role sınıflarının kaynak modülünü
             # doğrulayarak gerekiyorsa supervisor modülünü yeniden yükle.
+            # TODO(test-isolation-cleanup): bu da agent/swarm.py ve agent/core/supervisor.py
+            # içindeki contracts self-heal'iyle aynı sınıftan bir test-izolasyon savunma
+            # ağıdır, ama contracts'tan farklı olarak tests/conftest.py'de bu modül için
+            # henüz bir `_isolate_*_module` autouse fixture'ı yok. Bu reload'u kaldırmadan
+            # önce ya sızıntıyı yapan testleri düzeltin ya da eşdeğer bir fixture ekleyin.
             role_symbols = (
                 "ResearcherAgent",
                 "CoderAgent",

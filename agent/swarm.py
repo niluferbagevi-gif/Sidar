@@ -89,6 +89,15 @@ def _is_contracts_module_healthy(module: ModuleType) -> bool:
 _CONTRACTS_MODULE_CACHE: ModuleType | None = None
 
 
+# TODO(test-isolation-cleanup): _contracts_module()/_ensure_contract_aliases()
+# below are a defensive "self-healing module" workaround for tests that swap
+# sys.modules["agent.core.contracts"] with stubs/mocks mid-run, not something
+# normal runtime operation needs. tests/conftest.py's autouse
+# `_isolate_contracts_module` fixture now restores that module after every
+# test, addressing the same root cause at the fixture level. Before deleting
+# this mechanism (and the matching one in agent/core/supervisor.py), confirm
+# the full test suite still passes without it in an environment where the
+# whole suite can actually run.
 def _contracts_module(*, force_refresh: bool = False) -> ModuleType:
     global _CONTRACTS_MODULE_CACHE
     if _CONTRACTS_MODULE_CACHE is not None and not force_refresh:
