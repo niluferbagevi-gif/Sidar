@@ -78,40 +78,54 @@ async def run_nightly_memory_maintenance(
             except Exception as exc:
                 entity_report = {"status": "failed", "error": str(exc), "purged": 0}
 
-            memory_report = await agent.memory.run_nightly_consolidation(
-                keep_recent_sessions=max(
-                    0, int(getattr(agent.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
-                ),
-                min_messages=max(
-                    2, int(getattr(agent.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
-                ),
-            )
-
+            memory_report: dict[str, Any] = {"status": "failed"}
             rag_reports: list[dict[str, Any]] = []
-            keep_recent_docs = max(
-                1, int(getattr(agent.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
-            )
-            raw_session_ids = memory_report.get("session_ids", [])
-            session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
-            for session_id in session_ids:
-                report = await asyncio.to_thread(
-                    agent.docs.consolidate_session_documents,
-                    str(session_id),
-                    keep_recent_docs=keep_recent_docs,
+            removed_docs = 0
+            sessions_compacted = 0
+            overall_status = "completed"
+            try:
+                memory_report = await agent.memory.run_nightly_consolidation(
+                    keep_recent_sessions=max(
+                        0, int(getattr(agent.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
+                    ),
+                    min_messages=max(
+                        2, int(getattr(agent.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
+                    ),
                 )
-                rag_reports.append(report)
 
-            removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
-            raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
-            sessions_compacted = (
-                raw_sessions_compacted
-                if isinstance(raw_sessions_compacted, int)
-                else int(raw_sessions_compacted)
-                if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
-                else 0
-            )
+                keep_recent_docs = max(
+                    1, int(getattr(agent.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
+                )
+                raw_session_ids = memory_report.get("session_ids", [])
+                session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
+                for session_id in session_ids:
+                    report = await asyncio.to_thread(
+                        agent.docs.consolidate_session_documents,
+                        str(session_id),
+                        keep_recent_docs=keep_recent_docs,
+                    )
+                    rag_reports.append(report)
+
+                removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
+                raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
+                sessions_compacted = (
+                    raw_sessions_compacted
+                    if isinstance(raw_sessions_compacted, int)
+                    else int(raw_sessions_compacted)
+                    if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
+                    else 0
+                )
+            except Exception as exc:
+                # entity_memory.purge_expired() zaten kendi hatasını yakalayıp
+                # devam ediyor (yukarıda); memory/RAG konsolidasyonu da aynı şekilde
+                # dereceli bozulmalı — aksi halde bu istisna _append_autonomy_history
+                # çağrısına hiç ulaşmadan tüm nightly job'ı sessizce (yalnızca
+                # çağıranın log satırıyla) sonlandırırdı ve denetim izi kalmazdı.
+                overall_status = "failed"
+                memory_report = {"status": "failed", "error": str(exc)}
+
             result: dict[str, Any] = {
-                "status": "completed",
+                "status": overall_status,
                 "reason": reason,
                 "idle_for_seconds": round(idle_for, 2),
                 "memory_report": memory_report,
@@ -126,18 +140,24 @@ async def run_nightly_memory_maintenance(
                 ),
             }
             agent._last_nightly_maintenance_ts = time.time()
+            summary = (
+                f"Nightly maintenance tamamlandı: "
+                f"{result['sessions_compacted']} oturum sıkıştırıldı, "
+                f"{removed_docs} RAG dokümanı budandı, "
+                f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
+                if overall_status == "completed"
+                else (
+                    "Nightly maintenance başarısız oldu: "
+                    f"{memory_report.get('error', 'bilinmeyen hata')}"
+                )
+            )
             await agent._append_autonomy_history(
                 {
                     "trigger_id": f"nightly-{int(agent._last_nightly_maintenance_ts)}",
                     "source": "nightly_memory",
                     "event_name": "memory_consolidation",
                     "status": result["status"],
-                    "summary": (
-                        f"Nightly maintenance tamamlandı: "
-                        f"{result['sessions_compacted']} oturum sıkıştırıldı, "
-                        f"{removed_docs} RAG dokümanı budandı, "
-                        f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
-                    ),
+                    "summary": summary,
                     "payload": {
                         "reason": reason,
                         "idle_for_seconds": round(idle_for, 2),

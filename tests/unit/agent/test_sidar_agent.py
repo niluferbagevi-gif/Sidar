@@ -2612,6 +2612,52 @@ async def test_nightly_maintenance_handles_entity_failure(
     assert report["entity_report"]["status"] == "failed"
 
 
+async def test_nightly_maintenance_records_audit_trail_when_consolidation_fails(
+    sidar_agent_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    frozen_time,
+) -> None:
+    """A run_nightly_consolidation failure must still degrade gracefully and be
+    recorded via _append_autonomy_history, not silently abort the whole job."""
+    agent = sidar_agent_factory()
+    agent.initialize = AsyncMock()
+    agent._append_autonomy_history = AsyncMock()
+    agent._nightly_maintenance_lock = None
+    frozen_time.tick(delta=9999.0)
+    agent._last_activity_ts = sidar_agent.time.time() - 9999.0
+    _override_cfg(
+        agent,
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        ENABLE_DISTRIBUTED_AGENT_LOCKS=False,
+        NIGHTLY_MEMORY_IDLE_SECONDS=100,
+        NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=2,
+        NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=3,
+        NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
+    )
+
+    entity = AsyncMock()
+    entity.initialize = AsyncMock()
+    entity.purge_expired = AsyncMock(return_value=2)
+    monkeypatch.setattr(sidar_agent, "get_entity_memory", lambda *_a, **_k: entity)
+    agent.memory = types.SimpleNamespace(
+        run_nightly_consolidation=AsyncMock(side_effect=RuntimeError("consolidation-boom"))
+    )
+    agent.docs = types.SimpleNamespace(
+        consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 0}
+    )
+
+    report = await agent.run_nightly_memory_maintenance(force=True)
+
+    assert report["status"] == "failed"
+    assert report["memory_report"]["status"] == "failed"
+    assert "consolidation-boom" in report["memory_report"]["error"]
+    assert report["entity_report"]["status"] == "completed"
+    agent._append_autonomy_history.assert_awaited_once()
+    recorded = agent._append_autonomy_history.await_args.args[0]
+    assert recorded["status"] == "failed"
+    assert "başarısız" in recorded["summary"]
+
+
 async def test_memory_archive_context_returns_empty_when_collection_disappears(
     sidar_agent_factory,
 ) -> None:
