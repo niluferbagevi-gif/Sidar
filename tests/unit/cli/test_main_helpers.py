@@ -1044,6 +1044,26 @@ def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch
     assert child_env["CUSTOM_ENV"] == "kept"
 
 
+def test_launcher_child_env_does_not_force_skip_boot_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SIDAR_SKIP_BOOT_CHECKS", raising=False)
+
+    child_env = main._launcher_child_env()
+
+    assert "SIDAR_SKIP_BOOT_CHECKS" not in child_env
+
+
+def test_launcher_child_env_preserves_explicit_skip_boot_checks_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SIDAR_SKIP_BOOT_CHECKS", "1")
+
+    child_env = main._launcher_child_env()
+
+    assert child_env["SIDAR_SKIP_BOOT_CHECKS"] == "1"
+
+
 def test_maybe_bootstrap_development_env_runs_bootstrap_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

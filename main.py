@@ -1133,11 +1133,19 @@ def build_command(
 
 
 def _launcher_child_env() -> dict[str, str]:
-    """Environment for child processes launched by main.py without duplicate config banners."""
+    """Environment for child processes launched by main.py without duplicate config banners.
+
+    Does not force SIDAR_SKIP_BOOT_CHECKS: the launcher's own
+    validate_critical_settings() call in main() only covers the code path that
+    runs through main(), so the child must keep running its own boot check
+    (web_server.py's lifespan) as a real, independent safety net rather than a
+    permanently-disabled one. Whatever the user explicitly set for
+    SIDAR_SKIP_BOOT_CHECKS in their own environment still passes through via
+    os.environ.copy().
+    """
     child_env = os.environ.copy()
     child_env["SIDAR_CONFIG_QUIET"] = "true"
     child_env["SIDAR_LAUNCHED_BY_MAIN"] = "true"
-    child_env["SIDAR_SKIP_BOOT_CHECKS"] = "1"
     child_env["SIDAR_BANNER_SHOWN"] = "1"
     return child_env
 
