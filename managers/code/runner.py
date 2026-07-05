@@ -117,7 +117,7 @@ def find_destructive_shell_pattern(command: str) -> str | None:
             # mutlak-yol silmeleri de engellenir (önceki alt-dizge kontrolünün
             # kapsamıyla uyumlu; bkz. testler).
             targets_risky_path = any(
-                token.lower() in _CATASTROPHIC_TARGETS or token.startswith("/") or token == "~"
+                token.lower() in _CATASTROPHIC_TARGETS or token.startswith("/") or token == "~"  # nosec B105 - home dir shorthand, not a password
                 for token in positional
             )
             if (
