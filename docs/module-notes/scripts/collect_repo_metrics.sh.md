@@ -12,7 +12,9 @@ Bu script, repo için hızlı bir metrik özeti üretir:
 - `python_files`: `.py` dosya sayısı
 - `markdown_files`: `.md` dosya sayısı
 - `python_lines`: tüm `.py` dosyalarının toplam satır sayısı
-- `test_files`: `tests/` altındaki `test_*.py` dosya sayısı
+- `test_files`: `tests/` altındaki tüm `test_*.py` dosya sayısı
+- `production_python_files`: `tests/` dışındaki `.py` dosya sayısı
+- `production_python_lines`: `tests/` dışındaki `.py` dosyalarının toplam satır sayısı
 
 Çıktı `key=value` formatındadır; CI loglarında kolay okunur ve parse edilir.
 
@@ -34,11 +36,15 @@ bash scripts/collect_repo_metrics.sh /workspace/Sidar
 
 ## 4) Çalışma mantığı
 
-Script `find + wc -l` kombinasyonu ile sayım yapar:
+Script varsayılan olarak `git ls-files` ile yalnız Git tarafından takip edilen dosyaları
+sayar; Git komutu başarısız olursa `.git` dışındaki dosyalar için `Path.rglob()` fallback'i
+kullanır. Böylece `.venv`, `node_modules` veya takip dışı artifact'ler metrikleri şişirmez.
 
-- `.py` ve `.md` dosya sayıları doğrudan bulunur.
-- Python satır toplamı için `.py` dosyaları `-print0` + `xargs -0 cat` ile birleştirilip `wc -l` uygulanır.
-- Test dosyaları `"$root/tests"` altında `test_*.py` deseniyle sayılır.
+- `.py` ve `.md` dosya sayıları takipli dosya listesi üzerinden hesaplanır.
+- Python satır toplamı, takipli `.py` dosyalarının UTF-8 satır sayısı toplanarak üretilir.
+- Test dosyaları `tests/` altında basename'i `test_` ile başlayan tüm `.py` dosyalarıdır;
+  yalnız `tests/test_*.py` kök dosyalarıyla sınırlı değildir.
+- Production Python metrikleri `tests/` dışındaki takipli `.py` dosyalarını kapsar.
 
 Sonuçlar şu formatta basılır:
 
@@ -47,6 +53,8 @@ python_files=...
 markdown_files=...
 python_lines=...
 test_files=...
+production_python_files=...
+production_python_lines=...
 ```
 
 ## 5) Kullanım ve örnek çıktı
@@ -60,23 +68,24 @@ bash scripts/collect_repo_metrics.sh
 Örnek çıktı:
 
 ```text
-python_files=132
-markdown_files=87
-python_lines=34226
-test_files=91
+python_files=501
+markdown_files=112
+python_lines=167638
+test_files=218
+production_python_files=260
+production_python_lines=64393
 ```
 
 ## 6) Bağımlılıklar
 
 - Bash
-- `find`
-- `wc`
-- `tr`
-- `xargs`
-- `cat`
+- Python 3
+- Git (tercih edilir; yoksa Python fallback devreye girer)
 
 ## 7) Sınırlamalar
 
 1. Uzantı kapsamı yalnızca `.py` ve `.md` ile sınırlıdır.
-2. `.git` gibi klasörler için ek filtre yoktur.
-3. `python_lines` hesabı tüm `.py` dosyalarını dahil eder; generated/vendor ayrımı yapmaz.
+2. Git fallback modunda `.git` dışındaki takip dışı dosyalar da sayılabilir; release metrikleri
+   için Git repo içinde `git ls-files` yolu tercih edilmelidir.
+3. `python_lines` hesabı tüm takipli `.py` dosyalarını dahil eder; generated/vendor ayrımı
+   ancak bu dosyalar Git dışında bırakılmışsa otomatik korunur.

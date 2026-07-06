@@ -1,26 +1,56 @@
 # tests/ klasörü özeti
 
-Bu not, **mevcut depo durumunu** (2026-04-09) yansıtır ve eski “coverage push” döneminden kalan
-tek seferlik/geçici dosya adlarını referans almaz.
+Bu not, **mevcut depo durumunu** (2026-07-06) yansıtır ve eski “coverage push” döneminden kalan
+tek seferlik/geçici dosya adlarını referans almaz. Release öncesinde bu dosya yeniden
+üretilen `scripts/collect_repo_metrics.sh` çıktısı ve son CI `artifacts/test-summary.json` /
+`artifacts/test_run.log` sonuçlarıyla güncellenmelidir; yalnız yerel smoke logu full CI
+metriği yerine yazılmamalıdır.
 
 ## Güncel metrikler
 
-- `test_*.py` desenine uyan toplam test dosyası: **90**
+- `scripts/collect_repo_metrics.sh .` çıktısı (2026-07-06):
+  - `python_files`: **501**
+  - `markdown_files`: **112**
+  - `python_lines`: **167638**
+  - `test_files`: **218** (`tests/` altındaki `test_*.py` dosyaları)
+  - `production_python_files`: **260**
+  - `production_python_lines`: **64393**
+- `test_*.py` desenine uyan toplam test dosyası: **218**
 - Katman dağılımı:
-  - `tests/unit`: **77**
-  - `tests/integration`: **7**
-  - `tests/quality`: **2**
-  - `tests/smoke`: **2**
-  - `tests/e2e`: **1**
-  - `tests/performance`: **1**
-- 2026-06-23 kalite çıktısı bazında test adedi dağılımı: backend unit **3605**, backend
-  integration/smoke/e2e **73**, frontend Vitest **496**; toplam **4174** test. Unit ağırlığı
-  yaklaşık **%86** olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
+  - `tests/unit`: **177**
+  - `tests/integration`: **16**
+  - `tests/quality`: **6**
+  - `tests/smoke`: **8**
+  - `tests/e2e`: **6**
+  - `tests/performance`: **2**
+  - `tests/` kökü: **3**
+- Paylaşılan development installer logunda smoke doğrulaması **33 passed** olarak gözlenmiştir.
+  Bu sayı pytest item sayısıdır; yukarıdaki `tests/smoke`: **8** değeri ise dosya/modül
+  envanteridir. Release notuna test item sayısı yazılacaksa son CI `test_run.log` veya
+  `artifacts/test-summary.json` kaynağı açıkça belirtilmelidir.
+- Önceki 2026-06-23 kalite çıktısı bazında test adedi dağılımı (backend unit **3605**,
+  backend integration/smoke/e2e **73**, frontend Vitest **496**, toplam **4174**) artık
+  tarihli referans kabul edilir; release öncesi son CI çıktısıyla yenilenmeden güncel metrik
+  gibi kullanılmamalıdır. Unit ağırlığı yüksek olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
   ve `core/db/__init__.py` gibi facade taşımalarında en az bir integration sahnesi de eklenir.
 - `run_tests.sh` Aşama 1 unit fazı artık pytest-xdist mevcutsa `PYTEST_WORKERS` ve
   `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
   ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
   paralel değil" tespiti güncel script için geçerli değildir.
+
+## Release öncesi metrik yenileme prosedürü
+
+1. Repo kökünde `bash scripts/collect_repo_metrics.sh .` çalıştırın ve yukarıdaki key-value
+   envanteri güncelleyin.
+2. Son main CI koşusundan `artifacts/test-summary.json`, `artifacts/test_run.log`,
+   frontend Playwright raporu ve benchmark artifact'lerini indirin.
+3. Smoke/integration/frontend/benchmark değerlerini dosya sayısı ile pytest item sayısını
+   karıştırmadan yazın:
+   - dosya/modül sayısı için Git envanteri (`tests/**/test_*.py`);
+   - geçen/atlanan/başarısız gate durumu için `artifacts/test-summary.json`;
+   - test item sayısı için CI `test_run.log` / pytest summary.
+4. Local installer smoke sonucu yalnız kurulum smoke kapsamını temsil eder; CI full validation
+   veya production readiness metrikleri yerine kullanılmamalıdır.
 
 ## Mimari kural: anti-fragmentation
 
