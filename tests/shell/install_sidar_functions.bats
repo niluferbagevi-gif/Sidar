@@ -1846,6 +1846,40 @@ ENV
   [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
 }
 
+@test "detect_gpu preserves an existing RUN_GPU_STRESS=0 opt-out in .env.development" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: Test GPU (UUID: GPU-test)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "Test GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "24576" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "8.9" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") echo "12.9" ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "610.62" ;;
+  *) echo "NVIDIA-SMI changed banner without CUDA token" ;;
+esac
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    cat > "$tmpdir/.env.development" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=false
+    unset RUN_GPU_STRESS
+    detect_gpu
+    [[ "$GPU_AVAILABLE" == "true" ]]
+    grep -q "^RUN_GPU_STRESS=0$" "$tmpdir/.env.development"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"kullanıcı tercihi korunuyor"* ]]
+}
+
 @test "persist_run_gpu_stress_dotenv creates development dotenv from example" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

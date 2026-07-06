@@ -78,7 +78,9 @@ detect_gpu() {
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
+        if declare -F gpu_stress_disabled_by_user >/dev/null 2>&1 && gpu_stress_disabled_by_user; then
+            info "RUN_GPU_STRESS=0 (.env.development) kullanıcı tercihi korunuyor; otomatik olarak yeniden etkinleştirilmiyor."
+        elif [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
             declare -F persist_run_gpu_stress_dotenv >/dev/null 2>&1 && persist_run_gpu_stress_dotenv
             info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
