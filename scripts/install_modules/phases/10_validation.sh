@@ -416,11 +416,34 @@ run_test_artifact_audit() {
     fi
 }
 
+sidar_install_production_gate_required() {
+    local env_choice="${AUTO_ENV_TYPE:-ask}"
+    local env_file_value=""
+    local production_readiness_raw=""
+
+    production_readiness_raw="$(normalize_bool "${SIDAR_PRODUCTION_READINESS:-${PRODUCTION_READINESS:-}}")"
+    [[ "$production_readiness_raw" == "true" ]] && return 0
+    [[ "$env_choice" == "production" ]] && return 0
+
+    if [[ "$env_choice" == "ask" && -f "$SCRIPT_DIR/.env" ]]; then
+        env_file_value="$(read_env_value_from_file "SIDAR_ENV" "$SCRIPT_DIR/.env" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        [[ "$env_file_value" == "production" ]] && return 0
+    fi
+
+    return 1
+}
+
 run_install_ci_full_validation() {
     step "CI Tam Doğrulama"
 
+    local production_gate_required=false
+    if sidar_install_production_gate_required; then
+        production_gate_required=true
+        RUN_CI_FULL_VALIDATION=true
+    fi
+
     if [[ "$RUN_CI_FULL_VALIDATION" != true ]]; then
-        info "--ci-full verilmediği için run_tests.sh --stage all otomatik çalıştırılmadı."
+        info "Development/local kurulumda run_tests.sh --stage all otomatik çalıştırılmadı; production için --production-readiness zorunlu gate olarak kullanılır."
         CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
         return
     fi
@@ -428,8 +451,11 @@ run_install_ci_full_validation() {
     local run_tests_script="$SCRIPT_DIR/run_tests.sh"
     local ci_full_failure_policy="${CI_FULL_VALIDATION_FAILURE_POLICY:-fail}"
     if [[ ! -f "$run_tests_script" ]]; then
-        warn "Tam doğrulama betiği bulunamadı: $run_tests_script"
         CI_FULL_VALIDATION_STATUS="betik_yok"
+        if [[ "$production_gate_required" == true ]]; then
+            fail "Production readiness gate çalıştırılamadı: tam doğrulama betiği bulunamadı ($run_tests_script)."
+        fi
+        warn "Tam doğrulama betiği bulunamadı: $run_tests_script"
         return
     fi
 
@@ -440,8 +466,10 @@ run_install_ci_full_validation() {
         CI_FULL_VALIDATION_STATUS="tamamlandi"
     else
         CI_FULL_VALIDATION_STATUS="hata"
-        if [[ "$ci_full_failure_policy" == "warn" ]]; then
-            warn "Tam CI doğrulamasında hata var. CI_FULL_VALIDATION_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+        if [[ "$production_gate_required" == true ]]; then
+            fail "Production readiness gate başarısız. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+        elif [[ "$ci_full_failure_policy" == "warn" ]]; then
+            warn "Tam CI doğrulamasında hata var. CI_FULL_VALIDATION_FAILURE_POLICY=warn nedeniyle development/local kurulum devam ediyor."
         else
             fail "Tam CI doğrulamasında hata var. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
         fi
@@ -483,15 +511,20 @@ print_install_validation_coverage() {
         echo -e "   ${RED}Tam doğrulama sonucu: HATA${NC}"
     elif [[ "$full_coverage_reached" != true ]]; then
         echo ""
-        echo -e "   ${YELLOW}${BOLD}⚠️  UYARI: Bu kurulum yalnızca smoke testleri (boot/GPU/import/kilit/WSL) kapsar.${NC}"
-        echo -e "   ${YELLOW}   Agent orkestrasyonu, gerçek DB migrasyonları, WebSocket oturumları ve plugin sandbox'ı${NC}"
-        echo -e "   ${YELLOW}   gibi kritik yollar bu aşamada DOĞRULANMADI. \"Smoke testler geçti\" mesajı, tam${NC}"
-        echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
-        echo ""
-        echo -e "   ${BOLD}➡️  Zorunlu sonraki adım: production'a geçmeden veya kod üzerinde çalışmaya devam${NC}"
-        echo -e "   ${BOLD}   etmeden önce en az bir kez şunu çalıştırın:${NC}"
-        echo -e "   ${BOLD}   ./run_tests.sh --stage integration${NC}"
-        echo "   Tam doğrulama (integration + e2e + benchmark): ./install_sidar.sh --production-readiness"
-        echo "   veya yalnızca:                                  TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+        if sidar_install_production_gate_required; then
+            echo -e "   ${RED}${BOLD}⛔ PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur.${NC}"
+            echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
+            echo -e "   ${RED}   Zorunlu gate: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all${NC}"
+        else
+            echo -e "   ${YELLOW}${BOLD}⚠️  DEVELOPMENT UYARISI: Bu kurulum yalnızca smoke testleri (boot/GPU/import/kilit/WSL) kapsar.${NC}"
+            echo -e "   ${YELLOW}   Agent orkestrasyonu, gerçek DB migrasyonları, WebSocket oturumları ve plugin sandbox'ı${NC}"
+            echo -e "   ${YELLOW}   gibi kritik yollar bu aşamada DOĞRULANMADI. \"Smoke testler geçti\" mesajı, tam${NC}"
+            echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
+            echo ""
+            echo -e "   ${BOLD}➡️  Development için önerilen sonraki adım:${NC}"
+            echo -e "   ${BOLD}   ./run_tests.sh --stage integration${NC}"
+            echo "   Production gate (integration + e2e + benchmark): ./install_sidar.sh --production-readiness"
+            echo "   veya yalnızca:                                  TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+        fi
     fi
 }
