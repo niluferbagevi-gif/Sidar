@@ -888,6 +888,7 @@ EOF
   [[ "$output" == *"Coverage ratchet / fail-under notu"* ]]
   [[ "$output" == *"pyproject.toml coverage fail-under eşiği: 50%"* ]]
   [[ "$output" == *"tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz"* ]]
+  [[ "$output" == *"Test rehberi: docs/TESTING.md"* ]]
   [[ "$output" == *"GitHub Actions CI parite haritası"* ]]
   [[ "$output" == *"CI step: Run frontend lint/type-check/audit gate"*"bash run_tests.sh --stage frontend"* ]]
   [[ "$output" == *"CI step: Run test suite + coverage + benchmark"*"bash run_tests.sh --stage all"* ]]

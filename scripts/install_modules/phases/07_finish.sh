@@ -182,6 +182,7 @@ print_summary() {
     echo ""
     echo -e "  6️⃣  Testleri çalıştır (varsayılan kurulumda hazır):"
     echo "       ./run_tests.sh"
+    echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
     echo ""
     print_install_validation_coverage
 
@@ -209,6 +210,7 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
+    echo "  Test rehberi: docs/TESTING.md — smoke ile yetinmeyin; PR/merge öncesi run_tests.sh kullanın."
     echo "  Tam doğrulama için (backend + frontend + benchmark + BATS + security):"
     echo "    bash run_tests.sh --stage all"
     echo "  Backend entegrasyon ana yolu:"

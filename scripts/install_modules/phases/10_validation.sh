@@ -569,6 +569,7 @@ print_install_coverage_gate_note() {
     echo -e "   ${YELLOW}Pytest marker'ları ve warning politikası pyproject.toml içinde tanımlı; bu kalite kapısı yalnız run_tests.sh coverage akışında uygulanır.${NC}"
     echo -e "   ${YELLOW}Kurulum smoke/build adımları geçse bile tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz.${NC}"
     echo "   Coverage gate için: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    echo "   Test rehberi: docs/TESTING.md (run_tests.sh PR/merge öncesi ana doğrulama yoludur)"
 }
 
 print_install_ci_parity_summary() {
@@ -662,6 +663,7 @@ print_install_validation_coverage() {
             echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
             echo ""
             echo -e "   ${BOLD}➡️  Önerilen doğrulama komutu (duruma göre tek komut seçin):${NC}"
+            echo "   Test rehberi:             docs/TESTING.md"
             echo -e "   ${BOLD}   Development tam doğrulama: ${recommended_validation_command}${NC}"
             echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
             echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
