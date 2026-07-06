@@ -368,6 +368,13 @@ ensure_docker_cli_available() {
 }
 
 
+# shellcheck disable=SC2120 # opsiyonel pozisyonel argüman; testler özel dosya yolu geçebilir.
+gpu_stress_disabled_by_user() {
+    local target_env_file="${1:-${SCRIPT_DIR}/.env.development}"
+    [[ -f "$target_env_file" ]] || return 1
+    grep -qE '^RUN_GPU_STRESS=0[[:space:]]*$' "$target_env_file" 2>/dev/null
+}
+
 # shellcheck disable=SC2120 # opsiyonel pozisyonel argümanlar; testler özel dosya yolu geçebilir.
 persist_run_gpu_stress_dotenv() {
     [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
@@ -965,7 +972,9 @@ detect_gpu() {
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
 
         GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
+        if gpu_stress_disabled_by_user; then
+            info "RUN_GPU_STRESS=0 (.env.development) kullanıcı tercihi korunuyor; otomatik olarak yeniden etkinleştirilmiyor."
+        elif [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
             persist_run_gpu_stress_dotenv
             info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."

@@ -243,6 +243,8 @@ run_smoke_tests() {
     if [[ "${RUN_GPU_STRESS:-0}" == "1" ]]; then
         persist_run_gpu_stress_dotenv
         info "RUN_GPU_STRESS=1 zaten tanımlı; GPU stres smoke testi zorunlu çalıştırılacak."
+    elif gpu_stress_disabled_by_user; then
+        info "RUN_GPU_STRESS=0 (.env.development) kullanıcı tercihi korunuyor; GPU stres smoke testi bu kurulumda atlanıyor."
     elif [[ "$GPU_AVAILABLE" == true ]]; then
         export RUN_GPU_STRESS=1
         persist_run_gpu_stress_dotenv
