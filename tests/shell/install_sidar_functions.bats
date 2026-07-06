@@ -980,30 +980,24 @@ EOF
   [[ "$output" == *"crontab satırı olarak kuruldu"* ]]
 }
 
-@test "run_install_integration_api_tests is opt-in and passes service env to pytest" {
+@test "run_install_integration_api_tests is opt-in and runs full integration gate with service env" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
-    mkdir -p "$tmpdir/tests/integration/api" "$tmpdir/bin"
+    mkdir -p "$tmpdir/bin"
+    touch "$tmpdir/run_tests.sh"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar
 POSTGRES_PASSWORD=secret
 SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
 EOF
-    cat > "$tmpdir/bin/uv" <<EOF
-#!/usr/bin/env bash
-printf "%s\n" "\$*" > "$tmpdir/uv.args"
-printf "DATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/uv.env"
+    cat > "$tmpdir/bin/bash" <<EOF
+#!/bin/bash
+printf "%s\n" "\$*" > "$tmpdir/bash.args"
+printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/bash.env"
 exit 0
 EOF
-    chmod +x "$tmpdir/bin/uv"
-    # pytest precheck (install_sidar.sh:`python -c "import pytest"`) runs against the
-    # system python, which has no pytest on the CI runner; stub it to satisfy the gate.
-    cat > "$tmpdir/bin/python" <<EOF
-#!/usr/bin/env bash
-exit 0
-EOF
-    chmod +x "$tmpdir/bin/python"
+    chmod +x "$tmpdir/bin/bash"
     export PATH="$tmpdir/bin:$PATH"
     SCRIPT_DIR="$tmpdir"
     wait_for_redis_before_smoke_tests() { return 0; }
@@ -1012,15 +1006,18 @@ EOF
     RUN_INSTALL_INTEGRATION_TESTS=false
     run_install_integration_api_tests
     [[ "$INTEGRATION_TEST_STATUS" == "atlandi_bayrak" ]]
-    [[ ! -e "$tmpdir/uv.args" ]]
+    [[ ! -e "$tmpdir/bash.args" ]]
 
     RUN_INSTALL_INTEGRATION_TESTS=true
     run_install_integration_api_tests
     [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]
-    grep -q "tests/integration/api" "$tmpdir/uv.args"
-    grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/uv.env"
-    grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/uv.env"
-    grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/uv.env"
+    grep -q "run_tests.sh" "$tmpdir/bash.args"
+    grep -q -- "--stage" "$tmpdir/bash.args"
+    grep -q "integration" "$tmpdir/bash.args"
+    grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
+    grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/bash.env"
+    grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/bash.env"
+    grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
   '
   [ "$status" -eq 0 ]
 }

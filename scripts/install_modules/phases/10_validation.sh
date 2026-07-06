@@ -321,31 +321,22 @@ wait_for_core_docker_health_before_smoke_tests() {
 
 
 run_install_integration_api_tests() {
-    step "API Entegrasyon Testleri"
+    step "Kurulum Entegrasyon Testleri"
 
     if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
-        info "--with-integration verilmediği için tests/integration/api çalıştırılmadı."
+        info "--with-integration verilmediği için bash run_tests.sh --stage integration çalıştırılmadı."
         INTEGRATION_TEST_STATUS="atlandi_bayrak"
         return
     fi
 
-    local integration_dir="$SCRIPT_DIR/tests/integration/api"
-    local -a pytest_integration_args=("$integration_dir" --rootdir="$SCRIPT_DIR" -v --no-cov)
-    local -a pytest_integration_env=()
+    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
+    local -a integration_env=(AUTO_OPEN_ARTIFACTS=0)
     local integration_failure_policy="${INTEGRATION_TEST_FAILURE_POLICY:-fail}"
 
-    if [[ ! -d "$integration_dir" ]]; then
-        warn "API entegrasyon test dizini bulunamadı: $integration_dir"
-        INTEGRATION_TEST_STATUS="dizin_yok"
-        return
+    if [[ ! -f "$run_tests_script" ]]; then
+        INTEGRATION_TEST_STATUS="betik_yok"
+        fail "--with-integration entegrasyon kapısı çalıştırılamadı: $run_tests_script bulunamadı."
     fi
-
-    if ! wait_for_redis_before_smoke_tests; then
-        warn "Redis hazır olmadığı için API entegrasyon testleri çalıştırılmadı (false-negative önleme)."
-        INTEGRATION_TEST_STATUS="atlandi_redis_hazir_degil"
-        return
-    fi
-    wait_for_core_docker_health_before_smoke_tests
 
     local env_file="$SCRIPT_DIR/.env"
     local integration_database_url=""
@@ -360,32 +351,34 @@ run_install_integration_api_tests() {
         fi
 
         if [[ -n "$integration_database_url" ]]; then
-            pytest_integration_env+=("DATABASE_URL=$integration_database_url")
-            info "API entegrasyon test DATABASE_URL değeri .env dosyasından yenilendi."
+            integration_env+=("DATABASE_URL=$integration_database_url")
+            info "Entegrasyon test DATABASE_URL değeri .env dosyasından yenilendi."
         fi
         if [[ -n "$integration_postgres_password" ]]; then
-            pytest_integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")
+            integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")
         fi
         if [[ -n "$integration_redis_url" ]]; then
-            pytest_integration_env+=("REDIS_URL=$integration_redis_url")
+            integration_env+=("REDIS_URL=$integration_redis_url")
         fi
     fi
 
-    if ! python -c "import pytest" >/dev/null 2>&1; then
-        warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini uv.lock ile tekrar çalıştırın."
-        INTEGRATION_TEST_STATUS="pytest_yok"
+    if ! wait_for_redis_before_smoke_tests; then
+        warn "Redis hazır olmadığı için entegrasyon testleri çalıştırılmadı (false-negative önleme)."
+        INTEGRATION_TEST_STATUS="atlandi_redis_hazir_degil"
         return
     fi
+    wait_for_core_docker_health_before_smoke_tests
 
-    if env "${pytest_integration_env[@]}" uv run pytest "${pytest_integration_args[@]}"; then
-        ok "API entegrasyon testleri başarıyla geçti."
+    info "Kurulum entegrasyon kapısı başlıyor: bash run_tests.sh --stage integration"
+    if env "${integration_env[@]}" bash "$run_tests_script" --stage integration; then
+        ok "Entegrasyon testleri başarıyla geçti (run_tests.sh --stage integration)."
         INTEGRATION_TEST_STATUS="tamamlandi"
     else
         INTEGRATION_TEST_STATUS="hata"
         if [[ "$integration_failure_policy" == "warn" ]]; then
-            warn "API entegrasyon testlerinde hata var. INTEGRATION_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+            warn "Entegrasyon testlerinde hata var. INTEGRATION_TEST_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
         else
-            fail "API entegrasyon testlerinde hata var. Kurulum güvenliği için süreç durduruldu."
+            fail "Entegrasyon testlerinde hata var. Tekrar için: bash run_tests.sh --stage integration"
         fi
     fi
 }
@@ -542,9 +535,9 @@ print_install_validation_coverage() {
         echo -e "   ${GREEN}✅ Benchmark:    TAMAMLANDI${NC}"
     else
         if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
-            echo -e "   ${YELLOW}⚠️  Integration:  API TAMAMLANDI; TAM KAPSAM ATLANDI (api/cli/db/managers/web/workflow)${NC}"
+            echo -e "   ${GREEN}✅ Integration:  TAMAMLANDI (kapsam: run_tests.sh --stage integration)${NC}"
         elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-            echo -e "   ${RED}❌ Integration:  API HATA; tam kapsam için run_tests.sh --stage integration${NC}"
+            echo -e "   ${RED}❌ Integration:  HATA; tekrar için run_tests.sh --stage integration${NC}"
         else
             echo -e "   ${YELLOW}⏭️  Integration:  ATLANDI (kapsam: api/cli/db/managers/web/workflow)${NC}"
         fi

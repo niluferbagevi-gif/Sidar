@@ -211,11 +211,11 @@ print_summary() {
         echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
     fi
     if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
-        echo "  API entegrasyon testleri: başarılı (tests/integration/api)."
+        echo "  Entegrasyon testleri: başarılı (run_tests.sh --stage integration)."
     elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-        echo "  API entegrasyon testleri: hata var. Tekrar için: uv run pytest tests/integration/api --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
+        echo "  Entegrasyon testleri: hata var. Tekrar için: bash run_tests.sh --stage integration"
     else
-        echo "  API entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
+        echo "  Entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
         echo "  Tüm entegrasyon/CLI/DB/workflow kapsamı için: bash run_tests.sh --stage integration"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then

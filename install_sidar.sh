@@ -1261,7 +1261,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --values=<file>  Helm values file (for example: helm/sidar/values-prod.yaml)
   --smoke-test  Require tests/smoke at the end of installation
   --skip-smoke-test  Do not run smoke tests at the end of installation
-  --with-integration / --with-integration-tests  Also run tests/integration/api after smoke tests
+  --with-integration / --with-integration-tests  Also run bash run_tests.sh --stage integration after smoke tests
   --ci-full  After installation, run TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
   --production-readiness  Production gate alias for --ci-full; fails installation unless the full CI/e2e/benchmark gate passes
   --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
@@ -1327,7 +1327,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)
   --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
-  --with-integration / --with-integration-tests  Smoke sonrası tests/integration/api testlerini de çalıştır
+  --with-integration / --with-integration-tests  Smoke sonrası bash run_tests.sh --stage integration çalıştır
   --ci-full  Kurulum sonunda TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all çalıştır
   --production-readiness  --ci-full için üretim geçiş kapısı aliası; tam CI/e2e/benchmark geçmeden kurulumu başarılı saymaz
   --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
