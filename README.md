@@ -562,6 +562,46 @@ seçenekleri `docs/install-script-options.md` içinde belgelenmiştir. Normal
 geliştirme ve CI akışlarında bu gate'leri açık bırakın; opt-out değerlerini
 yalnız geçici tanılama veya ayrı doğrulama gate'leri bulunan ortamlarda kullanın.
 
+### Local install smoke != CI full validation
+
+`./install_sidar.sh` development/local akışında kurulumun çalışabilirliğini hızlıca
+kanıtlayan smoke kontrollerini hedefler. Bu kapsam; boot/import, installer manifest
+uyumluluğu, temel runtime hazırlığı, Alembic/servis smoke ve varsa GPU smoke gibi erken
+hata sinyallerini yakalar, ancak main CI hattının tamamıyla aynı güvenceyi vermez.
+Özellikle `npm run build` başarısı React uygulamasının üretilebilir olduğunu gösterir;
+frontend `lint`, `typecheck`, Vitest `coverage` ve Playwright smoke doğrulamalarının
+geçtiği anlamına gelmez.
+
+Main CI (`.github/workflows/ci.yml`) local installer smoke kapsamının üzerine şu kapıları
+ekler ve bunları merge öncesi sinyal olarak kullanır:
+
+- core installer manifest ve installer modül hash doğrulamaları;
+- installer shell gates (`make lint`, `make test-shell`) ve standalone installer bundle
+  üretimi;
+- Python `ruff check` ve `ruff format --check`;
+- frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
+  Playwright Chromium smoke hazırlığı/raporu;
+- Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- izole PostgreSQL test DB hazırlığı, Alembic upgrade, kritik smoke import gates ve
+  installer/runtime smoke testleri;
+- `run_tests.sh` tam kalite kapısı: coverage ratchet, frontend E2E, benchmark JSON/trend
+  artifact'leri ve Docker test image hazırlığı;
+- ayrı `installer-smoke` job'ı ile raw GitHub installer hash/manifest smoke doğrulaması.
+
+Yerelde yalnız “kurulum başarılı / smoke geçti” gördüyseniz bunu full validation olarak
+yorumlamayın. Kapsama göre önerilen tek komutlar:
+
+```bash
+# Hızlı entegrasyon kontrolü
+bash run_tests.sh --stage integration
+
+# Development full validation (GPU varsa installer bu komuta RUN_GPU_STRESS=1 önerir)
+RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
+
+# Production readiness gate
+./install_sidar.sh --production-readiness
+```
+
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya
 uzun coverage kampanyaları için repoyu klonlamak hâlâ en doğru çalışma şeklidir:
 
