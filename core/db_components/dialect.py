@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(r"^(?:INSERT\s+\d+|UPDATE|DELETE|SELECT|MOVE|FETCH|COPY)\s+(\d+)\s*$", re.IGNORECASE)
+ASYNCPG_COMMAND_TAG_COUNT_RE = re.compile(
+    r"^(?:INSERT\s+\d+|UPDATE|DELETE|SELECT|MOVE|FETCH|COPY)\s+(\d+)\s*$", re.IGNORECASE
+)
 
 
 def quote_sql_identifier(identifier: str) -> str:
