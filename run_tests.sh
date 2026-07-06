@@ -578,7 +578,9 @@ FRONTEND_LINT_EXIT_CODE=0
 FRONTEND_COVERAGE_EXIT_CODE=0
 FRONTEND_NPM_AUDIT_EXIT_CODE=0
 FRONTEND_E2E_EXIT_CODE=0
+FRONTEND_TYPECHECK_EXIT_CODE=0
 FRONTEND_LINT_RAN=0
+FRONTEND_TYPECHECK_RAN=0
 FRONTEND_COVERAGE_RAN=0
 FRONTEND_NPM_AUDIT_RAN=0
 FRONTEND_E2E_RAN=0
@@ -630,6 +632,7 @@ print_frontend_quality_summary() {
   echo ""
   echo "🧭 Frontend kalite kapısı özeti"
   echo "   Lint (npm run lint): $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}")"
+  echo "   Typecheck (npm run typecheck): $(format_quality_status "${FRONTEND_TYPECHECK_EXIT_CODE}" "${FRONTEND_TYPECHECK_RAN}")"
   echo "   Coverage (npm run test:coverage): $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}")"
   echo "   Dependency audit (npm run audit:high): $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}")"
   echo "   Playwright (${FRONTEND_E2E_NPM_SCRIPT}): $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "atlanmış") (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
@@ -648,6 +651,7 @@ print_frontend_quality_summary() {
       echo "| Gate | Command | Result |"
       echo "| --- | --- | --- |"
       echo "| Lint | \`npm run lint\` | $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}" "skipped") |"
+      echo "| Typecheck | \`npm run typecheck\` | $(format_quality_status "${FRONTEND_TYPECHECK_EXIT_CODE}" "${FRONTEND_TYPECHECK_RAN}" "skipped") |"
       echo "| Coverage | \`npm run test:coverage\` | $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}" "skipped") |"
       echo "| Dependency audit | \`npm run audit:high\` | $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}" "skipped") |"
       echo "| Playwright smoke | \`npm run ${FRONTEND_E2E_NPM_SCRIPT}\` | $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "skipped") |"
@@ -2176,23 +2180,31 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
           if [ "${FRONTEND_LINT_EXIT_CODE}" -ne 0 ]; then
             FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
           else
-            echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
-            FRONTEND_COVERAGE_RAN=1
-            run_checked npm run test:coverage
-            FRONTEND_COVERAGE_EXIT_CODE=$?
-            FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+            echo "🧪 Frontend typecheck kalite kapısı çalıştırılıyor: npm run typecheck"
+            FRONTEND_TYPECHECK_RAN=1
+            run_checked npm run typecheck
+            FRONTEND_TYPECHECK_EXIT_CODE=$?
+            if [ "${FRONTEND_TYPECHECK_EXIT_CODE}" -ne 0 ]; then
+              FRONTEND_EXIT_CODE=${FRONTEND_TYPECHECK_EXIT_CODE}
+            else
+              echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
+              FRONTEND_COVERAGE_RAN=1
+              run_checked npm run test:coverage
+              FRONTEND_COVERAGE_EXIT_CODE=$?
+              FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
             if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -eq 0 ] && [ ! -f "coverage/index.html" ]; then
               echo "❌ Frontend coverage testi geçti ancak HTML artefaktı üretilemedi: web_ui_react/coverage/index.html"
               FRONTEND_COVERAGE_EXIT_CODE=1
               FRONTEND_EXIT_CODE=1
             fi
-            if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-              if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
-                FRONTEND_E2E_RAN=1
-                run_checked run_frontend_e2e_with_retry
-                FRONTEND_E2E_EXIT_CODE=$?
-              else
-                echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+              if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
+                if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
+                  FRONTEND_E2E_RAN=1
+                  run_checked run_frontend_e2e_with_retry
+                  FRONTEND_E2E_EXIT_CODE=$?
+                else
+                  echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+                fi
               fi
             fi
           fi

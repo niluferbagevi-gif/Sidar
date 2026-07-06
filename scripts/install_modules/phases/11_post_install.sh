@@ -351,6 +351,7 @@ run_smoke_phase() {
     seed_rag_metadata_after_migrations
     run_smoke_tests
     run_install_integration_api_tests
+    run_install_frontend_quality_validation
     run_test_artifact_audit
     run_install_ci_full_validation
     run_doctor_phase || true

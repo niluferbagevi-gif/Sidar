@@ -51,6 +51,7 @@ def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked(
         "run_checked npm install",
         "run_checked npm run audit:high",
         "run_checked npm run lint",
+        "run_checked npm run typecheck",
         "run_checked npm run test:coverage",
         "run_checked run_frontend_e2e_with_retry",
     ):
@@ -601,6 +602,11 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "assert_production_readiness_request" in run_tests_script
     assert "production_readiness_gate_active" in run_tests_script
     assert "SIDAR_PRODUCTION_READINESS=1" in validation_phase
+    assert "run_install_frontend_quality_validation()" in validation_phase
+    assert "npm run lint &&" in validation_phase
+    assert "npm run typecheck &&" in validation_phase
+    assert "npm run test:coverage &&" in validation_phase
+    assert "npm run test:e2e:smoke" in validation_phase
     assert "SIDAR_PRODUCTION_READINESS" in install_script
     assert "sidar_install_production_gate_required()" in validation_phase
     assert "Production readiness gate başarısız" in validation_phase
@@ -3026,12 +3032,15 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         frontend_gate_block.index("resolve_local_frontend_e2e_mode")
         < frontend_gate_block.index("npm run audit:high")
         < frontend_gate_block.index("npm run lint")
+        < frontend_gate_block.index("npm run typecheck")
         < frontend_gate_block.index("npm run test:coverage")
     )
     assert "FRONTEND_NPM_AUDIT_RAN=1" in script
     assert "FRONTEND_NPM_AUDIT_EXIT_CODE=$?" in script
     assert "Dependency audit (npm run audit:high)" in script
+    assert "Typecheck (npm run typecheck)" in script
     assert r"| Dependency audit | \`npm run audit:high\` |" in script
+    assert r"| Typecheck | \`npm run typecheck\` |" in script
     assert "RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}" in script
     assert "run_frontend_e2e_with_retry()" in script
     assert 'if [ "${FRONTEND_E2E_RETRY_ON_FAIL}" != "1" ]; then' in script
@@ -3050,6 +3059,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
+    assert '"typecheck": "tsc --noEmit"' in package_json
     assert '"test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js"' in package_json
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
@@ -3162,6 +3172,7 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     assert (
         frontend_gate_block.index("npm run audit:high")
         < frontend_gate_block.index("npm run lint")
+        < frontend_gate_block.index("npm run typecheck")
         < frontend_gate_block.index("npm run test:coverage")
     )
 

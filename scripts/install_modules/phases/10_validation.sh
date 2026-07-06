@@ -390,6 +390,47 @@ run_install_integration_api_tests() {
     fi
 }
 
+
+run_install_frontend_quality_validation() {
+    step "Frontend Entegrasyon Kalite Kapısı"
+
+    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+        info "--with-integration verilmediği için frontend lint/typecheck/coverage/e2e smoke çalıştırılmadı."
+        FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    local frontend_dir="$SCRIPT_DIR/web_ui_react"
+    local frontend_failure_policy="${FRONTEND_QUALITY_FAILURE_POLICY:-fail}"
+    if [[ ! -f "$frontend_dir/package.json" ]]; then
+        FRONTEND_QUALITY_STATUS="package_yok"
+        fail "--with-integration frontend kalite kapısı çalıştırılamadı: $frontend_dir/package.json bulunamadı."
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+        FRONTEND_QUALITY_STATUS="npm_yok"
+        fail "--with-integration frontend kalite kapısı çalıştırılamadı: npm bulunamadı."
+    fi
+
+    info "Frontend kalite kapısı başlıyor: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+    if (
+        cd "$frontend_dir" && \
+        npm run lint && \
+        npm run typecheck && \
+        npm run test:coverage && \
+        npm run test:e2e:smoke
+    ); then
+        ok "Frontend lint/typecheck/coverage/e2e smoke kalite kapısı başarıyla geçti."
+        FRONTEND_QUALITY_STATUS="tamamlandi"
+    else
+        FRONTEND_QUALITY_STATUS="hata"
+        if [[ "$frontend_failure_policy" == "warn" ]]; then
+            warn "Frontend kalite kapısında hata var. FRONTEND_QUALITY_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
+        else
+            fail "Frontend kalite kapısı başarısız. Tekrar için: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+        fi
+    fi
+}
+
 run_test_artifact_audit() {
     step "Test Artifact Denetimi"
 
@@ -504,6 +545,14 @@ print_install_validation_coverage() {
         fi
         echo -e "   ${YELLOW}⏭️  E2E:          ATLANDI (kapsam: agents/cli/web)${NC}"
         echo -e "   ${YELLOW}⏭️  Benchmark:    ATLANDI${NC}"
+    fi
+
+    if [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
+        echo -e "   ${GREEN}✅ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE TAMAMLANDI${NC}"
+    elif [[ "$FRONTEND_QUALITY_STATUS" == "hata" ]]; then
+        echo -e "   ${RED}❌ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE HATA${NC}"
+    elif [[ "$RUN_INSTALL_INTEGRATION_TESTS" == true ]]; then
+        echo -e "   ${YELLOW}⏭️  Frontend:     ATLANDI (${FRONTEND_QUALITY_STATUS:-bilinmiyor})${NC}"
     fi
 
     if [[ "$CI_FULL_VALIDATION_STATUS" == "hata" ]]; then

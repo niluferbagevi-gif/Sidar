@@ -1497,6 +1497,7 @@ sidar_phase_services_and_validation() {
         sync_database_passwords_before_smoke_tests
         run_smoke_tests
         run_install_integration_api_tests
+        run_install_frontend_quality_validation
         run_test_artifact_audit
     else
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
