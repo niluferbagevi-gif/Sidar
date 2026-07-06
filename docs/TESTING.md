@@ -33,6 +33,18 @@ CI profilinde coverage eşiği daha sıkı çalıştırılabilir:
 ```bash
 CI=true TEST_PROFILE=ci ./run_tests.sh
 ```
+
+`--stage integration` (veya `smoke`/`e2e`) gibi kısmi bir stage tek başına
+çalıştırıldığında, testlerin kendisi geçse bile repo genelindeki `fail_under`
+eşiği uygulanmaz; bu kısmi kapsam repo genelini temsil etmediği için sahte bir
+coverage başarısızlığı üretmez. Global coverage kalite kapısı yalnızca
+`--stage all` (varsayılan), `--stage backend` veya `--stage unit` çalıştığında
+uygulanır:
+
+```bash
+./run_tests.sh --stage integration   # 47/47 geçebilir; global coverage gate atlanır
+./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
+```
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`

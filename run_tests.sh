@@ -1713,6 +1713,17 @@ run_bats_shell_tests() {
   return 1
 }
 
+# Global fail-under kalite kapısı yalnızca unit fazının çalıştığı stage
+# kombinasyonlarında (all/backend/unit) anlamlıdır: pyproject.toml'daki
+# fail_under eşiği repo genelindeki modül kapsamına göre kalibre edilmiştir.
+# Yalnızca --stage integration/smoke/e2e gibi kısmi bir faz çalıştırıldığında
+# üretilen kapsam repo genelini temsil etmez; bu durumda gate'i uygulamak
+# integration testlerinin kendisi geçmişken sahte bir "coverage" başarısızlığı
+# üretir.
+should_enforce_combined_coverage_gate() {
+  stage_all_selected || stage_selected backend || stage_selected unit
+}
+
 enforce_combined_coverage_gate() {
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
     echo "ℹ️ Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı."
@@ -1726,23 +1737,34 @@ enforce_combined_coverage_gate() {
     return 0
   fi
 
+  # Rapor üretim komutları (html/xml/json) coverage.py'nin [tool.coverage.report]
+  # fail_under eşiğini de miras alır; --fail-under=0 olmadan, eşiğin altında
+  # kalan kısmi bir çalışmada rapor dosyası başarıyla yazılsa bile komut
+  # non-zero döner ve script bunu yanlışlıkla "rapor üretilemedi" sayar.
+  # Artefakt üretimini kalite kapısından ayırmak için burada her zaman
+  # --fail-under=0 kullanılır; asıl eşik aşağıda ayrıca uygulanır.
   echo "📊 Final birleşik coverage raporları yenileniyor..."
-  if ! uv run python -m coverage html -d htmlcov; then
+  if ! uv run python -m coverage html -d htmlcov --fail-under=0; then
     echo "❌ Coverage HTML raporu üretilemedi."
     record_backend_failure "coverage_html_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
-  if ! uv run python -m coverage xml -o coverage.xml; then
+  if ! uv run python -m coverage xml -o coverage.xml --fail-under=0; then
     echo "❌ Coverage XML raporu üretilemedi."
     record_backend_failure "coverage_xml_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
-  if ! uv run python -m coverage json -o coverage.json; then
+  if ! uv run python -m coverage json -o coverage.json --fail-under=0; then
     echo "❌ Coverage JSON raporu üretilemedi."
     record_backend_failure "coverage_json_report_failed"
     BACKEND_EXIT_CODE=1
+    return 0
+  fi
+
+  if ! should_enforce_combined_coverage_gate; then
+    echo "ℹ️ Kısmi test stage'i seçildi (--stage=${RUN_TESTS_STAGE}); global coverage fail-under kalite kapısı atlandı."
     return 0
   fi
 

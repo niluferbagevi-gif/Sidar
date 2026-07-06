@@ -232,9 +232,52 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     script = _script()
     gate_function = script[script.index("enforce_combined_coverage_gate()") :]
 
-    assert "uv run python -m coverage html -d htmlcov" in gate_function
-    assert "uv run python -m coverage xml -o coverage.xml" in gate_function
-    assert "uv run python -m coverage json -o coverage.json" in gate_function
+    assert "uv run python -m coverage html -d htmlcov --fail-under=0" in gate_function
+    assert "uv run python -m coverage xml -o coverage.xml --fail-under=0" in gate_function
+    assert "uv run python -m coverage json -o coverage.json --fail-under=0" in gate_function
+
+
+def test_run_tests_coverage_artifact_generation_is_not_gated_by_fail_under() -> None:
+    # coverage.py'nin html/xml/json alt komutları [tool.coverage.report] fail_under
+    # eşiğini miras alır; --fail-under=0 olmadan eşiğin altındaki bir kısmi
+    # çalıştırmada rapor başarıyla yazılsa bile komut non-zero döner ve script
+    # bunu yanlışlıkla "rapor üretilemedi" olarak kaydeder.
+    script = _script()
+    gate_start = script.index("\nenforce_combined_coverage_gate() {") + 1
+    gate_function = script[gate_start : script.index("update_progressive_coverage_gate()")]
+
+    assert "coverage_html_report_failed" in gate_function
+    assert "coverage_xml_report_failed" in gate_function
+    assert "coverage_json_report_failed" in gate_function
+
+
+def test_run_tests_skips_global_coverage_gate_for_partial_stage_runs() -> None:
+    # --stage integration (veya smoke/e2e) yalnızca kısmi bir kapsam üretir;
+    # repo genelindeki fail_under eşiğini bu kapsamla uygulamak, integration
+    # testlerinin kendisi geçmişken sahte bir coverage başarısızlığı üretir.
+    script = _script()
+
+    assert "should_enforce_combined_coverage_gate() {" in script
+    should_enforce_start = script.index("should_enforce_combined_coverage_gate() {")
+    should_enforce_end = script.index(
+        "\nenforce_combined_coverage_gate() {", should_enforce_start
+    )
+    should_enforce_fn = script[should_enforce_start:should_enforce_end]
+    assert "stage_all_selected || stage_selected backend || stage_selected unit" in should_enforce_fn
+
+    gate_start = script.index("\nenforce_combined_coverage_gate() {") + 1
+    gate_function = script[gate_start : script.index("update_progressive_coverage_gate()")]
+    assert "if ! should_enforce_combined_coverage_gate; then" in gate_function
+    assert (
+        "global coverage fail-under kalite kapısı atlandı" in gate_function
+    )
+
+    # Kapsam kararı, rapor üretiminden (html/xml/json) SONRA ama asıl
+    # `coverage report --fail-under` çağrısından ÖNCE devreye girmeli.
+    skip_check_pos = gate_function.index("if ! should_enforce_combined_coverage_gate; then")
+    json_report_pos = gate_function.index("coverage json -o coverage.json --fail-under=0")
+    final_gate_pos = gate_function.index('coverage report --fail-under="${COVERAGE_FAIL_UNDER}"')
+    assert json_report_pos < skip_check_pos < final_gate_pos
 
 
 def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> None:
