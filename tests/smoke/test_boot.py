@@ -3,6 +3,7 @@
 import hashlib
 import inspect
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import unquote, urlsplit
@@ -139,6 +140,23 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
         assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith(
             "http"
         ), "LITELLM_GATEWAY_URL http/https ile başlamalı."
+
+
+def test_boot_smoke_scope_has_required_deeper_quality_gates() -> None:
+    """Smoke boot success must not be treated as integration/e2e production readiness."""
+
+    required_deeper_tests = {
+        "agent orchestration": Path("tests/integration/workflow/test_agent_workflow_integration.py"),
+        "websocket session": Path("tests/e2e/web/test_chat_websocket_real_e2e.py"),
+        "plugin sandbox": Path("tests/integration/web/test_plugin_sandbox_integration.py"),
+        "workflow manager": Path("tests/e2e/test_github_workflow.py"),
+    }
+
+    missing = [label for label, path in required_deeper_tests.items() if not path.is_file()]
+    assert not missing, (
+        "Smoke tests only answer whether Sidar boots; production readiness also requires "
+        f"integration/e2e coverage for: {', '.join(missing)}"
+    )
 
 
 @pytest.mark.asyncio
