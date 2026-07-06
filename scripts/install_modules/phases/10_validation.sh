@@ -467,6 +467,48 @@ sidar_install_production_gate_required() {
     return 1
 }
 
+sidar_install_optional_dev_full_validation_available() {
+    [[ "${GPU_AVAILABLE:-false}" == true ]] || return 1
+    [[ "${SMOKE_TEST_STATUS:-}" == "tamamlandi" ]] || return 1
+    [[ "${NO_INTERACTION:-false}" != true ]] || return 1
+    [[ "${AUTO_INSTALL:-false}" != true ]] || return 1
+    [[ "${SILENT_MODE:-false}" != true ]] || return 1
+    [[ -f "$SCRIPT_DIR/run_tests.sh" ]] || return 1
+    return 0
+}
+
+run_optional_dev_full_validation_prompt() {
+    local optional_command="RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    local reply=""
+
+    if ! sidar_install_optional_dev_full_validation_available; then
+        info "Development/local tam doğrulama prompt'u gösterilmedi (GPU, smoke servis doğrulaması veya etkileşimli mod koşulları sağlanmadı)."
+        CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
+        return
+    fi
+
+    info "GPU ve smoke servis doğrulaması hazır; development tam doğrulama isteğe bağlı çalıştırılabilir."
+    reply=$(prompt_yes_no_with_timeout_default_no "Kurulum sonunda tam doğrulama çalıştırılsın mı? (${optional_command}) [e/H] ")
+    case "${reply:-H}" in
+        [EeYy]*) ;;
+        *)
+            info "Development/local tam doğrulama kullanıcı tercihiyle atlandı. İsterseniz daha sonra çalıştırın: ${optional_command}"
+            CI_FULL_VALIDATION_STATUS="atlandi_kullanici"
+            return
+            ;;
+    esac
+
+    info "Development tam doğrulama başlıyor: ${optional_command}"
+    if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
+        bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
+        ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
+        CI_FULL_VALIDATION_STATUS="tamamlandi"
+    else
+        CI_FULL_VALIDATION_STATUS="hata"
+        warn "Development tam doğrulaması başarısız oldu. Tekrar için: ${optional_command}"
+    fi
+}
+
 run_install_ci_full_validation() {
     step "CI Tam Doğrulama"
 
@@ -478,7 +520,7 @@ run_install_ci_full_validation() {
 
     if [[ "$RUN_CI_FULL_VALIDATION" != true ]]; then
         info "Development/local kurulumda run_tests.sh --stage all otomatik çalıştırılmadı; production için --production-readiness zorunlu gate olarak kullanılır."
-        CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
+        run_optional_dev_full_validation_prompt
         return
     fi
 

@@ -888,6 +888,54 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+
+@test "development full validation prompt runs GPU stress full gate when accepted" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=false
+    GPU_AVAILABLE=true
+    SMOKE_TEST_STATUS="tamamlandi"
+    NO_INTERACTION=false
+    AUTO_INSTALL=false
+    SILENT_MODE=false
+    prompt_yes_no_with_timeout_default_no() { printf "e"; }
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s|%s|%s\n" "\${RUN_GPU_STRESS:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/run_tests.log"
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    grep -q "^1|required|1|0|--stage all$" "$tmpdir/run_tests.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "development full validation prompt is skipped unless GPU and smoke service gate are ready" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=false
+    GPU_AVAILABLE=false
+    SMOKE_TEST_STATUS="tamamlandi"
+    NO_INTERACTION=false
+    AUTO_INSTALL=false
+    SILENT_MODE=false
+    prompt_yes_no_with_timeout_default_no() { exit 99; }
+    touch "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "atlandi_bayrak" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "run_smoke_tests defensively repairs private key and session file permissions after pytest" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
