@@ -306,7 +306,7 @@ def test_full_repo_coverage_stage_selected_matches_unit_phase_selection(
                 "backend_infra_required_for_stage() {"
             )
         ]
-        + '\nif full_repo_coverage_stage_selected; then echo yes; else echo no; fi\n',
+        + "\nif full_repo_coverage_stage_selected; then echo yes; else echo no; fi\n",
         encoding="utf-8",
     )
     helper.chmod(0o755)
