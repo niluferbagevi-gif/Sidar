@@ -1411,7 +1411,9 @@ async def basic_auth_middleware(
         or is_signature_verified_webhook
         or request.url.path.startswith("/static/")
         or request.url.path.startswith("/vendor/")
+        or request.url.path.startswith("/assets/")
         or request.url.path == "/favicon.ico"
+        or request.url.path == "/favicon.svg"
     ):
         return await call_next(request)
 

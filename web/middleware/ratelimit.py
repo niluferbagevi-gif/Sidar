@@ -13,8 +13,8 @@ RateLimitKeyResolver = Callable[[Request, str], str]
 NextHandler = Callable[[Request], Awaitable[Response]]
 
 
-DEFAULT_DDOS_BYPASS_PATHS: tuple[str, ...] = ("/health", "/healthz", "/readyz")
-DEFAULT_DDOS_BYPASS_PREFIXES: tuple[str, ...] = ("/ui/", "/static/")
+DEFAULT_DDOS_BYPASS_PATHS: tuple[str, ...] = ("/health", "/healthz", "/readyz", "/favicon.ico", "/favicon.svg")
+DEFAULT_DDOS_BYPASS_PREFIXES: tuple[str, ...] = ("/ui/", "/static/", "/assets/")
 
 # GET requests are rate-limited by default (mirroring the POST/DELETE mutation
 # bucket below, which already applies to every path with no opt-in list) so a
@@ -26,8 +26,9 @@ DEFAULT_GET_IO_EXEMPT_PATHS: tuple[str, ...] = (
     "/readyz",
     "/metrics",
     "/favicon.ico",
+    "/favicon.svg",
 )
-DEFAULT_GET_IO_EXEMPT_PREFIXES: tuple[str, ...] = ("/ui/", "/static/", "/vendor/")
+DEFAULT_GET_IO_EXEMPT_PREFIXES: tuple[str, ...] = ("/ui/", "/static/", "/vendor/", "/assets/")
 
 
 async def ddos_rate_limit_middleware_impl(
