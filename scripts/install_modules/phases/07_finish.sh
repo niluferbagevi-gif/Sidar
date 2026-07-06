@@ -147,6 +147,10 @@ print_summary() {
         else
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
+        if [[ "${FRONTEND_QUALITY_STATUS:-}" != "tamamlandi" && "${FRONTEND_QUALITY_STATUS:-}" != "hata" ]]; then
+            echo "       React build geçti; fakat frontend lint/typecheck/coverage/e2e çalışmadı."
+            echo "       Çalıştırmak için: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+        fi
     elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
         echo "       React UI build: başarısız (npm ci|npm install ve/veya npm run build hata verdi)"
         echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm ci && npm run build"
