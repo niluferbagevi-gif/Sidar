@@ -28,13 +28,15 @@ def _current_metrics(benchmarks: list[dict[str, Any]]) -> dict[str, float]:
     ttft = _find_benchmark(benchmarks, "test_gpu_time_to_first_token")
     tps = _find_benchmark(benchmarks, "test_gpu_tokens_per_second")
     vram = _find_benchmark(benchmarks, "test_gpu_vram_peak_under_load")
-    if not ttft or not tps or not vram:
+    oom = _find_benchmark(benchmarks, "test_gpu_oom_regression_under_load")
+    if not ttft or not tps or not vram or not oom:
         missing = [
             name
             for name, item in {
                 "ttft": ttft,
                 "tps": tps,
                 "vram": vram,
+                "oom_failures": oom,
             }.items()
             if item is None
         ]
@@ -44,10 +46,16 @@ def _current_metrics(benchmarks: list[dict[str, Any]]) -> dict[str, float]:
     tps_extra = tps.get("extra_info", {}).get("tokens_per_second")
     tps_value = float(tps_extra) if tps_extra is not None else 0.0
     vram_peak = float(vram.get("extra_info", {}).get("vram_peak_mib", 0.0))
+    oom_failures = float(
+        oom.get("extra_info", {}).get(
+            "oom_regression_failures", oom.get("extra_info", {}).get("oom_failures", 0.0)
+        )
+    )
     return {
         "ttft_ms": round(ttft_ms, 3),
         "tps": round(tps_value, 3),
         "vram_peak_mib": round(vram_peak, 3),
+        "oom_failures": round(oom_failures, 3),
     }
 
 
@@ -79,6 +87,8 @@ def _is_regression(metric_name: str, pct_delta: float, threshold_percent: float)
     """Return whether a metric moved in its harmful direction beyond the trend budget."""
     if metric_name == "tps":
         return pct_delta < -threshold_percent
+    if metric_name == "oom_failures":
+        return pct_delta > 0
     return pct_delta > threshold_percent
 
 
@@ -113,13 +123,21 @@ def main() -> int:
     failed = False
     if recent_entries:
         for metric_name, current in metrics.items():
-            med = statistics.median(
-                [
-                    float(item["metrics"][metric_name])
-                    for item in recent_entries
-                    if metric_name in item["metrics"]
-                ]
-            )
+            historical_values = [
+                float(item["metrics"][metric_name])
+                for item in recent_entries
+                if metric_name in item["metrics"]
+            ]
+            if not historical_values:
+                continue
+            med = statistics.median(historical_values)
+            if metric_name == "oom_failures" and current > 0:
+                print(
+                    f"[ALARM] {metric_name} GPU OOM regresyonu algıladı: "
+                    f"current={current:.3f}."
+                )
+                failed = True
+                continue
             if med <= 0:
                 continue
             pct_delta = ((current - med) / med) * 100.0
