@@ -430,9 +430,8 @@ jobs:
           tests/smoke/test_install_verification.py
 
   production-profile-dry-run:
-    name: Production dependency profile dry run (non-blocking)
+    name: Production dependency profile dry run
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout

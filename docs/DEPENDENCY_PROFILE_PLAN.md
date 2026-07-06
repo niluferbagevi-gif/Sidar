@@ -143,10 +143,10 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 1. **Envanter + Faz 1 dev split:** Ana `dependencies` içindeki runtime paketleri ile `dev` extra içindeki
    kalite araçlarını `runtime`, `dev`, optional integration ve provider sınıflarına etiketle. Dev/test
    araçları ana runtime listesinden çıkarılmıştır; `uv sync --all-extras` davranışı korunur.
-2. **CI dry-run:** Yeni profil komutlarını ayrı non-blocking job olarak dene; örn. production image için
-   `uv sync --frozen --extra production-minimal --no-dev` ancak ana gate yine `uv sync --all-extras` kalır.
-   İlk takip işi `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ıdır;
-   `continue-on-error: true` ile başlar ve production profile olgunlaşana kadar ana CI gate'ini kırmaz.
+2. **CI dry-run:** Yeni profil komutlarını ayrı zorunlu job olarak dene; örn. production image için
+   `uv sync --frozen --extra production --no-dev`, minimal profil için `--extra production-minimal --no-dev`.
+   `.github/workflows/ci.yml` içindeki `production-profile-dry-run` job'ı artık production-minimal
+   profilini ana CI kalite kapısının parçası olarak doğrular; `continue-on-error` kullanılmamalıdır.
 3. **Docker/installer koordinasyonu:** `Dockerfile.production` yeni no-dev profile'ı kullanır; ana
    `Dockerfile` ve installer varsayılanları local/CI paritesi için `uv sync --all-extras` kalır.
 4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
@@ -173,7 +173,7 @@ olarak ayrı Dockerfile ve requirements üreticisi üzerinden çalışır:
 | Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
 
 Faz 1 kapanış kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı,
-`production-profile-dry-run` job'ı non-blocking kalmalı, `Dockerfile.production`
+`production-profile-dry-run` job'ı blocking kalmalı, `Dockerfile.production`
 `--no-dev` kurulum yapmalı ve installer production varsayılanları ancak smoke/dry-run
 sonuçları raporlandıktan sonra profile-aware akışa geçirilmelidir.
 

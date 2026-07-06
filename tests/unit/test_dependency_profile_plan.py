@@ -116,17 +116,18 @@ def test_posthog_major_cap_is_documented_as_chromadb_telemetry_constraint() -> N
     assert "PostHog v6" in docs
 
 
-def test_ci_has_non_blocking_production_profile_dry_run() -> None:
+def test_ci_has_blocking_production_profile_dry_run() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert "production-profile-dry-run:" in workflow
-    assert "continue-on-error: true" in workflow
+    assert "continue-on-error" not in workflow[workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")]
     assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
     assert "production-minimal imports ok" in workflow
     assert "production-profile-dry-run" in docs
     assert "`sidar[postgres]`" in docs
-    assert "ana CI gate'ini kırmaz" in docs
+    assert "ana CI kalite kapısının parçası" in docs
+    assert "continue-on-error` kullanılmamalıdır" in docs
 
 
 def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:
