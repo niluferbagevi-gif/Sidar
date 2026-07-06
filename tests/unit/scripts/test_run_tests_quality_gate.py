@@ -615,8 +615,27 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         "bash run_tests.sh --stage all"
     ) in validation_phase
 
+
+def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> None:
+    env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+    collect_start = env_phase.index("collect_api_keys_interactive()")
+    collect_block = env_phase[
+        collect_start : env_phase.index("report_env_api_key_status()", collect_start)
+    ]
+
+    assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0" in collect_block
+    assert "_sync_real_keys_to_test_env_enabled()" in collect_block
+    test_start = collect_block.index('optional_env_file="$SCRIPT_DIR/.env.test"')
+    test_target_block = collect_block[
+        test_start : collect_block.index("printf '%s", test_start)
+    ]
+    assert "if _sync_real_keys_to_test_env_enabled; then" in test_target_block
+    assert 'targets+=("$optional_env_file")' in test_target_block
+    assert "varsayılan güvenli davranış" in test_target_block
+    assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1" in test_target_block
+
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
-    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
 
     api_keys_start = install_script.index("sidar_user_api_key_names()")
     api_keys_block = install_script[api_keys_start : install_script.index("}", api_keys_start)]
@@ -638,7 +657,12 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "_api_key_env_targets()" in collect_block
     assert 'local -a targets=("$env_file")' in collect_block
     assert 'local advanced_env_file="$SCRIPT_DIR/.env.advanced"' in collect_block
-    assert '"$SCRIPT_DIR/.env.development" "$SCRIPT_DIR/.env.test"' in collect_block
+    assert 'optional_env_file="$SCRIPT_DIR/.env.development"' in collect_block
+    assert 'optional_env_file="$SCRIPT_DIR/.env.test"' in collect_block
+    assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0" in collect_block
+    assert "_sync_real_keys_to_test_env_enabled" in collect_block
+    assert 'targets+=("$optional_env_file")' in collect_block
+    assert "varsayılan güvenli davranış" in collect_block
     assert "mapfile -t target_env_files < <(_api_key_env_targets)" in collect_block
     assert 'for target in "${target_env_files[@]}"' in collect_block
     assert "_sync_existing_api_keys_to_env_targets" in collect_block

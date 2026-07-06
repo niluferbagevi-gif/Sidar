@@ -183,6 +183,19 @@ collect_api_keys_interactive() {
         esac
     }
 
+
+    local sidar_test_key_sync_skip_warned=false
+
+    _sync_real_keys_to_test_env_enabled() {
+        local raw="${SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0}"
+        raw="${raw,,}"
+        raw="${raw//[[:space:]]/}"
+        case "$raw" in
+            1|true|yes|y|evet|e) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
     _api_key_env_targets() {
         local -a targets=("$env_file")
         local advanced_env_file="$SCRIPT_DIR/.env.advanced"
@@ -196,9 +209,18 @@ collect_api_keys_interactive() {
 
         [[ -f "$advanced_env_file" && "$advanced_env_file" != "$env_file" ]] && targets+=("$advanced_env_file")
 
-        for optional_env_file in "$SCRIPT_DIR/.env.development" "$SCRIPT_DIR/.env.test"; do
-            [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]] && targets+=("$optional_env_file")
-        done
+        optional_env_file="$SCRIPT_DIR/.env.development"
+        [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]] && targets+=("$optional_env_file")
+
+        optional_env_file="$SCRIPT_DIR/.env.test"
+        if [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]]; then
+            if _sync_real_keys_to_test_env_enabled; then
+                targets+=("$optional_env_file")
+            elif [[ "$sidar_test_key_sync_skip_warned" != true ]]; then
+                warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
+                sidar_test_key_sync_skip_warned=true
+            fi
+        fi
 
         printf '%s\n' "${targets[@]}"
     }
