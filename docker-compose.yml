@@ -15,6 +15,11 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   postgres:
     image: pgvector/pgvector:0.8.1-pg16
@@ -165,7 +170,7 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       ollama:
@@ -235,7 +240,7 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       ollama-gpu:
@@ -301,7 +306,7 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       jaeger:
@@ -371,7 +376,7 @@ services:
 
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       jaeger:

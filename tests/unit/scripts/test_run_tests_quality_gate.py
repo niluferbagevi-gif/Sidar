@@ -3611,3 +3611,18 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
         'phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")'
         in script
     )
+
+
+def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    redis_start = compose.index("  redis:")
+    postgres_start = compose.index("  postgres:", redis_start)
+    redis_block = compose[redis_start:postgres_start]
+
+    assert "healthcheck:" in redis_block
+    assert 'test: ["CMD", "redis-cli", "ping"]' in redis_block
+    assert "interval: 5s" in redis_block
+    assert "timeout: 3s" in redis_block
+    assert "retries: 20" in redis_block
+    assert "redis:\n        condition: service_started" not in compose
+    assert compose.count("redis:\n        condition: service_healthy") >= 4
