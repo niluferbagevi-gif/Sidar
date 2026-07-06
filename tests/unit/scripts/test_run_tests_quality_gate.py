@@ -616,6 +616,32 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     ) in validation_phase
 
 
+
+def test_install_summary_prints_masked_runtime_key_source_report() -> None:
+    env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+    finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+
+    assert "print_runtime_key_source_summary()" in env_phase
+    assert "config.get_dotenv_key_source_report()" in env_phase
+    assert 'os.environ.setdefault("SIDAR_CONFIG_QUIET", "true")' in env_phase
+    assert "Kritik key kaynak özeti (değerler maskeli)" in env_phase
+    assert "source_display = \"process-env\"" in env_phase
+    assert 'print(f"  {key:<26}  ***        {source_display}")' in env_phase
+    assert 'print(f"  {key:<26}  eksik      -")' in env_phase
+    for key in (
+        "API_KEY",
+        "JWT_SECRET_KEY",
+        "MEMORY_ENCRYPTION_KEY",
+        "DATABASE_URL",
+        "OPENAI_API_KEY",
+        "GITHUB_TOKEN",
+        "TEAMS_WEBHOOK_URL",
+    ):
+        assert key in env_phase
+
+    assert "declare -F print_runtime_key_source_summary" in finish_phase
+    assert "print_runtime_key_source_summary" in finish_phase
+
 def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> None:
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     collect_start = env_phase.index("collect_api_keys_interactive()")

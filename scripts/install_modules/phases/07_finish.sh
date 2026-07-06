@@ -111,6 +111,9 @@ print_summary() {
         echo "  Not: Kullanmayacağınız servis anahtarlarını boş bırakabilirsiniz."
     fi
     verify_sidar_keys_file_permissions
+    if declare -F print_runtime_key_source_summary >/dev/null 2>&1; then
+        print_runtime_key_source_summary
+    fi
     echo ""
     echo -e "  2️⃣  Sanal ortamı aktif et (yeni terminalde):"
     echo "       source .venv/bin/activate"

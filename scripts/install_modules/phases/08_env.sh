@@ -562,6 +562,70 @@ PY_RUNTIME_ENV_CHECK
     fi
 }
 
+
+print_runtime_key_source_summary() {
+    echo ""
+    echo -e "${BOLD}Kritik key kaynak özeti (değerler maskeli):${NC}"
+
+    if ! command -v uv &>/dev/null; then
+        warn "uv bulunamadı; kritik key kaynak özeti atlandı."
+        return 0
+    fi
+
+    if ! (cd "$SCRIPT_DIR" && uv run python - <<'PY_KEY_SOURCE_SUMMARY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+os.environ.setdefault("SIDAR_CONFIG_QUIET", "true")
+os.environ.setdefault("SIDAR_CONFIG_BANNER_LOGGED", "1")
+env_path = Path(".env").resolve()
+if env_path.exists():
+    os.environ.setdefault("SIDAR_ENV_LOGGED", str(env_path))
+
+import config
+
+CRITICAL_KEYS = (
+    "API_KEY",
+    "JWT_SECRET_KEY",
+    "MEMORY_ENCRYPTION_KEY",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GITHUB_TOKEN",
+    "SLACK_TOKEN",
+    "JIRA_TOKEN",
+    "TEAMS_WEBHOOK_URL",
+)
+
+source_report = config.get_dotenv_key_source_report()
+print("  KEY                         DURUM      KAYNAK")
+print("  --------------------------  ---------  ----------------------------------------")
+for key in CRITICAL_KEYS:
+    value = os.getenv(key, "")
+    if not value:
+        print(f"  {key:<26}  eksik      -")
+        continue
+
+    source = source_report.get(key)
+    if source:
+        label = str(source.get("label") or "dotenv")
+        path = str(source.get("path") or "")
+        path_display = Path(path).name if path else "-"
+        source_display = f"{label}:{path_display}"
+    else:
+        source_display = "process-env"
+    print(f"  {key:<26}  ***        {source_display}")
+PY_KEY_SOURCE_SUMMARY
+    ); then
+        warn "Kritik key kaynak özeti üretilemedi; config.get_dotenv_key_source_report() çıktısını manuel kontrol edin."
+        return 0
+    fi
+}
+
 ensure_env_file_secrets_after_uv_sync() {
     local env_file="$SCRIPT_DIR/.env"
     local example_file="$SCRIPT_DIR/.env.example"
