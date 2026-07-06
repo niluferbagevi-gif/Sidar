@@ -25,7 +25,9 @@ sidar_phase_apply_coverage_dark_mode_assets() {
 
     for html_dir in "${coverage_html_dirs[@]}"; do
         [[ -d "$html_dir" ]] || continue
-        find "$html_dir" -type f -name '*.html' -exec sed -i 's/light-mode/dark-mode/g' {} +
+        while IFS= read -r -d '' html_file; do
+            sed_inplace 's/light-mode/dark-mode/g' "$html_file"
+        done < <(find "$html_dir" -type f -name '*.html' -print0)
     done
 
     ok "Coverage dark-mode varlıkları hazırlandı ve mevcut HTML raporları dark-mode'a geçirildi."

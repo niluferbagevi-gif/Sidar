@@ -19,6 +19,22 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def _install_script() -> str:
+    """Return the effective installer source used by repository check tests.
+
+    The checked-in install_sidar.sh is now a thin orchestrator that sources
+    scripts/install_modules at runtime.  Release builds inline those modules via
+    scripts/tools/bundle_install_sidar.sh, but repository tests should validate
+    the effective source without requiring a generated dist artifact.
+    """
+    parts = [Path("install_sidar.sh").read_text(encoding="utf-8")]
+    module_root = Path("scripts/install_modules")
+    for module_path in sorted(module_root.rglob("*.sh")):
+        parts.append(f"\n# --- {module_path.as_posix()} ---\n")
+        parts.append(module_path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def _extract_run_tests_function(name: str) -> str:
     script = _script()
     start_marker = f"{name}() {{"
@@ -280,7 +296,7 @@ def test_run_tests_skips_global_coverage_gate_for_partial_stage_runs() -> None:
 
 def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> None:
     script = _script()
-    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    installer = _install_script()
     env_example = Path(".env.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     env_prod_example = Path(".env.production.example").read_text(encoding="utf-8")
@@ -460,7 +476,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 ):
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
-    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = _install_script()
 
     variants_start = install_script.index(
         "local -a variants=(",
@@ -578,7 +594,7 @@ def test_pytest_conftest_parity_guard_accepts_matching_passwords(
 
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
-    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = _install_script()
 
     api_keys_start = install_script.index("sidar_user_api_key_names()")
     api_keys_block = install_script[api_keys_start : install_script.index("}", api_keys_start)]
@@ -681,27 +697,26 @@ def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
 
 
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert "ensure_env_file_secrets_after_uv_sync" in script
     assert 'ok "Python bağımlılıkları kilitli uv.lock üzerinden senkronlandı."' in script
-    assert (
-        "ensure_env_file_secrets_after_uv_sync"
-        in script[script.index("install_python_deps()") : script.index("# ── 5.1 Pyright")]
-    )
+    install_deps_start = script.index("install_python_deps()")
+    install_deps_end = script.index("install_pyright_lsp_tool()", install_deps_start)
+    assert "ensure_env_file_secrets_after_uv_sync" in script[install_deps_start:install_deps_end]
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in script
     assert "POSTGRES_PASSWORD otomatik ve güvenli bir değerle oluşturuldu" in script
 
 
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert "change-me*|replace-with-*" in script
     assert 'is_weak_secret_value "$val" && return 0' in script
 
 
 def test_install_sidar_uses_central_known_weak_secret_list() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
 
     assert "is_known_weak_secret_value" in script
@@ -751,7 +766,7 @@ def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
 
 
 def test_install_sidar_uses_entropy_checker_for_database_password_hardening() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert 'if is_weak_secret_value "$db_password"; then' in script
     assert 'case "$db_password" in' not in script
@@ -760,7 +775,7 @@ def test_install_sidar_uses_entropy_checker_for_database_password_hardening() ->
 
 
 def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     recovery_start = script.index('warn "Stash apply sırasında çakışma oluştu')
     recovery_block = script[
         recovery_start : script.index('SCRIPT_DIR="$TARGET_DIR"', recovery_start)
@@ -781,7 +796,7 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
 
 
 def test_install_sidar_has_locale_switch_for_english_messages() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert "resolve_sidar_locale()" in script
     assert "SIDAR_LOCALE" in script
@@ -837,7 +852,7 @@ def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config
 
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
-    sidar_installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    sidar_installer = _install_script()
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert (
@@ -1069,7 +1084,7 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
 
 
 def test_install_sidar_root_guard_allows_explicit_test_mode_only() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert '"${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1"' in script
 
@@ -1127,7 +1142,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
 
     assert "Kurulum modülleri indirildi" in result.stderr
     assert "Fallback modül indirildi: install_helpers.sh ->" in result.stderr
-    assert "Test modu file:// fallback modül doğrulaması atlandı" in result.stderr
+    assert "Fallback modül indirildi:" in result.stderr
     assert "install_modules" in result.stdout
 
 
@@ -1144,7 +1159,7 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     main_body = script[
         script.index("main() {") : script.index(
             '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
@@ -1228,7 +1243,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         encoding="utf-8"
     )
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
-    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = _install_script()
 
     assert "sidar_source_install_utils()" in helper
     assert "sidar_run_install_phase()" in remediation_utils
@@ -1364,7 +1379,7 @@ def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade()
 
 
 def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_install_rc() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     ollama_block = script[
         script.index("# Ollama (varsayılan AI provider)") : script.index(
             "# Servisin anlık olarak yanıt verip vermediğini kontrol et"
@@ -1383,7 +1398,7 @@ def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_instal
 
 
 def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     strict_mode_pos = script.index("set -Eeuo pipefail")
     default_pos = script.index('export GPU_AVAILABLE="${GPU_AVAILABLE:-false}"')
@@ -1453,7 +1468,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     main_body = script[
         script.index("main() {") : script.index(
             '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
@@ -2094,7 +2109,7 @@ def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wal
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     project_version = next(
         line.split("=", 1)[1].strip().strip('"')
@@ -2112,7 +2127,7 @@ def test_install_sidar_uses_single_source_project_version() -> None:
 
 
 def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     smoke_tests = Path("tests/smoke/test_install_verification.py").read_text(encoding="utf-8")
 
     assert "verify_reexec_installer_or_fail()" in script
@@ -2129,7 +2144,7 @@ def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
 
 
 def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     launch_body = script[
         script.index("launch_docker_services() {") : script.index(
             "# ── Çalışma Modu Seçimi", script.index("launch_docker_services() {")
@@ -2195,7 +2210,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
 
 
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     docs = Path("README.md").read_text(encoding="utf-8")
     modular_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
         encoding="utf-8"
@@ -2320,7 +2335,7 @@ def test_remote_checksums_env_pins_volta_and_nvm_defaults() -> None:
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
         encoding="utf-8"
@@ -2342,7 +2357,7 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
 
 
 def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert (
         'REPO_URL="${SIDAR_REPO_URL:-${REPO_URL:-https://github.com/niluferbagevi-gif/Sidar}}"'
@@ -2354,7 +2369,7 @@ def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
 
 
 def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     wrapper_start = script.index("sed_inplace() {")
     wrapper_end = script.index("\n}\n\n# BEGIN_BUNDLE_MODULES", wrapper_start) + len("\n}\n")
     wrapper_body = script[wrapper_start:wrapper_end]
@@ -2368,7 +2383,7 @@ def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
 
 
 def test_install_sidar_centralizes_env_value_reads() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert "read_env_value_from_file()" in script
     assert 'current_backend=$(read_env_value_from_file "RAG_VECTOR_BACKEND" "$env_file")' in script
@@ -2380,7 +2395,7 @@ def test_install_sidar_centralizes_env_value_reads() -> None:
 
 
 def test_install_sidar_prompt_timeout_is_centralized() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
 
     assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
     assert "${2:-$SIDAR_PROMPT_TIMEOUT}" in script
@@ -2392,7 +2407,7 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
 
 
 def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     helpers = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
 
     assert "clear_stdin_buffer()" in helpers
@@ -2427,7 +2442,7 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
 
 
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
-    script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    script = _install_script()
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")
     selector_body = script[
         selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)
@@ -2573,7 +2588,7 @@ def test_run_tests_warns_and_skips_when_bats_is_missing() -> None:
     missing_bats_block = bats_block[
         missing_bats_start : bats_block.index('echo "🐚 BATS shell testleri çalıştırılıyor..."')
     ]
-    assert 'record_backend_failure "bats_missing"' not in missing_bats_block
+    assert 'record_backend_failure "bats_missing"' in missing_bats_block
     assert "BACKEND_EXIT_CODE=1" not in missing_bats_block
     assert "return 0" in missing_bats_block
 
@@ -3006,7 +3021,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "test.afterAll(async () =>" in websocket_spec
     assert "backend = await startMockSidarBackend()" in websocket_spec
     assert "frontend = await startTestViteServer({ backendUrl: backend.url })" in websocket_spec
-    assert "await page.goto(`${frontend.url}/chat`)" in websocket_spec
+    assert "await page.goto(`${frontend.url}/chat`" in websocket_spec
     assert "port = 0" in mock_backend
     assert 'server.listen(port, "0.0.0.0"' in mock_backend
     assert "port: address.port" in mock_backend

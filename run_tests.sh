@@ -1697,6 +1697,7 @@ run_bats_shell_tests() {
   if ! command -v bats >/dev/null 2>&1; then
     echo "⚠️ bats yok — shell testleri atlandı. CI paritesi için: bash scripts/install_ci_system_deps.sh"
     echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
+    record_backend_failure "bats_missing"
     return 0
   fi
 
