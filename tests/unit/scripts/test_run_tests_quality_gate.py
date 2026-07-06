@@ -2669,7 +2669,11 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
         )
     ]
 
+    assert 'record_backend_failure "pytest_failed"' in script
     assert 'record_backend_failure "bats_failed"' in script
+    assert 'record_backend_failure "bats_missing"' in script
+    assert 'record_backend_failure "security_failed"' in script
+    assert 'record_backend_failure "ratchet_failed"' in script
     assert "Backend kalite akışı başarısız olduğu için coverage ratchet atlandı" in ratchet_block
     assert "$(format_backend_failure_reasons)" in ratchet_block
     assert "Backend Hata Nedenleri: $(format_backend_failure_reasons)" in script
@@ -2678,14 +2682,14 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
     )
 
 
-def test_run_tests_warns_and_skips_when_bats_is_missing() -> None:
+def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
     script = _script()
     bats_block = script[
         script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
     ]
 
     assert 'if [ "${RUN_BATS_TESTS}" != "1" ]; then' in bats_block
-    assert "⚠️ bats yok — shell testleri atlandı" in bats_block
+    assert "❌ bats yok — shell testleri çalıştırılamadı" in bats_block
     assert "bash scripts/install_ci_system_deps.sh" in bats_block
     missing_bats_start = bats_block.index(
         "if ! command -v bats >/dev/null 2>&1; then",
@@ -2694,9 +2698,9 @@ def test_run_tests_warns_and_skips_when_bats_is_missing() -> None:
     missing_bats_block = bats_block[
         missing_bats_start : bats_block.index('echo "🐚 BATS shell testleri çalıştırılıyor..."')
     ]
-    assert 'record_backend_failure "bats_missing"' not in missing_bats_block
-    assert "BACKEND_EXIT_CODE=1" not in missing_bats_block
-    assert "return 0" in missing_bats_block
+    assert 'record_backend_failure "bats_missing"' in missing_bats_block
+    assert "BACKEND_EXIT_CODE=1" in missing_bats_block
+    assert "return 1" in missing_bats_block
 
 
 def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> None:

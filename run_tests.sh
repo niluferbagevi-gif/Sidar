@@ -600,13 +600,14 @@ BACKEND_FAILURE_REASONS=()
 
 record_backend_failure() {
   local reason="$1"
-  local existing
-  for existing in "${BACKEND_FAILURE_REASONS[@]}"; do
-    if [ "${existing}" = "${reason}" ]; then
-      return 0
-    fi
-  done
-  BACKEND_FAILURE_REASONS+=("${reason}")
+  local joined_reasons
+  [[ -n "$reason" ]] || return 0
+  local IFS=,
+  joined_reasons="${BACKEND_FAILURE_REASONS[*]}"
+  case ",${joined_reasons}," in
+    *,"$reason",*) return 0 ;;
+    *) BACKEND_FAILURE_REASONS+=("$reason") ;;
+  esac
 }
 
 format_backend_failure_reasons() {
@@ -1141,6 +1142,7 @@ run_static_analysis_gates() {
   fi
   echo "🔍 Linter ve Type Checker çalıştırılıyor..."
   if ! uv run ruff check .; then
+    record_backend_failure "static_failed"
     BACKEND_EXIT_CODE=1
     return 1
   fi
@@ -1159,6 +1161,7 @@ run_static_analysis_gates() {
       return 0
     fi
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then
+      record_backend_failure "static_failed"
       BACKEND_EXIT_CODE=1
       return 1
     fi
@@ -1171,6 +1174,7 @@ run_static_analysis_gates() {
           ;;
         *)
           echo "ℹ️ Kullanıcı otonom iyileştirme döngüsünü reddetti. Statik analiz adımı başarısız sayılıyor."
+          record_backend_failure "static_failed"
           BACKEND_EXIT_CODE=1
           return 1
           ;;
@@ -1180,6 +1184,7 @@ run_static_analysis_gates() {
     echo "⚠️ Mypy hataları tespit edildi. Otonom iyileştirme döngüsü başlatılıyor... (deneme $((attempt + 1))/${AUTO_HEAL_MAX_ATTEMPTS})"
     if ! uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --batch-retries "${AUTO_HEAL_BATCH_RETRIES}" --output "${AUTO_HEAL_RESULT_PATH}"; then
       echo "❌ Otonom ajan düzeltme planını uygulayamadı. Sonuç artefaktı: ${AUTO_HEAL_RESULT_PATH}"
+      record_backend_failure "static_failed"
       BACKEND_EXIT_CODE=1
       return 1
     fi
@@ -1227,6 +1232,7 @@ run_security_analysis_gates() {
   echo "🛡️ Hızlı SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
   if ! uv run bandit -r . -c pyproject.toml; then
     echo "❌ Bandit güvenlik taraması başarısız."
+    record_backend_failure "security_failed"
     BACKEND_EXIT_CODE=1
     return 1
   fi
@@ -1245,6 +1251,7 @@ run_security_analysis_gates() {
   local pip_audit_ignore_args=()
   if ! mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py); then
     echo "❌ pip-audit ignore politikası geçersiz veya süresi dolmuş."
+    record_backend_failure "security_failed"
     BACKEND_EXIT_CODE=1
     return 1
   fi
@@ -1315,6 +1322,7 @@ except Exception:
   else
     echo "❌ pip-audit hata sınıflandırması belirsiz (failure_category=${pip_audit_failure_category})."
   fi
+  record_backend_failure "security_failed"
   BACKEND_EXIT_CODE=1
   return 1
 }
@@ -1848,9 +1856,11 @@ run_bats_shell_tests() {
   fi
 
   if ! command -v bats >/dev/null 2>&1; then
-    echo "⚠️ bats yok — shell testleri atlandı. CI paritesi için: bash scripts/install_ci_system_deps.sh"
+    echo "❌ bats yok — shell testleri çalıştırılamadı. CI paritesi için: bash scripts/install_ci_system_deps.sh"
     echo "   Parolasız sudo kullanılabiliyorsa opt-in otomatik kurulum: AUTO_INSTALL_CI_SYSTEM_DEPS=1 bash run_tests.sh"
-    return 0
+    record_backend_failure "bats_missing"
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."
@@ -1966,6 +1976,7 @@ PY_RATCHET_GATE
     COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"
   else
     echo "❌ Coverage ratcheting başarısız oldu."
+    record_backend_failure "ratchet_failed"
     BACKEND_EXIT_CODE=1
   fi
 }
