@@ -882,11 +882,14 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Smoke:"*"TAMAMLANDI"* ]]
-  [[ "$output" == *"Integration:"*"ATLANDI"*"api/cli/db/managers/web/workflow"* ]]
-  [[ "$output" == *"E2E:"*"ATLANDI"*"agents/cli/web"* ]]
+  [[ "$output" == *"Integration:"*"ATLANDI"*"run_tests.sh --stage integration"* ]]
+  [[ "$output" == *"E2E:"*"ATLANDI"*"run_tests.sh --stage e2e"* ]]
   [[ "$output" == *"Benchmark:"*"ATLANDI"* ]]
-  [[ "$output" == *"./install_sidar.sh --ci-full"* ]]
-  [[ "$output" == *"./run_tests.sh --stage all"* ]]
+  [[ "$output" == *"GitHub Actions CI parite haritası"* ]]
+  [[ "$output" == *"CI step: Run frontend lint/type-check/audit gate"*"bash run_tests.sh --stage frontend"* ]]
+  [[ "$output" == *"CI step: Run test suite + coverage + benchmark"*"bash run_tests.sh --stage all"* ]]
+  [[ "$output" == *"./install_sidar.sh --production-readiness"* ]]
+  [[ "$output" == *"bash run_tests.sh --stage all"* ]]
 }
 
 @test "ci-full validation runs run_tests stage all with CI profile" {

@@ -543,6 +543,32 @@ run_install_ci_full_validation() {
     fi
 }
 
+print_install_ci_parity_summary() {
+    echo ""
+    echo -e "${BOLD}🧩 GitHub Actions CI parite haritası:${NC}"
+    echo "   CI step: Run installer shell gates                 → local: make lint && make test-shell"
+    echo "   CI step: Run ShellCheck for installer/modules      → local: uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh"
+    echo "   CI step: Run frontend lint/type-check/audit gate   → local: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+    echo "   CI step: Run critical/runtime smoke gates          → local: bash run_tests.sh --stage smoke"
+    echo "   CI step: Run SAST gates (Bandit + pip-audit)       → local: bash run_tests.sh --stage static veya bash run_tests.sh --stage all"
+    echo "   CI step: Run test suite + coverage + benchmark     → local: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    echo "   CI step: Upload Playwright/BATS/Coverage artifacts → local: web_ui_react/playwright-report, artifacts/bats, htmlcov, web_ui_react/coverage dizinlerini kontrol edin"
+
+    if [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]; then
+        echo -e "   ${GREEN}✅ Local durum: full CI parite komutu tamamlandı.${NC}"
+    else
+        echo -e "   ${YELLOW}⏭️  Local durum: CI'daki full test/coverage/benchmark/artifact kapsamı tamamlanmadı (${CI_FULL_VALIDATION_STATUS:-bilinmiyor}).${NC}"
+    fi
+
+    if [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
+        echo -e "   ${GREEN}✅ Frontend CI paritesi: lint/typecheck/audit/coverage/e2e smoke stage'i geçti.${NC}"
+    elif [[ "$FRONTEND_QUALITY_STATUS" == "hata" ]]; then
+        echo -e "   ${RED}❌ Frontend CI paritesi: frontend stage başarısız.${NC}"
+    else
+        echo -e "   ${YELLOW}⏭️  Frontend CI paritesi: frontend stage çalışmadı (${FRONTEND_QUALITY_STATUS:-bilinmiyor}).${NC}"
+    fi
+}
+
 print_install_validation_coverage() {
     local full_coverage_reached=false
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]] && full_coverage_reached=true
@@ -614,4 +640,6 @@ print_install_validation_coverage() {
             echo "   Production readiness:      ./install_sidar.sh --production-readiness"
         fi
     fi
+
+    print_install_ci_parity_summary
 }
