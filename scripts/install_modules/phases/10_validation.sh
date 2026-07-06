@@ -543,6 +543,34 @@ run_install_ci_full_validation() {
     fi
 }
 
+sidar_read_coverage_fail_under() {
+    local pyproject_path="$SCRIPT_DIR/pyproject.toml"
+    if [[ ! -f "$pyproject_path" ]]; then
+        printf 'bilinmiyor'
+        return 0
+    fi
+    python - "$pyproject_path" <<'PY_COVERAGE_FAIL_UNDER' 2>/dev/null || printf 'bilinmiyor'
+from pathlib import Path
+import sys
+import tomllib
+
+path = Path(sys.argv[1])
+data = tomllib.loads(path.read_text(encoding="utf-8"))
+print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", "bilinmiyor"))
+PY_COVERAGE_FAIL_UNDER
+}
+
+print_install_coverage_gate_note() {
+    local coverage_fail_under=""
+    coverage_fail_under="$(sidar_read_coverage_fail_under)"
+    echo ""
+    echo -e "${BOLD}📈 Coverage ratchet / fail-under notu:${NC}"
+    echo -e "   ${YELLOW}pyproject.toml coverage fail-under eşiği: ${coverage_fail_under}%.${NC}"
+    echo -e "   ${YELLOW}Pytest marker'ları ve warning politikası pyproject.toml içinde tanımlı; bu kalite kapısı yalnız run_tests.sh coverage akışında uygulanır.${NC}"
+    echo -e "   ${YELLOW}Kurulum smoke/build adımları geçse bile tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz.${NC}"
+    echo "   Coverage gate için: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+}
+
 print_install_ci_parity_summary() {
     echo ""
     echo -e "${BOLD}🧩 GitHub Actions CI parite haritası:${NC}"
@@ -641,5 +669,6 @@ print_install_validation_coverage() {
         fi
     fi
 
+    print_install_coverage_gate_note
     print_install_ci_parity_summary
 }
