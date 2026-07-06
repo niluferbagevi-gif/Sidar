@@ -259,18 +259,16 @@ def test_run_tests_skips_global_coverage_gate_for_partial_stage_runs() -> None:
 
     assert "should_enforce_combined_coverage_gate() {" in script
     should_enforce_start = script.index("should_enforce_combined_coverage_gate() {")
-    should_enforce_end = script.index(
-        "\nenforce_combined_coverage_gate() {", should_enforce_start
-    )
+    should_enforce_end = script.index("\nenforce_combined_coverage_gate() {", should_enforce_start)
     should_enforce_fn = script[should_enforce_start:should_enforce_end]
-    assert "stage_all_selected || stage_selected backend || stage_selected unit" in should_enforce_fn
+    assert (
+        "stage_all_selected || stage_selected backend || stage_selected unit" in should_enforce_fn
+    )
 
     gate_start = script.index("\nenforce_combined_coverage_gate() {") + 1
     gate_function = script[gate_start : script.index("update_progressive_coverage_gate()")]
     assert "if ! should_enforce_combined_coverage_gate; then" in gate_function
-    assert (
-        "global coverage fail-under kalite kapısı atlandı" in gate_function
-    )
+    assert "global coverage fail-under kalite kapısı atlandı" in gate_function
 
     # Kapsam kararı, rapor üretiminden (html/xml/json) SONRA ama asıl
     # `coverage report --fail-under` çağrısından ÖNCE devreye girmeli.
