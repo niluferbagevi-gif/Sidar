@@ -571,6 +571,7 @@ AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"
 DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 QUALITY_GATE_EXIT_AFTER_FIRST_FAIL="${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL:-0}"
+TEST_SUMMARY_JSON="${TEST_SUMMARY_JSON:-artifacts/test-summary.json}"
 
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
@@ -659,6 +660,107 @@ print_frontend_quality_summary() {
       echo "- Coverage artifact: \`${FRONTEND_COVERAGE_REPORT_PATH}\`"
       echo "- Playwright artifact: \`${FRONTEND_PLAYWRIGHT_REPORT_PATH}\`"
     } >> "${GITHUB_STEP_SUMMARY}"
+  fi
+}
+
+quality_summary_status() {
+  local ran="$1"
+  local exit_code="$2"
+  if [ "${ran}" != "1" ]; then
+    printf 'skipped'
+  elif [ "${exit_code}" = "0" ]; then
+    printf 'passed'
+  else
+    printf 'failed'
+  fi
+}
+
+backend_stage_summary_status() {
+  local stage="$1"
+  if ! stage_selected "${stage}"; then
+    printf 'skipped'
+  elif [ "${BACKEND_EXIT_CODE}" = "0" ]; then
+    printf 'passed'
+  else
+    printf 'failed'
+  fi
+}
+
+write_test_summary_json() {
+  local production_ready="$1"
+  local benchmark_ran=1
+  local smoke_status=""
+  local integration_status=""
+  local frontend_lint_status=""
+  local frontend_typecheck_status=""
+  local frontend_coverage_status=""
+  local frontend_e2e_status=""
+  local benchmark_status=""
+
+  smoke_status="$(backend_stage_summary_status smoke)"
+  integration_status="$(backend_stage_summary_status integration)"
+  frontend_lint_status="$(quality_summary_status "${FRONTEND_LINT_RAN}" "${FRONTEND_LINT_EXIT_CODE}")"
+  frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
+  frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
+  frontend_e2e_status="$(quality_summary_status "${FRONTEND_E2E_RAN}" "${FRONTEND_E2E_EXIT_CODE}")"
+
+  if [ "${RUN_BENCHMARKS}" = "0" ]; then
+    benchmark_ran=0
+  fi
+  benchmark_status="$(quality_summary_status "${benchmark_ran}" "${BENCHMARK_EXIT_CODE}")"
+
+  mkdir -p "$(dirname "${TEST_SUMMARY_JSON}")"
+  if command -v python >/dev/null 2>&1; then
+    if python - "${TEST_SUMMARY_JSON}" \
+      "${smoke_status}" \
+      "${integration_status}" \
+      "${frontend_lint_status}" \
+      "${frontend_typecheck_status}" \
+      "${frontend_coverage_status}" \
+      "${frontend_e2e_status}" \
+      "${benchmark_status}" \
+      "${production_ready}" <<'PY_TEST_SUMMARY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+(
+    output_path,
+    smoke,
+    integration,
+    frontend_lint,
+    frontend_typecheck,
+    frontend_coverage,
+    frontend_e2e,
+    benchmark,
+    production_ready,
+) = sys.argv[1:10]
+
+summary = {
+    "smoke": smoke,
+    "integration": integration,
+    "frontend_lint": frontend_lint,
+    "frontend_typecheck": frontend_typecheck,
+    "frontend_coverage": frontend_coverage,
+    "frontend_e2e": frontend_e2e,
+    "benchmark": benchmark,
+    "production_ready": production_ready == "true",
+}
+
+Path(output_path).write_text(
+    json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY_TEST_SUMMARY
+    then
+      echo "🧾 Makinece okunabilir test özeti yazıldı: ${TEST_SUMMARY_JSON}"
+    else
+      echo "⚠️ Makinece okunabilir test özeti yazılamadı: ${TEST_SUMMARY_JSON}"
+    fi
+  else
+    echo "⚠️ python bulunamadı; makinece okunabilir test özeti yazılamadı: ${TEST_SUMMARY_JSON}"
   fi
 }
 
@@ -2257,6 +2359,12 @@ if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
     echo "   Varsayılan sıkı kapıya dönmek için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
   fi
 fi
+
+PRODUCTION_READY=false
+if production_readiness_gate_active && [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
+  PRODUCTION_READY=true
+fi
+write_test_summary_json "${PRODUCTION_READY}"
 
 if production_readiness_gate_active; then
   echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"
