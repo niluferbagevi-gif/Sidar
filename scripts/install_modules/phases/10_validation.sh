@@ -573,6 +573,9 @@ print_install_coverage_gate_note() {
 }
 
 print_install_ci_parity_summary() {
+    local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
+    local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
+
     echo ""
     echo -e "${BOLD}🧩 GitHub Actions CI parite haritası:${NC}"
     echo "   CI step: Run installer shell gates                 → local: make lint && make test-shell"
@@ -583,38 +586,44 @@ print_install_ci_parity_summary() {
     echo "   CI step: Run test suite + coverage + benchmark     → local: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     echo "   CI step: Upload Playwright/BATS/Coverage artifacts → local: web_ui_react/playwright-report, artifacts/bats, htmlcov, web_ui_react/coverage dizinlerini kontrol edin"
 
-    if [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]; then
+    if [[ "$ci_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Local durum: full CI parite komutu tamamlandı.${NC}"
     else
-        echo -e "   ${YELLOW}⏭️  Local durum: CI'daki full test/coverage/benchmark/artifact kapsamı tamamlanmadı (${CI_FULL_VALIDATION_STATUS:-bilinmiyor}).${NC}"
+        echo -e "   ${YELLOW}⏭️  Local durum: CI'daki full test/coverage/benchmark/artifact kapsamı tamamlanmadı (${ci_status:-bilinmiyor}).${NC}"
     fi
 
-    if [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
+    if [[ "$frontend_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Frontend CI paritesi: lint/typecheck/audit/coverage/e2e smoke stage'i geçti.${NC}"
-    elif [[ "$FRONTEND_QUALITY_STATUS" == "hata" ]]; then
+    elif [[ "$frontend_status" == "hata" ]]; then
         echo -e "   ${RED}❌ Frontend CI paritesi: frontend stage başarısız.${NC}"
     else
-        echo -e "   ${YELLOW}⏭️  Frontend CI paritesi: frontend stage çalışmadı (${FRONTEND_QUALITY_STATUS:-bilinmiyor}).${NC}"
+        echo -e "   ${YELLOW}⏭️  Frontend CI paritesi: frontend stage çalışmadı (${frontend_status:-bilinmiyor}).${NC}"
     fi
 }
 
 print_install_validation_coverage() {
+    local smoke_status="${SMOKE_TEST_STATUS:-atlandi_bayrak}"
+    local integration_status="${INTEGRATION_TEST_STATUS:-atlandi_bayrak}"
+    local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
+    local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
+    local run_install_integration_tests="${RUN_INSTALL_INTEGRATION_TESTS:-false}"
+    local gpu_available="${GPU_AVAILABLE:-false}"
     local full_coverage_reached=false
-    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]] && full_coverage_reached=true
+    [[ "$ci_status" == "tamamlandi" ]] && full_coverage_reached=true
     local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-    if [[ "$GPU_AVAILABLE" == true ]]; then
+    if [[ "$gpu_available" == true ]]; then
         recommended_validation_command="RUN_GPU_STRESS=1 ${recommended_validation_command}"
     fi
 
     echo ""
     echo -e "${BOLD}📊 Kurulum doğrulama kapsamı:${NC}"
-    if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
+    if [[ "$smoke_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Smoke:        TAMAMLANDI (kapsam: tests/smoke)${NC}"
-    elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
+    elif [[ "$smoke_status" == "hata" ]]; then
         echo -e "   ${RED}❌ Smoke:        HATA${NC}"
     else
-        echo -e "   ${YELLOW}⏭️  Smoke:        ATLANDI (${SMOKE_TEST_STATUS})${NC}"
+        echo -e "   ${YELLOW}⏭️  Smoke:        ATLANDI (${smoke_status})${NC}"
     fi
 
     if [[ "$full_coverage_reached" == true ]]; then
@@ -622,9 +631,9 @@ print_install_validation_coverage() {
         echo -e "   ${GREEN}✅ E2E:          TAMAMLANDI (kapsam: agents/cli/web)${NC}"
         echo -e "   ${GREEN}✅ Benchmark:    TAMAMLANDI${NC}"
     else
-        if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
+        if [[ "$integration_status" == "tamamlandi" ]]; then
             echo -e "   ${GREEN}✅ Integration:  TAMAMLANDI (kapsam: run_tests.sh --stage integration)${NC}"
-        elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
+        elif [[ "$integration_status" == "hata" ]]; then
             echo -e "   ${RED}❌ Integration:  HATA; tekrar için run_tests.sh --stage integration${NC}"
         else
             echo -e "   ${YELLOW}⏭️  Integration:  ATLANDI (kapsam: run_tests.sh --stage integration → tests/integration)${NC}"
@@ -633,15 +642,15 @@ print_install_validation_coverage() {
         echo -e "   ${YELLOW}⏭️  Benchmark:    ATLANDI${NC}"
     fi
 
-    if [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
+    if [[ "$frontend_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE TAMAMLANDI${NC}"
-    elif [[ "$FRONTEND_QUALITY_STATUS" == "hata" ]]; then
+    elif [[ "$frontend_status" == "hata" ]]; then
         echo -e "   ${RED}❌ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE HATA${NC}"
-    elif [[ "$RUN_INSTALL_INTEGRATION_TESTS" == true ]]; then
-        echo -e "   ${YELLOW}⏭️  Frontend:     ATLANDI (${FRONTEND_QUALITY_STATUS:-bilinmiyor})${NC}"
+    elif [[ "$run_install_integration_tests" == true ]]; then
+        echo -e "   ${YELLOW}⏭️  Frontend:     ATLANDI (${frontend_status:-bilinmiyor})${NC}"
     fi
 
-    if [[ "$CI_FULL_VALIDATION_STATUS" == "hata" ]]; then
+    if [[ "$ci_status" == "hata" ]]; then
         echo ""
         echo -e "   ${RED}Tam doğrulama sonucu: HATA${NC}"
     elif [[ "$full_coverage_reached" != true ]]; then
@@ -650,10 +659,12 @@ print_install_validation_coverage() {
             echo -e "   ${RED}${BOLD}⛔ PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur.${NC}"
             echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
             echo -e "   ${RED}   Zorunlu gate: ${production_readiness_command}${NC}"
+            echo "   Production readiness:      ./install_sidar.sh --production-readiness"
+            echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
         else
             echo -e "   ${YELLOW}${BOLD}⚠️  KAPSAM EKSİK: Development/local kurulum tam proje doğrulaması değildir.${NC}"
-            echo -e "   ${YELLOW}   Kurulum başarılı: $([[ "$SMOKE_TEST_STATUS" == "hata" ]] && echo "Hayır" || echo "Evet")${NC}"
-            echo -e "   ${YELLOW}   Smoke doğrulaması: $([[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]] && echo "Geçti" || echo "Tamamlanmadı (${SMOKE_TEST_STATUS:-bilinmiyor})")${NC}"
+            echo -e "   ${YELLOW}   Kurulum başarılı: $([[ "$smoke_status" == "hata" ]] && echo "Hayır" || echo "Evet")${NC}"
+            echo -e "   ${YELLOW}   Smoke doğrulaması: $([[ "$smoke_status" == "tamamlandi" ]] && echo "Geçti" || echo "Tamamlanmadı (${smoke_status:-bilinmiyor})")${NC}"
             echo -e "   ${YELLOW}   Tam proje doğrulaması: Çalıştırılmadı${NC}"
             echo -e "   ${YELLOW}   Eksik kapsam: run_tests.sh stage all içindeki integration, e2e, benchmark, frontend, bats ve security gate sonuçları${NC}"
             echo ""
@@ -668,6 +679,7 @@ print_install_validation_coverage() {
             echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
             echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
             echo "   Production readiness:      ./install_sidar.sh --production-readiness"
+            echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
         fi
     fi
 
