@@ -520,6 +520,7 @@ run_install_ci_full_validation() {
 print_install_validation_coverage() {
     local full_coverage_reached=false
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]] && full_coverage_reached=true
+    local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
 
     echo ""
     echo -e "${BOLD}📊 Kurulum doğrulama kapsamı:${NC}"
@@ -563,17 +564,23 @@ print_install_validation_coverage() {
         if sidar_install_production_gate_required; then
             echo -e "   ${RED}${BOLD}⛔ PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur.${NC}"
             echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
-            echo -e "   ${RED}   Zorunlu gate: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all${NC}"
+            echo -e "   ${RED}   Zorunlu gate: ${production_readiness_command}${NC}"
         else
+            echo -e "   ${YELLOW}${BOLD}⚠️  KAPSAM EKSİK: Development/local kurulum tam proje doğrulaması değildir.${NC}"
+            echo -e "   ${YELLOW}   Kurulum başarılı: $([[ "$SMOKE_TEST_STATUS" == "hata" ]] && echo "Hayır" || echo "Evet")${NC}"
+            echo -e "   ${YELLOW}   Smoke doğrulaması: $([[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]] && echo "Geçti" || echo "Tamamlanmadı (${SMOKE_TEST_STATUS:-bilinmiyor})")${NC}"
+            echo -e "   ${YELLOW}   Tam proje doğrulaması: Çalıştırılmadı${NC}"
+            echo -e "   ${YELLOW}   Eksik kapsam: integration, e2e, benchmark, frontend lint/typecheck/coverage${NC}"
+            echo ""
             echo -e "   ${YELLOW}${BOLD}⚠️  DEVELOPMENT UYARISI: Bu kurulum yalnızca smoke testleri (boot/GPU/import/kilit/WSL) kapsar.${NC}"
             echo -e "   ${YELLOW}   Agent orkestrasyonu, gerçek DB migrasyonları, WebSocket oturumları ve plugin sandbox'ı${NC}"
             echo -e "   ${YELLOW}   gibi kritik yollar bu aşamada DOĞRULANMADI. \"Smoke testler geçti\" mesajı, tam${NC}"
             echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
             echo ""
             echo -e "   ${BOLD}➡️  Development için önerilen sonraki adım:${NC}"
-            echo -e "   ${BOLD}   ./run_tests.sh --stage integration${NC}"
+            echo -e "   ${BOLD}   bash run_tests.sh --stage all${NC}"
             echo "   Production gate (integration + e2e + benchmark): ./install_sidar.sh --production-readiness"
-            echo "   veya yalnızca:                                  TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+            echo "   veya tek komut:                                 ${production_readiness_command}"
         fi
     fi
 }
