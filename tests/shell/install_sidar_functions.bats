@@ -1091,6 +1091,39 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "run_install_frontend_quality_validation uses run_tests frontend stage with e2e enabled" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    touch "$tmpdir/run_tests.sh"
+    cat > "$tmpdir/bin/bash" <<EOF
+#!/bin/bash
+printf "%s\n" "\$*" > "$tmpdir/bash.args"
+printf "RUN_FRONTEND_E2E=%s\nAUTO_OPEN_ARTIFACTS=%s\n" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" > "$tmpdir/bash.env"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/bash"
+    export PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+
+    RUN_INSTALL_INTEGRATION_TESTS=false
+    run_install_frontend_quality_validation
+    [[ "$FRONTEND_QUALITY_STATUS" == "atlandi_bayrak" ]]
+    [[ ! -e "$tmpdir/bash.args" ]]
+
+    RUN_INSTALL_INTEGRATION_TESTS=true
+    run_install_frontend_quality_validation
+    [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
+    grep -q "run_tests.sh" "$tmpdir/bash.args"
+    grep -q -- "--stage" "$tmpdir/bash.args"
+    grep -q "frontend" "$tmpdir/bash.args"
+    grep -q "RUN_FRONTEND_E2E=1" "$tmpdir/bash.env"
+    grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "01_context phase runs environment detection before WSL GPU preflight" {
   run_installer_function '
     events=()
@@ -1498,11 +1531,12 @@ EOF
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
     run_install_integration_api_tests() { events+=(run_install_integration_api_tests); }
+    run_install_frontend_quality_validation() { events+=(run_install_frontend_quality_validation); }
     run_test_artifact_audit() { events+=(run_test_artifact_audit); }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1536,6 +1570,7 @@ EOF
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
     run_install_integration_api_tests() { events+=(unexpected_integration); return 99; }
+    run_install_frontend_quality_validation() { events+=(unexpected_frontend); return 99; }
     run_test_artifact_audit() { events+=(unexpected_audit); return 99; }
 
     sidar_phase_local_migrations_and_models

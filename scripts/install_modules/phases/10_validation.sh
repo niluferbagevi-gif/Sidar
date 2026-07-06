@@ -385,41 +385,32 @@ run_install_integration_api_tests() {
 
 
 run_install_frontend_quality_validation() {
-    step "Frontend Entegrasyon Kalite Kapısı"
+    step "Frontend Kalite Kapısı"
 
     if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
-        info "--with-integration verilmediği için frontend lint/typecheck/coverage/e2e smoke çalıştırılmadı."
+        info "--with-integration verilmediği için frontend stage çalıştırılmadı. Manuel komut: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         FRONTEND_QUALITY_STATUS="atlandi_bayrak"
         return
     fi
 
-    local frontend_dir="$SCRIPT_DIR/web_ui_react"
+    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
     local frontend_failure_policy="${FRONTEND_QUALITY_FAILURE_POLICY:-fail}"
-    if [[ ! -f "$frontend_dir/package.json" ]]; then
-        FRONTEND_QUALITY_STATUS="package_yok"
-        fail "--with-integration frontend kalite kapısı çalıştırılamadı: $frontend_dir/package.json bulunamadı."
-    fi
-    if ! command -v npm >/dev/null 2>&1; then
-        FRONTEND_QUALITY_STATUS="npm_yok"
-        fail "--with-integration frontend kalite kapısı çalıştırılamadı: npm bulunamadı."
+    if [[ ! -f "$run_tests_script" ]]; then
+        FRONTEND_QUALITY_STATUS="betik_yok"
+        fail "--with-integration frontend kalite kapısı çalıştırılamadı: $run_tests_script bulunamadı."
     fi
 
-    info "Frontend kalite kapısı başlıyor: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
-    if (
-        cd "$frontend_dir" && \
-        npm run lint && \
-        npm run typecheck && \
-        npm run test:coverage && \
-        npm run test:e2e:smoke
-    ); then
-        ok "Frontend lint/typecheck/coverage/e2e smoke kalite kapısı başarıyla geçti."
+    info "Frontend kalite kapısı başlıyor: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+    info "Bu stage web_ui_react/package.json komutlarını çalıştırır: lint, typecheck, test:coverage, test:e2e:smoke."
+    if env RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 bash "$run_tests_script" --stage frontend; then
+        ok "Frontend kalite kapısı başarıyla geçti (run_tests.sh --stage frontend)."
         FRONTEND_QUALITY_STATUS="tamamlandi"
     else
         FRONTEND_QUALITY_STATUS="hata"
         if [[ "$frontend_failure_policy" == "warn" ]]; then
             warn "Frontend kalite kapısında hata var. FRONTEND_QUALITY_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
         else
-            fail "Frontend kalite kapısı başarısız. Tekrar için: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+            fail "Frontend kalite kapısı başarısız. Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         fi
     fi
 }
