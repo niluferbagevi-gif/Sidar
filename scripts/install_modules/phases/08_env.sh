@@ -587,38 +587,67 @@ if env_path.exists():
 import config
 
 CRITICAL_KEYS = (
-    "API_KEY",
-    "JWT_SECRET_KEY",
-    "MEMORY_ENCRYPTION_KEY",
-    "DATABASE_URL",
-    "REDIS_URL",
-    "OPENAI_API_KEY",
-    "GEMINI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GITHUB_TOKEN",
-    "SLACK_TOKEN",
-    "JIRA_TOKEN",
-    "TEAMS_WEBHOOK_URL",
+    ("API_KEY", ("API_KEY",), "direct"),
+    ("JWT_SECRET_KEY", ("JWT_SECRET_KEY",), "direct"),
+    ("MEMORY_ENCRYPTION_KEY", ("MEMORY_ENCRYPTION_KEY",), "direct"),
+    ("DATABASE_URL", ("DATABASE_URL",), "postgres_derived"),
+    ("SIDAR_REDIS_URL", ("SIDAR_REDIS_URL", "REDIS_URL"), "alias"),
+    ("OPENAI_API_KEY", ("OPENAI_API_KEY",), "direct"),
+    ("GEMINI_API_KEY", ("GEMINI_API_KEY",), "direct"),
+    ("ANTHROPIC_API_KEY", ("ANTHROPIC_API_KEY",), "direct"),
+    ("GITHUB_TOKEN", ("GITHUB_TOKEN",), "direct"),
+    ("SLACK_TOKEN", ("SLACK_TOKEN",), "direct"),
+    ("JIRA_TOKEN", ("JIRA_TOKEN",), "direct"),
+    ("TEAMS_WEBHOOK_URL", ("TEAMS_WEBHOOK_URL",), "direct"),
 )
 
 source_report = config.get_dotenv_key_source_report()
+config_cls = config.Config
+
+
+def source_display_for(*keys: str) -> str:
+    for source_key in keys:
+        source = source_report.get(source_key)
+        if source:
+            label = str(source.get("label") or "dotenv")
+            path = str(source.get("path") or "")
+            path_display = Path(path).name if path else "-"
+            return f"{label}:{path_display}:{source_key}"
+    return "process-env"
+
+
+def postgres_parts_available() -> bool:
+    return all(
+        str(os.getenv(key, "")).strip()
+        for key in ("POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD")
+    )
+
+
 print("  KEY                         DURUM      KAYNAK")
 print("  --------------------------  ---------  ----------------------------------------")
-for key in CRITICAL_KEYS:
-    value = os.getenv(key, "")
+for display_key, env_keys, mode in CRITICAL_KEYS:
+    value = next((os.getenv(key, "") for key in env_keys if os.getenv(key, "")), "")
+    source_display = source_display_for(*env_keys)
+
+    if mode == "postgres_derived" and not value:
+        derived_database_url = getattr(config_cls, "DATABASE_URL", "")
+        if derived_database_url and postgres_parts_available():
+            print(f"  {display_key:<26}  türetildi  POSTGRES_* parçaları")
+            continue
+
+    if mode == "alias":
+        alias_value = getattr(config_cls, "SIDAR_REDIS_URL", "") or getattr(config_cls, "REDIS_URL", "")
+        if alias_value:
+            if not value:
+                source_display = "varsayılan (SIDAR_REDIS_URL/REDIS_URL yok)"
+            print(f"  {display_key:<26}  ***        {source_display} (REDIS_URL alias destekli)")
+            continue
+
     if not value:
-        print(f"  {key:<26}  eksik      -")
+        print(f"  {display_key:<26}  eksik      -")
         continue
 
-    source = source_report.get(key)
-    if source:
-        label = str(source.get("label") or "dotenv")
-        path = str(source.get("path") or "")
-        path_display = Path(path).name if path else "-"
-        source_display = f"{label}:{path_display}"
-    else:
-        source_display = "process-env"
-    print(f"  {key:<26}  ***        {source_display}")
+    print(f"  {display_key:<26}  ***        {source_display}")
 PY_KEY_SOURCE_SUMMARY
     ); then
         warn "Kritik key kaynak özeti üretilemedi; config.get_dotenv_key_source_report() çıktısını manuel kontrol edin."
@@ -1319,4 +1348,3 @@ setup_env_file() {
     sync_database_env_chain_after_setup
     validate_runtime_env_loading
 }
-
