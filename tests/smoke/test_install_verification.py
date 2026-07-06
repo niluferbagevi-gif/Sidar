@@ -1294,7 +1294,7 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
+def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
     source_check = _run_bash_smoke(
@@ -1327,7 +1327,71 @@ def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         ENV_FILE="$SCRIPT_DIR/.env"
         NO_INTERACTION=true
+        unset SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
         export SCRIPT_DIR ENV_FILE NO_INTERACTION
+        collect_api_keys_interactive "$ENV_FILE"
+        for profile in .env.advanced .env.development; do
+          for key in $(sidar_user_api_key_names); do
+            expected=$(read_env_value_from_file "$key" "$ENV_FILE")
+            actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/$profile")
+            if [[ "$actual" != "$expected" ]]; then
+              echo "$profile:$key expected=$expected actual=$actual" >&2
+              exit 1
+            fi
+          done
+        done
+        for key in $(sidar_user_api_key_names); do
+          expected=$(read_env_value_from_file "$key" "$ENV_FILE")
+          actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/.env.test")
+          if [[ -n "$actual" && "$actual" == "$expected" ]]; then
+            echo ".env.test:$key unexpectedly received real key value: $actual" >&2
+            exit 1
+          fi
+        done
+        report_env_api_key_status "$ENV_FILE"
+        test "$ENV_API_KEYS_TOTAL" -eq 18
+        test "$ENV_API_KEYS_FILLED" -eq 18
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir()
+    source_check = _run_bash_smoke(
+        "set -euo pipefail; source ./install_sidar.sh; type sidar_user_api_key_names >/dev/null",
+        tmp_path,
+    )
+    if source_check.returncode != 0:
+        pytest.skip(
+            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
+            f"{source_check.stdout}{source_check.stderr}"
+        )
+
+    key_script = "source ./install_sidar.sh; sidar_user_api_key_names"
+    keys_result = _run_bash_smoke(key_script, tmp_path)
+    assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
+    keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
+    assert len(keys) == 18
+
+    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
+    (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+    for name in (".env.advanced", ".env.development", ".env.test"):
+        (script_dir / name).write_text(
+            "\n".join(f"{key}=" for key in keys) + "\n", encoding="utf-8"
+        )
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source ./install_sidar.sh
+        SCRIPT_DIR={shlex.quote(str(script_dir))}
+        ENV_FILE="$SCRIPT_DIR/.env"
+        NO_INTERACTION=true
+        SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1
+        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
         collect_api_keys_interactive "$ENV_FILE"
         for profile in .env.advanced .env.development .env.test; do
           for key in $(sidar_user_api_key_names); do
@@ -1339,9 +1403,6 @@ def test_env_keys_synced_across_profiles(tmp_path: Path) -> None:
             fi
           done
         done
-        report_env_api_key_status "$ENV_FILE"
-        test "$ENV_API_KEYS_TOTAL" -eq 18
-        test "$ENV_API_KEYS_FILLED" -eq 18
         """,
         tmp_path,
     )
