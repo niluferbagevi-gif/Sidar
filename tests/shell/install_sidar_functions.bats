@@ -759,6 +759,27 @@ ENV
   ! grep -q "^setup_react_frontend()" "$root/install_sidar.sh"
 }
 
+@test "React build summary warns that frontend QA was not run" {
+  run_installer_function '
+    FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+    print_react_frontend_qa_status_block
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FRONTEND QA ÇALIŞTIRILMADI"* ]]
+  [[ "$output" == *"React build geçti ≠ frontend QA geçti"* ]]
+  [[ "$output" == *"npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"* ]]
+}
+
+@test "React build summary uses red block when frontend QA failed" {
+  run_installer_function '
+    FRONTEND_QUALITY_STATUS="hata"
+    print_react_frontend_qa_status_block
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FRONTEND QA BAŞARISIZ"* ]]
+  [[ "$output" == *"build geçti ≠ frontend QA geçti"* ]]
+}
+
 @test "DATABASE_URL defaults live in a dedicated utility module" {
   local root
   root="$(repo_root)"

@@ -80,6 +80,30 @@ EOF
     warn "Otonom döngü zamanlayıcısı kurulamadı: systemd user timer ve crontab kullanılamıyor. Manuel öneri: ${loop_script}"
 }
 
+print_react_frontend_qa_status_block() {
+    local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
+    local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+
+    if [[ "$frontend_status" == "tamamlandi" ]]; then
+        echo -e "       ${GREEN}✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı.${NC}"
+        return
+    fi
+
+    echo ""
+    if [[ "$frontend_status" == "hata" ]]; then
+        echo -e "       ${RED}${BOLD}❌ FRONTEND QA BAŞARISIZ${NC}"
+        echo -e "       ${RED}React build çıktısı oluşmuş olabilir; ancak build geçti ≠ frontend QA geçti.${NC}"
+        echo -e "       ${RED}Başarısız kalite kapısını düzeltip tekrar çalıştırın:${NC}"
+    else
+        echo -e "       ${YELLOW}${BOLD}⚠️  FRONTEND QA ÇALIŞTIRILMADI${NC}"
+        echo -e "       ${YELLOW}React build geçti ≠ frontend QA geçti.${NC}"
+        echo -e "       ${YELLOW}Lint, typecheck, coverage ve e2e smoke henüz doğrulanmadı.${NC}"
+        echo -e "       ${YELLOW}Ayrı frontend kalite kapısını çalıştırın:${NC}"
+    fi
+    echo "       ${frontend_quality_command}"
+    echo ""
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
@@ -147,10 +171,7 @@ print_summary() {
         else
             echo "       React UI build: tamamlandı (web_ui_react/dist)"
         fi
-        if [[ "${FRONTEND_QUALITY_STATUS:-}" != "tamamlandi" && "${FRONTEND_QUALITY_STATUS:-}" != "hata" ]]; then
-            echo "       React build geçti; fakat frontend lint/typecheck/coverage/e2e çalışmadı."
-            echo "       Çalıştırmak için: cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
-        fi
+        print_react_frontend_qa_status_block
     elif [[ "$REACT_UI_STATUS" == "build_hata" ]]; then
         echo "       React UI build: başarısız (npm ci|npm install ve/veya npm run build hata verdi)"
         echo "       Logları kontrol edin ve manuel deneyin: cd web_ui_react && npm ci && npm run build"
