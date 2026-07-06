@@ -92,6 +92,16 @@ stage_selected() {
   stage_all_selected || [[ "${RUN_TESTS_STAGE}" == *,"${stage}",* ]]
 }
 
+# Global fail-under kalite kapısı, pyproject.toml/ratchet eşiğini repo geneli
+# (agent/core/managers/plugins/web) coverage baz alınarak hesaplar. Bu yalnızca
+# tests/unit fazı gerçekten çalıştığında anlamlıdır (bkz. run_unit_phase içinde
+# aynı koşul). --stage integration|smoke|e2e gibi kısmi çalıştırmalarda unit
+# fazı atlanır ve toplanan coverage yalnızca o alt kümeye ait olur; böyle bir
+# kısmi coverage'ı repo geneli eşiğe karşı test etmek yanlış-negatif üretir.
+full_repo_coverage_stage_selected() {
+  stage_all_selected || stage_selected backend || stage_selected unit
+}
+
 backend_infra_required_for_stage() {
   stage_all_selected || stage_selected backend || stage_selected integration || stage_selected smoke || stage_selected e2e
 }
@@ -1727,22 +1737,31 @@ enforce_combined_coverage_gate() {
   fi
 
   echo "📊 Final birleşik coverage raporları yenileniyor..."
-  if ! uv run python -m coverage html -d htmlcov; then
+  # Bu artefakt komutlarının tek görevi rapor üretmek; repo geneli fail_under
+  # eşiği yüzünden (ör. kısmi --stage çalıştırmalarında) yanlışlıkla
+  # "rapor üretilemedi" hatası vermemeleri için --fail-under=0 ile nötrlenir.
+  # Asıl kalite kapısı aşağıdaki coverage report --fail-under adımıdır.
+  if ! uv run python -m coverage html -d htmlcov --fail-under=0; then
     echo "❌ Coverage HTML raporu üretilemedi."
     record_backend_failure "coverage_html_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
-  if ! uv run python -m coverage xml -o coverage.xml; then
+  if ! uv run python -m coverage xml -o coverage.xml --fail-under=0; then
     echo "❌ Coverage XML raporu üretilemedi."
     record_backend_failure "coverage_xml_report_failed"
     BACKEND_EXIT_CODE=1
     return 0
   fi
-  if ! uv run python -m coverage json -o coverage.json; then
+  if ! uv run python -m coverage json -o coverage.json --fail-under=0; then
     echo "❌ Coverage JSON raporu üretilemedi."
     record_backend_failure "coverage_json_report_failed"
     BACKEND_EXIT_CODE=1
+    return 0
+  fi
+
+  if ! full_repo_coverage_stage_selected; then
+    echo "ℹ️ Kısmi test stage'i seçildi (--stage=${RUN_TESTS_STAGE}); tests/unit fazı çalışmadığı için global coverage fail-under kalite kapısı atlandı."
     return 0
   fi
 
@@ -1759,6 +1778,11 @@ enforce_combined_coverage_gate() {
 update_progressive_coverage_gate() {
   if [ "${COVERAGE_RATCHET_ENABLED:-1}" != "1" ]; then
     echo "ℹ️ Coverage ratcheting devre dışı (COVERAGE_RATCHET_ENABLED=${COVERAGE_RATCHET_ENABLED:-0})."
+    return 0
+  fi
+
+  if ! full_repo_coverage_stage_selected; then
+    echo "ℹ️ Kısmi test stage'i seçildi (--stage=${RUN_TESTS_STAGE}); tests/unit fazı çalışmadığından repo geneli olmayan coverage ile ratchet güncellenmesi atlandı."
     return 0
   fi
 

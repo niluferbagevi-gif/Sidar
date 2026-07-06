@@ -13,7 +13,13 @@ RateLimitKeyResolver = Callable[[Request, str], str]
 NextHandler = Callable[[Request], Awaitable[Response]]
 
 
-DEFAULT_DDOS_BYPASS_PATHS: tuple[str, ...] = ("/health", "/healthz", "/readyz", "/favicon.ico", "/favicon.svg")
+DEFAULT_DDOS_BYPASS_PATHS: tuple[str, ...] = (
+    "/health",
+    "/healthz",
+    "/readyz",
+    "/favicon.ico",
+    "/favicon.svg",
+)
 DEFAULT_DDOS_BYPASS_PREFIXES: tuple[str, ...] = ("/ui/", "/static/", "/assets/")
 
 # GET requests are rate-limited by default (mirroring the POST/DELETE mutation
