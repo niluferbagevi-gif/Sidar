@@ -33,6 +33,19 @@ CI profilinde coverage eşiği daha sıkı çalıştırılabilir:
 ```bash
 CI=true TEST_PROFILE=ci ./run_tests.sh
 ```
+
+Global fail-under kalite kapısı ve coverage ratchet, yalnızca `tests/unit` fazının
+gerçekten çalıştığı stage seçimlerinde uygulanır (`--stage all`, `--stage backend`
+veya `--stage unit`). `--stage integration`, `--stage smoke` veya `--stage e2e` gibi
+kısmi çalıştırmalar repo genelini temsil etmeyen bir alt küme coverage'ı üretir; bu
+yüzden bu stage'lerde global eşik atlanır ve yalnızca ilgili testlerin kendi
+başarı/başarısızlığı sonucu belirler. HTML/XML/JSON coverage raporları yine de her
+stage'de üretilir.
+
+```bash
+bash run_tests.sh --stage integration   # integration testleri + rapor üretimi; global fail-under atlanır
+bash run_tests.sh --stage all           # tüm fazlar + global fail-under kalite kapısı
+```
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`

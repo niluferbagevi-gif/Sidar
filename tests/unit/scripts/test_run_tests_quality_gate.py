@@ -237,6 +237,91 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
     assert "uv run python -m coverage json -o coverage.json" in gate_function
 
 
+def test_coverage_artifact_commands_never_fail_on_the_global_gate() -> None:
+    """coverage html/xml/json only need to write a report; the actual quality
+    gate is the dedicated `coverage report --fail-under` call below them. If
+    the global fail_under threshold leaked into these commands, a partial
+    (e.g. --stage integration) run's low subset coverage would make report
+    generation itself fail and get misreported as "HTML/XML/JSON report
+    could not be produced" even though coverage.py did write the file.
+    """
+    script = _script()
+    gate_function = script[
+        script.index("enforce_combined_coverage_gate()") : script.index(
+            "update_progressive_coverage_gate()"
+        )
+    ]
+
+    assert "uv run python -m coverage html -d htmlcov --fail-under=0" in gate_function
+    assert "uv run python -m coverage xml -o coverage.xml --fail-under=0" in gate_function
+    assert "uv run python -m coverage json -o coverage.json --fail-under=0" in gate_function
+
+
+def test_partial_stage_runs_skip_the_global_coverage_gate_and_ratchet() -> None:
+    """--stage integration (or smoke/e2e) never runs tests/unit, so the
+    coverage collected in that run only covers the subset of code exercised
+    by those tests. Enforcing/ratcheting the repo-wide fail_under threshold
+    against that partial coverage would fail (or corrupt) the gate even
+    though the requested stage's own tests all passed.
+    """
+    script = _script()
+    gate_function = script[
+        script.index("enforce_combined_coverage_gate()") : script.index(
+            "update_progressive_coverage_gate()"
+        )
+    ]
+    ratchet_function = script[script.index("update_progressive_coverage_gate()") :]
+
+    assert "if ! full_repo_coverage_stage_selected; then" in gate_function
+    assert "if ! full_repo_coverage_stage_selected; then" in ratchet_function
+
+
+@pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        ("all", True),
+        ("backend", True),
+        ("unit", True),
+        ("integration", False),
+        ("smoke", False),
+        ("e2e", False),
+        ("integration,smoke", False),
+        ("unit,integration", True),
+    ],
+)
+def test_full_repo_coverage_stage_selected_matches_unit_phase_selection(
+    tmp_path: Path, stage: str, expected: bool
+) -> None:
+    """full_repo_coverage_stage_selected() must agree with run_pytest_coverage_report's
+    own `run_unit_phase` condition (stage_selected backend || stage_selected unit):
+    the gate should only ever be enforced against a run that actually executed
+    tests/unit and therefore produced repo-wide coverage data.
+    """
+    script = _script()
+    helper = tmp_path / "should_enforce_probe.sh"
+    helper.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        + script[
+            script.index("normalize_test_stages() {") : script.index(
+                "backend_infra_required_for_stage() {"
+            )
+        ]
+        + '\nif full_repo_coverage_stage_selected; then echo yes; else echo no; fi\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+
+    result = subprocess.run(
+        [str(helper)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "RUN_TESTS_STAGE": stage},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ("yes" if expected else "no")
+
+
 def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> None:
     script = _script()
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
