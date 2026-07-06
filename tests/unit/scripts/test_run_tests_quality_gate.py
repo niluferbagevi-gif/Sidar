@@ -617,6 +617,25 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
 
 
 
+
+def test_install_alembic_logs_revision_and_db_source_observability() -> None:
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "mask_alembic_db_url()" in alembic_phase
+    assert "log_alembic_revision_observation()" in alembic_phase
+    assert "Alembic DB URL kaynağı:" in alembic_phase
+    assert "Alembic DB URL (maskeli):" in alembic_phase
+    assert "Alembic current revizyon:" in alembic_phase
+    assert "Alembic head revizyon:" in alembic_phase
+    assert 'DB_URL_SOURCE=".env:DATABASE_URL"' in alembic_phase
+    assert 'DB_URL_SOURCE=".env:POSTGRES_*"' in alembic_phase
+    assert 'DB_URL_SOURCE=".env:DATABASE_URL (yenilendi)"' in alembic_phase
+    assert "post_current_output=" in alembic_phase
+    assert "post_heads_output=" in alembic_phase
+    assert 'log_alembic_revision_observation "$current_rev" "$head_rev"' in alembic_phase
+
 def test_install_summary_prints_masked_runtime_key_source_report() -> None:
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")

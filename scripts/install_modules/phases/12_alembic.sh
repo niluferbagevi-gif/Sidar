@@ -15,6 +15,28 @@ resolve_alembic_python() {
     fi
 }
 
+
+mask_alembic_db_url() {
+    local db_url="$1"
+    local masked_db_url="$db_url"
+    if [[ "$db_url" =~ ^(postgresql(\+asyncpg)?://[^:/?#]+:)([^@]+)(@.+)$ ]]; then
+        masked_db_url="${BASH_REMATCH[1]}***${BASH_REMATCH[4]}"
+    fi
+    printf '%s\n' "$masked_db_url"
+}
+
+log_alembic_revision_observation() {
+    local current_rev="${1:-}"
+    local head_rev="${2:-}"
+    local db_url_source="${3:-bilinmiyor}"
+    local masked_db_url="${4:-}"
+
+    info "Alembic DB URL kaynağı: ${db_url_source:-bilinmiyor}"
+    [[ -n "$masked_db_url" ]] && info "Alembic DB URL (maskeli): ${masked_db_url}"
+    info "Alembic current revizyon: ${current_rev:-ayrıştırılamadı}"
+    info "Alembic head revizyon: ${head_rev:-ayrıştırılamadı}"
+}
+
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -27,8 +49,10 @@ run_migrations() {
     fi
 
     DB_URL=""
+    DB_URL_SOURCE=""
     if [[ -f "$ENV_FILE" ]]; then
         DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
+        [[ -n "$DB_URL" ]] && DB_URL_SOURCE=".env:DATABASE_URL"
     fi
 
     cd "$SCRIPT_DIR" || return 1
@@ -69,6 +93,7 @@ if password:
 PY
 )
         if [[ -n "$DB_URL" ]]; then
+            DB_URL_SOURCE=".env:POSTGRES_*"
             info "DATABASE_URL .env içinde kasıtlı olarak tek kaynak yaklaşımıyla tutulmuyor; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
         fi
     fi
@@ -80,12 +105,11 @@ PY
         return
     fi
 
-    # Güvenlik: DB_URL içindeki parolayı loglarda maskele
-    local masked_db_url="$DB_URL"
-    if [[ "$DB_URL" =~ ^(postgresql(\+asyncpg)?://[^:/?#]+:)([^@]+)(@.+)$ ]]; then
-        masked_db_url="${BASH_REMATCH[1]}***${BASH_REMATCH[4]}"
-    fi
-    info "DATABASE_URL: $masked_db_url"
+    # Güvenlik: DB_URL içindeki parolayı loglarda maskele.
+    local masked_db_url=""
+    masked_db_url="$(mask_alembic_db_url "$DB_URL")"
+    info "Alembic DB URL kaynağı: ${DB_URL_SOURCE:-bilinmiyor}"
+    info "Alembic DB URL (maskeli): $masked_db_url"
 
     if [[ "$DOCKER_ONLY" == true ]]; then
         DOCKER_COMPOSE_CMD=()
@@ -249,6 +273,7 @@ PY
 
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
+            DB_URL_SOURCE=".env:DATABASE_URL (yenilendi)"
             export DATABASE_URL="$refreshed_db_url"
         fi
         if [[ -n "$refreshed_postgres_password" ]]; then
@@ -264,6 +289,15 @@ PY
         > >(tee -a "$alembic_output_file") \
         2> >(tee -a "$alembic_output_file" >&2); then
         rm -f "$alembic_output_file"
+        local post_current_output=""
+        local post_heads_output=""
+        local post_current_rev=""
+        local post_head_rev=""
+        post_current_output="$(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic current 2>&1 || true)"
+        post_heads_output="$(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic heads 2>&1 || true)"
+        post_current_rev="$(printf '%s\n' "$post_current_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+        post_head_rev="$(printf '%s\n' "$post_heads_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+        log_alembic_revision_observation "$post_current_rev" "$post_head_rev" "${DB_URL_SOURCE:-bilinmiyor}" "$(mask_alembic_db_url "$DB_URL")"
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
     else
@@ -284,14 +318,17 @@ is_alembic_at_head() {
     local heads_output=""
     local current_rev=""
     local head_rev=""
+    local db_url_source=""
 
     [[ -f "$alembic_ini" ]] || return 1
     py_bin="$(resolve_alembic_python)" || return 1
 
     if [[ -n "${DATABASE_URL:-}" ]]; then
         db_url="$DATABASE_URL"
+        db_url_source="process:DATABASE_URL"
     elif [[ -f "$env_file" ]]; then
         db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file")"
+        [[ -n "$db_url" ]] && db_url_source=".env:DATABASE_URL"
     else
         debug "Alembic head kontrolü için DATABASE_URL bulunamadı: ortam değişkeni ve ${env_file} yok."
         return 1
@@ -310,6 +347,7 @@ is_alembic_at_head() {
     if [[ -z "$current_rev" || -z "$head_rev" ]]; then
         debug "Alembic current/head çıktısı ayrıştırılamadı. current=$(printf '%s' "$current_output" | tail -n 3 | tr '\n' ' ') heads=$(printf '%s' "$heads_output" | tail -n 3 | tr '\n' ' ')"
     fi
+    log_alembic_revision_observation "$current_rev" "$head_rev" "${db_url_source:-bilinmiyor}" "$(mask_alembic_db_url "$db_url")"
     [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
 }
 
