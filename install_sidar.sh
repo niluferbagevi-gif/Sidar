@@ -14,6 +14,7 @@
 #   ./install_sidar.sh --silent   # CI/CD için sessiz kurulum (güvenli varsayılanlarla)
 #   ./install_sidar.sh --auto --mode=local --env=development --reset-db --no-vscode
 #   ./install_sidar.sh --with-browsers  # Playwright Chromium + deps kurulumunu zorla
+#   ./install_sidar.sh --production-readiness  # production öncesi tam CI/e2e/benchmark doğrulaması
 #   AUTO_INSTALL=true INSTALL_MODE=1 ENV_TYPE=dev RESET_DB=yes START_DOCKER_SERVICES=yes OPEN_VSCODE=no ./install_sidar.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
@@ -350,7 +351,7 @@ sidar_t() {
                     '  Environment: --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode' \
                     '  Assets/offline: --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli' \
                     '  Cleanup/Kubernetes: --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=...' \
-                    '  Tests/automation: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit' \
+                    '  Tests/automation: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --production-readiness | --enable-autonomous-cron | --audit' \
                     '  Models/UI/audio: --skip-models | --download-models | --build-ui | --enable-audio'
                 printf '\n%s' '  Non-interactive: --ci | --no-interaction | --non-interactive | --headless | --yes | -y'
                 ;;
@@ -385,7 +386,7 @@ sidar_t() {
                     '  Ortam: --mode=... | --env=... | --reset-db | --no-reset-db | --start-services | --no-start-services | --vscode | --no-vscode' \
                     '  Varlık/offline: --with-browsers | --skip-browsers | --offline | --air-gapped | --install-docker-cli | --skip-docker-cli' \
                     '  Temizlik/Kubernetes: --force-postgres-volume-cleanup | --force-docker-cleanup | --kubernetes | --helm | --helm-release=... | --namespace=... | --values=...' \
-                    '  Test/otomasyon: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --enable-autonomous-cron | --audit' \
+                    '  Test/otomasyon: --smoke-test | --skip-smoke-test | --with-integration | --ci-full | --production-readiness | --enable-autonomous-cron | --audit' \
                     '  Model/UI/ses: --skip-models | --download-models | --build-ui | --enable-audio'
                 printf '\n%s' '  Etkileşimsiz: --ci | --no-interaction | --non-interactive | --headless | --yes | -y'
                 ;;
@@ -493,7 +494,7 @@ b2a79704bc05ded9fb283cc5eaafb75b5b21b9f63e0b387c417f337d60bd8aa9  scripts/instal
 179f368aa1d3bd859331ddb6a9cb8e3cce1c76817ff5cbb92a7b00f01a0d716d  scripts/install_modules/phases/07_finish.sh
 32e44dd98310e384e02f12227217a1c6860d7bf276325cb2d2a64fdcaacaff77  scripts/install_modules/phases/08_env.sh
 a5ed55e0d24f7c50feb43a8998de3a3e9e00fee1c8012f84d3403787a58c0029  scripts/install_modules/phases/09_ollama_models.sh
-803435e456d77b56ca96cf4437b2861d63e4a004f6560efb40a12fb68246009b  scripts/install_modules/phases/10_validation.sh
+63d5afa13f8d0a7e09426ba43cfe8dd85aa454bb1944d1fff77185fbcd1d36a4  scripts/install_modules/phases/10_validation.sh
 d15361999ab21b0ca5e8b04fbb5f0eccfebaaaa895d882d75f627d83bddcb618  scripts/install_modules/phases/11_post_install.sh
 2f4784f18bf595a953cddc29dece235b52bf1e472a096cd1e50afdb6d5403036  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -1245,7 +1246,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -1261,7 +1262,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --smoke-test  Require tests/smoke at the end of installation
   --skip-smoke-test  Do not run smoke tests at the end of installation
   --with-integration / --with-integration-tests  Also run tests/integration/api after smoke tests
-  --ci-full  After installation, run TEST_PROFILE=ci ./run_tests.sh --stage all (integration + E2E + benchmark)
+  --ci-full  After installation, run TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
+  --production-readiness  Production gate alias for --ci-full; fails installation unless the full CI/e2e/benchmark gate passes
   --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
@@ -1310,7 +1312,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -1326,7 +1328,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
   --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
   --with-integration / --with-integration-tests  Smoke sonrası tests/integration/api testlerini de çalıştır
-  --ci-full  Kurulum sonunda TEST_PROFILE=ci ./run_tests.sh --stage all çalıştır (integration + E2E + benchmark)
+  --ci-full  Kurulum sonunda TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all çalıştır
+  --production-readiness  --ci-full için üretim geçiş kapısı aliası; tam CI/e2e/benchmark geçmeden kurulumu başarılı saymaz
   --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
@@ -1413,6 +1416,7 @@ for arg in "$@"; do
         --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
         --with-integration|--with-integration-tests) RUN_INSTALL_INTEGRATION_TESTS=true ;;
         --ci-full) RUN_CI_FULL_VALIDATION=true; NO_INTERACTION=true ;;
+        --production-readiness) RUN_CI_FULL_VALIDATION=true; NO_INTERACTION=true ;;
         --enable-autonomous-cron) ENABLE_AUTONOMOUS_CRON=true ;;
         --audit) RUN_AUDIT=true ;;
         --docker-only) DOCKER_ONLY=true ;;
@@ -1433,6 +1437,11 @@ AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
 SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
 STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
 ENABLE_AUTONOMOUS_CRON="$(normalize_bool "${ENABLE_AUTONOMOUS_CRON:-${SIDAR_ENABLE_AUTONOMOUS_CRON:-false}}")"
+SIDAR_PRODUCTION_READINESS_RAW="$(normalize_bool "${SIDAR_PRODUCTION_READINESS:-${PRODUCTION_READINESS:-}}")"
+if [[ "$SIDAR_PRODUCTION_READINESS_RAW" == "true" ]]; then
+    RUN_CI_FULL_VALIDATION=true
+    NO_INTERACTION=true
+fi
 if [[ "$AUTO_INSTALL" == "true" ]]; then
     NO_INTERACTION=true
 fi
@@ -1475,6 +1484,12 @@ if [[ -n "$CLI_ENV_RAW" && "$AUTO_ENV_TYPE" == "ask" ]]; then
 fi
 AUTO_OPEN_VSCODE="$(normalize_bool "${CLI_OPEN_VSCODE:-${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}}")"
 [[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
+
+if [[ "$AUTO_ENV_TYPE" == "production" && "$RUN_CI_FULL_VALIDATION" != true ]]; then
+    RUN_CI_FULL_VALIDATION=true
+    NO_INTERACTION=true
+    warn "Production ortamı seçildi; kurulum başarısı için tam üretim doğrulaması zorunlu: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+fi
 
 if [[ "$SILENT_MODE" == true ]]; then
     export DEBIAN_FRONTEND=noninteractive

@@ -577,6 +577,32 @@ def test_pytest_conftest_parity_guard_accepts_matching_passwords(
     conftest._assert_test_dotenv_postgres_parity()
 
 
+def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--production-readiness" in install_script
+    assert (
+        "--production-readiness) RUN_CI_FULL_VALIDATION=true; "
+        "NO_INTERACTION=true ;;"
+    ) in install_script
+    assert (
+        'if [[ "$AUTO_ENV_TYPE" == "production" '
+        '&& "$RUN_CI_FULL_VALIDATION" != true ]]; then'
+    ) in install_script
+    assert "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
+    assert "SIDAR_PRODUCTION_READINESS" in install_script
+    assert (
+        "env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "AUTO_OPEN_ARTIFACTS=0"
+    ) in validation_phase
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "bash run_tests.sh --stage all"
+    ) in validation_phase
+
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 

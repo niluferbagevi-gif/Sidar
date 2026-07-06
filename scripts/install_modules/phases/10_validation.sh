@@ -433,7 +433,7 @@ run_install_ci_full_validation() {
         return
     fi
 
-    info "Tam doğrulama başlıyor: TEST_PROFILE=ci RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+    info "Tam doğrulama başlıyor: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     if env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
         bash "$run_tests_script" --stage all; then
         ok "Tam CI doğrulaması başarıyla tamamlandı (run_tests.sh --stage all)."
@@ -443,7 +443,7 @@ run_install_ci_full_validation() {
         if [[ "$ci_full_failure_policy" == "warn" ]]; then
             warn "Tam CI doğrulamasında hata var. CI_FULL_VALIDATION_FAILURE_POLICY=warn nedeniyle kurulum devam ediyor."
         else
-            fail "Tam CI doğrulamasında hata var. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+            fail "Tam CI doğrulamasında hata var. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
         fi
     fi
 }
@@ -491,7 +491,7 @@ print_install_validation_coverage() {
         echo -e "   ${BOLD}➡️  Zorunlu sonraki adım: production'a geçmeden veya kod üzerinde çalışmaya devam${NC}"
         echo -e "   ${BOLD}   etmeden önce en az bir kez şunu çalıştırın:${NC}"
         echo -e "   ${BOLD}   ./run_tests.sh --stage integration${NC}"
-        echo "   Tam doğrulama (integration + e2e + benchmark): ./install_sidar.sh --ci-full"
-        echo "   veya yalnızca:                                  ./run_tests.sh --stage all"
+        echo "   Tam doğrulama (integration + e2e + benchmark): ./install_sidar.sh --production-readiness"
+        echo "   veya yalnızca:                                  TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     fi
 }
