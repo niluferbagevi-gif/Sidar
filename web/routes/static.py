@@ -20,7 +20,15 @@ def build_frontend_router(
 
     @router.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Any:
-        """Tarayıcının favicon isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
+        """Tarayıcının favicon.ico isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
+        return Response(status_code=204)
+
+    @router.get("/favicon.svg", include_in_schema=False)
+    async def favicon_svg() -> Any:
+        """React/Vite favicon.svg isteğini 404 üretmeden karşılar."""
+        svg_file = web_dir() / "favicon.svg"
+        if svg_file.exists():
+            return FileResponse(svg_file)
         return Response(status_code=204)
 
     @router.get("/vendor/{file_path:path}", include_in_schema=False)
