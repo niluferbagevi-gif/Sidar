@@ -13,6 +13,8 @@ from core.db_components.dialect import (
 from core.db_components.dialect import quote_sql_identifier as quote_sql_identifier
 
 
-def parse_asyncpg_affected_rows(command_tag: Any) -> int:
+def parse_asyncpg_affected_rows(
+    command_tag: Any, *, pattern: Any = ASYNCPG_COMMAND_TAG_COUNT_RE
+) -> int:
     """Parse affected row count from an asyncpg command tag."""
-    return _parse_asyncpg_affected_rows(command_tag, pattern=ASYNCPG_COMMAND_TAG_COUNT_RE)
+    return _parse_asyncpg_affected_rows(command_tag, pattern=pattern)
