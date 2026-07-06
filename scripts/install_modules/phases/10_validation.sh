@@ -521,6 +521,10 @@ print_install_validation_coverage() {
     local full_coverage_reached=false
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]] && full_coverage_reached=true
     local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        recommended_validation_command="RUN_GPU_STRESS=1 ${recommended_validation_command}"
+    fi
 
     echo ""
     echo -e "${BOLD}📊 Kurulum doğrulama kapsamı:${NC}"
@@ -577,10 +581,10 @@ print_install_validation_coverage() {
             echo -e "   ${YELLOW}   gibi kritik yollar bu aşamada DOĞRULANMADI. \"Smoke testler geçti\" mesajı, tam${NC}"
             echo -e "   ${YELLOW}   kapsamlı bir doğrulamanın yerine geçmez.${NC}"
             echo ""
-            echo -e "   ${BOLD}➡️  Development için önerilen sonraki adım:${NC}"
-            echo -e "   ${BOLD}   bash run_tests.sh --stage all${NC}"
-            echo "   Production gate (integration + e2e + benchmark): ./install_sidar.sh --production-readiness"
-            echo "   veya tek komut:                                 ${production_readiness_command}"
+            echo -e "   ${BOLD}➡️  Önerilen doğrulama komutu (duruma göre tek komut seçin):${NC}"
+            echo -e "   ${BOLD}   Development tam doğrulama: ${recommended_validation_command}${NC}"
+            echo "   Hızlı kontrol:             bash run_tests.sh --stage integration"
+            echo "   Production readiness:      ./install_sidar.sh --production-readiness"
         fi
     fi
 }
