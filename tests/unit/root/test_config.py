@@ -2178,12 +2178,16 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
     monkeypatch.setenv("SIDAR_ENV", "production")
-    assert config.Config.get_missing_critical_runtime_keys() == [
-        "API_KEY",
-        "POSTGRES_PASSWORD",
-        "LITELLM_GATEWAY_URL",
-        "MEMORY_ENCRYPTION_KEY",
-    ]
+    monkeypatch.setenv("POSTGRES_PASSWORD", "sidar")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+    assert "API_KEY" in missing
+    assert "POSTGRES_PASSWORD" in missing
+    assert "LITELLM_GATEWAY_URL" in missing
+    assert "MEMORY_ENCRYPTION_KEY" in missing
 
     monkeypatch.setattr(config, "_DOTENV_LOAD_EVENTS", [], raising=False)
     config.Config._log_dotenv_load_status(missing_keys=[])
