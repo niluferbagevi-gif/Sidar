@@ -581,9 +581,9 @@ print_install_validation_coverage() {
         elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
             echo -e "   ${RED}❌ Integration:  HATA; tekrar için run_tests.sh --stage integration${NC}"
         else
-            echo -e "   ${YELLOW}⏭️  Integration:  ATLANDI (kapsam: api/cli/db/managers/web/workflow)${NC}"
+            echo -e "   ${YELLOW}⏭️  Integration:  ATLANDI (kapsam: run_tests.sh --stage integration → tests/integration)${NC}"
         fi
-        echo -e "   ${YELLOW}⏭️  E2E:          ATLANDI (kapsam: agents/cli/web)${NC}"
+        echo -e "   ${YELLOW}⏭️  E2E:          ATLANDI (kapsam: run_tests.sh --stage e2e → tests/e2e/{agents,cli,web})${NC}"
         echo -e "   ${YELLOW}⏭️  Benchmark:    ATLANDI${NC}"
     fi
 
@@ -609,7 +609,7 @@ print_install_validation_coverage() {
             echo -e "   ${YELLOW}   Kurulum başarılı: $([[ "$SMOKE_TEST_STATUS" == "hata" ]] && echo "Hayır" || echo "Evet")${NC}"
             echo -e "   ${YELLOW}   Smoke doğrulaması: $([[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]] && echo "Geçti" || echo "Tamamlanmadı (${SMOKE_TEST_STATUS:-bilinmiyor})")${NC}"
             echo -e "   ${YELLOW}   Tam proje doğrulaması: Çalıştırılmadı${NC}"
-            echo -e "   ${YELLOW}   Eksik kapsam: integration, e2e, benchmark, frontend lint/typecheck/coverage${NC}"
+            echo -e "   ${YELLOW}   Eksik kapsam: run_tests.sh stage all içindeki integration, e2e, benchmark, frontend, bats ve security gate sonuçları${NC}"
             echo ""
             echo -e "   ${YELLOW}${BOLD}⚠️  DEVELOPMENT UYARISI: Bu kurulum yalnızca smoke testleri (boot/GPU/import/kilit/WSL) kapsar.${NC}"
             echo -e "   ${YELLOW}   Agent orkestrasyonu, gerçek DB migrasyonları, WebSocket oturumları ve plugin sandbox'ı${NC}"
@@ -618,7 +618,8 @@ print_install_validation_coverage() {
             echo ""
             echo -e "   ${BOLD}➡️  Önerilen doğrulama komutu (duruma göre tek komut seçin):${NC}"
             echo -e "   ${BOLD}   Development tam doğrulama: ${recommended_validation_command}${NC}"
-            echo "   Hızlı kontrol:             bash run_tests.sh --stage integration"
+            echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
+            echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
             echo "   Production readiness:      ./install_sidar.sh --production-readiness"
         fi
     fi

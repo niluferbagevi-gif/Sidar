@@ -209,8 +209,10 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
-    echo "  Tam doğrulama için (entegrasyon + e2e):"
-    echo "    bash run_tests.sh --stage all   # veya tek başına: --stage integration"
+    echo "  Tam doğrulama için (backend + frontend + benchmark + BATS + security):"
+    echo "    bash run_tests.sh --stage all"
+    echo "  Backend entegrasyon ana yolu:"
+    echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"
     echo "    bash run_tests.sh --stage e2e   # tests/e2e/{agents,cli,web}"
     echo "  Performans/benchmark doğrulaması için:"
@@ -237,7 +239,8 @@ print_summary() {
         echo "  Entegrasyon testleri: hata var. Tekrar için: bash run_tests.sh --stage integration"
     else
         echo "  Entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
-        echo "  Tüm entegrasyon/CLI/DB/workflow kapsamı için: bash run_tests.sh --stage integration"
+        echo "  Backend entegrasyon kapsamı için: bash run_tests.sh --stage integration"
+        echo "  Frontend kalite kapısı ayrı stage'dir: bash run_tests.sh --stage frontend"
     fi
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."

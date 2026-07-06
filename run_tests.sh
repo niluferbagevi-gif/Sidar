@@ -26,6 +26,12 @@ Stage examples:
   bash run_tests.sh --stage unit
   bash run_tests.sh --stage integration,smoke
 
+Stage scopes:
+  all          Full quality gate: static/security + backend unit/integration/smoke/e2e + frontend + benchmark + BATS (profile-dependent).
+  integration  Backend integration main path: tests/integration/{api,cli,db,managers,web,workflow}.
+  frontend     Frontend quality gate: npm audit:high, lint, typecheck, coverage and Playwright smoke.
+  bats         Installer/shell quality gate: tests/shell via BATS.
+
 Production readiness gate:
   ${PRODUCTION_READINESS_COMMAND}
 USAGE
