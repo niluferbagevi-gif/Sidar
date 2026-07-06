@@ -460,7 +460,7 @@ run_install_ci_full_validation() {
     fi
 
     info "Tam doğrulama başlıyor: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-    if env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
+    if env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0 \
         bash "$run_tests_script" --stage all; then
         ok "Tam CI doğrulaması başarıyla tamamlandı (run_tests.sh --stage all)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"

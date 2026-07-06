@@ -593,6 +593,14 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         '&& "$RUN_CI_FULL_VALIDATION" != true ]]; then'
     ) in install_script
     assert "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
+    run_tests_script = Path("run_tests.sh").read_text(encoding="utf-8")
+    assert (
+        'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
+        'RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"'
+    ) in run_tests_script
+    assert "assert_production_readiness_request" in run_tests_script
+    assert "production_readiness_gate_active" in run_tests_script
+    assert "SIDAR_PRODUCTION_READINESS=1" in validation_phase
     assert "SIDAR_PRODUCTION_READINESS" in install_script
     assert "sidar_install_production_gate_required()" in validation_phase
     assert "Production readiness gate başarısız" in validation_phase
@@ -600,7 +608,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "DEVELOPMENT UYARISI" in validation_phase
     assert (
         "env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
-        "AUTO_OPEN_ARTIFACTS=0"
+        "SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0"
     ) in validation_phase
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "

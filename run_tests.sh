@@ -16,14 +16,18 @@ run_checked() {
 }
 
 RUN_TESTS_STAGE="${RUN_TESTS_STAGE:-all}"
+PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
 print_usage() {
-  cat <<'USAGE'
+  cat <<USAGE
 Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]
 
 Stage examples:
   bash run_tests.sh --stage static
   bash run_tests.sh --stage unit
   bash run_tests.sh --stage integration,smoke
+
+Production readiness gate:
+  ${PRODUCTION_READINESS_COMMAND}
 USAGE
 }
 
@@ -489,6 +493,43 @@ if ! stage_all_selected; then
     RUN_FRONTEND_E2E=1
   fi
 fi
+
+is_truthy_env() {
+  local value="${1:-}"
+  value="${value,,}"
+  value="${value//[[:space:]]/}"
+  case "${value}" in
+    1|true|yes|y|evet|e) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+production_readiness_gate_active() {
+  stage_all_selected \
+    && [ "${TEST_PROFILE}" = "ci" ] \
+    && [ "${RUN_BENCHMARKS}" = "required" ] \
+    && [ "${RUN_FRONTEND_E2E}" = "1" ] \
+    && [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ] \
+    && [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]
+}
+
+assert_production_readiness_request() {
+  if ! is_truthy_env "${SIDAR_PRODUCTION_READINESS:-${PRODUCTION_READINESS:-}}"; then
+    return 0
+  fi
+
+  if production_readiness_gate_active; then
+    echo "✅ Production readiness gate aktif: ${PRODUCTION_READINESS_COMMAND}"
+    return 0
+  fi
+
+  echo "❌ SIDAR_PRODUCTION_READINESS=1 verildi ancak run_tests.sh tam production gate koşullarında çalışmıyor." >&2
+  echo "   Zorunlu komut: ${PRODUCTION_READINESS_COMMAND}" >&2
+  echo "   Mevcut: TEST_PROFILE=${TEST_PROFILE}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E}, stage=${RUN_TESTS_STAGE}" >&2
+  exit 2
+}
+
+assert_production_readiness_request
 
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
   # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
@@ -2203,6 +2244,13 @@ if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
     echo "⚠️ Frontend Playwright E2E fazı retry sonrasında başarısız ancak FRONTEND_E2E_ENFORCE_RESULT=0 ile rapor modunda; final çıkış kodu bloke edilmeyecek."
     echo "   Varsayılan sıkı kapıya dönmek için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
   fi
+fi
+
+if production_readiness_gate_active; then
+  echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"
+else
+  echo "⚠️ Bu çalışma production readiness gate değildir. Projeyi tam doğrulanmış kabul etmek için çalıştırın:"
+  echo "   ${PRODUCTION_READINESS_COMMAND}"
 fi
 
 if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
