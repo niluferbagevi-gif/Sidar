@@ -244,6 +244,7 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
 
     assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
     assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
+    assert 'TEST_SUMMARY_JUNIT_DIR="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"' in script
 
     phase1_block = _run_tests_block_between(
         "local phase1_cmd=(",
@@ -4263,6 +4264,7 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
     assert "phase2_dirs+=(tests/integration)" in script
     assert "phase2_dirs+=(tests/smoke)" in script
     assert "phase2_dirs+=(tests/e2e)" in script
+    assert 'local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"' in script
 
     phase2_parent = script.index('if [ "${#phase2_dirs[@]}" -gt 0 ]; then')
     phase2_block = _run_tests_block_between(
