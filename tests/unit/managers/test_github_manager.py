@@ -365,6 +365,112 @@ def test_issue_related_methods(manager):
     assert manager.close_issue(999)[0] is False
 
 
+def test_merge_pull_request_success_and_missing_repo_paths(manager):
+    manager._repo = None
+    assert manager.merge_pull_request(5) == (False, "Aktif depo yok.")
+
+    class MergeablePR:
+        html_url = "https://example/pr/5"
+
+        def merge(self, **_kwargs):
+            return SimpleNamespace(merged=True, message="")
+
+    manager._repo = RepoMock()
+    manager._repo._pulls = [MergeablePR()]
+
+    ok, msg = manager.merge_pull_request(5, merge_method="")
+
+    assert ok is True
+    assert msg == "✓ PR #5 merge edildi (merge): https://example/pr/5"
+
+
+def test_merge_pull_request_rejects_invalid_method_before_api_call(manager):
+    manager._repo.get_pull = lambda _number: (_ for _ in ()).throw(AssertionError("api touched"))
+
+    ok, msg = manager.merge_pull_request(5, merge_method="fast-forward")
+
+    assert ok is False
+    assert "Geçersiz merge yöntemi" in msg
+
+
+def test_merge_pull_request_reports_github_merged_false(manager):
+    merge_calls = []
+
+    class MergeablePR:
+        html_url = "https://example/pr/5"
+
+        def merge(self, **kwargs):
+            merge_calls.append(kwargs)
+            return SimpleNamespace(merged=False, message="Required status check expected")
+
+    manager._repo._pulls = [MergeablePR()]
+
+    ok, msg = manager.merge_pull_request(5, commit_message="ship it", merge_method="squash")
+
+    assert ok is False
+    assert "PR #5 merge edilemedi: Required status check expected" == msg
+    assert merge_calls == [{"commit_message": "ship it", "merge_method": "squash"}]
+
+
+def test_merge_pull_request_reports_branch_protection_exception(manager):
+    class BranchProtectionError(RuntimeError):
+        status = 403
+
+    class ProtectedPR:
+        def merge(self, **_kwargs):
+            raise BranchProtectionError("Protected branch update failed")
+
+    manager._repo._pulls = [ProtectedPR()]
+
+    ok, msg = manager.merge_pull_request(5, merge_method="rebase")
+
+    assert ok is False
+    assert "branch protection nedeniyle merge edilemedi" in msg
+    assert "Protected branch" in msg
+
+
+def test_merge_pull_request_reports_generic_exception(manager):
+    class BrokenPR:
+        def merge(self, **_kwargs):
+            raise RuntimeError("api unavailable")
+
+    manager._repo._pulls = [BrokenPR()]
+
+    assert manager.merge_pull_request(5) == (False, "PR merge hatası: api unavailable")
+
+
+def test_list_issues_filters_pull_requests_and_normalizes_state_and_limit(manager):
+    issue = IssueMock(number=11, title="real bug", user="maintainer")
+    pull_request_issue = IssueMock(number=12, title="pr mirror", is_pr=True)
+    manager._repo._issues = [pull_request_issue, issue]
+
+    ok, items = manager.list_issues(state="INVALID", limit=10)
+
+    assert ok is True
+    assert items == [
+        {
+            "number": 11,
+            "title": "real bug",
+            "state": "open",
+            "user": "maintainer",
+            "created_at": "2026-01-01T10:00:00",
+        }
+    ]
+
+
+def test_issue_create_comment_and_close_exception_messages(manager):
+    manager._repo.create_issue = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("create down"))
+    ok, msg = manager.create_issue("bug", "body")
+    assert ok is False and msg == "✗ Issue oluşturulamadı: create down"
+
+    manager._repo.get_issue = lambda number=None: (_ for _ in ()).throw(RuntimeError("lookup down"))
+    ok, msg = manager.comment_issue(7, "note")
+    assert ok is False and msg == "✗ Yorum eklenemedi: lookup down"
+
+    ok, msg = manager.close_issue(7)
+    assert ok is False and msg == "✗ Issue kapatılamadı: lookup down"
+
+
 def test_diff_files_search_status_and_repr(manager, caplog):
     pr = PRMock(many_files=False)
     manager._repo._pulls = [pr]
