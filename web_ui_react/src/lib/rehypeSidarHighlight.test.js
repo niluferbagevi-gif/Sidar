@@ -135,4 +135,20 @@ describe("rehypeSidarHighlight", () => {
     expect(() => rehypeSidarHighlight()(tree)).not.toThrow();
     expect(tree.children[2].children).toBeNull();
   });
+
+  it("decodes highlighted html entities back into HAST text nodes", () => {
+    const tree = buildCodeTree("javascript", "if (a < b && c > d) console.log(\"sidar\");");
+
+    rehypeSidarHighlight()(tree);
+
+    const flattenedText = codeNode(tree)
+      .children.flatMap((child) => child.children || [child])
+      .filter((child) => child.type === "text")
+      .map((child) => child.value)
+      .join("");
+    expect(flattenedText).toContain("<");
+    expect(flattenedText).toContain("&&");
+    expect(flattenedText).toContain(">");
+    expect(flattenedText).toContain("\"sidar\"");
+  });
 });

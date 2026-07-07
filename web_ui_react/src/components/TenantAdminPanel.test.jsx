@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TenantAdminPanel } from "./TenantAdminPanel.jsx";
@@ -54,6 +54,7 @@ function mockFetchJson(url, options = {}) {
 
 describe("TenantAdminPanel", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     fetchJson.mockImplementation(mockFetchJson);
   });
 
@@ -99,5 +100,26 @@ describe("TenantAdminPanel", () => {
     const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
     expect(JSON.parse(request.body)).toMatchObject({ user_id: "user-1", tenant_id: "acme", resource_type: "rag" });
     expect(await screen.findByText("acme tenant erişim politikası kaydedildi.")).toBeInTheDocument();
+  });
+
+  it("shows a controlled error banner when tenant data loading fails", async () => {
+    fetchJson.mockRejectedValueOnce(new Error("audit API unavailable"));
+
+    render(<TenantAdminPanel />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("audit API unavailable");
+    expect(screen.getByRole("button", { name: "Yenile" })).not.toBeDisabled();
+  });
+
+  it("validates user id before submitting a policy", async () => {
+    render(<TenantAdminPanel />);
+
+    await screen.findByText("Audit Trail");
+    fireEvent.submit(screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "RBAC politikası kaydetmek için kullanıcı ID zorunludur.",
+    );
+    expect(fetchJson).not.toHaveBeenCalledWith("/admin/policies", expect.anything());
   });
 });
