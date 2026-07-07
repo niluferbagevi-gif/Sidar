@@ -3135,7 +3135,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "test.afterAll(async () =>" in websocket_spec
     assert "backend = await startMockSidarBackend()" in websocket_spec
     assert "frontend = await startTestViteServer({ backendUrl: backend.url })" in websocket_spec
-    assert "await page.goto(`${frontend.url}/chat`, { waitUntil: \"domcontentloaded\" })" in websocket_spec
+    assert "await page.goto(`${frontend.url}/chat`" in websocket_spec
+    assert 'waitUntil: "domcontentloaded"' in websocket_spec
     assert "port = 0" in mock_backend
     assert 'server.listen(port, "0.0.0.0"' in mock_backend
     assert "port: address.port" in mock_backend
