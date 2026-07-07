@@ -9,7 +9,10 @@ Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre *
 - Testlerden sonra `coverage.xml` üretilmiş olmalı.
 - Backend tarafında coverage hedefi `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeri veya açıkça verilen `COVERAGE_FAIL_UNDER` ile aktiftir.
 
-> Not: Gönderdiğin çıktıda backend toplam coverage `%40.11`, frontend `%91.55` görünüyor. Sorun backend tarafındaki coverage açığıdır.
+> Güncel not: Eski örnek çıktılardaki düşük backend/frontend coverage değerleri artık
+> operasyonel eşik olarak kullanılmaz. Günlük local/CI kalite kapısı `pyproject.toml`
+> içindeki `%99` ratchet baseline'ını kullanır; local/CI ratchet cap `%99` olarak
+> korunur ve `%100` hedef yalnız coverage campaign / strict opt-in profilinde geçerlidir.
 
 ## 2) Coverage Agent'i nasıl tetiklersin?
 
@@ -92,7 +95,9 @@ Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu
 ## 4.1) Coverage hedefleri operasyonel olarak ayrıdır
 
 Coverage yüzdeleri tek bir kapı gibi okunmamalıdır. Sidar'da dört ayrı operasyonel
-profil vardır:
+profil vardır: günlük local/CI gate için güncel ratchet baseline `%99`, local/CI
+ratchet cap `%99`, planlı coverage campaign için opt-in hedef `%100` olarak
+ayrıştırılır.
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
