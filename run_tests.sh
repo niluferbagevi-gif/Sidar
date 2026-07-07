@@ -2026,7 +2026,11 @@ data = tomllib.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 print(data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 5))
 PY_RATCHET_GATE
 )"
-    COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"
+    if [ "${COVERAGE_FAIL_UNDER_SOURCE}" = "explicit-override" ]; then
+      echo "ℹ️ Açık COVERAGE_FAIL_UNDER override korundu; ratchet sonrası eşik ${COVERAGE_FAIL_UNDER} olarak bırakıldı (pyproject.toml baseline=${DEFAULT_COVERAGE_FAIL_UNDER})."
+    else
+      COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"
+    fi
   else
     echo "❌ Coverage ratcheting başarısız oldu."
     record_backend_failure "ratchet_failed"

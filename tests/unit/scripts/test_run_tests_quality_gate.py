@@ -2930,6 +2930,22 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
     )
 
 
+def test_run_tests_preserves_explicit_coverage_fail_under_after_ratchet() -> None:
+    script = _script()
+    ratchet_block = script[
+        script.index("update_progressive_coverage_gate()") : script.index(
+            "# 1) Backend kalite akışı"
+        )
+    ]
+
+    assert 'if [ "${COVERAGE_FAIL_UNDER_SOURCE}" = "explicit-override" ]; then' in ratchet_block
+    assert "Açık COVERAGE_FAIL_UNDER override korundu" in ratchet_block
+    assert 'COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"' in ratchet_block
+    assert ratchet_block.index("explicit-override") < ratchet_block.index(
+        'COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"'
+    )
+
+
 def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
     script = _script()
     bats_block = script[
