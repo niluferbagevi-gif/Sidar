@@ -50,12 +50,25 @@ class _RaisingDb:
         raise RuntimeError("db unavailable")
 
 
+class _UnexpectedDb(_RaisingDb):
+    async def list_content_assets(self, **_kwargs):
+        raise ValueError("unexpected db serialization failure")
+
+
 class _RaisingMemory:
     db = _RaisingDb()
 
 
+class _UnexpectedMemory:
+    db = _UnexpectedDb()
+
+
 async def _resolve_agent_instance_with_raising_db():
     return SimpleNamespace(memory=_RaisingMemory())
+
+
+async def _resolve_agent_instance_with_unexpected_db():
+    return SimpleNamespace(memory=_UnexpectedMemory())
 
 
 def _configure_raising_operations_db() -> None:
@@ -242,3 +255,63 @@ async def test_operations_db_routes_return_503_when_database_methods_raise(
     response = await route(*args, **kwargs, _user=SimpleNamespace(id="u1"))
 
     _assert_database_unavailable_response(response)
+
+
+@pytest.mark.asyncio
+async def test_operations_db_routes_log_and_mask_unexpected_database_errors(caplog) -> None:
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            resolve_agent_instance=_resolve_agent_instance_with_unexpected_db,
+        )
+    )
+
+    response = await operations.api_operations_list_assets(
+        7, limit=2, _user=SimpleNamespace(id="u1")
+    )
+
+    _assert_database_unavailable_response(response)
+    assert "Unexpected operations route failure during database_operation" in caplog.text
+    assert "unexpected db serialization failure" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_operations_plan_service_includes_owner_and_reports_tool_failure() -> None:
+    events: list[dict] = []
+    prompts: list[str] = []
+
+    class _Poyraz:
+        async def run_task(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return '{"success": false, "error": "planning failed"}'
+
+    async def _emit(room_id: str, **payload):
+        events.append({"room_id": room_id, **payload})
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.ServiceOperationsPlanRequest(
+        service_name="Catering", audience="Teams", room_id="ops:room"
+    )
+
+    response = await operations.api_operations_plan_service(req, _user=SimpleNamespace(id="u42"))
+    payload = json.loads(response.body)
+    tool_payload = json.loads(prompts[0].split("|", 1)[1])
+
+    assert response.status_code == 200
+    assert payload == {
+        "success": False,
+        "result": {"success": False, "error": "planning failed"},
+    }
+    assert tool_payload["tenant_id"] == "tenant-route"
+    assert tool_payload["owner_user_id"] == "u42"
+    assert events[-1]["payload"] == {"success": False}
