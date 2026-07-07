@@ -617,8 +617,21 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
         "rm -rf `echo /`",
         "rm -rf $(echo /)",
         # Diğer yıkıcı komut aileleri, aynı bayrak/hedef varyasyonlarıyla.
+        "mkfs.ext4 /dev/sdb1",
+        "shred -n 1 /dev/sda",
+        "wipefs --all /dev/nvme0n1",
+        "dd if=image.raw of=/dev/sda bs=4M",
         "chmod --recursive 777 /",
+        "chmod -R a+rwx /",
         "chown -R root /",
+        "chown --recursive root:root /home",
+        # Hatalı tırnaklama statik ayrıştırmayı bozuyorsa yıkıcı komutlar
+        # güvenli kabul edilmemeli.
+        'rm -rf "/',
+        'mkfs.ext4 "/dev/sdb1',
+        # Dinamik hedefler bash çalışma zamanında çözüleceği için fail-closed.
+        "dd if=image.raw of=$TARGET",
+        "shred $TARGET",
     ],
 )
 def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):

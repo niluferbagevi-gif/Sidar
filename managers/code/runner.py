@@ -97,15 +97,19 @@ def find_destructive_shell_pattern(command: str) -> str | None:
         if _DEV_WIPE_RE.search(lowered):
             return "shred/wipefs /dev/*"
 
+        has_dynamic_expansion = bool(_DYNAMIC_EXPANSION_RE.search(segment))
         try:
             tokens = shlex.split(segment)
         except ValueError:
-            tokens = []
+            segment_words = lowered.split(None, 1)
+            first_word = segment_words[0].rsplit("/", 1)[-1] if segment_words else ""
+            if first_word in _DESTRUCTIVE_COMMAND_NAMES or _MKFS_RE.search(lowered):
+                return f"{first_word or 'shell'} + hatalı tırnaklama (statik olarak doğrulanamaz)"
+            continue
         if not tokens:
             continue
 
         command_name = tokens[0].rsplit("/", 1)[-1].lower()
-        has_dynamic_expansion = bool(_DYNAMIC_EXPANSION_RE.search(segment))
         positional = [token for token in tokens[1:] if not token.startswith("-")]
         flags = _shell_token_flags(tokens[1:])
 
