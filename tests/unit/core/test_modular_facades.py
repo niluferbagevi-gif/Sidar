@@ -52,6 +52,52 @@ def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
     assert "falling back to original query" in caplog.text
 
 
+def test_rag_query_candidates_handle_empty_and_single_candidate_limits() -> None:
+    assert build_query_candidates("   ") == []
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=0) == [
+        "orijinal"
+    ]
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=1) == [
+        "orijinal"
+    ]
+
+
+def test_rag_query_candidates_accept_string_expansion() -> None:
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=2) == [
+        "expanded",
+        "orijinal",
+    ]
+
+
+def test_rag_query_candidates_empty_expansion_iterable_keeps_original() -> None:
+    assert build_query_candidates("orijinal", expander=lambda _q: [], max_candidates=3) == [
+        "orijinal"
+    ]
+
+
+def test_rag_query_candidates_dedupe_normalize_and_limit_expansions() -> None:
+    def _expander(_query: str):
+        yield "  semantic campaign  "
+        yield ""
+        yield None
+        yield "semantic campaign"
+        yield "orijinal"
+        yield "graph campaign"
+
+    assert build_query_candidates("orijinal", expander=_expander, max_candidates=3) == [
+        "semantic campaign",
+        "graph campaign",
+        "orijinal",
+    ]
+
+
+def test_rag_query_candidates_fall_back_for_invalid_expander_payload(caplog) -> None:
+    with caplog.at_level("WARNING", logger="core.rag.query"):
+        assert build_query_candidates("orijinal", expander=lambda _q: 42) == ["orijinal"]
+
+    assert "falling back to original query" in caplog.text
+
+
 def test_rag_embedding_wrappers_delegate_lazily(monkeypatch) -> None:
     monkeypatch.setattr(rag, "build_embedding_function", lambda **kwargs: kwargs)
     monkeypatch.setattr(rag, "embed_texts_for_semantic_cache", lambda texts, cfg=None: [texts, cfg])
