@@ -578,6 +578,7 @@ DOCKER_TEST_IMAGE_BUILD_CONTEXT="${DOCKER_TEST_IMAGE_BUILD_CONTEXT:-.}"
 AUTO_HEAL_RESULT_PATH="${AUTO_HEAL_RESULT_PATH:-artifacts/auto_heal_result.json}"
 QUALITY_GATE_EXIT_AFTER_FIRST_FAIL="${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL:-0}"
 TEST_SUMMARY_JSON="${TEST_SUMMARY_JSON:-artifacts/test-summary.json}"
+TEST_SUMMARY_JUNIT_DIR="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
 
 BACKEND_EXIT_CODE=0
 BACKEND_UNIT_RAN=0
@@ -732,6 +733,8 @@ write_test_summary_json() {
   local frontend_coverage_status=""
   local frontend_e2e_status=""
   local benchmark_status=""
+  local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
+  local backend_failed_tests_enabled="false"
 
   smoke_status="$(backend_stage_summary_status smoke)"
   integration_status="$(backend_stage_summary_status integration)"
@@ -740,6 +743,12 @@ write_test_summary_json() {
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
   frontend_e2e_status="$(quality_summary_status "${FRONTEND_E2E_RAN}" "${FRONTEND_E2E_EXIT_CODE}")"
+  if [ "${BACKEND_UNIT_RAN}" = "1" ] \
+    || [ "${BACKEND_INTEGRATION_RAN}" = "1" ] \
+    || [ "${BACKEND_SMOKE_RAN}" = "1" ] \
+    || [ "${BACKEND_E2E_RAN}" = "1" ]; then
+    backend_failed_tests_enabled="true"
+  fi
 
   if [ "${RUN_BENCHMARKS}" = "0" ]; then
     benchmark_ran=0
@@ -757,11 +766,14 @@ write_test_summary_json() {
       "${frontend_coverage_status}" \
       "${frontend_e2e_status}" \
       "${benchmark_status}" \
-      "${production_ready}" <<'PY_TEST_SUMMARY'
+      "${production_ready}" \
+      "${junit_dir}" \
+      "${backend_failed_tests_enabled}" <<'PY_TEST_SUMMARY'
 from __future__ import annotations
 
 import json
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 (
@@ -775,7 +787,42 @@ from pathlib import Path
     frontend_e2e,
     benchmark,
     production_ready,
-) = sys.argv[1:11]
+    junit_dir,
+    backend_failed_tests_enabled,
+) = sys.argv[1:13]
+
+
+def _failed_backend_tests(report_dir: str) -> list[str]:
+    failed_tests: list[str] = []
+    seen: set[str] = set()
+    for report_path in sorted(Path(report_dir).glob("backend-*.xml")):
+        try:
+            root = ET.parse(report_path).getroot()
+        except ET.ParseError:
+            continue
+        for testcase in root.iter("testcase"):
+            if not any(child.tag.rsplit("}", 1)[-1] in {"failure", "error"} for child in testcase):
+                continue
+            nodeid = _testcase_nodeid(testcase)
+            if nodeid and nodeid not in seen:
+                seen.add(nodeid)
+                failed_tests.append(nodeid)
+    return failed_tests
+
+
+def _testcase_nodeid(testcase: ET.Element) -> str:
+    name = testcase.attrib.get("name", "").strip()
+    file_path = testcase.attrib.get("file", "").strip()
+    if file_path and name:
+        return f"{file_path}::{name}"
+
+    classname = testcase.attrib.get("classname", "").strip()
+    if classname and name:
+        candidate = classname.replace(".", "/")
+        if candidate.startswith("tests/") and not candidate.endswith(".py"):
+            candidate = f"{candidate}.py"
+        return f"{candidate}::{name}"
+    return name
 
 summary = {
     "smoke": smoke,
@@ -787,6 +834,11 @@ summary = {
     "frontend_e2e": frontend_e2e,
     "benchmark": benchmark,
     "production_ready": production_ready == "true",
+    "backend_failed_tests": (
+        _failed_backend_tests(junit_dir)
+        if backend_failed_tests_enabled == "true"
+        else []
+    ),
 }
 
 Path(output_path).write_text(
@@ -1749,8 +1801,14 @@ PY
 
   # Aşama 1: Unit testler (yüksek paralellik)
   local phase1_exit=0
+  mkdir -p "${TEST_SUMMARY_JUNIT_DIR}"
+  rm -f "${TEST_SUMMARY_JUNIT_DIR}"/backend-*.xml
   if [ "${run_unit_phase}" -eq 1 ]; then
-    local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
+    local phase1_cmd=(
+      "${base_pytest_cmd[@]}"
+      "--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-unit.xml"
+      tests/unit
+    )
     echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
     BACKEND_UNIT_RAN=1
     run_checked "${phase1_cmd[@]}"
@@ -1793,7 +1851,13 @@ PY
       # tek başına fail-under kalite barajına tabi tutulmaz.
       phase2_cov_args+=(--cov-append)
     fi
-    phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")
+    phase2_cmd=(
+      "${filtered_phase2_cmd[@]}"
+      "${phase2_cov_args[@]}"
+      "--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-integration-smoke-e2e.xml"
+      -n "${phase2_workers}"
+      "${phase2_dirs[@]}"
+    )
     echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
     run_checked "${phase2_cmd[@]}"
     phase2_exit=$?

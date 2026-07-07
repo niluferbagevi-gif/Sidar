@@ -655,6 +655,7 @@ def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) 
         + summary_block
         + f"""
 TEST_SUMMARY_JSON={summary_json}
+TEST_SUMMARY_JUNIT_DIR={tmp_path / "pytest"}
 BACKEND_UNIT_RAN=1
 BACKEND_UNIT_EXIT_CODE=1
 BACKEND_INTEGRATION_RAN=1
@@ -687,6 +688,74 @@ write_test_summary_json false
     assert summary["e2e"] == "passed"
     assert summary["benchmark"] == "passed"
     assert summary["production_ready"] is False
+    assert summary["backend_failed_tests"] == []
+
+
+def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
+    script = _script()
+    summary_json = tmp_path / "test-summary.json"
+    junit_dir = tmp_path / "pytest"
+    junit_dir.mkdir()
+    (junit_dir / "backend-unit.xml").write_text(
+        textwrap.dedent(
+            """\
+            <?xml version="1.0" encoding="utf-8"?>
+            <testsuites>
+              <testsuite name="pytest">
+                <testcase
+                  classname="tests.unit.root.test_config"
+                  name="test_production_requires_explicit_jwt_secret_and_api_key"
+                  file="tests/unit/root/test_config.py"
+                >
+                  <failure message="assertion failed">details</failure>
+                </testcase>
+                <testcase classname="tests.unit.root.test_config" name="test_passing" />
+              </testsuite>
+            </testsuites>
+            """
+        ),
+        encoding="utf-8",
+    )
+    summary_block = script[
+        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
+    ]
+    runner = tmp_path / "summary_failed_tests_probe.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
+        + summary_block
+        + f"""
+TEST_SUMMARY_JSON={summary_json}
+TEST_SUMMARY_JUNIT_DIR={junit_dir}
+BACKEND_UNIT_RAN=1
+BACKEND_UNIT_EXIT_CODE=1
+BACKEND_INTEGRATION_RAN=0
+BACKEND_INTEGRATION_EXIT_CODE=0
+BACKEND_SMOKE_RAN=0
+BACKEND_SMOKE_EXIT_CODE=0
+BACKEND_E2E_RAN=0
+BACKEND_E2E_EXIT_CODE=0
+FRONTEND_LINT_RAN=0
+FRONTEND_LINT_EXIT_CODE=0
+FRONTEND_TYPECHECK_RAN=0
+FRONTEND_TYPECHECK_EXIT_CODE=0
+FRONTEND_COVERAGE_RAN=0
+FRONTEND_COVERAGE_EXIT_CODE=0
+FRONTEND_E2E_RAN=0
+FRONTEND_E2E_EXIT_CODE=0
+RUN_BENCHMARKS=0
+BENCHMARK_EXIT_CODE=0
+write_test_summary_json false
+""",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    subprocess.run([str(runner)], check=True)
+
+    summary = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert summary["backend_failed_tests"] == [
+        "tests/unit/root/test_config.py::test_production_requires_explicit_jwt_secret_and_api_key"
+    ]
 
 
 def test_install_validation_summary_reads_run_tests_json_for_partial_full_failures(
