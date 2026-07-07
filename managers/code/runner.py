@@ -58,6 +58,7 @@ _SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;&|\n]")
 _MKFS_RE = re.compile(r"\bmkfs(\.\w+)?\b")
 _DEV_WIPE_RE = re.compile(r"\b(shred|wipefs)\b.*?/dev/")
 _DESTRUCTIVE_COMMAND_NAMES = {"rm", "dd", "shred", "wipefs", "chmod", "chown"}
+HOME_SHORTHAND = "~"
 _CATASTROPHIC_TARGETS = {"/", "/*", "~", "$home", "*", "/root", "/root/*", "/home", "/home/*"}
 _RECURSIVE_FLAGS = {"r", "recursive"}
 _FORCE_FLAGS = {"f", "force"}
@@ -121,7 +122,9 @@ def find_destructive_shell_pattern(command: str) -> str | None:
             # mutlak-yol silmeleri de engellenir (önceki alt-dizge kontrolünün
             # kapsamıyla uyumlu; bkz. testler).
             targets_risky_path = any(
-                token.lower() in _CATASTROPHIC_TARGETS or token.startswith("/") or token == "~"  # nosec B105  # home dir shorthand, not a password
+                token.lower() in _CATASTROPHIC_TARGETS
+                or token.startswith("/")
+                or token == HOME_SHORTHAND
                 for token in positional
             )
             if (
