@@ -3544,8 +3544,17 @@ def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependen
     )
 
 
+@pytest.mark.parametrize(
+    ("ubuntu_version", "expects_ubuntu_override"),
+    [
+        ("26.04", True),
+        ("24.04", False),
+    ],
+)
 def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_removes_stale_cache(
     tmp_path: Path,
+    ubuntu_version: str,
+    expects_ubuntu_override: bool,
 ) -> None:
     script = _script()
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
@@ -3563,7 +3572,9 @@ def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_rem
     sentinel = tmp_path / ".playwright-installed"
     node_log = tmp_path / "node.log"
     npx_log = tmp_path / "npx.log"
+    os_release = tmp_path / "os-release"
     package_lock = tmp_path / "package-lock.json"
+    os_release.write_text(f'ID=ubuntu\nVERSION_ID="{ubuntu_version}"\n', encoding="utf-8")
     package_lock.write_text("lock-v1\n", encoding="utf-8")
     node = bin_dir / "node"
     node.write_text(
@@ -3591,9 +3602,15 @@ touch "${MOCK_BROWSER}"
     result = subprocess.run(
         [
             "bash",
+            "-x",
             "-c",
             """set -Eeuo pipefail
 source "$1"
+if [[ "${EXPECTS_UBUNTU_OVERRIDE}" == 1 ]]; then
+  is_playwright_ubuntu_override_recommended "${OS_RELEASE_PATH}"
+else
+  ! is_playwright_ubuntu_override_recommended "${OS_RELEASE_PATH}"
+fi
 RUN_FRONTEND_E2E=auto
 resolve_local_frontend_e2e_mode
 [[ "${RUN_FRONTEND_E2E}" == 1 ]]
@@ -3620,24 +3637,44 @@ resolve_local_frontend_e2e_mode
             "bash",
             str(helper_script),
         ],
-        check=True,
+        check=False,
         capture_output=True,
         env={
+            "EXPECTS_UBUNTU_OVERRIDE": "1" if expects_ubuntu_override else "0",
             "FRONTEND_PLAYWRIGHT_SENTINEL": str(sentinel),
             "FRONTEND_PLAYWRIGHT_PACKAGE_LOCK": str(package_lock),
             "MOCK_BROWSER": str(browser),
             "MOCK_NODE_LOG": str(node_log),
             "MOCK_NPX_LOG": str(npx_log),
+            "OS_RELEASE_PATH": str(os_release),
             "PATH": f"{bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
             "RUN_FRONTEND_E2E_AUTO_INSTALL": "1",
         },
         text=True,
     )
+    if result.returncode != 0:
+        pytest.fail(
+            "\n".join(
+                [
+                    f"bash returncode={result.returncode}",
+                    f"ubuntu_version={ubuntu_version}",
+                    f"expects_ubuntu_override={expects_ubuntu_override}",
+                    f"stdout:\n{result.stdout}",
+                    f"stderr:\n{result.stderr}",
+                    f"node.log:\n{node_log.read_text(encoding='utf-8') if node_log.exists() else '<missing>'}",
+                    f"npx.log:\n{npx_log.read_text(encoding='utf-8') if npx_log.exists() else '<missing>'}",
+                    f"sentinel:\n{sentinel.read_text(encoding='utf-8') if sentinel.exists() else '<missing>'}",
+                ]
+            )
+        )
 
     assert "Chromium cache'i otomatik kuruldu" in result.stdout
     assert "Chromium sentinel cache'i hazır" in result.stdout
     assert "Chromium cache'i hazırlanamadı" in result.stdout
+    assert npx_log.read_text(encoding="utf-8").splitlines() == [
+        "--no-install playwright install chromium"
+    ]
 
 
 def test_forced_frontend_playwright_mode_attempts_cache_install_before_failing(
@@ -3657,7 +3694,9 @@ def test_forced_frontend_playwright_mode_attempts_cache_install_before_failing(
     bin_dir.mkdir()
     node_log = tmp_path / "node.log"
     npx_log = tmp_path / "npx.log"
+    os_release = tmp_path / "os-release"
     package_lock = tmp_path / "package-lock.json"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="24.04"\n', encoding="utf-8")
     package_lock.write_text("lock-v1\n", encoding="utf-8")
     node = bin_dir / "node"
     node.write_text(
@@ -3681,6 +3720,7 @@ exit 1
     result = subprocess.run(
         [
             "bash",
+            "-x",
             "-c",
             """set -Eeuo pipefail
 source "$1"
@@ -3692,19 +3732,32 @@ grep -qx -- '--no-install playwright install chromium' "${MOCK_NPX_LOG}" """,
             "bash",
             str(helper_script),
         ],
-        check=True,
+        check=False,
         capture_output=True,
         env={
             "FRONTEND_PLAYWRIGHT_SENTINEL": str(tmp_path / ".playwright-installed"),
             "FRONTEND_PLAYWRIGHT_PACKAGE_LOCK": str(package_lock),
             "MOCK_NODE_LOG": str(node_log),
             "MOCK_NPX_LOG": str(npx_log),
+            "OS_RELEASE_PATH": str(os_release),
             "PATH": f"{bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
             "RUN_FRONTEND_E2E_AUTO_INSTALL": "1",
         },
         text=True,
     )
+    if result.returncode != 0:
+        pytest.fail(
+            "\n".join(
+                [
+                    f"bash returncode={result.returncode}",
+                    f"stdout:\n{result.stdout}",
+                    f"stderr:\n{result.stderr}",
+                    f"node.log:\n{node_log.read_text(encoding='utf-8') if node_log.exists() else '<missing>'}",
+                    f"npx.log:\n{npx_log.read_text(encoding='utf-8') if npx_log.exists() else '<missing>'}",
+                ]
+            )
+        )
 
     assert "Chromium cache'i bulunamadı" in result.stdout
     assert "RUN_FRONTEND_E2E=1" in result.stdout
