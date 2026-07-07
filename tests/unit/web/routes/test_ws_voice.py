@@ -35,6 +35,25 @@ class _Ws:
             raise ws_voice.WebSocketDisconnect() from exc
 
 
+class _WaitUntilSentWs(_Ws):
+    def __init__(self, messages=None, *, expected_key: str, headers=None) -> None:
+        super().__init__(messages, headers=headers)
+        self.expected_key = expected_key
+
+    async def receive(self) -> dict[str, object]:
+        try:
+            packet = next(self._messages)
+        except StopIteration as exc:
+            raise ws_voice.WebSocketDisconnect() from exc
+        if packet.get("wait_for_expected"):
+            for _ in range(100):
+                if any(self.expected_key in payload for payload in self.sent):
+                    break
+                await asyncio.sleep(0.01)
+            raise ws_voice.WebSocketDisconnect()
+        return packet
+
+
 class _NeverSendsWs(_Ws):
     """A websocket that accepts the connection but never sends any message."""
 
@@ -54,6 +73,9 @@ class _RepeatedGarbageWs(_Ws):
 
 
 class _Logger:
+    def exception(self, *_args, **_kwargs) -> None:
+        return None
+
     def warning(self, *_args, **_kwargs) -> None:
         return None
 
@@ -82,6 +104,30 @@ class _VoicePipeline:
 
     def build_voice_state_payload(self, *_args, **_kwargs) -> dict[str, object]:
         return {"enabled": True}
+
+    def begin_assistant_turn(self, duplex_state) -> int:
+        if isinstance(duplex_state, dict):
+            duplex_state["assistant_turn_id"] = int(duplex_state.get("assistant_turn_id", 0) or 0) + 1
+            return int(duplex_state["assistant_turn_id"])
+        return 1
+
+    def interrupt_assistant_turn(self, duplex_state, *, reason: str) -> dict[str, object]:
+        assistant_turn_id = 0
+        if isinstance(duplex_state, dict):
+            assistant_turn_id = int(duplex_state.get("assistant_turn_id", 0) or 0)
+            duplex_state["last_interrupt_reason"] = reason
+        return {
+            "assistant_turn_id": assistant_turn_id,
+            "dropped_text_chars": 0,
+            "cancelled_audio_sequences": 0,
+            "reason": reason,
+        }
+
+    def should_interrupt_response(self, buffered_bytes: int, *, event: str) -> bool:
+        return bool(buffered_bytes and event == "speech_start")
+
+    def should_commit_audio(self, buffered_bytes: int, *, event: str) -> bool:
+        return bool(buffered_bytes and event in {"speech_end", "vad_commit"})
 
 
 def _deps(**overrides) -> SimpleNamespace:
@@ -315,3 +361,215 @@ async def test_websocket_voice_uses_default_header_token_extractor_without_echo(
 
     assert ws.accepted == [None]
     assert {"auth_ok": True} in ws.sent
+
+
+def _install_voice_imports(monkeypatch, pipeline_cls, voice_pipeline_cls=_VoicePipeline) -> None:
+    original_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "core.multimodal":
+            return SimpleNamespace(MultimodalPipeline=pipeline_cls)
+        if name == "core.voice":
+            return SimpleNamespace(VoicePipeline=voice_pipeline_cls)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+
+async def _voice_user(_agent, token: str):
+    assert token == "voice-token"
+    return SimpleNamespace(id="u1", username="ada")
+
+
+class _SuccessfulTranscriptionPipeline:
+    def __init__(self, *_args, **_kwargs) -> None:
+        return None
+
+    async def transcribe_bytes(self, *_args, **_kwargs):
+        return {"success": True, "text": "hello", "language": "tr", "provider": "mock"}
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_reports_empty_audio_commit(monkeypatch) -> None:
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _Ws(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"text": '{"action":"commit"}'},
+        ]
+    )
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_voice_user))
+
+    assert {"auth_ok": True} in ws.sent
+    assert {"error": "İşlenecek ses verisi bulunamadı.", "done": True} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_reports_transcription_failure(monkeypatch) -> None:
+    class _FailingTranscriptionPipeline:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": False, "reason": "bad audio"}
+
+    _install_voice_imports(monkeypatch, _FailingTranscriptionPipeline)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="error",
+    )
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_voice_user))
+
+    assert {"error": "bad audio", "done": True} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_finishes_empty_transcript_without_llm(monkeypatch) -> None:
+    calls = {"stream": 0}
+
+    class _EmptyTranscriptPipeline:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            return {"success": True, "text": "   ", "language": "tr", "provider": "mock"}
+
+    async def _stream(*_args, **_kwargs) -> None:
+        calls["stream"] += 1
+
+    _install_voice_imports(monkeypatch, _EmptyTranscriptPipeline)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="done",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    assert {"transcript": "", "language": "tr", "provider": "mock"} in ws.sent
+    assert {"done": True} in ws.sent
+    assert calls["stream"] == 0
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_reports_llm_provider_error(monkeypatch) -> None:
+    class _ProviderError(Exception):
+        provider = "mock-llm"
+        status_code = 429
+
+    async def _stream(*_args, **_kwargs) -> None:
+        raise _ProviderError("quota")
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="chunk",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(
+            resolve_user_from_token=_voice_user,
+            ws_stream_agent_text_response=_stream,
+            llm_api_error_cls=_ProviderError,
+        ),
+    )
+
+    assert {
+        "chunk": "\n[LLM Hatası] mock-llm (429): quota",
+        "done": True,
+    } in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_reports_generic_stream_error(monkeypatch) -> None:
+    async def _stream(*_args, **_kwargs) -> None:
+        raise ValueError("boom")
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="chunk",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    assert {"chunk": "\n[Sistem Hatası] boom", "done": True} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) -> None:
+    first_stream_started = asyncio.Event()
+    release_stream = asyncio.Event()
+    stream_calls = {"count": 0}
+
+    async def _stream(*_args, **_kwargs) -> None:
+        stream_calls["count"] += 1
+        first_stream_started.set()
+        await release_stream.wait()
+
+    class _InterleavedWs(_Ws):
+        async def receive(self) -> dict[str, object]:
+            try:
+                packet = next(self._messages)
+            except StopIteration as exc:
+                raise ws_voice.WebSocketDisconnect() from exc
+            if packet.get("wait_for_stream"):
+                await asyncio.wait_for(first_stream_started.wait(), timeout=1)
+                return {"bytes": b"second"}
+            return packet
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _InterleavedWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"first"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_stream": True},
+            {"text": '{"action":"commit"}'},
+        ]
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(
+            cfg=SimpleNamespace(VOICE_WS_MAX_BYTES=32),
+            resolve_user_from_token=_voice_user,
+            ws_stream_agent_text_response=_stream,
+        ),
+    )
+    release_stream.set()
+
+    assert any(
+        payload.get("voice_interruption") == "superseded_by_new_turn"
+        and payload.get("cancelled") is True
+        for payload in ws.sent
+    )
+    assert stream_calls["count"] >= 1
