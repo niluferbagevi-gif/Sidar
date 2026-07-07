@@ -875,6 +875,14 @@ EOF
 
 @test "installer validation coverage summary calls out skipped full suites" {
   run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/pyproject.toml" <<EOF
+[tool.coverage.report]
+fail_under = 87
+EOF
+
     SMOKE_TEST_STATUS="tamamlandi"
     INTEGRATION_TEST_STATUS="atlandi_bayrak"
     CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
@@ -885,16 +893,8 @@ EOF
   [[ "$output" == *"Integration:"*"ATLANDI"*"run_tests.sh --stage integration"* ]]
   [[ "$output" == *"E2E:"*"ATLANDI"*"run_tests.sh --stage e2e"* ]]
   [[ "$output" == *"Benchmark:"*"ATLANDI"* ]]
-  local expected_fail_under
-  expected_fail_under="$(python - <<'PY_COVERAGE_FAIL_UNDER'
-import tomllib
-from pathlib import Path
-
-print(tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["coverage"]["report"]["fail_under"])
-PY_COVERAGE_FAIL_UNDER
-)"
   [[ "$output" == *"Coverage ratchet / fail-under notu"* ]]
-  [[ "$output" == *"pyproject.toml coverage fail-under eşiği: ${expected_fail_under}%"* ]]
+  [[ "$output" == *"pyproject.toml coverage fail-under eşiği: 87%"* ]]
   [[ "$output" == *"tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz"* ]]
   [[ "$output" == *"Test rehberi: docs/TESTING.md"* ]]
   [[ "$output" == *"GitHub Actions CI parite haritası"* ]]
