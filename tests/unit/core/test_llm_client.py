@@ -435,6 +435,23 @@ def test_provider_specific_retry_mapping_and_context_limit() -> None:
     assert (retryable, status) == (False, 400)
 
 
+def test_context_limit_error_without_status_is_non_retryable() -> None:
+    context_error = llm_client.LLMAPIError(
+        "openai", "input is too long for this model", retryable=True
+    )
+
+    retryable, status = llm_client._is_retryable_exception(context_error, provider="openai")
+
+    assert (retryable, status) == (False, None)
+
+
+def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
+    exc = Exception("bad status")
+    exc.status_code = "not-a-status"
+
+    assert llm_client._extract_status_code(exc) is None
+
+
 def test_usage_token_counts_are_bounded_on_overflow() -> None:
     huge = str(llm_client.MAX_SAFE_TOKEN_COUNT + 999_999)
 
@@ -932,6 +949,32 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
+async def test_track_stream_completion_reraises_stream_error_when_metric_recording_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logs = []
+
+    def failing_recorder(**_kwargs):
+        raise RuntimeError("metrics backend unavailable")
+
+    monkeypatch.setattr(llm_client, "_record_llm_metric", failing_recorder)
+    monkeypatch.setattr(llm_client.logger, "debug", lambda *args, **_kwargs: logs.append(args))
+
+    async def broken_stream():
+        yield "partial"
+        raise RuntimeError("stream interrupted")
+
+    with pytest.raises(RuntimeError, match="stream interrupted"):
+        async for _token in llm_client._track_stream_completion(
+            broken_stream(), provider="openai", model="m", started_at=0.0
+        ):
+            pass
+
+    assert logs[-1][0] == "%s stream failure metric could not be recorded: %s"
+    assert logs[-1][1] == "openai"
+
+
+@pytest.mark.asyncio
 async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_config) -> None:
     class StrategyClient(llm_client.BaseLLMClient):
         def __init__(self, config):
@@ -966,6 +1009,17 @@ async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_c
         chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])
     ]
     assert chunks == ["strategy", "-ok"]
+
+
+def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> None:
+    with pytest.raises(ValueError, match="Provider adı boş"):
+        llm_client.LLMClient.register_provider("  ", llm_client.OllamaClient)
+
+    with pytest.raises(TypeError, match="BaseLLMClient"):
+        llm_client.LLMClient.register_provider("invalid", object)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Bilinmeyen AI sağlayıcısı"):
+        llm_client.LLMClient("missing-provider", _make_config())
 
 
 @pytest.mark.asyncio
@@ -1044,6 +1098,31 @@ async def test_track_stream_routing_cost_records_on_stream_error(
             config=_make_config(),
         ):
             pass
+
+    assert recorded and recorded[0] > 0
+
+
+@pytest.mark.asyncio
+async def test_track_stream_routing_cost_records_when_stream_is_closed_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[float] = []
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+    monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
+
+    async def _stream():
+        yield "abc"
+        yield "def"
+
+    tracked = llm_client._track_stream_routing_cost(
+        _stream(),
+        messages=[{"content": "prompt"}],
+        config=_make_config(),
+        model="m",
+    )
+
+    assert await tracked.__anext__() == "abc"
+    await tracked.aclose()
 
     assert recorded and recorded[0] > 0
 
@@ -4512,6 +4591,22 @@ async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
     assert calls == 2
     assert wait_ms >= 0
     limiter.release()
+
+
+@pytest.mark.asyncio
+async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+
+    first = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+    second = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+    different_pool = await llm_client._ollama_gpu_limiter("http://ollama.local", 3)
+    disabled = await llm_client._ollama_gpu_limiter("http://ollama.local", 0)
+
+    assert first is second
+    assert different_pool is not first
+    assert disabled is None
 
 
 @pytest.mark.asyncio

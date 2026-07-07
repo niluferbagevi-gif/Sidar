@@ -555,9 +555,20 @@ async def _track_stream_completion(
             len(partial_response),
             partial_response,
         )
-        _record_llm_metric(
-            provider=provider, model=model, started_at=started_at, success=False, error=str(exc)
-        )
+        try:
+            _record_llm_metric(
+                provider=provider,
+                model=model,
+                started_at=started_at,
+                success=False,
+                error=str(exc),
+            )
+        except Exception as metric_exc:
+            logger.debug(
+                "%s stream failure metric could not be recorded: %s",
+                provider,
+                metric_exc,
+            )
         raise
 
 
@@ -727,6 +738,8 @@ class LLMClient:
         provider_name = (name or "").strip().lower()
         if not provider_name:
             raise ValueError("Provider adı boş olamaz.")
+        if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
+            raise TypeError("Provider sınıfı BaseLLMClient alt sınıfı olmalıdır.")
         cls.PROVIDER_REGISTRY[provider_name] = provider_cls
 
     @property
