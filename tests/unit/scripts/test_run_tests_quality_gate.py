@@ -194,6 +194,9 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
     assert "uv run bash run_tests.sh" in ci
+    assert "Verify committed coverage ratchet baseline" in ci
+    assert "git diff --exit-code -- pyproject.toml" in ci
+    assert "pyproject.toml coverage fail_under changed during run_tests.sh" in ci
     # CI no longer hardcodes a stricter override; it inherits the
     # ratchet-managed pyproject.toml baseline like the local profile.
     assert 'COVERAGE_FAIL_UNDER_CI: "95"' not in ci

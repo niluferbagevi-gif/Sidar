@@ -285,7 +285,7 @@ jobs:
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
-          # (starts at %5, coverage_ratchet.py only ever raises it) — see
+          # (currently %50; coverage_ratchet.py only ever raises it) — see
           # AGENTS.md §2.5.4. Set COVERAGE_FAIL_UNDER_CI explicitly if a
           # stricter ad-hoc pre-merge bar is ever needed again.
           BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
@@ -299,6 +299,13 @@ jobs:
           set -o pipefail
           mkdir -p artifacts
           uv run bash run_tests.sh 2>&1 | tee artifacts/test_run.log
+
+      - name: Verify committed coverage ratchet baseline
+        run: |
+          if ! git diff --exit-code -- pyproject.toml; then
+            echo "::error::pyproject.toml coverage fail_under changed during run_tests.sh. Commit the ratcheted baseline in a dedicated PR or lower the measured run below the ratchet threshold intentionally."
+            exit 1
+          fi
 
       - name: Upload run_tests.sh full log
         if: always()
