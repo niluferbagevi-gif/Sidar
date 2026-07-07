@@ -3460,6 +3460,104 @@ PYTHONPATH={tmp_path} python3 "$@"
     assert result.stdout == "ubuntu26.04-x64|"
 
 
+def test_playwright_phase_python_installer_still_resolves_latest_supported_ubuntu_bundle(
+    tmp_path: Path,
+) -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    phase = Path("scripts/install_modules/phases/13_playwright.sh").resolve()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    mock_python = bin_dir / "python"
+    python_log = tmp_path / "python.log"
+    os_release = tmp_path / "os-release"
+    pyproject = tmp_path / "pyproject.toml"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="28.04"\n', encoding="utf-8")
+    pyproject.write_text(
+        '[dependency-groups]\ndev = ["playwright>=1.60,<1.62"]\n',
+        encoding="utf-8",
+    )
+    mock_python.write_text(
+        """#!/usr/bin/bash
+printf 'args=%s\n' "$*" >> "${MOCK_PYTHON_LOG}"
+if [[ "$*" == "-c import playwright" ]]; then
+  exit 0
+fi
+if [[ "$*" == "-m playwright install chromium" ]]; then
+  printf 'install-platform=%s\n' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" >> "${MOCK_PYTHON_LOG}"
+  grep -q '^VERSION_ID="26.04"$' "${OS_RELEASE_PATH}"
+  exit $?
+fi
+if [[ "$*" == "-" ]]; then
+  payload="$(cat)"
+  if [[ "${payload}" == *"isOfficiallySupportedPlatform"* ]]; then
+    printf 'host-support-probe\n' >> "${MOCK_PYTHON_LOG}"
+    exit 1
+  fi
+  if [[ "${payload}" == *"ubuntu(\\d+\\.\\d+)-x64"* ]]; then
+    printf 'latest-supported-probe\n' >> "${MOCK_PYTHON_LOG}"
+    printf '26.04\n'
+    exit 0
+  fi
+fi
+printf 'unexpected python invocation: %s\n' "$*" >&2
+exit 42
+""",
+        encoding="utf-8",
+    )
+    mock_python.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-x",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+source "$2"
+step() { printf 'STEP:%s\n' "$*"; }
+info() { printf 'INFO:%s\n' "$*"; }
+ok() { printf 'OK:%s\n' "$*"; }
+warn() { printf 'WARN:%s\n' "$*"; }
+read_env_value_from_file() { printf 'development\n'; }
+playwright_linux_dependencies_ready() { return 0; }
+PLAYWRIGHT_BROWSERS_MODE=always
+SCRIPT_DIR="$3"
+OS_RELEASE_PATH="$4"
+install_playwright_browsers""",
+            "bash",
+            str(helper),
+            str(phase),
+            str(tmp_path),
+            str(os_release),
+        ],
+        check=False,
+        capture_output=True,
+        env={
+            "MOCK_PYTHON_LOG": str(python_log),
+            "PATH": f"{bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        },
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            "\n".join(
+                [
+                    f"bash returncode={result.returncode}",
+                    f"stdout:\n{result.stdout}",
+                    f"stderr:\n{result.stderr}",
+                    f"python.log:\n{python_log.read_text(encoding='utf-8') if python_log.exists() else '<missing>'}",
+                ]
+            )
+        )
+
+    python_log_text = python_log.read_text(encoding="utf-8")
+    assert "host-support-probe" in python_log_text
+    assert "latest-supported-probe" in python_log_text
+    assert "args=-m playwright install chromium" in python_log_text
+    assert "install-platform=ubuntu26.04-x64" in python_log_text
+    assert "proaktif OS override" in result.stdout
+
+
 def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override() -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
 
