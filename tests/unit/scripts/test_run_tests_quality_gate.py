@@ -198,6 +198,7 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
     assert "make production-readiness" in ci
+    assert "uv run python scripts/ci/check_policy_dates.py" in ci
     assert "Verify committed coverage ratchet baseline" in ci
     assert "git diff --exit-code -- pyproject.toml" in ci
     assert "pyproject.toml coverage fail_under changed during run_tests.sh" in ci

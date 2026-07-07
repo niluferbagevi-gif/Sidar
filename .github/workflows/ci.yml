@@ -91,6 +91,9 @@ jobs:
       - name: Check release version consistency
         run: uv run python scripts/check_release_version_consistency.py
 
+      - name: Check dated policy/debt expirations
+        run: uv run python scripts/ci/check_policy_dates.py
+
       - name: Restore benchmark baseline cache
         id: benchmark-baseline-cache
         uses: actions/cache@v4
