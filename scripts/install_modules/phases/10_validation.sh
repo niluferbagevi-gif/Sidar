@@ -682,7 +682,7 @@ print_install_validation_coverage() {
         summary_production_ready="$(read_install_test_summary_field production_ready)"; then
         summary_available=true
     fi
-    local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
     local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     if [[ "$gpu_available" == true ]]; then
         recommended_validation_command="RUN_GPU_STRESS=1 ${recommended_validation_command}"
@@ -701,6 +701,9 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
         if [[ "$summary_production_ready" == true ]]; then
             echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+        elif [[ "$ci_status" == "tamamlandi" ]] && ! sidar_install_production_gate_required; then
+            echo -e "   ${YELLOW}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
+            echo -e "   ${YELLOW}   Development full validation geçti; production gate için: ${production_readiness_command}${NC}"
         else
             echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
         fi

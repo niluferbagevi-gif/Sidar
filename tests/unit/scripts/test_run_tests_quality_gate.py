@@ -609,7 +609,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     run_tests_script = Path("run_tests.sh").read_text(encoding="utf-8")
     assert (
         'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
-        'RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"'
+        'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
     ) in run_tests_script
     assert "assert_production_readiness_request" in run_tests_script
     assert "production_readiness_gate_active" in run_tests_script
@@ -628,7 +628,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     ) in validation_phase
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
-        "bash run_tests.sh --stage all"
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
     ) in validation_phase
 
 
@@ -746,6 +746,69 @@ print_install_validation_coverage""",
     assert "Benchmark:    ATLANDI" not in result.stdout
 
 
+
+
+def test_install_validation_summary_separates_development_full_validation_from_production_gate(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "smoke": "passed",
+                "integration": "passed",
+                "e2e": "passed",
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_e2e": "passed",
+                "benchmark": "passed",
+                "production_ready": False,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+BOLD=
+GREEN=
+YELLOW=
+RED=
+NC=
+SCRIPT_DIR="$2"
+TEST_SUMMARY_JSON="$3"
+CI_FULL_VALIDATION_STATUS=tamamlandi
+SMOKE_TEST_STATUS=tamamlandi
+INTEGRATION_TEST_STATUS=atlandi_bayrak
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+RUN_INSTALL_INTEGRATION_TESTS=false
+GPU_AVAILABLE=false
+sidar_install_production_gate_required() { return 1; }
+print_install_coverage_gate_note() { :; }
+print_install_ci_parity_summary() { :; }
+print_install_validation_coverage""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ" in result.stdout
+    assert "Development full validation geçti" in result.stdout
+    assert "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
+    assert "Production readiness: GEÇMEDİ" not in result.stdout
 
 
 def test_install_alembic_logs_revision_and_db_source_observability() -> None:
