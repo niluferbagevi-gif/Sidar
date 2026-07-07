@@ -45,6 +45,31 @@ uygulanır:
 ./run_tests.sh --stage integration   # 47/47 geçebilir; global coverage gate atlanır
 ./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
 ```
+
+## Make hedefleriyle CI/local komut paritesi
+
+Komut karmaşasını azaltmak için sık kullanılan kalite kapıları `Makefile`
+hedefleriyle sabitlendi. Bu hedefler CI'daki `run_tests.sh` davranışıyla aynı
+sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını açıkça
+gösterir:
+
+```bash
+make dev-full              # Geliştirici tam doğrulaması; production readiness değildir.
+make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
+make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
+make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
+```
+
+`make production-readiness` hedefi bilinçli olarak şu kanonik komutu çalıştırır:
+
+```bash
+TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
+```
+
+CI tarafında karşılaştırılabilirlik için `artifacts/test-summary.json`,
+`coverage.json`, `coverage.xml`, `htmlcov/`, frontend coverage çıktıları ve
+benchmark JSON dosyaları artifact olarak yüklenir. Böylece lokal log ile CI
+raporu aynı özet/coverage/benchmark dosyaları üzerinden kıyaslanabilir.
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`

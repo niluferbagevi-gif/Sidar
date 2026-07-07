@@ -358,12 +358,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload Coverage XML + Benchmark JSON artifacts
+      - name: Upload test summary, coverage XML/JSON + Benchmark JSON artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-quality-trend-artifacts
           path: |
+            artifacts/test-summary.json
+            coverage.json
             coverage.xml
             artifacts/benchmark/benchmark.json
             artifacts/benchmark/history.json

@@ -1305,6 +1305,17 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "run_tests.sh" in makefile
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
+    assert "dev-full:" in makefile
+    assert "RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in makefile
+    assert "production-readiness:" in makefile
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    ) in makefile
+    assert "frontend-gate:" in makefile
+    assert "RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend" in makefile
+    assert "backend-integration:" in makefile
+    assert "bash run_tests.sh --stage integration" in makefile
     assert "sudo apt-get install -y bats shellcheck" not in ci_workflow
     assert "Install shell test tools" not in ci_workflow
     assert "run: bash scripts/install_ci_system_deps.sh" in ci_workflow
@@ -2984,15 +2995,18 @@ def test_ci_uploads_bats_junit_report_artifact() -> None:
     assert "if-no-files-found: warn" in ci_workflow
 
 
-def test_ci_uploads_benchmark_reports_and_reviewable_baseline_candidates() -> None:
+def test_ci_uploads_test_summary_coverage_and_benchmark_reports() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     artifact_block = ci_workflow[
         ci_workflow.index(
-            "- name: Upload Coverage XML + Benchmark JSON artifacts"
+            "- name: Upload test summary, coverage XML/JSON + Benchmark JSON artifacts"
         ) : ci_workflow.index("- name: Upload Frontend Coverage Report")
     ]
 
     assert "name: backend-quality-trend-artifacts" in artifact_block
+    assert "artifacts/test-summary.json" in artifact_block
+    assert "coverage.json" in artifact_block
+    assert "coverage.xml" in artifact_block
     assert "artifacts/benchmark/benchmark.json" in artifact_block
     assert "artifacts/benchmark/history.json" in artifact_block
     assert ".benchmarks/" in artifact_block
