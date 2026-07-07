@@ -68,8 +68,16 @@ TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READ
 
 CI tarafında karşılaştırılabilirlik için `artifacts/test-summary.json`,
 `coverage.json`, `coverage.xml`, `htmlcov/`, frontend coverage çıktıları ve
-benchmark JSON dosyaları artifact olarak yüklenir. Böylece lokal log ile CI
-raporu aynı özet/coverage/benchmark dosyaları üzerinden kıyaslanabilir.
+benchmark JSON dosyaları artifact olarak yüklenir. Backend pytest fazları ayrıca
+aşağıdaki JUnit çıktılarıyla unit ve integration/smoke/e2e sonuçlarını ayrı ayrı
+izlenebilir hale getirir:
+
+- `artifacts/pytest/backend-unit.xml`
+- `artifacts/pytest/backend-integration-smoke-e2e.xml`
+
+Böylece lokal log ile CI raporu aynı özet/coverage/benchmark/JUnit dosyaları
+üzerinden kıyaslanabilir.
+
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`
