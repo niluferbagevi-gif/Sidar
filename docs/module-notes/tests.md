@@ -184,9 +184,9 @@ metriği yerine yazılmamalıdır.
   `backend-quality-trend-artifacts` artifact'iyle review için yükler. Cache/artifact içinde
   `*_baseline.json` bulunduğunda `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
   `BENCHMARK_COMPARE_FAIL=mean:10%` değerleriyle baseline eksikliği veya `mean` üzerinde `%10`
-  regresyon hard-fail üretir. Cache boşsa ilk koşu seed baseline moduna alınır
-  (`BENCHMARK_COMPARE_REQUIRED=0`) ve sonraki başarılı koşular için `.benchmarks/` cache/artifact
-  adayı üretir. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
+  regresyon hard-fail üretir. CI production-readiness gate içinde cache/artifact baseline boşsa
+  koşu seed moduna düşmez; `.benchmarks/*_baseline.json` restore edilmeden kalite kapısı fail-closed
+  sonlanır. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
   `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh`. Sonraki sıkı doğrulama
   komutu: `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,

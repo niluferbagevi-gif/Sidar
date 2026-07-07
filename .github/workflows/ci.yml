@@ -117,12 +117,13 @@ jobs:
               echo "- Restored cached baseline for \`${benchmark_compare_name}\`; compare gate is required."
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"
-            echo "::notice title=Benchmark baseline::No cached benchmark baseline found for ${benchmark_compare_name}; this run seeds a baseline artifact/cache candidate."
+            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Restore .benchmarks from GitHub Actions cache/artifact before the CI production-readiness gate."
             {
               echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; this run seeds a reviewable baseline artifact/cache candidate."
+              echo "- No cached baseline found for \`${benchmark_compare_name}\`; CI production-readiness is fail-closed and will not seed a baseline inside the gated run."
+              echo "- Seed or restore \`.benchmarks/*_${benchmark_compare_name}.json\` from a reviewed benchmark artifact/cache before re-running CI."
             } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
       - name: Diagnose environment (always)
@@ -298,7 +299,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p artifacts
-          uv run bash run_tests.sh 2>&1 | tee artifacts/test_run.log
+          make production-readiness 2>&1 | tee artifacts/test_run.log
 
       - name: Verify committed coverage ratchet baseline
         run: |

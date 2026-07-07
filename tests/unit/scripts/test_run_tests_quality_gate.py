@@ -197,7 +197,7 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     )
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
-    assert "uv run bash run_tests.sh" in ci
+    assert "make production-readiness" in ci
     assert "Verify committed coverage ratchet baseline" in ci
     assert "git diff --exit-code -- pyproject.toml" in ci
     assert "pyproject.toml coverage fail_under changed during run_tests.sh" in ci
@@ -3186,7 +3186,7 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
@@ -3202,9 +3202,12 @@ def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' in ci
-    assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' in ci
+    assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
+    assert "Benchmark baseline missing" in ci
+    assert "exit 1" in ci
+    assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
-    assert "reviewable baseline artifact/cache candidate" in ci
+    assert "CI production-readiness is fail-closed" in ci
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
     assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
@@ -3212,7 +3215,7 @@ def test_ci_restores_or_seeds_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
-    assert "Cache boşsa ilk koşu seed baseline moduna alınır" in notes
+    assert "koşu seed moduna düşmez" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
