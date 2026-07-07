@@ -169,6 +169,11 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert "[tool.coverage.report] fail_under" in script
     assert "coverage debug config" in script
     assert 'DEFAULT_COVERAGE_FAIL_UNDER="$(validate_coverage_ratchet_state)" || exit 1' in script
+    testing_docs = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    tests_module_notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
+    assert ".coveragerc" not in testing_docs
+    assert ".coveragerc" not in tests_module_notes
+    assert "[tool.coverage.report] fail_under" in tests_module_notes
 
 
 def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:

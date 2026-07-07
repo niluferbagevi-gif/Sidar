@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -293,8 +292,8 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
     if not prepared:
         return 0
 
-    async with db.transaction() as conn:
-        if db._backend == "postgresql":
+    if db._backend == "postgresql":
+        async with db.transaction() as conn:
             await conn.executemany(
                 """
                 INSERT INTO messages (session_id, role, content, tokens_used, created_at)
@@ -304,14 +303,16 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
             )
             return len(prepared)
 
-        def _run() -> int:
-            conn.executemany(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
-            )
-            return len(prepared)
+    def _run() -> int:
+        assert db._sqlite_conn is not None
+        db._sqlite_conn.executemany(
+            "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+            [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
+        )
+        db._sqlite_conn.commit()
+        return len(prepared)
 
-        return await asyncio.to_thread(_run)
+    return cast(int, await db._run_sqlite_op(_run))
 
 
 async def get_session_messages(db: Any, session_id: str) -> list[Any]:

@@ -22,7 +22,7 @@ uv run pytest tests/unit/core/test_rag.py::test_fetch_pgvector_returns_empty_whe
 ## Kalite kapısı / coverage doğrulaması
 
 Merge/PR öncesi ana doğrulama yolu `run_tests.sh` betiğidir. Coverage raporları ve
-`.coveragerc` tabanlı fail-under kontrolü bu betik tarafından yönetilir.
+`pyproject.toml` içindeki `[tool.coverage.*]` ayarları ve ratchet edilmiş `[tool.coverage.report].fail_under` tabanlı kontrol bu betik tarafından yönetilir.
 
 ```bash
 ./run_tests.sh

@@ -140,7 +140,7 @@ metriği yerine yazılmamalıdır.
 
 ## Coverage ratchet eşik davranışı
 
-- Güncel gate ve ratchet state `.coveragerc` içindeki `[report] fail_under` değeridir. Bu dosya
+- Güncel gate ve ratchet state `pyproject.toml` içindeki `[tool.coverage.report] fail_under` değeridir. Bu dosya
   repo'ya commitli kalmalıdır; `run_tests.sh` dosya yoksa veya gate beklenen minimumun altındaysa
   baseline kaybını önlemek için kalite akışını fail-closed durdurur. Ratchet yalnız başarılı
   birleşik coverage koşusundan sonra ve ölçüm bir sonraki basamağa gerçekten ulaştığında yükselir.

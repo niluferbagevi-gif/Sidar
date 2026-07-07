@@ -8,6 +8,7 @@ import logging
 import random
 import sqlite3
 from collections.abc import AsyncIterator, Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -251,6 +252,8 @@ class Database:
         self._sqlite_path: Path | None = None
         self._sqlite_conn: sqlite3.Connection | None = None
         self._sqlite_write_lock: asyncio.Lock | None = None
+        self._sqlite_executor: ThreadPoolExecutor | None = None
+        self._sqlite_closed = False
 
         self._pg_pool = None
         self._pg_pool_factory = pg_pool_factory
@@ -378,17 +381,26 @@ class Database:
             conn.execute("PRAGMA busy_timeout = 10000;")
             return conn
 
-        self._sqlite_conn = await asyncio.to_thread(_open)
+        self._sqlite_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sidar-sqlite")
+        self._sqlite_closed = False
+        loop = asyncio.get_running_loop()
+        self._sqlite_conn = await loop.run_in_executor(self._sqlite_executor, _open)
 
     async def _run_sqlite_op(self, operation: Callable[[], _T], *, write: bool = True) -> _T:
-        """SQLite işlemini çalıştırır.
+        """SQLite işlemini tek instance'a ait dedicated worker lane içinde çalıştırır.
 
-        Varsayılan davranış yazma işlemlerini tek bir kilit ile sıralamaktır.
-        Sadece-okuma çağrılarında `write=False` verilerek gereksiz lock contention
-        azaltılabilir.
+        SQLite bağlantısı tek nesne olarak paylaşıldığı için okuma ve yazma ayrımı
+        yapılmadan aynı ``ThreadPoolExecutor(max_workers=1)`` kuyruğuna alınır.
+        ``check_same_thread=False`` yalnızca Python thread kontrolünü gevşetir; aynı
+        connection'ın farklı threadpool thread'lerinde eşzamanlı kullanılması güvenli
+        kabul edilmez ve xdist/coverage altında native çökmelere yol açabilir.
         """
-        if self._sqlite_conn is None:
+        if self._sqlite_conn is None or self._sqlite_closed:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
+        if self._sqlite_executor is None:
+            self._sqlite_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="sidar-sqlite"
+            )
         running_loop = asyncio.get_running_loop()
         if self._sqlite_write_lock is None:
             self._sqlite_write_lock = asyncio.Lock()
@@ -399,31 +411,34 @@ class Database:
                     "SQLite kilidi farklı event loop'a bağlı bulundu; kilit yeniden oluşturuluyor."
                 )
                 self._sqlite_write_lock = asyncio.Lock()
-        if not write:
-            return await asyncio.to_thread(operation)
 
         async with self._sqlite_write_lock:
             for attempt in range(1, 4):
                 try:
-                    return await asyncio.to_thread(operation)
+                    return await running_loop.run_in_executor(self._sqlite_executor, operation)
                 except sqlite3.OperationalError as exc:
+                    if write:
+                        await running_loop.run_in_executor(
+                            self._sqlite_executor, self._sqlite_conn.rollback
+                        )
                     if "database is locked" not in str(exc).lower() or attempt == 3:
                         raise
                     await asyncio.sleep(
                         0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
                     )
                 except Exception:
-                    # Hata durumunda açık transaction'ı geri al; rollback başarısız olursa
-                    # hatayı yutmak yerine üst katmana açıkça bildir.
-                    try:
-                        await asyncio.to_thread(self._sqlite_conn.rollback)
-                    except Exception as rollback_exc:
-                        logger.exception(
-                            "SQLite rollback başarısız oldu; veri bütünlüğü riske girebilir."
-                        )
-                        raise RuntimeError(
-                            "SQLite işlemi ve rollback başarısız oldu."
-                        ) from rollback_exc
+                    if write:
+                        try:
+                            await running_loop.run_in_executor(
+                                self._sqlite_executor, self._sqlite_conn.rollback
+                            )
+                        except Exception as rollback_exc:
+                            logger.exception(
+                                "SQLite rollback başarısız oldu; veri bütünlüğü riske girebilir."
+                            )
+                            raise RuntimeError(
+                                "SQLite işlemi ve rollback başarısız oldu."
+                            ) from rollback_exc
                     raise
         raise sqlite3.OperationalError("SQLite işlemi deneme sınırına ulaştı ve tamamlanamadı.")
 
@@ -455,15 +470,20 @@ class Database:
             if lock_loop is not None and lock_loop is not running_loop:
                 self._sqlite_write_lock = asyncio.Lock()
 
+        if self._sqlite_executor is None:
+            self._sqlite_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="sidar-sqlite"
+            )
+        loop = asyncio.get_running_loop()
         async with self._sqlite_write_lock:
-            await asyncio.to_thread(self._sqlite_conn.execute, "BEGIN")
+            await loop.run_in_executor(self._sqlite_executor, self._sqlite_conn.execute, "BEGIN")
             try:
                 yield self._sqlite_conn
             except Exception:
-                await asyncio.to_thread(self._sqlite_conn.rollback)
+                await loop.run_in_executor(self._sqlite_executor, self._sqlite_conn.rollback)
                 raise
             else:
-                await asyncio.to_thread(self._sqlite_conn.commit)
+                await loop.run_in_executor(self._sqlite_executor, self._sqlite_conn.commit)
 
     @staticmethod
     def _redact_database_url(database_url: str) -> str:
@@ -501,11 +521,15 @@ class Database:
         self.degraded_mode = True
         self.degraded_reason = action_message
         self._pg_pool = None
+        self._sqlite_executor = None
+        self._sqlite_closed = False
         self.database_url = fallback_url
         self.cfg.DATABASE_URL = fallback_url
         self._backend = "sqlite"
         self._sqlite_conn = None
         self._sqlite_write_lock = None
+        self._sqlite_executor = None
+        self._sqlite_closed = False
         self._configure_backend()
         await self._connect_sqlite()
 
@@ -565,10 +589,18 @@ class Database:
     async def close(self) -> None:
         if self._sqlite_conn is not None:
             conn = self._sqlite_conn
+            executor = self._sqlite_executor
+            self._sqlite_closed = True
             self._sqlite_conn = None
             self._sqlite_write_lock = None
+            self._sqlite_executor = None
             if callable(getattr(conn, "close", None)):
-                await asyncio.to_thread(conn.close)
+                if executor is not None:
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(executor, conn.close)
+                    executor.shutdown(wait=True)
+                else:
+                    await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
             pool = self._pg_pool

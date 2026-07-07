@@ -480,3 +480,56 @@ def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
             assert table_names in (set(), {"alembic_version"})
         finally:
             engine.dispose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_sqlite_audit_logs_remain_integral_under_concurrency(tmp_path):
+    """Audit inserts share one SQLite worker lane under async concurrency."""
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'concurrent_audit.db'}",
+        BASE_DIR=str(tmp_path),
+        DB_POOL_SIZE=2,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=2,
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
+        JWT_ALGORITHM="HS256",
+        JWT_TTL_DAYS=3,
+    )
+    db = Database(cfg)
+    await db.connect()
+    await db.init_schema()
+    total = 100
+    user_id = "audit-concurrency-user"
+    try:
+        await asyncio.gather(
+            *[
+                db.record_audit_log(
+                    user_id=user_id,
+                    tenant_id="tenant-audit",
+                    action=f"ACTION_{idx}",
+                    resource=f"resource-{idx}",
+                    ip_address="127.0.0.1",
+                    allowed=idx % 2 == 0,
+                )
+                for idx in range(total)
+            ]
+        )
+
+        logs = await db.list_audit_logs(user_id=user_id, tenant_id="tenant-audit", limit=total)
+
+        def _integrity_check():
+            assert db._sqlite_conn is not None
+            integrity = db._sqlite_conn.execute("PRAGMA integrity_check").fetchone()
+            count_row = db._sqlite_conn.execute(
+                "SELECT COUNT(*) AS count FROM audit_logs WHERE user_id=? AND tenant_id=?",
+                (user_id, "tenant-audit"),
+            ).fetchone()
+            return str(integrity[0] if integrity else ""), int(count_row[0] if count_row else 0)
+
+        integrity_result, audit_count = await db._run_sqlite_op(_integrity_check, write=False)
+        assert len(logs) == total
+        assert integrity_result.lower() == "ok"
+        assert audit_count == total
+    finally:
+        await db.close()

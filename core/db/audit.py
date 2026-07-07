@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 
 async def record_audit_log(
@@ -61,7 +65,11 @@ async def record_audit_log(
         )
         db._sqlite_conn.commit()
 
-    await db._run_sqlite_op(_run)
+    try:
+        await db._run_sqlite_op(_run)
+    except sqlite3.Error:
+        logger.exception("SQLite audit log insert failed.")
+        raise RuntimeError("SQLite audit log insert failed.") from None
 
 
 async def list_audit_logs(
@@ -120,7 +128,11 @@ async def list_audit_logs(
             cur = db._sqlite_conn.execute(query, tuple(params))
             return cast(list[Any], cur.fetchall())
 
-        rows = await db._run_sqlite_op(_run, write=False)
+        try:
+            rows = await db._run_sqlite_op(_run, write=False)
+        except sqlite3.Error:
+            logger.exception("SQLite audit log query failed.")
+            raise RuntimeError("SQLite audit log query failed.") from None
 
     return [
         record_cls(
