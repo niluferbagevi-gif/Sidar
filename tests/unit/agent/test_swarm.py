@@ -1171,6 +1171,62 @@ def test_execute_task_retries_timeout_before_success(monkeypatch):
     assert agent.calls == 2
 
 
+def test_execute_task_retries_exception_before_success(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _TransientFailureAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("temporary transport error")
+            return TaskResult(
+                task_id="retry-exception-ok",
+                status="success",
+                summary="recovered after exception",
+                evidence=["attempt:2"],
+            )
+
+    agent = _TransientFailureAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "success"
+    assert result.summary == "recovered after exception"
+    assert result.evidence == ["attempt:2"]
+    assert agent.calls == 2
+
+
+def test_execute_task_returns_final_failure_after_retry_budget_exhausted(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=2, SWARM_TASK_RETRY_DELAY_MS=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _AlwaysFailingAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            raise RuntimeError(f"permanent failure {self.calls}")
+
+    agent = _AlwaysFailingAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "failed"
+    assert "permanent failure 3" in result.summary
+    assert agent.calls == 3
+
+
 def test_task_timeout_ignores_malformed_model_json_and_invalid_provider_timeout() -> None:
     cfg = SimpleNamespace(
         AI_PROVIDER="openai",
