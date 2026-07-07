@@ -1207,3 +1207,96 @@ def test_execute_task_retries_timeout_before_success(monkeypatch):
     assert result.status == "success"
     assert result.summary == "recovered"
     assert agent.calls == 2
+
+
+def test_task_timeout_ignores_malformed_model_json_and_invalid_provider_timeout() -> None:
+    cfg = SimpleNamespace(
+        AI_PROVIDER="openai",
+        CODING_MODEL="gpt-5.5",
+        SWARM_TASK_TIMEOUT_BY_MODEL='{not-json',
+        SWARM_TASK_TIMEOUT_SECONDS_OPENAI="not-a-number",
+        SWARM_TASK_TIMEOUT_SECONDS=9,
+        REACT_TIMEOUT=3,
+    )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 9
+
+
+def test_distributed_idempotency_cache_refreshes_lru_before_eviction(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace(SWARM_IDEMPOTENCY_CACHE_MAX=2))
+    backend = InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: reviewer)
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: reviewer)
+
+    for key in ("delivery-1", "delivery-2"):
+        __import__("asyncio").run(
+            orchestrator.dispatch_distributed(
+                SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": key}),
+                session_id="sess-42",
+                sender="supervisor",
+            )
+        )
+
+    cached_first = orchestrator._get_distributed_idempotency_cache("delivery-1")
+    assert cached_first is not None
+
+    __import__("asyncio").run(
+        orchestrator.dispatch_distributed(
+            SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}),
+            session_id="sess-42",
+            sender="supervisor",
+        )
+    )
+
+    assert list(orchestrator._distributed_idempotency_cache) == ["delivery-1", "delivery-3"]
+    assert len(backend.dispatched) == 3
+
+
+def test_execute_task_records_failed_rollback_evidence(monkeypatch):
+    class _RollbackBoomAgent:
+        async def handle(self, _envelope):
+            raise RuntimeError("primary boom")
+
+        async def rollback_task(self, _envelope, _exc):
+            raise RuntimeError("rollback boom")
+
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _RollbackBoomAgent())
+
+    result = __import__("asyncio").run(
+        orchestrator._execute_task(SwarmTask(task_id="swarm-rb", goal="Kod yaz", intent="code"))
+    )
+
+    assert result.status == "failed"
+    assert result.summary == "Görev başarısız: primary boom"
+    assert result.evidence == ["rollback:rollback_task:failed:rollback boom"]
+
+
+def test_contracts_module_restores_previous_module_when_repair_loader_fails(monkeypatch):
+    previous = SimpleNamespace(marker="previous")
+    broken = SimpleNamespace(marker="broken")
+
+    class _Loader:
+        @staticmethod
+        def exec_module(_module):
+            raise RuntimeError("repair failed")
+
+    class _Spec:
+        loader = _Loader()
+
+    monkeypatch.setitem(sys.modules, "agent.core.contracts", previous)
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
+    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
+    monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+
+    with pytest.raises(RuntimeError, match="repair failed"):
+        swarm._contracts_module(force_refresh=True)
+
+    assert sys.modules["agent.core.contracts"] is previous
