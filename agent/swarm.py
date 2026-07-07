@@ -290,10 +290,12 @@ class TaskRouter:
         """
         catalog = self._catalog()
         capability = _INTENT_CAPABILITY_MAP.get(intent, intent)
-        candidates = catalog.find_by_capability(capability)
+        finder = getattr(catalog, "find_by_capability", None)
+        candidates = finder(capability) if callable(finder) else []
         if not candidates:
             # Fallback: herhangi bir kayıtlı ajan
-            all_agents = catalog.list_all()
+            lister = getattr(catalog, "list_all", None)
+            all_agents = lister() if callable(lister) else []
             return all_agents[0] if all_agents else None
         preferred_role = _INTENT_ROLE_PREFERENCE.get(intent)
         if preferred_role:
@@ -418,18 +420,24 @@ class SwarmOrchestrator:
             except (TypeError, ValueError):
                 logger.debug("Invalid provider timeout ignored for %s", provider_key)
 
-        return max(
-            0.001,
-            float(
-                getattr(
-                    self.cfg,
-                    "SWARM_TASK_TIMEOUT_SECONDS",
-                    getattr(self.cfg, "REACT_TIMEOUT", 60),
-                )
-                or getattr(self.cfg, "REACT_TIMEOUT", 60)
-                or 60
-            ),
+        raw_timeout = (
+            getattr(
+                self.cfg,
+                "SWARM_TASK_TIMEOUT_SECONDS",
+                getattr(self.cfg, "REACT_TIMEOUT", 60),
+            )
+            or getattr(self.cfg, "REACT_TIMEOUT", 60)
+            or 60
         )
+        try:
+            return max(0.001, float(raw_timeout))
+        except (TypeError, ValueError):
+            logger.debug("Invalid global swarm task timeout ignored: %s", raw_timeout)
+        try:
+            return max(0.001, float(getattr(self.cfg, "REACT_TIMEOUT", 60) or 60))
+        except (TypeError, ValueError):
+            logger.debug("Invalid REACT_TIMEOUT ignored for swarm task timeout fallback")
+        return 60.0
 
     async def _attempt_task_rollback(self, agent: Any, envelope: Any, exc: Exception) -> str:
         """Run best-effort rollback hook exposed by an agent after task failure."""

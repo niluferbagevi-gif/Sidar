@@ -1262,3 +1262,94 @@ def test_ensure_contract_aliases_uses_imported_contract_module(monkeypatch):
     assert swarm.TaskEnvelope is _Real
     assert swarm.TaskResult is _Real
     assert swarm.DelegationRequest is _Real
+
+
+def test_contracts_module_import_failure_leaves_cache_empty(monkeypatch):
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
+
+    def _raise_import(_name):
+        raise ImportError("contracts unavailable")
+
+    monkeypatch.setattr(swarm.importlib, "import_module", _raise_import)
+
+    with pytest.raises(ImportError, match="contracts unavailable"):
+        swarm._contracts_module(force_refresh=True)
+    assert swarm._CONTRACTS_MODULE_CACHE is None
+
+
+def test_looks_like_delegation_request_returns_false_when_checker_fails_and_attrs_missing(
+    monkeypatch,
+):
+    monkeypatch.setattr(swarm, "_ensure_contract_aliases", lambda: None)
+    monkeypatch.setattr(
+        swarm, "is_delegation_request", lambda _value: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    assert swarm._looks_like_delegation_request(SimpleNamespace(target_agent="coder")) is False
+
+
+def test_task_router_route_falls_back_to_list_all_when_capability_lookup_unavailable(monkeypatch):
+    coder = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    catalog = SimpleNamespace(list_all=lambda: [coder])
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: catalog))
+
+    assert TaskRouter().route("code") == coder
+
+
+def test_distributed_idempotency_key_prefers_trimmed_correlation_ids_and_falls_back_to_task_id():
+    with_correlation = SwarmTask(
+        task_id="task-1", goal="g", context={"correlation_id": "  corr-42  "}
+    )
+    without_key = SwarmTask(task_id="task-2", goal="g", context={})
+
+    assert (
+        SwarmOrchestrator._distributed_idempotency_key(
+            with_correlation, session_id="sess", receiver="coder"
+        )
+        == "corr-42"
+    )
+    assert (
+        SwarmOrchestrator._distributed_idempotency_key(
+            without_key, session_id="sess", receiver="coder"
+        )
+        == "sess:coder:task-2"
+    )
+
+
+def test_task_timeout_falls_back_from_invalid_global_to_react_timeout() -> None:
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS="bad-global", REACT_TIMEOUT="7")
+
+    assert SwarmOrchestrator(cfg=cfg)._task_timeout_seconds(SwarmTask(goal="x")) == 7
+
+
+def test_task_timeout_falls_back_to_sixty_when_global_and_react_timeout_are_invalid() -> None:
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS="bad-global", REACT_TIMEOUT="bad-react")
+
+    assert SwarmOrchestrator(cfg=cfg)._task_timeout_seconds(SwarmTask(goal="x")) == 60.0
+
+
+def test_attempt_task_rollback_uses_rollback_hook_when_task_hook_missing() -> None:
+    class _Agent:
+        def rollback(self, envelope, exc):
+            assert envelope.task_id == "task-rb"
+            assert str(exc) == "boom"
+            return None
+
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    envelope = SimpleNamespace(task_id="task-rb")
+
+    result = __import__("asyncio").run(
+        orch._attempt_task_rollback(_Agent(), envelope, RuntimeError("boom"))
+    )
+
+    assert result == "rollback:rollback:completed"
+
+
+def test_attempt_task_rollback_returns_empty_when_no_hook_exists() -> None:
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    result = __import__("asyncio").run(
+        orch._attempt_task_rollback(SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x"))
+    )
+
+    assert result == ""
