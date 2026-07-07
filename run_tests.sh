@@ -2195,6 +2195,8 @@ install_local_frontend_playwright_chromium_cache() {
     local playwright_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
     if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
       echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i en yakın desteklenen Ubuntu OS override ile hazırlanıyor."
+      # npx burada yalnızca gerçek browser install komutu olarak geçirilir;
+      # Ubuntu bundle probe'u helper içinde sadece Python interpreter komutlarıyla yapılır.
       run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}" \
         npx --no-install playwright install chromium
     else
@@ -2233,7 +2235,9 @@ run_frontend_e2e_with_retry() {
 }
 
 resolve_local_frontend_e2e_mode() {
-  if [ "${RUN_FRONTEND_E2E}" != "auto" ]; then
+  local requested_frontend_e2e="${RUN_FRONTEND_E2E}"
+
+  if [ "${requested_frontend_e2e}" != "auto" ] && [ "${requested_frontend_e2e}" != "1" ]; then
     return 0
   fi
 
@@ -2253,6 +2257,15 @@ resolve_local_frontend_e2e_mode() {
     RUN_FRONTEND_E2E=1
     echo "✅ Node Playwright Chromium cache'i otomatik kuruldu; yerel frontend smoke testleri etkinleştirildi."
     return 0
+  fi
+
+  if [ "${requested_frontend_e2e}" = "1" ]; then
+    echo "❌ Frontend Playwright smoke testleri zorunlu ancak Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=1)."
+    if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
+      echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
+    fi
+    echo "   Manuel kurulum için: cd web_ui_react && npx playwright install chromium"
+    return 1
   fi
 
   RUN_FRONTEND_E2E=0
@@ -2285,6 +2298,10 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_EXIT_CODE=${local_npm_ci_exit}
       else
         resolve_local_frontend_e2e_mode
+        FRONTEND_E2E_MODE_EXIT_CODE=$?
+        if [ "${FRONTEND_E2E_MODE_EXIT_CODE}" -ne 0 ]; then
+          FRONTEND_EXIT_CODE=${FRONTEND_E2E_MODE_EXIT_CODE}
+        fi
         echo "🔐 Frontend dependency audit kalite kapısı çalıştırılıyor: npm run audit:high"
         FRONTEND_NPM_AUDIT_RAN=1
         run_checked npm run audit:high
@@ -2310,7 +2327,9 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
               FRONTEND_COVERAGE_RAN=1
               run_checked npm run test:coverage
               FRONTEND_COVERAGE_EXIT_CODE=$?
-              FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+              if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -ne 0 ]; then
+                FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+              fi
             if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -eq 0 ] && [ ! -f "coverage/index.html" ]; then
               echo "❌ Frontend coverage testi geçti ancak HTML artefaktı üretilemedi: web_ui_react/coverage/index.html"
               FRONTEND_COVERAGE_EXIT_CODE=1
