@@ -315,3 +315,233 @@ async def test_operations_plan_service_includes_owner_and_reports_tool_failure()
     assert tool_payload["tenant_id"] == "tenant-route"
     assert tool_payload["owner_user_id"] == "u42"
     assert events[-1]["payload"] == {"success": False}
+@pytest.mark.asyncio
+async def test_poyraz_rest_bridge_runs_allowed_tool_with_tenant_and_owner_payload() -> None:
+    events: list[dict] = []
+    prompts: list[str] = []
+
+    class _Poyraz:
+        async def run_task(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return '{"success": true, "output": {"campaign_id": 9}}'
+
+    async def _emit(room_id: str, **payload):
+        events.append({"room_id": room_id, **payload})
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.PoyrazToolRunRequest(
+        tool_name="create_marketing_campaign",
+        payload={"name": "Launch"},
+        room_id="ops:bridge",
+    )
+
+    response = await operations.api_operations_poyraz_run(req, _user=SimpleNamespace(id="u55"))
+    payload = json.loads(response.body)
+    tool_name, raw_payload = prompts[0].split("|", 1)
+    tool_payload = json.loads(raw_payload)
+
+    assert response.status_code == 200
+    assert tool_name == "create_marketing_campaign"
+    assert tool_payload == {"name": "Launch", "tenant_id": "tenant-route", "owner_user_id": "u55"}
+    assert payload == {
+        "success": True,
+        "tool": "create_marketing_campaign",
+        "result": {"success": True, "output": {"campaign_id": 9}},
+    }
+    assert events[0] == {
+        "room_id": "ops:bridge",
+        "kind": "tool_call",
+        "source": "poyraz",
+        "content": "Poyraz aracı başlatıldı: create_marketing_campaign",
+        "payload": {"tool": "create_marketing_campaign"},
+    }
+    assert events[-1]["payload"] == {"tool": "create_marketing_campaign", "success": True}
+
+
+@pytest.mark.asyncio
+async def test_named_poyraz_request_uses_raw_output_fallback_when_result_has_no_output() -> None:
+    prompts: list[str] = []
+
+    class _Poyraz:
+        async def run_task(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return '{"success": true, "html": "<main>Landing</main>"}'
+
+    async def _emit(_room_id: str, **_payload):
+        return None
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.LandingPageDraftRequest(
+        brand_name="Sidar",
+        offer="AI ops",
+        audience="Teams",
+        call_to_action="Start",
+        room_id="ops:landing",
+    )
+
+    response = await operations.api_operations_generate_landing_page(
+        req, _user=SimpleNamespace(id="u99")
+    )
+    payload = json.loads(response.body)
+    tool_payload = json.loads(prompts[0].split("|", 1)[1])
+
+    assert response.status_code == 200
+    assert payload["success"] is True
+    assert payload["output"] == '{"success": true, "html": "<main>Landing</main>"}'
+    assert payload["result"] == {"success": True, "html": "<main>Landing</main>"}
+    assert tool_payload["tenant_id"] == "tenant-route"
+    assert "room_id" not in tool_payload
+
+
+@pytest.mark.asyncio
+async def test_operations_create_campaign_masks_unexpected_database_errors(caplog) -> None:
+    class _CreateUnexpectedDb(_RaisingDb):
+        async def upsert_marketing_campaign(self, **_kwargs):
+            raise ValueError("campaign metadata was not serializable")
+
+    async def _resolve_agent_instance_with_create_unexpected_db():
+        return SimpleNamespace(memory=SimpleNamespace(db=_CreateUnexpectedDb()))
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            resolve_agent_instance=_resolve_agent_instance_with_create_unexpected_db,
+        )
+    )
+
+    response = await operations.api_operations_create_campaign(
+        operations.CampaignCreateRequest(name="Launch"), _user=SimpleNamespace(id="u1")
+    )
+
+    _assert_database_unavailable_response(response)
+    assert "Unexpected operations route failure during database_operation" in caplog.text
+    assert "campaign metadata was not serializable" in caplog.text
+@pytest.mark.asyncio
+async def test_operations_create_campaign_serializes_initial_assets_and_checklists() -> None:
+    class _CreateDb:
+        async def upsert_marketing_campaign(self, **kwargs):
+            assert kwargs["tenant_id"] == "tenant-route"
+            assert kwargs["owner_user_id"] == "u-create"
+            assert kwargs["metadata"] == {"segment": "smb"}
+            return SimpleNamespace(id=12, tenant_id="tenant-route", name=kwargs["name"], budget=3)
+
+        async def add_content_asset(self, **kwargs):
+            assert kwargs["campaign_id"] == 12
+            assert kwargs["metadata"] == {"variant": "a"}
+            return SimpleNamespace(id=21, campaign_id=12, title=kwargs["title"], content=kwargs["content"])
+
+        async def add_operation_checklist(self, **kwargs):
+            assert kwargs["campaign_id"] == 12
+            assert kwargs["items"] == ["book venue"]
+            assert kwargs["owner_user_id"] == "u-create"
+            return SimpleNamespace(id=31, campaign_id=12, title=kwargs["title"], items_json='["book venue"]')
+
+    async def _resolve_agent_instance_with_create_db():
+        return SimpleNamespace(memory=SimpleNamespace(db=_CreateDb()))
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            resolve_agent_instance=_resolve_agent_instance_with_create_db,
+        )
+    )
+    req = operations.CampaignCreateRequest(
+        name="Launch",
+        channel="email",
+        objective="Grow",
+        budget=3,
+        metadata={"segment": "smb"},
+        initial_assets=[
+            operations.ContentAssetCreateRequest(
+                asset_type="copy",
+                title="Subject",
+                content="Hello",
+                metadata={"variant": "a"},
+            )
+        ],
+        initial_checklists=[
+            operations.OperationChecklistCreateRequest(title="Prep", items=["book venue"])
+        ],
+    )
+
+    response = await operations.api_operations_create_campaign(
+        req, _user=SimpleNamespace(id="u-create")
+    )
+    payload = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert payload["success"] is True
+    assert payload["campaign"]["id"] == 12
+    assert payload["assets"] == [
+        {
+            "id": 21,
+            "campaign_id": 12,
+            "tenant_id": "default",
+            "asset_type": "",
+            "title": "Subject",
+            "content": "Hello",
+            "channel": "",
+            "metadata_json": "{}",
+            "created_at": "",
+            "updated_at": "",
+        }
+    ]
+    assert payload["checklists"][0]["campaign_id"] == 12
+    assert payload["checklists"][0]["items_json"] == '["book venue"]'
+
+
+@pytest.mark.asyncio
+async def test_poyraz_rest_bridge_preserves_existing_owner_user_id() -> None:
+    prompts: list[str] = []
+
+    class _Poyraz:
+        async def run_task(self, prompt: str) -> str:
+            prompts.append(prompt)
+            return {"success": True}
+
+    async def _emit(_room_id: str, **_payload):
+        return None
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.PoyrazToolRunRequest(
+        tool_name="store_content_asset",
+        payload={"owner_user_id": "payload-owner"},
+    )
+
+    response = await operations.api_operations_poyraz_run(req, _user=SimpleNamespace(id="u-route"))
+    tool_payload = json.loads(prompts[0].split("|", 1)[1])
+
+    assert response.status_code == 200
+    assert tool_payload["tenant_id"] == "tenant-route"
+    assert tool_payload["owner_user_id"] == "payload-owner"
+
