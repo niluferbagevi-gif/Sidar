@@ -224,6 +224,26 @@ def test_extract_review_decision_prefers_structured_signal_over_summary_words() 
 
 
 @pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("", None),
+        ("qa_feedback|   ", None),
+        ('qa_feedback|{"decision":', None),
+        (json.dumps({"approved": False}), "reject"),
+        (json.dumps({"verdict": "PASSED"}), "passed"),
+        (json.dumps({"review": {"status": "FAILED"}}), "failed"),
+        ("verdict - approved", "approved"),
+        ("Result is rework_required", "rework_required"),
+        ("[REVIEW:PASS] Dinamik denetim tamam", "pass"),
+    ],
+)
+def test_extract_review_decision_handles_fallback_formats(
+    summary: object, expected: str | None
+) -> None:
+    assert SupervisorAgent._extract_review_decision(summary) == expected
+
+
+@pytest.mark.parametrize(
     ("payload", "expected"),
     [
         ('qa_feedback|{"decision":"reject"}', True),

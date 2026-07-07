@@ -225,17 +225,44 @@ class SupervisorAgent(BaseAgent):
         if not text:
             return None
         body = text.split("|", 1)[1].strip() if text.startswith("qa_feedback|") else text
+        if not body:
+            return None
         if body.startswith("{"):
             try:
                 parsed = json.loads(body)
             except json.JSONDecodeError:
                 parsed = None
-            if isinstance(parsed, dict):
-                decision = str(parsed.get("decision", "") or "").strip().lower()
-                return decision or None
-        match = re.search(r"\bdecision\s*[:=]\s*[\"']?([a-z_-]+)", body, flags=re.IGNORECASE)
+            decision = SupervisorAgent._decision_from_review_payload(parsed)
+            if decision:
+                return decision
+        match = re.search(
+            r"\b(?:decision|verdict|status|result)\s*(?::|=|-|\bis\b)\s*[\"']?([a-z_-]+)",
+            body,
+            flags=re.IGNORECASE,
+        )
         if match:
             return match.group(1).strip().lower()
+        review_tag = re.search(r"\[review\s*[:=]\s*([a-z_-]+)\]", body, flags=re.IGNORECASE)
+        if review_tag:
+            return review_tag.group(1).strip().lower()
+        return None
+
+    @staticmethod
+    def _decision_from_review_payload(payload: object) -> str | None:
+        """Extract reviewer decision variants from a decoded JSON payload."""
+
+        if not isinstance(payload, dict):
+            return None
+        for key in ("decision", "verdict", "status", "result", "review_decision"):
+            decision = str(payload.get(key, "") or "").strip().lower()
+            if decision:
+                return decision
+        approved = payload.get("approved")
+        if isinstance(approved, bool):
+            return "approve" if approved else "reject"
+        review = payload.get("review")
+        if isinstance(review, dict):
+            return SupervisorAgent._decision_from_review_payload(review)
         return None
 
     @classmethod
