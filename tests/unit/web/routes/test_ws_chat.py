@@ -80,6 +80,150 @@ async def test_ws_stream_agent_text_response_stops_when_client_disconnects() -> 
 
 
 @pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> None:
+    class _LegacyVoicePipeline:
+        enabled = True
+
+        def __init__(self) -> None:
+            self.extract_calls: list[tuple[str, bool]] = []
+            self.synthesized: list[str] = []
+
+        def extract_ready_segments(self, text: str, *, flush: bool = False):
+            self.extract_calls.append((text, flush))
+            return ([text] if flush and text else [], "" if flush else text)
+
+        async def synthesize_text(self, segment: str):
+            self.synthesized.append(segment)
+            return {
+                "success": True,
+                "audio_bytes": b"wav-bytes",
+                "mime_type": "audio/wav",
+                "provider": "mock",
+                "voice": "test",
+            }
+
+    class _StreamingAgent:
+        async def respond(self, _prompt: str):
+            yield "Merhaba"
+
+    ws = _Ws()
+    voice_pipeline = _LegacyVoicePipeline()
+    ws._sidar_voice_pipeline = voice_pipeline
+
+    await ws_chat.ws_stream_agent_text_response(ws, _StreamingAgent(), "prompt")
+
+    assert ws.sent == [
+        {"chunk": "Merhaba"},
+        {
+            "audio_chunk": "d2F2LWJ5dGVz",
+            "audio_text": "Merhaba",
+            "audio_mime_type": "audio/wav",
+            "audio_provider": "mock",
+            "audio_voice": "test",
+            "assistant_turn_id": 0,
+            "audio_sequence": 1,
+        },
+    ]
+    assert voice_pipeline.extract_calls == [("Merhaba", False), ("Merhaba", True)]
+    assert voice_pipeline.synthesized == ["Merhaba"]
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> None:
+    class _BufferedVoicePipeline:
+        enabled = True
+
+        def __init__(self) -> None:
+            self.buffer_calls: list[tuple[object, str, bool]] = []
+            self.buffered_text = ""
+            self.synthesized: list[str] = []
+
+        def buffer_assistant_text(self, duplex_state: object, text: str, *, flush: bool = False):
+            self.buffer_calls.append((duplex_state, text, flush))
+            if text:
+                self.buffered_text += text
+            if not flush or not self.buffered_text:
+                return 7, []
+            packet_text = self.buffered_text
+            self.buffered_text = ""
+            return 7, [{"assistant_turn_id": 7, "audio_sequence": 3, "text": packet_text}]
+
+        async def synthesize_text(self, segment: str):
+            self.synthesized.append(segment)
+            return {"success": True, "audio_bytes": b"ok"}
+
+    class _SentinelAgent:
+        async def respond(self, _prompt: str):
+            yield "\x00TOOL:search\x00"
+            yield "\x00THOUGHT:thinking\x00"
+            yield "Cevap"
+
+    ws = _Ws()
+    voice_pipeline = _BufferedVoicePipeline()
+    duplex_state = object()
+    ws._sidar_voice_pipeline = voice_pipeline
+    ws._sidar_voice_duplex_state = duplex_state
+
+    await ws_chat.ws_stream_agent_text_response(ws, _SentinelAgent(), "prompt")
+
+    assert ws.sent == [
+        {"tool_call": "search"},
+        {"thought": "thinking"},
+        {"chunk": "Cevap"},
+        {
+            "audio_chunk": "b2s=",
+            "audio_text": "Cevap",
+            "audio_mime_type": "audio/wav",
+            "audio_provider": "",
+            "audio_voice": "",
+            "assistant_turn_id": 7,
+            "audio_sequence": 3,
+        },
+    ]
+    assert voice_pipeline.buffer_calls == [
+        (duplex_state, "Cevap", False),
+        (duplex_state, "", True),
+    ]
+    assert voice_pipeline.synthesized == ["Cevap"]
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> None:
+    class _VoicePipeline:
+        enabled = True
+
+        def __init__(self) -> None:
+            self.synthesized: list[str] = []
+
+        def extract_ready_segments(self, text: str, *, flush: bool = False):
+            return ([text] if flush and text else [], text)
+
+        async def synthesize_text(self, segment: str):
+            self.synthesized.append(segment)
+            return {"success": True, "audio_bytes": b"late"}
+
+    class _StreamingAgent:
+        async def respond(self, _prompt: str):
+            yield "first"
+            yield "second"
+
+    ws = _Ws()
+    voice_pipeline = _VoicePipeline()
+    ws._sidar_voice_pipeline = voice_pipeline
+
+    async def _send_and_disconnect(payload: dict[str, object]) -> None:
+        ws.sent.append(payload)
+        ws.client_state = WebSocketState.DISCONNECTED
+
+    ws.send_json = _send_and_disconnect  # type: ignore[method-assign]
+
+    await ws_chat.ws_stream_agent_text_response(ws, _StreamingAgent(), "prompt")
+
+    assert ws.sent == [{"chunk": "first"}]
+    assert voice_pipeline.synthesized == ["first"]
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_requires_auth_before_non_auth_action() -> None:
     ws = _Ws(['{"action":"message","message":"hello"}'])
 
