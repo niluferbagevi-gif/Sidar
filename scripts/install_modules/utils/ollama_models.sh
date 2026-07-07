@@ -276,13 +276,16 @@ download_ollama_models() {
 
     resolved_models_csv=$(IFS=', '; echo "${models_to_pull[*]}")
     info "İndirilecek model listesi: ${resolved_models_csv}"
+    info "Not: Ollama katmanlı blob indirdiği için yüzde veya hız göstergesi kısa süreli gerileyebilir/dalgalanabilir; bu tek başına hata değildir."
 
     for model in "${models_to_pull[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
             local pull_success=false
+            local pull_log=""
+            pull_log="$(mktemp -t sidar_ollama_pull.XXXXXX)"
             for attempt in 1 2 3; do
-                if ollama pull "$model"; then
+                if ollama pull "$model" > >(tee -a "$pull_log") 2> >(tee -a "$pull_log" >&2); then
                     pull_success=true
                     break
                 fi
@@ -295,8 +298,14 @@ download_ollama_models() {
             done
 
             if [[ "$pull_success" != true ]]; then
+                warn "Son ollama pull çıktısı (${model}, son 20 satır):"
+                tail -n 20 "$pull_log" >&2 || true
+                info "Manuel indirme: OLLAMA_HOST='${OLLAMA_BASE_URL}' ollama pull '${model}'"
+                info "Manuel doğrulama: curl -sf '${ollama_tags_url}' | grep -F '\"name\":\"${model}\"'"
+                rm -f "$pull_log"
                 fail "Model indirilemedi: ${model} (3 deneme sonrası başarısız)."
             fi
+            rm -f "$pull_log"
         fi
     done
 

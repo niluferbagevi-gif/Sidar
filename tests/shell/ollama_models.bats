@@ -218,3 +218,53 @@ EOF
   '
   [ "$status" -eq 0 ]
 }
+
+@test "download_ollama_models explains layered progress and prints failure diagnostics" {
+  run_ollama_snippet '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+TEXT_MODEL=llama3.1:8b
+CODING_MODEL=qwen2.5-coder:7b
+VISION_MODEL=
+ENABLE_MULTIMODAL=false
+EOF
+
+    step(){ :; }
+    info(){ echo "INFO:$*"; }
+    warn(){ echo "WARN:$*"; }
+    ok(){ :; }
+    fail(){ echo "FAIL:$*"; exit 99; }
+    sleep(){ :; }
+    resolve_ollama_version_url(){ echo "http://127.0.0.1:11434/api/version"; }
+    is_local_ollama_url(){ return 0; }
+    curl(){
+      if [[ "$*" == *"/api/tags"* ]]; then
+        printf "%s\n" "{\"models\":[]}"
+        return 0
+      fi
+      return 0
+    }
+    ollama(){
+      echo "pull stdout for $*"
+      echo "pull stderr for $*" >&2
+      return 42
+    }
+    run_coding_model_smoke_prompt(){ :; }
+
+    WSL2=false
+    WSLCONFIG_CHANGED=false
+    SKIP_MODELS=false
+    NO_INTERACTION=true
+    DOWNLOAD_MODELS=true
+
+    download_ollama_models
+  '
+  [ "$status" -eq 99 ]
+  [[ "$output" == *"Ollama katmanlı blob indirdiği için yüzde veya hız göstergesi"* ]]
+  [[ "$output" == *"Son ollama pull çıktısı (llama3.1:8b, son 20 satır)"* ]]
+  [[ "$output" == *"pull stderr for pull llama3.1:8b"* ]]
+  [[ "$output" == *"Manuel indirme: OLLAMA_HOST='http://127.0.0.1:11434' ollama pull 'llama3.1:8b'"* ]]
+  [[ "$output" == *"Manuel doğrulama: curl -sf 'http://127.0.0.1:11434/api/tags'"* ]]
+}
