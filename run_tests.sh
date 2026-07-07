@@ -2457,6 +2457,11 @@ write_test_summary_json "${PRODUCTION_READY}"
 
 if production_readiness_gate_active; then
   echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"
+elif stage_all_selected && [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
+  echo "✅ Development full validation başarıyla tamamlandı."
+  echo "⚠️ Production readiness profili çalıştırılmadı."
+  echo "Production readiness için:"
+  echo "   ${PRODUCTION_READINESS_COMMAND}"
 else
   echo "⚠️ KAPSAM EKSİK: Bu çalışma production readiness gate değildir."
   echo "   Smoke/unit/build gibi seçili kapılar geçse bile integration, frontend E2E ve benchmark"
@@ -2478,9 +2483,16 @@ if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
 else
   if production_readiness_gate_active; then
     echo "✅ Zorunlu Backend, Frontend E2E ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
+  elif stage_all_selected; then
+    echo "✅ Development full validation başarıyla tamamlandı."
+    echo "⚠️ Production readiness profili çalıştırılmadı."
+    echo "Production readiness için:"
+    echo "   ${PRODUCTION_READINESS_COMMAND}"
   else
     echo "✅ Seçili kalite kapıları BAŞARIYLA tamamlandı."
-    echo "⚠️ Tam doğrulama durumu: ÇALIŞTIRILMADI. Production readiness için yukarıdaki tek komutu kullanın."
+    echo "⚠️ Production readiness profili çalıştırılmadı."
+    echo "Production readiness için:"
+    echo "   ${PRODUCTION_READINESS_COMMAND}"
   fi
   echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"

@@ -611,6 +611,9 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
         'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
     ) in run_tests_script
+    assert "Development full validation başarıyla tamamlandı" in run_tests_script
+    assert "Production readiness profili çalıştırılmadı" in run_tests_script
+    assert "Tam doğrulama durumu: ÇALIŞTIRILMADI" not in run_tests_script
     assert "assert_production_readiness_request" in run_tests_script
     assert "production_readiness_gate_active" in run_tests_script
     assert "SIDAR_PRODUCTION_READINESS=1" in validation_phase
