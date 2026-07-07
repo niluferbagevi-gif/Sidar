@@ -525,6 +525,72 @@ async def test_websocket_voice_reports_generic_stream_error(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_stops_turn_when_transcript_send_fails(monkeypatch) -> None:
+    calls = {"stream": 0}
+
+    async def _stream(*_args, **_kwargs) -> None:
+        calls["stream"] += 1
+
+    async def _send_json_if_connected(_websocket, payload):
+        return "transcript" not in payload
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    monkeypatch.setattr(ws_voice, "send_json_if_connected", _send_json_if_connected)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="enabled",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    assert calls["stream"] == 0
+    assert not any(payload.get("assistant_turn") == "started" for payload in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_emits_assistant_turn_started_before_completed(
+    monkeypatch,
+) -> None:
+    async def _stream(websocket, *_args, **_kwargs) -> None:
+        await websocket.send_json({"chunk": "voice answer"})
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="done",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    turn_events = [
+        payload.get("assistant_turn")
+        for payload in ws.sent
+        if payload.get("assistant_turn") in {"started", "completed"}
+    ]
+    assert turn_events == ["started", "completed"]
+    assert {"chunk": "voice answer"} in ws.sent
+    assert ws.sent.index({"assistant_turn": "started", "assistant_turn_id": 1}) < ws.sent.index(
+        {"assistant_turn": "completed", "assistant_turn_id": 1}
+    )
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) -> None:
     first_stream_started = asyncio.Event()
     release_stream = asyncio.Event()
