@@ -8,16 +8,16 @@ metriği yerine yazılmamalıdır.
 
 ## Güncel metrikler
 
-- `scripts/collect_repo_metrics.sh .` çıktısı (2026-07-06):
-  - `python_files`: **501**
+- `scripts/collect_repo_metrics.sh .` çıktısı (2026-07-08 doğrulama akışı):
+  - `python_files`: **509**
   - `markdown_files`: **112**
-  - `python_lines`: **167638**
-  - `test_files`: **218** (`tests/` altındaki `test_*.py` dosyaları)
-  - `production_python_files`: **260**
-  - `production_python_lines`: **64393**
-- `test_*.py` desenine uyan toplam test dosyası: **218**
+  - `python_lines`: **171465**
+  - `test_files`: **225** (`tests/` altındaki `test_*.py` dosyaları)
+  - `production_python_files`: **261**
+  - `production_python_lines`: **64543**
+- `test_*.py` desenine uyan toplam test dosyası: **225**
 - Katman dağılımı:
-  - `tests/unit`: **177**
+  - `tests/unit`: **184**
   - `tests/integration`: **16**
   - `tests/quality`: **6**
   - `tests/smoke`: **8**
