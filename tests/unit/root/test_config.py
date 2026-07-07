@@ -1928,6 +1928,26 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
         config.Config()
 
 
+def test_production_accepts_strong_database_url_password_without_postgres_env(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(config.Config, "API_KEY", "api-key-configured")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "explicit-strong-jwt-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
+    monkeypatch.setattr(
+        config.Config,
+        "DATABASE_URL",
+        "postgresql://sidar:H7sQ9vL2mR5xT8nB3kY6pW1zC4aD%21@127.0.0.1:5432/sidar",
+    )
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+
+    assert "POSTGRES_PASSWORD" not in missing
+    config.Config()
+
+
 def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
