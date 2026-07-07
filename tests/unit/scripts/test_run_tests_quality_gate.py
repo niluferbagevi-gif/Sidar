@@ -3364,6 +3364,51 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
     assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
+def test_shared_playwright_ubuntu_override_helper_does_not_probe_node_install_command(
+    tmp_path: Path,
+) -> None:
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_npx = tmp_path / "npx"
+    npx_log = tmp_path / "npx.log"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    mock_npx.write_text(
+        """#!/usr/bin/bash
+printf '%s\n' "$*" >> "${MOCK_NPX_LOG}"
+if [[ "$*" == "--no-install playwright install chromium" ]]; then
+  printf '%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}"
+  grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
+  exit $?
+fi
+printf 'unexpected probe invocation: %s\n' "$*" >&2
+exit 42
+""",
+        encoding="utf-8",
+    )
+    mock_npx.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; source "$1"; run_playwright_ubuntu_override_install "$2" 120000 "$3" --no-install playwright install chromium',
+            "bash",
+            str(helper),
+            str(os_release),
+            str(mock_npx),
+        ],
+        check=True,
+        capture_output=True,
+        env={"MOCK_NPX_LOG": str(npx_log)},
+        text=True,
+    )
+
+    assert result.stdout == "ubuntu24.04-x64|"
+    assert npx_log.read_text(encoding="utf-8").splitlines() == [
+        "--no-install playwright install chromium"
+    ]
+
+
 def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_bundle(
     tmp_path: Path,
 ) -> None:
@@ -3372,7 +3417,7 @@ def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_b
     host_platform = (
         package_dir / "driver" / "package" / "lib" / "server" / "utils" / "hostPlatform.js"
     )
-    mock_python = tmp_path / "mock-python.sh"
+    mock_python = tmp_path / "python3"
     os_release = tmp_path / "os-release"
     host_platform.parent.mkdir(parents=True)
     (package_dir / "__init__.py").write_text("# fake playwright\n", encoding="utf-8")

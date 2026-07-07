@@ -166,22 +166,32 @@ OS_RELEASE_EOF
     fi
 }
 
+playwright_install_command_is_python() {
+    local executable_name="${1##*/}"
+    [[ "$executable_name" == "python" \
+        || "$executable_name" == "python3" \
+        || "$executable_name" =~ ^python3\.[0-9]+$ ]]
+}
+
 run_playwright_ubuntu_override_install() {
     local source_os_release="${1:-/etc/os-release}"
     local download_timeout_ms="${2:-120000}"
     local override_os_release=""
     local install_rc=0
-    local supported_ubuntu_version=""
+    local supported_ubuntu_version="${PLAYWRIGHT_UBUNTU_FALLBACK_VERSION:-24.04}"
     local override_platform=""
     local -a python_probe_cmd=()
     local arg=""
     shift 2
 
-    for arg in "$@"; do
-        [[ "$arg" == "-m" ]] && break
-        python_probe_cmd+=("$arg")
-    done
-    supported_ubuntu_version="$(playwright_latest_supported_ubuntu_version "$source_os_release" "${python_probe_cmd[@]:-$@}")"
+    if [[ "$#" -gt 0 ]] && playwright_install_command_is_python "${1:-}"; then
+        for arg in "$@"; do
+            [[ "$arg" == "-m" ]] && break
+            python_probe_cmd+=("$arg")
+        done
+        supported_ubuntu_version="$(playwright_latest_supported_ubuntu_version "$source_os_release" "${python_probe_cmd[@]}")"
+    fi
+
     override_platform="$(playwright_ubuntu_override_platform "$supported_ubuntu_version")"
     override_os_release="$(mktemp)"
     prepare_playwright_ubuntu_override_file "$source_os_release" "$override_os_release" "$supported_ubuntu_version"
