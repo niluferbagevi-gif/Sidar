@@ -403,3 +403,98 @@ async def test_call_maybe_async_with_async_callable(coder_module):
 
     result = await coder_module.CoderAgent._call_maybe_async(_async_sum, 4, 6)
     assert result == 10
+
+
+def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(coder_module):
+    CoderAgent = coder_module.CoderAgent
+
+    assert CoderAgent._parse_llm_tool_plan('```json\n{"final":"ok"}\n```') == {"final": "ok"}
+    assert CoderAgent._parse_llm_tool_plan('[{"name":"read_file","arg":"a.py"}]') == {
+        "tool_calls": [{"name": "read_file", "arg": "a.py"}],
+        "final": "",
+    }
+    assert CoderAgent._parse_llm_tool_plan('{not-json') == {"final": "{not-json"}
+    assert CoderAgent._parse_llm_tool_plan('"done"') == {"final": "done"}
+    assert CoderAgent._parse_llm_tool_plan("   ") == {"final": ""}
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_handles_unknown_tool_dict_call_then_final(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    llm_messages: list[list[dict[str, str]]] = []
+
+    responses = iter(
+        [
+            '{"tool_calls":{"name":"not_registered","arg":"x"},"final":""}',
+            '{"final":"unknown tool reported"}',
+        ]
+    )
+
+    async def fake_call_llm(messages, **kwargs):
+        llm_messages.append(messages)
+        assert kwargs["json_mode"] is True
+        return next(responses)
+
+    agent.call_llm = fake_call_llm
+
+    result = await agent._run_llm_tool_loop("use a tool")
+
+    assert result == "unknown tool reported"
+    assert "Bilinmeyen araç: not_registered" in llm_messages[-1][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_handles_list_tool_calls_and_ignores_non_dict_items(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    calls: list[tuple[str, str]] = []
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"ok:{arg}"
+
+    responses = iter(
+        [
+            '["skip-me", {"tool":"read_file","input":"src/app.py"}]',
+            '{"final":"read complete"}',
+        ]
+    )
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("read") == "read complete"
+    assert calls == [("read_file", "src/app.py")]
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    calls: list[tuple[str, str]] = []
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"still looping:{arg}"
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return '{"tool_calls":[{"name":"read_file","arg":"loop.py"}],"final":""}'
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("loop") == "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+    assert calls == [("read_file", "loop.py")] * 3
+
+
+@pytest.mark.asyncio
+async def test_run_task_qa_feedback_malformed_json_defaults_to_approved_raw_summary(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+
+    result = await agent.run_task("qa_feedback|{bad json")
+
+    assert result == "[CODER:APPROVED] Reviewer onayı alındı: {bad json"
