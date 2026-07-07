@@ -895,6 +895,8 @@ EOF
   [[ "$output" == *"Benchmark:"*"ATLANDI"* ]]
   [[ "$output" == *"Coverage ratchet / fail-under notu"* ]]
   [[ "$output" == *"pyproject.toml coverage fail-under eşiği: 87%"* ]]
+  [[ "$output" == *"Local/CI gate:"*"ratchet baseline 87%"* ]]
+  [[ "$output" == *"Coverage campaign hedefi: 100%"*"coverage-campaign opt-in"* ]]
   [[ "$output" == *"tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz"* ]]
   [[ "$output" == *"Test rehberi: docs/TESTING.md"* ]]
   [[ "$output" == *"GitHub Actions CI parite haritası"* ]]

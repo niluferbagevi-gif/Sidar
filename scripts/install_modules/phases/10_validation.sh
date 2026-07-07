@@ -588,10 +588,13 @@ PY_COVERAGE_FAIL_UNDER
 
 print_install_coverage_gate_note() {
     local coverage_fail_under=""
+    local campaign_fail_under="${COVERAGE_FAIL_UNDER_CAMPAIGN:-100}"
     coverage_fail_under="$(sidar_read_coverage_fail_under)"
     echo ""
     echo -e "${BOLD}📈 Coverage ratchet / fail-under notu:${NC}"
     echo -e "   ${YELLOW}pyproject.toml coverage fail-under eşiği: ${coverage_fail_under}%.${NC}"
+    echo -e "   ${YELLOW}Local/CI gate: pyproject.toml ratchet baseline ${coverage_fail_under}% (COVERAGE_FAIL_UNDER_LOCAL/CI veya açık COVERAGE_FAIL_UNDER ile override edilebilir).${NC}"
+    echo -e "   ${YELLOW}Coverage campaign hedefi: ${campaign_fail_under}% (yalnız COVERAGE_CAMPAIGN=1 veya AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign opt-in ile).${NC}"
     echo -e "   ${YELLOW}Pytest marker'ları ve warning politikası pyproject.toml içinde tanımlı; bu kalite kapısı yalnız run_tests.sh coverage akışında uygulanır.${NC}"
     echo -e "   ${YELLOW}Kurulum smoke/build adımları geçse bile tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz.${NC}"
     echo "   Coverage gate için: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
