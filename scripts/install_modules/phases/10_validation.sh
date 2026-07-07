@@ -468,6 +468,30 @@ sidar_install_optional_dev_full_validation_available() {
     return 0
 }
 
+
+sync_frontend_quality_status_from_test_summary() {
+    local summary_frontend_lint=""
+    local summary_frontend_typecheck=""
+    local summary_frontend_coverage=""
+    local summary_frontend_e2e=""
+
+    if summary_frontend_lint="$(read_install_test_summary_field frontend_lint)" &&
+        summary_frontend_typecheck="$(read_install_test_summary_field frontend_typecheck)" &&
+        summary_frontend_coverage="$(read_install_test_summary_field frontend_coverage)" &&
+        summary_frontend_e2e="$(read_install_test_summary_field frontend_e2e)" &&
+        [[ "$summary_frontend_lint" == "passed" ]] &&
+        [[ "$summary_frontend_typecheck" == "passed" ]] &&
+        [[ "$summary_frontend_coverage" == "passed" ]] &&
+        [[ "$summary_frontend_e2e" == "passed" ]]; then
+        # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
+        FRONTEND_QUALITY_STATUS="tamamlandi"
+        info "Frontend kalite durumu artifacts/test-summary.json üzerinden tamamlandı olarak işaretlendi."
+        return 0
+    fi
+
+    return 1
+}
+
 run_optional_dev_full_validation_prompt() {
     local optional_command="RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     local reply=""
@@ -494,6 +518,7 @@ run_optional_dev_full_validation_prompt() {
         bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
         ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
+        sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
         warn "Development tam doğrulaması başarısız oldu. Tekrar için: ${optional_command}"
@@ -531,6 +556,7 @@ run_install_ci_full_validation() {
         bash "$run_tests_script" --stage all; then
         ok "Tam CI doğrulaması başarıyla tamamlandı (run_tests.sh --stage all)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
+        sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
         if [[ "$production_gate_required" == true ]]; then

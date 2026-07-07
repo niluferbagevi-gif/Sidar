@@ -751,6 +751,51 @@ print_install_validation_coverage""",
 
 
 
+def test_optional_full_validation_syncs_frontend_status_from_run_tests_summary(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_e2e": "passed",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+SCRIPT_DIR="$2"
+TEST_SUMMARY_JSON="$3"
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+info() { printf 'INFO:%s\n' "$*"; }
+sync_frontend_quality_status_from_test_summary
+printf 'FRONTEND_QUALITY_STATUS=%s\n' ${FRONTEND_QUALITY_STATUS}""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
+    assert "artifacts/test-summary.json üzerinden tamamlandı" in result.stdout
+
+
 def test_install_validation_summary_separates_development_full_validation_from_production_gate(
     tmp_path: Path,
 ) -> None:
