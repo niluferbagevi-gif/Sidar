@@ -265,6 +265,12 @@ class _RouteAgent:
         return "room ok"
 
 
+class _SlowRouteAgent(_RouteAgent):
+    async def respond(self, _message: str):
+        await asyncio.sleep(999)
+        yield "late"  # pragma: no cover - cancelled before yielding
+
+
 class _Room:
     def __init__(self, room_id: str) -> None:
         self.room_id = room_id
@@ -397,6 +403,82 @@ async def test_websocket_chat_ignores_invalid_json_after_auth_then_cleans_up() -
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_ignores_malformed_json_and_processes_next_message() -> None:
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            "{not-json",
+            json.dumps({"action": "message", "message": "hello"}),
+        ]
+    )
+    deps = _Deps(agent=_RouteAgent(chunks=["after-json-error"]))
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"auth_ok": True} in ws.sent
+    assert {"chunk": "after-json-error"} in ws.sent
+    assert {"done": True} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_ignores_empty_message_after_auth() -> None:
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "   "}),
+        ]
+    )
+    deps = _Deps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"auth_ok": True} in ws.sent
+    assert not any("chunk" in item for item in ws.sent)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_returns_rate_limit_response() -> None:
+    class _RateLimitedDeps(_Deps):
+        async def redis_is_rate_limited(self, *_args) -> bool:
+            return True
+
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "hello"}),
+        ]
+    )
+    deps = _RateLimitedDeps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {
+        "chunk": "[Hız Sınırı] Çok fazla istek. Lütfen bir dakika bekleyin.",
+        "done": True,
+    } in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_cancel_active_task_sends_cancel_confirmation() -> None:
+    ws = _CancelThenDisconnectWs(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "slow"}),
+            json.dumps({"action": "cancel"}),
+            "__WAIT_THEN_DISCONNECT__",
+        ]
+    )
+    deps = _Deps(agent=_SlowRouteAgent())
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {
+        "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
+        "done": True,
+    } in ws.sent
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_reports_llm_provider_error() -> None:
     ws = _Ws(
         [
@@ -479,3 +561,88 @@ async def test_websocket_chat_room_cancel_broadcasts_cancelled_done() -> None:
     await ws_chat.websocket_chat(ws, deps)
 
     assert any(item.get("type") == "assistant_done" and item.get("cancelled") is True for item in deps.broadcasts)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_rbac_denied_records_telemetry_and_error() -> None:
+    class _ReadOnlyDeps(_Deps):
+        async def join_collaboration_room(
+            self, websocket, *, room_id, user_id, username, display_name, user_role
+        ):
+            room = self.collaboration_rooms.setdefault(room_id, _Room(room_id))
+            participant = SimpleNamespace(can_write=False, websocket=websocket, user_id=user_id)
+            room.participants[self.socket_key(websocket)] = participant
+            return room
+
+        def collaboration_command_requires_write(self, _command: str) -> bool:
+            return True
+
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "team:ops", "display_name": "Ada"}),
+            json.dumps({"action": "message", "message": "@sidar deploy production"}),
+        ]
+    )
+    deps = _ReadOnlyDeps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    room = deps.collaboration_rooms["team:ops"]
+    assert any(item.get("kind") == "rbac_denied" for item in room.telemetry)
+    assert any(
+        item.get("type") == "room_error"
+        and "yazma yetkisine sahip değil" in str(item.get("error"))
+        for item in deps.broadcasts
+    )
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_disconnect_cleans_lifecycle_and_room() -> None:
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "team:ops", "display_name": "Ada"}),
+        ]
+    )
+    deps = _Deps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert deps.left is True
+    assert any(level == "info" and "bağlantısını kesti" in msg for level, msg in deps.logger.messages)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_anyio_closed_resource_cleans_up_like_disconnect() -> None:
+    class _ClosedResourceError(Exception):
+        pass
+
+    class _ClosedWs(_Ws):
+        async def receive_text(self) -> str:
+            raise _ClosedResourceError("closed")
+
+    ws = _ClosedWs([json.dumps({"action": "auth", "token": "valid-token"})])
+    deps = _Deps()
+    deps.anyio_closed = _ClosedResourceError
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert deps.left is True
+    assert any("ClosedResourceError" in msg for _level, msg in deps.logger.messages)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_unexpected_exception_sends_error_and_leaves_room() -> None:
+    class _BoomWs(_Ws):
+        async def receive_text(self) -> str:
+            raise RuntimeError("socket boom")
+
+    ws = _BoomWs()
+    deps = _Deps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True} in ws.sent
+    assert deps.left is True
+    assert any(level == "warning" and "socket boom" in msg for level, msg in deps.logger.messages)
