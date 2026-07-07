@@ -1907,17 +1907,21 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
     monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     # get_missing_critical_runtime_keys() reads POSTGRES_PASSWORD straight from
-    # os.environ, so a developer's real process env would otherwise mask it
-    # from the expected missing-keys list below.
+    # os.environ and also accepts a strong password embedded in DATABASE_URL, so
+    # a developer's real process/dotenv values would otherwise mask it from the
+    # expected missing-keys list below.
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "generated-runtime-secret")
     monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "DATABASE_URL", "")
 
     missing = config.Config.get_missing_critical_runtime_keys()
 
     assert "JWT_SECRET_KEY" in missing
     assert "API_KEY" in missing
+    assert "POSTGRES_PASSWORD" in missing
     with pytest.raises(
         ValueError, match="JWT_SECRET_KEY, API_KEY, POSTGRES_PASSWORD boş bırakılamaz"
     ):
