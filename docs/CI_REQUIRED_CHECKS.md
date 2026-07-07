@@ -87,6 +87,8 @@ The same drift checks are also wired into `.pre-commit-config.yaml` for both
 `pre-commit` and `pre-push` stages:
 
 ```bash
+make check-install-manifests
+make installer-shellcheck
 uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
 ```
@@ -103,6 +105,8 @@ an installer manifest checklist covering:
 
 - unit/smoke coverage,
 - `scripts/sync_install_manifest.sh`,
+- `make check-install-manifests`,
+- `make installer-shellcheck`,
 - direct core/module manifest `--check` commands,
 - raw installer smoke verification or the required `Installer manifest and smoke gate`.
 
