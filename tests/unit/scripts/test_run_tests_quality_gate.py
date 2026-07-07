@@ -19,6 +19,11 @@ def _script() -> str:
     return RUN_TESTS.read_text(encoding="utf-8")
 
 
+def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
+    """Return a run_tests.sh block for structure-oriented shell assertions."""
+    script = _script()
+    start = script.index(start_marker, start_offset)
+    return script[start : script.index(end_marker, start)]
 
 
 def installer_contract_sources() -> str:
@@ -239,7 +244,15 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
 
     assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
     assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
-    assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
+
+    phase1_block = _run_tests_block_between(
+        "local phase1_cmd=(",
+        'echo "➡️ Aşama 1 (Unit) komutu',
+    )
+    assert '"${base_pytest_cmd[@]}"' in phase1_block
+    assert '"--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-unit.xml"' in phase1_block
+    assert "tests/unit" in phase1_block
+
     assert "Aşama 1 unit fazı artık pytest-xdist mevcutsa" in notes
     assert "Unit ağırlığı" in notes
 
@@ -4238,17 +4251,37 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
     script = _script()
 
     assert "local run_unit_phase=0" in script
-    assert 'local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)' in script
+
+    phase1_block = _run_tests_block_between(
+        "local phase1_cmd=(",
+        'echo "➡️ Aşama 1 (Unit) komutu',
+    )
+    assert '"${base_pytest_cmd[@]}"' in phase1_block
+    assert '"--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-unit.xml"' in phase1_block
+    assert "tests/unit" in phase1_block
+
     assert "phase2_dirs+=(tests/integration)" in script
     assert "phase2_dirs+=(tests/smoke)" in script
     assert "phase2_dirs+=(tests/e2e)" in script
+
+    phase2_parent = script.index('if [ "${#phase2_dirs[@]}" -gt 0 ]; then')
+    phase2_block = _run_tests_block_between(
+        "phase2_cmd=(",
+        'echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu',
+        start_offset=phase2_parent,
+    )
+    assert '"${filtered_phase2_cmd[@]}"' in phase2_block
+    assert '"${phase2_cov_args[@]}"' in phase2_block
+    assert (
+        '"--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-integration-smoke-e2e.xml"'
+        in phase2_block
+    )
+    assert '-n "${phase2_workers}"' in phase2_block
+    assert '"${phase2_dirs[@]}"' in phase2_block
+
     assert 'echo "ℹ️ Aşama 1 (Unit) atlandı (--stage=${RUN_TESTS_STAGE})."' in script
     assert (
         'echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."' in script
-    )
-    assert (
-        'phase2_cmd=("${filtered_phase2_cmd[@]}" "${phase2_cov_args[@]}" -n "${phase2_workers}" "${phase2_dirs[@]}")'
-        in script
     )
 
 
