@@ -16,26 +16,26 @@ class RagSearchStore(Protocol):
     _bm25_available: bool
     collection: Any
 
-    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...  # pragma: no cover
 
-    def _chroma_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+    def _chroma_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...  # pragma: no cover
 
-    def _bm25_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+    def _bm25_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...  # pragma: no cover
 
-    def _keyword_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...
+    def _keyword_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]: ...  # pragma: no cover
 
     def _format_results_from_struct(
         self,
         results: list[dict[str, Any]],
         query: str,
         source_name: str,
-    ) -> tuple[bool, str]: ...
+    ) -> tuple[bool, str]: ...  # pragma: no cover
 
-    def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...
+    def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...  # pragma: no cover
 
-    def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...
+    def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...  # pragma: no cover
 
-    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...
+    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]: ...  # pragma: no cover
 
 
 class VectorOnlyStrategy:
