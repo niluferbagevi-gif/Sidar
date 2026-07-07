@@ -265,7 +265,7 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   hızını gereksiz yere kırar:
     - **Local profile (`TEST_PROFILE=local`)** — günlük geliştirici kapısı.
       `pyproject.toml [tool.coverage.report].fail_under` ratchet ile yönetilen
-      tabanı tutar (güncel durum: `%50`'den başlar, `coverage_ratchet.py`
+      tabanı tutar (güncel durum: `%99`, `coverage_ratchet.py`
       ölçülen coverage arttıkça bu değeri yalnızca yukarı taşır);
       `COVERAGE_FAIL_UNDER_LOCAL` envi ile profil bazında üstüne yazılabilir,
       `run_tests.sh` profile göre eşiği `COVERAGE_FAIL_UNDER` değişkenine

@@ -285,7 +285,7 @@ jobs:
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
-          # (currently %50; coverage_ratchet.py only ever raises it) — see
+          # (currently %99; coverage_ratchet.py only ever raises it) — see
           # AGENTS.md §2.5.4. Set COVERAGE_FAIL_UNDER_CI explicitly if a
           # stricter ad-hoc pre-merge bar is ever needed again.
           BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
