@@ -627,6 +627,120 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     ) in validation_phase
 
 
+def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
+    script = _script()
+    summary_json = tmp_path / "test-summary.json"
+    summary_block = script[
+        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
+    ]
+    runner = tmp_path / "summary_probe.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
+        + summary_block
+        + f"""
+TEST_SUMMARY_JSON={summary_json}
+BACKEND_UNIT_RAN=1
+BACKEND_UNIT_EXIT_CODE=1
+BACKEND_INTEGRATION_RAN=1
+BACKEND_INTEGRATION_EXIT_CODE=0
+BACKEND_SMOKE_RAN=1
+BACKEND_SMOKE_EXIT_CODE=0
+BACKEND_E2E_RAN=1
+BACKEND_E2E_EXIT_CODE=0
+FRONTEND_LINT_RAN=1
+FRONTEND_LINT_EXIT_CODE=0
+FRONTEND_TYPECHECK_RAN=1
+FRONTEND_TYPECHECK_EXIT_CODE=0
+FRONTEND_COVERAGE_RAN=1
+FRONTEND_COVERAGE_EXIT_CODE=0
+FRONTEND_E2E_RAN=1
+FRONTEND_E2E_EXIT_CODE=0
+RUN_BENCHMARKS=required
+BENCHMARK_EXIT_CODE=0
+write_test_summary_json false
+""",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    subprocess.run([str(runner)], check=True)
+
+    summary = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert summary["integration"] == "passed"
+    assert summary["smoke"] == "passed"
+    assert summary["e2e"] == "passed"
+    assert summary["benchmark"] == "passed"
+    assert summary["production_ready"] is False
+
+
+def test_install_validation_summary_reads_run_tests_json_for_partial_full_failures(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    summary_json = artifacts_dir / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "smoke": "passed",
+                "integration": "passed",
+                "e2e": "passed",
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_e2e": "passed",
+                "benchmark": "passed",
+                "production_ready": False,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+BOLD=
+GREEN=
+YELLOW=
+RED=
+NC=
+SCRIPT_DIR="$2"
+TEST_SUMMARY_JSON="$3"
+CI_FULL_VALIDATION_STATUS=hata
+SMOKE_TEST_STATUS=atlandi_bayrak
+INTEGRATION_TEST_STATUS=atlandi_bayrak
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+RUN_INSTALL_INTEGRATION_TESTS=false
+GPU_AVAILABLE=false
+sidar_install_production_gate_required() { return 1; }
+print_install_coverage_gate_note() { :; }
+print_install_ci_parity_summary() { :; }
+print_install_validation_coverage""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Integration : tests/integration GEÇTİ" in result.stdout
+    assert "E2E         : tests/e2e/{agents,cli,web} GEÇTİ" in result.stdout
+    assert "Benchmark   : tests/performance GEÇTİ" in result.stdout
+    assert "Production readiness: GEÇMEDİ" in result.stdout
+    assert "Tam doğrulama sonucu: HATA" in result.stdout
+    assert "Integration:  ATLANDI" not in result.stdout
+    assert "Benchmark:    ATLANDI" not in result.stdout
+
+
 
 
 def test_install_alembic_logs_revision_and_db_source_observability() -> None:

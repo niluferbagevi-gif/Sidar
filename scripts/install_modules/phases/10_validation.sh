@@ -601,6 +601,56 @@ print_install_ci_parity_summary() {
     fi
 }
 
+read_install_test_summary_field() {
+    local field="$1"
+    local summary_path="${TEST_SUMMARY_JSON:-${SCRIPT_DIR}/artifacts/test-summary.json}"
+    [[ -f "$summary_path" ]] || return 1
+    python - "$summary_path" "$field" <<'PY_SUMMARY_FIELD'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+summary_path, field = sys.argv[1:3]
+try:
+    value = json.loads(Path(summary_path).read_text(encoding="utf-8"))[field]
+except (OSError, KeyError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+if isinstance(value, bool):
+    print("true" if value else "false")
+else:
+    print(value)
+PY_SUMMARY_FIELD
+}
+
+print_install_validation_gate_line() {
+    local label="$1"
+    local status="$2"
+    local scope="$3"
+    local retry_command="${4:-}"
+
+    case "$status" in
+        passed)
+            echo -e "   ${GREEN}✅ ${label}: ${scope} GEÇTİ${NC}"
+            ;;
+        failed)
+            if [[ -n "$retry_command" ]]; then
+                echo -e "   ${RED}❌ ${label}: HATA; tekrar için ${retry_command}${NC}"
+            else
+                echo -e "   ${RED}❌ ${label}: HATA${NC}"
+            fi
+            ;;
+        skipped)
+            echo -e "   ${YELLOW}⏭️  ${label}: ATLANDI (${scope})${NC}"
+            ;;
+        *)
+            echo -e "   ${YELLOW}⏭️  ${label}: DURUM BİLİNMİYOR (${status:-yok}; ${scope})${NC}"
+            ;;
+    esac
+}
+
 print_install_validation_coverage() {
     local smoke_status="${SMOKE_TEST_STATUS:-atlandi_bayrak}"
     local integration_status="${INTEGRATION_TEST_STATUS:-atlandi_bayrak}"
@@ -610,6 +660,28 @@ print_install_validation_coverage() {
     local gpu_available="${GPU_AVAILABLE:-false}"
     local full_coverage_reached=false
     [[ "$ci_status" == "tamamlandi" ]] && full_coverage_reached=true
+    local summary_available=false
+    local summary_smoke=""
+    local summary_integration=""
+    local summary_e2e=""
+    local summary_frontend_lint=""
+    local summary_frontend_typecheck=""
+    local summary_frontend_coverage=""
+    local summary_frontend_e2e=""
+    local summary_benchmark=""
+    local summary_production_ready=""
+    if [[ "$ci_status" == "tamamlandi" || "$ci_status" == "hata" ]] &&
+        summary_smoke="$(read_install_test_summary_field smoke)" &&
+        summary_integration="$(read_install_test_summary_field integration)" &&
+        summary_e2e="$(read_install_test_summary_field e2e)" &&
+        summary_frontend_lint="$(read_install_test_summary_field frontend_lint)" &&
+        summary_frontend_typecheck="$(read_install_test_summary_field frontend_typecheck)" &&
+        summary_frontend_coverage="$(read_install_test_summary_field frontend_coverage)" &&
+        summary_frontend_e2e="$(read_install_test_summary_field frontend_e2e)" &&
+        summary_benchmark="$(read_install_test_summary_field benchmark)" &&
+        summary_production_ready="$(read_install_test_summary_field production_ready)"; then
+        summary_available=true
+    fi
     local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     if [[ "$gpu_available" == true ]]; then
@@ -618,7 +690,21 @@ print_install_validation_coverage() {
 
     echo ""
     echo -e "${BOLD}📊 Kurulum doğrulama kapsamı:${NC}"
-    if [[ "$smoke_status" == "tamamlandi" ]]; then
+    if [[ "$summary_available" == true ]]; then
+        print_install_validation_gate_line "Smoke       " "$summary_smoke" "tests/smoke" "bash run_tests.sh --stage smoke"
+        print_install_validation_gate_line "Integration " "$summary_integration" "tests/integration" "bash run_tests.sh --stage integration"
+        print_install_validation_gate_line "E2E         " "$summary_e2e" "tests/e2e/{agents,cli,web}" "bash run_tests.sh --stage e2e"
+        print_install_validation_gate_line "Frontend lint" "$summary_frontend_lint" "npm run lint" "bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Frontend type" "$summary_frontend_typecheck" "npm run typecheck" "bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Frontend cov " "$summary_frontend_coverage" "npm run test:coverage" "bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Frontend E2E " "$summary_frontend_e2e" "Playwright smoke" "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+        if [[ "$summary_production_ready" == true ]]; then
+            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+        else
+            echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
+        fi
+    elif [[ "$smoke_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Smoke:        TAMAMLANDI (kapsam: tests/smoke)${NC}"
     elif [[ "$smoke_status" == "hata" ]]; then
         echo -e "   ${RED}❌ Smoke:        HATA${NC}"
@@ -626,7 +712,9 @@ print_install_validation_coverage() {
         echo -e "   ${YELLOW}⏭️  Smoke:        ATLANDI (${smoke_status})${NC}"
     fi
 
-    if [[ "$full_coverage_reached" == true ]]; then
+    if [[ "$summary_available" == true ]]; then
+        :
+    elif [[ "$full_coverage_reached" == true ]]; then
         echo -e "   ${GREEN}✅ Integration:  TAMAMLANDI (kapsam: api/cli/db/managers/web/workflow)${NC}"
         echo -e "   ${GREEN}✅ E2E:          TAMAMLANDI (kapsam: agents/cli/web)${NC}"
         echo -e "   ${GREEN}✅ Benchmark:    TAMAMLANDI${NC}"
@@ -642,7 +730,9 @@ print_install_validation_coverage() {
         echo -e "   ${YELLOW}⏭️  Benchmark:    ATLANDI${NC}"
     fi
 
-    if [[ "$frontend_status" == "tamamlandi" ]]; then
+    if [[ "$summary_available" == true ]]; then
+        :
+    elif [[ "$frontend_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE TAMAMLANDI${NC}"
     elif [[ "$frontend_status" == "hata" ]]; then
         echo -e "   ${RED}❌ Frontend:     LINT/TYPECHECK/COVERAGE/E2E SMOKE HATA${NC}"

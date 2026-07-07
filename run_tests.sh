@@ -580,6 +580,14 @@ QUALITY_GATE_EXIT_AFTER_FIRST_FAIL="${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL:-0}"
 TEST_SUMMARY_JSON="${TEST_SUMMARY_JSON:-artifacts/test-summary.json}"
 
 BACKEND_EXIT_CODE=0
+BACKEND_UNIT_RAN=0
+BACKEND_UNIT_EXIT_CODE=0
+BACKEND_INTEGRATION_RAN=0
+BACKEND_INTEGRATION_EXIT_CODE=0
+BACKEND_SMOKE_RAN=0
+BACKEND_SMOKE_EXIT_CODE=0
+BACKEND_E2E_RAN=0
+BACKEND_E2E_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 FRONTEND_LINT_EXIT_CODE=0
 FRONTEND_COVERAGE_EXIT_CODE=0
@@ -684,13 +692,33 @@ quality_summary_status() {
 
 backend_stage_summary_status() {
   local stage="$1"
-  if ! stage_selected "${stage}"; then
-    printf 'skipped'
-  elif [ "${BACKEND_EXIT_CODE}" = "0" ]; then
-    printf 'passed'
-  else
-    printf 'failed'
-  fi
+  local ran=0
+  local exit_code=0
+
+  case "${stage}" in
+    unit)
+      ran="${BACKEND_UNIT_RAN}"
+      exit_code="${BACKEND_UNIT_EXIT_CODE}"
+      ;;
+    integration)
+      ran="${BACKEND_INTEGRATION_RAN}"
+      exit_code="${BACKEND_INTEGRATION_EXIT_CODE}"
+      ;;
+    smoke)
+      ran="${BACKEND_SMOKE_RAN}"
+      exit_code="${BACKEND_SMOKE_EXIT_CODE}"
+      ;;
+    e2e)
+      ran="${BACKEND_E2E_RAN}"
+      exit_code="${BACKEND_E2E_EXIT_CODE}"
+      ;;
+    *)
+      printf 'skipped'
+      return 0
+      ;;
+  esac
+
+  quality_summary_status "${ran}" "${exit_code}"
 }
 
 write_test_summary_json() {
@@ -698,6 +726,7 @@ write_test_summary_json() {
   local benchmark_ran=1
   local smoke_status=""
   local integration_status=""
+  local e2e_status=""
   local frontend_lint_status=""
   local frontend_typecheck_status=""
   local frontend_coverage_status=""
@@ -706,6 +735,7 @@ write_test_summary_json() {
 
   smoke_status="$(backend_stage_summary_status smoke)"
   integration_status="$(backend_stage_summary_status integration)"
+  e2e_status="$(backend_stage_summary_status e2e)"
   frontend_lint_status="$(quality_summary_status "${FRONTEND_LINT_RAN}" "${FRONTEND_LINT_EXIT_CODE}")"
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
@@ -721,6 +751,7 @@ write_test_summary_json() {
     if python - "${TEST_SUMMARY_JSON}" \
       "${smoke_status}" \
       "${integration_status}" \
+      "${e2e_status}" \
       "${frontend_lint_status}" \
       "${frontend_typecheck_status}" \
       "${frontend_coverage_status}" \
@@ -737,17 +768,19 @@ from pathlib import Path
     output_path,
     smoke,
     integration,
+    e2e,
     frontend_lint,
     frontend_typecheck,
     frontend_coverage,
     frontend_e2e,
     benchmark,
     production_ready,
-) = sys.argv[1:10]
+) = sys.argv[1:11]
 
 summary = {
     "smoke": smoke,
     "integration": integration,
+    "e2e": e2e,
     "frontend_lint": frontend_lint,
     "frontend_typecheck": frontend_typecheck,
     "frontend_coverage": frontend_coverage,
@@ -1719,8 +1752,10 @@ PY
   if [ "${run_unit_phase}" -eq 1 ]; then
     local phase1_cmd=("${base_pytest_cmd[@]}" tests/unit)
     echo "➡️ Aşama 1 (Unit) komutu: ${phase1_cmd[*]}"
+    BACKEND_UNIT_RAN=1
     run_checked "${phase1_cmd[@]}"
     phase1_exit=$?
+    BACKEND_UNIT_EXIT_CODE=${phase1_exit}
   else
     echo "ℹ️ Aşama 1 (Unit) atlandı (--stage=${RUN_TESTS_STAGE})."
   fi
@@ -1743,6 +1778,15 @@ PY
   done
   local phase2_exit=0
   if [ "${#phase2_dirs[@]}" -gt 0 ]; then
+    if stage_selected backend || stage_selected integration; then
+      BACKEND_INTEGRATION_RAN=1
+    fi
+    if stage_selected backend || stage_selected smoke; then
+      BACKEND_SMOKE_RAN=1
+    fi
+    if stage_selected backend || stage_selected e2e; then
+      BACKEND_E2E_RAN=1
+    fi
     local phase2_cov_args=()
     if [ "${run_unit_phase}" -eq 1 ]; then
       # Aşama 2 coverage verisini Aşama 1 ile birleştiririz; entegrasyon testleri
@@ -1753,6 +1797,15 @@ PY
     echo "➡️ Aşama 2 (Integration/Smoke/E2E) komutu: ${phase2_cmd[*]}"
     run_checked "${phase2_cmd[@]}"
     phase2_exit=$?
+    if [ "${BACKEND_INTEGRATION_RAN}" = "1" ]; then
+      BACKEND_INTEGRATION_EXIT_CODE=${phase2_exit}
+    fi
+    if [ "${BACKEND_SMOKE_RAN}" = "1" ]; then
+      BACKEND_SMOKE_EXIT_CODE=${phase2_exit}
+    fi
+    if [ "${BACKEND_E2E_RAN}" = "1" ]; then
+      BACKEND_E2E_EXIT_CODE=${phase2_exit}
+    fi
   else
     echo "ℹ️ Aşama 2 (Integration/Smoke/E2E) atlandı (--stage=${RUN_TESTS_STAGE})."
   fi
