@@ -131,16 +131,28 @@ _CONTRACTS_MODULE_SENTINEL = object()
 
 @pytest.fixture(autouse=True)
 def _isolate_contracts_module() -> Generator[None, None, None]:
-    """sys.modules['agent.core.contracts'] üzerinde test pollutionunu engelle."""
+    """Test pollutionunu runtime koduna taşımadan contracts modülünü izole et."""
     original = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
     yield
     current = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
-    if current is original:
-        return
-    if original is _CONTRACTS_MODULE_SENTINEL:
-        sys.modules.pop("agent.core.contracts", None)
-        return
-    sys.modules["agent.core.contracts"] = cast(ModuleType, original)
+    if current is not original:
+        if original is _CONTRACTS_MODULE_SENTINEL:
+            sys.modules.pop("agent.core.contracts", None)
+        else:
+            sys.modules["agent.core.contracts"] = cast(ModuleType, original)
+
+    swarm_module = sys.modules.get("agent.swarm")
+    if swarm_module is not None:
+        contracts_module = (
+            importlib.import_module("agent.core.contracts")
+            if original is _CONTRACTS_MODULE_SENTINEL
+            else cast(ModuleType, original)
+        )
+        sys.modules["agent.core.contracts"] = contracts_module
+        swarm_module._CONTRACTS_MODULE_CACHE = None
+        ensure_aliases = getattr(swarm_module, "_ensure_contract_aliases", None)
+        if callable(ensure_aliases):
+            ensure_aliases()
 
 
 @pytest.fixture(autouse=True)

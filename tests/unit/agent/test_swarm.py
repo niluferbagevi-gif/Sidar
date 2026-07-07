@@ -424,52 +424,38 @@ def test_is_contracts_module_healthy_rejects_non_callable_delegation_request():
     assert swarm._is_contracts_module_healthy(not_callable_delegation) is False
 
 
-def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypatch):
-    broken = SimpleNamespace(
-        TaskEnvelope=lambda **_k: None,
-        TaskResult=lambda **_k: None,
-        DelegationRequest=object,
-        BrokerTaskEnvelope=object(),
-        BrokerTaskResult=object(),
-        is_delegation_request=lambda _v: False,
-    )
+def test_contracts_module_returns_imported_module_without_runtime_repair(monkeypatch):
+    """Runtime kodu test-pollution kaynaklı kontrat modülünü onarmaya çalışmamalı."""
+
+    imported = SimpleNamespace(marker="imported-stub")
+    calls = {"import": 0}
+
+    def _import_module(name):
+        calls["import"] += 1
+        assert name == "agent.core.contracts"
+        return imported
+
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
-    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
-    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
+    monkeypatch.setattr(swarm.importlib, "import_module", _import_module)
 
-    assert swarm._contracts_module(force_refresh=True) is broken
+    assert swarm._contracts_module(force_refresh=True) is imported
+    assert calls == {"import": 1}
 
 
-def test_contracts_module_caches_successful_health_check(monkeypatch):
-    class _Real:
-        def __init__(self, **_kwargs):
-            pass
-
-    module = SimpleNamespace(
-        TaskEnvelope=_Real,
-        TaskResult=_Real,
-        DelegationRequest=_Real,
-        BrokerTaskEnvelope=object,
-        BrokerTaskResult=object,
-        is_delegation_request=lambda _v: False,
-    )
-    calls = {"import": 0, "health": 0}
+def test_contracts_module_caches_imported_contracts_module(monkeypatch):
+    module = SimpleNamespace(marker="contracts")
+    calls = {"import": 0}
 
     def _import_module(_name):
         calls["import"] += 1
         return module
 
-    def _healthy(_module):
-        calls["health"] += 1
-        return True
-
     monkeypatch.setattr(swarm.importlib, "import_module", _import_module)
-    monkeypatch.setattr(swarm, "_is_contracts_module_healthy", _healthy)
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
 
     assert swarm._contracts_module() is module
     assert swarm._contracts_module() is module
-    assert calls == {"import": 1, "health": 1}
+    assert calls == {"import": 1}
 
 
 def test_task_router_catalog_prefers_local_when_live_catalog_invalid(monkeypatch):
@@ -884,41 +870,17 @@ def test_contract_health_check_handles_constructor_exceptions():
     assert swarm._is_contracts_module_healthy(_ExplodingModule) is False
 
 
-def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch):
-    original_contracts = sys.modules.get("agent.core.contracts")
-    if original_contracts is not None:
-        monkeypatch.setitem(sys.modules, "agent.core.contracts", original_contracts)
-
-    broken = SimpleNamespace()
-
-    class _Loader:
-        @staticmethod
-        def exec_module(module):
-            module.TaskEnvelope = lambda **_k: SimpleNamespace(**_k)
-            module.TaskResult = lambda **_k: SimpleNamespace(**_k)
-            module.DelegationRequest = lambda **_k: SimpleNamespace(**_k)
-            module.BrokerTaskEnvelope = object
-            module.BrokerTaskResult = object
-            module.is_delegation_request = lambda _v: False
-            module.LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
-            module.ActionFeedback = object
-            module.ExternalTrigger = object
-            module.FederationTaskEnvelope = object
-            module.FederationTaskResult = object
-
-    class _Spec:
-        loader = _Loader()
+def test_contracts_module_force_refresh_replaces_cached_module(monkeypatch):
+    first = SimpleNamespace(marker="first")
+    second = SimpleNamespace(marker="second")
+    modules = iter([first, second])
 
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
-    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
-    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
-    monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: next(modules))
 
-    repaired = swarm._contracts_module(force_refresh=True)
-    assert callable(repaired.TaskEnvelope)
-    assert "agent.core.contracts" in sys.modules
-    if original_contracts is not None:
-        assert sys.modules["agent.core.contracts"] is not original_contracts
+    assert swarm._contracts_module() is first
+    assert swarm._contracts_module() is first
+    assert swarm._contracts_module(force_refresh=True) is second
 
 
 def test_task_router_catalog_prefers_valid_live_catalog_and_last_resort_live(monkeypatch):
@@ -1278,25 +1240,25 @@ def test_execute_task_records_failed_rollback_evidence(monkeypatch):
     assert result.evidence == ["rollback:rollback_task:failed:rollback boom"]
 
 
-def test_contracts_module_restores_previous_module_when_repair_loader_fails(monkeypatch):
-    previous = SimpleNamespace(marker="previous")
-    broken = SimpleNamespace(marker="broken")
+def test_ensure_contract_aliases_uses_imported_contract_module(monkeypatch):
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
 
-    class _Loader:
-        @staticmethod
-        def exec_module(_module):
-            raise RuntimeError("repair failed")
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object,
+        BrokerTaskResult=object,
+        is_delegation_request=lambda _value: False,
+    )
 
-    class _Spec:
-        loader = _Loader()
-
-    monkeypatch.setitem(sys.modules, "agent.core.contracts", previous)
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
-    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
-    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
-    monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: module)
 
-    with pytest.raises(RuntimeError, match="repair failed"):
-        swarm._contracts_module(force_refresh=True)
+    swarm._ensure_contract_aliases()
 
-    assert sys.modules["agent.core.contracts"] is previous
+    assert swarm.TaskEnvelope is _Real
+    assert swarm.TaskResult is _Real
+    assert swarm.DelegationRequest is _Real

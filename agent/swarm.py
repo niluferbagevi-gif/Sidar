@@ -21,16 +21,13 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import importlib.util
 import inspect
 import json
 import logging
-import sys
 import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -89,52 +86,15 @@ def _is_contracts_module_healthy(module: ModuleType) -> bool:
 _CONTRACTS_MODULE_CACHE: ModuleType | None = None
 
 
-# TODO(test-isolation-cleanup): _contracts_module()/_ensure_contract_aliases()
-# below are a defensive "self-healing module" workaround for tests that swap
-# sys.modules["agent.core.contracts"] with stubs/mocks mid-run, not something
-# normal runtime operation needs. tests/conftest.py's autouse
-# `_isolate_contracts_module` fixture now restores that module after every
-# test, addressing the same root cause at the fixture level. Before deleting
-# this mechanism (and the matching one in agent/core/supervisor.py), confirm
-# the full test suite still passes without it in an environment where the
-# whole suite can actually run.
 def _contracts_module(*, force_refresh: bool = False) -> ModuleType:
+    """Return the imported contracts module without runtime test-pollution repair."""
     global _CONTRACTS_MODULE_CACHE
     if _CONTRACTS_MODULE_CACHE is not None and not force_refresh:
         return _CONTRACTS_MODULE_CACHE
 
     module = importlib.import_module("agent.core.contracts")
-    if _is_contracts_module_healthy(module):
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-
-    module_path = Path(__file__).resolve().parent / "core" / "contracts.py"
-    spec = importlib.util.spec_from_file_location("agent.core.contracts", module_path)
-    if spec is None or spec.loader is None:
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-    repaired = importlib.util.module_from_spec(spec)
-    previous = sys.modules.get("agent.core.contracts")
-    sys.modules["agent.core.contracts"] = repaired
-    try:
-        spec.loader.exec_module(repaired)
-    except Exception:
-        if previous is not None:
-            sys.modules["agent.core.contracts"] = previous
-        else:
-            sys.modules.pop("agent.core.contracts", None)
-        raise
-
-    if not _is_contracts_module_healthy(repaired):
-        if previous is not None:
-            sys.modules["agent.core.contracts"] = previous
-        else:
-            sys.modules.pop("agent.core.contracts", None)
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-
-    _CONTRACTS_MODULE_CACHE = repaired
-    return repaired
+    _CONTRACTS_MODULE_CACHE = module
+    return module
 
 
 if TYPE_CHECKING:
