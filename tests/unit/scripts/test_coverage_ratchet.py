@@ -206,3 +206,12 @@ def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
 def test_ninety_nine_gate_does_not_require_hundred_until_measurement_reaches_it() -> None:
     assert compute_next_gate(99.58, 99, step=1, min_gate=5, max_gate=100) == 99
     assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=100) == 100
+
+
+def test_daily_cap_keeps_ninety_nine_gate_even_with_hundred_percent_measurement() -> None:
+    assert compute_next_gate(98.42, 99, step=1, min_gate=5, max_gate=99) == 99
+    assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=99) == 99
+
+
+def test_campaign_cap_can_opt_in_to_hundred_percent_gate() -> None:
+    assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=100) == 100
