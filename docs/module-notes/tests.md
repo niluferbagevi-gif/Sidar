@@ -1,6 +1,6 @@
 # tests/ klasörü özeti
 
-Bu not, **mevcut depo durumunu** (2026-07-06) yansıtır ve eski “coverage push” döneminden kalan
+Bu not, **mevcut depo durumunu** (2026-07-08 doğrulama akışı) yansıtır ve eski “coverage push” döneminden kalan
 tek seferlik/geçici dosya adlarını referans almaz. Release öncesinde bu dosya yeniden
 üretilen `scripts/collect_repo_metrics.sh` çıktısı ve son CI `artifacts/test-summary.json` /
 `artifacts/test_run.log` sonuçlarıyla güncellenmelidir; yalnız yerel smoke logu full CI
@@ -37,6 +37,13 @@ metriği yerine yazılmamalıdır.
   `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
   ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
   paralel değil" tespiti güncel script için geçerli değildir.
+- Backend pytest fazları artık CI/test özeti için faz bazlı JUnit çıktıları üretir:
+  - `artifacts/pytest/backend-unit.xml`
+  - `artifacts/pytest/backend-integration-smoke-e2e.xml`
+- `tests/unit/scripts/test_run_tests_quality_gate.py` kalite kapısı testleri, `run_tests.sh`
+  içindeki pytest komutlarını eski tek satırlık shell string eşleşmeleri yerine Aşama 1/Aşama 2
+  komut blokları üzerinden doğrular; bu sözleşme JUnit argümanları, coverage append akışı ve
+  phase-specific worker ayarlarını format değişikliklerine karşı daha dayanıklı biçimde korur.
 
 ## Release öncesi metrik yenileme prosedürü
 
