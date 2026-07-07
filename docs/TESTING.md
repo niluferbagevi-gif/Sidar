@@ -72,6 +72,8 @@ benchmark JSON dosyaları artifact olarak yüklenir. Backend pytest fazları ayr
 aşağıdaki JUnit çıktılarıyla unit ve integration/smoke/e2e sonuçlarını ayrı ayrı
 izlenebilir hale getirir:
 
+Backend pytest JUnit çıktıları:
+
 - `artifacts/pytest/backend-unit.xml`
 - `artifacts/pytest/backend-integration-smoke-e2e.xml`
 
