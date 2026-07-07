@@ -5,6 +5,13 @@
 
 ---
 
+## [Unreleased]
+
+### Dokümantasyon
+- **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; günlük local/CI coverage baseline `pyproject.toml [tool.coverage.report].fail_under = 99` olarak izlenir, ratchet yalnız yukarı taşır ve `%100` hedef yalnız coverage campaign / strict opt-in profilinde uygulanır.
+
+---
+
 ## [v5.2.0-post2] - 2026-06-20
 
 ### Güvenlik
@@ -65,7 +72,7 @@ Faz E otonom iş ekosistemi ajanları kod tabanına ve üst seviye raporlara res
 Swarm orkestrasyonu ile Active Learning yüzeyleri, production cutover ve coverage kalite kapıları içinde daha görünür ve hedefli bir regresyon dilimi olarak sabitlendi.
 
 ### İyileştirmeler (Improved)
-- **CI coverage guard netleştirmesi:** `.github/workflows/ci.yml` içine `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` odaklı ayrı bir regresyon adımı eklenerek, `%100` coverage hard gate öncesinde Swarm + Active Learning omurgasının açık isimli bir kalite kapısından geçmesi sağlandı.
+- **CI coverage guard netleştirmesi:** `.github/workflows/ci.yml` içine `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` odaklı ayrı bir regresyon adımı eklenerek, `%99` local/CI ratchet gate ve opt-in `%100` campaign kontrolü öncesinde Swarm + Active Learning omurgasının açık isimli bir kalite kapısından geçmesi sağlandı.
 - **Production cutover doğrulama genişlemesi:** `.github/workflows/migration-cutover-checks.yml` artık PostgreSQL migration + pool smoke zincirine ek olarak aynı Swarm + Active Learning dilimini ve workflow guard testini çalıştırarak cutover provasını yalnızca veri katmanı ile sınırlamıyor.
 
 ### Teknik Borç Kapanışı
@@ -90,7 +97,7 @@ Sürekli öğrenme (Continuous Learning) altyapısının temelleri atıldı, Ak�
 Kurumsal raporlar, `main.py` launcher sertleştirmeleri ve %100 coverage baseline'ını koruyan son edge-case test modülü ile yeniden senkronize edildi.
 
 ### Eklenenler (Added)
-- **%100 coverage kapanışı:** `tests/test_missing_edge_case_coverage_final.py` eklenerek Redis fallback, `WebSocketDisconnect` kaynaklı async cancel, `tempfile.mkdtemp` hata yolu ile GitHub API 400/503 kenar durumları izole mock testleriyle coverage hard gate içine alındı.
+- **%100 coverage kapanışı:** `tests/test_missing_edge_case_coverage_final.py` eklenerek Redis fallback, `WebSocketDisconnect` kaynaklı async cancel, `tempfile.mkdtemp` hata yolu ile GitHub API 400/503 kenar durumları izole mock testleriyle coverage campaign/regresyon kalite kapısı içine alındı.
 
 ### İyileştirmeler (Improved)
 - **Ultimate Launcher sertleştirmesi:** `main.py` içinde `--port` argümanı için `1-65535` aralık doğrulaması, `validate_runtime_dependencies` kontrolü ve child process stdout/stderr akışını bellek dostu biçimde yazdıran güvenli stream loglama yolu dokümantasyon baseline'ına işlendi.
@@ -194,7 +201,7 @@ FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut r
 - PostgreSQL cutover workflow'undan diskte bulunmayan `requirements.txt` bağımlılığı kaldırıldı; migration provası artık `requirements-dev.txt + asyncpg` ile çalışır.
 - README, React/Vite geliştirme akışı, SPA öncelikli servisleme modeli, güncel proje ağacı ve 149 test modülü / 151 test dosyası gerçekliğiyle yenilendi.
 - RFC ve teknik referans, Supervisor/Coder/Researcher/Reviewer sorumluluklarını ve reviewer'ın dinamik QA/sandbox regresyon rolünü yansıtacak şekilde güncellendi.
-- Production cutover ve audit raporları prompt registry, DLP, observability dashboard'ları, migration provası ve `%100` coverage hard gate detaylarıyla güçlendirildi.
+- Production cutover ve audit raporları prompt registry, DLP, observability dashboard'ları, migration provası ve `%99` local/CI ratchet gate ve opt-in `%100` coverage campaign detaylarıyla güçlendirildi.
 
 ### Teknik Borç Kapanışı
 - Cutover workflow içindeki `requirements.txt` drift'i kaldırıldı.
@@ -852,7 +859,7 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **Güvenlik:** WebSocket zorunlu Auth Handshake ve ConversationMemory fail-closed (`MemoryAuthError`) sertleştirmesi eklendi.
 * **QA:** ReviewerAgent ile dinamik unit test üretimi ve `MAX_QA_RETRIES=3` devre kesici (circuit-breaker) mekanizması devreye alındı.
 * **Operasyon:** SQLite'tan PostgreSQL'e geçiş için `migrate_sqlite_to_pg.py` scripti ve Alembic migration zinciri standardize edildi.
-* **Kalite:** Test coverage alt sınırı %95'e çıkarıldı ve CI üzerinde bloklayıcı hale getirildi.
+* **Kalite:** Test coverage alt sınırı güncel `pyproject.toml fail_under=99` ratchet baseline'ına taşındı; CI üzerinde profile-aware bloklayıcı gate olarak izlenir.
 
 ### Added (Eklenenler)
 * **[Veritabanı Altyapısı]:** Kalıcılık katmanı JSON modelinden async PostgreSQL + Alembic migration temeline taşındı.
@@ -865,7 +872,7 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Çözüldü] Senkron darboğazlar:** Kritik çağrı yolları async modele geçirildi (`httpx`/async servis akışları) ve blocking etkisi azaltıldı.
 * **[Çözüldü] Tek ajan sınırı:** Supervisor-first çoklu ajan (Coder/Researcher/Reviewer) + P2P delegasyon/QA döngüsü üretim akışına alındı.
 * **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
-* **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
+* **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage ratchet gate (`fail_under=99`) ve opt-in `%100` campaign profili operasyonel standarda bağlandı.
 
 #### Önceki Denetimlerde (Audit) Çözüldüğü Doğrulanan Diğer Maddeler
 | Madde | Doğrulama | Dosya / Referans |
@@ -889,7 +896,7 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 | Prometheus metrikleri | ✅ `update_prometheus_metrics()` + lazy Gauge init | `system_health.py` |
 | OpenAI istemci | ✅ `OpenAIClient` + `response_format: json_object` | `llm_client.py` |
 | Drag-drop dosya yükleme | ✅ `/api/rag/upload` endpoint; temp dizin temizleme | `web_server.py` |
-| Coverage zorunluluğu (global %70 + kritik modüller %80) | ✅ `run_tests.sh` içinde iki aşamalı `pytest --cov` kapısı tanımlı | `run_tests.sh` |
+| Coverage zorunluluğu (`pyproject.toml fail_under=99` + opt-in `%100` campaign) | ✅ `run_tests.sh` içinde profile-aware coverage kapısı tanımlı | `run_tests.sh` |
 | Performans benchmark baseline'ları | ✅ `tests/test_benchmark.py` ile ChromaDB/BM25/regex hedef eşikleri doğrulanıyor | `tests/test_benchmark.py` |
 
 ### Teknik Borç Kapanışı
@@ -965,7 +972,7 @@ Bu sürümde Web API dokümantasyonu OpenAPI/Swagger standardına yükseltilmiş
 Bu sürümde test kalite kapıları ve performans baseline ölçümleri CI/test akışına entegre edilmiştir.
 
 ### ✅ Test ve Kalite İyileştirmeleri
-* **Test Coverage Hedefleri (`run_tests.sh`):** CI süreçleri için global `%70` (`--cov-fail-under=70`) ve kritik çekirdek modüller (`managers.security`, `core.memory`, `core.rag`) için `%80` (`--cov-fail-under=80`) kapsam zorunluluğu eklendi.
+* **Test Coverage Hedefleri (`run_tests.sh`):** CI süreçleri için `pyproject.toml` kaynaklı `fail_under=99` ratchet baseline ve kritik çekirdek modüller için opt-in `%100` coverage campaign yaklaşımı dokümante edildi.
 * **Performans Benchmark (`tests/test_benchmark.py`):** Kritik RAG (ChromaDB, BM25) ve AutoHandle regex yolları için `pytest-benchmark` tabanlı otomatik hız testleri sisteme entegre edildi.
 
 ### Teknik Borç Kapanışı

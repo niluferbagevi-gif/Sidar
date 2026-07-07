@@ -633,7 +633,8 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 ### 6.2 Coverage Profile-Aware Quality Gates
 
 Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
-gate ailesidir (detay için bkz. `AGENTS.md §2.5.4`):
+gate ailesidir; release öncesi güncel baseline local/CI için `%99`, campaign için
+opt-in `%100` hedefidir (detay için bkz. `AGENTS.md §2.5.4`):
 
 - **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 99`
   ratchet tabanıdır; `coverage_ratchet.py` step `%1` ile bu değeri
