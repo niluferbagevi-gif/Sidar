@@ -199,6 +199,11 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     assert "uv run bandit -r . -c pyproject.toml" in ci
     assert "make production-readiness" in ci
     assert "uv run python scripts/ci/check_policy_dates.py" in ci
+    assert "POSTGRES_PASSWORD: sidar" in ci
+    assert "Test-only CI service credentials" in ci
+    assert "SIDAR_ENV: test" in ci
+    assert "CI production-readiness is a quality gate, not an app production runtime." in ci
+    assert "cannot satisfy or mask production-secret tests" in ci
     assert "Verify committed coverage ratchet baseline" in ci
     assert "git diff --exit-code -- pyproject.toml" in ci
     assert "pyproject.toml coverage fail_under changed during run_tests.sh" in ci

@@ -61,6 +61,10 @@ jobs:
       TEST_DATABASE_PASSWORD: sidar
       DATABASE_URL: postgresql+asyncpg://sidar:sidar@localhost:5432/sidar_test
       REDIS_URL: redis://localhost:6379/0
+      # CI production-readiness is a quality gate, not an app production runtime.
+      # Keep runtime config in the isolated test profile so weak ephemeral
+      # service credentials above cannot satisfy or mask production-secret tests.
+      SIDAR_ENV: test
 
     steps:
       - name: Checkout
