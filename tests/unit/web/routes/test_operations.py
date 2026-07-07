@@ -545,3 +545,171 @@ async def test_poyraz_rest_bridge_preserves_existing_owner_user_id() -> None:
     assert tool_payload["tenant_id"] == "tenant-route"
     assert tool_payload["owner_user_id"] == "payload-owner"
 
+
+
+class _ExceptionDb:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    async def list_marketing_campaigns(self, **_kwargs):
+        raise self.exc
+
+    async def upsert_marketing_campaign(self, **_kwargs):
+        raise self.exc
+
+    async def list_content_assets(self, **_kwargs):
+        raise self.exc
+
+    async def add_content_asset(self, **_kwargs):
+        raise self.exc
+
+    async def list_operation_checklists(self, **_kwargs):
+        raise self.exc
+
+    async def add_operation_checklist(self, **_kwargs):
+        raise self.exc
+
+
+async def _resolve_agent_instance_with_db(db):
+    return SimpleNamespace(memory=SimpleNamespace(db=db))
+
+
+def _configure_operations_db_exception(exc: Exception) -> None:
+    db = _ExceptionDb(exc)
+
+    async def _resolve():
+        return await _resolve_agent_instance_with_db(db)
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            resolve_agent_instance=_resolve,
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("runtime db down"),
+        OSError("socket closed"),
+        AttributeError("missing db method"),
+        ValueError("unexpected serialization failure"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("route_name", "args", "kwargs"),
+    [
+        ("api_operations_list_campaigns", (), {"status": "active", "limit": 3}),
+        ("api_operations_create_campaign", (operations.CampaignCreateRequest(name="Launch"),), {}),
+        ("api_operations_list_assets", (7,), {"limit": 2}),
+        (
+            "api_operations_add_asset",
+            (7, operations.ContentAssetCreateRequest(asset_type="copy", title="Subject", content="Hi")),
+            {},
+        ),
+        ("api_operations_list_checklists", (7,), {"limit": 2}),
+        (
+            "api_operations_add_checklist",
+            (7, operations.OperationChecklistCreateRequest(title="Prep", items=["one"])),
+            {},
+        ),
+    ],
+)
+async def test_operations_db_routes_mask_expected_and_unexpected_exceptions(
+    exc: Exception,
+    route_name: str,
+    args: tuple,
+    kwargs: dict,
+) -> None:
+    _configure_operations_db_exception(exc)
+
+    response = await getattr(operations, route_name)(*args, **kwargs, _user=SimpleNamespace(id="u1"))
+
+    _assert_database_unavailable_response(response)
+
+
+def _assert_poyraz_unavailable_response(response) -> None:
+    assert response.status_code == 503
+    assert json.loads(response.body) == {
+        "success": False,
+        "error": "poyraz_unavailable",
+        "message": "Poyraz operasyon aracı geçici olarak kullanılamıyor.",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("poyraz runtime down"),
+        OSError("poyraz socket closed"),
+        AttributeError("poyraz missing method"),
+        ValueError("unexpected poyraz failure"),
+    ],
+)
+async def test_poyraz_tool_bridge_returns_api_response_for_tool_exceptions(exc: Exception) -> None:
+    class _Poyraz:
+        async def run_task(self, _prompt: str) -> str:
+            raise exc
+
+    async def _emit(_room_id: str, **_payload):
+        return None
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.PoyrazToolRunRequest(tool_name="store_content_asset", payload={})
+
+    response = await operations.api_operations_poyraz_run(req, _user=SimpleNamespace(id="u1"))
+
+    _assert_poyraz_unavailable_response(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("named runtime down"),
+        OSError("named socket closed"),
+        AttributeError("named missing method"),
+        ValueError("unexpected named failure"),
+    ],
+)
+async def test_named_poyraz_bridge_returns_api_response_for_tool_exceptions(exc: Exception) -> None:
+    class _Poyraz:
+        async def run_task(self, _prompt: str) -> str:
+            raise exc
+
+    async def _emit(_room_id: str, **_payload):
+        return None
+
+    async def _await_if_needed(value):
+        return value
+
+    operations.configure_operations_dependencies(
+        lambda: SimpleNamespace(
+            get_user_tenant=lambda _user: "tenant-route",
+            emit_control_room_event=_emit,
+            await_if_needed=_await_if_needed,
+            get_poyraz_agent_instance=lambda: _Poyraz(),
+        )
+    )
+    req = operations.LandingPageDraftRequest(
+        brand_name="Sidar", offer="AI ops", audience="Teams", call_to_action="Start"
+    )
+
+    response = await operations.api_operations_generate_landing_page(
+        req, _user=SimpleNamespace(id="u1")
+    )
+
+    _assert_poyraz_unavailable_response(response)

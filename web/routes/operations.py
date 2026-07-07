@@ -128,6 +128,18 @@ def _database_unavailable_response(*, operation: str, exc: Exception) -> JSONRes
     )
 
 
+def _poyraz_unavailable_response(*, operation: str, exc: Exception) -> JSONResponse:
+    logger.warning("Poyraz operation unavailable during %s: %s", operation, exc)
+    return JSONResponse(
+        {
+            "success": False,
+            "error": "poyraz_unavailable",
+            "message": "Poyraz operasyon aracı geçici olarak kullanılamıyor.",
+        },
+        status_code=503,
+    )
+
+
 async def _resolve_operations_db(deps: Any) -> Any:
     agent = await deps.resolve_agent_instance()
     return agent.memory.db
@@ -368,7 +380,13 @@ async def api_operations_poyraz_run(
     payload = {**dict(req.payload or {}), "tenant_id": deps.get_user_tenant(_user)}
     if "owner_user_id" not in payload:
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    _raw_result, result = await _run_poyraz_tool(req, _user, tool_name, payload)
+    try:
+        _raw_result, result = await _run_poyraz_tool(req, _user, tool_name, payload)
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _poyraz_unavailable_response(operation="poyraz_tool_bridge", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during poyraz_tool_bridge")
+        return _poyraz_unavailable_response(operation="poyraz_tool_bridge", exc=exc)
     return JSONResponse(
         {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
     )
@@ -383,21 +401,27 @@ async def _run_named_poyraz_request(
     payload["tenant_id"] = deps.get_user_tenant(_user)
     if tool_name == "plan_service_operations":
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await deps.emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content=started
-    )
-    poyraz = await deps.await_if_needed(deps.get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
-    result = decode_agent_tool_result(raw_result)
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content=completed,
-        payload={"success": bool(result.get("success", True))}
-        if tool_name == "plan_service_operations"
-        else None,
-    )
+    try:
+        await deps.emit_control_room_event(
+            req.room_id, kind="tool_call", source="poyraz", content=started
+        )
+        poyraz = await deps.await_if_needed(deps.get_poyraz_agent_instance())
+        raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
+        result = decode_agent_tool_result(raw_result)
+        await deps.emit_control_room_event(
+            req.room_id,
+            kind="status",
+            source="poyraz",
+            content=completed,
+            payload={"success": bool(result.get("success", True))}
+            if tool_name == "plan_service_operations"
+            else None,
+        )
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _poyraz_unavailable_response(operation=tool_name, exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during %s", tool_name)
+        return _poyraz_unavailable_response(operation=tool_name, exc=exc)
     if tool_name == "plan_service_operations":
         return JSONResponse({"success": bool(result.get("success", True)), "result": result})
     return JSONResponse(
