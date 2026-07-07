@@ -870,6 +870,64 @@ def test_contract_health_check_handles_constructor_exceptions():
     assert swarm._is_contracts_module_healthy(_ExplodingModule) is False
 
 
+@pytest.mark.parametrize("broken_contract", ["TaskResult", "DelegationRequest"])
+def test_contract_health_check_handles_result_and_delegation_constructor_exceptions(
+    broken_contract: str,
+) -> None:
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    def _broken_ctor(**_kwargs):
+        raise RuntimeError(f"broken {broken_contract}")
+
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_broken_ctor if broken_contract == "TaskResult" else _Real,
+        DelegationRequest=_broken_ctor if broken_contract == "DelegationRequest" else _Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+        LEGACY_FEDERATION_PROTOCOL_V1="p2p.v1",
+        ActionFeedback=object(),
+        ExternalTrigger=object(),
+        FederationTaskEnvelope=object(),
+        FederationTaskResult=object(),
+    )
+
+    assert swarm._is_contracts_module_healthy(module) is False
+
+
+def test_contract_health_check_rejects_non_callable_delegation_checker() -> None:
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request="not-callable",
+        LEGACY_FEDERATION_PROTOCOL_V1="p2p.v1",
+        ActionFeedback=object(),
+        ExternalTrigger=object(),
+        FederationTaskEnvelope=object(),
+        FederationTaskResult=object(),
+    )
+
+    assert swarm._is_contracts_module_healthy(module) is False
+
+
+def test_ensure_contract_aliases_propagates_incomplete_contract_module(monkeypatch) -> None:
+    incomplete = SimpleNamespace(TaskEnvelope=object)
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", incomplete)
+
+    with pytest.raises(AttributeError, match="BrokerTaskEnvelope"):
+        swarm._ensure_contract_aliases()
+
+
 def test_contracts_module_force_refresh_replaces_cached_module(monkeypatch):
     first = SimpleNamespace(marker="first")
     second = SimpleNamespace(marker="second")
