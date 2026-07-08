@@ -249,6 +249,7 @@ jobs:
           path: |
             dist/install_sidar.sh
             dist/MODULE_HASHES.txt
+            dist/INSTALLER_USAGE.md
           if-no-files-found: error
           retention-days: 30
 
@@ -718,3 +719,4 @@ jobs:
           files: |
             dist/install_sidar.sh
             dist/MODULE_HASHES.txt
+            dist/INSTALLER_USAGE.md

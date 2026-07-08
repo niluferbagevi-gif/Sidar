@@ -267,9 +267,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 | Yöntem | Komut | Kullanım | Avantaj |
 |---|---|---|---|
-| Online modüler | `wget .../install_sidar.sh && ./install_sidar.sh` | Hızlı tek seferlik | Modülleri runtime indirir |
+| Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Offline bundle | `./dist/install_sidar.sh` (CI release) | Air-gapped | Tek dosya, ağ gerektirmez |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; GitHub raw 429/5xx riskine daha açıktır |
 
 ### Sistem Gereksinimleri
 
@@ -543,12 +543,17 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
-**Varsayılan çevrimiçi kurulum yöntemi bootstrap clone + re-exec akışıdır.**
-Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirip çalıştırdığında betik önce `~/Sidar` altına depoyu (dar bant için `--depth=1 --branch <ref>` ile) klonlar ve ardından klonlanan kopyadaki `install_sidar.sh` üzerinden kendini yeniden başlatır (re-exec). Kurulum zaten klonlanmış repo dizininden başlatıldıysa bu bootstrap adımı atlanır; böylece tek komut ergonomisi korunurken modüler `scripts/install_modules` yapısı ile güncel modüller güvenli şekilde kullanılır.
+**Varsayılan çevrimiçi kurulum yöntemi Release bundle artefaktıdır.**
+Kullanıcıya öncelikle GitHub Release üzerinden yayınlanan tek dosyalık
+`install_sidar.sh` bundle'ı verilmelidir; bu dosya `scripts/tools/bundle_install_sidar.sh`
+tarafından üretildiği için bootstrap sırasında `scripts/install_modules/*`
+dosyalarını GitHub raw üzerinden tek tek indirmez. Raw `main/install_sidar.sh`
+yalnız hedef ref için Release bundle henüz yoksa son çare fallback olarak
+kullanılmalıdır.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
-# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
 chmod +x install_sidar.sh
 ./install_sidar.sh
 
@@ -562,6 +567,17 @@ chmod +x install_sidar.sh
 
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
+```
+
+raw fallback gerektiğinde kullanılan URL aşağıdadır; bu yol runtime'da dinamik
+modül indirme yapabildiği için GitHub raw 429/5xx riskine Release bundle'a göre
+daha açıktır:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh
 ```
 
 Smoke test ve servis öncesi smoke gate opt-out değerleri için `--skip-smoke-test`,
@@ -640,9 +656,10 @@ uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 > installer manifest drift'ini commit/push öncesi yakalar. Hook kurulumu
 > yapılmadıysa aynı koruma yalnızca CI/branch protection tarafında kalır.
 
-Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik Release
-bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
-ile üretilir ve modül indirme ihtiyacı olmadan çalışır:
+Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı ortamlar için
+öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya
+CI/CD tarafından `bundle_install_sidar.sh` ile üretilir ve bootstrap sırasında
+30+ ayrı GitHub raw modül isteğini ortadan kaldırır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh

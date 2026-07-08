@@ -1579,6 +1579,7 @@ def test_pytest_shellcheck_quality_gate_is_registered() -> None:
 
 def test_ci_publishes_standalone_installer_bundle() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    bundle_script = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
         encoding="utf-8"
@@ -1592,6 +1593,7 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "path: |" in ci_workflow
     assert "dist/install_sidar.sh" in ci_workflow
     assert "dist/MODULE_HASHES.txt" in ci_workflow
+    assert "dist/INSTALLER_USAGE.md" in ci_workflow
     assert "softprops/action-gh-release@v2" in ci_workflow
     assert "files: |" in ci_workflow
 
@@ -1599,6 +1601,12 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     release_url = (
         "https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh"
     )
+    assert "OUTPUT_USAGE=" in bundle_script
+    assert "RELEASE_INSTALLER_URL=" in bundle_script
+    assert "RAW_INSTALLER_URL=" in bundle_script
+    assert "Preferred release/bundle install" in bundle_script
+    assert "Last-resort raw fallback" in bundle_script
+    assert "raw main/install_sidar.sh yalnız release bundle mevcut değilse son çare" in bundle_script
     assert release_url in readme
     assert release_url in modularization_note
     for content in (readme, modularization_note):
@@ -1606,9 +1614,12 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
         assert "git clone https://github.com/niluferbagevi-gif/Sidar.git" in content
         assert "uv sync --all-extras" in content
         assert "dinamik modül" in content
-    assert "Varsayılan çevrimiçi kurulum yöntemi dinamik modül indiren betiktir" in readme
-    assert "Standart çevrimiçi kullanıcı akışında ana yöntem" in modularization_note
-    assert "Kurumsal, offline veya interneti kısıtlı" in readme
+        assert content.index(release_url) < content.index(dynamic_url)
+        assert "raw fallback" in content
+        assert "GitHub raw 429/5xx" in content
+    assert "Release bundle (önerilen)" in readme
+    assert "varsayılan Release bundle, raw fallback son çare" in modularization_note
+    assert "Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı" in readme
     assert "monolitik Release bundle" in modularization_note
 
 

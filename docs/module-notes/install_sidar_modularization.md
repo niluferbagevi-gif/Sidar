@@ -79,13 +79,25 @@ bu değişkeni doğrudan set etmek yerine `db_credentials.sh` içindeki
 tek yazıcı üzerinden yönetilir; `12_alembic.sh` bu değeri üretmez veya değiştirmez,
 yalnızca okur.
 
-## Kullanıcı yönlendirmesi: çevrimiçi varsayılan dinamik modül indirme
+## Kullanıcı yönlendirmesi: varsayılan Release bundle, raw fallback son çare
 
-Standart çevrimiçi kullanıcı akışında ana yöntem, kök `install_sidar.sh` dosyasının
-indirilmesi ve bu betiğin eksik `scripts/install_modules/` modüllerini GitHub'dan
-dinamik olarak çekmesidir. Bu yaklaşım kurulum deneyimini tek parça bir araç gibi
-sunar; bakım tarafında ise yardımcı/faz dosyaları modüler kalır ve yeni kurulumlar
-GitHub'daki düzeltilmiş modülleri hemen alabilir:
+Standart çevrimiçi kullanıcı akışında ana yöntem, GitHub Release üzerinden
+yayınlanan tek dosyalık bundle `install_sidar.sh` artefaktının indirilmesidir.
+Bundle, `scripts/tools/bundle_install_sidar.sh` tarafından üretildiği için
+kurulum bootstrap aşamasında `scripts/install_modules/` altındaki modülleri
+GitHub raw üzerinden tek tek indirmez; bu da 429/5xx edge throttling riskini
+azaltır:
+
+```bash
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh
+```
+
+Raw `main/install_sidar.sh` URL'i yalnız hedef ref için Release bundle henüz yoksa
+son çare fallback olarak kullanılmalıdır; bu yol eksik modülleri runtime'da
+indirebildiği için GitHub raw 429/5xx kısıtlarına daha açıktır:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
@@ -107,8 +119,9 @@ uv sync --all-extras
 
 ## Standalone / offline dağıtım sözleşmesi
 
-Kurumsal, offline veya interneti kısıtlı ortamlarda ağdan modül indiren varsayılan
-yol yerine CI tarafından üretilen monolitik Release bundle artefaktı kullanılmalıdır:
+Kurumsal, offline, interneti kısıtlı ve normal temiz kurulum ortamlarında ağdan
+modül indiren raw fallback yerine CI tarafından üretilen monolitik Release bundle
+artefaktı kullanılmalıdır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
@@ -122,7 +135,7 @@ komutunu çalıştırır, `dist/install_sidar.sh` dosyasını syntax-check'ten g
 `standalone-install-sidar` artefaktı olarak yükler ve `v*` tag release'lerinde aynı
 dosyayı GitHub Release asset'i olarak yayınlar.
 
-Böylece hibrit dağıtım korunur: çevrimiçi standart kullanıcılar dinamik modül
+Böylece hibrit dağıtım korunur: standart kullanıcılar Release bundle kullanır; raw fallback dinamik modül
 indiren kök betiği kullanır; kurumsal/offline kullanıcılar ise modül indirme ihtiyacı
 olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
 

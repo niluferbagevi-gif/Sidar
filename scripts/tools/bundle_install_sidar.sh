@@ -6,6 +6,9 @@ SOURCE_SCRIPT="${ROOT_DIR}/install_sidar.sh"
 MODULE_DIR="${ROOT_DIR}/scripts/install_modules"
 OUTPUT_SCRIPT="${ROOT_DIR}/dist/install_sidar.sh"
 OUTPUT_HASHES="${ROOT_DIR}/dist/MODULE_HASHES.txt"
+OUTPUT_USAGE="${ROOT_DIR}/dist/INSTALLER_USAGE.md"
+RELEASE_INSTALLER_URL="${SIDAR_RELEASE_INSTALLER_URL:-https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh}"
+RAW_INSTALLER_URL="${SIDAR_RAW_INSTALLER_URL:-https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh}"
 
 mkdir -p "${ROOT_DIR}/dist"
 
@@ -116,6 +119,49 @@ chmod +x "$OUTPUT_SCRIPT"
 
 echo "Modül hash manifesti ayrıca yazıldı: $OUTPUT_HASHES"
 
+cat > "$OUTPUT_USAGE" <<USAGE_EOF
+# Sidar bundled installer usage
+
+This release artifact is the preferred clean-install entry point for normal
+online users and constrained networks because it is a single bundled
+\`install_sidar.sh\` file. It avoids the bootstrap path that downloads each
+\`scripts/install_modules/*\` file separately from GitHub raw URLs.
+
+## Preferred release/bundle install
+
+\`\`\`bash
+curl -fsSL ${RELEASE_INSTALLER_URL} -o install_sidar.sh
+# or: wget -O install_sidar.sh ${RELEASE_INSTALLER_URL}
+chmod +x install_sidar.sh
+./install_sidar.sh
+\`\`\`
+
+## Development checkout install
+
+\`\`\`bash
+git clone https://github.com/niluferbagevi-gif/Sidar.git
+cd Sidar
+uv sync --all-extras
+./install_sidar.sh
+\`\`\`
+
+## Last-resort raw fallback
+
+Use the raw \`main/install_sidar.sh\` URL only when a release bundle is not yet
+available for the target ref. The raw path may need to download many module
+files during bootstrap and can therefore be more exposed to transient GitHub raw
+429/5xx throttling:
+
+\`\`\`bash
+curl -fsSL ${RAW_INSTALLER_URL} -o install_sidar.sh
+# or: wget -O install_sidar.sh ${RAW_INSTALLER_URL}
+chmod +x install_sidar.sh
+./install_sidar.sh
+\`\`\`
+USAGE_EOF
+
+echo "Installer kullanım rehberi yazıldı: $OUTPUT_USAGE"
+
 # Post-bundle integrity: dist/MODULE_HASHES.txt'in kaynak install_sidar.sh'nin
 # EMBEDDED_MODULE_HASHES_MANIFEST bloğuyla birebir aynı olmasını doğrula. Bundle
 # sırasında ham modül blokları inline edildiği için bu, GitHub raw'dan indirilecek
@@ -135,3 +181,13 @@ if [[ "$embedded_hashes" != "$manifest_hashes" ]]; then
 fi
 
 echo "Bundle integrity doğrulandı: install_sidar.sh gömülü manifest == dist/MODULE_HASHES.txt"
+cat <<GUIDANCE_EOF
+Önerilen kullanıcı indirme yöntemi:
+  curl -fsSL ${RELEASE_INSTALLER_URL} -o install_sidar.sh
+  chmod +x install_sidar.sh
+  ./install_sidar.sh
+
+Not: raw main/install_sidar.sh yalnız release bundle mevcut değilse son çare
+fallback olarak kullanılmalıdır; bundle bootstrap sırasında çoklu raw modül
+isteklerini ortadan kaldırır.
+GUIDANCE_EOF
