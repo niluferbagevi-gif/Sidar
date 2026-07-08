@@ -219,4 +219,41 @@ describe("rehypeSidarHighlight", () => {
     expect(flattenedText).toContain(">");
     expect(flattenedText).toContain("\"sidar\"");
   });
+
+  it("parses spans without class attributes as classless HAST elements", () => {
+    expect(__rehypeSidarHighlightTestHooks.classNamesFromHtml("<span>sidar</span>")).toEqual([]);
+
+    const children = __rehypeSidarHighlightTestHooks.highlightHtmlToHastChildren(
+      "<span>plain</span>",
+    );
+
+    expect(children).toEqual([
+      {
+        type: "element",
+        tagName: "span",
+        properties: { className: [] },
+        children: [{ type: "text", value: "plain" }],
+      },
+    ]);
+  });
+
+  it("keeps text inside malformed open highlighted spans", () => {
+    const children = __rehypeSidarHighlightTestHooks.highlightHtmlToHastChildren(
+      '<span class="hljs-keyword">const',
+    );
+
+    expect(children).toEqual([
+      {
+        type: "element",
+        tagName: "span",
+        properties: { className: ["hljs-keyword"] },
+        children: [{ type: "text", value: "const" }],
+      },
+    ]);
+  });
+
+  it("allows the module to be imported again without alias registration errors", async () => {
+    await expect(import("./rehypeSidarHighlight.js?duplicate-alias-test")).resolves.toBeTruthy();
+  });
+
 });

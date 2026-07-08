@@ -693,6 +693,24 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
     assert "--with-integration verilmediği için frontend stage çalıştırılmadı" in install_options
 
 
+def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in ci
+    assert "seed_benchmark_baseline:" in ci
+    assert "seed-benchmark-baseline:" in ci
+    assert "Seed benchmark baseline cache" in ci
+    assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
+    assert "benchmark-baseline-seed" in ci
+    assert "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}" in ci
+    assert "Benchmark baseline missing" in ci
+    assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
+    assert "seed_benchmark_baseline" in testing
+    assert "benchmark-baseline-seed" in testing
+    assert "cp -a /tmp/sidar-benchmark-baseline/.benchmarks/. .benchmarks/" in testing
+
+
 def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
     script = _script()
     summary_json = tmp_path / "test-summary.json"

@@ -2087,3 +2087,22 @@ EOF
   [[ "$output" == *"SIDAR_KEYS_FILE izinleri güvenli değil"* ]]
   [[ "$output" == *"chmod 600"* ]]
 }
+
+@test "finish summary prefers run_tests all summary for integration e2e and frontend status" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    TEST_SUMMARY_JSON="$tmpdir/test-summary.json"
+    cat > "$TEST_SUMMARY_JSON" <<JSON
+{"integration":"passed","e2e":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
+JSON
+    INTEGRATION_TEST_STATUS="atlandi_bayrak"
+    FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+    print_install_summary_extended_test_statuses
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Entegrasyon testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
+  [[ "$output" == *"E2E testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
+  [[ "$output" == *"Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."* ]]
+  [[ "$output" != *"Entegrasyon testleri: atlandı"* ]]
+}

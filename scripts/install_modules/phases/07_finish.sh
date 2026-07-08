@@ -80,6 +80,74 @@ EOF
     warn "Otonom döngü zamanlayıcısı kurulamadı: systemd user timer ve crontab kullanılamıyor. Manuel öneri: ${loop_script}"
 }
 
+
+sidar_install_summary_field_or_empty() {
+    local field="$1"
+    if declare -F read_install_test_summary_field >/dev/null 2>&1; then
+        read_install_test_summary_field "$field" 2>/dev/null || true
+    fi
+}
+
+sidar_install_summary_all_passed() {
+    local field value
+    for field in "$@"; do
+        value="$(sidar_install_summary_field_or_empty "$field")"
+        [[ "$value" == "passed" ]] || return 1
+    done
+    return 0
+}
+
+sidar_install_summary_any_failed() {
+    local field value
+    for field in "$@"; do
+        value="$(sidar_install_summary_field_or_empty "$field")"
+        [[ "$value" == "failed" ]] && return 0
+    done
+    return 1
+}
+
+print_install_summary_extended_test_statuses() {
+    local summary_integration=""
+    summary_integration="$(sidar_install_summary_field_or_empty integration)"
+    if [[ "$summary_integration" == "passed" ]]; then
+        echo "  Entegrasyon testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."
+    elif [[ "$summary_integration" == "failed" ]]; then
+        echo "  Entegrasyon testleri: hata var (run_tests.sh --stage all çıktısında doğrulandı). Tekrar için: bash run_tests.sh --stage integration"
+    elif [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
+        echo "  Entegrasyon testleri: başarılı (run_tests.sh --stage integration)."
+    elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
+        echo "  Entegrasyon testleri: hata var. Tekrar için: bash run_tests.sh --stage integration"
+    else
+        echo "  Entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
+        echo "  Backend entegrasyon kapsamı için: bash run_tests.sh --stage integration"
+        echo "  Frontend kalite kapısı ayrı stage'dir: bash run_tests.sh --stage frontend"
+    fi
+
+    local summary_e2e=""
+    summary_e2e="$(sidar_install_summary_field_or_empty e2e)"
+    if [[ "$summary_e2e" == "passed" ]]; then
+        echo "  E2E testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."
+    elif [[ "$summary_e2e" == "failed" ]]; then
+        echo "  E2E testleri: hata var (run_tests.sh --stage all çıktısında doğrulandı). Tekrar için: bash run_tests.sh --stage e2e"
+    elif [[ "$summary_e2e" == "skipped" ]]; then
+        echo "  E2E testleri: atlandı (artifacts/test-summary.json). Çalıştırmak için: bash run_tests.sh --stage e2e"
+    else
+        echo "  E2E testleri: durum özeti yok. Doğrulamak için: bash run_tests.sh --stage e2e"
+    fi
+
+    if sidar_install_summary_all_passed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
+        echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."
+    elif sidar_install_summary_any_failed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
+        echo "  Frontend kalite kapısı: hata var (artifacts/test-summary.json). Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+    elif [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
+        echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage frontend)."
+    elif [[ "$FRONTEND_QUALITY_STATUS" == "hata" ]]; then
+        echo "  Frontend kalite kapısı: hata var. Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+    else
+        echo "  Frontend kalite kapısı: atlandı (${FRONTEND_QUALITY_STATUS}). Çalıştırmak için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+    fi
+}
+
 print_react_frontend_qa_status_block() {
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
     local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
@@ -235,15 +303,7 @@ print_summary() {
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
         echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
     fi
-    if [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]; then
-        echo "  Entegrasyon testleri: başarılı (run_tests.sh --stage integration)."
-    elif [[ "$INTEGRATION_TEST_STATUS" == "hata" ]]; then
-        echo "  Entegrasyon testleri: hata var. Tekrar için: bash run_tests.sh --stage integration"
-    else
-        echo "  Entegrasyon testleri: atlandı (${INTEGRATION_TEST_STATUS}). Çalıştırmak için: ./install_sidar.sh --with-integration"
-        echo "  Backend entegrasyon kapsamı için: bash run_tests.sh --stage integration"
-        echo "  Frontend kalite kapısı ayrı stage'dir: bash run_tests.sh --stage frontend"
-    fi
+    print_install_summary_extended_test_statuses
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
     elif [[ "$RUN_AUDIT" == true ]]; then

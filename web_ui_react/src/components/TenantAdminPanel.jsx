@@ -102,12 +102,12 @@ export function TenantAdminPanel() {
   }, [loadTenantData, policyForm]);
 
   const tenantStats = useMemo(() => {
-    const denied = auditLogs.filter((item) => item.allowed === false).length;
+    const allowed = auditLogs.filter((item) => item.allowed === true).length;
     return {
       policies: policies.length,
       auditEvents: auditLogs.length,
-      denied,
-      allowed: auditLogs.length - denied,
+      allowed,
+      denied: auditLogs.length - allowed,
     };
   }, [auditLogs, policies]);
 
@@ -210,8 +210,8 @@ export function TenantAdminPanel() {
           </div>
           {auditLogs.map((item) => (
             <div className="audit-table__row" role="row" key={item.id}>
-              <span className={item.allowed ? "status-pill status-pill--ok" : "status-pill status-pill--danger"}>
-                {item.allowed ? "İzin" : "Red"}
+              <span className={item.allowed === true ? "status-pill status-pill--ok" : "status-pill status-pill--danger"}>
+                {item.allowed === true ? "İzin" : "Red"}
               </span>
               <span>{item.action}</span>
               <span>{item.resource}</span>

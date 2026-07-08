@@ -93,6 +93,51 @@ Backend pytest JUnit çıktıları:
 Böylece lokal log ile CI raporu aynı özet/coverage/benchmark/JUnit dosyaları
 üzerinden kıyaslanabilir.
 
+## CI benchmark baseline cache boşsa ne yapılır?
+
+CI `make production-readiness` adımında benchmark karşılaştırmasını fail-closed çalıştırır:
+`BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
+`BENCHMARK_COMPARE_FAIL=mean:10%`. Bu yüzden `.benchmarks` altında
+`*_baseline.json` bulunamazsa kalite kapısı bilinçli olarak başarısız olur. Bu durum
+çoğu zaman testlerin bozuk olduğu anlamına gelmez; yeni branch, temiz cache veya cache
+retention süresi dolduğu için karşılaştırma baseline'ı bulunamamış olabilir.
+
+Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
+
+1. GitHub Actions → **CI** workflow'unu elle çalıştırın (`workflow_dispatch`).
+2. `seed_benchmark_baseline` girdisini `true` seçin. Bu özel job production-readiness
+   kapısını çalıştırmaz; yalnız `tests/performance` benchmarklarını
+   `--benchmark-save=baseline` ile koşar.
+3. Job sonunda iki kaynak oluşur:
+   - Actions cache: `benchmark-baseline-<OS>-py311-<branch>-<run_id>` anahtarıyla
+     `.benchmarks/` dizini kaydedilir. Normal CI restore adımı branch, `main`,
+     `master` ve genel prefix sırasıyla bu cache'i arar.
+   - Artifact: `benchmark-baseline-seed`, `.benchmarks/` dizinini ve
+     `artifacts/benchmark/benchmark.json` dosyasını içerir.
+4. Normal CI'ı yeniden çalıştırın. `Restore benchmark baseline cache` adımı cache'i
+   bulursa `Resolve benchmark baseline gate mode` adımı compare gate'i etkinleştirir.
+
+Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
+
+```bash
+# GitHub Actions'tan benchmark-baseline-seed artifact'ini indirdikten sonra:
+unzip benchmark-baseline-seed.zip -d /tmp/sidar-benchmark-baseline
+mkdir -p .benchmarks
+cp -a /tmp/sidar-benchmark-baseline/.benchmarks/. .benchmarks/
+find .benchmarks -type f -name '*_baseline.json' -print
+```
+
+Ardından lokal doğrulama veya yeni cache seed'i için:
+
+```bash
+BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required bash run_tests.sh --stage all
+```
+
+> Not: CI'daki gated run baseline üretmez; sadece restore edilmiş ve gözden geçirilmiş
+> `.benchmarks/*_baseline.json` dosyalarıyla karşılaştırır. İlk kurulum/temiz cache
+> bootstrap'ı yalnız `seed_benchmark_baseline=true` workflow_dispatch job'ı üzerinden
+> yapılmalıdır.
+
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`

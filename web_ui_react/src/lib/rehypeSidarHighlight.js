@@ -72,7 +72,7 @@ function classNamesFromHtml(value) {
 function highlightHtmlToHastChildren(html) {
   const root = { children: [] };
   const stack = [root];
-  const tokenPattern = /<span\s+class="[^"]+">|<\/span>|[^<]+/g;
+  const tokenPattern = /<span(?:\s+class="[^"]+")?>|<\/span>|[^<]+/g;
   for (const token of String(html || "").match(tokenPattern) || []) {
     const current = stack[stack.length - 1];
     if (token.startsWith("<span")) {
@@ -132,6 +132,7 @@ export default function rehypeSidarHighlight() {
 }
 
 export const __rehypeSidarHighlightTestHooks = {
+  classNamesFromHtml,
   decodeHtmlText,
   highlightHtmlToHastChildren,
   visitCodeBlocks,
