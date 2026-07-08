@@ -804,6 +804,16 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     fi
     info "Yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS})"
 
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" == "1" && -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
+        info "SIDAR_INSTALL_TEST_MODE=1: mevcut $HOME/Sidar re-exec güvenlik doğrulaması fallback indirmeden önce çalıştırılıyor."
+        verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"
+    fi
+
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE:-0}" == "1" && -z "${SIDAR_INSTALL_MODULE_BASE_URL:-}" ]] && command -v git >/dev/null 2>&1; then
+        info "SIDAR_INSTALL_TEST_MODE=1: bootstrap re-exec güvenlik doğrulaması fallback indirmeden önce çalıştırılıyor."
+        bootstrap_clone_and_reexec
+    fi
+
     REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
     if command -v curl &>/dev/null || command -v wget &>/dev/null; then
         info "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek: $REMOTE_MODULE_BASE"
