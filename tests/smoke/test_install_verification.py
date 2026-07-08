@@ -17,6 +17,24 @@ def _sha256_for_test(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _extract_bash_function(script_text: str, function_name: str) -> str:
+    start_marker = f"{function_name}() {{"
+    marker_start = script_text.index(start_marker)
+    start = script_text.rfind("\n", 0, marker_start) + 1
+    lines = script_text[start:].splitlines()
+    collected: list[str] = []
+    first_line = lines[0]
+    close_line = f"{first_line[: len(first_line) - len(first_line.lstrip())]}}}"
+    for line in lines:
+        collected.append(line.rstrip())
+        if line == close_line:
+            break
+    return "\n".join(collected) + "\n"
+
+def _normalize_bash_function(function_text: str) -> str:
+    return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
+
+
 def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
@@ -60,6 +78,28 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
 
 def test_python_version() -> None:
     assert sys.version_info >= (3, 11)
+
+
+def test_installer_hash_guard_inline_fallback_matches_module() -> None:
+    """Raw installer fallback hash guard must stay in sync with the module copy."""
+    repo_root = Path(os.getcwd())
+    installer = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    module = (
+        repo_root / "scripts" / "install_modules" / "utils" / "installer_hash_guard.sh"
+    ).read_text(encoding="utf-8")
+
+    for function_name in (
+        "check_installer_hash",
+        "verify_reexec_installer_or_fail",
+        "verify_home_reexec_candidate_if_present",
+    ):
+        module_function = _normalize_bash_function(
+            _extract_bash_function(module, function_name)
+        )
+        installer_function = _normalize_bash_function(
+            _extract_bash_function(installer, function_name)
+        )
+        assert installer_function == module_function
 
 
 def test_install_sidar_embedded_manifests_in_sync() -> None:
