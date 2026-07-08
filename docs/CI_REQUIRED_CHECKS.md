@@ -78,12 +78,19 @@ SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh --runtime-mode=local
 
 Keep the bypass off for normal development and CI; it exists for diagnosing installer or environment breakage before Docker services start.
 
-If this gate fails, synchronize the manifests before merging:
+If this gate fails, synchronize the manifests before merging. For core installer
+changes (`core/memory.py`, `core/multimodal.py`, `.sidar_manifest.txt`, or the
+`SIDAR_INSTALL_MANIFEST_EOF` block in `install_sidar.sh`), run both commands in
+this order so the generated core manifest and the raw-installer hash gate stay
+reviewable in the same PR:
 
 ```bash
 scripts/sync_install_manifest.sh
 scripts/sync_install_module_hashes.sh
 ```
+
+For changes limited to `scripts/install_modules/**`, the module hash sync is the
+required generator; running both is still safe and keeps the checklist uniform.
 
 The same drift checks are also wired into `.pre-commit-config.yaml` for both
 `pre-commit` and `pre-push` stages:
