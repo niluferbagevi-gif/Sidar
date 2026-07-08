@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -30,6 +31,15 @@ def installer_contract_sources() -> str:
     """Return the modular installer contract surface as one searchable string."""
     paths = [Path("install_sidar.sh"), *sorted(Path("scripts/install_modules").rglob("*.sh"))]
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 
 def _extract_run_tests_function(name: str) -> str:
     script = _script()
@@ -1473,6 +1483,42 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config
     assert "scripts/.*\\.(sh|bash)" in config
+
+
+def test_install_sidar_core_manifest_hashes_match_current_security_files() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    sidar_manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8")
+    protected_files = ("core/memory.py", "core/multimodal.py")
+
+    for rel_path in protected_files:
+        expected_line = f"{_sha256_file(Path(rel_path))}  {rel_path}"
+        assert expected_line in sidar_manifest
+        assert expected_line in install_script
+
+    for required_marker in (
+        "verify_core_install_manifest()",
+        "SIDAR_INSTALL_MANIFEST_EOF",
+        "Güvenlik ihlali: çekirdek kurulum dosyaları hash doğrulamasını geçemedi",
+        "kurulum modül manifestinden (scripts/install_modules) değil",
+        "scripts/sync_install_manifest.sh",
+        "ALLOW_UNVERIFIED_REMOTE_SCRIPTS yalnız kurulum modülleri için",
+        "çekirdek dosya manifesti için bypass uygulanmaz",
+    ):
+        assert required_marker in install_script
+
+
+def test_sync_install_manifest_updates_core_manifest_contract() -> None:
+    sync_script = Path("scripts/sync_install_manifest.sh").read_text(encoding="utf-8")
+    update_tool = Path("scripts/tools/update_core_install_manifest.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "uv run python scripts/tools/update_core_install_manifest.py" in sync_script
+    assert 'Path("core/memory.py")' in update_tool
+    assert 'Path("core/multimodal.py")' in update_tool
+    assert ".sidar_manifest.txt" in update_tool
+    assert "SIDAR_INSTALL_MANIFEST_EOF" in update_tool
+    assert "Düzeltmek için: scripts/sync_install_manifest.sh" in update_tool
 
 
 def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> None:
