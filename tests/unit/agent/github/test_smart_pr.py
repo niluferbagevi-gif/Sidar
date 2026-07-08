@@ -8,6 +8,8 @@ from agent.github.smart_pr import (
     GITHUB_SMART_PR_NO_BRANCH_MESSAGE,
     GITHUB_SMART_PR_NO_CHANGES_MESSAGE,
     GITHUB_SMART_PR_NO_TOKEN_MESSAGE,
+    _CodeManagerLike,
+    _GitHubManagerLike,
     create_smart_pr,
 )
 
@@ -162,3 +164,13 @@ def test_create_smart_pr_reports_false_create_result_reason() -> None:
     )
 
     assert result == f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} validation failed"
+
+
+def test_protocol_method_stubs_are_import_coverage_only() -> None:
+    assert _CodeManagerLike.run_shell(object(), "git status") is None  # type: ignore[arg-type]
+    assert _GitHubManagerLike.default_branch.fget(object()) is None  # type: ignore[union-attr,arg-type]
+    assert _GitHubManagerLike.is_available(object()) is None  # type: ignore[arg-type]
+    assert (
+        _GitHubManagerLike.create_pull_request(object(), "title", "body", "head", "base")
+        is None
+    )
