@@ -1140,6 +1140,13 @@ else
     verify_install_module_hashes_if_present
 fi
 if [[ "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" == "1" ]]; then
+    if [[ "${core_manifest_status:-0}" == "2" ]]; then
+        warn "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 ancak çekirdek manifest doğrulaması repo senkronizasyonu sonrasına ertelendi; başarılı erken çıkış yapılmayacak."
+        if { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE:-0}" == "1" ]]; } && command -v git >/dev/null 2>&1; then
+            bootstrap_clone_and_reexec
+        fi
+        fail "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 ancak çekirdek manifest doğrulaması repo senkronizasyonu sonrasına ertelendi. Çekirdek manifest doğrulanmadan başarılı çıkılamaz."
+    fi
     info "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1; hash doğrulaması sonrası erken çıkış."
     exit 0
 fi

@@ -159,8 +159,9 @@ def test_install_sidar_direct_module_download_smoke(tmp_path: Path) -> None:
     """Simulate the fresh-user scenario: no local repo, only a raw install_sidar.sh.
 
     The installer should detect the missing local scripts/install_modules tree,
-    download the pinned module set directly, and avoid a git bootstrap clone when
-    curl/wget is available.
+    download the pinned module set directly, then continue through bootstrap
+    synchronization before an abort-after-hash smoke exit if core files were
+    unavailable to the standalone raw script.
     """
     repo_root = Path(os.getcwd())
     origin = tmp_path / "origin"
@@ -204,7 +205,8 @@ def test_install_sidar_direct_module_download_smoke(tmp_path: Path) -> None:
     )
     assert "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek" in combined
     assert "Fallback modül indirildi: install_helpers.sh ->" in combined
-    assert "bootstrap clone" not in combined.lower()
+    assert "çekirdek manifest doğrulaması repo senkronizasyonu sonrasına ertelendi" in combined
+    assert "Bootstrap clone tamamlandı" in combined
     assert "Test modu file:// fallback modül doğrulaması atlandı" in combined, (
         "file:// test fixture için fallback modül indirme doğrulaması görülemedi.\n"
         f"--- combined ---\n{combined}"
@@ -289,12 +291,13 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
         "Fallback modül indirildi: install_helpers.sh ->",
         "Test modu file:// fallback modül doğrulaması atlandı",
         "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1",
+        "çekirdek manifest doğrulaması repo senkronizasyonu sonrasına ertelendi",
+        "Bootstrap clone tamamlandı",
     ):
         assert required_marker in combined, (
             f"wget raw installer smoke çıktısında beklenen marker yok: {required_marker!r}.\n"
             f"--- combined ---\n{combined}"
         )
-    assert "bootstrap clone" not in combined.lower()
     assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" not in combined
 
 
