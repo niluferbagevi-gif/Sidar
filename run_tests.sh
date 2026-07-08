@@ -633,8 +633,7 @@ format_backend_failure_reasons() {
 }
 
 print_failed_backend_nodeids() {
-  local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
-  if [ ! -d "${junit_dir}" ]; then
+  if [ ! -f "${TEST_SUMMARY_JSON}" ]; then
     return 0
   fi
 
@@ -642,48 +641,20 @@ print_failed_backend_nodeids() {
     return 0
   fi
 
-  python - "${junit_dir}" <<'PY_FAILED_NODEIDS'
+  python - "${TEST_SUMMARY_JSON}" <<'PY_FAILED_NODEIDS'
 from __future__ import annotations
 
+import json
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
-def _testcase_nodeid(testcase: ET.Element) -> str:
-    name = testcase.attrib.get("name", "").strip()
-    file_path = testcase.attrib.get("file", "").strip()
-    if file_path and name:
-        return f"{file_path}::{name}"
-
-    classname = testcase.attrib.get("classname", "").strip()
-    if classname and name:
-        candidate = classname.replace(".", "/")
-        if candidate.startswith("tests/") and not candidate.endswith(".py"):
-            candidate = f"{candidate}.py"
-        return f"{candidate}::{name}"
-    return name
-
-
-failed_tests: list[str] = []
-seen: set[str] = set()
-for report_path in sorted(Path(sys.argv[1]).glob("backend-*.xml")):
-    try:
-        root = ET.parse(report_path).getroot()
-    except ET.ParseError:
-        continue
-    for testcase in root.iter("testcase"):
-        if not any(child.tag.rsplit("}", 1)[-1] in {"failure", "error"} for child in testcase):
-            continue
-        nodeid = _testcase_nodeid(testcase)
-        if nodeid and nodeid not in seen:
-            seen.add(nodeid)
-            failed_tests.append(nodeid)
+summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+failed_tests = summary.get("backend_failed_tests", [])
 
 if failed_tests:
-    print("   Başarısız Backend Testleri:")
+    print("❌ Başarısız backend testleri:")
     for nodeid in failed_tests:
-        print(f"     - {nodeid}")
+        print(f"   - {nodeid}")
 PY_FAILED_NODEIDS
 }
 
