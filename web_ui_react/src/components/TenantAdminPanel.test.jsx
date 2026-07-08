@@ -111,6 +111,40 @@ describe("TenantAdminPanel", () => {
     expect(screen.getByRole("button", { name: "Yenile" })).not.toBeDisabled();
   });
 
+  it("shows an empty-policy hint when the selected user has no tenant policies", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation((url) => {
+      if (url.startsWith("/admin/audit-logs")) return Promise.resolve({ items: [] });
+      if (url.startsWith("/admin/policies/user-empty")) return Promise.resolve({ items: [] });
+      return Promise.resolve({ items: [] });
+    });
+
+    render(<TenantAdminPanel />);
+
+    await user.type(screen.getByLabelText("Kullanıcı ID"), "user-empty");
+
+    expect(await screen.findByText("Bu kullanıcı/tenant için politika yok.")).toBeInTheDocument();
+  });
+
+  it("keeps invalid audit timestamps readable instead of formatting them", async () => {
+    fetchJson.mockResolvedValueOnce({
+      items: [
+        {
+          id: 42,
+          user_id: "user-1",
+          action: "read",
+          resource: "rag:*",
+          allowed: true,
+          timestamp: "not-a-date",
+        },
+      ],
+    });
+
+    render(<TenantAdminPanel />);
+
+    expect(await screen.findByText("not-a-date")).toBeInTheDocument();
+  });
+
   it("validates user id before submitting a policy", async () => {
     render(<TenantAdminPanel />);
 
@@ -121,5 +155,44 @@ describe("TenantAdminPanel", () => {
       "RBAC politikası kaydetmek için kullanıcı ID zorunludur.",
     );
     expect(fetchJson).not.toHaveBeenCalledWith("/admin/policies", expect.anything());
+  });
+
+  it("shows submit errors without replacing existing policies", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation((url, options = {}) => {
+      if (url.startsWith("/admin/audit-logs")) return Promise.resolve(auditPayload);
+      if (url.startsWith("/admin/policies/user-1") && !options.method) {
+        return Promise.resolve(policiesPayload);
+      }
+      if (url === "/admin/policies" && options.method === "POST") {
+        return Promise.reject(new Error("policy write failed"));
+      }
+      return Promise.resolve({ items: [] });
+    });
+
+    render(<TenantAdminPanel />);
+
+    await user.clear(screen.getByLabelText("Tenant ID"));
+    await user.type(screen.getByLabelText("Tenant ID"), "acme");
+    await user.type(screen.getByLabelText("Kullanıcı ID"), "user-1");
+    expect(await screen.findByText("ALLOW · rag:*")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Politikayı Kaydet" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("policy write failed");
+    expect(screen.getByText("ALLOW · rag:*")).toBeInTheDocument();
+  });
+
+  it("rebuilds the audit query when the tenant changes", async () => {
+    const user = userEvent.setup();
+    render(<TenantAdminPanel />);
+
+    await screen.findByText("Audit Trail");
+    await user.clear(screen.getByLabelText("Tenant ID"));
+    await user.type(screen.getByLabelText("Tenant ID"), "acme");
+
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith("/admin/audit-logs?tenant_id=acme&limit=50");
+    });
   });
 });
