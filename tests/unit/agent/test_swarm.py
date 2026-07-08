@@ -385,7 +385,7 @@ def test_task_timeout_ignores_invalid_json_and_bad_react_timeout():
     assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 60.0
 
 
-@pytest.mark.parametrize("raw_model_map", ["[]", [], {}])
+@pytest.mark.parametrize("raw_model_map", ["[]", [], {}, [("m", 4)]])
 def test_task_timeout_ignores_non_dict_model_maps(raw_model_map):
     cfg = SimpleNamespace(
         AI_PROVIDER="",
