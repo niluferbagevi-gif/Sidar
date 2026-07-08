@@ -733,6 +733,17 @@ verify_reexec_installer_or_fail() {
     fi
 }
 
+verify_home_reexec_candidate_if_present() {
+    local home_script="$HOME/Sidar/install_sidar.sh"
+
+    [[ -d "$HOME/Sidar/.git" && -f "$home_script" ]] || return 0
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" != "1" ]]; then
+        return 0
+    fi
+
+    verify_reexec_installer_or_fail "$home_script" "Mevcut $HOME/Sidar re-exec"
+}
+
 bootstrap_clone_and_reexec() {
     local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
     local clone_parent="${SIDAR_BOOTSTRAP_CLONE_PARENT_DIR:-$PWD}"
@@ -803,6 +814,7 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
         fail "SIDAR_BUNDLE_MODE=1 algılandı ancak yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS}). Bundle bütünlüğünü doğrulayın ve betiği yeniden üretin."
     fi
     info "Yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS})"
+    verify_home_reexec_candidate_if_present
 
     REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
     if command -v curl &>/dev/null || command -v wget &>/dev/null; then
