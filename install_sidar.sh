@@ -444,6 +444,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/wsl_integration_autofix.sh"
     "utils/wsl_gpu_preflight.sh"
     "utils/gpu_utils.sh"
+    "utils/installer_hash_guard.sh"
     "utils/remote_script.sh"
     "utils/python_env.sh"
     "utils/database_url.sh"
@@ -504,6 +505,7 @@ a3a95af0105d4356094ff74da6cdd34aea64639d70a504c143773b0e79b59e38  scripts/instal
 61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
 9ee4ccc2cc93f3ce212fb4e9521e1aa0f8811a9ba2c00f0fb8da874676cb3c34  scripts/install_modules/utils/gpu_utils.sh
 9b0468f312ac4cfb4f5081eb1a58c128de6f9376ca0483ac1abfd14a889396fb  scripts/install_modules/utils/install_remediation.sh
+3cc8bbf934ffd4071b7e8c328d122188591c8f57a19811b555b2840fefd6e741  scripts/install_modules/utils/installer_hash_guard.sh
 eebe784b4f22fc4d19a97c60971aaf65aa0bb6b2228acad38e59ef8f55f9415a  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
 b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/install_modules/utils/python_env.sh
@@ -709,40 +711,64 @@ download_remote_install_modules() {
     done
 }
 
-verify_reexec_installer_or_fail() {
-    local next_script="$1"
-    local reexec_label="$2"
-    local current_sha="bilinmiyor"
-    local next_sha="bilinmiyor"
+if [[ -f "${INSTALL_MODULE_DIR}/utils/installer_hash_guard.sh" ]]; then
+    # shellcheck source=scripts/install_modules/utils/installer_hash_guard.sh
+    # shellcheck disable=SC1091
+    source "${INSTALL_MODULE_DIR}/utils/installer_hash_guard.sh"
+fi
 
-    [[ -f "$next_script" ]] || fail "${reexec_label} hedef install_sidar.sh bulunamadı: $next_script"
+# Raw/standalone installer runs may reach the re-exec decision before utility
+# modules exist locally. Keep a minimal fallback shim here; once modules are
+# present, utils/installer_hash_guard.sh becomes the shared implementation used
+# by the installer and sourced install modules.
+if ! declare -F check_installer_hash >/dev/null 2>&1; then
+    check_installer_hash() {
+        local current_script="$1"
+        local next_script="$2"
+        local reexec_label="$3"
+        local current_sha="bilinmiyor"
+        local next_sha="bilinmiyor"
 
-    current_sha="$(compute_sha256 "$ORIGINAL_SCRIPT_PATH" 2>/dev/null || echo bilinmiyor)"
-    next_sha="$(compute_sha256 "$next_script" 2>/dev/null || echo bilinmiyor)"
+        [[ -f "$next_script" ]] || fail "${reexec_label} hedef install_sidar.sh bulunamadı: $next_script"
 
-    if [[ "$current_sha" == "bilinmiyor" || "$next_sha" == "bilinmiyor" ]]; then
-        fail "${reexec_label} install_sidar.sh SHA256 doğrulaması yapılamadı (mevcut=${current_sha}, hedef=${next_sha}). Güvenli re-exec için sha256sum/shasum erişimini düzeltin."
-    fi
+        current_sha="$(compute_sha256 "$current_script" 2>/dev/null || echo bilinmiyor)"
+        next_sha="$(compute_sha256 "$next_script" 2>/dev/null || echo bilinmiyor)"
 
-    if [[ "$current_sha" != "$next_sha" ]]; then
-        if [[ "${SIDAR_INSTALL_ALLOW_STALE_REEXEC:-0}" == "1" ]]; then
-            warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
+        if [[ "$current_sha" == "bilinmiyor" || "$next_sha" == "bilinmiyor" ]]; then
+            fail "${reexec_label} install_sidar.sh SHA256 doğrulaması yapılamadı (mevcut=${current_sha}, hedef=${next_sha}). Güvenli re-exec için sha256sum/shasum erişimini düzeltin."
+        fi
+
+        if [[ "$current_sha" != "$next_sha" ]]; then
+            if [[ "${SIDAR_INSTALL_ALLOW_STALE_REEXEC:-0}" == "1" ]]; then
+                warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
+                return 0
+            fi
+            fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. Hedef repoyu güncelleyin ya da bilinçli olarak SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
+        fi
+    }
+fi
+
+if ! declare -F verify_reexec_installer_or_fail >/dev/null 2>&1; then
+    verify_reexec_installer_or_fail() {
+        local next_script="$1"
+        local reexec_label="$2"
+
+        check_installer_hash "$ORIGINAL_SCRIPT_PATH" "$next_script" "$reexec_label"
+    }
+fi
+
+if ! declare -F verify_home_reexec_candidate_if_present >/dev/null 2>&1; then
+    verify_home_reexec_candidate_if_present() {
+        local home_script="$HOME/Sidar/install_sidar.sh"
+
+        [[ -d "$HOME/Sidar/.git" && -f "$home_script" ]] || return 0
+        if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" != "1" ]]; then
             return 0
         fi
-        fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. Hedef repoyu güncelleyin ya da bilinçli olarak SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
-    fi
-}
 
-verify_home_reexec_candidate_if_present() {
-    local home_script="$HOME/Sidar/install_sidar.sh"
-
-    [[ -d "$HOME/Sidar/.git" && -f "$home_script" ]] || return 0
-    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" != "1" ]]; then
-        return 0
-    fi
-
-    verify_reexec_installer_or_fail "$home_script" "Mevcut $HOME/Sidar re-exec"
-}
+        verify_reexec_installer_or_fail "$home_script" "Mevcut $HOME/Sidar re-exec"
+    }
+fi
 
 bootstrap_clone_and_reexec() {
     local clone_url="${SIDAR_BOOTSTRAP_CLONE_URL:-${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}}"
@@ -1107,6 +1133,7 @@ sidar_source_install_utils \
     "wsl_integration_autofix.sh" \
     "wsl_gpu_preflight.sh" \
     "gpu_utils.sh" \
+    "installer_hash_guard.sh" \
     "remote_script.sh" \
     "python_env.sh" \
     "database_url.sh" \
