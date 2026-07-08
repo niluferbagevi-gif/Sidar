@@ -339,6 +339,7 @@ tracked_policy_exception = "CVE-2025-3000"
 review_by = "2026-08-15"
 expires = "2026-09-15"
 calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
+runbook_file = "docs/runbooks/torch-cve-upgrade.md"
 upgrade_command = "uv lock --upgrade-package torch --upgrade-package torchvision"
 validation_commands = [
   "uv sync --all-extras",

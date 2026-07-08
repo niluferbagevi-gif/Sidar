@@ -135,6 +135,8 @@ def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> N
     reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
     calendar = Path(reminder["calendar_file"])
     calendar_text = calendar.read_text(encoding="utf-8")
+    runbook = Path(reminder["runbook_file"])
+    runbook_text = runbook.read_text(encoding="utf-8")
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert reminder["current_lock"] == "torch 2.11.0"
@@ -146,9 +148,20 @@ def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> N
     )
     assert "uv sync --all-extras" in reminder["validation_commands"]
     assert calendar.exists()
+    assert runbook.exists()
     assert "DTSTART;VALUE=DATE:20260815" in calendar_text
     assert "Review Sidar torch 2.11.0 pin" in calendar_text
     assert str(calendar) in docs
+    assert str(runbook) in docs
+    for required in (
+        "Review by:** 2026-08-15",
+        "Exception expires:** 2026-09-15",
+        "uv lock --upgrade-package torch --upgrade-package torchvision",
+        "uv run --with pip-audit pip-audit --skip-editable --timeout 30",
+        "security/pip-audit-ignores.tsv",
+        "Do not move `torch` / `torchvision` into `production-minimal`",
+    ):
+        assert required in runbook_text
 
 
 def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> None:

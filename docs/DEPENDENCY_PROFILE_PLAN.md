@@ -122,6 +122,7 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   çözümü üretirse istisnayı uzatmadan önce `<2.12` sınırı ve upstream fix durumu tekrar doğrulanmalıdır.
   Calendar reminder: `docs/reminders/torch-cve-review-2026-08-15.ics`; makine-okunur takip metadata
   `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğundadır.
+  Operasyonel upgrade/runbook adımları `docs/runbooks/torch-cve-upgrade.md` altında tutulur.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
