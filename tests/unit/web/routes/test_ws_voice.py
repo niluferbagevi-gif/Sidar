@@ -968,3 +968,88 @@ async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) 
         for payload in ws.sent
     )
     assert stream_calls["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(monkeypatch) -> None:
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    ws = _Ws(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"text": '{"action":"cancel"}'},
+            {"type": "websocket.disconnect"},
+        ]
+    )
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_voice_user))
+
+    assert not any("voice_interruption" in payload for payload in ws.sent)
+    assert {"cancelled": True, "done": True} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_run_turn_returns_when_disconnected_before_start(monkeypatch) -> None:
+    calls = {"transcribe": 0}
+
+    class _CountingPipeline:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def transcribe_bytes(self, *_args, **_kwargs):
+            calls["transcribe"] += 1
+            return {"success": True, "text": "hello", "language": "tr", "provider": "mock"}
+
+    _install_voice_imports(monkeypatch, _CountingPipeline)
+    ws = _Ws(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"type": "websocket.disconnect"},
+        ]
+    )
+
+    async def _send_and_disconnect(payload: dict[str, object]) -> None:
+        ws.sent.append(payload)
+        if payload == {"enabled": True}:
+            ws.client_state = WebSocketState.DISCONNECTED
+
+    ws.send_json = _send_and_disconnect  # type: ignore[method-assign]
+
+    await ws_voice.websocket_voice(ws, _deps(resolve_user_from_token=_voice_user))
+
+    assert calls["transcribe"] == 0
+
+
+@pytest.mark.asyncio
+async def test_websocket_voice_stops_when_assistant_turn_start_send_fails(monkeypatch) -> None:
+    calls = {"stream": 0}
+
+    async def _stream(*_args, **_kwargs) -> None:
+        calls["stream"] += 1
+
+    async def _send_json_if_connected(_websocket, payload):
+        if payload.get("assistant_turn") == "started":
+            return False
+        await _websocket.send_json(payload)
+        return True
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    monkeypatch.setattr(ws_voice, "send_json_if_connected", _send_json_if_connected)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="transcript",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    assert calls["stream"] == 0
+    assert not any(payload.get("assistant_turn") == "started" for payload in ws.sent)

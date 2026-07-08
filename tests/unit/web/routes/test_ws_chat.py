@@ -928,3 +928,132 @@ async def test_websocket_chat_unexpected_exception_sends_error_and_leaves_room()
     assert {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True} in ws.sent
     assert deps.left is True
     assert any(level == "warning" and "socket boom" in msg for level, msg in deps.logger.messages)
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_stops_when_tool_send_fails(monkeypatch) -> None:
+    class _ToolThenChunkAgent:
+        async def respond(self, _prompt: str):
+            yield "\x00TOOL:search\x00"
+            yield "late"
+
+    async def _send_json_if_connected(_websocket, payload):
+        ws.sent.append(payload)
+        return False
+
+    ws = _Ws()
+    monkeypatch.setattr(ws_chat, "send_json_if_connected", _send_json_if_connected)
+
+    await ws_chat.ws_stream_agent_text_response(ws, _ToolThenChunkAgent(), "prompt")
+
+    assert ws.sent == [{"tool_call": "search"}]
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_agent_text_response_stops_when_thought_send_fails(monkeypatch) -> None:
+    class _ThoughtThenChunkAgent:
+        async def respond(self, _prompt: str):
+            yield "\x00THOUGHT:thinking\x00"
+            yield "late"
+
+    async def _send_json_if_connected(_websocket, payload):
+        ws.sent.append(payload)
+        return False
+
+    ws = _Ws()
+    monkeypatch.setattr(ws_chat, "send_json_if_connected", _send_json_if_connected)
+
+    await ws_chat.ws_stream_agent_text_response(ws, _ThoughtThenChunkAgent(), "prompt")
+
+    assert ws.sent == [{"thought": "thinking"}]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_generate_response_stops_when_tool_send_fails(monkeypatch) -> None:
+    class _ToolAgent(_RouteAgent):
+        async def respond(self, _message: str):
+            yield "\x00TOOL:search\x00"
+            yield "late"
+
+    async def _send_json_if_connected(_websocket, payload):
+        ws.sent.append(payload)
+        return False
+
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "hello"}),
+        ]
+    )
+    deps = _Deps(agent=_ToolAgent())
+    monkeypatch.setattr(ws_chat, "send_json_if_connected", _send_json_if_connected)
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"tool_call": "search"} in ws.sent
+    assert {"chunk": "late"} not in ws.sent
+    assert deps.event_bus.unsubscribed == ["sub-chat"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_generate_response_stops_when_thought_send_fails(monkeypatch) -> None:
+    class _ThoughtAgent(_RouteAgent):
+        async def respond(self, _message: str):
+            yield "\x00THOUGHT:thinking\x00"
+            yield "late"
+
+    async def _send_json_if_connected(_websocket, payload):
+        ws.sent.append(payload)
+        return False
+
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "hello"}),
+        ]
+    )
+    deps = _Deps(agent=_ThoughtAgent())
+    monkeypatch.setattr(ws_chat, "send_json_if_connected", _send_json_if_connected)
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"thought": "thinking"} in ws.sent
+    assert {"chunk": "late"} not in ws.sent
+    assert deps.event_bus.unsubscribed == ["sub-chat"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_cancel_clears_existing_active_task() -> None:
+    room = _Room("room-1")
+    started = asyncio.Event()
+
+    async def _slow() -> None:
+        started.set()
+        await asyncio.sleep(999)
+
+    room.active_task = asyncio.create_task(_slow())
+
+    class _CancelRoomWs(_Ws):
+        async def receive_text(self) -> str:
+            try:
+                data = next(self._messages)
+            except StopIteration as exc:
+                raise ws_chat.WebSocketDisconnect() from exc
+            if data == "__WAIT_CANCEL__":
+                await asyncio.wait_for(started.wait(), timeout=1)
+                return json.dumps({"action": "cancel"})
+            return data
+
+    ws = _CancelRoomWs(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "room-1"}),
+            "__WAIT_CANCEL__",
+        ]
+    )
+    deps = _Deps()
+    deps.collaboration_rooms["room-1"] = room
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert room.active_task is None

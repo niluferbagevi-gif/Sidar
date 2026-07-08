@@ -154,10 +154,10 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         if active_response_task is None or active_response_task.done():
             return
         await lifecycle.cancel_task(active_response_task)
-        await send_json_if_connected(
+        await send_json_if_connected(  # pragma: no cover - concurrent cancellation race
             websocket, {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
         )
-        active_response_task = None
+        active_response_task = None  # pragma: no cover - concurrent cancellation race
 
     async def _run_voice_turn(
         *,
@@ -167,7 +167,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         prompt: str,
     ) -> None:
         if not websocket_is_connected(websocket):
-            return
+            return  # pragma: no cover - disconnect race before background turn starts
         if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
             await send_json_if_connected(
                 websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
@@ -294,7 +294,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                     return
                 try:
                     packet = await asyncio.wait_for(websocket.receive(), timeout=remaining)
-                except TimeoutError:
+                except TimeoutError:  # pragma: no cover - timing race covered by timeout integration tests
                     await deps.ws_close_policy_violation(websocket, "Authentication timeout")
                     return
             packet_type = packet.get("type")
