@@ -176,6 +176,24 @@ def test_memory_encrypts_db_content_and_decrypts_history(monkeypatch, tmp_path: 
     asyncio.run(scenario())
 
 
+def test_memory_rejects_invalid_fernet_key_and_skips_double_encryption(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+
+    with pytest.raises(ValueError, match="Fernet"):
+        ConversationMemory(base_dir=tmp_path, encryption_key="not-a-valid-fernet-key")
+
+    key = Fernet.generate_key().decode("utf-8")
+    encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+    plaintext = ConversationMemory(base_dir=tmp_path)
+    already_encrypted = "fernet:v1:existing-token"
+
+    assert encrypted.encryption_enabled is True
+    assert plaintext.encryption_enabled is False
+    assert encrypted._encrypt_content(already_encrypted) == already_encrypted
+
+
 def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     key = Fernet.generate_key().decode("utf-8")
@@ -285,6 +303,31 @@ def test_history_reads_from_database_when_cache_is_compacted(monkeypatch, tmp_pa
             "two",
             "three",
         ]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=-1)] == [
+            "two",
+            "three",
+        ]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=1)] == [
+            "three",
+        ]
+        assert await mem.get_session_history("   ") == []
+
+    asyncio.run(scenario())
+
+
+def test_get_history_without_active_session_respects_n_last(mem) -> None:
+    async def scenario() -> None:
+        await mem.initialize()
+        mem.active_session_id = None
+        mem._turns = [
+            {"role": "user", "content": "one"},
+            {"role": "assistant", "content": "two"},
+            {"role": "user", "content": "three"},
+        ]
+
+        assert [turn["content"] for turn in await mem.get_history()] == ["one", "two", "three"]
+        assert [turn["content"] for turn in await mem.get_history(n_last=2)] == ["two", "three"]
+        assert [turn["content"] for turn in await mem.get_history(n_last=-1)] == ["two", "three"]
 
     asyncio.run(scenario())
 
