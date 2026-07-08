@@ -278,13 +278,36 @@ class AgentCatalog:
             side_effect_level=resolved_side_effect_level,
         )
         cls._registry[role_name] = spec
+        contract = _builtin_contract_by_role(role_name)
+        if (
+            is_builtin
+            and contract is not None
+            and resolved_agent_class.__module__ == contract.module_name
+        ):
+            role_exports = sys.modules.get("agent.roles")
+            if role_exports is not None:
+                setattr(role_exports, contract.class_name, resolved_agent_class)
         logger.debug("AgentCatalog: '%s' kaydedildi (yetenekler: %s)", role_name, capabilities)
 
     @classmethod
     def get(cls, role_name: str) -> AgentSpec | None:
+        """Return a registered agent spec without re-normalizing canonical classes.
+
+        Built-in role class normalization belongs to registration/sync paths so
+        tests and bootstrap callers that explicitly provide a canonical module
+        cache keep their deterministic class identity. ``get`` only repairs
+        stale export aliases for built-in specs whose class still points at a
+        non-canonical module.
+        """
         spec = cls._registry.get(role_name)
         contract = _builtin_contract_by_role(role_name)
-        if spec is not None and spec.is_builtin and contract is not None:
+        if (
+            spec is not None
+            and spec.is_builtin
+            and contract is not None
+            and spec.agent_class is not None
+            and spec.agent_class.__module__ != contract.module_name
+        ):
             role_exports = sys.modules.get("agent.roles")
             exported_cls = (
                 getattr(role_exports, contract.class_name, None) if role_exports else None
