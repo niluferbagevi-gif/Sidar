@@ -1589,12 +1589,17 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert '"v*"' in ci_workflow
     assert "bash scripts/tools/bundle_install_sidar.sh" in ci_workflow
     assert "bash -n dist/install_sidar.sh" in ci_workflow
+    assert "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh" in ci_workflow
     assert "name: standalone-install-sidar" in ci_workflow
     assert "path: |" in ci_workflow
     assert "dist/install_sidar.sh" in ci_workflow
     assert "dist/MODULE_HASHES.txt" in ci_workflow
     assert "dist/INSTALLER_USAGE.md" in ci_workflow
     assert "softprops/action-gh-release@v2" in ci_workflow
+    assert "github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')" in ci_workflow
+    assert "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}" in ci_workflow
+    assert "`main` pushes update this prerelease snapshot" in ci_workflow
+    assert "overwrite_files: true" in ci_workflow
     assert "files: |" in ci_workflow
 
     dynamic_url = "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh"

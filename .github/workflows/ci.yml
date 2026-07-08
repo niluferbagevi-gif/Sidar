@@ -241,6 +241,7 @@ jobs:
         run: |
           bash scripts/tools/bundle_install_sidar.sh
           bash -n dist/install_sidar.sh
+          SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh
 
       - name: Upload standalone installer bundle artifact
         uses: actions/upload-artifact@v4
@@ -669,7 +670,7 @@ jobs:
     name: Publish Standalone Installer Bundle
     runs-on: ubuntu-latest
     needs: [test, pg-stress]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
@@ -708,6 +709,7 @@ jobs:
         run: |
           bash scripts/tools/bundle_install_sidar.sh
           bash -n dist/install_sidar.sh
+          SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh
 
       - name: Smoke verify bundled installer integrity
         run: |
@@ -716,6 +718,17 @@ jobs:
       - name: Publish standalone installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('Sidar {0}', github.ref_name) || 'Sidar main installer snapshot' }}
+          body: |
+            Standalone Sidar installer bundle.
+
+            - `v*` tags publish immutable release assets.
+            - `main` pushes update this prerelease snapshot so users do not need the raw GitHub installer URL for clean installs.
+          prerelease: ${{ github.ref == 'refs/heads/main' }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          overwrite_files: true
           files: |
             dist/install_sidar.sh
             dist/MODULE_HASHES.txt
