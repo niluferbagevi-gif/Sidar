@@ -1408,6 +1408,24 @@ def test_ensure_rabbit_listener_handles_missing_optional_dependency(
     assert "uv pip install aio-pika" in caplog.text
 
 
+def test_missing_optional_backend_dependency_warning_is_logged_once(
+    caplog: pytest.LogCaptureFixture, bus: AgentEventBus
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        bus._warn_missing_optional_backend_dependency(
+            backend="rabbitmq",
+            package="aio_pika",
+            install_hint="uv pip install aio-pika",
+        )
+        bus._warn_missing_optional_backend_dependency(
+            backend="rabbitmq",
+            package="aio_pika",
+            install_hint="uv pip install aio-pika",
+        )
+
+    assert caplog.text.count("AgentEventBus RabbitMQ backend bağımlılığı bulunamadı") == 1
+    assert bus._missing_optional_dependency_warnings == {"rabbitmq:aio_pika"}
+
 def test_ensure_kafka_listener_success_and_failure(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
@@ -2178,6 +2196,15 @@ async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_unde
     bus._dlq_persist_lock = _DrainingLock()
     await bus._flush_dead_letter_persist_queue()
 
+
+@pytest.mark.asyncio
+async def test_cancel_background_task_returns_for_current_task(bus: AgentEventBus) -> None:
+    current = asyncio.current_task()
+    assert current is not None
+
+    await bus._cancel_background_task(current)
+
+    assert current.cancelled() is False
 
 def test_cancel_background_task_handles_foreign_open_and_closed_loops() -> None:
     bus = AgentEventBus()
