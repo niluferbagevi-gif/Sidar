@@ -435,6 +435,21 @@ def test_provider_specific_retry_mapping_and_context_limit() -> None:
     assert (retryable, status) == (False, 400)
 
 
+def test_retry_mapping_handles_response_status_retryable_and_missing_status() -> None:
+    response_error = RuntimeError("upstream busy")
+    response_error.response = SimpleNamespace(status_code="503")  # type: ignore[attr-defined]
+    retryable, status = llm_client._is_retryable_exception(response_error, provider="openai")
+    assert (retryable, status) == (True, 503)
+
+    retryable_error = llm_client.LLMAPIError("ollama", "busy", retryable=True)
+    retryable, status = llm_client._is_retryable_exception(retryable_error)
+    assert (retryable, status) == (True, None)
+
+    plain_error = llm_client.LLMAPIError("ollama", "plain")
+    retryable, status = llm_client._is_retryable_exception(plain_error)
+    assert (retryable, status) == (False, None)
+
+
 def test_context_limit_error_without_status_is_non_retryable() -> None:
     context_error = llm_client.LLMAPIError(
         "openai", "input is too long for this model", retryable=True
@@ -450,6 +465,20 @@ def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
     exc.status_code = "not-a-status"
 
     assert llm_client._extract_status_code(exc) is None
+
+
+def test_token_estimate_and_prompt_limit_fallback_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        token_counter,
+        "estimate_tokens",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("tokenizer down")),
+    )
+    assert llm_client._estimate_tokens_bounded("hello", model="m") == 0
+
+    cfg = _make_config(LLM_MAX_PROMPT_TOKENS="invalid", MAX_INPUT_TOKENS=42)
+    assert llm_client._configured_prompt_token_limit(cfg) == 42
 
 
 def test_usage_token_counts_are_bounded_on_overflow() -> None:
@@ -949,6 +978,32 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
+async def test_track_stream_completion_records_success_with_empty_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = []
+
+    def recorder(**kwargs):
+        events.append(kwargs)
+
+    monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+
+    async def stream():
+        yield ""
+        yield "ok"
+
+    chunks = [
+        token
+        async for token in llm_client._track_stream_completion(
+            stream(), provider="openai", model="m", started_at=0.0
+        )
+    ]
+
+    assert chunks == ["", "ok"]
+    assert events[-1]["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_track_stream_completion_reraises_stream_error_when_metric_recording_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1009,6 +1064,22 @@ async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_c
         chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])
     ]
     assert chunks == ["strategy", "-ok"]
+
+
+@pytest.mark.asyncio
+async def test_base_llm_client_generate_yields_string_chat_response(mock_config) -> None:
+    class StringClient(llm_client.BaseLLMClient):
+        async def chat(self, *_args, **_kwargs):
+            return "single-response"
+
+        def json_mode_config(self):
+            return {}
+
+    client = StringClient(mock_config())
+
+    assert [chunk async for chunk in client.generate([{"role": "user", "content": "hello"}])] == [
+        "single-response"
+    ]
 
 
 def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> None:
