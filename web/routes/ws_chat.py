@@ -247,7 +247,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -356,7 +356,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -437,7 +437,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 continue
 
             if action == "cancel" and active_task and not active_task.done():
-                active_task.cancel()
+                await _cancel_task_and_wait(active_task)
+                active_task = None
                 await websocket.send_json(
                     {
                         "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
@@ -453,7 +454,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                     and existing_room.active_task
                     and not existing_room.active_task.done()
                 ):
-                    existing_room.active_task.cancel()
+                    await _cancel_task_and_wait(existing_room.active_task)
+                    existing_room.active_task = None
                 continue
 
             if not user_message:

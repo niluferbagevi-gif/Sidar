@@ -410,8 +410,16 @@ class _RouteAgent:
 
 
 class _SlowRouteAgent(_RouteAgent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled = False
+
     async def respond(self, _message: str):
-        await asyncio.sleep(999)
+        try:
+            await asyncio.sleep(999)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
         yield "late"  # pragma: no cover - cancelled before yielding
 
 
@@ -612,10 +620,12 @@ async def test_websocket_chat_cancel_active_task_sends_cancel_confirmation() -> 
             "__WAIT_THEN_DISCONNECT__",
         ]
     )
-    deps = _Deps(agent=_SlowRouteAgent())
+    agent = _SlowRouteAgent()
+    deps = _Deps(agent=agent)
 
     await ws_chat.websocket_chat(ws, deps)
 
+    assert agent.cancelled is True
     assert {
         "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
         "done": True,
