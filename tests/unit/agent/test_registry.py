@@ -354,6 +354,40 @@ def test_builtin_contract_sync_skips_non_class_symbols() -> None:
         AgentCatalog._registry[contract.role_name] = original_spec
 
 
+def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = dict(AgentCatalog._registry)
+    original_role_exports = sys.modules.get("agent.roles")
+    module_cache = {
+        contract.module_name: SimpleNamespace(
+            **{
+                contract.class_name: type(
+                    f"Temp{contract.class_name}", (), {"__module__": contract.module_name}
+                )
+            }
+        )
+        for contract in BUILTIN_ROLE_CONTRACTS
+    }
+
+    try:
+        monkeypatch.delitem(sys.modules, "agent.roles", raising=False)
+
+        _sync_builtin_contract_registry(module_cache)
+
+        for contract in BUILTIN_ROLE_CONTRACTS:
+            synced_spec = AgentCatalog.get(contract.role_name)
+            assert synced_spec is not None
+            assert synced_spec.agent_class is getattr(
+                module_cache[contract.module_name], contract.class_name
+            )
+            assert synced_spec.is_builtin is True
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+        if original_role_exports is not None:
+            sys.modules["agent.roles"] = original_role_exports
+
 def test_agent_catalog_health_reports_non_builtin_builtin_role() -> None:
     snapshot = dict(AgentCatalog._registry)
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
