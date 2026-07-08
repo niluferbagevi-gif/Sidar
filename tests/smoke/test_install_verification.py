@@ -1138,6 +1138,23 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "sidar_install_auto_heal_enabled || return 1" in remediation_utils
 
 
+def test_docker_compose_start_checks_daemon_access_before_up() -> None:
+    phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    start_idx = phase.index("start_docker_services_or_fail()")
+    start_body = phase[start_idx : phase.index("wait_for_compose_services_health()", start_idx)]
+
+    assert "ensure_docker_compose_access_or_fail()" in phase
+    assert "docker info" in phase
+    assert "sudo -n docker info" in phase
+    assert "ensure_docker_compose_access_or_fail \"${compose_cmd[@]}\"" in start_body
+    assert "permission denied" in phase
+    assert "docker grubuna ekleyin" in phase
+    assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(
+        "maybe_reset_postgres_volume_after_password_hardening"
+    )
+    assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(" up -d ")
+
+
 def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     (script_dir / "tests" / "smoke").mkdir(parents=True)

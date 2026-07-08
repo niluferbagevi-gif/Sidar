@@ -65,6 +65,33 @@ EOF
     fi
 }
 
+ensure_docker_compose_access_or_fail() {
+    local -a compose_cmd=("$@")
+    local docker_info_err=""
+    local docker_info_err_file=""
+
+    [[ ${#compose_cmd[@]} -gt 0 ]] || fail "Docker Compose komutu çözülemedi; servisler başlatılamıyor."
+    command -v docker >/dev/null 2>&1 || fail "Docker CLI bulunamadı; servisleri başlatmak için Docker gerekli."
+
+    docker_info_err_file="$(mktemp)"
+    if docker info >/dev/null 2>"$docker_info_err_file"; then
+        rm -f "$docker_info_err_file"
+        return 0
+    fi
+
+    docker_info_err="$(<"$docker_info_err_file")"
+    rm -f "$docker_info_err_file"
+
+    if [[ "$docker_info_err" == *"permission denied"* || "$docker_info_err" == *"Got permission denied"* ]]; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
+            fail "Docker daemon erişimi bu kullanıcı için yetkisiz; sudo ile çalışıyor görünüyor. Kurulumu sudo docker compose ile sürdürmek yerine kullanıcıyı docker grubuna ekleyin (sudo usermod -aG docker ${USER:-$(id -un 2>/dev/null || echo '<user>')}) ve oturumu yenileyin; WSL2'de Docker Desktop WSL Integration açık olmalıdır."
+        fi
+        fail "Docker daemon socket erişim hatası (permission denied). WSL2 kullanıyorsanız Docker Desktop WSL Integration ayarını açın; Linux hostta kullanıcıyı docker grubuna ekleyip oturumu yenileyin."
+    fi
+
+    fail "Docker daemon erişilemedi; '${compose_cmd[*]} up -d' öncesi Docker Desktop/daemon hazır olmalıdır. docker info çıktısı: ${docker_info_err}"
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -78,6 +105,8 @@ start_docker_services_or_fail() {
     local -a services=("$@")
     local stderr_file
     stderr_file=$(mktemp)
+
+    ensure_docker_compose_access_or_fail "${compose_cmd[@]}"
 
     if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
         fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
