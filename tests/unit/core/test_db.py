@@ -2749,6 +2749,20 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     )
 
 
+def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) -> None:
+    import core.db.diagnostics as db_diagnostics
+
+    monkeypatch.setattr(
+        db_diagnostics,
+        "_doctor_database_env_failure_reason",
+        lambda: "database_url is not set",
+    )
+
+    message = db_diagnostics.postgres_user_action_message("unexpected")
+
+    assert "DATABASE_URL yok/kayboldu" in message
+    assert "dotenv reload zincirini" in message
+
 def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(monkeypatch) -> None:
     import core.doctor as doctor
 
