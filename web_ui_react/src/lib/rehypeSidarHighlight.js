@@ -130,3 +130,9 @@ export default function rehypeSidarHighlight() {
     visitCodeBlocks(tree, undefined);
   };
 }
+
+export const __rehypeSidarHighlightTestHooks = {
+  decodeHtmlText,
+  highlightHtmlToHastChildren,
+  visitCodeBlocks,
+};
