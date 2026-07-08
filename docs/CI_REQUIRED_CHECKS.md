@@ -92,6 +92,12 @@ scripts/sync_install_module_hashes.sh
 For changes limited to `scripts/install_modules/**`, the module hash sync is the
 required generator; running both is still safe and keeps the checklist uniform.
 
+The core manifest intentionally covers only the current raw-installer security
+boundary, `core/memory.py` and `core/multimodal.py`. If another file becomes
+bootstrap-critical, add it to `TARGET_FILES` in
+`scripts/tools/update_core_install_manifest.py` in the same PR as the manifest
+sync output.
+
 The same drift checks are also wired into `.pre-commit-config.yaml` for both
 `pre-commit` and `pre-push` stages:
 

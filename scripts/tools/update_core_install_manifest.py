@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# Deliberate installer-security boundary: keep this list narrow and explicit.
+# If another core file becomes mandatory for safe raw-installer bootstrap, add it
+# here and run scripts/sync_install_manifest.sh followed by
+# scripts/sync_install_module_hashes.sh so .sidar_manifest.txt and the embedded
+# install_sidar.sh heredoc stay in lockstep.
 TARGET_FILES = [Path("core/memory.py"), Path("core/multimodal.py")]
 MANIFEST_FILE = ROOT / ".sidar_manifest.txt"
 INSTALL_SCRIPT = ROOT / "install_sidar.sh"
