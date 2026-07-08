@@ -91,3 +91,9 @@ def test_scoped_hf_runtime_env_restores_unset_and_existing_values(monkeypatch) -
     assert "HF_HUB_DISABLE_PROGRESS_BARS" not in os.environ
     assert "TRANSFORMERS_NO_ADVISORY_WARNINGS" not in os.environ
     assert os.environ["TRANSFORMERS_VERBOSITY"] == "warning"
+
+
+def test_embedding_load_timeout_ignores_malformed_values() -> None:
+    assert embeddings._embedding_load_timeout_seconds(
+        SimpleNamespace(RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS="not-a-float")
+    ) == 0.0

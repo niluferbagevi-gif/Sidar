@@ -4681,6 +4681,33 @@ async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
 
 
 @pytest.mark.asyncio
+async def test_ollama_gpu_limiter_reuses_limiter_created_while_waiting_for_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+
+    class _PopulatingLock:
+        async def __aenter__(self):
+            llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)] = asyncio.Semaphore(2)
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS_LOCK", _PopulatingLock())
+
+    limiter = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+
+    assert limiter is llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)]
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_protocol_stubs_are_import_coverage_only() -> None:
+    assert await llm_client.LLMProvider.generate(object(), []) is None  # type: ignore[arg-type]
+    assert await llm_client.LLMProvider.chat(object(), []) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
 async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
     cfg = _make_config(
         OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=1,

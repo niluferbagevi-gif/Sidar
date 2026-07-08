@@ -494,6 +494,23 @@ async def test_document_store_validate_url_safe_resolves_dns_to_public_addresses
     rag.DocumentStore._validate_url_safe("https://public.example/resource", resolve_dns=True)
 
 
+async def test_document_store_validate_url_safe_handles_invalid_and_unresolved_dns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert rag.DocumentStore._is_public_ip_address("not-an-ip") is False
+
+    def _raise_gaierror(*_args, **_kwargs):
+        raise rag.socket.gaierror("no dns")
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _raise_gaierror)
+    with pytest.raises(ValueError, match="Hostname çözümlenemedi"):
+        rag.DocumentStore._validate_url_safe("https://missing.example", resolve_dns=True)
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", lambda *_args, **_kwargs: [])
+    with pytest.raises(ValueError, match="Hostname çözümlenemedi"):
+        rag.DocumentStore._validate_url_safe("https://empty.example", resolve_dns=True)
+
+
 async def test_document_store_validate_url_safe_blocks_dns_private_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1365,6 +1382,55 @@ async def test_document_store_add_document_from_url_success_and_failure(
     ok, msg = await store.add_document_from_url("ftp://example.com/docs", session_id="s-url")
     assert ok is False
     assert "URL belge eklenemedi" in msg
+
+
+async def test_document_store_add_document_from_url_redirect_error_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    monkeypatch.setattr(
+        rag.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    class _Response:
+        def __init__(self, url: str, status_code: int, location: str = "") -> None:
+            self.url = url
+            self.status_code = status_code
+            self.headers = {"Location": location} if location else {}
+            self.text = ""
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _MissingLocationClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str):
+            return _Response(url, 302)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _MissingLocationClient())
+    ok, message = await store.add_document_from_url("https://public.example/start")
+    assert ok is False
+    assert "Location başlığı yok" in message
+
+    class _LoopingRedirectClient(_MissingLocationClient):
+        async def get(self, url: str):
+            return _Response(url, 302, location="/again")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _LoopingRedirectClient())
+    ok, message = await store.add_document_from_url("https://public.example/start")
+    assert ok is False
+    assert "Redirect limiti" in message
 
 
 @pytest.mark.parametrize(

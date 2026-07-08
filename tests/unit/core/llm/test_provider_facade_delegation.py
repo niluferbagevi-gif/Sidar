@@ -83,3 +83,21 @@ async def test_ensure_json_text_async_wrapper_delegates_to_facade(
 
     assert await module._ensure_json_text_async("payload", "Provider") == "facade-result"
     assert calls == [("payload", "Provider")]
+
+
+@pytest.mark.asyncio
+async def test_anthropic_close_client_accepts_sync_close() -> None:
+    module = importlib.import_module("core.llm.anthropic")
+
+    class _Client:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    client = _Client()
+
+    await module._close_anthropic_client(client)
+
+    assert client.closed is True
