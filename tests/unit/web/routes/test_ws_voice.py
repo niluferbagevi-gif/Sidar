@@ -883,6 +883,43 @@ async def test_websocket_voice_emits_assistant_turn_started_before_completed(
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_stops_done_when_completed_turn_send_fails(
+    monkeypatch,
+) -> None:
+    async def _stream(websocket, *_args, **_kwargs) -> None:
+        await websocket.send_json({"chunk": "voice answer"})
+
+    async def _send_json_if_connected(websocket, payload):
+        if payload.get("assistant_turn") == "completed":
+            websocket.client_state = WebSocketState.DISCONNECTED
+            return False
+        await websocket.send_json(payload)
+        return True
+
+    _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
+    monkeypatch.setattr(ws_voice, "send_json_if_connected", _send_json_if_connected)
+    ws = _WaitUntilSentWs(
+        [
+            {"text": '{"action":"auth","token":"voice-token"}'},
+            {"bytes": b"abc"},
+            {"text": '{"action":"commit"}'},
+            {"wait_for_expected": True},
+        ],
+        expected_key="chunk",
+    )
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(resolve_user_from_token=_voice_user, ws_stream_agent_text_response=_stream),
+    )
+
+    assert {"assistant_turn": "started", "assistant_turn_id": 1} in ws.sent
+    assert {"chunk": "voice answer"} in ws.sent
+    assert not any(payload.get("assistant_turn") == "completed" for payload in ws.sent)
+    assert {"done": True} not in ws.sent
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) -> None:
     first_stream_started = asyncio.Event()
     release_stream = asyncio.Event()

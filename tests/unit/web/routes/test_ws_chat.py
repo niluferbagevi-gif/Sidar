@@ -80,6 +80,17 @@ async def test_ws_stream_agent_text_response_stops_when_client_disconnects() -> 
 
 
 @pytest.mark.asyncio
+async def test_send_json_if_connected_returns_false_without_sending_when_disconnected() -> None:
+    ws = _Ws()
+    ws.client_state = WebSocketState.DISCONNECTED
+
+    sent = await ws_chat.send_json_if_connected(ws, {"chunk": "late"})
+
+    assert sent is False
+    assert ws.sent == []
+
+
+@pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> None:
     class _LegacyVoicePipeline:
         enabled = True
@@ -341,9 +352,10 @@ async def test_websocket_chat_uses_default_header_token_extractor_when_dependenc
 class _DummyEventBus:
     def __init__(self) -> None:
         self.unsubscribed: list[str] = []
+        self.queue: asyncio.Queue[object] = asyncio.Queue()
 
     def subscribe(self):
-        return "sub-chat", asyncio.Queue()
+        return "sub-chat", self.queue
 
     def unsubscribe(self, sub_id: str) -> None:
         self.unsubscribed.append(sub_id)
@@ -684,6 +696,62 @@ async def test_websocket_chat_stops_stream_when_client_disconnects_during_send()
 
     assert {"chunk": "first"} in ws.sent
     assert {"chunk": "second"} not in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_streams_status_queue_events() -> None:
+    class _StatusAgent(_RouteAgent):
+        async def respond(self, _message: str):
+            await asyncio.sleep(0.01)
+            yield "after-status"
+
+    ws = _CancelThenDisconnectWs(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "stream status"}),
+            "__WAIT_THEN_DISCONNECT__",
+        ]
+    )
+    deps = _Deps(agent=_StatusAgent())
+    deps.event_bus.queue.put_nowait(SimpleNamespace(source="planner", message="working"))
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert {"status": "planner: working"} in ws.sent
+    assert {"chunk": "after-status"} in ws.sent
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_falls_back_to_sync_update_title_when_async_missing() -> None:
+    class _SyncTitleMemory:
+        def __init__(self) -> None:
+            self.titles: list[str] = []
+            self.active_users: list[tuple[str, str]] = []
+
+        def __len__(self) -> int:
+            return 0
+
+        async def set_active_user(self, user_id: str, username: str) -> None:
+            self.active_users.append((user_id, username))
+
+        def update_title(self, title: str) -> None:
+            self.titles.append(title)
+
+    memory = _SyncTitleMemory()
+    agent = _RouteAgent(chunks=["titled"])
+    agent.memory = memory
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "message", "message": "a" * 35}),
+        ]
+    )
+    deps = _Deps(agent=agent)
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert memory.titles == ["a" * 30 + "..."]
+    assert {"chunk": "titled"} in ws.sent
 
 
 @pytest.mark.asyncio
