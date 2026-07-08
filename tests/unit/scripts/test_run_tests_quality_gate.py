@@ -673,6 +673,7 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
 
     assert "Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz" in readme
     assert "frontend stage'in atlandığını görmek normaldir" in testing
+    assert "Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde" in testing
     assert "frontend kalite kapısı ise bilinçli opt-in gerektirir" in install_options
     assert "--with-integration verilmediği için frontend stage çalıştırılmadı" in install_options
 
@@ -3027,6 +3028,7 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
     assert 'record_backend_failure "security_failed"' in script
     assert 'record_backend_failure "ratchet_failed"' in script
     assert "Backend kalite akışı başarısız olduğu için coverage ratchet atlandı" in ratchet_block
+    assert "Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı" in script
     assert "$(format_backend_failure_reasons)" in ratchet_block
     assert "Backend Hata Nedenleri: $(format_backend_failure_reasons)" in script
     assert (

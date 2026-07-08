@@ -48,6 +48,12 @@ frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulam
 `RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend` veya tam doğrulama komutu
 `RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` olmalıdır.
 
+Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde kalite kapısı olarak
+geçerli kabul edilir. `run_tests.sh`, pytest/BATS/security gibi backend fazlarından
+biri başarısızsa final `coverage report --fail-under=...` adımını ve ratchet
+güncellemesini atlar; bu yüzden örneğin backend `%99+` ve frontend `%99+` görünse
+bile başarısız test düzeltilmeden coverage sonucu merge/PR kanıtı sayılmamalıdır.
+
 ```bash
 ./run_tests.sh --stage integration   # 47/47 geçebilir; global coverage gate atlanır
 ./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
