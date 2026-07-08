@@ -4,29 +4,33 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from core.entity_memory import get_entity_memory
 
+if TYPE_CHECKING:
+    from typing import Protocol
 
-class _NightlyAgentLike(Protocol):
-    cfg: Any
-    docs: Any
-    memory: Any
-    _nightly_maintenance_lock: asyncio.Lock | None
-    _last_nightly_maintenance_ts: float
+    class _NightlyAgentLike(Protocol):
+        cfg: Any
+        docs: Any
+        memory: Any
+        _nightly_maintenance_lock: asyncio.Lock | None
+        _last_nightly_maintenance_ts: float
 
-    async def initialize(self) -> None: ...
+        async def initialize(self) -> None: ...
 
-    def seconds_since_last_activity(self) -> float: ...
+        def seconds_since_last_activity(self) -> float: ...
 
-    async def _acquire_nightly_distributed_lease(
-        self,
-    ) -> tuple[Any | None, dict[str, Any] | None]: ...
+        async def _acquire_nightly_distributed_lease(
+            self,
+        ) -> tuple[Any | None, dict[str, Any] | None]: ...
 
-    async def _release_nightly_distributed_lease(self, lease: Any | None) -> None: ...
+        async def _release_nightly_distributed_lease(self, lease: Any | None) -> None: ...
 
-    async def _append_autonomy_history(self, record: dict[str, Any]) -> None: ...
+        async def _append_autonomy_history(self, record: dict[str, Any]) -> None: ...
+else:
+    _NightlyAgentLike = Any
 
 
 async def run_nightly_memory_maintenance(
