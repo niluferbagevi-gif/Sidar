@@ -472,6 +472,24 @@ async def test_llm_tool_loop_handles_list_tool_calls_and_ignores_non_dict_items(
 
 
 @pytest.mark.asyncio
+async def test_llm_tool_loop_returns_raw_response_when_tool_calls_are_not_valid_dicts(
+    coder_module,
+) -> None:
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return '{"tool_calls":["skip-me"],"final":""}'
+
+    agent.call_llm = fake_call_llm
+
+    assert (
+        await agent._run_llm_tool_loop("read")
+        == '{"tool_calls":["skip-me"],"final":""}'
+    )
+
+
+@pytest.mark.asyncio
 async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(coder_module):
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {"read_file": agent._tool_read_file}
