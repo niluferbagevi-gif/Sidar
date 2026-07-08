@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,12 @@ def _admin_user() -> dict[str, Any]:
 
 
 async def _async_value(value: Any) -> Any:
+    return value
+
+
+async def _await_if_needed(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
     return value
 
 
@@ -112,7 +119,7 @@ def test_auth_admin_router_register_direct(make_test_client) -> None:
     agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="")
     router = build_auth_admin_router(
         resolve_agent_instance=lambda: _async_value(agent),
-        await_if_needed=lambda x: x,
+        await_if_needed=_await_if_needed,
         get_request_user=_admin_user,
         require_admin_user=_admin_user,
         issue_auth_token=lambda *_: _async_value("tkn"),
@@ -159,7 +166,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
     agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="")
     router = build_auth_admin_router(
         resolve_agent_instance=lambda: _async_value(agent),
-        await_if_needed=lambda value: value,
+        await_if_needed=_await_if_needed,
         get_request_user=_admin_user,
         require_admin_user=_admin_user,
         issue_auth_token=lambda *_: _async_value("tkn"),
@@ -205,7 +212,7 @@ def test_hitl_router_pending_direct(make_test_client) -> None:
     router = build_hitl_router(
         get_request_user=_admin_user,
         resolve_agent_instance=lambda: _async_value(SimpleNamespace()),
-        await_if_needed=lambda x: x,
+        await_if_needed=_await_if_needed,
         resolve_user_from_token=lambda *_: _async_value(_admin_user()),
         ws_close_policy_violation=lambda *_: None,
         hitl_ws_clients=set(),
@@ -273,7 +280,7 @@ def test_orchestration_router_requires_request_model() -> None:
             require_admin_user=_admin_user,
             get_request_user=_admin_user,
             resolve_agent_instance=lambda: _async_value(None),
-            await_if_needed=lambda x: _async_value(x),
+            await_if_needed=_await_if_needed,
             cfg=SimpleNamespace(),
             swarm_orchestrator_cls=SimpleNamespace,
             swarm_task_cls=SimpleNamespace,
@@ -322,7 +329,7 @@ def test_rag_router_search_direct(make_test_client) -> None:
     agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
     router = build_rag_router(
         resolve_agent_instance=lambda: _async_value(agent),
-        await_if_needed=lambda x: x,
+        await_if_needed=_await_if_needed,
         max_rag_upload_bytes=1024,
         server_root=Path("."),
         logger=SimpleNamespace(debug=lambda *_: None),
