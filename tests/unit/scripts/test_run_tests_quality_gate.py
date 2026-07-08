@@ -662,6 +662,21 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     ) in validation_phase
 
 
+def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
+
+    for doc in (readme, testing, install_options):
+        assert "--stage all" in doc
+        assert "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend" in doc
+
+    assert "Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz" in readme
+    assert "frontend stage'in atlandığını görmek normaldir" in testing
+    assert "frontend kalite kapısı ise bilinçli opt-in gerektirir" in install_options
+    assert "--with-integration verilmediği için frontend stage çalıştırılmadı" in install_options
+
+
 def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
     script = _script()
     summary_json = tmp_path / "test-summary.json"

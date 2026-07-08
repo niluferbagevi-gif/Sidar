@@ -572,6 +572,13 @@ hata sinyallerini yakalar, ancak main CI hattının tamamıyla aynı güvenceyi 
 frontend `lint`, `typecheck`, Vitest `coverage` ve Playwright smoke doğrulamalarının
 geçtiği anlamına gelmez.
 
+Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz;
+installer frontend kalite kapısını kullanıcıya/operatöre opt-in olarak bırakır.
+`--with-integration` verilmediğinde loglarda frontend stage'in atlandığı bilgisi
+beklenen bir durumdur. Frontend kalite kapısını kurulumdan bağımsız doğrulamak için
+`RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend`, tam doğrulama için
+`RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` kullanın.
+
 Main CI (`.github/workflows/ci.yml`) local installer smoke kapsamının üzerine şu kapıları
 ekler ve bunları merge öncesi sinyal olarak kullanır:
 

@@ -2,7 +2,8 @@
 
 Bu dosya, `install_sidar.sh` için operatörlerin bilinçli kullanması gereken
 bayrak ve environment override'larını özetler. Varsayılan akış, geliştirici ve CI
-paritesi için mümkün olduğunca tam doğrulama çalıştırır.
+paritesi için smoke doğrulamaları otomatik çalıştırır; pahalı tam doğrulama ve
+frontend kalite kapısı ise bilinçli opt-in gerektirir.
 
 ## Smoke test davranışı
 
@@ -30,4 +31,35 @@ Tanılama amaçlı geçici opt-out örnekleri:
 ./install_sidar.sh --skip-smoke-test
 RUN_SMOKE_TESTS_MODE=never ./install_sidar.sh --runtime-mode=local
 SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh --runtime-mode=local
+```
+
+## Frontend kalite kapısı ve tam doğrulama
+
+Varsayılan development/local kurulum akışı React build ve smoke odaklıdır;
+`run_tests.sh --stage all` veya frontend kalite kapısı otomatik başlatılmaz.
+Kurulum sonunda frontend stage kullanıcıya manuel/opt-in doğrulama olarak sunulur;
+loglarda `--with-integration verilmediği için frontend stage çalıştırılmadı` mesajı
+beklenen bir durumdur. Bu mesaj, frontend testlerinin başarısız olduğu anlamına
+gelmez; yalnızca pahalı lint/typecheck/Vitest coverage/Playwright smoke kapısının
+başlangıç kurulumunda atlandığını gösterir.
+
+Frontend kalite kapısını ayrıca çalıştırmak için:
+
+```bash
+RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+```
+
+Tam doğrulamayı kurulum sırasında zorunlu yapmak için production readiness veya
+CI full validation profili kullanılmalıdır:
+
+```bash
+./install_sidar.sh --production-readiness
+# veya legacy CI alias'ı:
+./install_sidar.sh --ci-full
+```
+
+Kurulum sonrası manuel tam doğrulama için kanonik komut:
+
+```bash
+RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
 ```

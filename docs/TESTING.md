@@ -41,6 +41,13 @@ coverage başarısızlığı üretmez. Global coverage kalite kapısı yalnızca
 `--stage all` (varsayılan), `--stage backend` veya `--stage unit` çalıştığında
 uygulanır:
 
+Kurulum betiğinin development/local varsayılanı da bu ayrımı izler: hızlı smoke ve
+kurulum doğrulaması otomatik yapılır, ancak frontend kalite kapısı ve `--stage all`
+kullanıcı/operatör opt-in'i olmadan başlangıçta çalıştırılmaz. Kurulum logunda
+frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulama komutu
+`RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend` veya tam doğrulama komutu
+`RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` olmalıdır.
+
 ```bash
 ./run_tests.sh --stage integration   # 47/47 geçebilir; global coverage gate atlanır
 ./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
