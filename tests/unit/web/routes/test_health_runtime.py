@@ -147,3 +147,7 @@ def test_domain_config_loaders_preserve_defaults() -> None:
     assert app_settings.project_name == "Sidar"
     assert observability_settings.otel_service_name
     assert orchestrator_settings.max_react_steps >= 1
+
+
+def test_logger_protocol_stub_is_import_coverage_only() -> None:
+    assert health_runtime.LoggerLike.exception(object(), "boom") is None  # type: ignore[arg-type]

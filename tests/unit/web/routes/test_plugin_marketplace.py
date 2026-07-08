@@ -69,6 +69,26 @@ def test_read_plugin_marketplace_state_tolerates_missing_and_malformed_files(
     assert recorder.warnings
 
 
+def test_read_plugin_marketplace_state_tolerates_os_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    plugin_marketplace.write_plugin_marketplace_state({"demo": {"installed_at": "now"}})
+
+    class _RecordingLogger:
+        def __init__(self) -> None:
+            self.warnings: list[str] = []
+
+        def warning(self, message: str, *args: object) -> None:
+            self.warnings.append(message % args if args else message)
+
+    monkeypatch.setattr(Path, "read_text", lambda self, **_kwargs: (_ for _ in ()).throw(OSError("disk")))
+    recorder = _RecordingLogger()
+
+    assert plugin_marketplace.read_plugin_marketplace_state(logger_obj=recorder) == {}
+    assert recorder.warnings
+
+
 def test_serialize_marketplace_plugin_reports_installed_and_live_state(tmp_path: Path) -> None:
     entrypoint = tmp_path / "demo.py"
     entrypoint.write_text("x = 1", encoding="utf-8")

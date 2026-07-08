@@ -126,7 +126,7 @@ def test_auth_admin_router_register_direct(make_test_client) -> None:
         issue_auth_token=lambda *_: _async_value("tkn"),
         serialize_prompt=lambda p: {},
         serialize_policy=lambda p: {},
-        serialize_audit_log=lambda _audit_log: {},
+        serialize_audit_log=lambda audit_log: {"id": audit_log.id},
         register_request_model=_RegisterReq,
         login_request_model=_LoginReq,
         prompt_upsert_request_model=_PromptReq,
@@ -158,11 +158,16 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
     async def _list_access_policies(**_: Any) -> list[Any]:
         return [policy]
 
+    async def _list_audit_logs(**kwargs: Any) -> list[Any]:
+        assert kwargs == {"user_id": "u1", "tenant_id": "tenant-a", "limit": 5}
+        return [SimpleNamespace(id="audit-1")]
+
     db = SimpleNamespace(
         upsert_prompt=_upsert_prompt,
         activate_prompt=_activate_prompt,
         upsert_access_policy=_upsert_access_policy,
         list_access_policies=_list_access_policies,
+        list_audit_logs=_list_audit_logs,
     )
     agent = SimpleNamespace(memory=SimpleNamespace(db=db), system_prompt="")
     router = build_auth_admin_router(
@@ -173,7 +178,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
         issue_auth_token=lambda *_: _async_value("tkn"),
         serialize_prompt=lambda item: {"id": item.id, "prompt_text": item.prompt_text},
         serialize_policy=lambda item: {"id": item.id, "user_id": item.user_id},
-        serialize_audit_log=lambda _audit_log: {},
+        serialize_audit_log=lambda audit_log: {"id": audit_log.id},
         register_request_model=_RegisterReq,
         login_request_model=_LoginReq,
         prompt_upsert_request_model=_PromptReq,
@@ -188,6 +193,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
         "/admin/prompts", json={"role_name": "system", "prompt_text": "hello"}
     )
     activate_prompt = client.post("/admin/prompts/activate", json={"prompt_id": "p1"})
+    audit_logs = client.get("/admin/audit-logs?user_id=u1&tenant_id=tenant-a&limit=5")
     upsert_policy = client.post(
         "/admin/policies",
         json={
@@ -204,6 +210,8 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
     assert upsert_prompt.json() == {"id": "p1", "prompt_text": "hello"}
     assert activate_prompt.status_code == 200
     assert activate_prompt.json() == {"id": "p1", "prompt_text": "hello"}
+    assert audit_logs.status_code == 200
+    assert audit_logs.json() == {"items": [{"id": "audit-1"}]}
     assert upsert_policy.status_code == 200
     assert upsert_policy.json() == {"success": True, "items": [{"id": "a1", "user_id": "u1"}]}
 

@@ -149,8 +149,15 @@ def test_register_routers_includes_routes_and_collects_legacy_exports(make_test_
         return {"ok": True}
 
     router.legacy_exports = {"factory_ping": factory_ping}  # type: ignore[attr-defined]
+    router_without_exports = APIRouter()
 
-    exports = register_routers(app, [router])
+    @router_without_exports.get("/factory-pong")
+    async def factory_pong() -> dict[str, bool]:
+        return {"ok": True}
+
+    router_without_exports.legacy_exports = ["not", "a", "dict"]  # type: ignore[attr-defined]
+
+    exports = register_routers(app, [router, router_without_exports])
     response = make_test_client(app).get("/factory-ping")
 
     assert response.json() == {"ok": True}

@@ -21,3 +21,13 @@ async def test_websocket_lifecycle_close_is_idempotent_under_concurrency() -> No
     await asyncio.gather(lifecycle.close(reason="a"), lifecycle.close(reason="b"))
 
     assert calls == 1
+
+
+def test_track_task_ignores_none_and_duplicate_tasks() -> None:
+    lifecycle = WebSocketLifecycle(websocket=object())
+    task = object()
+
+    assert lifecycle.track_task(None) is None
+    assert lifecycle.track_task(task) is task
+    assert lifecycle.track_task(task) is task
+    assert lifecycle._tasks == [task]
