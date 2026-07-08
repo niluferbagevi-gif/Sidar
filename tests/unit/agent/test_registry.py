@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -239,6 +240,14 @@ def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() ->
     from agent.core.supervisor import SupervisorAgent
     from agent.swarm import TaskRouter
 
+    _clear_builtin_import_failures()
+    _sync_builtin_contract_registry(
+        {
+            contract.module_name: importlib.import_module(contract.module_name)
+            for contract in BUILTIN_ROLE_CONTRACTS
+        }
+    )
+
     router = TaskRouter()
     supervisor_prompts = {
         "code": "kod yaz",
@@ -371,6 +380,7 @@ def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
     }
 
     try:
+        _clear_builtin_import_failures()
         monkeypatch.delitem(sys.modules, "agent.roles", raising=False)
 
         _sync_builtin_contract_registry(module_cache)
@@ -383,6 +393,7 @@ def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
             )
             assert synced_spec.is_builtin is True
     finally:
+        _clear_builtin_import_failures()
         AgentCatalog._registry.clear()
         AgentCatalog._registry.update(snapshot)
         if original_role_exports is not None:
