@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shlex
 import shutil
@@ -10,6 +11,10 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
+
+def _sha256_for_test(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_dark_mode_assets_exist(tmp_path: Path) -> None:
@@ -409,13 +414,48 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         timeout=60,
     )
     combined = result.stdout + result.stderr
+    debug_context = textwrap.dedent(
+        f"""
+        --- install_sidar home re-exec hash drift debug ---
+        cwd: {run_dir}
+        HOME: {env["HOME"]}
+        PWD: {env["PWD"]}
+        TMPDIR: {env["TMPDIR"]}
+        SIDAR_INSTALL_TEST_MODE: {env["SIDAR_INSTALL_TEST_MODE"]}
+        SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE: {env["SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE"]}
+        standalone: {standalone}
+        standalone_sha256: {_sha256_for_test(standalone)}
+        stale_installer: {stale_installer}
+        stale_installer_sha256: {_sha256_for_test(stale_installer)}
+        returncode: {result.returncode}
+        --- stdout ---
+        {result.stdout}
+        --- stderr ---
+        {result.stderr}
+        --- combined ---
+        {combined}
+        """
+    ).strip()
 
     assert result.returncode != 42, (
-        "Stale $HOME/Sidar/install_sidar.sh çalıştırılmamalıydı.\n" f"--- combined ---\n{combined}"
+        "Stale $HOME/Sidar/install_sidar.sh çalıştırılmamalıydı; returncode=42 "
+        "stale betiğin gerçekten exec edildiğini gösterir.\n"
+        f"{debug_context}"
     )
-    assert result.returncode != 0, "Hash drift guard stale re-exec yolunu durdurmalıydı."
-    assert "Mevcut" in combined and "re-exec install_sidar.sh SHA256 farklı" in combined
-    assert "stale-installer-ran" not in combined
+    assert result.returncode != 0, (
+        "Hash drift guard stale re-exec yolunu durdurmalıydı; returncode=0 fallback veya normal "
+        "kurulum akışının drift'i maskelendiğini gösterir.\n"
+        f"{debug_context}"
+    )
+    assert "Mevcut" in combined and "re-exec install_sidar.sh SHA256 farklı" in combined, (
+        "Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n"
+        f"{debug_context}"
+    )
+    assert "stale-installer-ran" not in combined, (
+        "Stale installer çıktısı görülmemeliydi; bu, korumanın eski betiği çalıştırmadan önce "
+        "fail-closed olmadığını gösterir.\n"
+        f"{debug_context}"
+    )
 
 
 def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_path: Path) -> None:
