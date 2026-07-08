@@ -7,10 +7,17 @@ frontend kalite kapısı ise bilinçli opt-in gerektirir.
 
 ## Smoke test davranışı
 
+- `SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=<saniye>`: Yavaş WSL2/Defender veya yoğun
+  CI runner ortamlarında Bash tabanlı installer smoke helper timeout'unu artırır.
+  Smoke gate'i kapatmadan önce tercih edilen ilk tanılama adımıdır; örn.
+  `SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh`.
 - `--smoke-test`: Kurulum sonundaki smoke testleri zorunlu çalıştırır.
 - `--skip-smoke-test`: Kurulum sonundaki smoke testleri ve lokal runtime'daki
   servis öncesi installer smoke gate'i atlar. Bu bayrak içeride
-  `RUN_SMOKE_TESTS_MODE=never` değerine karşılık gelir.
+  `RUN_SMOKE_TESTS_MODE=never` değerine karşılık gelir. Bu seçenek son çaredir:
+  önce timeout artırma, manifest/hash/version drift düzeltme ve Docker/env
+  erişim kontrollerini deneyin; opt-out kullanıldıysa aynı değişiklikleri merge
+  etmeden önce ayrı CI veya manuel smoke doğrulamasıyla kapatın.
 - `RUN_SMOKE_TESTS_MODE=never`: Bayrak kullanmadan aynı opt-out davranışını
   environment üzerinden uygular. Bu değer yalnız geçici tanılama, kırık host
   ortamını izole etme veya zaten ayrı CI gate'leri çalışmış senaryolarda

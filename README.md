@@ -561,6 +561,10 @@ Smoke test ve servis öncesi smoke gate opt-out değerleri için `--skip-smoke-t
 seçenekleri `docs/install-script-options.md` içinde belgelenmiştir. Normal
 geliştirme ve CI akışlarında bu gate'leri açık bırakın; opt-out değerlerini
 yalnız geçici tanılama veya ayrı doğrulama gate'leri bulunan ortamlarda kullanın.
+Yavaş WSL2/Defender/CI runner ortamlarında smoke gate'i kapatmadan önce
+`SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh` gibi daha geniş bir
+timeout deneyin; `--skip-smoke-test` son çare olarak kullanılmalı ve ardından
+ayrı smoke/CI doğrulamasıyla telafi edilmelidir.
 
 ### Local install smoke != CI full validation
 

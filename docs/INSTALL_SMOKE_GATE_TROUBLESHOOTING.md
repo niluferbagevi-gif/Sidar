@@ -75,15 +75,18 @@ başlangıç için güvenli değerdir:
 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh
 ```
 
-Sadece servis öncesi smoke gate takılı kalıyor, diğer kurulum adımlarını koruyarak
-Docker servislerine geçmek istiyorsanız daha dar kapsamlı kısa yol kullanılabilir:
+Sadece servis öncesi smoke gate takılı kalıyor, timeout artırma ve drift
+düzeltmeleri sorunu açıklamıyorsa diğer kurulum adımlarını koruyarak Docker
+servislerine geçmek için daha dar kapsamlı kısa yol kullanılabilir:
 
 ```bash
 SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh
 ```
 
 Smoke gate'i bilinçli atlamak son çaredir; servis öncesi sözleşmeyi ve kurulum
-sonu smoke testlerini devre dışı bırakır:
+sonu smoke testlerini devre dışı bırakır. Bu seçenek kullanıldıysa aynı değişiklik
+merge edilmeden önce `uv run pytest tests/smoke/test_install_verification.py` veya
+eşdeğer CI smoke gate'iyle mutlaka telafi doğrulaması yapılmalıdır:
 
 ```bash
 ./install_sidar.sh --skip-smoke-test

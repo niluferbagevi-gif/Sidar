@@ -1103,9 +1103,16 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "--skip-smoke-test/RUN_SMOKE_TESTS_MODE=never" in phase
     assert "RUN_SMOKE_TESTS_MODE=never" in readme
     assert "docs/install-script-options.md" in readme
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh" in readme
+    assert "`--skip-smoke-test` son çare" in readme
     assert "RUN_SMOKE_TESTS_MODE=never" in install_options
+    assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=<saniye>" in install_options
+    assert "Smoke gate'i kapatmadan önce tercih edilen ilk tanılama adımıdır" in install_options
+    assert "Bu seçenek son çaredir" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0" in install_options
     assert "SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0 ./install_sidar.sh" in troubleshooting
+    assert "timeout artırma ve drift" in troubleshooting
+    assert "telafi doğrulaması yapılmalıdır" in troubleshooting
     assert 'Add-MpPreference -ExclusionProcess "wsl.exe"' in troubleshooting
     assert "Add-MpPreference -ExclusionPath" in troubleshooting
     assert "pyproject.toml" in version_contract_block
