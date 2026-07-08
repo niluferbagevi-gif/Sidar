@@ -403,6 +403,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         "TMPDIR": str(tmp_path),
         "SIDAR_INSTALL_TEST_MODE": "1",
         "SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_STALE_REEXEC": "0",
     }
 
     result = subprocess.run(
@@ -451,6 +452,8 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         "Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n"
         f"{debug_context}"
     )
+    assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
+    assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in combined
     assert "stale-installer-ran" not in combined, (
         "Stale installer çıktısı görülmemeliydi; bu, korumanın eski betiği çalıştırmadan önce "
         "fail-closed olmadığını gösterir.\n"
@@ -486,6 +489,8 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
         "TMPDIR": str(tmp_path),
         "SIDAR_INSTALL_TEST_MODE": "1",
         "SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE": "1",
+        "SIDAR_INSTALL_ALLOW_STALE_REEXEC": "0",
+        "SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD": "1",
         "SIDAR_BOOTSTRAP_CLONE_URL": f"file://{origin}",
         "SIDAR_BOOTSTRAP_CLONE_PARENT_DIR": str(host),
         "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
@@ -507,6 +512,7 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
         result.returncode != 0
     ), "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
     assert "Bootstrap clone re-exec install_sidar.sh SHA256 farklı" in combined
+    assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
     assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC=1" in combined
 
 
@@ -1088,6 +1094,32 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
     assert "~/Sidar veya PATH üzerinde stale install_sidar.sh" in result.stdout
     assert "repo kökündeki ./install_sidar.sh" in result.stdout
     assert "REPORT:06_services|learned-non-retryable-failure|" in result.stdout
+
+
+def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            warn() { printf 'WARN:%s\\n' "$*"; }
+            sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
+            sidar_phase_remediation_strategy 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı' || true
+            sidar_emit_remediation_guidance 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı'
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "REPORT:02_repo|installer-hash-drift|no-retry;remove-stale-home-installer-or-refresh-clone" in result.stdout
+    assert "installer hash drift hatası" in result.stdout
+    assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in result.stdout
+    assert "git pull --ff-only" in result.stdout
 
 
 def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight() -> None:

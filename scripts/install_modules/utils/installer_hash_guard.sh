@@ -21,7 +21,7 @@ check_installer_hash() {
             warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
             return 0
         fi
-        fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. Hedef repoyu güncelleyin ya da bilinçli olarak SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
+        fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. NEXT STEP → hash drift kaynağını temizleyin: \$HOME/Sidar/install_sidar.sh eskiyse 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırıp güncel install_sidar.sh ile yeniden deneyin; hedef repo driftliyse git pull --ff-only veya temiz clone kullanın. Yalnız bilinçli/incelemesi yapılmış durumda SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
     fi
 }
 

@@ -512,8 +512,8 @@ a3a95af0105d4356094ff74da6cdd34aea64639d70a504c143773b0e79b59e38  scripts/instal
 6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
 61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
 9ee4ccc2cc93f3ce212fb4e9521e1aa0f8811a9ba2c00f0fb8da874676cb3c34  scripts/install_modules/utils/gpu_utils.sh
-9b0468f312ac4cfb4f5081eb1a58c128de6f9376ca0483ac1abfd14a889396fb  scripts/install_modules/utils/install_remediation.sh
-3cc8bbf934ffd4071b7e8c328d122188591c8f57a19811b555b2840fefd6e741  scripts/install_modules/utils/installer_hash_guard.sh
+30010afd406be1f30a74d3dc5fd9b4ea617adade767146396cec33fe13bf9679  scripts/install_modules/utils/install_remediation.sh
+e20d7478bcb80da2d87d2644c70a5b97a3fabbc9f98cadc28f04210ebb85ab00  scripts/install_modules/utils/installer_hash_guard.sh
 eebe784b4f22fc4d19a97c60971aaf65aa0bb6b2228acad38e59ef8f55f9415a  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
 b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/install_modules/utils/python_env.sh
@@ -751,7 +751,7 @@ if ! declare -F check_installer_hash >/dev/null 2>&1; then
                 warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
                 return 0
             fi
-            fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. Hedef repoyu güncelleyin ya da bilinçli olarak SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
+            fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. NEXT STEP → hash drift kaynağını temizleyin: \$HOME/Sidar/install_sidar.sh eskiyse 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırıp güncel install_sidar.sh ile yeniden deneyin; hedef repo driftliyse git pull --ff-only veya temiz clone kullanın. Yalnız bilinçli/incelemesi yapılmış durumda SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
         fi
     }
 fi
@@ -851,7 +851,9 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     verify_home_reexec_candidate_if_present
 
     REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
-    if command -v curl &>/dev/null || command -v wget &>/dev/null; then
+    if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then
+        warn "SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD=1; fallback modül indirme atlandı, bootstrap/re-exec yolu denenecek."
+    elif command -v curl &>/dev/null || command -v wget &>/dev/null; then
         info "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek: $REMOTE_MODULE_BASE"
         download_install_modules_to_temp "$REMOTE_MODULE_BASE"
     fi

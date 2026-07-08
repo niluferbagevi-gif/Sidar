@@ -75,6 +75,9 @@ sidar_is_deterministic_failure_signal() {
         *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
             return 0
             ;;
+        *"install_sidar.sh sha256 farklı"*|*"hash drift kaynağını temizleyin"*|*"sidar_install_allow_stale_reexec"*)
+            return 0
+            ;;
     esac
     case "$normalized" in
         *"sudo: timed out"*|*"ollama_install"*)
@@ -152,6 +155,22 @@ sidar_is_installer_smoke_gate_failure() {
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
         *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidar_is_installer_hash_drift_failure() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"install_sidar.sh sha256 farklı"*|*"hash drift kaynağını temizleyin"*|*"sidar_install_allow_stale_reexec"*)
             return 0
             ;;
         *)
@@ -413,6 +432,10 @@ sidar_phase_remediation_strategy() {
         sidar_write_remediation_report "$phase" "installer-smoke-gate-failure" "no-retry;manual-fix-required"
         return 1
     fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-hash-drift" "no-retry;remove-stale-home-installer-or-refresh-clone"
+        return 1
+    fi
 
     case "$phase" in
         03_runtime)
@@ -484,6 +507,11 @@ sidar_emit_remediation_guidance() {
     if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
         warn "Auto-heal: ${phase} fazı installer smoke gate hatası nedeniyle durdu. Bu sinyal deterministiktir; aynı imza retry ile düzelmez."
         warn "NEXT STEP → Smoke gate version preflight logundaki stderr satırlarını inceleyin; INSTALL_SIDAR_VERSION, pyproject.toml version ve source install_sidar.sh erken çıkış nedenini düzeltip ./install_sidar.sh çalıştırın."
+        return 0
+    fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazı installer hash drift hatası nedeniyle durdu. Bu sinyal deterministiktir; stale/tampered installer retry ile güvenli şekilde düzelmez."
+        warn "NEXT STEP → \$HOME/Sidar/install_sidar.sh eski/modifiye ise 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırın, güncel install_sidar.sh dosyasını yeniden indirin veya repo clone'unu 'git pull --ff-only' ile güncelleyin, ardından ./install_sidar.sh komutunu tekrar çalıştırın."
         return 0
     fi
 
