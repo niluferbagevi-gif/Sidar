@@ -538,6 +538,22 @@ async def test_websocket_chat_rejects_invalid_auth_token() -> None:
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_rejects_invalid_header_token_before_first_message() -> None:
+    class _HeaderDeps(_Deps):
+        def extract_ws_header_token(self, _header: str):
+            return "bad-token", "sidar.ws.chat"
+
+    ws = _Ws(headers={"sec-websocket-protocol": "sidar.ws.chat, bad-token"})
+    deps = _HeaderDeps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert ws.accepted == ["sidar.ws.chat"]
+    assert ws.closed == [(1008, "Invalid or expired token")]
+    assert deps.agent.memory.active_users == []
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_ignores_invalid_json_after_auth_then_cleans_up() -> None:
     ws = _Ws(
         [
@@ -685,6 +701,50 @@ async def test_websocket_chat_room_stream_error_broadcasts_room_error() -> None:
 
     assert any(item.get("type") == "room_error" for item in deps.broadcasts)
     assert any("room provider exploded" in str(item.get("error")) for item in deps.broadcasts)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_empty_sidar_command_broadcasts_error() -> None:
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "team:ops", "display_name": "Ada"}),
+            json.dumps({"action": "message", "message": "@Sidar"}),
+        ]
+    )
+    deps = _Deps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert any(
+        item.get("type") == "room_error"
+        and "komut bulunamadı" in str(item.get("error"))
+        for item in deps.broadcasts
+    )
+    assert not any(item.get("type") == "assistant_stream_start" for item in deps.broadcasts)
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_room_sidar_command_streams_successful_response() -> None:
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "team:ops", "display_name": "Ada"}),
+            json.dumps({"action": "message", "message": "@Sidar summarize notes"}),
+        ]
+    )
+    deps = _Deps()
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert any(item.get("type") == "assistant_stream_start" for item in deps.broadcasts)
+    assert any(
+        item.get("type") == "assistant_chunk" and item.get("chunk") == "room ok"
+        for item in deps.broadcasts
+    )
+    assert any(item.get("type") == "assistant_done" for item in deps.broadcasts)
+    room = deps.collaboration_rooms["team:ops"]
+    assert any(message.get("kind") == "assistant_reply" for message in room.messages)
 
 
 class _CancelThenDisconnectWs(_Ws):
