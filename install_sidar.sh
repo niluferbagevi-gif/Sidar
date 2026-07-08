@@ -83,20 +83,28 @@ if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
         _sidar_probe_dir="${PWD}"
     fi
 
-    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
-    if [[ -z "$INSTALL_SIDAR_VERSION" && -f "${_sidar_probe_dir}/pyproject.toml" ]]; then
+    _sidar_probe_requested_version="${INSTALL_SIDAR_VERSION:-}"
+    _sidar_probe_pyproject_version=""
+    if [[ -f "${_sidar_probe_dir}/pyproject.toml" ]]; then
         while IFS= read -r _sidar_probe_line; do
             if [[ "$_sidar_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
-                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
+                _sidar_probe_pyproject_version="${BASH_REMATCH[1]}"
                 break
             fi
         done < "${_sidar_probe_dir}/pyproject.toml"
     fi
+    if [[ -n "$_sidar_probe_requested_version" && -n "$_sidar_probe_pyproject_version" && "$_sidar_probe_requested_version" != "$_sidar_probe_pyproject_version" ]]; then
+        echo "❌ INSTALL_SIDAR_VERSION uyumsuz: ortam=${_sidar_probe_requested_version}, pyproject.toml=${_sidar_probe_pyproject_version}. Smoke/version probe için pyproject.toml tek doğruluk kaynağıdır." >&2
+        unset _sidar_probe_source _sidar_probe_dir _sidar_probe_line _sidar_probe_requested_version _sidar_probe_pyproject_version
+        trap - ERR
+        return 1 2>/dev/null || exit 1
+    fi
+    INSTALL_SIDAR_VERSION="${_sidar_probe_pyproject_version:-${_sidar_probe_requested_version:-}}"
     if [[ -z "$INSTALL_SIDAR_VERSION" ]]; then
         INSTALL_SIDAR_VERSION="0.0.0"
     fi
     export INSTALL_SIDAR_VERSION
-    unset _sidar_probe_source _sidar_probe_dir _sidar_probe_line
+    unset _sidar_probe_source _sidar_probe_dir _sidar_probe_line _sidar_probe_requested_version _sidar_probe_pyproject_version
     trap - ERR
     return 0 2>/dev/null || exit 0
 fi
@@ -491,7 +499,7 @@ f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/instal
 b2a79704bc05ded9fb283cc5eaafb75b5b21b9f63e0b387c417f337d60bd8aa9  scripts/install_modules/phases/03_system.sh
 74239b350bd85a7982be8516555c76c31f59bcd09492ed6c38b2f8fdcea9a99c  scripts/install_modules/phases/04_workspace.sh
 76041c983eefaf3d97b2af8cec7744edc0eaeb0f95a1f3fa3e6bc70123d3e75d  scripts/install_modules/phases/05_frontend.sh
-fae50b21245c6f0cd2078e64f21320d187e0d213f0937036a4f1495d110b05de  scripts/install_modules/phases/06_services.sh
+d1d59b44f1701deea565d6932c5c89804ef611b19519f1e496d08a81d96ffc15  scripts/install_modules/phases/06_services.sh
 9cc1a9ce4f5e6318c8a0276719c0d68740ad132b1928aa80637da5d57b57202f  scripts/install_modules/phases/07_finish.sh
 f39f8d51e9011da0f6d19b29ab7b8c86e8a3738cdec768b20391edd8e1868f7d  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
@@ -976,20 +984,26 @@ validate_install_utility_modules() {
 # kullanıcının yavaş fork() ortamlarında (örn. WSL2 + Defender) 10s'lik
 # timeout'a takılmadan dönmemizi sağlar.
 if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" == "1" ]]; then
-    INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-}"
-    if is_blank "$INSTALL_SIDAR_VERSION" && [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
+    _sidar_version_probe_requested="${INSTALL_SIDAR_VERSION:-}"
+    _sidar_version_probe_pyproject=""
+    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
         while IFS= read -r _sidar_version_probe_line; do
             if [[ "$_sidar_version_probe_line" =~ ^[[:space:]]*version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
-                INSTALL_SIDAR_VERSION="${BASH_REMATCH[1]}"
+                _sidar_version_probe_pyproject="${BASH_REMATCH[1]}"
                 break
             fi
         done < "$SCRIPT_DIR/pyproject.toml"
         unset _sidar_version_probe_line
     fi
+    if [[ -n "$_sidar_version_probe_requested" && -n "$_sidar_version_probe_pyproject" && "$_sidar_version_probe_requested" != "$_sidar_version_probe_pyproject" ]]; then
+        fail "INSTALL_SIDAR_VERSION uyumsuz: ortam=${_sidar_version_probe_requested}, pyproject.toml=${_sidar_version_probe_pyproject}. Smoke/version probe için pyproject.toml tek doğruluk kaynağıdır."
+    fi
+    INSTALL_SIDAR_VERSION="${_sidar_version_probe_pyproject:-${_sidar_version_probe_requested:-}}"
     if is_blank "$INSTALL_SIDAR_VERSION"; then
         INSTALL_SIDAR_VERSION="0.0.0"
     fi
     export INSTALL_SIDAR_VERSION
+    unset _sidar_version_probe_requested _sidar_version_probe_pyproject
     return 0 2>/dev/null || exit 0
 fi
 
@@ -1141,13 +1155,18 @@ sidar_source_install_utils \
     "env_utils.sh" \
     "ollama_models.sh" \
     "playwright_ubuntu_override.sh"
-INSTALL_SIDAR_VERSION="${INSTALL_SIDAR_VERSION:-$(resolve_install_sidar_version)}"
+SIDAR_INSTALL_REQUESTED_VERSION="${INSTALL_SIDAR_VERSION:-}"
+INSTALL_SIDAR_VERSION="$(resolve_install_sidar_version)"
+if [[ -n "$SIDAR_INSTALL_REQUESTED_VERSION" && "$INSTALL_SIDAR_VERSION" != "0.0.0" && "$SIDAR_INSTALL_REQUESTED_VERSION" != "$INSTALL_SIDAR_VERSION" ]]; then
+    fail "INSTALL_SIDAR_VERSION uyumsuz: ortam=${SIDAR_INSTALL_REQUESTED_VERSION}, pyproject.toml=${INSTALL_SIDAR_VERSION}. Kurulum sürümü pyproject.toml ile senkron kalmalıdır; ortam değişkenini kaldırın veya pyproject.toml sürümüyle eşitleyin."
+fi
 if is_blank "$INSTALL_SIDAR_VERSION"; then
     info "INSTALL_SIDAR_VERSION boş çözüldü; güvenli fallback sürümü kullanılacak."
     warn "Installer sürümü pyproject.toml/sidar_version.py üzerinden okunamadı; INSTALL_SIDAR_VERSION=0.0.0 olarak ayarlanıyor."
     INSTALL_SIDAR_VERSION="0.0.0"
 fi
 export INSTALL_SIDAR_VERSION
+unset SIDAR_INSTALL_REQUESTED_VERSION
 
 load_install_phase_modules
 # END_BUNDLE_MODULES

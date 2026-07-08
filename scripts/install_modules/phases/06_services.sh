@@ -1401,6 +1401,9 @@ run_pre_service_installer_smoke_gate() {
     fi
     if [[ -n "${expected_installer_version//[[:space:]]/}" ]]; then
         info "Installer sürüm sözleşmesi pyproject.toml üzerinden okunuyor: v${expected_installer_version}. Source/export doğrulaması CI smoke testi kapsamındadır."
+        if [[ -n "${INSTALL_SIDAR_VERSION:-}" && "${INSTALL_SIDAR_VERSION}" != "$expected_installer_version" ]]; then
+            fail "Servis öncesi smoke gate durduruldu: INSTALL_SIDAR_VERSION=${INSTALL_SIDAR_VERSION}, pyproject.toml=${expected_installer_version}. Kurulumu repo kökündeki ./install_sidar.sh ile yeniden başlatın veya ortam değişkenini pyproject.toml ile eşitleyin."
+        fi
     else
         warn "pyproject.toml içinde [project].version okunamadı; INSTALL_SIDAR_VERSION sözleşmesi CI smoke testi kapsamında doğrulanacak."
     fi

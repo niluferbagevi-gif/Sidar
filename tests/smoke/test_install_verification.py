@@ -996,6 +996,32 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
     )
 
 
+def test_install_sidar_version_probe_fails_on_env_pyproject_mismatch(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
+
+    mismatch_result = _run_bash_smoke(
+        """
+        set -euo pipefail
+        export SIDAR_INSTALL_VERSION_PROBE_ONLY=1
+        export INSTALL_SIDAR_VERSION=0.0.0-test-mismatch
+        source ./install_sidar.sh >/dev/null
+        """,
+        tmp_path,
+        timeout_seconds=int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60")),
+    )
+    assert mismatch_result.returncode != 0, (
+        "Version probe INSTALL_SIDAR_VERSION/pyproject.toml uyumsuzluğunu fail-closed "
+        "yakalamalıydı.\n"
+        f"expected_pyproject_version={pyproject_version}\n"
+        f"--- stdout ---\n{mismatch_result.stdout!r}\n"
+        f"--- stderr ---\n{mismatch_result.stderr!r}"
+    )
+    assert "INSTALL_SIDAR_VERSION uyumsuz" in mismatch_result.stderr
+    assert f"pyproject.toml={pyproject_version}" in mismatch_result.stderr
+
+
 def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         """
