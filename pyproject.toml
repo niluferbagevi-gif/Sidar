@@ -221,7 +221,7 @@ dev = [
   "respx>=0.21.1",
   "fakeredis>=2.20.0",
   "testcontainers>=4.0.0",
-  "ruff~=0.8.1",
+  "ruff>=0.15,<0.16",
   "mypy~=1.11.2",
   "pyright>=1.1.409,<2.0.0",
   "pre-commit>=4.0.0,<5.0.0",
@@ -349,6 +349,8 @@ validation_commands = [
 line_length = 100
 e501_global_ignore_review_by = "2026-09-30"
 e501_global_ignore_reason = "Legacy root entrypoints still contain long lines; new or meaningfully edited code should wrap to line-length=100 and avoid expanding this debt."
+async240_global_ignore_review_by = "2026-09-30"
+async240_global_ignore_reason = "Legacy async code paths still contain synchronous pathlib metadata checks that are safe for current small local files but trip Ruff ASYNC240 after flake8-async updates; new async I/O paths should prefer asyncio.to_thread, anyio.Path, or precomputed sync setup instead of expanding this debt."
 legacy_hotspots = ["web_server.py", "main.py"]
 
 [[tool.sidar.dependency_profile_plan.profiles]]
@@ -635,6 +637,9 @@ ignore = [
   "D403",
   "D415",
   "D417",
+  # ASYNC240 is tracked in [tool.sidar.ruff_debt]; new async I/O code should not
+  # add blocking pathlib calls just because this compatibility ignore exists.
+  "ASYNC240",
 ]
 
 [tool.ruff.lint.per-file-ignores]
