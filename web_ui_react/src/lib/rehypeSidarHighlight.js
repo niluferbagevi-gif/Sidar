@@ -92,10 +92,7 @@ function highlightHtmlToHastChildren(html) {
       }
       continue;
     }
-    const text = decodeHtmlText(token);
-    if (text) {
-      current.children.push({ type: "text", value: text });
-    }
+    current.children.push({ type: "text", value: decodeHtmlText(token) });
   }
   return root.children;
 }

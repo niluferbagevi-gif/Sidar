@@ -335,4 +335,28 @@ describe("TenantAdminPanel", () => {
     expect(screen.getByText("İzinli audit").previousSibling).toHaveTextContent("1");
   });
 
+  it("normalizes blank tenant and resource values to safe defaults before submit", async () => {
+    const user = userEvent.setup();
+    render(<TenantAdminPanel />);
+
+    await screen.findByText("Audit Trail");
+    await user.clear(screen.getByLabelText("Tenant ID"));
+    await user.type(screen.getByLabelText("Kullanıcı ID"), "  user-1  ");
+    await user.clear(screen.getByPlaceholderText("*"));
+    fireEvent.submit(screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form"));
+
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith("/admin/policies", expect.objectContaining({ method: "POST" }));
+    });
+    const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
+    expect(JSON.parse(request.body)).toMatchObject({
+      user_id: "user-1",
+      tenant_id: "default",
+      resource_id: "*",
+      resource_type: "rag",
+      action: "read",
+      effect: "allow",
+    });
+  });
+
 });

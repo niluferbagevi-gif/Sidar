@@ -256,4 +256,11 @@ describe("rehypeSidarHighlight", () => {
     await expect(import("./rehypeSidarHighlight.js?duplicate-alias-test")).resolves.toBeTruthy();
   });
 
+  it("parses classless text tokens with decoded entities", () => {
+    expect(__rehypeSidarHighlightTestHooks.classNamesFromHtml()).toEqual([]);
+    expect(__rehypeSidarHighlightTestHooks.highlightHtmlToHastChildren("&amp;&amp;")).toEqual([
+      { type: "text", value: "&&" },
+    ]);
+  });
+
 });
