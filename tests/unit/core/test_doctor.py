@@ -1827,6 +1827,33 @@ def test_doctor_check_contract_rejects_invalid_status() -> None:
         doctor.validate_doctor_check_contract(bad)
 
 
+def test_doctor_check_contract_rejects_missing_required_fields() -> None:
+    def valid_as_dict() -> dict[str, object]:
+        return {}
+
+    with pytest.raises(TypeError, match="non-empty string name"):
+        doctor.validate_doctor_check_contract(
+            types.SimpleNamespace(
+                name=" ", status="pass", message="ok", details={}, as_dict=valid_as_dict
+            )
+        )
+    with pytest.raises(TypeError, match="string message"):
+        doctor.validate_doctor_check_contract(
+            types.SimpleNamespace(
+                name="x", status="pass", message=None, details={}, as_dict=valid_as_dict
+            )
+        )
+    with pytest.raises(TypeError, match="details must be a dict"):
+        doctor.validate_doctor_check_contract(
+            types.SimpleNamespace(
+                name="x", status="pass", message="ok", details=[], as_dict=valid_as_dict
+            )
+        )
+    with pytest.raises(TypeError, match="as_dict"):
+        doctor.validate_doctor_check_contract(
+            types.SimpleNamespace(name="x", status="pass", message="ok", details={})
+        )
+
 def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection() -> None:
     assert doctor.validate_auto_fix_command(
         "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
@@ -1842,6 +1869,10 @@ def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection()
         doctor.validate_auto_fix_command("uv run python -m scripts.seed_rag; rm -rf / --force")
     with pytest.raises(ValueError, match="not allowlisted"):
         doctor.validate_auto_fix_command("bash -lc 'echo pwnd'")
+    with pytest.raises(ValueError, match="empty"):
+        doctor.validate_auto_fix_command("   ")
+    with pytest.raises(ValueError, match="not safe"):
+        doctor.validate_auto_fix_command("uv run python -m scripts.seed_rag bad;arg")
 
 
 def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
@@ -1852,6 +1883,7 @@ def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
         {
             "error": "password=secret-token postgresql://sidar:secret-token@localhost/sidar",
             "nested": ["api_key=abc12345", {"token": "token=my-token"}],
+            "tuple_secret": ("password=tuple-secret",),
         },
     )
 
@@ -1861,4 +1893,5 @@ def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
     assert "secret-token" not in serialized
     assert "abc12345" not in serialized
     assert "my-token" not in serialized
+    assert "tuple-secret" not in serialized
     assert "postgresql://sidar:***@localhost/sidar" in serialized
