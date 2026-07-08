@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,7 +208,8 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
     assert upsert_policy.json() == {"success": True, "items": [{"id": "a1", "user_id": "u1"}]}
 
 
-def test_hitl_router_pending_direct(make_test_client) -> None:
+@pytest.mark.asyncio
+async def test_hitl_router_pending_direct() -> None:
     store = SimpleNamespace(pending=lambda: _async_value([]))
     router = build_hitl_router(
         get_request_user=_admin_user,
@@ -221,11 +223,11 @@ def test_hitl_router_pending_direct(make_test_client) -> None:
             timeout=10, respond=lambda *_args, **_kwargs: _async_value(None)
         ),
     )
-    app = FastAPI()
-    app.include_router(router)
-    res = make_test_client(app).get("/api/hitl/pending")
+
+    res = await router.legacy_exports["hitl_pending"](user=_admin_user())
+
     assert res.status_code == 200
-    assert res.json()["count"] == 0
+    assert json.loads(res.body)["count"] == 0
 
 
 def test_metrics_router_json_direct(make_test_client) -> None:
