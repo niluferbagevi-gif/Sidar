@@ -632,6 +632,61 @@ format_backend_failure_reasons() {
   done
 }
 
+print_failed_backend_nodeids() {
+  local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
+  if [ ! -d "${junit_dir}" ]; then
+    return 0
+  fi
+
+  if ! command -v python >/dev/null 2>&1; then
+    return 0
+  fi
+
+  python - "${junit_dir}" <<'PY_FAILED_NODEIDS'
+from __future__ import annotations
+
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+def _testcase_nodeid(testcase: ET.Element) -> str:
+    name = testcase.attrib.get("name", "").strip()
+    file_path = testcase.attrib.get("file", "").strip()
+    if file_path and name:
+        return f"{file_path}::{name}"
+
+    classname = testcase.attrib.get("classname", "").strip()
+    if classname and name:
+        candidate = classname.replace(".", "/")
+        if candidate.startswith("tests/") and not candidate.endswith(".py"):
+            candidate = f"{candidate}.py"
+        return f"{candidate}::{name}"
+    return name
+
+
+failed_tests: list[str] = []
+seen: set[str] = set()
+for report_path in sorted(Path(sys.argv[1]).glob("backend-*.xml")):
+    try:
+        root = ET.parse(report_path).getroot()
+    except ET.ParseError:
+        continue
+    for testcase in root.iter("testcase"):
+        if not any(child.tag.rsplit("}", 1)[-1] in {"failure", "error"} for child in testcase):
+            continue
+        nodeid = _testcase_nodeid(testcase)
+        if nodeid and nodeid not in seen:
+            seen.add(nodeid)
+            failed_tests.append(nodeid)
+
+if failed_tests:
+    print("   Başarısız Backend Testleri:")
+    for nodeid in failed_tests:
+        print(f"     - {nodeid}")
+PY_FAILED_NODEIDS
+}
+
 format_quality_status() {
   local code="$1"
   local ran="${2:-1}"
@@ -2543,6 +2598,7 @@ if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
     echo "   Backend Hata Nedenleri: $(format_backend_failure_reasons)"
+    print_failed_backend_nodeids
   fi
   echo "   Frontend Unit/Coverage Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
   echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
