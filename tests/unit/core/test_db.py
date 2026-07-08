@@ -616,6 +616,69 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_sqlite_op_recreates_missing_executor(sqlite_db: Database) -> None:
+    executor = sqlite_db._sqlite_executor
+    assert executor is not None
+    executor.shutdown(wait=True)
+    sqlite_db._sqlite_executor = None
+
+    assert await sqlite_db._run_sqlite_op(lambda: "executor-restored") == "executor-restored"
+    assert sqlite_db._sqlite_executor is not None
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_read_failures_skip_rollback(sqlite_db: Database) -> None:
+    class _RollbackTrackingConn:
+        rollback_called = False
+
+        def rollback(self) -> None:
+            self.rollback_called = True
+
+    conn = _RollbackTrackingConn()
+    original_conn = sqlite_db._sqlite_conn
+    sqlite_db._sqlite_conn = conn  # type: ignore[assignment]
+
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            await sqlite_db._run_sqlite_op(
+                lambda: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked")),
+                write=False,
+            )
+        with pytest.raises(ValueError, match="read failed"):
+            await sqlite_db._run_sqlite_op(
+                lambda: (_ for _ in ()).throw(ValueError("read failed")),
+                write=False,
+            )
+    finally:
+        sqlite_db._sqlite_conn = original_conn
+
+    assert conn.rollback_called is False
+
+
+@pytest.mark.asyncio
+async def test_close_sqlite_connection_without_executor_uses_thread_fallback(tmp_path) -> None:
+    class _CloseOnlyConn:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    db = Database(
+        DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'close.db'}", BASE_DIR=str(tmp_path))
+    )
+    conn = _CloseOnlyConn()
+    db._sqlite_conn = conn  # type: ignore[assignment]
+    db._sqlite_executor = None
+    db._sqlite_closed = False
+
+    await db.close()
+
+    assert conn.closed is True
+    assert db._sqlite_conn is None
+
+
+@pytest.mark.asyncio
 async def test_jwt_token_flow_prefers_db_user(sqlite_db: Database) -> None:
     user = await sqlite_db.create_user(
         "jwt-user", role="admin", password="pw", tenant_id="tenant-a"
