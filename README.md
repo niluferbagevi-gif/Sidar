@@ -324,6 +324,14 @@ BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh
 
 CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
 `BENCHMARK_COMPARE_REQUIRED=1` ile baseline yokluğu fail-closed kalmalıdır.
+GitHub Actions tarafında boş cache / yeni branch / yeni runner durumunda önce manuel
+**Benchmark baseline seed** workflow'unu (`workflow_dispatch`) çalıştırın. Bu job
+`BENCHMARK_COMPARE_REQUIRED=0` ve `BENCHMARK_ENFORCE_COMPARE=0` ile yalnız baseline
+üretir, `.benchmarks/` dizinini artifact olarak yükler ve
+`benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'iyle kaydeder.
+Ana `CI` workflow'u daha sonra aynı branch, `main/master` veya genel restore-key
+zincirinden bu cache'i bulamazsa production-readiness gate'i seed moduna düşmeden
+fail-closed durmaya devam eder.
 Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
 `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
 çalıştırın.
@@ -1014,6 +1022,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
 > CI profili varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed durur; yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0` olduğu için ilk koşuda otomatik bootstrap yapar.
+> GitHub Actions'ta ilk/boş cache bootstrap için **Benchmark baseline seed** workflow'unu
+> manuel çalıştırın; workflow `.benchmarks/` artifact'i üretir ve CI'ın restore edeceği
+> `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'ini kaydeder.
+> Artifact'i review etmeden cache'i kalıcı güven sinyali kabul etmeyin.
 > Yeni makine veya boş cache/bootstrap durumunda ilk baseline'ı üretmek için
 > `RUN_BENCHMARKS=required ./run_tests.sh` çalıştırın; bu koşu
 > `--benchmark-save=baseline` ile `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.

@@ -3398,7 +3398,11 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
 
 def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
+        encoding="utf-8"
+    )
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
@@ -3426,6 +3430,15 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
     assert "koşu seed moduna düşmez" in notes
+    assert "name: Benchmark baseline seed" in seed_workflow
+    assert "workflow_dispatch:" in seed_workflow
+    assert 'BENCHMARK_COMPARE_REQUIRED: "0"' in seed_workflow
+    assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
+    assert "actions/cache/save@v4" in seed_workflow
+    assert "actions/upload-artifact@v4" in seed_workflow
+    assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
+    assert "Benchmark baseline seed" in readme
+    assert "Benchmark baseline seed" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
