@@ -601,7 +601,7 @@ download_remote_install_module() {
         return 1
     fi
 
-    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "$remote_module_base" == file://* ]]; then
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ENFORCE_FILE_MODULE_HASHES:-0}" != "1" && "$remote_module_base" == file://* ]]; then
         INSTALL_REMOTE_MODULE_HASH_BYPASS=1
         :
     else
@@ -610,6 +610,57 @@ download_remote_install_module() {
     install -m 0644 "$tmp_module_path" "$destination_path"
     rm -f "$tmp_module_path"
     info "Fallback modül indirildi: ${module_rel} -> ${destination_path}"
+}
+
+
+resolve_remote_module_base() {
+    local remote_module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+
+    if [[ -z "$remote_module_base" ]]; then
+        remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+    fi
+    [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+    printf '%s' "$remote_module_base"
+}
+
+install_module_tree_missing_summary() {
+    local module_root="$1"
+    local module_rel=""
+    local missing_count=0
+    local missing_preview=()
+
+    for module_rel in "${INSTALL_REMOTE_MODULES[@]}"; do
+        if [[ ! -f "${module_root}/${module_rel}" ]]; then
+            missing_count=$((missing_count + 1))
+            if [[ ${#missing_preview[@]} -lt 6 ]]; then
+                missing_preview+=("$module_rel")
+            fi
+        fi
+    done
+
+    if [[ $missing_count -eq 0 ]]; then
+        return 0
+    fi
+
+    printf '%s eksik' "$missing_count"
+    if [[ ${#missing_preview[@]} -gt 0 ]]; then
+        printf ': %s' "${missing_preview[*]}"
+        if [[ $missing_count -gt ${#missing_preview[@]} ]]; then
+            printf ' ...'
+        fi
+    fi
+    return 1
+}
+
+download_install_modules_to_temp() {
+    local remote_module_base="$1"
+
+    INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
+    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+    download_remote_install_modules "$remote_module_base" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $remote_module_base"
+    INSTALL_MODULES_DOWNLOADED=1
+    ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 }
 
 download_remote_install_modules() {
@@ -709,50 +760,37 @@ bootstrap_clone_and_reexec() {
     exec "$next_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
-if [[ ! -f "$INSTALL_HELPERS_MODULE" ]]; then
+LOCAL_INSTALL_MODULE_TREE_STATUS="$(install_module_tree_missing_summary "$INSTALL_MODULE_DIR" || true)"
+if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
-        fail "SIDAR_BUNDLE_MODE=1 algılandı ancak $INSTALL_HELPERS_MODULE bulunamadı. Bundle bütünlüğünü doğrulayın ve betiği yeniden üretin."
+        fail "SIDAR_BUNDLE_MODE=1 algılandı ancak yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS}). Bundle bütünlüğünü doğrulayın ve betiği yeniden üretin."
     fi
-    info "Yerel modül dosyası bulunamadı: $INSTALL_HELPERS_MODULE"
+    info "Yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS})"
 
-    if { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" == "1" ]]; } && [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
-        info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
-        verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"
-        cd "$HOME/Sidar" || fail "Mevcut repo dizinine geçilemedi: $HOME/Sidar"
-        exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
-    fi
-
-    REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
-    if [[ -n "$REMOTE_MODULE_BASE" ]]; then
-        INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-        INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-        download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
-        INSTALL_MODULES_DOWNLOADED=1
-        ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
-    elif { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE:-0}" == "1" ]]; } && command -v git >/dev/null 2>&1; then
-        bootstrap_clone_and_reexec
-    fi
-
-    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]] && ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        fail "Bootstrap clone için git yok, fallback indirme için curl/wget de yok. Kurulum devam edemiyor."
+    REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
+    if command -v curl &>/dev/null || command -v wget &>/dev/null; then
+        info "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek: $REMOTE_MODULE_BASE"
+        download_install_modules_to_temp "$REMOTE_MODULE_BASE"
     fi
 
     if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]]; then
-        warn "git bulunamadı; fallback olarak modüller geçici dizine indirilecek."
-        INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-        INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-        INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
-        REMOTE_MODULE_BASE="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
-        if [[ -z "$REMOTE_MODULE_BASE" ]]; then
-            REMOTE_MODULE_BASE="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+        if { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE:-0}" == "1" ]]; } && [[ -d "$HOME/Sidar/.git" && -f "$HOME/Sidar/install_sidar.sh" ]]; then
+            info "Mevcut repo algılandı: $HOME/Sidar — kurulum buradan yeniden başlatılıyor."
+            verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"
+            cd "$HOME/Sidar" || fail "Mevcut repo dizinine geçilemedi: $HOME/Sidar"
+            exec "$HOME/Sidar/install_sidar.sh" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
         fi
-        [[ -n "$REMOTE_MODULE_BASE" ]] || REMOTE_MODULE_BASE="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
-        download_remote_install_modules "$REMOTE_MODULE_BASE" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $REMOTE_MODULE_BASE"
-        INSTALL_MODULES_DOWNLOADED=1
-        ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
+
+        if { [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]] || [[ "${SIDAR_INSTALL_ALLOW_BOOTSTRAP_IN_TEST_MODE:-0}" == "1" ]]; } && command -v git >/dev/null 2>&1; then
+            bootstrap_clone_and_reexec
+        fi
+    fi
+
+    if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]]; then
+        fail "Yerel kurulum modülleri eksik; doğrudan fallback indirme için curl/wget, bootstrap clone için git bulunamadı. Kurulum devam edemiyor."
     fi
 fi
+unset LOCAL_INSTALL_MODULE_TREE_STATUS
 if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
     # shellcheck disable=SC1090
     source "$INSTALL_HELPERS_MODULE"

@@ -150,16 +150,12 @@ def _wait_for_http_server(url: str, timeout_seconds: float = 5.0) -> None:
     raise AssertionError(f"Yerel raw installer HTTP sunucusu hazır olmadı: {url}")
 
 
-def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
+def test_install_sidar_direct_module_download_smoke(tmp_path: Path) -> None:
     """Simulate the fresh-user scenario: no local repo, only a raw install_sidar.sh.
 
-    Reproduces the original bug report flow:
-      1. User has no repository checked out anywhere.
-      2. raw install_sidar.sh is downloaded and executed.
-      3. install_sidar.sh detects missing modules and bootstrap-clones the repo.
-      4. After clone, verify_install_module_hashes_if_present() runs.
-      5. With no ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1, the hash gate must pass and
-         the installer must reach the post-verification abort hook cleanly.
+    The installer should detect the missing local scripts/install_modules tree,
+    download the pinned module set directly, and avoid a git bootstrap clone when
+    curl/wget is available.
     """
     repo_root = Path(os.getcwd())
     origin = tmp_path / "origin"
@@ -184,6 +180,7 @@ def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
         "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
         "SIDAR_BOOTSTRAP_CLONE_REF": branch,
         "SIDAR_REPO_BRANCH": branch,
+        "SIDAR_INSTALL_MODULE_BASE_URL": (origin / "scripts/install_modules").as_uri(),
     }
     env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
 
@@ -200,12 +197,11 @@ def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
         "Bootstrap clone smoke beklenmedik şekilde başarısız oldu (exit="
         f"{result.returncode}).\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
-    assert "bootstrap clone" in combined.lower(), (
-        "Bootstrap clone yolunun çalıştığı doğrulanamadı; install_sidar.sh "
-        "muhtemelen mevcut $HOME/Sidar üzerinden re-exec etti."
-    )
-    assert "Kurulum modül hash doğrulaması başarılı" in combined, (
-        "verify_install_module_hashes_if_present başarılı mesajı görülemedi.\n"
+    assert "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek" in combined
+    assert "Fallback modül indirildi: install_helpers.sh ->" in combined
+    assert "bootstrap clone" not in combined.lower()
+    assert "Test modu file:// fallback modül doğrulaması atlandı" in combined, (
+        "file:// test fixture için fallback modül indirme doğrulaması görülemedi.\n"
         f"--- combined ---\n{combined}"
     )
     assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" not in combined, (
@@ -215,7 +211,7 @@ def test_install_sidar_bootstrap_clone_smoke(tmp_path: Path) -> None:
     )
 
 
-def test_install_sidar_wget_raw_bootstrap_clone_smoke(tmp_path: Path) -> None:
+def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> None:
     """Exercise the documented wget/chmod flow against a branch-local raw URL."""
     if shutil.which("wget") is None:
         raise AssertionError("wget bu smoke test için gereklidir.")
@@ -258,6 +254,7 @@ def test_install_sidar_wget_raw_bootstrap_clone_smoke(tmp_path: Path) -> None:
             "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
             "SIDAR_BOOTSTRAP_CLONE_REF": branch,
             "SIDAR_REPO_BRANCH": branch,
+            "SIDAR_INSTALL_MODULE_BASE_URL": (origin / "scripts/install_modules").as_uri(),
         }
         env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
 
@@ -283,20 +280,20 @@ def test_install_sidar_wget_raw_bootstrap_clone_smoke(tmp_path: Path) -> None:
         f"{result.returncode}).\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
     for required_marker in (
-        "bootstrap clone",
-        "Bootstrap clone tamamlandı",
-        "Çekirdek kurulum manifest hash doğrulaması başarılı",
-        "Kurulum modül hash doğrulaması başarılı",
+        "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek",
+        "Fallback modül indirildi: install_helpers.sh ->",
+        "Test modu file:// fallback modül doğrulaması atlandı",
         "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1",
     ):
         assert required_marker in combined, (
             f"wget raw installer smoke çıktısında beklenen marker yok: {required_marker!r}.\n"
             f"--- combined ---\n{combined}"
         )
+    assert "bootstrap clone" not in combined.lower()
     assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" not in combined
 
 
-def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> None:
+def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -> None:
     """Drift case: clone origin carries a tampered module but standalone
     install_sidar.sh's embedded manifest still pins the original hash. The
     installer must refuse to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
@@ -335,6 +332,8 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
         "SIDAR_BOOTSTRAP_CLONE_DIRNAME": "Sidar",
         "SIDAR_BOOTSTRAP_CLONE_REF": branch,
         "SIDAR_REPO_BRANCH": branch,
+        "SIDAR_INSTALL_MODULE_BASE_URL": (origin / "scripts/install_modules").as_uri(),
+        "SIDAR_INSTALL_ENFORCE_FILE_MODULE_HASHES": "1",
     }
     env.pop("ALLOW_UNVERIFIED_REMOTE_SCRIPTS", None)
 
@@ -351,18 +350,15 @@ def test_install_sidar_bootstrap_hash_drift_blocks_install(tmp_path: Path) -> No
         "Tampered modülle drift testi başarısız olmalıydı (exit=0); manifest "
         f"gate kullanıcıyı koruyamadı.\n--- combined ---\n{combined}"
     )
-    assert "Kurulum modül hash doğrulaması başarısız" in combined, (
-        "Manifest gate'in drift'i hata mesajıyla raporlaması bekleniyordu.\n"
+    assert "Fallback modül hash doğrulaması başarısız: utils/ollama_models.sh" in combined, (
+        "Direct module fallback hash gate'in drift'i hata mesajıyla raporlaması bekleniyordu.\n"
         f"--- combined ---\n{combined}"
     )
     for required_marker in (
-        "Karşılaştırma:",
-        "Beklenen (raw installer):",
-        "Mevcut (klonlanmış repo):",
-        "Uyumsuz modüller",
-        "scripts/install_modules/utils/ollama_models.sh",
-        "scripts/sync_install_module_hashes.sh",
-        "ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1",
+        "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek",
+        "beklenen=",
+        "mevcut=",
+        "utils/ollama_models.sh",
     ):
         assert required_marker in combined, (
             f"Drift hata mesajında beklenen bilgi yok: {required_marker!r}.\n"
