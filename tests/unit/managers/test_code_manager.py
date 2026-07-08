@@ -14,6 +14,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import managers.code_manager as cm
+from managers.code import runner as code_runner
 from managers.security import FULL, SANDBOX
 
 # Capture the real _init_docker before any fixture patches it
@@ -577,6 +578,28 @@ def test_run_shell_rejects_nul_bytes(manager):
 
     assert ok is False
     assert "NUL" in msg
+
+
+def test_glob_search_filters_matches_denied_by_security(manager, tmp_path):
+    (tmp_path / "visible.py").write_text("print('x')", encoding="utf-8")
+    manager.security.read_ok = False
+
+    ok, msg = manager.glob_search("*.py", base_path=str(tmp_path))
+
+    assert ok is True
+    assert "Eşleşen dosya bulunamadı" in msg
+
+
+def test_find_destructive_shell_pattern_skips_empty_segments_and_empty_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert code_runner.find_destructive_shell_pattern("echo ok && ;") is None
+    assert code_runner.find_destructive_shell_pattern("cat data > /etc/passwd") == "> /etc/passwd"
+    assert code_runner.find_destructive_shell_pattern("chown -R app /srv/app") is None
+
+    monkeypatch.setattr(code_runner.shlex, "split", lambda _segment: [])
+
+    assert code_runner.find_destructive_shell_pattern("echo") is None
 
 
 def test_run_shell_paths(manager, monkeypatch, tmp_path):

@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -294,6 +295,18 @@ def test_init_uses_cfg_defaults_and_skips_guardrails_when_disabled(
     assert mgr.base_dir == tmp_path.resolve()
     assert mgr.prompt_guard_enabled is False
     assert calls["count"] == 0
+
+
+def test_init_guardrails_stores_available_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_module = type("NemoguardrailsModule", (), {"LLMRails": object()})
+    monkeypatch.setitem(sys.modules, "nemoguardrails", fake_module)
+    cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
+
+    mgr = SecurityManager(cfg=cfg)
+
+    assert mgr._guardrails_engine is fake_module.LLMRails
 
 
 def test_init_guardrails_import_error_falls_back_without_crashing(
