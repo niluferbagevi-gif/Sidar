@@ -650,6 +650,11 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "SIDAR_PRODUCTION_READINESS" in install_script
     assert "sidar_install_production_gate_required()" in validation_phase
     assert "Production readiness gate başarısız" in validation_phase
+    assert "Development tam doğrulaması başarısız oldu" in validation_phase
+    assert "production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir" in validation_phase
+    assert "Tam doğrulama sonucu: HATA" in validation_phase
+    assert "uygulama geliştirme amacıyla çalışabilir" in validation_phase
+    assert "production-ready sayılmaz" in validation_phase
     assert "PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur" in validation_phase
     assert "DEVELOPMENT UYARISI" in validation_phase
     assert (
@@ -1549,6 +1554,58 @@ def test_install_sidar_root_guard_allows_explicit_test_mode_only() -> None:
     assert '"${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1"' in script
 
 
+def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clone() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "use_existing_install_module_tree_if_available()" in install_script
+    assert '"${PWD}/scripts/install_modules"' in install_script
+    assert 'candidates+=("${TARGET_DIR}/scripts/install_modules")' in install_script
+    assert '"${HOME}/Sidar/scripts/install_modules"' in install_script
+    assert "Mevcut repo kurulum modülleri doğrudan kullanılacak" in install_script
+    module_resolution_flow = install_script[
+        install_script.index("use_existing_install_module_tree_if_available || true") : install_script.index(
+            "if [[ \"${INSTALL_MODULES_DOWNLOADED:-0}\" != \"1\" ]]; then"
+        )
+    ]
+    assert module_resolution_flow.index("use_existing_install_module_tree_if_available || true") < module_resolution_flow.index(
+        "download_install_modules_to_temp"
+    )
+    missing_module_flow = install_script[install_script.index("use_existing_install_module_tree_if_available || true") :]
+    assert missing_module_flow.index("download_install_modules_to_temp \"$REMOTE_MODULE_BASE\"") < missing_module_flow.index(
+        "bootstrap_clone_and_reexec"
+    )
+
+
+def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(tmp_path: Path) -> None:
+    runner_dir = tmp_path / "runner"
+    runner_dir.mkdir()
+    shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; printf "%s\n" "$INSTALL_MODULE_DIR"',
+            "bash",
+            str(runner_dir / "install_sidar.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "HOME": str(tmp_path),
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "SIDAR_INSTALL_MODULE_BASE_URL": (tmp_path / "missing-remote").as_uri(),
+        },
+        text=True,
+    )
+
+    expected_module_dir = str((Path.cwd() / "scripts/install_modules").resolve())
+    assert result.stdout.strip() == expected_module_dir
+    assert "Mevcut repo kurulum modülleri doğrudan kullanılacak" in result.stderr
+    assert "Fallback modül indirildi" not in result.stderr
+
+
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
     remote_modules = tmp_path / "remote"
     runner_dir = tmp_path / "runner"
@@ -1591,6 +1648,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
         ],
         check=True,
         capture_output=True,
+        cwd=runner_dir,
         env={
             "HOME": str(tmp_path),
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

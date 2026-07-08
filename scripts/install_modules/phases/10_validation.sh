@@ -521,7 +521,7 @@ run_optional_dev_full_validation_prompt() {
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
-        warn "Development tam doğrulaması başarısız oldu. Tekrar için: ${optional_command}"
+        warn "Development tam doğrulaması başarısız oldu. Uygulama smoke kontrolleri geçtiyse geliştirme amaçlı çalışabilir; ancak production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir. Tekrar için: ${optional_command}"
     fi
 }
 
@@ -774,7 +774,10 @@ print_install_validation_coverage() {
 
     if [[ "$ci_status" == "hata" ]]; then
         echo ""
-        echo -e "   ${RED}Tam doğrulama sonucu: HATA${NC}"
+        echo -e "   ${RED}${BOLD}❌ Tam doğrulama sonucu: HATA${NC}"
+        echo -e "   ${YELLOW}   Kurulum smoke adımları geçmişse uygulama geliştirme amacıyla çalışabilir;${NC}"
+        echo -e "   ${YELLOW}   ancak üretim/merge için tam doğrulama başarılı olmadan bu kurulum production-ready sayılmaz.${NC}"
+        echo -e "   ${YELLOW}   Tekrar komutu: ${recommended_validation_command}${NC}"
     elif [[ "$full_coverage_reached" != true ]]; then
         echo ""
         if sidar_install_production_gate_required; then

@@ -494,7 +494,7 @@ fae50b21245c6f0cd2078e64f21320d187e0d213f0937036a4f1495d110b05de  scripts/instal
 9cc1a9ce4f5e6318c8a0276719c0d68740ad132b1928aa80637da5d57b57202f  scripts/install_modules/phases/07_finish.sh
 f39f8d51e9011da0f6d19b29ab7b8c86e8a3738cdec768b20391edd8e1868f7d  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
-aa95607d80650b1d750914ac9f7de4342f92b829b4c47a1c5e322523c7aef3f1  scripts/install_modules/phases/10_validation.sh
+a3a95af0105d4356094ff74da6cdd34aea64639d70a504c143773b0e79b59e38  scripts/install_modules/phases/10_validation.sh
 36202d5144780b33345d1554e658af65f99b7f961b6a05eef0a4eeb1efe4f8e1  scripts/install_modules/phases/11_post_install.sh
 339cd801d29f2e929f66d2d76d5cceb5a4d5c858197c44bb20205980f671c4c2  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -652,6 +652,42 @@ install_module_tree_missing_summary() {
     return 1
 }
 
+
+use_existing_install_module_tree_if_available() {
+    local candidate_dir=""
+    local candidate_status=""
+    local candidates=(
+        "${INSTALL_MODULE_DIR}"
+        "${PWD}/scripts/install_modules"
+        "${HOME}/Sidar/scripts/install_modules"
+    )
+    local seen=""
+
+    if [[ -n "${TARGET_DIR:-}" ]]; then
+        candidates+=("${TARGET_DIR}/scripts/install_modules")
+    fi
+
+    for candidate_dir in "${candidates[@]}"; do
+        [[ -n "${candidate_dir:-}" && -d "$candidate_dir" ]] || continue
+        case ":${seen}:" in
+            *":${candidate_dir}:"*) continue ;;
+        esac
+        seen="${seen}:${candidate_dir}"
+        candidate_status="$(install_module_tree_missing_summary "$candidate_dir" || true)"
+        if [[ -z "$candidate_status" ]]; then
+            if [[ "$candidate_dir" != "$INSTALL_MODULE_DIR" ]]; then
+                info "Mevcut repo kurulum modülleri doğrudan kullanılacak: $candidate_dir"
+                INSTALL_MODULE_DIR="$candidate_dir"
+                INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+            fi
+            return 0
+        fi
+        info "Aday kurulum modül ağacı eksik: $candidate_dir (${candidate_status})"
+    done
+
+    return 1
+}
+
 download_install_modules_to_temp() {
     local remote_module_base="$1"
 
@@ -760,6 +796,7 @@ bootstrap_clone_and_reexec() {
     exec "$next_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
+use_existing_install_module_tree_if_available || true
 LOCAL_INSTALL_MODULE_TREE_STATUS="$(install_module_tree_missing_summary "$INSTALL_MODULE_DIR" || true)"
 if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
