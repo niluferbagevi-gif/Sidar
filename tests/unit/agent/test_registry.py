@@ -388,6 +388,34 @@ def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
         if original_role_exports is not None:
             sys.modules["agent.roles"] = original_role_exports
 
+
+def test_agent_catalog_get_preserves_canonical_module_cache_class_identity() -> None:
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
+    snapshot = dict(AgentCatalog._registry)
+
+    temp_cls = type(
+        f"Temp{contract.class_name}",
+        (),
+        {"__module__": contract.module_name},
+    )
+
+    try:
+        AgentCatalog.register_type(
+            role_name=contract.role_name,
+            agent_class=temp_cls,
+            capabilities=list(contract.capabilities),
+            is_builtin=True,
+        )
+
+        spec = AgentCatalog.get(contract.role_name)
+
+        assert spec is not None
+        assert spec.agent_class is temp_cls
+    finally:
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
 def test_agent_catalog_health_reports_non_builtin_builtin_role() -> None:
     snapshot = dict(AgentCatalog._registry)
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")

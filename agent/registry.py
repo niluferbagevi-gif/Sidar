@@ -284,8 +284,14 @@ class AgentCatalog:
             and contract is not None
             and resolved_agent_class.__module__ == contract.module_name
         ):
+            canonical_module = sys.modules.get(contract.module_name)
+            canonical_export = (
+                getattr(canonical_module, contract.class_name, None)
+                if canonical_module is not None
+                else None
+            )
             role_exports = sys.modules.get("agent.roles")
-            if role_exports is not None:
+            if role_exports is not None and canonical_export is resolved_agent_class:
                 setattr(role_exports, contract.class_name, resolved_agent_class)
         logger.debug("AgentCatalog: '%s' kaydedildi (yetenekler: %s)", role_name, capabilities)
 
