@@ -1075,6 +1075,8 @@ başında açıklanır. Runtime yükleme zinciri özetle `config.py` varsayılan
 `DOTENV_FILE` → `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` şeklindedir. İzole süreçlerde
 `SIDAR_SKIP_DEFAULT_DOTENV=1`, repo içindeki `.env`, `.env.advanced` ve `.env.${SIDAR_ENV}`
 katmanlarını atlar; açık `DOTENV_FILE` ve `SIDAR_KEYS_FILE` katmanları yüklenmeye devam eder.
+Ayrıntılı dosya sorumluluğu, override önceliği ve drift giderme akışı için
+[`docs/ENVIRONMENT_CONFIGURATION.md`](docs/ENVIRONMENT_CONFIGURATION.md) dosyasını kullanın.
 
 **API anahtarı politikası:** OpenAI/Gemini/Anthropic/GitHub/Slack/Jira/Teams gibi gerçek
 servis anahtarları için kalıcı kaynak olarak yalnız `.env` ve repo dışındaki
