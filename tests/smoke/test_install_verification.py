@@ -1164,6 +1164,8 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "60 saniyelik varsayılan timeout" in troubleshooting
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
     assert "Smoke gate probe timeout belirtisi" in phase
+    assert "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" in phase
+    assert "core_manifest_status=2 durumunu maskelemediğini kontrol edin" in phase
     assert "sidar_phase06_cleanup_pre_service_smoke_log" in phase
     assert "SIDAR_PHASE06_PRE_SERVICE_SMOKE_LOG" in phase
     assert "sidar_phase06_fail_with_smoke_cleanup" in phase

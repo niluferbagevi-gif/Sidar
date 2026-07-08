@@ -1508,6 +1508,9 @@ PY
             sed -n '1,200p' "$smoke_log" | sed 's/^/  | /' || true
         fi
         warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
+        if grep -q "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" "$smoke_log" 2>/dev/null; then
+            warn "Installer core manifest drift smoke testi başarısız oldu; install_sidar.sh içinde SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY erken çıkışının core_manifest_status=2 durumunu maskelemediğini kontrol edin."
+        fi
         if grep -qE '\.env\.test:.*expected=.*actual=|unexpectedly received real key value|SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV' "$smoke_log" 2>/dev/null; then
             warn "Smoke gate .env.test API key senkronizasyon sözleşmesi nedeniyle başarısız görünüyor."
             warn "Varsayılan güvenlik davranışı gerçek servis anahtarlarını .env.test içine kopyalamaz."
