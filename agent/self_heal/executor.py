@@ -8,21 +8,25 @@ wired through the facade while follow-up slices migrate more self-heal logic her
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 from core.ci_remediation import normalize_self_heal_plan
 
+if TYPE_CHECKING:
+    from typing import Protocol
 
-class _CodeManagerLike(Protocol):
-    def read_file(self, path: str, include_line_numbers: bool = False) -> tuple[bool, str]: ...
+    class _CodeManagerLike(Protocol):
+        def read_file(self, path: str, include_line_numbers: bool = False) -> tuple[bool, str]: ...
 
-    def write_file(
-        self, path: str, content: str, include_line_numbers: bool = False
-    ) -> tuple[bool, str]: ...
+        def write_file(
+            self, path: str, content: str, include_line_numbers: bool = False
+        ) -> tuple[bool, str]: ...
 
-    def patch_file(self, path: str, target: str, replacement: str) -> tuple[bool, str]: ...
+        def patch_file(self, path: str, target: str, replacement: str) -> tuple[bool, str]: ...
 
-    def run_shell_in_sandbox(self, command: str, workdir: str) -> tuple[bool, str]: ...
+        def run_shell_in_sandbox(self, command: str, workdir: str) -> tuple[bool, str]: ...
+else:
+    _CodeManagerLike = Any
 
 
 async def restore_self_heal_backups(code: _CodeManagerLike, backups: dict[str, str]) -> None:
