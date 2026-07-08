@@ -446,6 +446,11 @@ INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 INSTALL_MODULES_DOWNLOADED=0
+SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-5}"
+SIDAR_INSTALL_MODULE_RETRY_DELAY="${SIDAR_INSTALL_MODULE_RETRY_DELAY:-2}"
+SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15}"
+SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache}"
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -591,6 +596,102 @@ derive_remote_module_base_from_repo() {
     printf 'https://raw.githubusercontent.com/%s/%s/scripts/install_modules' "$owner_repo" "$repo_branch"
 }
 
+remote_install_module_cache_key() {
+    local remote_module_base="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$remote_module_base" | sha256sum | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$remote_module_base" | shasum -a 256 | awk '{print $1}'
+        return 0
+    fi
+    printf '%s' "$remote_module_base" | sed -E 's#[^A-Za-z0-9._-]+#_#g'
+}
+
+remote_install_module_cached_path() {
+    local module_rel="$1"
+    local remote_module_base="$2"
+    local cache_key=""
+
+    cache_key="$(remote_install_module_cache_key "$remote_module_base")"
+    printf '%s/%s/%s' "$SIDAR_INSTALL_MODULE_CACHE_ROOT" "$cache_key" "$module_rel"
+}
+
+remote_install_module_retry_sleep() {
+    local attempt="$1"
+    local retry_after="${2:-}"
+    local delay="$SIDAR_INSTALL_MODULE_RETRY_DELAY"
+    local jitter=0
+
+    if [[ "$retry_after" =~ ^[0-9]+$ && "$retry_after" -gt 0 ]]; then
+        delay="$retry_after"
+    else
+        delay=$((SIDAR_INSTALL_MODULE_RETRY_DELAY * (2 ** (attempt - 1))))
+        jitter=$(( (RANDOM % 3) ))
+        delay=$((delay + jitter))
+    fi
+
+    if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" || "${SIDAR_INSTALL_SKIP_RETRY_SLEEP:-0}" == "1" ]]; then
+        info "Fallback modül retry beklemesi test modunda atlandı: ${delay}s"
+        return 0
+    fi
+    sleep "$delay"
+}
+
+download_remote_install_module_with_curl() {
+    local module_rel="$1"
+    local remote_module_url="$2"
+    local tmp_module_path="$3"
+    local headers_path="$4"
+    local http_code=""
+
+    http_code="$(
+        curl \
+            -fsSL \
+            --retry "$SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES" \
+            --retry-all-errors \
+            --retry-delay "$SIDAR_INSTALL_MODULE_RETRY_DELAY" \
+            --connect-timeout "$SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT" \
+            --max-time "$SIDAR_INSTALL_MODULE_MAX_TIME" \
+            -D "$headers_path" \
+            -w '%{http_code}' \
+            "$remote_module_url" \
+            -o "$tmp_module_path" 2>/dev/null
+    )" || {
+        printf '%s' "${http_code:-000}"
+        return 1
+    }
+    printf '%s' "${http_code:-000}"
+    return 0
+}
+
+download_remote_install_module_with_wget() {
+    local remote_module_url="$1"
+    local tmp_module_path="$2"
+
+    wget \
+        --tries="$SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES" \
+        --connect-timeout="$SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT" \
+        --read-timeout="$SIDAR_INSTALL_MODULE_MAX_TIME" \
+        --waitretry="$SIDAR_INSTALL_MODULE_RETRY_DELAY" \
+        -qO "$tmp_module_path" "$remote_module_url"
+}
+
+remote_install_module_status_is_retryable() {
+    local http_code="${1:-000}"
+
+    case "$http_code" in
+        000|403|408|409|425|429|5??) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+remote_install_module_retry_after_header() {
+    local headers_path="$1"
+    awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {gsub("\r", "", $2); print $2; exit}' "$headers_path" 2>/dev/null || true
+}
+
 download_remote_install_module() {
     local module_rel="$1"
     local remote_module_base="$2"
@@ -598,18 +699,59 @@ download_remote_install_module() {
     local remote_module_url="${remote_module_base}/${module_rel}"
     local destination_path="${destination_root}/${module_rel}"
     local tmp_module_path=""
+    local cache_path=""
+    local cache_sentinel=""
+    local headers_path=""
+    local attempt=1
+    local max_attempts=$((SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES + 1))
+    local http_code="000"
+    local retry_after=""
 
     mkdir -p "$(dirname "$destination_path")"
-    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
-
-    if command -v curl &>/dev/null; then
-        curl -fsSL "$remote_module_url" -o "$tmp_module_path" || { rm -f "$tmp_module_path"; return 1; }
-    elif command -v wget &>/dev/null; then
-        wget -qO "$tmp_module_path" "$remote_module_url" || { rm -f "$tmp_module_path"; return 1; }
-    else
-        rm -f "$tmp_module_path"
-        return 1
+    cache_path="$(remote_install_module_cached_path "$module_rel" "$remote_module_base")"
+    cache_sentinel="${cache_path}.ok"
+    if [[ -f "$cache_path" && -f "$cache_sentinel" ]]; then
+        if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ENFORCE_FILE_MODULE_HASHES:-0}" != "1" && "$remote_module_base" == file://* ]]; then
+            :
+        else
+            verify_remote_install_module_hash "$module_rel" "$cache_path"
+        fi
+        install -m 0644 "$cache_path" "$destination_path"
+        info "Fallback modül cache'den kullanıldı: ${module_rel} -> ${destination_path}"
+        return 0
     fi
+
+    tmp_module_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module.XXXXXX")"
+    headers_path="$(mktemp "${TMPDIR:-/tmp}/sidar_install_module_headers.XXXXXX")"
+
+    while (( attempt <= max_attempts )); do
+        rm -f "$tmp_module_path" "$headers_path"
+        if command -v curl &>/dev/null; then
+            if http_code="$(download_remote_install_module_with_curl "$module_rel" "$remote_module_url" "$tmp_module_path" "$headers_path")"; then
+                break
+            fi
+        elif command -v wget &>/dev/null; then
+            if download_remote_install_module_with_wget "$remote_module_url" "$tmp_module_path"; then
+                http_code="200"
+                break
+            fi
+            http_code="000"
+        else
+            rm -f "$tmp_module_path" "$headers_path"
+            fail "Fallback modül indirilemedi (${module_rel}): curl veya wget bulunamadı."
+        fi
+
+        if (( attempt >= max_attempts )) || ! remote_install_module_status_is_retryable "$http_code"; then
+            rm -f "$tmp_module_path" "$headers_path"
+            warn "Fallback modül indirme başarısız (${module_rel}); url=${remote_module_url}; http_status=${http_code}; deneme=${attempt}/${max_attempts}"
+            return 1
+        fi
+
+        retry_after="$(remote_install_module_retry_after_header "$headers_path")"
+        warn "Fallback modül indirme geçici hata (${module_rel}); http_status=${http_code}; deneme=${attempt}/${max_attempts}. Exponential backoff ile tekrar denenecek."
+        remote_install_module_retry_sleep "$attempt" "$retry_after"
+        attempt=$((attempt + 1))
+    done
 
     if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ENFORCE_FILE_MODULE_HASHES:-0}" != "1" && "$remote_module_base" == file://* ]]; then
         INSTALL_REMOTE_MODULE_HASH_BYPASS=1
@@ -618,7 +760,10 @@ download_remote_install_module() {
         verify_remote_install_module_hash "$module_rel" "$tmp_module_path"
     fi
     install -m 0644 "$tmp_module_path" "$destination_path"
-    rm -f "$tmp_module_path"
+    mkdir -p "$(dirname "$cache_path")"
+    install -m 0644 "$tmp_module_path" "$cache_path"
+    printf 'module=%s\nsource=%s\n' "$module_rel" "$remote_module_base" > "$cache_sentinel"
+    rm -f "$tmp_module_path" "$headers_path"
     info "Fallback modül indirildi: ${module_rel} -> ${destination_path}"
 }
 
@@ -715,7 +860,10 @@ download_remote_install_modules() {
     local module_rel=""
 
     for module_rel in "${INSTALL_REMOTE_MODULES[@]}"; do
-        download_remote_install_module "$module_rel" "$remote_module_base" "$destination_root" || return 1
+        download_remote_install_module "$module_rel" "$remote_module_base" "$destination_root" || {
+            warn "Fallback modül indirme akışı ${module_rel} dosyasında durdu. Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır."
+            return 1
+        }
     done
 }
 

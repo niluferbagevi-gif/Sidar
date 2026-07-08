@@ -1727,6 +1727,24 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
     assert "install_modules" in result.stdout
 
 
+def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-5}"' in install_script
+    assert "--retry-all-errors" in install_script
+    assert "--connect-timeout" in install_script
+    assert "--max-time" in install_script
+    assert "remote_install_module_status_is_retryable()" in install_script
+    assert "000|403|408|409|425|429|5??" in install_script
+    assert "remote_install_module_retry_sleep" in install_script
+    assert "Retry-After:" in install_script
+    assert "SIDAR_INSTALL_MODULE_CACHE_ROOT" in install_script
+    assert 'cache_sentinel="${cache_path}.ok"' in install_script
+    assert "Fallback modül cache'den kullanıldı" in install_script
+    assert "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır." in install_script
+    assert "Fallback modül indirme başarısız (${module_rel})" in install_script
+
+
 def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -> None:
     raw_script = Path("scripts/install_modules/utils/wsl_integration_autofix.ps1").read_bytes()
 
