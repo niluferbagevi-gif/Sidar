@@ -114,9 +114,34 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    # Standart kurulum komutu: uv sync --frozen --all-extras — all extra grubu
-    # dev dahil tüm extras'ı içerir (pyproject.toml:194).
-    local -a SYNC_ARGS=(--frozen --all-extras)
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
+    local sync_command_label="uv sync --frozen --all-extras"
+    local -a SYNC_ARGS=()
+
+    case "$dependency_profile" in
+        dev-full)
+            # Standart kurulum komutu: uv sync --frozen --all-extras — all extra grubu
+            # dev dahil tüm extras'ı içerir.
+            SYNC_ARGS=(--frozen --all-extras)
+            sync_command_label="uv sync --frozen --all-extras"
+            ;;
+        dev-light)
+            SYNC_ARGS=(--frozen --extra dev-light)
+            sync_command_label="uv sync --frozen --extra dev-light"
+            ;;
+        production)
+            SYNC_ARGS=(--frozen --extra production --no-dev)
+            sync_command_label="uv sync --frozen --extra production --no-dev"
+            ;;
+        production-minimal)
+            SYNC_ARGS=(--frozen --extra production-minimal --no-dev)
+            sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
+            ;;
+        *)
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-full|dev-light|production|production-minimal"
+            ;;
+    esac
+    export DEPENDENCY_PROFILE="$dependency_profile"
 
     if [[ ! -f "$SCRIPT_DIR/uv.lock" ]]; then
         fail "uv.lock bulunamadı. Deterministik kurulum için önce geliştirici ortamında 'uv lock' çalıştırıp lock dosyasını repoya commit edin."
@@ -131,11 +156,18 @@ install_python_deps() {
         info "uv.lock korunuyor; kurulum lock dosyasını değiştirmeden yapılacak. Güncelleme için --upgrade-lock kullanın."
     fi
 
-    ensure_portaudio_dev "uv sync --frozen --all-extras"
+    if [[ "$dependency_profile" == "dev-full" ]]; then
+        ensure_portaudio_dev "$sync_command_label"
+    else
+        info "Dependency profile ${dependency_profile}: PortAudio/voice sistem ön koşulu yalnız dev-full profilinde zorunlu kontrol edilir."
+    fi
 
-    info "Standart kurulum komutu: uv sync --frozen --all-extras — all extra grubu dev dahil tüm extras'ı içerir (pyproject.toml:194)."
+    info "Bağımlılık profili: ${dependency_profile} — ${sync_command_label}."
+    if [[ "$dependency_profile" == "production" || "$dependency_profile" == "production-minimal" ]]; then
+        warn "Production dependency profili dev/test araçlarını kurmaz; smoke/CI/self-healing için dev-full veya dev-light kullanın."
+    fi
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "Standart kurulum komutu başarısız oldu: uv sync --frozen --all-extras. Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+        fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
@@ -164,7 +196,12 @@ install_pyright_lsp_tool() {
         return
     fi
 
-    fail "Pyright LSP bulunamadı. Standart kurulum komutunu çalıştırın: uv sync --frozen --all-extras. all extra grubu dev dahil tüm extras'ı içerir (pyproject.toml:194)."
+    if [[ "${DEPENDENCY_PROFILE:-dev-full}" == "production" || "${DEPENDENCY_PROFILE:-dev-full}" == "production-minimal" ]]; then
+        warn "Pyright LSP production dependency profilinde kurulmaz; reviewer/self-heal geliştirme akışları için --dev-full veya --dependency-profile=dev-light kullanın."
+        return
+    fi
+
+    fail "Pyright LSP bulunamadı. Standart kurulum komutunu çalıştırın: uv sync --frozen --all-extras veya installer için --dev-full kullanın."
 }
 
 select_pytorch_cuda_wheel_tag() {

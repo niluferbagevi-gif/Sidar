@@ -139,6 +139,43 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 - Bu sınır kaldırılmadan önce RAG embedding, Whisper/STT, CPU-only ve GPU/CUDA smoke
   profilleri birlikte doğrulanmalıdır.
 
+## Installer profil seçimi ve production-minimal takip kapısı
+
+Installer tarafında varsayılan profil artık isim olarak görünürdür: `--dev-full`
+(`uv sync --frozen --all-extras`) local/CI paritesi için standart kalır. Dar runtime
+yüzeyi denemeleri için opt-in komut `--production-minimal` veya
+`--dependency-profile=production-minimal` değeridir; bu yol dev/test araçlarını ve
+Pyright LSP yükünü kurmaz. Bu nedenle production-minimal, release kabulü değil
+runtime sync/dry-run kanıtı üretmek için kullanılmalıdır.
+
+Takip kapıları `pyproject.toml` içindeki
+`[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]` ve
+`[tool.sidar.dependency_profile_plan.installer_profile_visibility]` bloklarında
+makine-okunur tutulur. Production-minimal varsayılan installer davranışına ancak
+şu kanıtlar blocking hale geldiğinde terfi edebilir:
+
+1. `SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test`
+   komutu lock değiştirmeden geçer.
+2. Web/API boot smoke, DB migration smoke ve no-dev import smoke artifact'leri CI/release
+   çıktısına eklenir.
+3. Release/merge için ayrı production-readiness gate'i yine çalışır:
+   `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
+
+## Ruff docstring / ASYNC borç kapatma takibi
+
+`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu docstring (`D*`) ve
+`ASYNC240` ignore'larının kapanış tarihini `2026-09-30` olarak taşır. Bu tarihe kadar
+planlanan doğrulama komutları:
+
+```bash
+uv run ruff check . --select D,ASYNC
+uv run ruff check .
+```
+
+Yeni veya anlamlı şekilde değişen public API'lerde Google-style docstring eklemek ve
+yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmemek zorunludur;
+ignore listesi yeni borç eklemek için genişletilmemelidir.
+
 ## Aşamalı geçiş
 
 1. **Envanter + Faz 1 dev split:** Ana `dependencies` içindeki runtime paketleri ile `dev` extra içindeki

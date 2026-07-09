@@ -333,6 +333,21 @@ requirements_exporter = "scripts/export_production_requirements.sh"
 production_dockerfile = "Dockerfile.production"
 summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares distinct production (postgres+telemetry) and production-minimal (postgres-only) extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
 
+[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
+status = "planned-blocking"
+owner = "qa+release"
+review_by = "2026-08-15"
+required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test"
+follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+summary = "production-minimal remains an opt-in runtime profile until installer sync, web boot smoke, DB migration smoke, and release gate evidence are attached to CI/release artifacts."
+
+[tool.sidar.dependency_profile_plan.installer_profile_visibility]
+default_profile = "dev-full"
+default_command = "./install_sidar.sh --dev-full"
+production_minimal_command = "./install_sidar.sh --production-minimal"
+status = "visible-opt-in"
+summary = "Installer now names the default dev-full profile explicitly and exposes production-minimal as an opt-in narrow runtime sync profile; default remains dev-full for local/CI parity until production-minimal runtime validation is blocking."
+
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 current_lock = "torch 2.11.0"
 tracked_policy_exception = "CVE-2025-3000"
@@ -348,6 +363,13 @@ validation_commands = [
 
 [tool.sidar.ruff_debt]
 line_length = 100
+close_docstring_campaign_by = "2026-09-30"
+close_async240_campaign_by = "2026-09-30"
+tracking_owner = "qa+reviewer"
+planned_validation_commands = [
+  "uv run ruff check . --select D,ASYNC",
+  "uv run ruff check .",
+]
 e501_global_ignore_review_by = "2026-09-30"
 e501_global_ignore_reason = "Legacy root entrypoints still contain long lines; new or meaningfully edited code should wrap to line-length=100 and avoid expanding this debt."
 async240_global_ignore_review_by = "2026-09-30"
