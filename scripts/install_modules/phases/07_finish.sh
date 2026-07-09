@@ -149,6 +149,10 @@ print_install_summary_extended_test_statuses() {
 }
 
 print_react_frontend_qa_status_block() {
+    if declare -F sync_frontend_quality_status_from_test_summary >/dev/null 2>&1; then
+        sync_frontend_quality_status_from_test_summary || true
+    fi
+
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
     local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
 

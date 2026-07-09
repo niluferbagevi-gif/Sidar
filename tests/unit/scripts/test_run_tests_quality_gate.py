@@ -998,6 +998,148 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' ${FRONTEND_QUALITY_STATUS}""",
     assert "artifacts/test-summary.json üzerinden tamamlandı" in result.stdout
 
 
+
+def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Path) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_e2e": "passed",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_tests = tmp_path / "run_tests.sh"
+    run_tests.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    run_tests.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+SCRIPT_DIR="$2"
+TEST_SUMMARY_JSON="$3"
+RUN_CI_FULL_VALIDATION=true
+CI_FULL_VALIDATION_FAILURE_POLICY=warn
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+step() { :; }
+info() { :; }
+warn() { :; }
+ok() { :; }
+fail() { printf 'FAIL:%s\n' "$*"; exit 1; }
+sidar_install_production_gate_required() { return 1; }
+run_install_ci_full_validation
+printf 'CI_FULL_VALIDATION_STATUS=%s\n' "$CI_FULL_VALIDATION_STATUS"
+printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CI_FULL_VALIDATION_STATUS=hata" in result.stdout
+    assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
+
+
+
+def test_optional_dev_full_validation_failure_syncs_frontend_status_from_summary(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_e2e": "passed",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_tests = tmp_path / "run_tests.sh"
+    run_tests.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    run_tests.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+SCRIPT_DIR="$2"
+TEST_SUMMARY_JSON="$3"
+GPU_AVAILABLE=true
+SMOKE_TEST_STATUS=tamamlandi
+NO_INTERACTION=false
+AUTO_INSTALL=false
+SILENT_MODE=false
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+info() { :; }
+warn() { :; }
+ok() { :; }
+prompt_yes_no_with_timeout_default_no() { printf 'e'; }
+run_optional_dev_full_validation_prompt
+printf 'CI_FULL_VALIDATION_STATUS=%s\n' "$CI_FULL_VALIDATION_STATUS"
+printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "CI_FULL_VALIDATION_STATUS=hata" in result.stdout
+    assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
+
+def test_finish_frontend_qa_block_refreshes_summary_before_printing(tmp_path: Path) -> None:
+    finish_phase = Path("scripts/install_modules/phases/07_finish.sh").resolve()
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+GREEN=
+YELLOW=
+RED=
+BOLD=
+NC=
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+sync_frontend_quality_status_from_test_summary() { FRONTEND_QUALITY_STATUS=tamamlandi; }
+print_react_frontend_qa_status_block""",
+            "bash",
+            str(finish_phase),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı." in result.stdout
+    assert "FRONTEND QA ÇALIŞTIRILMADI" not in result.stdout
+
 def test_install_validation_summary_separates_development_full_validation_from_production_gate(
     tmp_path: Path,
 ) -> None:

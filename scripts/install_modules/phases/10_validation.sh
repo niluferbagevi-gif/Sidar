@@ -526,6 +526,7 @@ run_optional_dev_full_validation_prompt() {
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
+        sync_frontend_quality_status_from_test_summary || true
         warn "Development tam doğrulaması başarısız oldu. Uygulama smoke kontrolleri geçtiyse geliştirme amaçlı çalışabilir; ancak production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir. Tekrar için: ${optional_command}"
     fi
 }
@@ -564,6 +565,7 @@ run_install_ci_full_validation() {
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
+        sync_frontend_quality_status_from_test_summary || true
         if [[ "$production_gate_required" == true ]]; then
             fail "Production readiness gate başarısız. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
         elif [[ "$ci_full_failure_policy" == "warn" ]]; then
