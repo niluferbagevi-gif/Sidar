@@ -172,6 +172,32 @@ print_react_frontend_qa_status_block() {
     echo ""
 }
 
+print_release_readiness_next_action() {
+    local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
+    local production_ready=""
+    production_ready="$(sidar_install_summary_field_or_empty production_ready)"
+
+    echo -e "  ${BOLD}🚦 Release / merge readiness:${NC}"
+    if [[ "$production_ready" == "true" ]]; then
+        echo -e "       ${GREEN}✅ Production readiness geçti.${NC}"
+        echo "       Release/merge kapısı tamamlandı: make production-readiness"
+        return
+    fi
+
+    if [[ "$ci_status" == "tamamlandi" ]]; then
+        echo -e "       ${GREEN}✅ Development validation geçti.${NC}"
+    elif [[ "$ci_status" == "hata" ]]; then
+        echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"
+    else
+        echo -e "       ${YELLOW}⏭️  Development validation çalıştırılmadı (${ci_status}).${NC}"
+    fi
+
+    echo -e "       ${YELLOW}⏭️  Production readiness çalıştırılmadı.${NC}"
+    echo -e "       ${BOLD}Release/merge için zorunlu komut:${NC}"
+    echo "       make production-readiness"
+    echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
@@ -251,6 +277,8 @@ print_summary() {
     echo -e "  6️⃣  Testleri çalıştır (varsayılan kurulumda hazır):"
     echo "       ./run_tests.sh"
     echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
+    echo ""
+    print_release_readiness_next_action
     echo ""
     print_install_validation_coverage
 
