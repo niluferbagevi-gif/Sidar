@@ -32,6 +32,19 @@ FORBIDDEN_PATHS = [
     "models/",
 ]
 
+# Test ve kalite kapısı çıktıları kaynak kod değildir; .gitignore drift veya
+# otomatik stage akışındaki geniş .json izinleri nedeniyle repoya girmemelidir.
+GENERATED_ARTIFACT_PATHS = {
+    "coverage.json",
+    "coverage.xml",
+    "coverage-final.json",
+    "htmlcov/",
+    "artifacts/",
+    "web_ui_react/coverage/",
+    "web_ui_react/playwright-report/",
+    "web_ui_react/test-results/",
+}
+
 
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
@@ -138,9 +151,10 @@ def is_forbidden_path(path: str) -> bool:
     if base_name.startswith(".env") and base_name.endswith(".example"):
         return False
 
+    blocked_paths = [*FORBIDDEN_PATHS, *GENERATED_ARTIFACT_PATHS]
     return any(
         normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
-        for forbidden in FORBIDDEN_PATHS
+        for forbidden in blocked_paths
     )
 
 

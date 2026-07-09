@@ -62,6 +62,13 @@ def test_url_and_path_helpers(tmp_path):
     assert gu.is_forbidden_path(".env")
     assert gu.is_forbidden_path("sessions/a.json")
     assert gu.is_forbidden_path(".git/config")
+    assert gu.is_forbidden_path("coverage.json")
+    assert gu.is_forbidden_path("coverage.xml")
+    assert gu.is_forbidden_path("coverage-final.json")
+    assert gu.is_forbidden_path("artifacts/test-summary.json")
+    assert gu.is_forbidden_path("web_ui_react/coverage/coverage-summary.json")
+    assert gu.is_forbidden_path("web_ui_react/playwright-report/index.html")
+    assert gu.is_forbidden_path("web_ui_react/test-results/results.json")
     assert not gu.is_forbidden_path(".env.example")
 
     p = tmp_path / "ok.txt"
@@ -75,6 +82,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     text_file.write_text("print('x')", encoding="utf-8")
     binary_file = tmp_path / "bad.json"
     binary_file.write_bytes(b"\xff\xfe")
+    generated_file = "coverage.json"
 
     calls = []
 
@@ -83,7 +91,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
         if cmd[:3] == ["git", "ls-files", "-d"]:
             return True, "gone.txt\n"
         if cmd[:4] == ["git", "ls-files", "-co", "--exclude-standard"]:
-            return True, f"{text_file}\n{binary_file}\n.env\ngone.txt\n"
+            return True, f"{text_file}\n{binary_file}\n{generated_file}\n.env\ngone.txt\n"
         return True, ""
 
     monkeypatch.setattr(gu, "run_command", fake_run)
@@ -94,6 +102,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     safe, blocked = gu.collect_safe_files(deleted)
     assert str(text_file) in safe
     assert str(binary_file) in blocked
+    assert generated_file in blocked
     assert ".env" in blocked
 
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, "err"))
