@@ -59,6 +59,36 @@ bile başarısız test düzeltilmeden coverage sonucu merge/PR kanıtı sayılma
 ./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
 ```
 
+## Production readiness zorunlu ayrımı
+
+Kurulum veya lokal geliştirme logunda **“Development full validation geçti”** görmek
+release/merge onayı anlamına gelmez. Bu mesaj yalnız yerel geliştirme ortamının sağlıklı
+olduğunu gösterir: bağımlılıklar, smoke/integration kapsamı, frontend kontrolleri ve
+benchmark koşusu geliştirme profiliyle başarılı olabilir. Release, merge veya dağıtım
+öncesinde ayrıca **production readiness** kapısı çalıştırılmalı ve geçmelidir.
+
+Zorunlu ayrım:
+
+- **Development full validation = yerel geliştirme ortamı sağlıklı.** Kod yazma, test
+  geliştirme ve hata ayıklama için güçlü sinyaldir; tek başına production-ready kanıtı
+  değildir.
+- **Production readiness = release/merge öncesi zorunlu kapı.** CI profili, benchmark
+  karşılaştırması, frontend E2E ve `SIDAR_PRODUCTION_READINESS=1` davranışı birlikte
+  doğrulanmadan sürüm/merge kabulü yapılmamalıdır.
+- **Benchmark baseline yoksa önce seed workflow çalıştırılır.** `.benchmarks/*_baseline.json`
+  restore edilemiyorsa production-readiness gate'i baseline üretmez; GitHub Actions →
+  **CI** → **Run workflow** → `seed_benchmark_baseline=true` ile cache/artifact seed
+  edildikten sonra gate yeniden koşulur.
+
+Release/merge için öne çıkarılan kanonik kapı:
+
+```bash
+TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
+```
+
+Aynı sözleşme `Makefile` içinde `production-readiness` hedefiyle sabitlenmiştir;
+operatörler isterse doğrudan `make production-readiness` çalıştırabilir.
+
 ## Make hedefleriyle CI/local komut paritesi
 
 Komut karmaşasını azaltmak için sık kullanılan kalite kapıları `Makefile`
