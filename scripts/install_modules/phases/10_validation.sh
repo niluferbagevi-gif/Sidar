@@ -517,6 +517,8 @@ run_optional_dev_full_validation_prompt() {
     if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
         bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
         ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
+        warn "Development validation geçti; production readiness hâlâ ayrı release/merge kapısıdır. Zorunlu komut: make production-readiness"
+        echo -e "${YELLOW}   Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all${NC}"
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
     else
