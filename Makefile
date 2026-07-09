@@ -2,6 +2,8 @@ SHELL := /usr/bin/env bash
 
 SHELLCHECK ?= uv run shellcheck
 BATS ?= bats
+BENCHMARK_COMPARE_REQUIRED ?= 0
+FRONTEND_BUNDLE_BUDGET_LOCAL_FULL ?= 0
 
 SHELLCHECK_FILES := $(shell git ls-files \
 	'install_sidar.sh' \
@@ -16,7 +18,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests dev-full production-readiness frontend-gate backend-integration
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests dev-full ci-parity production-readiness benchmark-seed frontend-gate backend-integration
 
 lint: lint-shell check-install-manifests
 
@@ -36,10 +38,16 @@ test-shell:
 test: test-shell
 
 dev-full:
-	RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
+	RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL) bash run_tests.sh --stage all
+
+ci-parity:
+	$(MAKE) dev-full FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1
 
 production-readiness:
 	TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
+
+benchmark-seed:
+	BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED) RUN_BENCHMARKS=required bash run_tests.sh --stage all
 
 frontend-gate:
 	RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend
