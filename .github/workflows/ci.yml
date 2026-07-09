@@ -717,7 +717,7 @@ jobs:
           uv run pytest -q --no-cov tests/smoke/test_install_verification.py::test_bundled_install_sidar_manifest_matches
 
       - name: Publish standalone installer to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}
           target_commitish: ${{ github.sha }}
