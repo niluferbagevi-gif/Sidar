@@ -75,6 +75,11 @@ src/
   `web_ui_react/playwright-report/` altında artefakt olarak saklar.
 - Vitest coverage kapsamı `src/**/*.{js,jsx}` olarak açıkça tanımlıdır. Terminal raporu tam kapsanan
   dosyaları da listeler (`skipFull: false`); böylece `%100` özetinin hangi dosyalardan oluştuğu görünürdür.
+- Bundle budget kapısı CI profilinde varsayılan olarak `FRONTEND_BUNDLE_BUDGET=1` ile
+  `npm run build:budget` çalıştırır; yerel hızlı frontend stage'inde opt-in kullanmak için
+  `FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend` çalıştırın. Bu kapı
+  Vite build sonrası React DOM / markdown-highlight chunk büyümesini kırmızıya dönmeden
+  izlemek için tasarlanmıştır.
 - CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
   uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
   `coverage-final.json` dosyaları tek artefakt altında saklanır.

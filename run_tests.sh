@@ -456,6 +456,7 @@ if [ "${TEST_PROFILE}" = "ci" ]; then
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-1}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-1}"
+  FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-1}"
 else
   AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
   PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
@@ -464,6 +465,7 @@ else
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
+  FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"
 fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 # RETRY_ON_FAIL genel kullanıcı kısayoludur; namespaced değer verilirse öncelik ondadır.
@@ -497,6 +499,7 @@ if ! stage_all_selected; then
   fi
   if stage_selected frontend; then
     RUN_FRONTEND_E2E=1
+    FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"
   fi
 fi
 
@@ -593,12 +596,14 @@ FRONTEND_EXIT_CODE=0
 FRONTEND_LINT_EXIT_CODE=0
 FRONTEND_COVERAGE_EXIT_CODE=0
 FRONTEND_NPM_AUDIT_EXIT_CODE=0
+FRONTEND_BUNDLE_BUDGET_EXIT_CODE=0
 FRONTEND_E2E_EXIT_CODE=0
 FRONTEND_TYPECHECK_EXIT_CODE=0
 FRONTEND_LINT_RAN=0
 FRONTEND_TYPECHECK_RAN=0
 FRONTEND_COVERAGE_RAN=0
 FRONTEND_NPM_AUDIT_RAN=0
+FRONTEND_BUNDLE_BUDGET_RAN=0
 FRONTEND_E2E_RAN=0
 BENCHMARK_EXIT_CODE=0
 BENCHMARK_COMPARE_STATUS="not_run"
@@ -678,6 +683,7 @@ print_frontend_quality_summary() {
   echo "   Lint (npm run lint): $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}")"
   echo "   Typecheck (npm run typecheck): $(format_quality_status "${FRONTEND_TYPECHECK_EXIT_CODE}" "${FRONTEND_TYPECHECK_RAN}")"
   echo "   Coverage (npm run test:coverage): $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}")"
+  echo "   Bundle budget (npm run build:budget): $(format_quality_status "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" "${FRONTEND_BUNDLE_BUDGET_RAN}" "atlanmış") (FRONTEND_BUNDLE_BUDGET=${FRONTEND_BUNDLE_BUDGET})"
   echo "   Dependency audit (npm run audit:high): $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}")"
   echo "   Playwright (${FRONTEND_E2E_NPM_SCRIPT}): $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "atlanmış") (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   if [ -f "${FRONTEND_COVERAGE_REPORT_PATH}" ]; then
@@ -697,6 +703,7 @@ print_frontend_quality_summary() {
       echo "| Lint | \`npm run lint\` | $(format_quality_status "${FRONTEND_LINT_EXIT_CODE}" "${FRONTEND_LINT_RAN}" "skipped") |"
       echo "| Typecheck | \`npm run typecheck\` | $(format_quality_status "${FRONTEND_TYPECHECK_EXIT_CODE}" "${FRONTEND_TYPECHECK_RAN}" "skipped") |"
       echo "| Coverage | \`npm run test:coverage\` | $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}" "skipped") |"
+      echo "| Bundle budget | \`npm run build:budget\` | $(format_quality_status "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" "${FRONTEND_BUNDLE_BUDGET_RAN}" "skipped") |"
       echo "| Dependency audit | \`npm run audit:high\` | $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}" "skipped") |"
       echo "| Playwright smoke | \`npm run ${FRONTEND_E2E_NPM_SCRIPT}\` | $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "skipped") |"
       echo ""
@@ -758,6 +765,7 @@ write_test_summary_json() {
   local frontend_lint_status=""
   local frontend_typecheck_status=""
   local frontend_coverage_status=""
+  local frontend_bundle_budget_status=""
   local frontend_e2e_status=""
   local benchmark_status=""
   local benchmark_compare_status="${BENCHMARK_COMPARE_STATUS:-not_run}"
@@ -774,6 +782,7 @@ write_test_summary_json() {
   frontend_lint_status="$(quality_summary_status "${FRONTEND_LINT_RAN}" "${FRONTEND_LINT_EXIT_CODE}")"
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
+  frontend_bundle_budget_status="$(quality_summary_status "${FRONTEND_BUNDLE_BUDGET_RAN}" "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}")"
   frontend_e2e_status="$(quality_summary_status "${FRONTEND_E2E_RAN}" "${FRONTEND_E2E_EXIT_CODE}")"
   if [ "${FRONTEND_E2E_RAN}" = "1" ]; then
     if [ "${frontend_e2e_script}" = "test:e2e:smoke" ]; then
@@ -818,6 +827,7 @@ write_test_summary_json() {
       "${frontend_lint_status}" \
       "${frontend_typecheck_status}" \
       "${frontend_coverage_status}" \
+      "${frontend_bundle_budget_status}" \
       "${frontend_e2e_status}" \
       "${benchmark_status}" \
       "${production_ready}" \
@@ -849,6 +859,7 @@ from pathlib import Path
     frontend_lint,
     frontend_typecheck,
     frontend_coverage,
+    frontend_bundle_budget,
     frontend_e2e,
     benchmark,
     production_ready,
@@ -865,7 +876,7 @@ from pathlib import Path
     benchmark_compare_status,
     frontend_e2e_scope,
     frontend_e2e_script,
-) = sys.argv[1:24]
+) = sys.argv[1:25]
 
 
 def _safe_int(value: str) -> int:
@@ -915,6 +926,7 @@ summary = {
     "frontend_lint": frontend_lint,
     "frontend_typecheck": frontend_typecheck,
     "frontend_coverage": frontend_coverage,
+    "frontend_bundle_budget": frontend_bundle_budget,
     "frontend_e2e": frontend_e2e,
     "benchmark": benchmark,
     "benchmark_compare": benchmark_compare_status,
@@ -2567,6 +2579,19 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
               FRONTEND_EXIT_CODE=1
             fi
               if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
+                if [ "${FRONTEND_BUNDLE_BUDGET}" = "1" ]; then
+                  echo "📦 Frontend bundle budget kalite kapısı çalıştırılıyor: npm run build:budget"
+                  FRONTEND_BUNDLE_BUDGET_RAN=1
+                  run_checked npm run build:budget
+                  FRONTEND_BUNDLE_BUDGET_EXIT_CODE=$?
+                  if [ "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" -ne 0 ]; then
+                    FRONTEND_EXIT_CODE=${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}
+                  fi
+                else
+                  echo "ℹ️ Frontend bundle budget atlandı (FRONTEND_BUNDLE_BUDGET=${FRONTEND_BUNDLE_BUDGET}). Etkinleştirmek için FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend"
+                fi
+              fi
+              if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
                 if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
                   FRONTEND_E2E_RAN=1
                   run_checked run_frontend_e2e_with_retry
@@ -2656,6 +2681,7 @@ if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
     print_failed_backend_nodeids
   fi
   echo "   Frontend Unit/Coverage Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
+  echo "   Frontend Bundle Budget Çıkış Kodu: ${FRONTEND_BUNDLE_BUDGET_EXIT_CODE} (ran=${FRONTEND_BUNDLE_BUDGET_RAN})"
   echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
   exit 1
