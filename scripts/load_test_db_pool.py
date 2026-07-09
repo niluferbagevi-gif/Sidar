@@ -13,7 +13,7 @@ import argparse
 import asyncio
 import os
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from statistics import mean
 from typing import Any
 
@@ -98,12 +98,12 @@ async def run_load_test(
         await db.close()
 
 
-def _run_async(coro: Awaitable[Any]) -> Any:
+def run_async(coro: Awaitable[Any]) -> Any:
     """Run an async entrypoint through a patchable module-local wrapper."""
     return asyncio.run(coro)
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser for the asyncpg pool load-test utility."""
     parser = argparse.ArgumentParser(description="asyncpg pool smoke/load test")
     parser.add_argument("--database-url", required=True, help="PostgreSQL DSN")
@@ -124,10 +124,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse and validate CLI arguments without starting the event loop."""
-    args = _build_parser().parse_args(argv)
-
+def validate_args(args: argparse.Namespace) -> None:
+    """Validate parsed CLI arguments before starting the event loop."""
     if args.concurrency < 1:
         raise SystemExit("--concurrency en az 1 olmalıdır.")
     if args.requests < 1:
@@ -136,12 +134,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         raise SystemExit("--warmup-requests negatif olamaz.")
     if args.acquire_timeout <= 0:
         raise SystemExit("--acquire-timeout 0'dan büyük olmalıdır.")
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse and validate CLI arguments without starting the event loop."""
+    args = build_parser().parse_args(argv)
+    validate_args(args)
     return args
 
 
-def main(argv: list[str] | None = None, runner=_run_async) -> None:
+def main(
+    argv: list[str] | None = None,
+    runner: Callable[[Awaitable[Any]], Any] = run_async,
+) -> None:
     """Run the CLI with injectable arguments and async runner for tests."""
-    args = _parse_args(argv)
+    args = parse_args(argv)
 
     runner(
         run_load_test(

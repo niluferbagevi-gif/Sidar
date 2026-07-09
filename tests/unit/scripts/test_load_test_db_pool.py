@@ -23,7 +23,7 @@ def _import_module_with_stubs(monkeypatch):
     fake_core_db.Database = _Database
     monkeypatch.setitem(sys.modules, "core.db", fake_core_db)
 
-    sys.modules.pop("scripts.load_test_db_pool", None)
+    monkeypatch.delitem(sys.modules, "scripts.load_test_db_pool", raising=False)
     return importlib.import_module("scripts.load_test_db_pool")
 
 
@@ -158,50 +158,43 @@ def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
     ("argv", "expected_msg"),
     [
         (
-            ["prog", "--database-url", "postgresql://x", "--concurrency", "0"],
+            ["--database-url", "postgresql://x", "--concurrency", "0"],
             "--concurrency en az 1 olmalıdır.",
         ),
         (
-            ["prog", "--database-url", "postgresql://x", "--requests", "0"],
+            ["--database-url", "postgresql://x", "--requests", "0"],
             "--requests en az 1 olmalıdır.",
         ),
         (
-            ["prog", "--database-url", "postgresql://x", "--warmup-requests", "-1"],
+            ["--database-url", "postgresql://x", "--warmup-requests", "-1"],
             "--warmup-requests negatif olamaz.",
         ),
         (
-            ["prog", "--database-url", "postgresql://x", "--acquire-timeout", "0"],
+            ["--database-url", "postgresql://x", "--acquire-timeout", "0"],
             "--acquire-timeout 0'dan büyük olmalıdır.",
         ),
     ],
 )
 def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
     module = _import_module_with_stubs(monkeypatch)
-    monkeypatch.setattr(sys, "argv", argv)
-
     with pytest.raises(SystemExit, match=expected_msg):
-        module.main()
+        module.main(argv)
 
 
 def test_main_runs_load_test_with_parsed_args(monkeypatch):
     module = _import_module_with_stubs(monkeypatch)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "prog",
-            "--database-url",
-            "postgresql://user:pass@localhost:5432/sidar",
-            "--concurrency",
-            "3",
-            "--requests",
-            "9",
-            "--warmup-requests",
-            "2",
-            "--acquire-timeout",
-            "1.5",
-        ],
-    )
+    argv = [
+        "--database-url",
+        "postgresql://user:pass@localhost:5432/sidar",
+        "--concurrency",
+        "3",
+        "--requests",
+        "9",
+        "--warmup-requests",
+        "2",
+        "--acquire-timeout",
+        "1.5",
+    ]
 
     captured = {}
 
@@ -216,7 +209,7 @@ def test_main_runs_load_test_with_parsed_args(monkeypatch):
 
     monkeypatch.setattr(module, "run_load_test", fake_run_load_test)
 
-    module.main(runner=fake_runner)
+    module.main(argv, runner=fake_runner)
 
     assert captured["runner_called"] is True
     assert captured["args"] == (
