@@ -731,6 +731,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
     assert "benchmark-baseline-seed" in ci
     assert "Next step: rerun the normal CI / production-readiness gate" in ci
+    assert "GitHub Actions → CI → Run workflow" in ci
+    assert "seed_benchmark_baseline=true" in ci
     assert "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}" in ci
     assert "Benchmark baseline missing" in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
