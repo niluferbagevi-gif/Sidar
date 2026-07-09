@@ -1668,10 +1668,10 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL)" in makefile
     assert "bash run_tests.sh --stage all" in makefile
     assert "production-readiness:" in makefile
-    assert (
-        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
-        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
-    ) in makefile
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in makefile
+    assert "SIDAR_PRODUCTION_READINESS=1" in makefile
+    assert "SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB)" in makefile
+    assert "SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)" in makefile
     assert "frontend-gate:" in makefile
     assert "RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend" in makefile
     assert "backend-integration:" in makefile
