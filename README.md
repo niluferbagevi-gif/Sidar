@@ -332,6 +332,9 @@ GitHub Actions tarafında boş cache / yeni branch / yeni runner durumunda önce
 Ana `CI` workflow'u daha sonra aynı branch, `main/master` veya genel restore-key
 zincirinden bu cache'i bulamazsa production-readiness gate'i seed moduna düşmeden
 fail-closed durmaya devam eder.
+Önerilen sıra: yerelde oluşan ilk baseline'ı normal kabul edin; CI/main için önce
+`seed_benchmark_baseline=true` workflow_dispatch job'ını çalıştırın; cache/artifact
+oluştuktan sonra normal CI veya production readiness gate'ini tekrar koşun.
 Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
 `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
 çalıştırın.

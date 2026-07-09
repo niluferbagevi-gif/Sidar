@@ -122,6 +122,9 @@ Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
      `artifacts/benchmark/benchmark.json` dosyasını içerir.
 4. Normal CI'ı yeniden çalıştırın. `Restore benchmark baseline cache` adımı cache'i
    bulursa `Resolve benchmark baseline gate mode` adımı compare gate'i etkinleştirir.
+5. Cache/artifact seed tamamlandıktan sonra production readiness gate'ini tekrar koşun:
+   `make production-readiness` veya kanonik
+   `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 

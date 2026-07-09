@@ -84,6 +84,7 @@ jobs:
             echo "- Baseline name: \`${benchmark_compare_name}\`"
             echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-\`"
             echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
+            echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark baseline seed artifact

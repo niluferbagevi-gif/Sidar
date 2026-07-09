@@ -705,6 +705,7 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
 
 def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
 
     assert "workflow_dispatch:" in ci
@@ -713,11 +714,15 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "Seed benchmark baseline cache" in ci
     assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
     assert "benchmark-baseline-seed" in ci
+    assert "Next step: rerun the normal CI / production-readiness gate" in ci
     assert "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}" in ci
     assert "Benchmark baseline missing" in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
+    assert "production readiness gate'ini tekrar koşun" in testing
+    assert "yerelde oluşan ilk baseline'ı normal kabul edin" in readme
+    assert "cache/artifact" in readme
     assert "cp -a /tmp/sidar-benchmark-baseline/.benchmarks/. .benchmarks/" in testing
 
 
