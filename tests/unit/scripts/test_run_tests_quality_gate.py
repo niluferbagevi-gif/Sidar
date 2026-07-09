@@ -692,8 +692,14 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
         assert "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend" in doc
 
     assert "Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz" in readme
-    assert "**“Development full validation geçti”**: geliştirici ortamı sağlıklı" in readme
-    assert "**“Production readiness çalıştırılmadı”**: release/merge/dağıtım öncesinde" in readme
+    assert "smoke = hızlı sağlık kontrolü" in readme
+    assert "dev-full = local tam doğrulama" in readme
+    assert "production-readiness = merge/release kapısı" in readme
+    assert "**“dev-full geçti” / “Development full validation geçti”**" in readme
+    assert "**“production-readiness çalıştırılmadı”**" in readme
+    assert "smoke = hızlı sağlık kontrolü" in testing
+    assert "dev-full = local tam doğrulama" in testing
+    assert "production-readiness = merge/release kapısı" in testing
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"

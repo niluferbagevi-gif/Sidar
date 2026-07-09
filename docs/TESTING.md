@@ -59,9 +59,22 @@ bile başarısız test düzeltilmeden coverage sonucu merge/PR kanıtı sayılma
 ./run_tests.sh --stage all           # global coverage fail-under eşiği burada uygulanır
 ```
 
+## Terminoloji standardı
+
+Tüm test dokümantasyonu, installer özetleri ve CI mesajları aşağıdaki isimleri aynı anlamda kullanır:
+
+- **smoke = hızlı sağlık kontrolü.** Kısa boot/import/servis/migration sinyalidir; full QA,
+  coverage veya merge/release kanıtı değildir.
+- **dev-full = local tam doğrulama.** `make dev-full` ya da geliştirme profilli
+  `RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` komutudur;
+  local ortam sağlığını doğrular, production-ready kabulü değildir.
+- **production-readiness = merge/release kapısı.** `make production-readiness` ya da
+  kanonik `TEST_PROFILE=ci ... SIDAR_PRODUCTION_READINESS=1` komutudur; release/merge için
+  zorunlu kalite kapısıdır.
+
 ## Production readiness zorunlu ayrımı
 
-Kurulum veya lokal geliştirme logunda **“Development full validation geçti”** görmek
+Kurulum veya lokal geliştirme logunda **“dev-full geçti”** ya da **“Development full validation geçti”** görmek
 release/merge onayı anlamına gelmez. Bu mesaj yalnız yerel geliştirme ortamının sağlıklı
 olduğunu gösterir: bağımlılıklar, smoke/integration kapsamı, frontend kontrolleri ve
 benchmark koşusu geliştirme profiliyle başarılı olabilir. Release, merge veya dağıtım
@@ -69,12 +82,12 @@ benchmark koşusu geliştirme profiliyle başarılı olabilir. Release, merge ve
 
 Zorunlu ayrım:
 
-- **Development full validation = yerel geliştirme ortamı sağlıklı.** Kod yazma, test
-  geliştirme ve hata ayıklama için güçlü sinyaldir; tek başına production-ready kanıtı
-  değildir.
-- **Production readiness = release/merge öncesi zorunlu kapı.** CI profili, benchmark
-  karşılaştırması, frontend E2E ve `SIDAR_PRODUCTION_READINESS=1` davranışı birlikte
-  doğrulanmadan sürüm/merge kabulü yapılmamalıdır.
+- **smoke = hızlı sağlık kontrolü.** Hızlı kurulum/runtime sinyalidir; tam QA değildir.
+- **dev-full = local tam doğrulama.** Kod yazma, test geliştirme ve hata ayıklama için
+  güçlü sinyaldir; tek başına production-ready kanıtı değildir.
+- **production-readiness = merge/release kapısı.** CI profili, benchmark karşılaştırması,
+  frontend E2E ve `SIDAR_PRODUCTION_READINESS=1` davranışı birlikte doğrulanmadan
+  sürüm/merge kabulü yapılmamalıdır.
 - **Benchmark baseline yoksa önce seed workflow çalıştırılır.** `.benchmarks/*_baseline.json`
   restore edilemiyorsa production-readiness gate'i baseline üretmez; GitHub Actions →
   **CI** → **Run workflow** → `seed_benchmark_baseline=true` ile cache/artifact seed

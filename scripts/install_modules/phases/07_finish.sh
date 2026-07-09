@@ -308,9 +308,13 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
-    echo "  Test rehberi: docs/TESTING.md — smoke ile yetinmeyin; PR/merge öncesi run_tests.sh kullanın."
-    echo "  Tam doğrulama için (backend + frontend + benchmark + BATS + security):"
-    echo "    bash run_tests.sh --stage all"
+    echo "  Terminoloji: smoke = hızlı sağlık kontrolü; dev-full = local tam doğrulama; production-readiness = merge/release kapısı."
+    echo "  Test rehberi: docs/TESTING.md — smoke ile yetinmeyin; PR/merge öncesi production-readiness çalıştırın."
+    echo "  dev-full (local tam doğrulama; backend + frontend + benchmark + BATS + security):"
+    echo "    make dev-full"
+    echo "    # Eşdeğer: bash run_tests.sh --stage all"
+    echo "  production-readiness (merge/release kapısı):"
+    echo "    make production-readiness"
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"
@@ -325,13 +329,13 @@ print_summary() {
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
-        echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
+        echo "  Not: smoke = hızlı sağlık kontrolü; dev-full/local tam doğrulama veya production-readiness/merge-release kapısı değildir."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
         echo "  Smoke testler: hata var. Tekrar için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
+        echo "  dev-full/local tam doğrulama için: make dev-full"
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
+        echo "  Kurulum sonrası dev-full/local tam doğrulama için: make dev-full"
     fi
     print_install_summary_extended_test_statuses
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then

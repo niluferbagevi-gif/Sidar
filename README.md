@@ -600,7 +600,18 @@ Yavaş WSL2/Defender/CI runner ortamlarında smoke gate'i kapatmadan önce
 timeout deneyin; `--skip-smoke-test` son çare olarak kullanılmalı ve ardından
 ayrı smoke/CI doğrulamasıyla telafi edilmelidir.
 
-### Local install smoke != CI full validation
+### Terminoloji: smoke / dev-full / production-readiness
+
+Bu repo ve installer çıktıları aynı üçlü sözlüğü kullanır:
+
+- **smoke = hızlı sağlık kontrolü.** Boot/import, temel servis, migration ve erken
+  kurulum hatalarını yakalar; full QA veya merge/release kanıtı değildir.
+- **dev-full = local tam doğrulama.** `make dev-full` veya eşdeğer `run_tests.sh --stage all`
+  geliştirme profiliyle backend, frontend, benchmark ve BATS kapsamını doğrular; yine de
+  production-readiness değildir.
+- **production-readiness = merge/release kapısı.** CI profili, benchmark compare,
+  frontend E2E ve `SIDAR_PRODUCTION_READINESS=1` birlikte geçmeden merge/release onayı
+  verilmemelidir.
 
 `./install_sidar.sh` development/local akışında kurulumun çalışabilirliğini hızlıca
 kanıtlayan smoke kontrollerini hedefler. Bu kapsam; boot/import, installer manifest
@@ -633,25 +644,26 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
   artifact'leri ve Docker test image hazırlığı;
 - ayrı `installer-smoke` job'ı ile raw GitHub installer hash/manifest smoke doğrulaması.
 
-Yerelde yalnız “kurulum başarılı / smoke geçti” gördüyseniz bunu full validation olarak
-yorumlamayın. Kapsama göre önerilen tek komutlar:
+Yerelde yalnız “kurulum başarılı / smoke geçti” gördüyseniz bunu `smoke = hızlı sağlık kontrolü`
+olarak yorumlayın; full validation veya merge/release kanıtı değildir. Kapsama göre önerilen
+tek komutlar:
 
 Net ayrım:
 
-- **“Development full validation geçti”**: geliştirici ortamı sağlıklı; lokal geliştirme,
-  test yazımı ve hata ayıklama için güçlü sinyal verir.
-- **“Production readiness çalıştırılmadı”**: release/merge/dağıtım öncesinde hâlâ ayrı
-  production gate gerekir; development full validation tek başına production-ready
-  kabulü değildir.
+- **“smoke geçti”**: hızlı sağlık kontrolü tamamlandı; tam QA/coverage anlamına gelmez.
+- **“dev-full geçti” / “Development full validation geçti”**: local tam doğrulama başarılı;
+  geliştirici ortamı sağlıklı, fakat merge/release kapısı hâlâ ayrı.
+- **“production-readiness çalıştırılmadı”**: merge/release öncesinde hâlâ ayrı production
+  gate gerekir; dev-full tek başına production-ready kabulü değildir.
 
 ```bash
 # Hızlı entegrasyon kontrolü
 bash run_tests.sh --stage integration
 
-# Development full validation (GPU varsa installer bu komuta RUN_GPU_STRESS=1 önerir)
+# dev-full: local tam doğrulama (GPU varsa installer bu komuta RUN_GPU_STRESS=1 önerir)
 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
 
-# Production readiness gate
+# production-readiness: merge/release kapısı
 ./install_sidar.sh --production-readiness
 # veya kanonik komut:
 TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
