@@ -626,6 +626,14 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
 Yerelde yalnız “kurulum başarılı / smoke geçti” gördüyseniz bunu full validation olarak
 yorumlamayın. Kapsama göre önerilen tek komutlar:
 
+Net ayrım:
+
+- **“Development full validation geçti”**: geliştirici ortamı sağlıklı; lokal geliştirme,
+  test yazımı ve hata ayıklama için güçlü sinyal verir.
+- **“Production readiness çalıştırılmadı”**: release/merge/dağıtım öncesinde hâlâ ayrı
+  production gate gerekir; development full validation tek başına production-ready
+  kabulü değildir.
+
 ```bash
 # Hızlı entegrasyon kontrolü
 bash run_tests.sh --stage integration
@@ -635,6 +643,8 @@ RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
 
 # Production readiness gate
 ./install_sidar.sh --production-readiness
+# veya kanonik komut:
+TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
 ```
 
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya

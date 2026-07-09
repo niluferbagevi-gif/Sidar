@@ -699,6 +699,7 @@ print_install_validation_coverage() {
     local summary_frontend_e2e=""
     local summary_benchmark=""
     local summary_production_ready=""
+    local production_readiness_status_reported=false
     if [[ "$ci_status" == "tamamlandi" || "$ci_status" == "hata" ]] &&
         summary_smoke="$(read_install_test_summary_field smoke)" &&
         summary_integration="$(read_install_test_summary_field integration)" &&
@@ -730,11 +731,14 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
         if [[ "$summary_production_ready" == true ]]; then
             echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            production_readiness_status_reported=true
         elif [[ "$ci_status" == "tamamlandi" ]] && ! sidar_install_production_gate_required; then
             echo -e "   ${YELLOW}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
-            echo -e "   ${YELLOW}   Development full validation geçti; production gate için: ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Development full validation geçti = geliştirici ortamı sağlıklı; release/merge için ayrı production gate gerekir: ${production_readiness_command}${NC}"
+            production_readiness_status_reported=true
         else
             echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
+            production_readiness_status_reported=true
         fi
     elif [[ "$smoke_status" == "tamamlandi" ]]; then
         echo -e "   ${GREEN}✅ Smoke:        TAMAMLANDI (kapsam: tests/smoke)${NC}"
@@ -784,8 +788,10 @@ print_install_validation_coverage() {
             echo -e "   ${RED}${BOLD}⛔ PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur.${NC}"
             echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
             echo -e "   ${RED}   Zorunlu gate: ${production_readiness_command}${NC}"
-            echo "   Production readiness:      ./install_sidar.sh --production-readiness"
-            echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
+            if [[ "$production_readiness_status_reported" != true ]]; then
+                echo "   Production readiness:      ./install_sidar.sh --production-readiness"
+                echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
+            fi
         else
             echo -e "   ${YELLOW}${BOLD}⚠️  KAPSAM EKSİK: Development/local kurulum tam proje doğrulaması değildir.${NC}"
             echo -e "   ${YELLOW}   Kurulum başarılı: $([[ "$smoke_status" == "hata" ]] && echo "Hayır" || echo "Evet")${NC}"
@@ -803,8 +809,10 @@ print_install_validation_coverage() {
             echo -e "   ${BOLD}   Development tam doğrulama: ${recommended_validation_command}${NC}"
             echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
             echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
-            echo "   Production readiness:      ./install_sidar.sh --production-readiness"
-            echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
+            if [[ "$production_readiness_status_reported" != true ]]; then
+                echo "   Production readiness:      ./install_sidar.sh --production-readiness"
+                echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
+            fi
         fi
     fi
 

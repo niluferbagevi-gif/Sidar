@@ -667,6 +667,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "production-ready sayılmaz" in validation_phase
     assert "PRODUCTION GATE: Tam CI/e2e/benchmark doğrulaması zorunludur" in validation_phase
     assert "DEVELOPMENT UYARISI" in validation_phase
+    assert "production_readiness_status_reported=false" in validation_phase
+    assert "Development full validation geçti = geliştirici ortamı sağlıklı" in validation_phase
     assert (
         "env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
         "SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0"
@@ -687,6 +689,12 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
         assert "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend" in doc
 
     assert "Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz" in readme
+    assert "**“Development full validation geçti”**: geliştirici ortamı sağlıklı" in readme
+    assert "**“Production readiness çalıştırılmadı”**: release/merge/dağıtım öncesinde" in readme
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    ) in readme
     assert "frontend stage'in atlandığını görmek normaldir" in testing
     assert "Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde" in testing
     assert "frontend kalite kapısı ise bilinçli opt-in gerektirir" in install_options
@@ -999,8 +1007,9 @@ print_install_validation_coverage""",
     )
 
     assert "Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ" in result.stdout
-    assert "Development full validation geçti" in result.stdout
+    assert "Development full validation geçti = geliştirici ortamı sağlıklı" in result.stdout
     assert "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
+    assert result.stdout.count("Production readiness:") == 1
     assert "Production readiness: GEÇMEDİ" not in result.stdout
 
 
