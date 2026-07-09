@@ -111,6 +111,8 @@ gösterir:
 
 ```bash
 make dev-full              # Geliştirici tam doğrulaması; production readiness değildir.
+make ci-parity             # dev-full + local frontend bundle budget kapısı açık.
+make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
@@ -141,6 +143,50 @@ Backend pytest JUnit çıktıları:
 
 Böylece lokal log ile CI raporu aynı özet/coverage/benchmark/JUnit dosyaları
 üzerinden kıyaslanabilir.
+
+## Örnek başarılı local doğrulama çıktısı nasıl okunur?
+
+Aşağıdaki özet, gerçek kurulum loglarında görülen başarılı **development/local**
+doğrulamaya benzeyen temsilî bir çıktıdır. Önemli nokta: yeşil test sonuçları
+local ortamın sağlıklı olduğunu gösterir; sarı release uyarısı ise beklenen bir
+durumdur ve hata değildir.
+
+```text
+✅ Smoke testler başarıyla geçti.
+✅ Entegrasyon testleri başarıyla geçti (run_tests.sh --stage integration).
+✅ Frontend kalite kapısı başarıyla geçti (run_tests.sh --stage frontend).
+✅ Final coverage quality gate geçti (eşik: 99).
+✅ Benchmark JSON raporu oluşturuldu: artifacts/benchmark/benchmark.json
+✅ Development full validation başarıyla tamamlandı.
+⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]: stage all çalıştı; ancak
+   SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için
+   bu sonuç production-readiness sayılmaz.
+Production readiness için:
+   TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 \
+   SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
+```
+
+Bu çıktıyı şu şekilde yorumlayın:
+
+- `✅ Smoke`, `✅ Integration`, `✅ Frontend`, `✅ Coverage` ve `✅ Benchmark`
+  satırları ilgili local/dev kalite kapılarının geçtiğini gösterir.
+- `⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]` satırı **beklenen bir uyarıdır**:
+  local `--stage all` koşusu başarılı olsa bile release/merge kapısı sayılmaz.
+- `Frontend bundle budget atlandı` uyarısı local/dev-full varsayılanında normaldir;
+  CI paritesine daha yakın local koşu için `make ci-parity` veya
+  `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 make dev-full` kullanın.
+- İlk lokal benchmark koşusunda `seeded_not_compared` veya “baseline sonradan
+  oluşturuldu” mesajı görmek normaldir. CI/production-readiness tarafında baseline
+  restore edilemezse bu durum normalleştirilmez; gate fail-closed davranır.
+- `production_ready=false`, `validation_class=development_full` veya
+  `release_blocking=true` değerleri `artifacts/test-summary.json` içinde görülürse
+  bu, local doğrulamanın başarılı ama release için henüz yeterli olmadığını anlatır.
+
+Local başarıdan release onayına geçmek için tek kanonik komut:
+
+```bash
+make production-readiness
+```
 
 ## CI benchmark baseline cache boşsa ne yapılır?
 
