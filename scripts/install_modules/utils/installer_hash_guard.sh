@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
 
+installer_hash_guard_git_root_for_script() {
+    local script_path="$1"
+    local script_dir=""
+
+    [[ -n "$script_path" ]] || return 1
+    script_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd -P)" || return 1
+    git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null
+}
+
+log_installer_hash_drift_git_context() {
+    local label="$1"
+    local script_path="$2"
+    local repo_root=""
+    local repo_head=""
+    local status_output=""
+
+    command -v git >/dev/null 2>&1 || return 0
+    repo_root="$(installer_hash_guard_git_root_for_script "$script_path" || true)"
+    [[ -n "$repo_root" ]] || return 0
+
+    repo_head="$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo bilinmiyor)"
+    status_output="$(git -C "$repo_root" status --short 2>/dev/null || true)"
+    warn "${label} git bağlamı: repo=${repo_root}, HEAD=${repo_head}"
+    if [[ -n "$status_output" ]]; then
+        warn "${label} git status --short:"
+        while IFS= read -r status_line; do
+            warn "  ${status_line}"
+        done <<< "$status_output"
+    else
+        info "${label} git status --short: temiz"
+    fi
+}
+
 check_installer_hash() {
     local current_script="$1"
     local next_script="$2"
@@ -21,6 +54,8 @@ check_installer_hash() {
             warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
             return 0
         fi
+        log_installer_hash_drift_git_context "Mevcut installer" "$current_script"
+        log_installer_hash_drift_git_context "Hedef installer" "$next_script"
         fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. NEXT STEP → hash drift kaynağını temizleyin: \$HOME/Sidar/install_sidar.sh eskiyse 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırıp güncel install_sidar.sh ile yeniden deneyin; hedef repo driftliyse git pull --ff-only veya temiz clone kullanın. Yalnız bilinçli/incelemesi yapılmış durumda SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
     fi
 }
