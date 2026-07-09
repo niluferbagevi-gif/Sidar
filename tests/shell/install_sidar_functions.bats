@@ -941,7 +941,7 @@ EOF
     prompt_yes_no_with_timeout_default_no() { printf "e"; }
     cat > "$tmpdir/run_tests.sh" <<EOF
 #!/usr/bin/env bash
-printf "%s|%s|%s|%s|%s\n" "\${RUN_GPU_STRESS:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/run_tests.log"
+printf "%s|%s|%s|%s|%s|%s\n" "\${RUN_GPU_STRESS:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/run_tests.log"
 mkdir -p "$tmpdir/artifacts"
 cat > "$tmpdir/artifacts/test-summary.json" <<JSON
 {"frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
@@ -953,7 +953,7 @@ EOF
 
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
     [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
-    grep -q "^1|required|1|0|--stage all$" "$tmpdir/run_tests.log"
+    grep -q "^1|required|1|1|0|--stage all$" "$tmpdir/run_tests.log"
   '
   [ "$status" -eq 0 ]
 }

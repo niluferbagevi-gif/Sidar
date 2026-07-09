@@ -664,6 +664,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "sidar_install_production_gate_required()" in validation_phase
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
+    assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all" in validation_phase
+    assert "env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 AUTO_OPEN_ARTIFACTS=0" in validation_phase
     assert "production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir" in validation_phase
     assert "Tam doğrulama sonucu: HATA" in validation_phase
     assert "uygulama geliştirme amacıyla çalışabilir" in validation_phase
