@@ -284,9 +284,10 @@ jobs:
       - name: Run frontend dependency audit gate
         env:
           FRONTEND_NPM_AUDIT_LEVEL: high
+          FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE: "0"
         run: |
           cd web_ui_react
-          npm audit --audit-level="${FRONTEND_NPM_AUDIT_LEVEL}"
+          npm run audit:high
 
       - name: Install Playwright Chromium for frontend smoke tests
         run: |
