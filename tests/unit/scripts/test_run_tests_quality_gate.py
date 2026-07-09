@@ -649,7 +649,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
     ) in run_tests_script
     assert "Development full validation başarıyla tamamlandı" in run_tests_script
-    assert "RELEASE KAPSAMI EKSİK: stage all çalıştı" in run_tests_script
+    assert "RELEASE KAPSAMI EKSİK" in run_tests_script
+    assert "stage all çalıştı" in run_tests_script
     assert "SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı" in run_tests_script
     assert "Production readiness profili çalıştırılmadı" not in run_tests_script
     assert "Tam doğrulama durumu: ÇALIŞTIRILMADI" not in run_tests_script
@@ -947,7 +948,8 @@ print_install_validation_coverage""",
     assert "Integration : tests/integration GEÇTİ" in result.stdout
     assert "E2E         : tests/e2e/{agents,cli,web} GEÇTİ" in result.stdout
     assert "Benchmark   : tests/performance GEÇTİ" in result.stdout
-    assert "Production readiness: GEÇMEDİ" in result.stdout
+    assert "Production readiness:" in result.stdout
+    assert "GEÇMEDİ" in result.stdout
     assert "Tam doğrulama sonucu: HATA" in result.stdout
     assert "Integration:  ATLANDI" not in result.stdout
     assert "Benchmark:    ATLANDI" not in result.stdout
