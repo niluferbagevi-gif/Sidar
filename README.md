@@ -581,11 +581,19 @@ ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
 
 raw fallback gerektiğinde kullanılan URL aşağıdadır; bu yol runtime'da dinamik
 modül indirme yapabildiği için GitHub raw 429/5xx riskine Release bundle'a göre
-daha açıktır:
+daha açıktır. Dış wrapper indirme adımında GitHub raw rate-limit/429 yanıtlarına
+karşı retry/backoff seçenekleriyle indirin; installer'ın kendi modül fallback
+indiricisi retryable HTTP statüleri, `Retry-After` ve cache davranışını ayrıca
+yönetir:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
-# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+curl -fL --retry 5 --retry-all-errors --retry-delay 2 \
+  -o install_sidar.sh \
+  https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+# veya:
+wget --tries=5 --waitretry=2 \
+  -O install_sidar.sh \
+  https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
 chmod +x install_sidar.sh
 ./install_sidar.sh
 ```

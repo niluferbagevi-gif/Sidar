@@ -1828,6 +1828,9 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
         assert content.index(release_url) < content.index(dynamic_url)
         assert "raw fallback" in content
         assert "GitHub raw 429/5xx" in content
+    assert "curl -fL --retry 5 --retry-all-errors --retry-delay 2" in readme
+    assert "wget --tries=5 --waitretry=2" in readme
+    assert "Retry-After" in readme
     assert "Release bundle (önerilen)" in readme
     assert "varsayılan Release bundle, raw fallback son çare" in modularization_note
     assert "Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı" in readme
