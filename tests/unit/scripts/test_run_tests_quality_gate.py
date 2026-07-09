@@ -776,6 +776,19 @@ write_test_summary_json false
     assert summary["smoke"] == "passed"
     assert summary["e2e"] == "passed"
     assert summary["benchmark"] == "passed"
+    assert summary["benchmark_baseline"] == {
+        "name": "baseline",
+        "compare_required": False,
+        "compare_enforced": False,
+        "compare_enabled": True,
+        "compare_fail": None,
+        "file": None,
+        "selector": None,
+        "json_output": "artifacts/benchmark/benchmark.json",
+        "local_seed_command": "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all",
+        "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
+        "ci_fail_closed": True,
+    }
     assert summary["production_ready"] is False
     assert summary["backend_failed_tests"] == []
     assert summary["installer"] == {

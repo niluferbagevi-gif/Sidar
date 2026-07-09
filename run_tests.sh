@@ -769,6 +769,14 @@ write_test_summary_json() {
   local frontend_e2e_status=""
   local benchmark_status=""
   local benchmark_compare_status="${BENCHMARK_COMPARE_STATUS:-not_run}"
+  local benchmark_baseline_name="${BENCHMARK_COMPARE_NAME:-${BENCHMARK_BASELINE_NAME:-baseline}}"
+  local benchmark_baseline_file="${BENCHMARK_COMPARE_FILE:-}"
+  local benchmark_compare_selector="${BENCHMARK_COMPARE_SELECTOR:-}"
+  local benchmark_compare_required="${BENCHMARK_COMPARE_REQUIRED:-0}"
+  local benchmark_enforce_compare="${BENCHMARK_ENFORCE_COMPARE:-0}"
+  local benchmark_enable_compare="${BENCHMARK_ENABLE_COMPARE:-0}"
+  local benchmark_compare_fail="${BENCHMARK_COMPARE_FAIL:-}"
+  local benchmark_json_output="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
   local frontend_e2e_scope="skipped"
   local frontend_e2e_script="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
   local production_readiness_status="not_requested"
@@ -842,6 +850,14 @@ write_test_summary_json() {
       "${production_readiness_status}" \
       "${production_readiness_reason}" \
       "${benchmark_compare_status}" \
+      "${benchmark_baseline_name}" \
+      "${benchmark_baseline_file}" \
+      "${benchmark_compare_selector}" \
+      "${benchmark_compare_required}" \
+      "${benchmark_enforce_compare}" \
+      "${benchmark_enable_compare}" \
+      "${benchmark_compare_fail}" \
+      "${benchmark_json_output}" \
       "${frontend_e2e_scope}" \
       "${frontend_e2e_script}" <<'PY_TEST_SUMMARY'
 from __future__ import annotations
@@ -874,9 +890,17 @@ from pathlib import Path
     production_readiness_status,
     production_readiness_reason,
     benchmark_compare_status,
+    benchmark_baseline_name,
+    benchmark_baseline_file,
+    benchmark_compare_selector,
+    benchmark_compare_required,
+    benchmark_enforce_compare,
+    benchmark_enable_compare,
+    benchmark_compare_fail,
+    benchmark_json_output,
     frontend_e2e_scope,
     frontend_e2e_script,
-) = sys.argv[1:25]
+) = sys.argv[1:33]
 
 
 def _safe_int(value: str) -> int:
@@ -885,6 +909,10 @@ def _safe_int(value: str) -> int:
     except ValueError:
         return 0
     return max(parsed, 0)
+
+
+def _flag_enabled(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on", "required"}
 
 
 def _failed_backend_tests(report_dir: str) -> list[str]:
@@ -930,6 +958,19 @@ summary = {
     "frontend_e2e": frontend_e2e,
     "benchmark": benchmark,
     "benchmark_compare": benchmark_compare_status,
+    "benchmark_baseline": {
+        "name": benchmark_baseline_name or "baseline",
+        "compare_required": _flag_enabled(benchmark_compare_required),
+        "compare_enforced": _flag_enabled(benchmark_enforce_compare),
+        "compare_enabled": _flag_enabled(benchmark_enable_compare),
+        "compare_fail": benchmark_compare_fail or None,
+        "file": benchmark_baseline_file or None,
+        "selector": benchmark_compare_selector or None,
+        "json_output": benchmark_json_output,
+        "local_seed_command": "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all",
+        "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
+        "ci_fail_closed": True,
+    },
     "production_ready": production_ready == "true",
     "production_readiness": {
         "status": production_readiness_status,
