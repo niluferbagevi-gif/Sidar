@@ -335,6 +335,13 @@ fail-closed durmaya devam eder.
 Önerilen sıra: yerelde oluşan ilk baseline'ı normal kabul edin; CI/main için önce
 `seed_benchmark_baseline=true` workflow_dispatch job'ını çalıştırın; cache/artifact
 oluştuktan sonra normal CI veya production readiness gate'ini tekrar koşun.
+
+> **CI ilk kez kırılırsa hızlı çözüm:** GitHub Actions → **CI** → **Run workflow**
+> ekranında `seed_benchmark_baseline=true` seçeneğini işaretleyin. Bu koşu
+> production-readiness gate'ini çalıştırmadan yalnız benchmark baseline cache/artifact
+> üretir. Job tamamlandıktan sonra normal CI veya `make production-readiness` gate'ini
+> tekrar çalıştırın. Baseline olmadan gated CI'ın fail-closed kırılması beklenen
+> güvenli davranıştır; testlerin bozuk olduğu anlamına tek başına gelmez.
 Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
 `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
 çalıştırın.

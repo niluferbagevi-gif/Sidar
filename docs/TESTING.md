@@ -101,6 +101,12 @@ Böylece lokal log ile CI raporu aynı özet/coverage/benchmark/JUnit dosyaları
 
 ## CI benchmark baseline cache boşsa ne yapılır?
 
+> **Kısa cevap:** GitHub Actions → **CI** → **Run workflow** →
+> `seed_benchmark_baseline=true` seçeneğini çalıştırın; `benchmark-baseline-seed`
+> artifact/cache oluştuktan sonra normal CI veya production-readiness gate'ini tekrar
+> koşun. İlk/boş cache durumunda gated CI'ın baseline üretmeden kırılması beklenen
+> fail-closed davranıştır.
+
 CI `make production-readiness` adımında benchmark karşılaştırmasını fail-closed çalıştırır:
 `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
 `BENCHMARK_COMPARE_FAIL=mean:10%`. Bu yüzden `.benchmarks` altında

@@ -601,6 +601,18 @@ print_install_coverage_gate_note() {
     echo "   Test rehberi: docs/TESTING.md (run_tests.sh PR/merge öncesi ana doğrulama yoludur)"
 }
 
+print_install_benchmark_baseline_note() {
+    echo ""
+    echo -e "${BOLD}📌 CI ilk çalıştırma / benchmark baseline notu:${NC}"
+    echo -e "   ${YELLOW}CI production-readiness gate'i fail-closed çalışır; .benchmarks/*_baseline.json restore edilemezse normal CI baseline üretmez ve bilinçli olarak başarısız olur.${NC}"
+    echo "   İlk/boş cache bootstrap sırası:"
+    echo "     1. GitHub Actions → CI → Run workflow"
+    echo "     2. seed_benchmark_baseline=true seçin"
+    echo "     3. benchmark-baseline-seed artifact/cache oluşunca normal CI veya production-readiness gate'ini yeniden çalıştırın"
+    echo "   Lokal artifact restore örneği ve ayrıntılar: docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır"
+    echo "   Release/merge öncesi gate: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+}
+
 print_install_ci_parity_summary() {
     local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
@@ -817,5 +829,6 @@ print_install_validation_coverage() {
     fi
 
     print_install_coverage_gate_note
+    print_install_benchmark_baseline_note
     print_install_ci_parity_summary
 }
