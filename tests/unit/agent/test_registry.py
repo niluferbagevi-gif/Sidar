@@ -777,6 +777,40 @@ def test_builtin_contract_sync_normalizes_each_role_to_canonical_class(
         AgentCatalog._registry.update(snapshot)
 
 
+def test_builtin_contract_sync_uses_module_cache_despite_stale_import_failure() -> None:
+    """A stale import failure must not block an explicit canonical module cache sync."""
+    import agent.registry as registry_module
+
+    contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
+    snapshot = dict(AgentCatalog._registry)
+    canonical_module = importlib.import_module(contract.module_name)
+    canonical_cls = getattr(canonical_module, contract.class_name)
+
+    class _DriftingPlaceholder:
+        pass
+
+    try:
+        registry_module._BUILTIN_IMPORT_FAILURES[contract.module_name] = "stale failure"
+        AgentCatalog._registry[contract.role_name] = AgentSpec(
+            role_name=contract.role_name,
+            agent_class=_DriftingPlaceholder,
+            capabilities=[],
+            is_builtin=True,
+        )
+
+        _sync_builtin_contract_registry({contract.module_name: canonical_module})
+
+        synced_spec = AgentCatalog.get(contract.role_name)
+        assert synced_spec is not None
+        assert synced_spec.agent_class is canonical_cls
+        assert set(contract.capabilities).issubset(set(synced_spec.capabilities or []))
+        assert contract.module_name not in registry_module._BUILTIN_IMPORT_FAILURES
+    finally:
+        _clear_builtin_import_failures()
+        AgentCatalog._registry.clear()
+        AgentCatalog._registry.update(snapshot)
+
+
 def test_register_type_annotations_pin_strict_typing_contract() -> None:
     """Strict typing regression guard.
 

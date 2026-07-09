@@ -361,11 +361,12 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
     ``agent.roles`` package exports, even after test stubs or reloads.
     """
     role_exports = sys.modules.get("agent.roles")
+    module_cache = module_cache or {}
     for contract in BUILTIN_ROLE_CONTRACTS:
-        if contract.module_name in _BUILTIN_IMPORT_FAILURES:
+        module = module_cache.get(contract.module_name)
+        if module is None and contract.module_name in _BUILTIN_IMPORT_FAILURES:
             continue
         try:
-            module = (module_cache or {}).get(contract.module_name)
             if module is None:
                 module = importlib.import_module(contract.module_name)
             agent_cls = getattr(module, contract.class_name)
@@ -386,6 +387,8 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
                 contract.class_name,
             )
             continue
+
+        _BUILTIN_IMPORT_FAILURES.pop(contract.module_name, None)
 
         if role_exports is not None:
             setattr(role_exports, contract.class_name, agent_cls)

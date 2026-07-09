@@ -23,6 +23,7 @@ def _import_module_with_stubs(monkeypatch):
     fake_core_db.Database = _Database
     monkeypatch.setitem(sys.modules, "core.db", fake_core_db)
 
+    sys.modules.pop("scripts.load_test_db_pool", None)
     return importlib.import_module("scripts.load_test_db_pool")
 
 
@@ -209,18 +210,15 @@ def test_main_runs_load_test_with_parsed_args(monkeypatch):
     ):
         captured["args"] = (database_url, concurrency, requests, warmup_requests, acquire_timeout_s)
 
-    original_asyncio_run = asyncio.run
-
-    def fake_asyncio_run(coro):
-        captured["asyncio_run_called"] = True
-        return original_asyncio_run(coro)
+    def fake_runner(coro):
+        captured["runner_called"] = True
+        return asyncio.run(coro)
 
     monkeypatch.setattr(module, "run_load_test", fake_run_load_test)
-    monkeypatch.setattr(module.asyncio, "run", fake_asyncio_run)
 
-    module.main()
+    module.main(runner=fake_runner)
 
-    assert captured["asyncio_run_called"] is True
+    assert captured["runner_called"] is True
     assert captured["args"] == (
         "postgresql://user:pass@localhost:5432/sidar",
         3,
