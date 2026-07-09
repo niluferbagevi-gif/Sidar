@@ -110,8 +110,8 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
-make dev-full              # Geliştirici tam doğrulaması; production readiness değildir.
-make ci-parity             # dev-full + local frontend bundle budget kapısı açık.
+make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget.
+make ci-parity             # dev-full ile aynı local/CI parite kısayolu.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
@@ -172,9 +172,10 @@ Bu çıktıyı şu şekilde yorumlayın:
   satırları ilgili local/dev kalite kapılarının geçtiğini gösterir.
 - `⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]` satırı **beklenen bir uyarıdır**:
   local `--stage all` koşusu başarılı olsa bile release/merge kapısı sayılmaz.
-- `Frontend bundle budget atlandı` uyarısı local/dev-full varsayılanında normaldir;
-  CI paritesine daha yakın local koşu için `make ci-parity` veya
-  `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 make dev-full` kullanın.
+- `Frontend bundle budget atlandı` uyarısı doğrudan `bash run_tests.sh --stage all`
+  local profilinde normaldir; Makefile üzerinden `make dev-full` veya `make ci-parity`
+  çalıştırıldığında bundle budget kapısı varsayılan olarak açıktır. Geçici olarak
+  kapatmak için `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=0 make dev-full` kullanın.
 - İlk lokal benchmark koşusunda `seeded_not_compared` veya “baseline sonradan
   oluşturuldu” mesajı görmek normaldir. CI/production-readiness tarafında baseline
   restore edilemezse bu durum normalleştirilmez; gate fail-closed davranır.

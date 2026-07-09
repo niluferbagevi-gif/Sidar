@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 SHELLCHECK ?= uv run shellcheck
 BATS ?= bats
 BENCHMARK_COMPARE_REQUIRED ?= 0
-FRONTEND_BUNDLE_BUDGET_LOCAL_FULL ?= 0
+FRONTEND_BUNDLE_BUDGET_LOCAL_FULL ?= 1
 
 SHELLCHECK_FILES := $(shell git ls-files \
 	'install_sidar.sh' \
