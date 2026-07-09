@@ -777,7 +777,7 @@ write_test_summary_json() {
   local benchmark_compare_selector="${BENCHMARK_COMPARE_SELECTOR:-}"
   local benchmark_compare_required="${BENCHMARK_COMPARE_REQUIRED:-0}"
   local benchmark_enforce_compare="${BENCHMARK_ENFORCE_COMPARE:-0}"
-  local benchmark_enable_compare="${BENCHMARK_ENABLE_COMPARE:-0}"
+  local benchmark_enable_compare="${BENCHMARK_ENABLE_COMPARE:-1}"
   local benchmark_compare_fail="${BENCHMARK_COMPARE_FAIL:-}"
   local benchmark_json_output="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
   local frontend_e2e_scope="skipped"
@@ -2747,7 +2747,7 @@ elif stage_all_selected; then
   if [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
     echo "✅ Development full validation başarıyla tamamlandı."
   fi
-  echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+  echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı [summary-code=10]; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
   if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
     echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
   fi
@@ -2778,7 +2778,7 @@ else
     echo "✅ Zorunlu Backend, Frontend E2E ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
   elif stage_all_selected; then
     echo "✅ Development full validation başarıyla tamamlandı."
-    echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+    echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı [summary-code=10]; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
     if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
       echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
     fi

@@ -38,7 +38,7 @@ test-shell:
 test: test-shell
 
 dev-full:
-	RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL) bash run_tests.sh --stage all
+	RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
 
 ci-parity:
 	$(MAKE) dev-full FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1

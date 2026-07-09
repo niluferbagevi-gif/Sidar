@@ -484,7 +484,7 @@ print_install_production_readiness_notice() {
             echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
             ;;
         failed)
-            echo -e "   ${RED}${BOLD}❌ Production readiness: HATA${NC}"
+            echo -e "   ${RED}${BOLD}❌ Production readiness: GEÇMEDİ${NC}"
             echo -e "   ${YELLOW}   Release/merge için zorunlu gate başarısız oldu; tekrar komutu: ${production_readiness_command}${NC}"
             ;;
         not_requested|development_only)
@@ -493,6 +493,7 @@ print_install_production_readiness_notice() {
                 echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
             fi
             echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS${NC}"
             echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
             ;;
         *)
