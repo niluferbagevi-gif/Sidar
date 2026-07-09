@@ -782,7 +782,7 @@ write_test_summary_json() {
   frontend_lint_status="$(quality_summary_status "${FRONTEND_LINT_RAN}" "${FRONTEND_LINT_EXIT_CODE}")"
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
-  frontend_bundle_budget_status="$(quality_summary_status "${FRONTEND_BUNDLE_BUDGET_RAN}" "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}")"
+  frontend_bundle_budget_status="$(quality_summary_status "${FRONTEND_BUNDLE_BUDGET_RAN:-0}" "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE:-0}")"
   frontend_e2e_status="$(quality_summary_status "${FRONTEND_E2E_RAN}" "${FRONTEND_E2E_EXIT_CODE}")"
   if [ "${FRONTEND_E2E_RAN}" = "1" ]; then
     if [ "${frontend_e2e_script}" = "test:e2e:smoke" ]; then
