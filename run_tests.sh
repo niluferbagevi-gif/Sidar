@@ -601,6 +601,7 @@ FRONTEND_COVERAGE_RAN=0
 FRONTEND_NPM_AUDIT_RAN=0
 FRONTEND_E2E_RAN=0
 BENCHMARK_EXIT_CODE=0
+BENCHMARK_COMPARE_STATUS="not_run"
 FRONTEND_COVERAGE_REPORT_PATH="web_ui_react/coverage/index.html"
 FRONTEND_PLAYWRIGHT_REPORT_PATH="web_ui_react/playwright-report/index.html"
 DOCKER_TEST_SERVICES_STARTED=0
@@ -759,6 +760,11 @@ write_test_summary_json() {
   local frontend_coverage_status=""
   local frontend_e2e_status=""
   local benchmark_status=""
+  local benchmark_compare_status="${BENCHMARK_COMPARE_STATUS:-not_run}"
+  local frontend_e2e_scope="skipped"
+  local frontend_e2e_script="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
+  local production_readiness_status="not_requested"
+  local production_readiness_reason="production readiness gate was not requested"
   local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
   local backend_failed_tests_enabled="false"
 
@@ -769,6 +775,28 @@ write_test_summary_json() {
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
   frontend_e2e_status="$(quality_summary_status "${FRONTEND_E2E_RAN}" "${FRONTEND_E2E_EXIT_CODE}")"
+  if [ "${FRONTEND_E2E_RAN}" = "1" ]; then
+    if [ "${frontend_e2e_script}" = "test:e2e:smoke" ]; then
+      frontend_e2e_scope="smoke"
+    else
+      frontend_e2e_scope="full"
+    fi
+  fi
+
+  if [ "${production_ready}" = "true" ]; then
+    production_readiness_status="passed"
+    production_readiness_reason="production readiness gate passed"
+  elif production_readiness_gate_active; then
+    production_readiness_status="failed"
+    production_readiness_reason="production readiness gate was active but at least one required quality gate failed"
+  elif stage_all_selected; then
+    production_readiness_status="development_only"
+    production_readiness_reason="stage all completed outside the required CI production readiness profile"
+  else
+    production_readiness_status="partial_stage"
+    production_readiness_reason="selected stage set does not cover the full production readiness gate"
+  fi
+
   if [ "${BACKEND_UNIT_RAN}" = "1" ] \
     || [ "${BACKEND_INTEGRATION_RAN}" = "1" ] \
     || [ "${BACKEND_SMOKE_RAN}" = "1" ] \
@@ -800,7 +828,12 @@ write_test_summary_json() {
       "${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}" \
       "${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}" \
       "${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}" \
-      "${SIDAR_INSTALL_MODULE_BASE_URL:-}" <<'PY_TEST_SUMMARY'
+      "${SIDAR_INSTALL_MODULE_BASE_URL:-}" \
+      "${production_readiness_status}" \
+      "${production_readiness_reason}" \
+      "${benchmark_compare_status}" \
+      "${frontend_e2e_scope}" \
+      "${frontend_e2e_script}" <<'PY_TEST_SUMMARY'
 from __future__ import annotations
 
 import json
@@ -827,7 +860,12 @@ from pathlib import Path
     http_429_retries,
     remote_module_cache_hits,
     remote_module_base_url,
-) = sys.argv[1:19]
+    production_readiness_status,
+    production_readiness_reason,
+    benchmark_compare_status,
+    frontend_e2e_scope,
+    frontend_e2e_script,
+) = sys.argv[1:24]
 
 
 def _safe_int(value: str) -> int:
@@ -879,7 +917,15 @@ summary = {
     "frontend_coverage": frontend_coverage,
     "frontend_e2e": frontend_e2e,
     "benchmark": benchmark,
+    "benchmark_compare": benchmark_compare_status,
     "production_ready": production_ready == "true",
+    "production_readiness": {
+        "status": production_readiness_status,
+        "reason": production_readiness_reason,
+        "required_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+    },
+    "frontend_e2e_scope": frontend_e2e_scope,
+    "frontend_e2e_script": frontend_e2e_script,
     "backend_failed_tests": (
         _failed_backend_tests(junit_dir)
         if backend_failed_tests_enabled == "true"
@@ -2197,6 +2243,7 @@ fi
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
+  BENCHMARK_COMPARE_STATUS="skipped"
   echo "⚠️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
   if gpu_hardware_available || [ "${USE_GPU:-0}" = "1" ]; then
     echo "⚠️ GPU/hızlandırıcı algılandı; performans regresyonlarını erken yakalamak için benchmark fazını kapatmayın."
@@ -2206,6 +2253,7 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Öneri (lokal): RUN_BENCHMARKS=required bash run_tests.sh"
   echo "ℹ️ Öneri (hedefli): uv run pytest -q ${PERFORMANCE_TEST_DIR} --benchmark-json=${BENCHMARK_JSON_OUTPUT}"
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
+  BENCHMARK_COMPARE_STATUS="not_requested"
   echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
@@ -2226,13 +2274,16 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       benchmark_compare_target_found=1
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
       if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
+        BENCHMARK_COMPARE_STATUS="compared_enforced"
         echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
         benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
       else
+        BENCHMARK_COMPARE_STATUS="compared_report_only"
         echo "⚠️ Benchmark karşılaştırması rapor modunda (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
         echo "ℹ️ Varsayılan sıkı kapıyı geçici rapor moduna almak için BENCHMARK_ENFORCE_COMPARE=0 kullanın."
       fi
     else
+      BENCHMARK_COMPARE_STATUS="missing_baseline"
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
       echo "ℹ️ İlk makine/bootstrap istisnası: BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh"
@@ -2240,6 +2291,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       echo "ℹ️ CI, .benchmarks baseline'ını repo commit'i yerine GitHub Actions cache/artifact üzerinden seed/restore eder."
       if [ "${BENCHMARK_COMPARE_REQUIRED}" = "1" ]; then
         if [ "${IS_CI_ENV}" -eq 1 ]; then
+          BENCHMARK_COMPARE_STATUS="missing_required"
           echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
           echo "ℹ️ CI bootstrap için cache/artifact baseline restore edin veya seed job'ında BENCHMARK_COMPARE_REQUIRED=0 kullanın."
           BENCHMARK_EXIT_CODE=1
@@ -2250,6 +2302,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       fi
     fi
   else
+    BENCHMARK_COMPARE_STATUS="disabled"
     echo "ℹ️ Benchmark karşılaştırması devre dışı (BENCHMARK_ENABLE_COMPARE=0)."
   fi
 
@@ -2263,9 +2316,11 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     echo "✅ Benchmark JSON raporu oluşturuldu: ${BENCHMARK_JSON_OUTPUT}"
     if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ] && [ "${benchmark_compare_target_found}" = "0" ]; then
       if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
+        BENCHMARK_COMPARE_STATUS="seeded_not_compared"
         echo "✅ Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}"
         echo "ℹ️ Sonraki benchmark koşusunda --benchmark-compare=${BENCHMARK_COMPARE_SELECTOR} otomatik kullanılacak."
       else
+        BENCHMARK_COMPARE_STATUS="seed_missing"
         echo "⚠️ Benchmark JSON üretildi ancak .benchmarks altında '${BENCHMARK_COMPARE_NAME}' baseline kaydı doğrulanamadı."
       fi
     fi
@@ -2292,6 +2347,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     fi
   fi
 else
+  BENCHMARK_COMPARE_STATUS="benchmark_dir_missing"
   echo "⚠️ Benchmark testi atlandı: ${PERFORMANCE_TEST_DIR} bulunamadı."
   if [ "${RUN_BENCHMARKS}" = "required" ]; then
     echo "❌ RUN_BENCHMARKS=required iken benchmark dizini bulunamadı."
