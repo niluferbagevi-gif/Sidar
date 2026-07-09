@@ -780,7 +780,9 @@ write_test_summary_json() {
   local frontend_e2e_scope="skipped"
   local frontend_e2e_script="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
   local production_readiness_status="not_requested"
+  local production_readiness_summary="not_run"
   local production_readiness_reason="production readiness gate was not requested"
+  local installer_mode="${SIDAR_INSTALLER_MODE:-development_local}"
   local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
   local backend_failed_tests_enabled="false"
 
@@ -802,16 +804,26 @@ write_test_summary_json() {
 
   if [ "${production_ready}" = "true" ]; then
     production_readiness_status="passed"
+    production_readiness_summary="passed"
     production_readiness_reason="production readiness gate passed"
+    installer_mode="production_readiness"
   elif production_readiness_gate_active; then
     production_readiness_status="failed"
+    production_readiness_summary="failed"
     production_readiness_reason="production readiness gate was active but at least one required quality gate failed"
+    installer_mode="production_readiness"
   elif stage_all_selected; then
     production_readiness_status="development_only"
+    production_readiness_summary="not_run"
     production_readiness_reason="stage all completed outside the required CI production readiness profile"
   else
     production_readiness_status="partial_stage"
+    production_readiness_summary="not_run"
     production_readiness_reason="selected stage set does not cover the full production readiness gate"
+  fi
+
+  if [ "${installer_mode}" = "development_local" ] && [ "${TEST_PROFILE:-local}" = "ci" ]; then
+    installer_mode="ci"
   fi
 
   if [ "${BACKEND_UNIT_RAN}" = "1" ] \
@@ -847,8 +859,10 @@ write_test_summary_json() {
       "${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}" \
       "${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}" \
       "${SIDAR_INSTALL_MODULE_BASE_URL:-}" \
+      "${production_readiness_summary}" \
       "${production_readiness_status}" \
       "${production_readiness_reason}" \
+      "${installer_mode}" \
       "${benchmark_compare_status}" \
       "${benchmark_baseline_name}" \
       "${benchmark_baseline_file}" \
@@ -887,8 +901,10 @@ from pathlib import Path
     http_429_retries,
     remote_module_cache_hits,
     remote_module_base_url,
+    production_readiness_summary,
     production_readiness_status,
     production_readiness_reason,
+    installer_mode,
     benchmark_compare_status,
     benchmark_baseline_name,
     benchmark_baseline_file,
@@ -900,7 +916,7 @@ from pathlib import Path
     benchmark_json_output,
     frontend_e2e_scope,
     frontend_e2e_script,
-) = sys.argv[1:33]
+) = sys.argv[1:36]
 
 
 def _safe_int(value: str) -> int:
@@ -957,7 +973,10 @@ summary = {
     "frontend_bundle_budget": frontend_bundle_budget,
     "frontend_e2e": frontend_e2e,
     "benchmark": benchmark,
+    "production_readiness": production_readiness_summary,
     "benchmark_compare": benchmark_compare_status,
+    "frontend_e2e_scope": frontend_e2e_scope,
+    "installer_mode": installer_mode,
     "benchmark_baseline": {
         "name": benchmark_baseline_name or "baseline",
         "compare_required": _flag_enabled(benchmark_compare_required),
@@ -972,12 +991,11 @@ summary = {
         "ci_fail_closed": True,
     },
     "production_ready": production_ready == "true",
-    "production_readiness": {
+    "production_readiness_detail": {
         "status": production_readiness_status,
         "reason": production_readiness_reason,
         "required_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
     },
-    "frontend_e2e_scope": frontend_e2e_scope,
     "frontend_e2e_script": frontend_e2e_script,
     "backend_failed_tests": (
         _failed_backend_tests(junit_dir)

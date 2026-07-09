@@ -760,6 +760,7 @@ FRONTEND_E2E_RAN=1
 FRONTEND_E2E_EXIT_CODE=0
 RUN_BENCHMARKS=required
 BENCHMARK_EXIT_CODE=0
+BENCHMARK_COMPARE_STATUS=seeded_not_compared
 SIDAR_INSTALLER_BOOTSTRAP_MODE=raw-module-fallback
 SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT=7
 SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=9
@@ -779,6 +780,11 @@ write_test_summary_json false
     assert summary["smoke"] == "passed"
     assert summary["e2e"] == "passed"
     assert summary["benchmark"] == "passed"
+    assert summary["production_readiness"] == "not_run"
+    assert summary["benchmark_compare"] == "seeded_not_compared"
+    assert summary["frontend_e2e_scope"] == "smoke"
+    assert summary["installer_mode"] == "development_local"
+    assert summary["production_readiness_detail"]["status"] == "partial_stage"
     assert summary["benchmark_baseline"] == {
         "name": "baseline",
         "compare_required": False,
