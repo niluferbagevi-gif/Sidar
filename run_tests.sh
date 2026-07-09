@@ -2719,13 +2719,15 @@ write_test_summary_json "${PRODUCTION_READY}"
 
 if production_readiness_gate_active; then
   echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"
-elif stage_all_selected && [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
-  echo "✅ Development full validation başarıyla tamamlandı."
-  echo "⚠️ Production readiness profili çalıştırılmadı."
+elif stage_all_selected; then
+  if [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
+    echo "✅ Development full validation başarıyla tamamlandı."
+  fi
+  echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
   echo "Production readiness için:"
   echo "   ${PRODUCTION_READINESS_COMMAND}"
 else
-  echo "⚠️ KAPSAM EKSİK: Bu çalışma production readiness gate değildir."
+  echo "⚠️ RELEASE KAPSAMI EKSİK: Bu çalışma production readiness gate değildir."
   echo "   Smoke/unit/build gibi seçili kapılar geçse bile integration, frontend E2E ve benchmark"
   echo "   tam koşullarda çalışmadıysa projeyi production-ready kabul etmeyin."
   echo "   Tam proje doğrulaması için çalıştırın:"
@@ -2749,12 +2751,12 @@ else
     echo "✅ Zorunlu Backend, Frontend E2E ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
   elif stage_all_selected; then
     echo "✅ Development full validation başarıyla tamamlandı."
-    echo "⚠️ Production readiness profili çalıştırılmadı."
+    echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
     echo "Production readiness için:"
     echo "   ${PRODUCTION_READINESS_COMMAND}"
   else
     echo "✅ Seçili kalite kapıları BAŞARIYLA tamamlandı."
-    echo "⚠️ Production readiness profili çalıştırılmadı."
+    echo "⚠️ RELEASE KAPSAMI EKSİK: Bu çalışma production readiness gate değildir."
     echo "Production readiness için:"
     echo "   ${PRODUCTION_READINESS_COMMAND}"
   fi
