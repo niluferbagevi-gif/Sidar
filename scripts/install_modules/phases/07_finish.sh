@@ -186,14 +186,16 @@ print_release_readiness_next_action() {
 
     if [[ "$ci_status" == "tamamlandi" ]]; then
         echo -e "       ${GREEN}✅ Development validation geçti.${NC}"
+        echo -e "       ${YELLOW}${BOLD}⚠️  Bu sonuç yalnız yerel geliştirme ortamının sağlıklı olduğunu gösterir.${NC}"
     elif [[ "$ci_status" == "hata" ]]; then
         echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"
     else
         echo -e "       ${YELLOW}⏭️  Development validation çalıştırılmadı (${ci_status}).${NC}"
     fi
 
-    echo -e "       ${YELLOW}⏭️  Production readiness çalıştırılmadı.${NC}"
-    echo -e "       ${BOLD}Release/merge için zorunlu komut:${NC}"
+    echo -e "       ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI.${NC}"
+    echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
+    echo -e "       ${BOLD}Release/merge için tek zorunlu kapı:${NC}"
     echo "       make production-readiness"
     echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
 }

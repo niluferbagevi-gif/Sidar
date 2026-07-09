@@ -517,7 +517,10 @@ run_optional_dev_full_validation_prompt() {
     if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
         bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
         ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
-        warn "Development validation geçti; production readiness hâlâ ayrı release/merge kapısıdır. Zorunlu komut: make production-readiness"
+        warn "⚠️  DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS"
+        echo -e "${YELLOW}   ✅ Development validation geçti: yerel geliştirme ortamı sağlıklı.${NC}"
+        echo -e "${YELLOW}   ⏭️  Production readiness hâlâ çalıştırılmadı; release/merge için ayrı ve zorunlu kapıdır.${NC}"
+        echo -e "${YELLOW}   Zorunlu komut: make production-readiness${NC}"
         echo -e "${YELLOW}   Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all${NC}"
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
@@ -747,8 +750,10 @@ print_install_validation_coverage() {
             echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
             production_readiness_status_reported=true
         elif [[ "$ci_status" == "tamamlandi" ]] && ! sidar_install_production_gate_required; then
-            echo -e "   ${YELLOW}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
-            echo -e "   ${YELLOW}   Development full validation geçti = geliştirici ortamı sağlıklı; release/merge için ayrı production gate gerekir: ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
+            echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
+            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
             production_readiness_status_reported=true
         else
             echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
