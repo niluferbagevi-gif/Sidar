@@ -66,6 +66,11 @@ NR == 1 && /^#!/ { next }
     print "# BEGIN_BUNDLE_MODULES"
     print "# Bundled by scripts/tools/bundle_install_sidar.sh"
     print "SIDAR_BUNDLE_MODE=1"
+    print "export SIDAR_INSTALLER_BOOTSTRAP_MODE=\"${SIDAR_INSTALLER_BOOTSTRAP_MODE:-bundle}\""
+    print "export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT=\"${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}\""
+    print "export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\""
+    print "export SIDAR_INSTALL_MODULE_HTTP_429_RETRIES=\"${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}\""
+    print "export SIDAR_INSTALL_MODULE_CACHE_HITS=\"${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}\""
 
     helper = module_dir "/install_helpers.sh"
     if (system("test -f \"" helper "\"") == 0) {

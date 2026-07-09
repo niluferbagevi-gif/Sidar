@@ -85,6 +85,12 @@ benchmark JSON dosyaları artifact olarak yüklenir. Backend pytest fazları ayr
 aşağıdaki JUnit çıktılarıyla unit ve integration/smoke/e2e sonuçlarını ayrı ayrı
 izlenebilir hale getirir:
 
+`artifacts/test-summary.json` içindeki `installer` nesnesi installer bootstrap
+telemetrisini de taşır: bundle/local/raw fallback modu, raw fallback ile indirilen
+modül sayısı, toplam remote modül denemesi, HTTP 429 retry sayısı, cache hit sayısı
+ve kullanılan mirror/base URL. Bu alanlar özellikle GitHub raw throttling veya mirror
+problemlerini CI/test özetinden geriye dönük incelemek için kullanılır.
+
 Backend pytest JUnit çıktıları:
 
 - `artifacts/pytest/backend-unit.xml`

@@ -794,7 +794,13 @@ write_test_summary_json() {
       "${benchmark_status}" \
       "${production_ready}" \
       "${junit_dir}" \
-      "${backend_failed_tests_enabled}" <<'PY_TEST_SUMMARY'
+      "${backend_failed_tests_enabled}" \
+      "${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}" \
+      "${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}" \
+      "${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}" \
+      "${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}" \
+      "${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}" \
+      "${SIDAR_INSTALL_MODULE_BASE_URL:-}" <<'PY_TEST_SUMMARY'
 from __future__ import annotations
 
 import json
@@ -815,7 +821,21 @@ from pathlib import Path
     production_ready,
     junit_dir,
     backend_failed_tests_enabled,
-) = sys.argv[1:13]
+    installer_bootstrap_mode,
+    raw_fallback_modules_downloaded,
+    remote_module_download_attempts,
+    http_429_retries,
+    remote_module_cache_hits,
+    remote_module_base_url,
+) = sys.argv[1:19]
+
+
+def _safe_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        return 0
+    return max(parsed, 0)
 
 
 def _failed_backend_tests(report_dir: str) -> list[str]:
@@ -865,6 +885,14 @@ summary = {
         if backend_failed_tests_enabled == "true"
         else []
     ),
+    "installer": {
+        "bootstrap_mode": installer_bootstrap_mode or "unknown",
+        "raw_fallback_modules_downloaded": _safe_int(raw_fallback_modules_downloaded),
+        "remote_module_download_attempts": _safe_int(remote_module_download_attempts),
+        "http_429_retries": _safe_int(http_429_retries),
+        "remote_module_cache_hits": _safe_int(remote_module_cache_hits),
+        "remote_module_base_url": remote_module_base_url,
+    },
 }
 
 Path(output_path).write_text(

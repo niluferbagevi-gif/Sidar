@@ -451,6 +451,11 @@ SIDAR_INSTALL_MODULE_RETRY_DELAY="${SIDAR_INSTALL_MODULE_RETRY_DELAY:-2}"
 SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15}"
 SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
 SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache}"
+export SIDAR_INSTALLER_BOOTSTRAP_MODE="${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}"
+export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
+export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
+export SIDAR_INSTALL_MODULE_HTTP_429_RETRIES="${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}"
+export SIDAR_INSTALL_MODULE_CACHE_HITS="${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}"
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -508,7 +513,7 @@ b2a79704bc05ded9fb283cc5eaafb75b5b21b9f63e0b387c417f337d60bd8aa9  scripts/instal
 d6055b5c2cd33c66e625cd34051a5cf8f1b7695ac63021777868ea2e812487ff  scripts/install_modules/phases/07_finish.sh
 f39f8d51e9011da0f6d19b29ab7b8c86e8a3738cdec768b20391edd8e1868f7d  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
-a3a95af0105d4356094ff74da6cdd34aea64639d70a504c143773b0e79b59e38  scripts/install_modules/phases/10_validation.sh
+c5e80895b552a1d8b641beb72c7b8abc131a5fa265a33e5b18532b20b8f0d582  scripts/install_modules/phases/10_validation.sh
 36202d5144780b33345d1554e658af65f99b7f961b6a05eef0a4eeb1efe4f8e1  scripts/install_modules/phases/11_post_install.sh
 339cd801d29f2e929f66d2d76d5cceb5a4d5c858197c44bb20205980f671c4c2  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -711,6 +716,7 @@ download_remote_install_module() {
     cache_path="$(remote_install_module_cached_path "$module_rel" "$remote_module_base")"
     cache_sentinel="${cache_path}.ok"
     if [[ -f "$cache_path" && -f "$cache_sentinel" ]]; then
+        SIDAR_INSTALL_MODULE_CACHE_HITS=$((SIDAR_INSTALL_MODULE_CACHE_HITS + 1))
         if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" == "1" && "${SIDAR_INSTALL_ENFORCE_FILE_MODULE_HASHES:-0}" != "1" && "$remote_module_base" == file://* ]]; then
             :
         else
@@ -726,6 +732,7 @@ download_remote_install_module() {
 
     while (( attempt <= max_attempts )); do
         rm -f "$tmp_module_path" "$headers_path"
+        SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=$((SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS + 1))
         if command -v curl &>/dev/null; then
             if http_code="$(download_remote_install_module_with_curl "$module_rel" "$remote_module_url" "$tmp_module_path" "$headers_path")"; then
                 break
@@ -747,6 +754,9 @@ download_remote_install_module() {
             return 1
         fi
 
+        if [[ "$http_code" == "429" ]]; then
+            SIDAR_INSTALL_MODULE_HTTP_429_RETRIES=$((SIDAR_INSTALL_MODULE_HTTP_429_RETRIES + 1))
+        fi
         retry_after="$(remote_install_module_retry_after_header "$headers_path")"
         warn "Fallback modül indirme geçici hata (${module_rel}); http_status=${http_code}; deneme=${attempt}/${max_attempts}. Exponential backoff ile tekrar denenecek."
         remote_install_module_retry_sleep "$attempt" "$retry_after"
@@ -764,6 +774,7 @@ download_remote_install_module() {
     install -m 0644 "$tmp_module_path" "$cache_path"
     printf 'module=%s\nsource=%s\n' "$module_rel" "$remote_module_base" > "$cache_sentinel"
     rm -f "$tmp_module_path" "$headers_path"
+    SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT=$((SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT + 1))
     info "Fallback modül indirildi: ${module_rel} -> ${destination_path}"
 }
 
@@ -835,6 +846,13 @@ use_existing_install_module_tree_if_available() {
                 INSTALL_MODULE_DIR="$candidate_dir"
                 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
             fi
+            if [[ "${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}" == "unknown" ]]; then
+                if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
+                    SIDAR_INSTALLER_BOOTSTRAP_MODE="bundle"
+                else
+                    SIDAR_INSTALLER_BOOTSTRAP_MODE="local-module-tree"
+                fi
+            fi
             return 0
         fi
         info "Aday kurulum modül ağacı eksik: $candidate_dir (${candidate_status})"
@@ -851,6 +869,8 @@ download_install_modules_to_temp() {
     INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
     download_remote_install_modules "$remote_module_base" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $remote_module_base"
     INSTALL_MODULES_DOWNLOADED=1
+    SIDAR_INSTALLER_BOOTSTRAP_MODE="raw-module-fallback"
+    export SIDAR_INSTALL_MODULE_BASE_URL="$remote_module_base"
     ok "Fallback modülleri geçici dizine indirildi: $INSTALL_MODULE_DIR"
 }
 
@@ -980,6 +1000,7 @@ bootstrap_clone_and_reexec() {
     export SIDAR_BOOTSTRAP_REEXEC_REF="$preferred_ref"
     export SIDAR_BOOTSTRAP_REEXEC_HEAD="$clone_head"
     export SIDAR_BOOTSTRAP_REEXEC_REMOTE="$clone_remote"
+    export SIDAR_INSTALLER_BOOTSTRAP_MODE="bootstrap-clone-reexec"
     export SIDAR_BOOTSTRAP_ORIGINAL_INSTALLER_SHA256="$raw_installer_sha"
     export SIDAR_BOOTSTRAP_CLONED_INSTALLER_SHA256="$cloned_installer_sha"
     export SIDAR_BOOTSTRAP_INSTALLER_SHA_RELATION="$installer_sha_relation"

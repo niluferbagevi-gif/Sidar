@@ -696,6 +696,8 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
     ) in readme
     assert "frontend stage'in atlandığını görmek normaldir" in testing
+    assert "`installer` nesnesi installer bootstrap" in testing
+    assert "HTTP 429 retry sayısı" in testing
     assert "Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde" in testing
     assert "frontend kalite kapısı ise bilinçli opt-in gerektirir" in install_options
     assert "--with-integration verilmediği için frontend stage çalıştırılmadı" in install_options
@@ -750,6 +752,12 @@ FRONTEND_E2E_RAN=1
 FRONTEND_E2E_EXIT_CODE=0
 RUN_BENCHMARKS=required
 BENCHMARK_EXIT_CODE=0
+SIDAR_INSTALLER_BOOTSTRAP_MODE=raw-module-fallback
+SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT=7
+SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=9
+SIDAR_INSTALL_MODULE_HTTP_429_RETRIES=2
+SIDAR_INSTALL_MODULE_CACHE_HITS=3
+SIDAR_INSTALL_MODULE_BASE_URL=https://mirror.example/install_modules
 write_test_summary_json false
 """,
         encoding="utf-8",
@@ -765,6 +773,14 @@ write_test_summary_json false
     assert summary["benchmark"] == "passed"
     assert summary["production_ready"] is False
     assert summary["backend_failed_tests"] == []
+    assert summary["installer"] == {
+        "bootstrap_mode": "raw-module-fallback",
+        "raw_fallback_modules_downloaded": 7,
+        "remote_module_download_attempts": 9,
+        "http_429_retries": 2,
+        "remote_module_cache_hits": 3,
+        "remote_module_base_url": "https://mirror.example/install_modules",
+    }
 
 
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
@@ -1618,6 +1634,8 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "OUTPUT_USAGE=" in bundle_script
     assert "RELEASE_INSTALLER_URL=" in bundle_script
     assert "RAW_INSTALLER_URL=" in bundle_script
+    assert r'export SIDAR_INSTALLER_BOOTSTRAP_MODE=\"${SIDAR_INSTALLER_BOOTSTRAP_MODE:-bundle}\"' in bundle_script
+    assert r'export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\"' in bundle_script
     assert "Preferred release/bundle install" in bundle_script
     assert "Last-resort raw fallback" in bundle_script
     assert "raw main/install_sidar.sh yalnız release bundle mevcut değilse son çare" in bundle_script
@@ -1764,6 +1782,11 @@ def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache
     assert "remote_install_module_retry_sleep" in install_script
     assert "Retry-After:" in install_script
     assert "SIDAR_INSTALL_MODULE_CACHE_ROOT" in install_script
+    assert "SIDAR_INSTALLER_BOOTSTRAP_MODE" in install_script
+    assert "SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT" in install_script
+    assert "SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS" in install_script
+    assert "SIDAR_INSTALL_MODULE_HTTP_429_RETRIES" in install_script
+    assert "SIDAR_INSTALL_MODULE_CACHE_HITS" in install_script
     assert 'cache_sentinel="${cache_path}.ok"' in install_script
     assert "Fallback modül cache'den kullanıldı" in install_script
     assert "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır." in install_script
