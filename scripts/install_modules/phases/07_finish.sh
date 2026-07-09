@@ -148,6 +148,24 @@ print_install_summary_extended_test_statuses() {
     fi
 }
 
+print_install_raw_fallback_telemetry() {
+    local downloaded_count="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
+    local cache_hits="${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}"
+    local attempts="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
+    local http_429_retries="${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}"
+    local module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+
+    if [[ "$downloaded_count" == "0" && "$cache_hits" == "0" && "$attempts" == "0" ]]; then
+        echo "  Raw fallback modül indirme: kullanılmadı (yerel/clone modül ağacı yeterli)."
+        return
+    fi
+
+    echo "  Raw fallback modül indirme: ${downloaded_count} modül indirildi, cache hit ${cache_hits}, deneme ${attempts}, HTTP 429 retry ${http_429_retries}."
+    if [[ -n "$module_base" ]]; then
+        echo "  Raw fallback kaynak tabanı: ${module_base}"
+    fi
+}
+
 print_react_frontend_qa_status_block() {
     if declare -F sync_frontend_quality_status_from_test_summary >/dev/null 2>&1; then
         sync_frontend_quality_status_from_test_summary || true
@@ -342,6 +360,7 @@ print_summary() {
         echo "  Kurulum sonrası dev-full/local tam doğrulama için: make dev-full"
     fi
     print_install_summary_extended_test_statuses
+    print_install_raw_fallback_telemetry
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
     elif [[ "$RUN_AUDIT" == true ]]; then
