@@ -1652,7 +1652,11 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
     assert "dev-full:" in makefile
-    assert "RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in makefile
+    assert "RUN_GPU_STRESS=1" in makefile
+    assert "RUN_BENCHMARKS=required" in makefile
+    assert "RUN_FRONTEND_E2E=1" in makefile
+    assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL)" in makefile
+    assert "bash run_tests.sh --stage all" in makefile
     assert "production-readiness:" in makefile
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
