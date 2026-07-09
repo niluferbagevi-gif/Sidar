@@ -82,6 +82,67 @@ PY
     fi
 }
 
+
+sidar_ollama_pull_telemetry_path() {
+    printf '%s\n' "${SIDAR_OLLAMA_PULL_TELEMETRY_PATH:-${SCRIPT_DIR}/artifacts/install/ollama_model_pulls.json}"
+}
+
+sidar_ollama_pull_telemetry_init() {
+    local telemetry_path=""
+    telemetry_path="$(sidar_ollama_pull_telemetry_path)"
+    mkdir -p "$(dirname "$telemetry_path")"
+    if [[ ! -f "$telemetry_path" ]]; then
+        printf '{"models": []}\n' > "$telemetry_path"
+    fi
+    export SIDAR_OLLAMA_PULL_TELEMETRY_PATH="$telemetry_path"
+}
+
+sidar_ollama_pull_telemetry_record() {
+    local model_name="$1"
+    local attempts="$2"
+    local duration_seconds="$3"
+    local success="$4"
+    local status="$5"
+    local telemetry_path=""
+    telemetry_path="$(sidar_ollama_pull_telemetry_path)"
+    mkdir -p "$(dirname "$telemetry_path")"
+    python3 - "$telemetry_path" "$model_name" "$attempts" "$duration_seconds" "$success" "$status" <<'PY_OLLAMA_PULL_TELEMETRY' 2>/dev/null || true
+from __future__ import annotations
+
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path(sys.argv[1])
+model_name = sys.argv[2]
+attempts = int(sys.argv[3]) if sys.argv[3].isdigit() else 0
+duration_seconds = int(sys.argv[4]) if sys.argv[4].isdigit() else 0
+success = sys.argv[5].lower() == "true"
+status = sys.argv[6]
+try:
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"models": []}
+except json.JSONDecodeError:
+    data = {"models": []}
+models = data.setdefault("models", [])
+models.append(
+    {
+        "model": model_name,
+        "attempts": attempts,
+        "duration_seconds": duration_seconds,
+        "success": success,
+        "status": status,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+)
+data["total_models"] = len(models)
+data["successful_models"] = sum(1 for item in models if item.get("success") is True)
+data["failed_models"] = sum(1 for item in models if item.get("success") is False)
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY_OLLAMA_PULL_TELEMETRY
+    export SIDAR_OLLAMA_PULL_TELEMETRY_PATH="$telemetry_path"
+}
+
 sidar_ollama_model_exists_in_tags() {
     local payload="$1"
     local model_name="$2"
@@ -277,14 +338,21 @@ download_ollama_models() {
     resolved_models_csv=$(IFS=', '; echo "${models_to_pull[*]}")
     info "İndirilecek model listesi: ${resolved_models_csv}"
     info "Not: Ollama katmanlı blob indirdiği için yüzde veya hız göstergesi kısa süreli gerileyebilir/dalgalanabilir; bu tek başına hata değildir."
+    sidar_ollama_pull_telemetry_init
+    info "Ollama pull telemetri artefaktı: ${SIDAR_OLLAMA_PULL_TELEMETRY_PATH}"
 
     for model in "${models_to_pull[@]}"; do
         if [[ -n "$model" ]]; then
             info "-> $model indiriliyor (bu işlem zaman alabilir)..."
             local pull_success=false
             local pull_log=""
+            local pull_start_epoch=0
+            local pull_duration_seconds=0
+            local pull_attempts=0
+            pull_start_epoch="$(date +%s)"
             pull_log="$(mktemp -t sidar_ollama_pull.XXXXXX)"
             for attempt in 1 2 3; do
+                pull_attempts="$attempt"
                 if ollama pull "$model" > >(tee -a "$pull_log") 2> >(tee -a "$pull_log" >&2); then
                     pull_success=true
                     break
@@ -297,7 +365,9 @@ download_ollama_models() {
                 fi
             done
 
+            pull_duration_seconds=$(( $(date +%s) - pull_start_epoch ))
             if [[ "$pull_success" != true ]]; then
+                sidar_ollama_pull_telemetry_record "$model" "$pull_attempts" "$pull_duration_seconds" "false" "failed"
                 warn "Son ollama pull çıktısı (${model}, son 20 satır):"
                 tail -n 20 "$pull_log" >&2 || true
                 info "Manuel indirme: OLLAMA_HOST='${OLLAMA_BASE_URL}' ollama pull '${model}'"
@@ -305,6 +375,8 @@ download_ollama_models() {
                 rm -f "$pull_log"
                 fail "Model indirilemedi: ${model} (3 deneme sonrası başarısız)."
             fi
+            sidar_ollama_pull_telemetry_record "$model" "$pull_attempts" "$pull_duration_seconds" "true" "pulled"
+            info "Ollama pull tamamlandı: model=${model}, süre=${pull_duration_seconds}s, deneme=${pull_attempts}, durum=başarılı"
             rm -f "$pull_log"
         fi
     done
