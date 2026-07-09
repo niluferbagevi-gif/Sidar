@@ -78,8 +78,11 @@ src/
 - Bundle budget kapısı CI profilinde varsayılan olarak `FRONTEND_BUNDLE_BUDGET=1` ile
   `npm run build:budget` çalıştırır; yerel hızlı frontend stage'inde opt-in kullanmak için
   `FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend` çalıştırın. Bu kapı
-  Vite build sonrası React DOM / markdown-highlight chunk büyümesini kırmızıya dönmeden
-  izlemek için tasarlanmıştır.
+  Vite build sonrası React DOM chunk büyümesini, toplam JS boyutunu ve toplam gzip JS
+  boyutunu izler. React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220` değeridir;
+  opsiyonel toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB`
+  verilebilir. Her koşu en büyük 5 JS chunk'ı terminalde listeler ve makinece okunabilir
+  raporu `artifacts/frontend-bundle-budget.json` dosyasına yazar.
 - CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
   uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
   `coverage-final.json` dosyaları tek artefakt altında saklanır.
