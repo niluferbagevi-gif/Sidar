@@ -392,6 +392,9 @@ jobs:
           mkdir -p artifacts
           make production-readiness 2>&1 | tee artifacts/test_run.log
 
+      - name: Validate production-readiness test summary
+        run: uv run python scripts/ci/validate_test_summary.py --mode release --summary artifacts/test-summary.json
+
       - name: Verify committed coverage ratchet baseline
         run: |
           if ! git diff --exit-code -- pyproject.toml; then
