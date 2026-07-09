@@ -1,5 +1,31 @@
 # CI Required Checks
 
+## Main branch required status checks
+
+GitHub branch protection / rulesets are the source of truth for required PR
+checks. They are configured in GitHub repository settings, not in this file, but
+the expected required contexts should mirror the release-critical jobs in
+`.github/workflows/ci.yml`:
+
+| Workflow job id | Required GitHub check name | Why it must be required |
+| --- | --- | --- |
+| `test` | `CI / test` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
+| `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
+| `production-profile-dry-run` | `CI / Production dependency profile dry run` | Verifies the production-minimal dependency profile can be installed without dev extras and still import core runtime dependencies. |
+| `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
+
+The `seed-benchmark-baseline` / `Seed benchmark baseline cache` workflow path is
+intentionally **not** a required PR check: it only runs via manual
+`workflow_dispatch` bootstrap with `seed_benchmark_baseline=true`. Normal CI must
+remain fail-closed when no reviewed `.benchmarks/*_baseline.json` cache/artifact
+is restored.
+
+Repository administrators should periodically verify that the required check
+names above are selected for protected `main`/`master` branches. If a job `name:`
+changes in `.github/workflows/ci.yml`, update branch protection at the same time
+or PRs may either be blocked forever by a stale required context or allowed to
+merge without the intended release gate.
+
 ## Installer manifest and smoke gate
 
 GitHub branch protection for `main`/`master` should require the CI job named
