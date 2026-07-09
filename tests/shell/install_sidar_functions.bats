@@ -948,6 +948,11 @@ cat > "$tmpdir/artifacts/test-summary.json" <<JSON
 JSON
 EOF
     chmod +x "$tmpdir/run_tests.sh"
+    TEST_PROFILE=local
+    SIDAR_PRODUCTION_READINESS=0
+    PRODUCTION_READINESS=0
+    RUN_BENCHMARKS=""
+    RUN_FRONTEND_E2E=""
 
     run_install_ci_full_validation
 
@@ -971,6 +976,11 @@ EOF
     SILENT_MODE=false
     prompt_yes_no_with_timeout_default_no() { exit 99; }
     touch "$tmpdir/run_tests.sh"
+    TEST_PROFILE=local
+    SIDAR_PRODUCTION_READINESS=0
+    PRODUCTION_READINESS=0
+    RUN_BENCHMARKS=""
+    RUN_FRONTEND_E2E=""
 
     run_install_ci_full_validation
 

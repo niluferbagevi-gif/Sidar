@@ -755,6 +755,8 @@ def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) 
         + f"""
 TEST_SUMMARY_JSON={summary_json}
 TEST_SUMMARY_JUNIT_DIR={tmp_path / "pytest"}
+TEST_PROFILE=local
+SIDAR_INSTALLER_MODE=development_local
 BACKEND_UNIT_RAN=1
 BACKEND_UNIT_EXIT_CODE=1
 BACKEND_INTEGRATION_RAN=1
