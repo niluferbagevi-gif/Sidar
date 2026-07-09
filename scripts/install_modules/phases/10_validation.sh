@@ -469,6 +469,39 @@ sidar_install_optional_dev_full_validation_available() {
 }
 
 
+print_install_production_readiness_notice() {
+    local status="${1:-not_requested}"
+    local development_passed="${2:-false}"
+    local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+
+    if [[ "${SIDAR_INSTALL_PRODUCTION_READINESS_NOTICE_PRINTED:-false}" == true ]]; then
+        return 0
+    fi
+    SIDAR_INSTALL_PRODUCTION_READINESS_NOTICE_PRINTED=true
+
+    case "$status" in
+        passed)
+            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            ;;
+        failed)
+            echo -e "   ${RED}${BOLD}❌ Production readiness: HATA${NC}"
+            echo -e "   ${YELLOW}   Release/merge için zorunlu gate başarısız oldu; tekrar komutu: ${production_readiness_command}${NC}"
+            ;;
+        not_requested|development_only)
+            echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
+            if [[ "$development_passed" == true ]]; then
+                echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
+            fi
+            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
+            ;;
+        *)
+            echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ / DURUM BİLİNMİYOR (${status:-yok})${NC}"
+            echo -e "   ${YELLOW}   Zorunlu gate: ${production_readiness_command}${NC}"
+            ;;
+    esac
+}
+
 sync_frontend_quality_status_from_test_summary() {
     local summary_frontend_lint=""
     local summary_frontend_typecheck=""
@@ -517,11 +550,7 @@ run_optional_dev_full_validation_prompt() {
     if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
         bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
         ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
-        warn "⚠️  DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS"
-        echo -e "${YELLOW}   ✅ Development validation geçti: yerel geliştirme ortamı sağlıklı.${NC}"
-        echo -e "${YELLOW}   ⏭️  Production readiness hâlâ çalıştırılmadı; release/merge için ayrı ve zorunlu kapıdır.${NC}"
-        echo -e "${YELLOW}   Zorunlu komut: make production-readiness${NC}"
-        echo -e "${YELLOW}   Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all${NC}"
+        info "Production readiness uyarısı final kurulum doğrulama özetinde tek merkezden raporlanacak."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
     else
@@ -749,16 +778,13 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Frontend E2E " "$summary_frontend_e2e" "Playwright smoke" "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
         if [[ "$summary_production_ready" == true ]]; then
-            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            print_install_production_readiness_notice "passed" false
             production_readiness_status_reported=true
         elif [[ "$ci_status" == "tamamlandi" ]] && ! sidar_install_production_gate_required; then
-            echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
-            echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
-            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
-            echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
+            print_install_production_readiness_notice "development_only" true
             production_readiness_status_reported=true
         else
-            echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
+            print_install_production_readiness_notice "failed" false
             production_readiness_status_reported=true
         fi
     elif [[ "$smoke_status" == "tamamlandi" ]]; then
@@ -810,6 +836,7 @@ print_install_validation_coverage() {
             echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
             echo -e "   ${RED}   Zorunlu gate: ${production_readiness_command}${NC}"
             if [[ "$production_readiness_status_reported" != true ]]; then
+                print_install_production_readiness_notice "not_requested" false
                 echo "   Production readiness:      ./install_sidar.sh --production-readiness"
                 echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
             fi
@@ -831,6 +858,7 @@ print_install_validation_coverage() {
             echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
             echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
             if [[ "$production_readiness_status_reported" != true ]]; then
+                print_install_production_readiness_notice "not_requested" false
                 echo "   Production readiness:      ./install_sidar.sh --production-readiness"
                 echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
             fi

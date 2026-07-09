@@ -465,7 +465,7 @@ else
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
-  FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"
+  FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-${FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-0}}"
 fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 # RETRY_ON_FAIL genel kullanıcı kısayoludur; namespaced değer verilirse öncelik ondadır.
@@ -686,6 +686,9 @@ print_frontend_quality_summary() {
   echo "   Bundle budget (npm run build:budget): $(format_quality_status "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" "${FRONTEND_BUNDLE_BUDGET_RAN}" "atlanmış") (FRONTEND_BUNDLE_BUDGET=${FRONTEND_BUNDLE_BUDGET})"
   echo "   Dependency audit (npm run audit:high): $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}")"
   echo "   Playwright (${FRONTEND_E2E_NPM_SCRIPT}): $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "atlanmış") (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
+  if [ "${TEST_PROFILE:-local}" = "local" ] && stage_all_selected && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
+    echo "   ⚠️ Local full bundle budget kapısı kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+  fi
   if [ -f "${FRONTEND_COVERAGE_REPORT_PATH}" ]; then
     echo "   Frontend coverage artefaktı: ${FRONTEND_COVERAGE_REPORT_PATH}"
   else
@@ -782,6 +785,9 @@ write_test_summary_json() {
   local production_readiness_status="not_requested"
   local production_readiness_summary="not_run"
   local production_readiness_reason="production readiness gate was not requested"
+  local validation_class="partial"
+  local release_blocking="true"
+  local release_gate_exit_code="20"
   local installer_mode="${SIDAR_INSTALLER_MODE:-development_local}"
   local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
   local backend_failed_tests_enabled="false"
@@ -806,16 +812,25 @@ write_test_summary_json() {
     production_readiness_status="passed"
     production_readiness_summary="passed"
     production_readiness_reason="production readiness gate passed"
+    validation_class="production_readiness"
+    release_blocking="false"
+    release_gate_exit_code="0"
     installer_mode="production_readiness"
   elif production_readiness_gate_active; then
     production_readiness_status="failed"
     production_readiness_summary="failed"
     production_readiness_reason="production readiness gate was active but at least one required quality gate failed"
+    validation_class="production_readiness_failed"
+    release_blocking="true"
+    release_gate_exit_code="1"
     installer_mode="production_readiness"
   elif stage_all_selected; then
     production_readiness_status="development_only"
     production_readiness_summary="not_run"
     production_readiness_reason="stage all completed outside the required CI production readiness profile"
+    validation_class="development_full"
+    release_blocking="true"
+    release_gate_exit_code="10"
   else
     production_readiness_status="partial_stage"
     production_readiness_summary="not_run"
@@ -862,6 +877,9 @@ write_test_summary_json() {
       "${production_readiness_summary}" \
       "${production_readiness_status}" \
       "${production_readiness_reason}" \
+      "${validation_class}" \
+      "${release_blocking}" \
+      "${release_gate_exit_code}" \
       "${installer_mode}" \
       "${benchmark_compare_status}" \
       "${benchmark_baseline_name}" \
@@ -904,6 +922,9 @@ from pathlib import Path
     production_readiness_summary,
     production_readiness_status,
     production_readiness_reason,
+    validation_class,
+    release_blocking,
+    release_gate_exit_code,
     installer_mode,
     benchmark_compare_status,
     benchmark_baseline_name,
@@ -916,7 +937,7 @@ from pathlib import Path
     benchmark_json_output,
     frontend_e2e_scope,
     frontend_e2e_script,
-) = sys.argv[1:36]
+) = sys.argv[1:39]
 
 
 def _safe_int(value: str) -> int:
@@ -995,6 +1016,9 @@ summary = {
         "status": production_readiness_status,
         "reason": production_readiness_reason,
         "required_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+        "validation_class": validation_class,
+        "release_blocking": release_blocking == "true",
+        "release_gate_exit_code": _safe_int(release_gate_exit_code),
     },
     "frontend_e2e_script": frontend_e2e_script,
     "backend_failed_tests": (
@@ -2723,11 +2747,14 @@ elif stage_all_selected; then
   if [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
     echo "✅ Development full validation başarıyla tamamlandı."
   fi
-  echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+  echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+  if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
+    echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+  fi
   echo "Production readiness için:"
   echo "   ${PRODUCTION_READINESS_COMMAND}"
 else
-  echo "⚠️ RELEASE KAPSAMI EKSİK: Bu çalışma production readiness gate değildir."
+  echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=20]: Bu çalışma production readiness gate değildir."
   echo "   Smoke/unit/build gibi seçili kapılar geçse bile integration, frontend E2E ve benchmark"
   echo "   tam koşullarda çalışmadıysa projeyi production-ready kabul etmeyin."
   echo "   Tam proje doğrulaması için çalıştırın:"
@@ -2751,12 +2778,15 @@ else
     echo "✅ Zorunlu Backend, Frontend E2E ve Benchmark kalite kapıları BAŞARIYLA tamamlandı!"
   elif stage_all_selected; then
     echo "✅ Development full validation başarıyla tamamlandı."
-    echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+    echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]: stage all çalıştı; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+    if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
+      echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+    fi
     echo "Production readiness için:"
     echo "   ${PRODUCTION_READINESS_COMMAND}"
   else
     echo "✅ Seçili kalite kapıları BAŞARIYLA tamamlandı."
-    echo "⚠️ RELEASE KAPSAMI EKSİK: Bu çalışma production readiness gate değildir."
+    echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=20]: Bu çalışma production readiness gate değildir."
     echo "Production readiness için:"
     echo "   ${PRODUCTION_READINESS_COMMAND}"
   fi
