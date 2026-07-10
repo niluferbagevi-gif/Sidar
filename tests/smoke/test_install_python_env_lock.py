@@ -2,6 +2,25 @@ import os
 import subprocess
 import textwrap
 
+import pytest
+
+_ENV_VARS_THAT_CAN_CHANGE_INSTALLER_PROFILE = (
+    "DEPENDENCY_PROFILE",
+    "SIDAR_DEPENDENCY_PROFILE",
+    "SIDAR_DEPENDENCY_EXTRAS",
+    "RUN_CI_FULL_VALIDATION",
+)
+
+
+def _clean_subprocess_env(**overrides: str) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in _ENV_VARS_THAT_CAN_CHANGE_INSTALLER_PROFILE
+    }
+    env.update(overrides)
+    return env
+
 
 def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
     script_dir = tmp_path / "sidar"
@@ -89,12 +108,121 @@ EOS
     subprocess.run(
         ["bash", "-lc", smoke_script, "sidar-smoke", str(script_dir), str(fake_bin)],
         cwd=os.getcwd(),
-        env={**os.environ, "UV_STUB_LOG": str(tmp_path / "uv.log")},
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "uv.log")),
         check=True,
     )
 
 
-def test_install_python_deps_uses_all_extras_without_bats(tmp_path):
+@pytest.mark.parametrize(
+    ("profile_exports", "expected_sync_call"),
+    [
+        ("", "sync --frozen --extra dev-light"),
+        ('export DEPENDENCY_PROFILE="dev-light"', "sync --frozen --extra dev-light"),
+        ('export DEPENDENCY_PROFILE="dev-full"', "sync --frozen --all-extras"),
+        (
+            'export DEPENDENCY_PROFILE="production"',
+            "sync --frozen --extra production --no-dev",
+        ),
+        (
+            'export DEPENDENCY_PROFILE="production-minimal"',
+            "sync --frozen --extra production-minimal --no-dev",
+        ),
+        (
+            'export DEPENDENCY_PROFILE="custom"\nexport SIDAR_DEPENDENCY_EXTRAS="dev openai postgres"',
+            "sync --frozen --extra dev --extra openai --extra postgres",
+        ),
+    ],
+    ids=["default", "dev-light", "dev-full", "production", "production-minimal", "custom"],
+)
+def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
+    tmp_path, profile_exports, expected_sync_call
+):
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir(parents=True)
+    (script_dir / "uv.lock").touch()
+
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir(parents=True)
+    (fake_bin / "dpkg-query").write_text(
+        textwrap.dedent(
+            """#!/usr/bin/env bash
+            printf "Status: install ok installed\n"
+            """
+        ),
+        encoding="utf-8",
+    )
+    (fake_bin / "uv").write_text(
+        textwrap.dedent(
+            r"""#!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
+            case "$*" in
+              "sync --frozen --extra dev-light") exit 0 ;;
+              "sync --frozen --all-extras") exit 0 ;;
+              "sync --frozen --extra production --no-dev") exit 0 ;;
+              "sync --frozen --extra production-minimal --no-dev") exit 0 ;;
+              "sync --frozen --extra dev --extra openai --extra postgres") exit 0 ;;
+              "run python -c import pydantic, pydantic_settings") exit 0 ;;
+            esac
+            printf 'unexpected uv call: %s\n' "$*" >&2
+            exit 99
+            """
+        ),
+        encoding="utf-8",
+    )
+    (fake_bin / "dpkg-query").chmod(0o755)
+    (fake_bin / "uv").chmod(0o755)
+
+    smoke_script = textwrap.dedent(
+        r"""
+        set -euo pipefail
+        source scripts/install_modules/install_helpers.sh
+        source scripts/install_modules/utils/python_env.sh
+
+        step(){ :; }
+        info(){ :; }
+        ok(){ :; }
+        warn(){ :; }
+        fail(){ echo "FAIL:$*"; exit 1; }
+        ensure_env_file_secrets_after_uv_sync(){ :; }
+        validate_runtime_env_loading(){ :; }
+
+        export SCRIPT_DIR="$1"
+        export PATH="$2:$PATH"
+        export UPGRADE_LOCK=false
+        export PYTHON_VERSION="3.11"
+        expected_sync_call="$3"
+
+        unset DEPENDENCY_PROFILE SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS RUN_CI_FULL_VALIDATION
+        eval "$4"
+
+        install_python_deps
+
+        grep -q "^${expected_sync_call}$" "$UV_STUB_LOG"
+        ! grep -q -- "uv pip" "$UV_STUB_LOG"
+        """
+    )
+
+    subprocess.run(
+        [
+            "bash",
+            "-lc",
+            smoke_script,
+            "sidar-install-deps-smoke",
+            str(script_dir),
+            str(fake_bin),
+            expected_sync_call,
+            profile_exports,
+        ],
+        cwd=os.getcwd(),
+        env=_clean_subprocess_env(
+            UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")
+        ),
+        check=True,
+    )
+
+
+def test_install_python_deps_dev_full_uses_all_extras_without_conflicting_extra(tmp_path):
     script_dir = tmp_path / "sidar"
     script_dir.mkdir(parents=True)
     (script_dir / "uv.lock").touch()
@@ -145,6 +273,8 @@ def test_install_python_deps_uses_all_extras_without_bats(tmp_path):
         export PATH="$2:$PATH"
         export UPGRADE_LOCK=false
         export PYTHON_VERSION="3.11"
+        unset SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS
+        export DEPENDENCY_PROFILE="dev-full"
 
         install_python_deps
 
@@ -164,9 +294,8 @@ def test_install_python_deps_uses_all_extras_without_bats(tmp_path):
             str(fake_bin),
         ],
         cwd=os.getcwd(),
-        env={
-            **os.environ,
-            "UV_STUB_LOG": str(tmp_path / "install-python-deps-uv.log"),
-        },
+        env=_clean_subprocess_env(
+            UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")
+        ),
         check=True,
     )
