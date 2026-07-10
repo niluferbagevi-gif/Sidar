@@ -1303,7 +1303,7 @@ EOF
 @test "install_python_deps custom profile syncs only selected extras" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
-    trap "rm -rf "$tmpdir"" EXIT
+    trap "rm -rf -- \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
@@ -2228,7 +2228,7 @@ ENV
 @test "detect_gpu reports unknown CUDA driver cap and separate WSL runtime CUDA" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
-    trap "rm -rf "$tmpdir"" EXIT
+    trap "rm -rf -- \"$tmpdir\"" EXIT
     cat > "$tmpdir/nvidia-smi" <<SMI
 #!/usr/bin/env bash
 case "\$*" in
@@ -2274,7 +2274,7 @@ ENV
 @test "detect_gpu reuses WSL preflight GPU facts when available" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
-    trap "rm -rf "$tmpdir"" EXIT
+    trap "rm -rf -- \"$tmpdir\"" EXIT
     cat > "$tmpdir/nvidia-smi" <<SMI
 #!/usr/bin/env bash
 case "\$*" in

@@ -704,33 +704,52 @@ class BaseLLMClient(ABC):
             yield chunk
 
 
-from core.llm.anthropic import AnthropicClient  # noqa: E402
-from core.llm.gemini import GeminiClient  # noqa: E402
-from core.llm.litellm import LiteLLMClient  # noqa: E402
-from core.llm.ollama import OllamaClient  # noqa: E402
-from core.llm.openai import OpenAIClient  # noqa: E402
+_PROVIDER_IMPORTS: dict[str, tuple[str, str]] = {
+    "ollama": ("core.llm.ollama", "OllamaClient"),
+    "gemini": ("core.llm.gemini", "GeminiClient"),
+    "openai": ("core.llm.openai", "OpenAIClient"),
+    "anthropic": ("core.llm.anthropic", "AnthropicClient"),
+    "litellm": ("core.llm.litellm", "LiteLLMClient"),
+}
+_PROVIDER_CLASS_NAMES = {class_name: provider for provider, (_, class_name) in _PROVIDER_IMPORTS.items()}
+_PROVIDER_REGISTRY_CACHE: dict[str, type[BaseLLMClient]] = {}
+
+
+def _provider_class(provider: str) -> type[BaseLLMClient]:
+    provider_name = (provider or "").strip().lower()
+    cached = _PROVIDER_REGISTRY_CACHE.get(provider_name)
+    if cached is not None:
+        return cached
+    module_name, class_name = _PROVIDER_IMPORTS[provider_name]
+    provider_cls = getattr(importlib.import_module(module_name), class_name)
+    if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
+        raise TypeError(f"{class_name} BaseLLMClient alt sınıfı olmalıdır.")
+    _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
+    return provider_cls
+
+
+def __getattr__(name: str) -> Any:
+    """Expose provider classes lazily for backward-compatible imports."""
+
+    provider = _PROVIDER_CLASS_NAMES.get(name)
+    if provider is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return _provider_class(provider)
 
 
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
-    PROVIDER_REGISTRY: dict[str, type[BaseLLMClient]] = {
-        "ollama": OllamaClient,
-        "gemini": GeminiClient,
-        "openai": OpenAIClient,
-        "anthropic": AnthropicClient,
-        "litellm": LiteLLMClient,
-    }
+    PROVIDER_REGISTRY = _PROVIDER_IMPORTS
 
     def __init__(self, provider: str, config: Any) -> None:
         self.provider = provider.lower()
         self.config = config
         self._semantic_cache = SemanticCacheManager(config)
         self._router = CostAwareRouter(config)
-        client_cls = self.PROVIDER_REGISTRY.get(self.provider)
-        if client_cls is None:
+        if self.provider not in self.PROVIDER_REGISTRY:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
-        self._client = client_cls(config)
+        self._client = _provider_class(self.provider)(config)
 
     @classmethod
     def register_provider(cls, name: str, provider_cls: type[BaseLLMClient]) -> None:
@@ -740,12 +759,13 @@ class LLMClient:
             raise ValueError("Provider adı boş olamaz.")
         if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
             raise TypeError("Provider sınıfı BaseLLMClient alt sınıfı olmalıdır.")
-        cls.PROVIDER_REGISTRY[provider_name] = provider_cls
+        cls.PROVIDER_REGISTRY[provider_name] = (provider_cls.__module__, provider_cls.__name__)
+        _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
 
     @property
     def _ollama_base_url(self) -> str:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
-        if isinstance(self._client, OllamaClient):
+        if isinstance(self._client, _provider_class("ollama")):
             return self._client.base_url
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
@@ -753,7 +773,7 @@ class LLMClient:
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
-        if isinstance(self._client, OllamaClient):
+        if isinstance(self._client, _provider_class("ollama")):
             return self._client._build_timeout()
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
@@ -942,12 +962,12 @@ class LLMClient:
         return response
 
     async def list_ollama_models(self) -> list[str]:
-        if isinstance(self._client, OllamaClient):
+        if isinstance(self._client, _provider_class("ollama")):
             return await self._client.list_models()
         return []
 
     async def is_ollama_available(self) -> bool:
-        if isinstance(self._client, OllamaClient):
+        if isinstance(self._client, _provider_class("ollama")):
             return await self._client.is_available()
         return False
 
@@ -955,10 +975,10 @@ class LLMClient:
         self, response_stream: AsyncIterator[Any]
     ) -> AsyncGenerator[str, None]:
         """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
-        if isinstance(self._client, GeminiClient):
+        if isinstance(self._client, _provider_class("gemini")):
             async for chunk in self._client._stream_gemini_generator(response_stream):
                 yield chunk
             return
 
-        async for chunk in GeminiClient(self.config)._stream_gemini_generator(response_stream):
+        async for chunk in _provider_class("gemini")(self.config)._stream_gemini_generator(response_stream):
             yield chunk

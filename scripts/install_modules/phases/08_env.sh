@@ -250,20 +250,20 @@ collect_api_keys_interactive() {
     _write_key() {
         local key="$1"
         local val target target_name
-        val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
+        val=$(printf '%s' "${2:-}" | tr -d '\r\n')
         [[ -z "$val" ]] && return
 
         for target in "${api_key_target_env_files[@]}"; do
             mkdir -p "$(dirname "$target")"
             [[ -f "$target" ]] || : > "$target"
             chmod 600 "$target" 2>/dev/null || true
-            if grep -q "^${key}=" "$target" 2>/dev/null; then
-                sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+            if printf '%s' "$val" | uv run python scripts/update_dotenv_value.py --file "$target" --key "$key"; then
+                target_name="$(basename "$target")"
+                ok "${target_name}: ${key} güncellendi."
             else
-                echo "${key}=${val}" >> "$target"
+                err "${target}: ${key} güncellenemedi."
+                return 1
             fi
-            target_name="$(basename "$target")"
-            ok "${target_name}: ${key} güncellendi."
         done
     }
 
