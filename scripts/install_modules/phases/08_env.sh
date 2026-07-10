@@ -237,6 +237,9 @@ collect_api_keys_interactive() {
     }
 
     local -a api_key_target_env_files=()
+    local -a api_key_write_failures=()
+    local api_key_write_success_count=0
+    local api_key_write_failure_count=0
     mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)
     if ! _materialize_real_keys_to_env_enabled; then
         info "Gerçek servis anahtarları env dosyalarına kopyalanmayacak; kalıcı kaynak: ${sidar_keys_file}. Gerekirse SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ile bilinçli etkinleştirin."
@@ -251,17 +254,20 @@ collect_api_keys_interactive() {
         local key="$1"
         local val target target_name
         val=$(printf '%s' "${2:-}" | tr -d '\r\n')
-        [[ -z "$val" ]] && return
+        [[ -z "$val" ]] && return 0
 
         for target in "${api_key_target_env_files[@]}"; do
             mkdir -p "$(dirname "$target")"
             [[ -f "$target" ]] || : > "$target"
             chmod 600 "$target" 2>/dev/null || true
+            target_name="$(_api_key_target_display_name "$target")"
             if printf '%s' "$val" | uv run python scripts/update_dotenv_value.py --file "$target" --key "$key"; then
-                target_name="$(basename "$target")"
                 ok "${target_name}: ${key} güncellendi."
+                ((api_key_write_success_count += 1))
             else
-                err "${target}: ${key} güncellenemedi."
+                warn "${target_name}: ${key} güncellenemedi (bkz. yukarıdaki update_dotenv_value hatası)."
+                api_key_write_failures+=("${target_name}:${key}")
+                ((api_key_write_failure_count += 1))
                 return 1
             fi
         done
@@ -279,7 +285,14 @@ collect_api_keys_interactive() {
     _report_imported_api_key_targets() {
         local source_file="$1"
         local imported_count="$2"
-        local target target_name
+        local target target_name total_expected
+
+        total_expected=$((imported_count * ${#api_key_target_env_files[@]}))
+        if (( api_key_write_failure_count > 0 )); then
+            warn "${source_file}: ${total_expected} API anahtarı yazma denemesinden ${api_key_write_success_count} başarılı, ${api_key_write_failure_count} başarısız."
+            warn "Başarısız API anahtarı hedefleri: ${api_key_write_failures[*]}"
+            return 1
+        fi
 
         if ! _materialize_real_keys_to_env_enabled; then
             ok "${imported_count} API anahtarı SIDAR_KEYS_FILE (${sidar_keys_file}) içinde doğrulandı/güncellendi."
@@ -318,7 +331,7 @@ collect_api_keys_interactive() {
         for key in "${KEY_ORDER[@]}"; do
             current_val=$(read_env_value_from_file "$key" "$env_file" | tr -d '\n')
             [[ -z "${current_val//[[:space:]]/}" ]] && continue
-            _write_key "$key" "$current_val"
+            _write_key "$key" "$current_val" || true
             ((synced_count += 1))
         done
 
@@ -356,7 +369,7 @@ collect_api_keys_interactive() {
             fi
 
             if [[ -n "$raw_val" ]]; then
-                _write_key "$key" "$raw_val"
+                _write_key "$key" "$raw_val" || true
                 ((imported_count += 1))
             fi
         done
@@ -453,7 +466,7 @@ collect_api_keys_interactive() {
 
             IFS='|' read -ra _vals <<< "$zenity_out"
             for i in "${!grp_missing[@]}"; do
-                _write_key "${grp_missing[$i]}" "${_vals[$i]:-}"
+                _write_key "${grp_missing[$i]}" "${_vals[$i]:-}" || true
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
@@ -486,7 +499,7 @@ collect_api_keys_interactive() {
                     --inputbox "${lbl}\n(Boş bırakmak için doğrudan Enter'a basın)" \
                     10 72 "" \
                     3>&1 1>&2 2>&3) || true
-                _write_key "$mk" "$input"
+                _write_key "$mk" "$input" || true
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
@@ -516,7 +529,7 @@ collect_api_keys_interactive() {
             clear_stdin_buffer
             IFS= read -rs input || true
             echo ""
-            _write_key "$mk" "$input"
+            _write_key "$mk" "$input" || true
         done
         echo ""
     done

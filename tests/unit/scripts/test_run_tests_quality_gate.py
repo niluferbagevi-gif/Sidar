@@ -1453,6 +1453,24 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "mapfile -t key_order < <(sidar_user_api_key_names)" in report_block
 
 
+def test_install_sidar_reports_api_key_write_failures_without_missing_err_function() -> None:
+    env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+    collect_start = env_phase.index("collect_api_keys_interactive()")
+    collect_block = env_phase[
+        collect_start : env_phase.index("report_env_api_key_status()", collect_start)
+    ]
+
+    assert "err " not in collect_block
+    assert "api_key_write_success_count" in collect_block
+    assert "api_key_write_failure_count" in collect_block
+    assert "api_key_write_failures" in collect_block
+    assert "bkz. yukarıdaki update_dotenv_value hatası" in collect_block
+    assert "Başarısız API anahtarı hedefleri" in collect_block
+    assert "API anahtarı yazma denemesinden" in collect_block
+    assert '_write_key "$key" "$raw_val" || true' in collect_block
+    assert '_write_key "${grp_missing[$i]}" "${_vals[$i]:-}" || true' in collect_block
+
+
 def test_primary_env_example_stays_minimal_for_new_users() -> None:
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
