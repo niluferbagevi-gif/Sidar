@@ -7,6 +7,7 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 - DocumentStore     : ChromaDB + BM25 + Keyword hibrit RAG belgesi deposu
 """
 
+import logging
 from importlib import import_module
 from types import ModuleType
 from typing import Any
@@ -15,13 +16,24 @@ from sidar_version import PRODUCT_VERSION
 
 __version__ = PRODUCT_VERSION
 
+logger = logging.getLogger(__name__)
+
 
 def _optional_import(module_name: str, attr_name: str) -> Any:
     """Opsiyonel bağımlılık eksik olsa da çekirdek paketin import edilebilmesini sağlar."""
     try:
         module = import_module(module_name)
         return getattr(module, attr_name)
-    except Exception:
+    except Exception as exc:
+        # Sessizce yutmak yerine uyar: aksi halde bu modül gerçekten bozukken
+        # (opsiyonel bağımlılık eksikliği değil) hata, çağrı yerinde şaşırtıcı
+        # bir AttributeError/RuntimeError olarak çok sonra ortaya çıkıyordu.
+        logger.warning(
+            "%s.%s içe aktarılamadı, opsiyonel proxy kullanılacak: %s",
+            module_name,
+            attr_name,
+            exc,
+        )
 
         class _MissingDependencyProxy:  # pragma: no cover - yalnızca bağımlılık eksikse çalışır
             __name__ = attr_name
@@ -38,7 +50,8 @@ def _optional_module(module_name: str) -> ModuleType | None:
     """Alt modül import'u başarısız olsa da çekirdek paketinin yüklenmesini engellemez."""
     try:
         return import_module(module_name)
-    except Exception:
+    except Exception as exc:
+        logger.warning("%s içe aktarılamadı, None döndürülüyor: %s", module_name, exc)
         return None
 
 

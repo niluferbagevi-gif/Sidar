@@ -9,40 +9,40 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
-import core.llm_client as llm_facade
-from core.llm_client import BaseLLMClient, LLMAPIError, logger
+from core.llm import shared
+from core.llm.shared import BaseLLMClient, LLMAPIError, logger
 
 
 def _setting(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._setting(*args, **kwargs)
+    return shared._setting(*args, **kwargs)
 
 
 def _extract_usage_tokens(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._extract_usage_tokens(*args, **kwargs)
+    return shared._extract_usage_tokens(*args, **kwargs)
 
 
 def _extract_gemini_usage_tokens(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._extract_gemini_usage_tokens(*args, **kwargs)
+    return shared._extract_gemini_usage_tokens(*args, **kwargs)
 
 
 async def _ensure_json_text_async(text: str, provider: str) -> str:
-    return await llm_facade._ensure_json_text_async(text, provider)
+    return await shared._ensure_json_text_async(text, provider)
 
 
 def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
-    return llm_facade._fallback_stream(msg)
+    return shared._fallback_stream(msg)
 
 
 def _prepare_span_scope(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._prepare_span_scope(*args, **kwargs)
+    return shared._prepare_span_scope(*args, **kwargs)
 
 
 def _record_llm_metric(**kwargs: Any) -> Any:
-    return llm_facade._record_llm_metric(**kwargs)
+    return shared._record_llm_metric(**kwargs)
 
 
 def _retry_with_backoff(*args: Any, **kwargs: Any) -> Any:
-    return llm_facade._retry_with_backoff(*args, **kwargs)
+    return shared._retry_with_backoff(*args, **kwargs)
 
 
 def _track_stream_completion(
@@ -52,7 +52,7 @@ def _track_stream_completion(
     model: str,
     started_at: float,
 ) -> AsyncIterator[str]:
-    return llm_facade._track_stream_completion(
+    return shared._track_stream_completion(
         stream_iter, provider=provider, model=model, started_at=started_at
     )
 
@@ -60,7 +60,7 @@ def _track_stream_completion(
 def _trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
-    return llm_facade._trace_stream_metrics(stream_iter, span, started_at)
+    return shared._trace_stream_metrics(stream_iter, span, started_at)
 
 
 async def _close_anthropic_client(client: Any) -> None:

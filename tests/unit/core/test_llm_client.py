@@ -20,6 +20,7 @@ from redis import exceptions as redis_exceptions
 
 import core.llm_client as llm_client
 import core.utils.token_counter as token_counter
+from core.llm import shared
 from core.cache import semantic_cache as semantic_cache_module
 from core.cache.semantic_cache import SemanticCacheManager
 from tests.helpers import collect_async_chunks as _collect
@@ -353,7 +354,7 @@ async def test_ensure_json_text_async_wraps_invalid_payload_when_repair_fails(
     async def _no_repair(_text: str) -> None:
         return None
 
-    monkeypatch.setattr(llm_client, "repair_json_text_async", _no_repair)
+    monkeypatch.setattr(shared, "repair_json_text_async", _no_repair)
     wrapped = await llm_client._ensure_json_text_async("bozuk-yanit", "Gemini")
     data = json.loads(wrapped)
     assert data["tool"] == "final_answer"
@@ -368,7 +369,7 @@ async def test_ensure_json_text_async_returns_repaired_payload_when_available(
     async def _repair(_text: str) -> str:
         return '{"tool":"final_answer","argument":"ok"}'
 
-    monkeypatch.setattr(llm_client, "repair_json_text_async", _repair)
+    monkeypatch.setattr(shared, "repair_json_text_async", _repair)
     repaired = await llm_client._ensure_json_text_async("bozuk-yanit", "Gemini")
     assert json.loads(repaired)["argument"] == "ok"
 
@@ -715,7 +716,7 @@ async def test_retry_with_backoff_uses_exception_type_when_error_message_is_blan
 async def test_get_tracer_uses_trace_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     token = object()
     fake_trace = SimpleNamespace(get_tracer=lambda _name: token)
-    monkeypatch.setattr(llm_client, "trace", fake_trace)
+    monkeypatch.setattr(shared, "trace", fake_trace)
     assert llm_client._get_tracer(SimpleNamespace(ENABLE_TRACING=True)) is token
 
 
@@ -735,9 +736,9 @@ async def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.Monke
         def record(self, **kwargs):
             events.append(kwargs)
 
-    monkeypatch.setattr(llm_client, "get_llm_metrics_collector", lambda: Collector())
-    monkeypatch.setattr(llm_client, "get_current_metrics_user_id", lambda: "u-1")
-    monkeypatch.setattr(llm_client.time, "monotonic", lambda: 5.0)
+    monkeypatch.setattr(shared, "get_llm_metrics_collector", lambda: Collector())
+    monkeypatch.setattr(shared, "get_current_metrics_user_id", lambda: "u-1")
+    monkeypatch.setattr(shared.time, "monotonic", lambda: 5.0)
     llm_client._record_llm_metric(
         provider="openai", model="gpt", started_at=3.5, prompt_tokens=1, completion_tokens=2
     )
@@ -954,7 +955,7 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
     def recorder(**kwargs):
         events.append(kwargs)
 
-    monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+    monkeypatch.setattr(shared, "_record_llm_metric", recorder)
     monkeypatch.setattr(llm_client.logger, "warning", lambda *args, **_kwargs: logs.append(args))
 
     async def broken_stream():
@@ -986,7 +987,7 @@ async def test_track_stream_completion_records_success_with_empty_chunks(
     def recorder(**kwargs):
         events.append(kwargs)
 
-    monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+    monkeypatch.setattr(shared, "_record_llm_metric", recorder)
 
     async def stream():
         yield ""
@@ -1012,7 +1013,7 @@ async def test_track_stream_completion_reraises_stream_error_when_metric_recordi
     def failing_recorder(**_kwargs):
         raise RuntimeError("metrics backend unavailable")
 
-    monkeypatch.setattr(llm_client, "_record_llm_metric", failing_recorder)
+    monkeypatch.setattr(shared, "_record_llm_metric", failing_recorder)
     monkeypatch.setattr(llm_client.logger, "debug", lambda *args, **_kwargs: logs.append(args))
 
     async def broken_stream():
@@ -1493,7 +1494,7 @@ async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_r
     )
     c2 = llm_client.OpenAIClient(cfg)
     metrics = []
-    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kw: metrics.append(kw))
+    monkeypatch.setattr(shared, "_record_llm_metric", lambda **kw: metrics.append(kw))
     respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
@@ -1594,7 +1595,7 @@ async def test_ollama_stream_missing_model_emits_runtime_guidance(
     async def _fake_retry(_provider, operation, *, config, retry_hint):  # noqa: ARG001
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     _mock_httpx_stream_client(
         monkeypatch, chunks=(b'{"error":"model \\"qwen2.5-coder:7b\\" not found"}\n',)
     )
@@ -1639,7 +1640,7 @@ async def test_openai_stream_error_formats_output_by_json_mode(
     async def _raise_retry(*_a, **_kw):
         raise RuntimeError("bağlantı koptu")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_retry)
 
     text_chunks = await _collect(
         c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)
@@ -1699,7 +1700,7 @@ async def test_litellm_stream_and_fail(
     async def broken(*_a, **_kw):
         raise Exception("x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
+    monkeypatch.setattr(shared, "_retry_with_backoff", broken)
     got2 = await _collect(
         c._stream_openai_compatible(
             stream_endpoint, {}, {}, llm_client.httpx.Timeout(10, connect=1), True
@@ -1765,7 +1766,7 @@ async def test_gemini_non_stream_records_usage_metrics(
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
-    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+    monkeypatch.setattr(shared, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
 
     cfg = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c = llm_client.GeminiClient(cfg)
@@ -2069,7 +2070,7 @@ async def test_ollama_and_openai_error_paths(
     async def _retry_boom(*_a, **_kw):
         raise RuntimeError("stream boom")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_boom)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _retry_boom)
     got = await _collect(
         oa._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=True)
     )
@@ -2372,7 +2373,7 @@ async def test_ollama_chat_with_tracing_sets_span_attrs(
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
 
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
     respx_mock_router.post("http://x/api/chat").mock(
         return_value=httpx.Response(
             200,
@@ -2391,7 +2392,7 @@ async def test_openai_chat_stream_with_tracing(monkeypatch: pytest.MonkeyPatch) 
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
     span = _Span()
     tracer = SimpleNamespace(start_span=lambda _n: span)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
 
     def _stream(*_a, **_kw):
         async def gen():
@@ -2414,7 +2415,7 @@ async def test_litellm_stream_and_nonstream_tracing_attrs(
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm, start_span=lambda _n: span)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
 
     respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(
@@ -2548,12 +2549,12 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
 
     async def raise_llm(*_a, **_kw):
         raise llm_client.LLMAPIError("openai", "x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_llm)
+    monkeypatch.setattr(shared, "_retry_with_backoff", raise_llm)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert exc.value.provider == "openai"
@@ -2561,7 +2562,7 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
     async def raise_other(*_a, **_kw):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", raise_other)
+    monkeypatch.setattr(shared, "_retry_with_backoff", raise_other)
     with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert exc.value.provider == "openai"
@@ -2576,7 +2577,7 @@ async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> Non
     async def broken(*_a, **_kw):
         raise RuntimeError("down")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", broken)
+    monkeypatch.setattr(shared, "_retry_with_backoff", broken)
     with pytest.raises(llm_client.LLMAPIError, match="down") as exc:
         await c.chat([{"role": "user", "content": "x"}], stream=False)
     assert exc.value.provider == "ollama"
@@ -2589,7 +2590,7 @@ async def test_ollama_stream_errors_end_span_for_both_error_branches(
     c = llm_client.OllamaClient(_make_config(CODING_MODEL="m", ENABLE_TRACING=True))
     span = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
     )
 
     def _raise_llmapi(*_args, **_kwargs):
@@ -2602,7 +2603,7 @@ async def test_ollama_stream_errors_end_span_for_both_error_branches(
 
     span2 = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
     )
 
     def _raise_other(*_args, **_kwargs):
@@ -2622,7 +2623,7 @@ async def test_openai_stream_errors_end_span_for_both_error_branches(
 
     span = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
     )
 
     def _raise_llmapi(*_args, **_kwargs):
@@ -2635,7 +2636,7 @@ async def test_openai_stream_errors_end_span_for_both_error_branches(
 
     span2 = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
     )
 
     def _raise_other(*_args, **_kwargs):
@@ -2661,7 +2662,7 @@ async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.Monk
     _mock_google_genai(monkeypatch, _Client, fake_types)
     span = _Span()
     tracer = SimpleNamespace(start_span=lambda _n: span)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
     c = llm_client.GeminiClient(
         _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=True)
     )
@@ -2685,7 +2686,7 @@ async def test_litellm_failure_with_tracing(
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
 
     respx_mock_router.post("http://gw/chat/completions").mock(side_effect=RuntimeError("fail"))
     with pytest.raises(llm_client.LLMAPIError, match="fail") as exc:
@@ -2702,7 +2703,7 @@ async def test_litellm_stream_failure_ends_span_and_reraises(
     )
     span = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
     )
 
     def _raise_stream_open(*_args, **_kwargs):
@@ -2731,7 +2732,7 @@ async def test_litellm_chat_breaks_on_last_failed_model_and_raises_wrapped_error
     async def _always_fail(*_args, **_kwargs):
         raise RuntimeError("gateway down")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _always_fail)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _always_fail)
 
     with pytest.raises(llm_client.LLMAPIError, match="gateway down") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
@@ -2771,7 +2772,7 @@ async def test_anthropic_nonstream_records_usage_metrics_on_success(
             self.messages = _Messages()
 
     events: list[dict] = []
-    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+    monkeypatch.setattr(shared, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
 
     c = llm_client.AnthropicClient(
@@ -2815,12 +2816,12 @@ async def test_anthropic_nonstream_error_paths(
         span = _Span()
         span_cm = _SpanCM(span)
         tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
-        monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+        monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
 
     async def llm_err(*_a, **_kw):
         raise llm_client.LLMAPIError("anthropic", "x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", llm_err)
+    monkeypatch.setattr(shared, "_retry_with_backoff", llm_err)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=json_mode)
     assert exc.value.provider == "anthropic"
@@ -2828,7 +2829,7 @@ async def test_anthropic_nonstream_error_paths(
     async def oth_err(*_a, **_kw):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", oth_err)
+    monkeypatch.setattr(shared, "_retry_with_backoff", oth_err)
     with pytest.raises(llm_client.LLMAPIError, match="boom") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=json_mode)
     assert exc.value.provider == "anthropic"
@@ -2852,7 +2853,7 @@ async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.Monk
 
     span = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span)
     )
 
     async def _raise_llmapi(*_args, **_kwargs):
@@ -2868,7 +2869,7 @@ async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.Monk
 
     span2 = _Span()
     monkeypatch.setattr(
-        llm_client, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
+        shared, "_get_tracer", lambda _cfg: SimpleNamespace(start_span=lambda _n: span2)
     )
 
     async def _raise_runtime(*_args, **_kwargs):
@@ -3133,7 +3134,7 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
     span = _Span()
     span_cm = _SpanCM(span)
     tracer = SimpleNamespace(start_as_current_span=lambda _n: span_cm)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: tracer)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: tracer)
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     c = llm_client.AnthropicClient(
         _make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m", ENABLE_TRACING=True)
@@ -3158,7 +3159,7 @@ async def test_anthropic_stream_handles_open_failure_without_context_manager_exi
     async def _raise_open_error(*_args, **_kwargs):
         raise RuntimeError("open fail before cm assignment")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_open_error)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_open_error)
 
     chunks = await _collect(
         c._stream_anthropic(
@@ -3186,7 +3187,7 @@ async def test_openai_tracing_nonstream_success_and_error(
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(
-        llm_client,
+        shared,
         "_get_tracer",
         lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
     )
@@ -3207,7 +3208,7 @@ async def test_openai_invalid_model_mapping(monkeypatch: pytest.MonkeyPatch) -> 
     async def _raise_invalid_model(_provider, _operation, **_kw):
         raise llm_client.LLMAPIError("openai", "model_not_found", status_code=404, retryable=False)
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_invalid_model)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_invalid_model)
     with pytest.raises(llm_client.LLMAPIError, match="model_not_found") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "openai"
@@ -3276,7 +3277,7 @@ async def test_gemini_tracing_nonstream_and_empty_stream_chunk(
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(
-        llm_client,
+        shared,
         "_get_tracer",
         lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
     )
@@ -3317,7 +3318,7 @@ async def test_gemini_non_stream_error_returns_fallback_message_without_ending_s
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(
-        llm_client,
+        shared,
         "_get_tracer",
         lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
     )
@@ -3347,7 +3348,7 @@ async def test_openai_stream_empty_and_error_branches(
         span = _Span()
         span_cm = _SpanCM(span)
         monkeypatch.setattr(
-            llm_client,
+            shared,
             "_get_tracer",
             lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
         )
@@ -3355,7 +3356,7 @@ async def test_openai_stream_empty_and_error_branches(
     async def _raise_llm(*_a, **_kw):
         raise llm_client.LLMAPIError("openai", "x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_llm)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_llm)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "openai"
@@ -3363,7 +3364,7 @@ async def test_openai_stream_empty_and_error_branches(
     async def _raise_other(*_a, **_kw):
         raise RuntimeError("x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_other)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_other)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "openai"
@@ -3375,7 +3376,7 @@ async def test_openai_stream_empty_and_error_branches(
     async def _retry_ok(_provider, operation, **_kw):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_ok)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _retry_ok)
     assert (
         await _collect(
             c._stream_openai({}, {}, llm_client.httpx.Timeout(10, connect=1), json_mode=False)
@@ -3422,7 +3423,7 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
     span = _Span()
     span_cm = _SpanCM(span)
     monkeypatch.setattr(
-        llm_client,
+        shared,
         "_get_tracer",
         lambda _cfg: SimpleNamespace(start_as_current_span=lambda _n: span_cm),
     )
@@ -3436,7 +3437,7 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
     async def _llm(*_a, **_kw):
         raise llm_client.LLMAPIError("anthropic", "x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _llm)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _llm)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "anthropic"
@@ -3444,7 +3445,7 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
     async def _oth(*_a, **_kw):
         raise RuntimeError("x")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _oth)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _oth)
     with pytest.raises(llm_client.LLMAPIError, match="x") as exc:
         await c.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False)
     assert exc.value.provider == "anthropic"
@@ -3473,7 +3474,7 @@ async def test_anthropic_empty_prompt_handling(monkeypatch: pytest.MonkeyPatch) 
     async def _retry_passthrough(_provider, operation, **_kw):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_passthrough)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _retry_passthrough)
     with pytest.raises(llm_client.LLMAPIError, match="model_not_found") as exc:
         await c.chat([], stream=False, json_mode=False)
     assert exc.value.provider == "anthropic"
@@ -3536,7 +3537,7 @@ async def test_litellm_stream_no_lines_branch(
     async def _retry_ok(_provider, operation, **_kw):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_ok)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _retry_ok)
 
     respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(200, text="")
@@ -3666,7 +3667,7 @@ async def test_gemini_nonstream_without_tracing_hits_no_span_path(
 
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: None)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: None)
 
     c = llm_client.GeminiClient(
         _make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=False)
@@ -3681,7 +3682,7 @@ async def test_litellm_nonstream_without_tracing_success(
     c = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=False)
     )
-    monkeypatch.setattr(llm_client, "_get_tracer", lambda _cfg: None)
+    monkeypatch.setattr(shared, "_get_tracer", lambda _cfg: None)
     respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(
             200, json={"usage": {}, "choices": [{"message": {"content": "ok"}}]}
@@ -3813,7 +3814,7 @@ async def test_ollama_chat_generic_exception_model_not_found_guidance(
     async def _raise_model_not_found(*_a, **_kw):
         raise RuntimeError("model 'xyz' not found")
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_model_not_found)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _raise_model_not_found)
     with pytest.raises(llm_client.LLMAPIError) as exc_info:
         await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
     assert exc_info.value.provider == "ollama"
@@ -3858,7 +3859,7 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
@@ -3888,7 +3889,7 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
@@ -3918,7 +3919,7 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
@@ -3947,7 +3948,7 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     _mock_httpx_stream_client(monkeypatch)
 
     client = llm_client.OllamaClient(_make_config())
@@ -4107,9 +4108,9 @@ async def test_gemini_chat_stream_error_ends_span(
     fake_types = types.SimpleNamespace(GenerateContentConfig=lambda **kw: SimpleNamespace(**kw))
     _mock_google_genai(monkeypatch, _Client, fake_types)
     monkeypatch.setattr(
-        llm_client, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None)
+        shared, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None)
     )
-    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
+    monkeypatch.setattr(shared, "_record_llm_metric", lambda **kwargs: events.append(kwargs))
 
     c = llm_client.GeminiClient(mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
     stream = await c.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
@@ -4168,7 +4169,7 @@ async def test_anthropic_chat_stream_errors_end_span(
 
     _mock_anthropic(monkeypatch, _AsyncAnthropic)
     monkeypatch.setattr(
-        llm_client, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None)
+        shared, "_prepare_span_scope", lambda *_args, **_kwargs: (_Scope(), None)
     )
     client = llm_client.AnthropicClient(
         mock_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude")
@@ -4177,13 +4178,13 @@ async def test_anthropic_chat_stream_errors_end_span(
     def _raise_llmapi(*_args, **_kwargs):
         raise llm_client.LLMAPIError("anthropic", "stream exploded")
 
-    monkeypatch.setattr(llm_client, "_track_stream_completion", _raise_llmapi)
+    monkeypatch.setattr(shared, "_track_stream_completion", _raise_llmapi)
     with pytest.raises(llm_client.LLMAPIError, match="stream exploded"):
         await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
     assert ended["value"] == 1
 
     monkeypatch.setattr(
-        llm_client,
+        shared,
         "_track_stream_completion",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("unexpected")),
     )
@@ -4329,7 +4330,7 @@ async def test_litellm_chat_without_api_key_sends_request_without_authorization(
     async def _fake_retry(_provider, operation, *, config, retry_hint):
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda timeout: _Client())
 
     client = llm_client.LiteLLMClient(
@@ -4390,7 +4391,7 @@ async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkey
         _ = (config, retry_hint)
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(client, "_get_client", lambda: _Client())
 
@@ -4480,7 +4481,7 @@ async def test_anthropic_stream_includes_system_prompt_when_nonempty(monkeypatch
         _ = (config, retry_hint)
         return await operation()
 
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(client, "_get_client", lambda: _Client())
 
@@ -4668,7 +4669,7 @@ async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
 async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+    monkeypatch.setattr(shared, "_OLLAMA_GPU_LIMITERS", {})
 
     first = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
     second = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
@@ -4684,21 +4685,21 @@ async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
 async def test_ollama_gpu_limiter_reuses_limiter_created_while_waiting_for_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+    monkeypatch.setattr(shared, "_OLLAMA_GPU_LIMITERS", {})
 
     class _PopulatingLock:
         async def __aenter__(self):
-            llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)] = asyncio.Semaphore(2)
+            shared._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)] = asyncio.Semaphore(2)
             return self
 
         async def __aexit__(self, *_args):
             return False
 
-    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS_LOCK", _PopulatingLock())
+    monkeypatch.setattr(shared, "_OLLAMA_GPU_LIMITERS_LOCK", _PopulatingLock())
 
     limiter = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
 
-    assert limiter is llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)]
+    assert limiter is shared._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)]
 
 
 @pytest.mark.asyncio
@@ -4802,7 +4803,7 @@ async def test_anthropic_non_stream_closes_client(monkeypatch) -> None:
         return await operation()
 
     raw_client = _Client()
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(client, "_get_client", lambda: raw_client)
 
@@ -4845,7 +4846,7 @@ async def test_anthropic_stream_closes_client_after_iteration(monkeypatch) -> No
         return await operation()
 
     raw_client = _Client()
-    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    monkeypatch.setattr(shared, "_retry_with_backoff", _fake_retry)
     client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(client, "_get_client", lambda: raw_client)
 

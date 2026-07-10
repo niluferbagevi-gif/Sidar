@@ -61,7 +61,7 @@ def test_wrapper_delegates_to_facade(
         calls.append((call_args, call_kwargs))
         return sentinel
 
-    monkeypatch.setattr(module.llm_facade, attr_name, fake_facade_wrapper)
+    monkeypatch.setattr(module.shared, attr_name, fake_facade_wrapper)
 
     assert getattr(module, attr_name)(*args, **kwargs) is sentinel
     assert calls == [(args, kwargs)]
@@ -79,7 +79,7 @@ async def test_ensure_json_text_async_wrapper_delegates_to_facade(
         calls.append((text, provider))
         return "facade-result"
 
-    monkeypatch.setattr(module.llm_facade, "_ensure_json_text_async", fake_ensure_json_text_async)
+    monkeypatch.setattr(module.shared, "_ensure_json_text_async", fake_ensure_json_text_async)
 
     assert await module._ensure_json_text_async("payload", "Provider") == "facade-result"
     assert calls == [("payload", "Provider")]
