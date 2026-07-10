@@ -757,6 +757,9 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "uses: actions/cache/restore@v4" in ci
     assert "uses: actions/cache/save@v4" in ci
     assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
+    assert "baseline-seed-manifest.json" in ci
+    assert '"schema_version": 1' in ci
+    assert "retention-days: 90" in ci
     assert "benchmark-baseline-seed" in ci
     assert "Next step: rerun the normal CI / production-readiness gate" in ci
     assert "GitHub Actions → CI → Run workflow" in ci
@@ -3828,6 +3831,9 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
     assert "actions/cache/save@v4" in seed_workflow
     assert "actions/upload-artifact@v4" in seed_workflow
+    assert "baseline-seed-manifest.json" in ci
+    assert "Baseline files:" in ci
+    assert "retention-days: 90" in ci
     assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
     assert "Benchmark baseline seed" in readme
     assert "Benchmark baseline seed" in notes

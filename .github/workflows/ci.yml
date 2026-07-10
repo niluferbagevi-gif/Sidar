@@ -79,9 +79,31 @@ jobs:
             echo "::error title=Benchmark seed failed::pytest-benchmark completed but .benchmarks/*_${benchmark_compare_name}.json was not created."
             exit 1
           fi
+          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" | sort)
+          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          baseline_files = os.environ["BASELINE_FILES"].splitlines()
+          manifest = {
+              "schema_version": 1,
+              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_ref": os.environ["GITHUB_REF"],
+              "github_sha": os.environ["GITHUB_SHA"],
+              "benchmark_files": baseline_files,
+          }
+          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
           {
             echo "### Benchmark baseline seeded"
             echo "- Baseline name: \`${benchmark_compare_name}\`"
+            echo "- Baseline files: \`${#baseline_files[@]}\`"
+            echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
             echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-\`"
             echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
             echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
@@ -95,8 +117,9 @@ jobs:
           path: |
             .benchmarks/
             artifacts/benchmark/benchmark.json
+            artifacts/benchmark/baseline-seed-manifest.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
       - name: Save benchmark baseline cache for CI
         uses: actions/cache/save@v4
