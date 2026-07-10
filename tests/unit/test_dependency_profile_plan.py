@@ -206,6 +206,34 @@ def test_dependency_profile_plan_moves_dev_tools_to_dev_extra_not_runtime_deps()
         assert any(dep.startswith(package_prefix) for dep in dev_dependencies)
 
 
+def test_production_minimal_excludes_heavy_optional_extras() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+    production_minimal = optional_dependencies["production-minimal"]
+    docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+
+    assert production_minimal == ["sidar[postgres]"]
+    heavy_extras = {"rag", "gpu", "voice", "browser"}
+    for dependency in production_minimal:
+        requirement = Requirement(dependency)
+        assert heavy_extras.isdisjoint(requirement.extras)
+
+    heavy_packages = {
+        Requirement(dependency).name
+        for extra_name in heavy_extras
+        for dependency in optional_dependencies[extra_name]
+        if not dependency.startswith("sidar[")
+    }
+    production_minimal_packages = {
+        Requirement(dependency).name
+        for dependency in production_minimal
+        if not dependency.startswith("sidar[")
+    }
+    assert production_minimal_packages.isdisjoint(heavy_packages)
+    assert "RAG/GPU/voice/browser" in docs
+    assert "test_dependency_profile_plan.py" in docs
+
+
 def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     rag_deps = pyproject["project"]["optional-dependencies"]["rag"]

@@ -160,8 +160,13 @@ geldiğinde terfi edebilir:
 1. `SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test`
    komutu lock değiştirmeden geçer.
 2. Web/API boot smoke, DB migration smoke ve no-dev import smoke artifact'leri CI/release
-   çıktısına eklenir.
-3. Release/merge için ayrı production-readiness gate'i yine çalışır:
+   çıktısına eklenir. Mevcut CI `production-profile-dry-run` job'ı
+   `uv sync --frozen --extra production-minimal --no-dev` ve no-dev import smoke
+   doğrulamasını ana CI içinde çalıştırır; bu job `continue-on-error` olmadan kalmalıdır.
+3. RAG/GPU/voice/browser gibi ağır extras production-minimal profile alınmaz.
+   `tests/unit/test_dependency_profile_plan.py::test_production_minimal_excludes_heavy_optional_extras`
+   bu sınırı pyproject metadata'sı üzerinden korur.
+4. Release/merge için ayrı production-readiness gate'i yine çalışır:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
 ## Ruff docstring / ASYNC borç kapatma takibi
