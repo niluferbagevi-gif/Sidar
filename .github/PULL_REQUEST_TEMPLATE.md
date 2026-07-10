@@ -6,6 +6,17 @@
 
 - 
 
+## Production readiness / merge gate
+
+> `make dev-full` veya development `bash run_tests.sh --stage all` geçse bile release onayı değildir.
+> Merge/release öncesinde `artifacts/test-summary.json` içindeki `production_ready` alanı
+> `true` olmalı veya production-readiness CI job sonucu açıkça geçmelidir.
+
+- [ ] `artifacts/test-summary.json` içinde `production_ready=true` doğrulandı.
+- [ ] `production_readiness_detail.required_command` kanonik komutla eşleşiyor:
+  `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
+- [ ] `production_ready=false`, `summary-code=10` veya `summary-code=20` görüldüyse bu PR merge/release için bloke edildi.
+
 ## Installer manifest checklist
 
 If this PR touches `core/memory.py`, `core/multimodal.py`, `install_sidar.sh`,

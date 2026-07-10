@@ -2754,18 +2754,28 @@ print_release_scope_warning_once() {
     if [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
       echo "✅ Development full validation başarıyla tamamlandı."
     fi
-    echo "⚠️ RELEASE KAPSAMI EKSİK: stage all çalıştı [summary-code=10]; ancak SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı için bu sonuç production-readiness sayılmaz."
+    cat <<RELEASE_SCOPE_WARNING
+
+🚨 RELEASE / MERGE ONAYI VERMEYİN [summary-code=10]
+   Bu çalışma --stage all kapsamını development/local profilinde tamamladı;
+   artifacts/test-summary.json içinde production_ready=false kalır.
+   PR template ve merge checklist üzerinde bu alan zorunlu kontrol edilmelidir.
+   Production readiness için kanonik komut:
+   ${PRODUCTION_READINESS_COMMAND}
+RELEASE_SCOPE_WARNING
     if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
       echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
     fi
-    echo "Production readiness için:"
-    echo "   ${PRODUCTION_READINESS_COMMAND}"
   else
-    echo "⚠️ RELEASE KAPSAMI EKSİK [summary-code=20]: Bu çalışma production readiness gate değildir."
-    echo "   Smoke/unit/build gibi seçili kapılar geçse bile integration, frontend E2E ve benchmark"
-    echo "   tam koşullarda çalışmadıysa projeyi production-ready kabul etmeyin."
-    echo "   Tam proje doğrulaması için çalıştırın:"
-    echo "   ${PRODUCTION_READINESS_COMMAND}"
+    cat <<RELEASE_SCOPE_WARNING
+
+🚨 RELEASE / MERGE ONAYI VERMEYİN [summary-code=20]
+   Bu çalışma production readiness gate değildir. Smoke/unit/build gibi seçili
+   kapılar geçse bile integration, frontend E2E ve benchmark tam koşullarda
+   çalışmadıysa projeyi production-ready kabul etmeyin.
+   Production readiness için kanonik komut:
+   ${PRODUCTION_READINESS_COMMAND}
+RELEASE_SCOPE_WARNING
   fi
 }
 

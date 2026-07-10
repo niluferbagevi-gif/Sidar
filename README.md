@@ -688,6 +688,12 @@ cd Sidar
 uv sync --all-extras
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 ./install_sidar.sh
+
+# Local tam doğrulama: geliştirme ortamı için güçlü sinyal, release onayı değildir.
+make dev-full
+
+# Merge/release öncesi zorunlu kapı: artifacts/test-summary.json -> production_ready=true üretmelidir.
+make production-readiness
 ```
 
 > Geliştirici makinelerinde `pre-commit` ve `pre-push` hook'larının ikisi de
