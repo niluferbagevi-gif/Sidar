@@ -2,5 +2,6 @@
 # Active, dated exceptions only. Expired entries fail closed via scripts/pip_audit_ignore_args.py.
 # Torch CVE-2025-3000 remains in watch status for the current torch 2.11.0 lock window.
 # Next review target: 2026-08-15; expiry is enforced by scripts/pip_audit_ignore_args.py in run_tests.sh/CI and unit tests.
+# Keep torch exception status/dates synchronized with pyproject.toml, docs/runbooks/torch-cve-upgrade.md, and docs/DEPENDENCY_PROFILE_PLAN.md.
 GHSA-rrmf-rvhw-rf47	torch	2026-09-15	CVE-2025-3000: status=watch; installed=torch 2.11.0; next_review=2026-08-15; upstream fix unavailable; torch.jit.script is not used in production code.
 PYSEC-2026-597	nltk	2026-10-01	CVE-2026-12243: path traversal in nltk.data.load/find via percent-encoded '../'; no fix_version yet; nltk is a transitive dependency of the dev-only `safety` tool (not used by first-party Sidar code), which never calls nltk.data.load/find; next_review=2026-09-01.

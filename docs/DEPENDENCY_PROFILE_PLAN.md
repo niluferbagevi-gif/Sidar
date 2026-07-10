@@ -151,8 +151,11 @@ runtime sync/dry-run kanıtı üretmek için kullanılmalıdır.
 Takip kapıları `pyproject.toml` içindeki
 `[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]` ve
 `[tool.sidar.dependency_profile_plan.installer_profile_visibility]` bloklarında
-makine-okunur tutulur. Production-minimal varsayılan installer davranışına ancak
-şu kanıtlar blocking hale geldiğinde terfi edebilir:
+makine-okunur tutulur. Mevcut CI job'ı `production-profile-dry-run` yalnız no-dev
+import/sync kanıtı üretir; bir sonraki geliştirme PR'ında bu dry-run gerçek CI/release
+blocking gate'e çevrilmeden production-minimal release kabulü sayılmamalıdır.
+Production-minimal varsayılan installer davranışına ancak şu kanıtlar blocking hale
+geldiğinde terfi edebilir:
 
 1. `SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test`
    komutu lock değiştirmeden geçer.

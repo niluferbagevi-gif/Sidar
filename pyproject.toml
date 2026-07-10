@@ -339,6 +339,9 @@ owner = "qa+release"
 review_by = "2026-08-15"
 required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test"
 follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+current_ci_job = "production-profile-dry-run"
+next_action = "Promote the production-minimal dry-run into a real CI/release blocking gate with installer sync, web boot smoke, DB migration smoke, and release artifact evidence."
+blocking_transition_pr_required = true
 summary = "production-minimal remains an opt-in runtime profile until installer sync, web boot smoke, DB migration smoke, and release gate evidence are attached to CI/release artifacts."
 
 [tool.sidar.dependency_profile_plan.installer_profile_visibility]
@@ -355,6 +358,12 @@ review_by = "2026-08-15"
 expires = "2026-09-15"
 calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
 runbook_file = "docs/runbooks/torch-cve-upgrade.md"
+tracked_files = [
+  "pyproject.toml",
+  "security/pip-audit-ignores.tsv",
+  "docs/runbooks/torch-cve-upgrade.md",
+  "docs/DEPENDENCY_PROFILE_PLAN.md",
+]
 upgrade_command = "uv lock --upgrade-package torch --upgrade-package torchvision"
 validation_commands = [
   "uv sync --all-extras",
