@@ -25,7 +25,7 @@ sidar_phase_apply_coverage_dark_mode_assets() {
 
     for html_dir in "${coverage_html_dirs[@]}"; do
         [[ -d "$html_dir" ]] || continue
-        find "$html_dir" -type f -name '*.html' -exec sed -i 's/light-mode/dark-mode/g' {} +
+        find "$html_dir" -type f -name '*.html' -exec sed -i -E "s/(class=\"[^\"]*)\\blight-mode\\b/\\1dark-mode/g; s/(class='[^']*)\\blight-mode\\b/\\1dark-mode/g" {} +
     done
 
     ok "Coverage dark-mode varlıkları hazırlandı ve mevcut HTML raporları dark-mode'a geçirildi."
@@ -86,6 +86,7 @@ report_repo_lookup_context() {
 # ── 0. GitHub deposunu hazırla / güncelle ────────────────────────────────────
 sync_repo() {
     step "Sidar projesi GitHub'dan çekiliyor"
+    local repo_branch="${REPO_BRANCH:-main}"
 
     if [[ "$OFFLINE_MODE" == true ]]; then
         if [[ -d "$SCRIPT_DIR/.git" ]]; then
@@ -116,7 +117,7 @@ sync_repo() {
 
     if [[ ! -d "$TARGET_DIR/.git" ]]; then
         info "Sidar deposu klonlanıyor: $REPO_URL → $TARGET_DIR"
-        git clone "$REPO_URL" --depth=1 --branch "${REPO_BRANCH:-main}" "$TARGET_DIR"
+        git clone "$REPO_URL" --depth=1 --branch "$repo_branch" "$TARGET_DIR"
     else
         warn "Sidar klasörü zaten var ($TARGET_DIR). Rebase tabanlı git pull ile güncelleniyor..."
         info "Not: Sıfır kurulum beklenirken bu uyarıyı görüyorsanız mevcut çalışma dizinini kontrol edin: $(pwd)"
@@ -135,7 +136,8 @@ sync_repo() {
                 ok "Lokal değişiklikler yedek stash'e alındı: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
             fi
 
-            git pull --rebase origin main || fail "Git çekme işlemi başarısız oldu!"
+            git fetch origin "$repo_branch" || fail "Git fetch başarısız oldu: origin/${repo_branch}"
+            git rebase "origin/${repo_branch}" || fail "Git rebase başarısız oldu: origin/${repo_branch}"
 
             if [[ "$STASHED_CHANGES" == true ]]; then
                 # `apply` kullanıyoruz; başarı kesinleşmeden stash'i drop etmeyerek
@@ -154,19 +156,19 @@ sync_repo() {
 
                     echo ""
                     warn "Yerel değişiklikler yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-                    warn "Yalnız bu stash referansını doğruladıktan sonra çalışma ağacını origin/main durumuna sıfırlayabilirsiniz."
+                    warn "Yalnız bu stash referansını doğruladıktan sonra çalışma ağacını origin/${repo_branch} durumuna sıfırlayabilirsiniz."
                     local recovery_reply
-                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Yedek stash doğrulandı. Çakışmayı temizlemek için 'git reset --hard origin/main && git clean -fd' uygulansın mı? [e/H] ")
+                    recovery_reply=$(prompt_yes_no_with_timeout_default_no "Yedek stash doğrulandı. Çakışmayı temizlemek için 'git reset --hard origin/${repo_branch} && git clean -fd' uygulansın mı? [e/H] ")
                     case "${recovery_reply:-H}" in
                         [EeYy]*)
                             if [[ -z "$INSTALL_STASH_REF" ]] || ! git rev-parse -q --verify "${INSTALL_STASH_REF}^{commit}" >/dev/null; then
                                 fail "Yıkıcı git kurtarma reddedildi: geçerli yedek stash referansı bulunamadı. git clean -fd çalıştırılmadı."
                             fi
                             warn "Kurtarma adımı uygulanıyor. Yerel çalışma yedek stash'te korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE})"
-                            git fetch origin main || fail "Kurtarma için origin/main fetch başarısız oldu."
-                            git reset --hard origin/main || fail "git reset --hard origin/main başarısız oldu. Yedek stash: ${INSTALL_STASH_REF}"
+                            git fetch origin "$repo_branch" || fail "Kurtarma için origin/${repo_branch} fetch başarısız oldu."
+                            git reset --hard "origin/${repo_branch}" || fail "git reset --hard origin/${repo_branch} başarısız oldu. Yedek stash: ${INSTALL_STASH_REF}"
                             git clean -fd || warn "git clean -fd sırasında bazı dosyalar temizlenemedi. Yedek stash: ${INSTALL_STASH_REF}"
-                            ok "Repo origin/main durumuna sıfırlandı. Yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Geri almak için: git stash apply ${INSTALL_STASH_REF}"
+                            ok "Repo origin/${repo_branch} durumuna sıfırlandı. Yedek stash korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Geri almak için: git stash apply ${INSTALL_STASH_REF}"
                             ;;
                         *)
                             fail "Git çalışma ağacı çakışmalı durumda kaldı. Yerel çalışma yedek stash içinde korunuyor: ${INSTALL_STASH_REF} (${INSTALL_STASH_MESSAGE}). Lütfen '$TARGET_DIR' içinde çakışmaları manuel çözün veya stash'i doğruladıktan sonra reset/clean işlemini bilinçli çalıştırın."

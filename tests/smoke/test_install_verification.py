@@ -107,6 +107,12 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     (script_dir / "assets" / "dark_mode.css").write_text(
         source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
     )
+    html_report = script_dir / "htmlcov" / "index.html"
+    html_report.parent.mkdir(parents=True)
+    html_report.write_text(
+        '<html><body class="light-mode"><a href="/light-mode/help">light-mode text</a></body></html>',
+        encoding="utf-8",
+    )
 
     repo_phase_script = textwrap.dedent(
         """
@@ -133,6 +139,10 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     assert coverage_css.exists()
     assert artifact_coverage_css.exists()
     assert "background-color" in coverage_css.read_text(encoding="utf-8")
+    html = html_report.read_text(encoding="utf-8")
+    assert 'class="dark-mode"' in html
+    assert '/light-mode/help' in html
+    assert '>light-mode text<' in html
 
 
 def test_python_version() -> None:
@@ -159,6 +169,18 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
             _extract_bash_function(installer, function_name)
         )
         assert installer_function == module_function
+
+
+def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
+    phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
+
+    assert 'local repo_branch="${REPO_BRANCH:-main}"' in phase
+    assert 'git clone "$REPO_URL" --depth=1 --branch "$repo_branch" "$TARGET_DIR"' in phase
+    assert 'git fetch origin "$repo_branch"' in phase
+    assert 'git rebase "origin/${repo_branch}"' in phase
+    assert 'git pull --rebase origin main' not in phase
+    assert 'git fetch origin main' not in phase
+    assert 'git reset --hard origin/main' not in phase
 
 
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
