@@ -550,7 +550,7 @@ class GitHubManager:
         try:
             issue = self._repo.get_issue(number)
             created = issue.create_comment(comment)
-            return True, (f"✓ Yorum eklendi (PR #{number}):\n" f"  URL: {created.html_url}")
+            return True, (f"✓ Yorum eklendi (PR #{number}):\n  URL: {created.html_url}")
         except Exception as exc:
             return False, f"PR yorumu eklenemedi: {exc}"
 
@@ -790,4 +790,4 @@ class GitHubManager:
             return False, [], str(exc)
 
     def __repr__(self) -> str:
-        return f"<GitHubManager available={self._available} " f"repo={self.repo_name or 'None'}>"
+        return f"<GitHubManager available={self._available} repo={self.repo_name or 'None'}>"

@@ -1854,6 +1854,7 @@ def test_doctor_check_contract_rejects_missing_required_fields() -> None:
             types.SimpleNamespace(name="x", status="pass", message="ok", details={})
         )
 
+
 def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection() -> None:
     assert doctor.validate_auto_fix_command(
         "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"

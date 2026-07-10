@@ -265,9 +265,9 @@ async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
 
     assert hit == "cached-answer"
     assert len(embed_call_threads) == 2
-    assert all(
-        thread_id != event_loop_thread for thread_id in embed_call_threads
-    ), "get()/set() must run _embed_prompt off the event loop thread via asyncio.to_thread"
+    assert all(thread_id != event_loop_thread for thread_id in embed_call_threads), (
+        "get()/set() must run _embed_prompt off the event loop thread via asyncio.to_thread"
+    )
 
 
 @pytest.mark.asyncio

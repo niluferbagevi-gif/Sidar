@@ -22,7 +22,7 @@ def test_graph_index_links_frontend_calls_to_backend_endpoint_and_dependency_cha
     )
 
     (tmp_path / "frontend.js").write_text(
-        "async function run(){\n" "  await fetch('/api/hello', { method: 'POST' });\n" "}\n",
+        "async function run(){\n  await fetch('/api/hello', { method: 'POST' });\n}\n",
         encoding="utf-8",
     )
 

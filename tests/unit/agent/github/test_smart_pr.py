@@ -74,7 +74,9 @@ def _changed_code(diff: str = "diff --git a/a.py b/a.py") -> FakeCodeManager:
 
 def test_create_smart_pr_requires_available_github_token() -> None:
     result = asyncio.run(
-        create_smart_pr(arg="title", code=_changed_code(), github=FakeGitHubManager(available=False))
+        create_smart_pr(
+            arg="title", code=_changed_code(), github=FakeGitHubManager(available=False)
+        )
     )
 
     assert result == GITHUB_SMART_PR_NO_TOKEN_MESSAGE
@@ -170,7 +172,4 @@ def test_protocol_method_stubs_are_import_coverage_only() -> None:
     assert _CodeManagerLike.run_shell(object(), "git status") is None  # type: ignore[arg-type]
     assert _GitHubManagerLike.default_branch.fget(object()) is None  # type: ignore[union-attr,arg-type]
     assert _GitHubManagerLike.is_available(object()) is None  # type: ignore[arg-type]
-    assert (
-        _GitHubManagerLike.create_pull_request(object(), "title", "body", "head", "base")
-        is None
-    )
+    assert _GitHubManagerLike.create_pull_request(object(), "title", "body", "head", "base") is None

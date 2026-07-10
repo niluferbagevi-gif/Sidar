@@ -188,18 +188,21 @@ def test_load_dotenv_if_exists_records_empty_missing_and_loaded_paths(tmp_path, 
 
     dotenv_file = tmp_path / ".env.loaded"
     dotenv_file.write_text("DOTENV_SAMPLE=loaded\n", encoding="utf-8")
-    assert config_dotenv.load_dotenv_if_exists(
-        ".env.loaded",
-        base_dir=tmp_path,
-        environ=os.environ,
-        load_events=events,
-        missing_file_notices=missing,
-        managed_keys=managed,
-        original_env_values=originals,
-        key_sources=sources,
-        override=True,
-        label="loaded",
-    ) == dotenv_file
+    assert (
+        config_dotenv.load_dotenv_if_exists(
+            ".env.loaded",
+            base_dir=tmp_path,
+            environ=os.environ,
+            load_events=events,
+            missing_file_notices=missing,
+            managed_keys=managed,
+            original_env_values=originals,
+            key_sources=sources,
+            override=True,
+            label="loaded",
+        )
+        == dotenv_file
+    )
 
     assert os.environ["DOTENV_SAMPLE"] == "loaded"
     assert "DOTENV_SAMPLE" in managed
@@ -250,18 +253,21 @@ def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
     assert events[-1]["reason"] == "empty_path"
 
     dotenv_file.write_text("KEPT=dotenv\nNEW=value\nIGNORED_KEY\n", encoding="utf-8")
-    assert config_dotenv.load_dotenv_into_effective_env(
-        effective_env,
-        ".env.reload",
-        base_dir=tmp_path,
-        load_events=events,
-        missing_file_notices=missing,
-        managed_keys=managed,
-        original_env_values=originals,
-        key_sources=sources,
-        override=False,
-        label="reload",
-    ) == dotenv_file
+    assert (
+        config_dotenv.load_dotenv_into_effective_env(
+            effective_env,
+            ".env.reload",
+            base_dir=tmp_path,
+            load_events=events,
+            missing_file_notices=missing,
+            managed_keys=managed,
+            original_env_values=originals,
+            key_sources=sources,
+            override=False,
+            label="reload",
+        )
+        == dotenv_file
+    )
 
     assert effective_env["KEPT"] == "original"
     assert effective_env["NEW"] == "value"

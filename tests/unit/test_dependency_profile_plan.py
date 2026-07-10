@@ -121,7 +121,12 @@ def test_ci_has_blocking_production_profile_dry_run() -> None:
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert "production-profile-dry-run:" in workflow
-    assert "continue-on-error" not in workflow[workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")]
+    assert (
+        "continue-on-error"
+        not in workflow[
+            workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")
+        ]
+    )
     assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
     assert "production-minimal imports ok" in workflow
     assert "production-profile-dry-run" in docs

@@ -180,8 +180,8 @@ class ReviewerAgent(BaseAgent):
             "tautolojik mock kontrolü var mı değerlendir. "
             "Yanıt yalnızca ve yalnızca şu şemada tek JSON nesnesi olmalı; markdown, "
             "thought/tool/argument sarmalı veya ek anahtar kullanma: "
-            "{\"approved\": bool, \"reason\": str (red ise mutlaka somut neden, "
-            "en az 1 cümle), \"weaknesses\": [str]}. "
+            '{"approved": bool, "reason": str (red ise mutlaka somut neden, '
+            'en az 1 cümle), "weaknesses": [str]}. '
             f"{retry_clause}\n\n"
             f"[COVERAGE_FINDING]\n{json.dumps(dict(finding), ensure_ascii=False)}\n\n"
             f"[TEST_CANDIDATE]\n{str(candidate or '')[:6000]}"
@@ -367,7 +367,7 @@ class ReviewerAgent(BaseAgent):
             self.code.write_file, str(dynamic_path), test_content, False
         )
         if not ok:
-            return "[TEST:FAIL-CLOSED] komut=dynamic_pytest\n" f"[STDOUT]\n-\n[STDERR]\n{write_msg}"
+            return f"[TEST:FAIL-CLOSED] komut=dynamic_pytest\n[STDOUT]\n-\n[STDERR]\n{write_msg}"
 
         relative_path = dynamic_path.relative_to(self.config.BASE_DIR).as_posix()
         try:

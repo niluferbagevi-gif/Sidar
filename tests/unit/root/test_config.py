@@ -198,6 +198,7 @@ def test_web_scrape_max_chars_prefers_new_name_without_warning(monkeypatch):
         assert config.get_web_scrape_max_chars() == 9876
     assert not record
 
+
 def test_prefixed_env_helpers_prefer_sidar_namespace(monkeypatch):
     monkeypatch.setenv("LEGACY_INT", "10")
     monkeypatch.setenv("SIDAR_INT", "20")
@@ -453,6 +454,7 @@ def test_prefixed_env_helpers_use_legacy_and_default_fallbacks(monkeypatch):
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
     assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 9) == 9
     assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 2.5
+
 
 def test_get_int_and_float_prefixed_env_warn_on_malformed_value(monkeypatch, caplog):
     monkeypatch.setenv("SIDAR_INT_BAD", "not-a-number")

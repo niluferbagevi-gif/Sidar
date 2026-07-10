@@ -667,12 +667,7 @@ async def test_clean_code_output_handles_multiple_and_nested_like_fences():
 
 
 async def test_complex_code_sanitization():
-    raw = (
-        "Giriş metni\n"
-        "```python\nx = 1\n```\n"
-        "```js\nconsole.log('x')\n```\n"
-        "```python\ny = 2\n```"
-    )
+    raw = "Giriş metni\n```python\nx = 1\n```\n```js\nconsole.log('x')\n```\n```python\ny = 2\n```"
     cleaned = CoverageAgent._clean_code_output(raw)
     assert cleaned == "x = 1\n\ny = 2"
 
@@ -784,7 +779,7 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(
         {
             "coverage_xml": str(invalid_xml),
             "coverage_output": (
-                "Name Stmts Miss Branch BrPart Cover Missing\n" "src/app.py 10 2 0 0 80% 3-4\n"
+                "Name Stmts Miss Branch BrPart Cover Missing\nsrc/app.py 10 2 0 0 80% 3-4\n"
             ),
         }
     )

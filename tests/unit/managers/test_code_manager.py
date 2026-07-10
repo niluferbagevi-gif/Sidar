@@ -2101,9 +2101,11 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "read_text",
-        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("nope"))
-        if self == py_bad
-        else original_read_text(self, *a, **k),
+        lambda self, *a, **k: (
+            (_ for _ in ()).throw(RuntimeError("nope"))
+            if self == py_bad
+            else original_read_text(self, *a, **k)
+        ),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="**/*.py")
     assert ok and "ok.py" in msg
@@ -2114,9 +2116,11 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "relative_to",
-        lambda self, *_a, **_k: (_ for _ in ()).throw(ValueError("forced"))
-        if self == py_ok
-        else original_relative_to(self, *_a, **_k),
+        lambda self, *_a, **_k: (
+            (_ for _ in ()).throw(ValueError("forced"))
+            if self == py_ok
+            else original_relative_to(self, *_a, **_k)
+        ),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.py")
     assert ok and "ok.py" in msg

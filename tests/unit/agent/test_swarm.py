@@ -1375,7 +1375,7 @@ def test_task_timeout_ignores_malformed_model_json_and_invalid_provider_timeout(
     cfg = SimpleNamespace(
         AI_PROVIDER="openai",
         CODING_MODEL="gpt-5.5",
-        SWARM_TASK_TIMEOUT_BY_MODEL='{not-json',
+        SWARM_TASK_TIMEOUT_BY_MODEL="{not-json",
         SWARM_TASK_TIMEOUT_SECONDS_OPENAI="not-a-number",
         SWARM_TASK_TIMEOUT_SECONDS=9,
         REACT_TIMEOUT=3,
@@ -1408,7 +1408,9 @@ def test_distributed_idempotency_cache_refreshes_lru_before_eviction(monkeypatch
 
     __import__("asyncio").run(
         orchestrator.dispatch_distributed(
-            SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}),
+            SwarmTask(
+                goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}
+            ),
             session_id="sess-42",
             sender="supervisor",
         )
@@ -1549,7 +1551,9 @@ def test_attempt_task_rollback_returns_empty_when_no_hook_exists() -> None:
     orch = SwarmOrchestrator(cfg=SimpleNamespace())
 
     result = __import__("asyncio").run(
-        orch._attempt_task_rollback(SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x"))
+        orch._attempt_task_rollback(
+            SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x")
+        )
     )
 
     assert result == ""

@@ -259,7 +259,7 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     web_server = SimpleNamespace(
-        _git_run=lambda cmd, _cwd, _logger: ("feature\nmain" if cmd[1] == "branch" else "feature")
+        _git_run=lambda cmd, _cwd, _logger: "feature\nmain" if cmd[1] == "branch" else "feature"
     )
     monkeypatch.setitem(sys.modules, "web_server", web_server)
     exports = _build_project_exports(tmp_path, SimpleNamespace())

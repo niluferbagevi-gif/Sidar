@@ -1336,9 +1336,9 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
     )
     assert ci["status"] == "success"
     assert ci["remediation"]["self_heal_execution"]["status"] == "failed"
-    assert "boom" in ci["remediation"]["self_heal_execution"].get(
-        "detail", str(ci)
-    ), "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
+    assert "boom" in ci["remediation"]["self_heal_execution"].get("detail", str(ci)), (
+        "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
+    )
 
 
 async def test_try_multi_agent_handles_supervisor_constructor_returning_none(
@@ -1849,8 +1849,8 @@ async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(
     agent = sidar_agent_factory()
 
     code = Mock()
-    code.read_file.side_effect = (
-        lambda path, _safe: (False, "missing") if path == "bad.py" else (True, f"content:{path}")
+    code.read_file.side_effect = lambda path, _safe: (
+        (False, "missing") if path == "bad.py" else (True, f"content:{path}")
     )
     agent.code = code
     snapshots = await agent._collect_self_heal_snapshots(["", "./ok.py", "bad.py"])
@@ -2304,8 +2304,8 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     no_branch = await agent._tool_github_smart_pr("x")
     assert no_branch == sidar_agent.GITHUB_SMART_PR_NO_BRANCH_MESSAGE
 
-    code.run_shell.side_effect = (
-        lambda command: (True, "feat/a")
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/a")
         if "branch" in command
         else ((True, "") if "status" in command else (True, ""))
     )

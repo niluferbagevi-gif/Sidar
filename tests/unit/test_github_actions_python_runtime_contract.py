@@ -93,7 +93,7 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "Required installer ShellCheck gate" in workflow
     assert "make installer-shellcheck" in workflow
     assert (
-        "tests/smoke/test_install_verification.py::" "test_install_sidar_embedded_manifests_in_sync"
+        "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync"
     ) in workflow
     assert "sha256sum -c .sidar_manifest.txt" in workflow
     assert "uv run python scripts/tools/update_core_install_manifest.py --check" in workflow
@@ -104,7 +104,7 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "Treat raw GitHub installer as release artifact" in workflow
     assert "bash -n install_sidar.sh" in workflow
     assert (
-        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 " "bash install_sidar.sh"
+        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 bash install_sidar.sh"
     ) in workflow
     assert "raw installer as a release artifact" in docs
     assert "main/install_sidar.sh" in docs

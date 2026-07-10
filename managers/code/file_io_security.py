@@ -244,8 +244,7 @@ def grep_files(
         if not results:
             return True, f"Eşleşme bulunamadı: `{pattern}` ({path}, filtre: {file_glob})"
         header = (
-            f"Grep sonuçları — `{pattern}`\n"
-            f"  {files_with_matches} dosyada {match_count} eşleşme"
+            f"Grep sonuçları — `{pattern}`\n  {files_with_matches} dosyada {match_count} eşleşme"
         )
         return True, header + "\n\n" + "\n".join(results)
     except Exception as exc:

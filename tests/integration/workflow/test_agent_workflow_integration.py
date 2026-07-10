@@ -232,11 +232,9 @@ async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(
     monkeypatch.setattr(
         orchestrator.router,
         "route_by_role",
-        lambda role: reviewer
-        if role == "reviewer"
-        else researcher
-        if role == "researcher"
-        else None,
+        lambda role: (
+            reviewer if role == "reviewer" else researcher if role == "researcher" else None
+        ),
     )
 
     class _LoopingHandoffAgent:

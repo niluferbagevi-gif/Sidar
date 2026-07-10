@@ -6,7 +6,14 @@ from pathlib import Path
 from scripts.ci.validate_test_summary import main, validate_summary
 
 
-def _summary(*, production_ready: bool, status: str, validation_class: str, release_blocking: bool, exit_code: int) -> dict[str, object]:
+def _summary(
+    *,
+    production_ready: bool,
+    status: str,
+    validation_class: str,
+    release_blocking: bool,
+    exit_code: int,
+) -> dict[str, object]:
     return {
         "production_ready": production_ready,
         "production_readiness": "passed" if production_ready else "not_run",

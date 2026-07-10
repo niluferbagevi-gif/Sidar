@@ -3788,8 +3788,10 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
     monkeypatch.setattr(
         web_server,
         "_run_event_driven_federation_workflow",
-        lambda **kwargs: workflow_calls.append(kwargs)
-        or {"workflow_type": "external_event", "correlation_id": "cid-1"},
+        lambda **kwargs: (
+            workflow_calls.append(kwargs)
+            or {"workflow_type": "external_event", "correlation_id": "cid-1"}
+        ),
     )
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
@@ -10286,8 +10288,9 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
     monkeypatch.setattr(
         web_server,
         "_broadcast_room_payload",
-        lambda room, payload: calls["broadcasts"].append((room.room_id, payload))
-        or asyncio.sleep(0),
+        lambda room, payload: (
+            calls["broadcasts"].append((room.room_id, payload)) or asyncio.sleep(0)
+        ),
     )
 
     ws = _Ws()

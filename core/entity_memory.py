@@ -180,9 +180,7 @@ class EntityMemory:
         async with self._engine.connect() as conn:
             row = await conn.execute(
                 sql_text(
-                    "SELECT value FROM entity_memory"
-                    " WHERE user_id = :uid AND key = :key"
-                    " LIMIT 1"
+                    "SELECT value FROM entity_memory WHERE user_id = :uid AND key = :key LIMIT 1"
                 ),
                 {"uid": user_id, "key": key},
             )

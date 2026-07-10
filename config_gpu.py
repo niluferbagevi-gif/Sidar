@@ -17,7 +17,7 @@ PYTORCH_RECOMMENDED_CUDA_INDEX_URL: str = (
     f"https://download.pytorch.org/whl/{PYTORCH_RECOMMENDED_CUDA_WHEEL_TAG}"
 )
 PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND: str = (
-    "uv pip install torch torchvision " f"--index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
+    f"uv pip install torch torchvision --index-url {PYTORCH_RECOMMENDED_CUDA_INDEX_URL}"
 )
 
 

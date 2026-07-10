@@ -294,7 +294,9 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
                     return
                 try:
                     packet = await asyncio.wait_for(websocket.receive(), timeout=remaining)
-                except TimeoutError:  # pragma: no cover - timing race covered by timeout integration tests
+                except (
+                    TimeoutError
+                ):  # pragma: no cover - timing race covered by timeout integration tests
                     await deps.ws_close_policy_violation(websocket, "Authentication timeout")
                     return
             packet_type = packet.get("type")

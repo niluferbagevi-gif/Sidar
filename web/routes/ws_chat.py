@@ -386,7 +386,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                     return
                 try:
                     data = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
-                except TimeoutError:  # pragma: no cover - timing race covered by timeout integration tests
+                except (
+                    TimeoutError
+                ):  # pragma: no cover - timing race covered by timeout integration tests
                     await deps.ws_close_policy_violation(websocket, "Authentication timeout")
                     return
             try:

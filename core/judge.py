@@ -373,7 +373,7 @@ class LLMJudge:
         model_used = self.model or "default"
 
         # Alaka puanı
-        relevance_prompt = f"Sorgu: {query}\n\n" f"Belge:\n{context_text[:2000]}"
+        relevance_prompt = f"Sorgu: {query}\n\nBelge:\n{context_text[:2000]}"
         relevance = await self._call_llm(_RELEVANCE_SYSTEM, relevance_prompt)
         if relevance is None:
             relevance = 0.5  # bilinmiyor → nötr
@@ -382,7 +382,7 @@ class LLMJudge:
         hallucination = 0.0
         if answer:
             hall_prompt = (
-                f"Soru: {query}\n\n" f"Bağlam:\n{context_text[:1500]}\n\n" f"Yanıt:\n{answer[:500]}"
+                f"Soru: {query}\n\nBağlam:\n{context_text[:1500]}\n\nYanıt:\n{answer[:500]}"
             )
             hall_val = await self._call_llm(_HALLUCINATION_SYSTEM, hall_prompt)
             if hall_val is not None:

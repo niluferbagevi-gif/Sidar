@@ -28,7 +28,7 @@ class CryptoPriceAgent(BaseAgent):
             supported = ", ".join(sorted({"btc", "eth", "sol"}))
             return f"Desteklenmeyen sembol: {symbol}. Desteklenenler: {supported}."
 
-        url = "https://api.coingecko.com/api/v3/simple/price" f"?ids={coin_id}&vs_currencies=usd"
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd"
 
         try:
             async with httpx.AsyncClient(timeout=8) as client:

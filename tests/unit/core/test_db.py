@@ -665,7 +665,9 @@ async def test_close_sqlite_connection_without_executor_uses_thread_fallback(tmp
             self.closed = True
 
     db = Database(
-        DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'close.db'}", BASE_DIR=str(tmp_path))
+        DummyCfg(
+            DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'close.db'}", BASE_DIR=str(tmp_path)
+        )
     )
     conn = _CloseOnlyConn()
     db._sqlite_conn = conn  # type: ignore[assignment]
@@ -2825,6 +2827,7 @@ def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) 
 
     assert "DATABASE_URL yok/kayboldu" in message
     assert "dotenv reload zincirini" in message
+
 
 def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(monkeypatch) -> None:
     import core.doctor as doctor

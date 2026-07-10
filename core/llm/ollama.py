@@ -242,8 +242,7 @@ class OllamaClient(BaseLLMClient):
                     )
                     if wait_warn_ms > 0 and gpu_limiter_wait_ms >= wait_warn_ms:
                         logger.warning(
-                            "Ollama GPU request pool backpressure waited %.1f ms "
-                            "(pool_size=%s).",
+                            "Ollama GPU request pool backpressure waited %.1f ms (pool_size=%s).",
                             gpu_limiter_wait_ms,
                             _ollama_gpu_pool_size(self.config),
                         )

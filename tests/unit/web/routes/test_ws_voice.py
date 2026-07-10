@@ -108,7 +108,9 @@ class _VoicePipeline:
 
     def begin_assistant_turn(self, duplex_state) -> int:
         if isinstance(duplex_state, dict):
-            duplex_state["assistant_turn_id"] = int(duplex_state.get("assistant_turn_id", 0) or 0) + 1
+            duplex_state["assistant_turn_id"] = (
+                int(duplex_state.get("assistant_turn_id", 0) or 0) + 1
+            )
             return int(duplex_state["assistant_turn_id"])
         return 1
 
@@ -527,8 +529,7 @@ async def test_websocket_voice_start_resets_session_and_buffers_base64(monkeypat
             {"text": '{"action":"auth","token":"voice-token"}'},
             {
                 "text": (
-                    '{"action":"start","mime_type":"audio/wav",'
-                    '"language":"tr","prompt":"kisa"}'
+                    '{"action":"start","mime_type":"audio/wav","language":"tr","prompt":"kisa"}'
                 )
             },
             {"text": f'{{"action":"append_base64","chunk":"{chunk}"}}'},
@@ -626,8 +627,7 @@ async def test_websocket_voice_cancel_action_cancels_active_response(monkeypatch
     )
 
     assert any(
-        payload.get("voice_interruption") == "user_cancelled"
-        and payload.get("cancelled") is True
+        payload.get("voice_interruption") == "user_cancelled" and payload.get("cancelled") is True
         for payload in ws.sent
     )
     assert {"cancelled": True, "done": True} in ws.sent
@@ -971,7 +971,9 @@ async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(monkeypatch) -> None:
+async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(
+    monkeypatch,
+) -> None:
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [

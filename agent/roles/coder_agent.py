@@ -196,7 +196,7 @@ class CoderAgent(BaseAgent):
         messages: list[dict[str, str]] = [
             {
                 "role": "user",
-                "content": (f"{self._format_tool_contract()}\n\n" f"Görev: {prompt}"),
+                "content": (f"{self._format_tool_contract()}\n\nGörev: {prompt}"),
             }
         ]
         last_final = ""

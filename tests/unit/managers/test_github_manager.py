@@ -459,7 +459,9 @@ def test_list_issues_filters_pull_requests_and_normalizes_state_and_limit(manage
 
 
 def test_issue_create_comment_and_close_exception_messages(manager):
-    manager._repo.create_issue = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("create down"))
+    manager._repo.create_issue = lambda **_kwargs: (_ for _ in ()).throw(
+        RuntimeError("create down")
+    )
     ok, msg = manager.create_issue("bug", "body")
     assert ok is False and msg == "✗ Issue oluşturulamadı: create down"
 

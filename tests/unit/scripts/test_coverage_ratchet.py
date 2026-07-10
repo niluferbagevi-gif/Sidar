@@ -193,7 +193,7 @@ def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text(
-        "[tool.coverage.report]\nfail_under = 5\n" '[tool.coverage.html]\ndirectory = "htmlcov"\n',
+        '[tool.coverage.report]\nfail_under = 5\n[tool.coverage.html]\ndirectory = "htmlcov"\n',
         encoding="utf-8",
     )
     _write_coverage_json(coverage_json, 6.2)

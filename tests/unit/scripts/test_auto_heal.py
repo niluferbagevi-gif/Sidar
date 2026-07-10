@@ -208,12 +208,12 @@ def test_parse_approval_value_returns_none_for_unknown_and_prompt() -> None:
 
 
 def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
-    assert _select_auto_heal_model("qwen2.5-coder:" "3b", "mypy", None) == "qwen2.5-coder:7b"
+    assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", None) == "qwen2.5-coder:7b"
 
 
 def test_select_auto_heal_model_honors_requested_model() -> None:
     assert (
-        _select_auto_heal_model("qwen2.5-coder:" "3b", "mypy", "qwen2.5-coder:14b")
+        _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b")
         == "qwen2.5-coder:14b"
     )
 
@@ -634,7 +634,7 @@ def test_run_returns_partial_when_later_retry_applies(
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
     class _Cfg:
-        CODING_MODEL = "qwen2.5-coder:" "3b"
+        CODING_MODEL = "qwen2.5-coder:3b"
         ENABLE_AUTONOMOUS_SELF_HEAL = False
 
     class _Agent:

@@ -47,9 +47,9 @@ def test_revision_chain_is_linear_and_unique(script_directory: ScriptDirectory) 
 
     seen_ids: set[str] = set()
     for revision in revisions:
-        assert (
-            revision.revision not in seen_ids
-        ), f"duplicate revision id detected: {revision.revision}"
+        assert revision.revision not in seen_ids, (
+            f"duplicate revision id detected: {revision.revision}"
+        )
         seen_ids.add(revision.revision)
 
     heads = script_directory.get_heads()
@@ -84,12 +84,12 @@ def test_each_revision_defines_upgrade_and_downgrade_callables(
 ) -> None:
     for revision in script_directory.walk_revisions():
         module = revision.module
-        assert hasattr(module, "upgrade") and callable(
-            module.upgrade
-        ), f"revision {revision.revision} is missing a callable upgrade()"
-        assert hasattr(module, "downgrade") and callable(
-            module.downgrade
-        ), f"revision {revision.revision} is missing a callable downgrade()"
+        assert hasattr(module, "upgrade") and callable(module.upgrade), (
+            f"revision {revision.revision} is missing a callable upgrade()"
+        )
+        assert hasattr(module, "downgrade") and callable(module.downgrade), (
+            f"revision {revision.revision} is missing a callable downgrade()"
+        )
 
 
 def test_alembic_default_url_is_documented_as_local_only() -> None:

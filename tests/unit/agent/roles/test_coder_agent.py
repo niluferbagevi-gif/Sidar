@@ -413,7 +413,7 @@ def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(cod
         "tool_calls": [{"name": "read_file", "arg": "a.py"}],
         "final": "",
     }
-    assert CoderAgent._parse_llm_tool_plan('{not-json') == {"final": "{not-json"}
+    assert CoderAgent._parse_llm_tool_plan("{not-json") == {"final": "{not-json"}
     assert CoderAgent._parse_llm_tool_plan('"done"') == {"final": "done"}
     assert CoderAgent._parse_llm_tool_plan("   ") == {"final": ""}
 
@@ -483,10 +483,7 @@ async def test_llm_tool_loop_returns_raw_response_when_tool_calls_are_not_valid_
 
     agent.call_llm = fake_call_llm
 
-    assert (
-        await agent._run_llm_tool_loop("read")
-        == '{"tool_calls":["skip-me"],"final":""}'
-    )
+    assert await agent._run_llm_tool_loop("read") == '{"tool_calls":["skip-me"],"final":""}'
 
 
 @pytest.mark.asyncio
@@ -505,7 +502,10 @@ async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(cod
     agent.call_tool = fake_call_tool
     agent.call_llm = fake_call_llm
 
-    assert await agent._run_llm_tool_loop("loop") == "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+    assert (
+        await agent._run_llm_tool_loop("loop")
+        == "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+    )
     assert calls == [("read_file", "loop.py")] * 3
 
 

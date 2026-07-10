@@ -1499,10 +1499,7 @@ def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
 
     child_log = tmp_path / "logs" / "child.log"
     assert child_log.read_text(encoding="utf-8") == (
-        "$ python cli.py\n\n"
-        "[stdout] hello stdout\n"
-        "[stderr] warn stderr\n"
-        "\n[exit_code]\n0\n"
+        "$ python cli.py\n\n[stdout] hello stdout\n[stderr] warn stderr\n\n[exit_code]\n0\n"
     )
     out = capsys.readouterr().out
     assert "[stdout]" in out

@@ -132,10 +132,7 @@ def main() -> int:
                 continue
             med = statistics.median(historical_values)
             if metric_name == "oom_failures" and current > 0:
-                print(
-                    f"[ALARM] {metric_name} GPU OOM regresyonu algıladı: "
-                    f"current={current:.3f}."
-                )
+                print(f"[ALARM] {metric_name} GPU OOM regresyonu algıladı: current={current:.3f}.")
                 failed = True
                 continue
             if med <= 0:

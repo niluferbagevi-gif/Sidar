@@ -128,25 +128,27 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
     missing_fields = [
         field for field in required_fields if not str(getattr(cfg, field, "") or "").strip()
     ]
-    assert (
-        not missing_fields
-    ), f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
+    assert not missing_fields, (
+        f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
+    )
 
     if provider == "ollama":
-        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith(
-            "http"
-        ), "OLLAMA_URL http/https ile başlamalı."
+        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith("http"), (
+            "OLLAMA_URL http/https ile başlamalı."
+        )
     if provider == "litellm":
-        assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith(
-            "http"
-        ), "LITELLM_GATEWAY_URL http/https ile başlamalı."
+        assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith("http"), (
+            "LITELLM_GATEWAY_URL http/https ile başlamalı."
+        )
 
 
 def test_boot_smoke_scope_has_required_deeper_quality_gates() -> None:
     """Smoke boot success must not be treated as integration/e2e production readiness."""
 
     required_deeper_tests = {
-        "agent orchestration": Path("tests/integration/workflow/test_agent_workflow_integration.py"),
+        "agent orchestration": Path(
+            "tests/integration/workflow/test_agent_workflow_integration.py"
+        ),
         "websocket session": Path("tests/e2e/web/test_chat_websocket_real_e2e.py"),
         "plugin sandbox": Path("tests/integration/web/test_plugin_sandbox_integration.py"),
         "workflow manager": Path("tests/e2e/test_github_workflow.py"),
@@ -267,8 +269,7 @@ async def test_boot_postgresql_connection_select_1() -> None:
     diagnostics = _database_url_dotenv_diagnostics(database_url)
     if not database_url.startswith(("postgresql://", "postgres://")):
         pytest.skip(
-            "PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. "
-            f"{diagnostics}"
+            f"PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. {diagnostics}"
         )
 
     try:

@@ -315,6 +315,8 @@ async def test_operations_plan_service_includes_owner_and_reports_tool_failure()
     assert tool_payload["tenant_id"] == "tenant-route"
     assert tool_payload["owner_user_id"] == "u42"
     assert events[-1]["payload"] == {"success": False}
+
+
 @pytest.mark.asyncio
 async def test_poyraz_rest_bridge_runs_allowed_tool_with_tenant_and_owner_payload() -> None:
     events: list[dict] = []
@@ -436,6 +438,8 @@ async def test_operations_create_campaign_masks_unexpected_database_errors(caplo
     _assert_database_unavailable_response(response)
     assert "Unexpected operations route failure during database_operation" in caplog.text
     assert "campaign metadata was not serializable" in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_operations_create_campaign_serializes_initial_assets_and_checklists() -> None:
     class _CreateDb:
@@ -448,13 +452,17 @@ async def test_operations_create_campaign_serializes_initial_assets_and_checklis
         async def add_content_asset(self, **kwargs):
             assert kwargs["campaign_id"] == 12
             assert kwargs["metadata"] == {"variant": "a"}
-            return SimpleNamespace(id=21, campaign_id=12, title=kwargs["title"], content=kwargs["content"])
+            return SimpleNamespace(
+                id=21, campaign_id=12, title=kwargs["title"], content=kwargs["content"]
+            )
 
         async def add_operation_checklist(self, **kwargs):
             assert kwargs["campaign_id"] == 12
             assert kwargs["items"] == ["book venue"]
             assert kwargs["owner_user_id"] == "u-create"
-            return SimpleNamespace(id=31, campaign_id=12, title=kwargs["title"], items_json='["book venue"]')
+            return SimpleNamespace(
+                id=31, campaign_id=12, title=kwargs["title"], items_json='["book venue"]'
+            )
 
     async def _resolve_agent_instance_with_create_db():
         return SimpleNamespace(memory=SimpleNamespace(db=_CreateDb()))
@@ -546,7 +554,6 @@ async def test_poyraz_rest_bridge_preserves_existing_owner_user_id() -> None:
     assert tool_payload["owner_user_id"] == "payload-owner"
 
 
-
 class _ExceptionDb:
     def __init__(self, exc: Exception) -> None:
         self.exc = exc
@@ -606,7 +613,12 @@ def _configure_operations_db_exception(exc: Exception) -> None:
         ("api_operations_list_assets", (7,), {"limit": 2}),
         (
             "api_operations_add_asset",
-            (7, operations.ContentAssetCreateRequest(asset_type="copy", title="Subject", content="Hi")),
+            (
+                7,
+                operations.ContentAssetCreateRequest(
+                    asset_type="copy", title="Subject", content="Hi"
+                ),
+            ),
             {},
         ),
         ("api_operations_list_checklists", (7,), {"limit": 2}),
@@ -625,7 +637,9 @@ async def test_operations_db_routes_mask_expected_and_unexpected_exceptions(
 ) -> None:
     _configure_operations_db_exception(exc)
 
-    response = await getattr(operations, route_name)(*args, **kwargs, _user=SimpleNamespace(id="u1"))
+    response = await getattr(operations, route_name)(
+        *args, **kwargs, _user=SimpleNamespace(id="u1")
+    )
 
     _assert_database_unavailable_response(response)
 

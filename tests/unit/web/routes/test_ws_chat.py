@@ -140,7 +140,9 @@ async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> 
 
 
 @pytest.mark.asyncio
-async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> None:
+async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> (
+    None
+):
     class _BufferedVoicePipeline:
         enabled = True
 
@@ -199,7 +201,9 @@ async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_aft
 
 
 @pytest.mark.asyncio
-async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> None:
+async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> (
+    None
+):
     class _VoicePipeline:
         enabled = True
 
@@ -495,7 +499,9 @@ class _Deps:
     async def leave_collaboration_room(self, _websocket) -> None:
         self.left = True
 
-    async def join_collaboration_room(self, websocket, *, room_id, user_id, username, display_name, user_role):
+    async def join_collaboration_room(
+        self, websocket, *, room_id, user_id, username, display_name, user_role
+    ):
         room = self.collaboration_rooms.setdefault(room_id, _Room(room_id))
         participant = SimpleNamespace(can_write=True, websocket=websocket, user_id=user_id)
         room.participants[self.socket_key(websocket)] = participant
@@ -785,8 +791,7 @@ async def test_websocket_chat_room_empty_sidar_command_broadcasts_error() -> Non
     await ws_chat.websocket_chat(ws, deps)
 
     assert any(
-        item.get("type") == "room_error"
-        and "komut bulunamadı" in str(item.get("error"))
+        item.get("type") == "room_error" and "komut bulunamadı" in str(item.get("error"))
         for item in deps.broadcasts
     )
     assert not any(item.get("type") == "assistant_stream_start" for item in deps.broadcasts)
@@ -842,7 +847,10 @@ async def test_websocket_chat_room_cancel_broadcasts_cancelled_done() -> None:
 
     await ws_chat.websocket_chat(ws, deps)
 
-    assert any(item.get("type") == "assistant_done" and item.get("cancelled") is True for item in deps.broadcasts)
+    assert any(
+        item.get("type") == "assistant_done" and item.get("cancelled") is True
+        for item in deps.broadcasts
+    )
 
 
 @pytest.mark.asyncio
@@ -873,8 +881,7 @@ async def test_websocket_chat_room_rbac_denied_records_telemetry_and_error() -> 
     room = deps.collaboration_rooms["team:ops"]
     assert any(item.get("kind") == "rbac_denied" for item in room.telemetry)
     assert any(
-        item.get("type") == "room_error"
-        and "yazma yetkisine sahip değil" in str(item.get("error"))
+        item.get("type") == "room_error" and "yazma yetkisine sahip değil" in str(item.get("error"))
         for item in deps.broadcasts
     )
 
@@ -892,7 +899,9 @@ async def test_websocket_chat_disconnect_cleans_lifecycle_and_room() -> None:
     await ws_chat.websocket_chat(ws, deps)
 
     assert deps.left is True
-    assert any(level == "info" and "bağlantısını kesti" in msg for level, msg in deps.logger.messages)
+    assert any(
+        level == "info" and "bağlantısını kesti" in msg for level, msg in deps.logger.messages
+    )
 
 
 @pytest.mark.asyncio

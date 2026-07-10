@@ -46,7 +46,7 @@ def test_profile_key_separates_workload_shaping_ollama_options() -> None:
     profile = trend._profile_key(_benchmarks(), "driver-550")
 
     assert profile == (
-        "Q4_K_M|qwen2|qwen2.5-coder:7b|batch=512|ctx=2048|predict=128|" "keep_alive=30m|driver-550"
+        "Q4_K_M|qwen2|qwen2.5-coder:7b|batch=512|ctx=2048|predict=128|keep_alive=30m|driver-550"
     )
 
 
@@ -92,7 +92,9 @@ def test_main_records_new_profile_without_comparing_incompatible_history(
 
 
 def test_current_metrics_requires_oom_regression_benchmark() -> None:
-    benchmarks = [item for item in _benchmarks() if item["name"] != "test_gpu_oom_regression_under_load"]
+    benchmarks = [
+        item for item in _benchmarks() if item["name"] != "test_gpu_oom_regression_under_load"
+    ]
 
     try:
         trend._current_metrics(benchmarks)
