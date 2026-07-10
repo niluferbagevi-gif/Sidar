@@ -13,7 +13,7 @@ import os
 import re
 import subprocess  # nosec B404
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from config import Config
@@ -46,6 +46,45 @@ GENERATED_ARTIFACT_PATHS = {
 }
 
 
+_SUBPROCESS_ENV_ALLOWLIST = {
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "SSH_AUTH_SOCK",
+    "TERM",
+    "TMPDIR",
+    "USER",
+}
+_SUBPROCESS_ENV_PREFIXES = ("GIT_", "SSH_")
+_SUBPROCESS_ENV_VALUE_MAX_BYTES = 64 * 1024
+
+
+def _build_subprocess_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Git alt süreçleri için büyük ortam değişkenlerini dışarıda bırakan env üretir.
+
+    Python `execve` çağrısında argümanlar ve ortam değişkenleri aynı sistem limitini
+    paylaşır. `.env` veya shell oturumundan gelen çok büyük değişkenler basit
+    `git --version` çağrısını bile `OSError: [Errno 7] Argument list too long` ile
+    düşürebilir. Bu nedenle alt süreçlere yalnızca Git/Bash için gerekli küçük ve
+    güvenli ortam değerleri aktarılır.
+    """
+    env_source = os.environ if source is None else source
+    clean_env: dict[str, str] = {}
+
+    for key, value in env_source.items():
+        if key in _SUBPROCESS_ENV_ALLOWLIST or key.startswith(_SUBPROCESS_ENV_PREFIXES):
+            value_text = str(value)
+            if len(value_text.encode("utf-8", errors="ignore")) <= _SUBPROCESS_ENV_VALUE_MAX_BYTES:
+                clean_env[key] = value_text
+
+    clean_env.setdefault("PATH", os.defpath)
+    return clean_env
+
+
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
 # ═══════════════════════════════════════════════════════════════
@@ -71,6 +110,7 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
             check=True,
             capture_output=True,
             text=True,
+            env=_build_subprocess_env(),
         )
         if show_output and result.stdout.strip():
             print(result.stdout.strip())
@@ -81,6 +121,11 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
             err_msg += "\n" + e.stdout.strip()
 
         if show_output and err_msg:
+            print(f"{Colors.WARNING}Git ciktisi: {err_msg}{Colors.ENDC}")
+        return False, err_msg
+    except OSError as e:
+        err_msg = f"Komut başlatılamadı: {e}"
+        if show_output:
             print(f"{Colors.WARNING}Git ciktisi: {err_msg}{Colors.ENDC}")
         return False, err_msg
 

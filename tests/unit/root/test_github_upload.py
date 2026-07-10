@@ -538,6 +538,25 @@ def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
     gu.main()
 
 
+def test_run_command_uses_sanitized_env_and_reports_oserror(monkeypatch):
+    captured = {}
+
+    def fake_run(*_args, **kwargs):
+        captured.update(kwargs)
+        raise OSError(7, "Argument list too long", "git")
+
+    monkeypatch.setenv("SIDAR_HUGE_VALUE", "x" * (70 * 1024))
+    monkeypatch.setattr(gu.subprocess, "run", fake_run)
+
+    ok, err = gu.run_command(["git", "--version"], show_output=False)
+
+    assert ok is False
+    assert "Argument list too long" in err
+    assert "env" in captured
+    assert "SIDAR_HUGE_VALUE" not in captured["env"]
+    assert captured["env"]["PATH"]
+
+
 def test_run_command_silent_branches(monkeypatch):
     class Result:
         stdout = "   "
