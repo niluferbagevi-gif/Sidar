@@ -2,6 +2,15 @@
 
 Sidar'da iki farklı test akışı vardır:
 
+## Log nasıl okunur?
+
+Kurulum veya `run_tests.sh` çıktısındaki sarı `RELEASE KAPSAMI EKSİK` /
+`summary-code=10` uyarısı tek başına test hatası değildir; genellikle local
+`dev-full` veya development `--stage all` koşusunun geçtiğini, fakat
+`SIDAR_PRODUCTION_READINESS=1` ile production-readiness gate'in çalıştırılmadığını
+gösterir. Bu durumda geliştirici ortamı sağlıklı olabilir, ancak release/merge için
+aşağıdaki kanonik kapı ayrıca geçmelidir: `make production-readiness`.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest
