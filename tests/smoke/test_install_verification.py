@@ -15,6 +15,65 @@ import pytest
 pytestmark = pytest.mark.installer_smoke
 
 
+_SENSITIVE_ENV_KEYS = {
+    "SIDAR_KEYS_FILE",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "LITELLM_API_KEY",
+    "GITHUB_TOKEN",
+    "SLACK_TOKEN",
+    "SLACK_APP_LEVEL_TOKEN",
+    "JIRA_TOKEN",
+}
+
+
+def _installer_test_env(tmp_path: Path | None = None) -> dict[str, str]:
+    """Return a minimal, secret-scrubbed environment for installer subprocesses."""
+    allowed = {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "WSL_DISTRO_NAME",
+    }
+    env = {key: value for key, value in os.environ.items() if key in allowed}
+    for key in _SENSITIVE_ENV_KEYS:
+        env.pop(key, None)
+
+    env.update(
+        {
+            "SIDAR_ENV": "test",
+            "SIDAR_KEYS_FILE": "",
+            "SIDAR_TEST_LOAD_REAL_KEYS": "0",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        }
+    )
+    if tmp_path is not None:
+        env["TMPDIR"] = str(tmp_path)
+
+    return env
+
+
+def test_installer_test_env_scrubs_sensitive_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    for key in _SENSITIVE_ENV_KEYS:
+        monkeypatch.setenv(key, f"secret-{key.lower()}")
+    monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
+
+    env = _installer_test_env(tmp_path)
+
+    assert env["SIDAR_ENV"] == "test"
+    assert env["SIDAR_KEYS_FILE"] == ""
+    assert env["SIDAR_TEST_LOAD_REAL_KEYS"] == "0"
+    assert env["SIDAR_INSTALL_TEST_MODE"] == "1"
+    assert env["TMPDIR"] == str(tmp_path)
+    assert all(env.get(key, "") == "" for key in _SENSITIVE_ENV_KEYS)
+
+
 def _sha256_for_test(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -54,21 +113,18 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
         set -euo pipefail
         source scripts/install_modules/phases/02_repo.sh
 
-        step(){ :; }
-        info(){ :; }
         warn(){ :; }
         ok(){ :; }
-        install_system_dependencies(){ :; }
-        sync_repo(){ :; }
 
         export SCRIPT_DIR="$1"
-        sidar_phase_bootstrap_repo_system
+        sidar_phase_apply_coverage_dark_mode_assets
         """
     )
 
     subprocess.run(
-        ["bash", "-lc", repo_phase_script, "sidar-smoke", str(script_dir)],
+        ["bash", "--noprofile", "--norc", "-c", repo_phase_script, "sidar-smoke", str(script_dir)],
         cwd=repo_root,
+        env=_installer_test_env(tmp_path),
         check=True,
     )
 
@@ -165,6 +221,7 @@ def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: 
             str(temporary_installer),
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
@@ -223,6 +280,7 @@ EOF
     result = subprocess.run(
         ["bash", "-c", script, "sidar-db-url-source", str(tmp_path)],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(tmp_path),
         capture_output=True,
         text=True,
     )
@@ -286,6 +344,7 @@ def test_run_migrations_logs_resolved_database_url_source_not_unknown(tmp_path: 
     result = subprocess.run(
         ["bash", "-c", script, "sidar-alembic-source", str(tmp_path), str(fake_bin)],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(tmp_path),
         capture_output=True,
         text=True,
     )
@@ -304,6 +363,7 @@ def test_install_sidar_embedded_manifests_in_sync() -> None:
         result = subprocess.run(
             [sys.executable, f"scripts/tools/{tool}", *extra, "--check"],
             cwd=repo_root,
+            env=_installer_test_env(),
             capture_output=True,
             text=True,
         )
@@ -358,12 +418,12 @@ def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
         shutil.copy2(src, dst)
 
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
-    subprocess.run([*git, "config", "user.email", "smoke@example.com"], check=True)
-    subprocess.run([*git, "config", "user.name", "smoke"], check=True)
-    subprocess.run([*git, "config", "commit.gpgsign", "false"], check=True)
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "synthetic bootstrap origin"], check=True)
+    subprocess.run([*git, "init", "-q", "-b", "main"], env=_installer_test_env(origin), check=True)
+    subprocess.run([*git, "config", "user.email", "smoke@example.com"], env=_installer_test_env(origin), check=True)
+    subprocess.run([*git, "config", "user.name", "smoke"], env=_installer_test_env(origin), check=True)
+    subprocess.run([*git, "config", "commit.gpgsign", "false"], env=_installer_test_env(origin), check=True)
+    subprocess.run([*git, "add", "-A"], env=_installer_test_env(origin), check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "synthetic bootstrap origin"], env=_installer_test_env(origin), check=True)
     return "main"
 
 
@@ -380,6 +440,7 @@ def _wait_for_http_server(url: str, timeout_seconds: float = 5.0) -> None:
             ["wget", "-q", "--spider", url],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=_installer_test_env(),
             check=False,
         )
         if result.returncode == 0:
@@ -406,8 +467,7 @@ def test_install_sidar_direct_module_download_smoke(tmp_path: Path) -> None:
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -472,18 +532,18 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         text=True,
+        env=_installer_test_env(tmp_path),
     )
     try:
         _wait_for_http_server(raw_url)
 
         host = tmp_path / "host"
         host.mkdir()
-        subprocess.run(["wget", "-q", raw_url], cwd=host, check=True)
+        subprocess.run(["wget", "-q", raw_url], cwd=host, env=_installer_test_env(tmp_path), check=True)
         standalone = host / "install_sidar.sh"
         standalone.chmod(0o755)
 
-        env = {
-            **os.environ,
+        env = _installer_test_env(tmp_path) | {
             "HOME": str(host),
             "PWD": str(host),
             "SIDAR_INSTALL_TEST_MODE": "1",
@@ -551,8 +611,8 @@ def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -
         tampered.read_text(encoding="utf-8") + "# smoke-test drift\n", encoding="utf-8"
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper drift"], check=True)
+    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper drift"], env=_installer_test_env(tmp_path), check=True)
 
     host = tmp_path / "host"
     host.mkdir()
@@ -560,8 +620,7 @@ def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -632,8 +691,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(run_dir),
         "TMPDIR": str(tmp_path),
@@ -708,8 +766,8 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper installer drift"], check=True)
+    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper installer drift"], env=_installer_test_env(tmp_path), check=True)
 
     host = tmp_path / "host"
     host.mkdir()
@@ -717,8 +775,7 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -773,8 +830,8 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper core drift"], check=True)
+    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "tamper core drift"], env=_installer_test_env(tmp_path), check=True)
 
     host = tmp_path / "host"
     host.mkdir()
@@ -782,8 +839,7 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "SIDAR_INSTALL_TEST_MODE": "1",
@@ -859,7 +915,7 @@ def _decode_timeout_stream(value: bytes | str | None) -> str:
 def _run_bash_smoke(
     script: str, tmp_path: Path, timeout_seconds: int | None = None
 ) -> subprocess.CompletedProcess[str]:
-    smoke_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    smoke_env = _installer_test_env(tmp_path)
     smoke_env.pop("INSTALL_SIDAR_VERSION", None)
     guarded_script = f"""
     unset INSTALL_SIDAR_VERSION
@@ -894,6 +950,7 @@ def _run_bash_smoke(
         try:
             diag = subprocess.run(
                 ["bash", "-c", "echo BASH_OK=$$; type python3 || true; command -v sed"],
+                env=_installer_test_env(tmp_path),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -937,7 +994,7 @@ def _fake_python3_fails_snippet() -> str:
 
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60"))
-    diagnosis_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    diagnosis_env = _installer_test_env(tmp_path)
     diagnosis_env.pop("INSTALL_SIDAR_VERSION", None)
     diagnostic_script = f"""
     unset INSTALL_SIDAR_VERSION
@@ -1320,6 +1377,7 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
             """,
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
@@ -1353,6 +1411,7 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
             """,
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
@@ -1397,6 +1456,7 @@ def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
             """,
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
@@ -1539,7 +1599,7 @@ def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path
             str(script_dir),
         ],
         cwd=Path(os.getcwd()),
-        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        env=_installer_test_env(tmp_path) | {"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
@@ -1598,7 +1658,7 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
             str(script_dir),
         ],
         cwd=Path(os.getcwd()),
-        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        env=_installer_test_env(tmp_path) | {"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
@@ -1949,7 +2009,9 @@ def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
 def test_bundled_install_sidar_manifest_matches() -> None:
     repo_root = Path(os.getcwd())
     bundle_script = repo_root / "scripts" / "tools" / "bundle_install_sidar.sh"
-    subprocess.run(["bash", str(bundle_script)], cwd=repo_root, check=True)
+    subprocess.run(
+        ["bash", str(bundle_script)], cwd=repo_root, env=_installer_test_env(), check=True
+    )
 
     bundled_installer = repo_root / "dist" / "install_sidar.sh"
     module_hashes = repo_root / "dist" / "MODULE_HASHES.txt"
