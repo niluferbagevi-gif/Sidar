@@ -1327,7 +1327,7 @@ def test_install_alembic_logs_revision_and_db_source_observability() -> None:
     assert "resolve_runtime_database_url" in alembic_phase
     assert "RUNTIME_DATABASE_URL_SOURCE" in alembic_phase
     assert 'DB_URL_SOURCE="$RUNTIME_DATABASE_URL_SOURCE"' in alembic_phase
-    assert 'if resolve_runtime_database_url >/dev/null; then' in alembic_phase
+    assert "if resolve_runtime_database_url >/dev/null; then" in alembic_phase
     assert "post_current_output=" in alembic_phase
     assert "post_heads_output=" in alembic_phase
     assert 'log_alembic_revision_observation "$current_rev" "$head_rev"' in alembic_phase
@@ -1672,7 +1672,7 @@ def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
 
     assert 'DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-ask}"' in install_script
     assert (
-        "--dependency-profile=dev-light|dev-full|production-minimal|production|custom"
+        "--dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
         in install_script
     )
     assert 'sidar_source_install_utils "gpu_utils.sh" "python_env.sh"' in runtime_phase
@@ -1682,9 +1682,11 @@ def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
     assert "select_dependency_profile()" in python_env
     assert "1) dev-light" in python_env
     assert "2) developer-full" in python_env
-    assert "3) production-minimal" in python_env
-    assert "4) production" in python_env
-    assert "5) özel provider seçimi" in python_env
+    assert "3) dev-gpu" in python_env
+    assert "4) production-minimal" in python_env
+    assert "5) production" in python_env
+    assert "6) gpu-runtime" in python_env
+    assert "7) özel provider seçimi" in python_env
     assert "RUN_CI_FULL_VALIDATION" in python_env
     assert 'requested="dev-full"' in python_env
     assert 'requested="dev-light"' in python_env
@@ -3529,7 +3531,15 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     assert "cu124" in selector_body
     assert "PYTORCH_CUDA_INDEX_URL" in script
     assert 'sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"' in verify_body
-    assert "--reinstall-package torch" in script
+    sync_body = script[
+        script.index("sync_pytorch_cuda_wheels()") : script.index("verify_torch_cuda()")
+    ]
+    assert "--reinstall-package torch" in sync_body
+    assert "--reinstall-package torchvision" in sync_body
+    assert "--reinstall-package torchaudio" not in sync_body
+    assert "--extra dev-gpu" in sync_body
+    assert "--extra gpu-runtime --no-dev" in sync_body
+    assert "sync_args+=(--all-extras)" in sync_body
     assert "uv pip" not in script
     assert "uv tool install" not in script
     assert "python -m venv" not in script
@@ -3933,7 +3943,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "GITHUB_STEP_SUMMARY" in ci
     assert "benchmark compare is fail-closed" in ci
     assert '--benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"' in ci
-    assert 'BENCHMARK_COMPARE_FAIL: mean:10%' in ci
+    assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
     assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes

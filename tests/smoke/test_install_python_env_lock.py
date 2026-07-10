@@ -121,6 +121,11 @@ EOS
         ("", "sync --frozen --extra dev-light"),
         ('export DEPENDENCY_PROFILE="dev-light"', "sync --frozen --extra dev-light"),
         ('export DEPENDENCY_PROFILE="dev-full"', "sync --frozen --all-extras"),
+        ('export DEPENDENCY_PROFILE="dev-gpu"', "sync --frozen --extra dev-gpu"),
+        (
+            'export DEPENDENCY_PROFILE="gpu-runtime"',
+            "sync --frozen --extra gpu-runtime --no-dev",
+        ),
         (
             'export DEPENDENCY_PROFILE="production"',
             "sync --frozen --extra production --no-dev",
@@ -134,7 +139,16 @@ EOS
             "sync --frozen --extra dev --extra openai --extra postgres",
         ),
     ],
-    ids=["default", "dev-light", "dev-full", "production", "production-minimal", "custom"],
+    ids=[
+        "default",
+        "dev-light",
+        "dev-full",
+        "dev-gpu",
+        "gpu-runtime",
+        "production",
+        "production-minimal",
+        "custom",
+    ],
 )
 def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
     tmp_path, profile_exports, expected_sync_call
@@ -161,6 +175,8 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
             case "$*" in
               "sync --frozen --extra dev-light") exit 0 ;;
               "sync --frozen --all-extras") exit 0 ;;
+              "sync --frozen --extra dev-gpu") exit 0 ;;
+              "sync --frozen --extra gpu-runtime --no-dev") exit 0 ;;
               "sync --frozen --extra production --no-dev") exit 0 ;;
               "sync --frozen --extra production-minimal --no-dev") exit 0 ;;
               "sync --frozen --extra dev --extra openai --extra postgres") exit 0 ;;
@@ -217,9 +233,127 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
             profile_exports,
         ],
         cwd=os.getcwd(),
-        env=_clean_subprocess_env(
-            UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")),
+        check=True,
+    )
+
+
+def test_runtime_import_failure_guidance_uses_selected_profile_command(tmp_path):
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir(parents=True)
+    (script_dir / "uv.lock").touch()
+
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir(parents=True)
+    (fake_bin / "dpkg-query").write_text(
+        '#!/usr/bin/env bash\nprintf "Status: install ok installed\n"\n',
+        encoding="utf-8",
+    )
+    (fake_bin / "uv").write_text(
+        textwrap.dedent(
+            r"""#!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
+            case "$*" in
+              "sync --frozen --extra production-minimal --no-dev") exit 0 ;;
+              "run python -c import pydantic, pydantic_settings") exit 42 ;;
+            esac
+            printf 'unexpected uv call: %s\n' "$*" >&2
+            exit 99
+            """
         ),
+        encoding="utf-8",
+    )
+    (fake_bin / "dpkg-query").chmod(0o755)
+    (fake_bin / "uv").chmod(0o755)
+
+    smoke_script = textwrap.dedent(
+        r"""
+        set -euo pipefail
+        source scripts/install_modules/install_helpers.sh
+        source scripts/install_modules/utils/python_env.sh
+
+        step(){ :; }
+        info(){ :; }
+        ok(){ :; }
+        warn(){ :; }
+        fail(){ echo "FAIL:$*"; exit 1; }
+        ensure_env_file_secrets_after_uv_sync(){ :; }
+        validate_runtime_env_loading(){ :; }
+
+        export SCRIPT_DIR="$1"
+        export PATH="$2:$PATH"
+        export UPGRADE_LOCK=false
+        export PYTHON_VERSION="3.11"
+        export DEPENDENCY_PROFILE="production-minimal"
+
+        install_python_deps
+        """
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            smoke_script,
+            "sidar-runtime-import-guidance",
+            str(script_dir),
+            str(fake_bin),
+        ],
+        cwd=os.getcwd(),
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "runtime-import-guidance-uv.log")),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    combined_output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "uv sync --frozen --extra production-minimal --no-dev" in combined_output
+    assert "uv sync --frozen --all-extras" not in combined_output
+
+
+def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir(parents=True)
+    (fake_bin / "uv").write_text(
+        textwrap.dedent(
+            r"""#!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
+            case "$*" in
+              "sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 --reinstall-package torch --reinstall-package torchvision") exit 0 ;;
+            esac
+            printf 'unexpected uv call: %s\n' "$*" >&2
+            exit 99
+            """
+        ),
+        encoding="utf-8",
+    )
+    (fake_bin / "uv").chmod(0o755)
+
+    smoke_script = textwrap.dedent(
+        r"""
+        set -euo pipefail
+        source scripts/install_modules/utils/python_env.sh
+
+        info(){ :; }
+        fail(){ echo "FAIL:$*"; exit 1; }
+
+        export PATH="$1:$PATH"
+        export DEPENDENCY_PROFILE="dev-light"
+        sync_pytorch_cuda_wheels cu124
+
+        grep -q "^sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 --reinstall-package torch --reinstall-package torchvision$" "$UV_STUB_LOG"
+        ! grep -q -- "--all-extras" "$UV_STUB_LOG"
+        ! grep -q -- "torchaudio" "$UV_STUB_LOG"
+        """
+    )
+
+    subprocess.run(
+        ["bash", "-lc", smoke_script, "sidar-cuda-sync", str(fake_bin)],
+        cwd=os.getcwd(),
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "cuda-sync-uv.log")),
         check=True,
     )
 
@@ -296,8 +430,6 @@ def test_install_python_deps_dev_full_uses_all_extras_without_conflicting_extra(
             str(fake_bin),
         ],
         cwd=os.getcwd(),
-        env=_clean_subprocess_env(
-            UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")
-        ),
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "install-python-deps-uv.log")),
         check=True,
     )

@@ -118,6 +118,8 @@ normalize_dependency_profile_value() {
         full|developer-full|dev-full|all|all-extras) printf 'dev-full' ;;
         prod-min|prod-minimal|production-minimal|minimal) printf 'production-minimal' ;;
         prod|production) printf 'production' ;;
+        dev-gpu|gpu-dev|developer-gpu) printf 'dev-gpu' ;;
+        gpu-runtime|runtime-gpu|gpu) printf 'gpu-runtime' ;;
         custom|provider|providers|özel|ozel) printf 'custom' ;;
         ask|"") printf 'ask' ;;
         *) printf '%s' "$raw" ;;
@@ -140,11 +142,13 @@ select_dependency_profile() {
             echo "Bağımlılık profili seçin:"
             echo "  1) dev-light (önerilen; hızlı yerel geliştirme + test araçları)"
             echo "  2) developer-full (tüm extras; CI/tam doğrulama)"
-            echo "  3) production-minimal (dar no-dev runtime)"
-            echo "  4) production (runtime + postgres + telemetry)"
-            echo "  5) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
+            echo "  4) production-minimal (dar no-dev runtime)"
+            echo "  5) production (runtime + postgres + telemetry)"
+            echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
+            echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
             local profile_choice=""
-            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-5, varsayılan 1]: " profile_choice 2>/dev/tty; then
+            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 1]: " profile_choice 2>/dev/tty; then
                 profile_choice="${profile_choice:-1}"
             else
                 profile_choice="1"
@@ -154,9 +158,11 @@ select_dependency_profile() {
             case "$profile_choice" in
                 1) requested="dev-light" ;;
                 2) requested="dev-full" ;;
-                3) requested="production-minimal" ;;
-                4) requested="production" ;;
-                5) requested="custom" ;;
+                3) requested="dev-gpu" ;;
+                4) requested="production-minimal" ;;
+                5) requested="production" ;;
+                6) requested="gpu-runtime" ;;
+                7) requested="custom" ;;
                 *)
                     warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); dev-light kullanılacak."
                     requested="dev-light"
@@ -180,8 +186,8 @@ select_dependency_profile() {
     fi
 
     case "$requested" in
-        dev-light|dev-full|production-minimal|production|custom) ;;
-        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|production-minimal|production|custom" ;;
+        dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
+        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
     esac
 
     DEPENDENCY_PROFILE="$requested"
@@ -234,6 +240,14 @@ install_python_deps() {
             SYNC_ARGS=(--frozen --extra dev-light)
             sync_command_label="uv sync --frozen --extra dev-light"
             ;;
+        dev-gpu)
+            SYNC_ARGS=(--frozen --extra dev-gpu)
+            sync_command_label="uv sync --frozen --extra dev-gpu"
+            ;;
+        gpu-runtime)
+            SYNC_ARGS=(--frozen --extra gpu-runtime --no-dev)
+            sync_command_label="uv sync --frozen --extra gpu-runtime --no-dev"
+            ;;
         custom)
             mapfile -d '' -t SYNC_ARGS < <(build_custom_dependency_sync_args)
             sync_command_label="uv sync ${SYNC_ARGS[*]}"
@@ -247,7 +261,7 @@ install_python_deps() {
             sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
             ;;
     esac
     export DEPENDENCY_PROFILE="$dependency_profile"
@@ -280,7 +294,7 @@ install_python_deps() {
     fi
 
     if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
-        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. Standart kurulum komutunu temiz bir ortamda tekrar çalıştırın: uv sync --frozen --all-extras."
+        fail "Zorunlu runtime bağımlılık doğrulaması başarısız: pydantic/pydantic-settings import edilemedi. Standart kurulum komutunu temiz bir ortamda tekrar çalıştırın: ${sync_command_label}."
     fi
 
     ok "Zorunlu runtime bağımlılıkları doğrulandı: pydantic + pydantic-settings."
@@ -360,16 +374,42 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local -a sync_args=(
-        --frozen
-        --all-extras
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+
+    local -a sync_args=(--frozen)
+    local sync_profile_label="$dependency_profile"
+    case "$dependency_profile" in
+        dev-full)
+            # Kullanıcı bilinçli tam profili seçtiyse mevcut kapsam korunur.
+            sync_args+=(--all-extras)
+            ;;
+        dev-light|dev-gpu)
+            sync_args+=(--extra dev-gpu)
+            sync_profile_label="${dependency_profile} → dev-gpu"
+            ;;
+        production|production-minimal|gpu-runtime)
+            sync_args+=(--extra gpu-runtime --no-dev)
+            sync_profile_label="${dependency_profile} → gpu-runtime"
+            ;;
+        custom)
+            mapfile -d '' -t sync_args < <(build_custom_dependency_sync_args)
+            sync_args+=(--extra gpu-runtime)
+            sync_profile_label="custom + gpu-runtime"
+            ;;
+        *)
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            ;;
+    esac
+
+    sync_args+=(
         --index "$index_url"
         --reinstall-package torch
         --reinstall-package torchvision
-        --reinstall-package torchaudio
     )
 
-    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url})"
+    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url}); profil: ${sync_profile_label}"
     if ! uv sync "${sync_args[@]}"; then
         fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
     fi

@@ -201,6 +201,12 @@ all = [
 dev-light = [
   "sidar[postgres,dev]",
 ]
+dev-gpu = [
+  "sidar[postgres,dev,rag,gpu]",
+]
+gpu-runtime = [
+  "sidar[rag,gpu]",
+]
 production = [
   "sidar[postgres,telemetry]",
 ]
@@ -349,7 +355,7 @@ default_profile = "dev-light"
 default_command = "./install_sidar.sh --dependency-profile=dev-light"
 production_minimal_command = "./install_sidar.sh --production-minimal"
 status = "visible-opt-in"
-summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-light is the normal default, dev-full preserves uv sync --all-extras for CI/full validation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
+summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-light is the normal default, dev-full preserves uv sync --all-extras for CI/full validation, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
 
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 current_lock = "torch 2.11.0"

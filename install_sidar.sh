@@ -517,7 +517,7 @@ a3cc9bb0097ea5e4d3bd60fa5138d0d92962e3ba64f7eb1fa7f76f9540048db6  scripts/instal
 86296471876bfb2e6cbf8b66da6eaf9f8689b3217838f583cb5210b8853aa2f7  scripts/install_modules/phases/07_finish.sh
 5f68c471e78e5c4da007ba7ed978800d06a945bac6673b02d92cde23c86f9ea7  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
-3e4d715d9a6e6d225767408a150ec5d0f9201dc0e994f404b21eba616d417f1b  scripts/install_modules/phases/10_validation.sh
+b8363aec8355826c8db546bc755789036010579238baf9a87434654f918ab376  scripts/install_modules/phases/10_validation.sh
 046396e0f445e99422c17d4f28db05a40adf716d6e4a0d110c6b538e1a9ebdfb  scripts/install_modules/phases/11_post_install.sh
 554042f270ab18b3330f85a01ffeb8aebf27db1f8ea816e269067bbe0f678a32  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
@@ -530,7 +530,7 @@ b7a985336773d99bf6606f06f2f857468ed6ab0368e27882a52604fb448ba00a  scripts/instal
 f2dabe212383f00c9aed2311ef4ae771e2afe4ad8ca0f90e0845b4776217ddc2  scripts/install_modules/utils/installer_hash_guard.sh
 53f71d30511429c35763c4f1c53bc557f92674dbbd2a1b60dd807b17fcdf5968  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
-5170acb8d4576522a35fb699e05605b1b0dd18c9e8c6829ca019a48a98f032a8  scripts/install_modules/utils/python_env.sh
+422be7303d55b39ec74979acc2b19d2f1180cb7eb181f2a4c54783e7e88b8242  scripts/install_modules/utils/python_env.sh
 9823612f2782fad09a2001f040a5777190b0a57a13f9e35e127ac2955618761e  scripts/install_modules/utils/remote_script.sh
 93c2caa868bdc0e0210c2c2237928b2369235d451825903f2a40a3f2c059aa94  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -1635,7 +1635,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -1655,7 +1655,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --production-readiness  Production gate alias for --ci-full; fails installation unless the full CI/e2e/benchmark gate passes
   --dev-full  Explicit full developer/CI dependency profile: uv sync --frozen --all-extras
   --production-minimal  Narrow runtime dependency profile: uv sync --frozen --extra production-minimal --no-dev
-  --dependency-profile=dev-light|dev-full|production-minimal|production|custom  Select installer dependency sync profile
+  --dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom  Select installer dependency sync profile
   --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
@@ -1704,7 +1704,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -1724,7 +1724,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --production-readiness  --ci-full için üretim geçiş kapısı aliası; tam CI/e2e/benchmark geçmeden kurulumu başarılı saymaz
   --dev-full  Açık tam geliştirici/CI bağımlılık profili: uv sync --frozen --all-extras
   --production-minimal  Dar runtime bağımlılık profili: uv sync --frozen --extra production-minimal --no-dev
-  --dependency-profile=dev-light|dev-full|production-minimal|production|custom  Installer bağımlılık sync profilini seç
+  --dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom  Installer bağımlılık sync profilini seç
   --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
@@ -1903,8 +1903,8 @@ if [[ "$SILENT_MODE" == true ]]; then
 fi
 
 case "${DEPENDENCY_PROFILE}" in
-    ask|dev-light|dev-full|production-minimal|production|custom) ;;
-    *) fail "Geçersiz dependency profile: ${DEPENDENCY_PROFILE}. Desteklenen: dev-light|dev-full|production-minimal|production|custom" ;;
+    ask|dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
+    *) fail "Geçersiz dependency profile: ${DEPENDENCY_PROFILE}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
 esac
 export DEPENDENCY_PROFILE
 

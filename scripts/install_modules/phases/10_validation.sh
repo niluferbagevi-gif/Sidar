@@ -7,19 +7,44 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local -a pip_args=(
-        install
-        --reinstall
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+
+    local -a sync_args=(--frozen)
+    local sync_profile_label="$dependency_profile"
+    case "$dependency_profile" in
+        dev-full)
+            # Kullanıcı bilinçli tam profili seçtiyse mevcut kapsam korunur.
+            sync_args+=(--all-extras)
+            ;;
+        dev-light|dev-gpu)
+            sync_args+=(--extra dev-gpu)
+            sync_profile_label="${dependency_profile} → dev-gpu"
+            ;;
+        production|production-minimal|gpu-runtime)
+            sync_args+=(--extra gpu-runtime --no-dev)
+            sync_profile_label="${dependency_profile} → gpu-runtime"
+            ;;
+        custom)
+            mapfile -d '' -t sync_args < <(build_custom_dependency_sync_args)
+            sync_args+=(--extra gpu-runtime)
+            sync_profile_label="custom + gpu-runtime"
+            ;;
+        *)
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            ;;
+    esac
+
+    sync_args+=(
+        --index "$index_url"
         --reinstall-package torch
-        --index-url "$index_url"
-        torch
-        torchvision
-        torchaudio
+        --reinstall-package torchvision
     )
 
-    info "PyTorch CUDA wheel seçimi uv run python -m pip ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv run python -m pip "${pip_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv run python -m pip ile güncellenemedi (${cuda_tag})."
+    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url}); profil: ${sync_profile_label}"
+    if ! uv sync "${sync_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
     fi
 }
 

@@ -24,6 +24,8 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 | `dev` | Test/lint/type/security kalite araçları | `pytest`, `pytest-*`, `ruff`, `mypy`, `pyright`, `bandit`, `safety`, type stubs, test doubles | CI ve local kalite kapıları bu profile bağlı kalır. |
 | `dev-light` | Varsayılan normal geliştirici kurulumu | `postgres` + `dev` | Installer etkileşimli/normal akışta hızlı ve sistem başlığı gerektirmeyen varsayılandır. |
 | `developer-full` | Tam geliştirici/CI deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi CI/tam doğrulama için korunur. |
+| `dev-gpu` | GPU/RAG gerekli yerel geliştirici kurulumu | `postgres` + `dev` + `rag` + `gpu` | CUDA remediation sırasında `dev-light` kapsamını tüm provider/browser/voice extras yerine yalnız RAG/GPU yüzeyine genişleten convenience profildir. |
+| `gpu-runtime` | Dar no-dev RAG/GPU runtime | `rag` + `gpu` | Production veya minimal profilde GPU wheel onarımı gerektiğinde dev/test/provider extras kurmadan torch/RAG bağımlılıklarını çözer. |
 | `production` | Web/API deploy için gözlemlenebilirlik dahil runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | `uv export --extra production --no-dev` ve `Dockerfile.production` tarafından kullanılan deploy profili. |
 | `production-minimal` | Telemetry dahil etmeden en dar no-dev Web/API smoke yüzeyi | `sidar[postgres]` | CI dry-run ve hızlı production-minimal import smoke için kullanılır; telemetry isteyen deploy `production` profilini seçmelidir. |
 
@@ -149,9 +151,11 @@ normal kurulum varsayılanı `dev-light` profilidir; tam test/CI veya
 
 1. `dev-light` — önerilen normal geliştirici kurulumu.
 2. `developer-full` / `dev-full` — tüm extras ve tam CI/test paritesi.
-3. `production-minimal` — dar no-dev runtime.
-4. `production` — runtime + postgres + telemetry.
-5. `custom` — `SIDAR_DEPENDENCY_EXTRAS=dev,openai,postgres` gibi özel provider/extra seçimi.
+3. `dev-gpu` — geliştirici + RAG/GPU runtime; provider/browser/voice extras yok.
+4. `production-minimal` — dar no-dev runtime.
+5. `production` — runtime + postgres + telemetry.
+6. `gpu-runtime` — dar no-dev RAG/GPU runtime.
+7. `custom` — `SIDAR_DEPENDENCY_EXTRAS=dev,openai,postgres` gibi özel provider/extra seçimi.
 
 Etkileşimsiz normal kurulum `dev-light` seçer; `RUN_CI_FULL_VALIDATION=true` /
 `--production-readiness` ise otomatik olarak `dev-full` seçer.
@@ -228,8 +232,8 @@ olarak ayrı Dockerfile ve requirements üreticisi üzerinden çalışır:
 | `Dockerfile` | Build aşamaları hâlâ `uv sync --frozen --all-extras --extra dev` kullanır. | Developer/full image standardını korur; production-minimal için `Dockerfile.production` kullanılır. | Mevcut image build dry-run ve local/CI parity smoke. |
 | `Dockerfile.production` | Yeni no-dev production image yolu. | `uv sync --frozen --extra production --no-dev` ile dev/test araçlarını image dışında tutar. | `docker build -f Dockerfile.production ...`, web boot smoke, OpenAPI metadata smoke, import smoke. |
 | `scripts/export_production_requirements.sh` | Yeni requirements üreticisi. | `uv export --frozen --extra production --no-dev --no-editable --no-emit-project` ile `requirements-production.txt` üretir. | Export dry-run ve dev/test paket yokluğu kontrolü. |
-| `install_sidar.sh` | Yerel/CI paritesi için `uv sync --frozen --all-extras` ana kurulum akışıdır. | `--dependency-profile=all|production` veya eşdeğer env override tasarla; varsayılan `all` kalmalı. | Online/offline installer smoke, `--ci` bundle smoke, pyright/self-heal dev bağımlılığı kontrolü. |
-| `scripts/install_modules/utils/python_env.sh` | Modüler installer yolu `uv sync --frozen --all-extras --extra dev` ile dev araçlarını garanti eder. | Profile-aware sync arg builder ekle; production seçilse bile dev-only kontrollerin bilinçli atlandığını raporla. | Shellcheck, installer module tests, production profile dry-run. |
+| `install_sidar.sh` | Normal varsayılan `dev-light`, tam CI/production-readiness için `dev-full`, GPU remediation için `dev-gpu`/`gpu-runtime` profilleri desteklenir. | Production-minimal ve GPU runtime kapılarını CI artifact'lerine bağlayarak drift görünürlüğünü koru. | Online/offline installer smoke, `--ci` bundle smoke, GPU profile sync smoke, pyright/self-heal dev bağımlılığı kontrolü. |
+| `scripts/install_modules/utils/python_env.sh` | Profile-aware sync arg builder `dev-light`, `dev-full`, `dev-gpu`, `gpu-runtime`, `production`, `production-minimal` ve `custom` profillerini üretir. | GPU remediation ve runtime import guidance çıktılarının seçili profil sözleşmesini bozmadığını koru. | Shellcheck, installer module tests, production/GPU profile dry-run. |
 | Runbook / docs | `uv sync --all-extras` geliştirme standardı olarak korunur. | Production profile komutlarını Docker/installer runbook'larına ekle; rollback olarak `uv sync --all-extras` yolunu belgelemeyi sürdür. | Doküman testleri ve release checklist güncellemesi. |
 
 Faz 1 kapanış kabul kriteri: `uv sync --all-extras` geliştirici standardı kırılmamalı,
