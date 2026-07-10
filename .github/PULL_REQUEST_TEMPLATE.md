@@ -17,6 +17,19 @@
   `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 - [ ] `production_ready=false`, `summary-code=10` veya `summary-code=20` görüldüyse bu PR merge/release için bloke edildi.
 
+
+## Benchmark baseline bootstrap
+
+> CI'da benchmark baseline missing görülürse bu tek başına test hatası değildir;
+> fail-closed production-readiness davranışıdır. Önce GitHub Actions → CI → Run workflow
+> → `seed_benchmark_baseline=true` çalıştırın, seed artifact/cache oluştuktan sonra normal
+> CI veya `make production-readiness` gate'ini tekrar koşun. Yerel bootstrap için
+> `make benchmark-seed` kullanın. Seed artifact retention süresi 30 gündür; cache düşerse
+> aynı bootstrap prosedürünü tekrar uygulayın.
+
+- [ ] CI benchmark baseline cache/artifact mevcut veya `seed_benchmark_baseline=true` ile yeniden seed edildi.
+- [ ] Baseline seed sonrası normal CI / production-readiness gate tekrar çalıştırıldı.
+
 ## Installer manifest checklist
 
 If this PR touches `core/memory.py`, `core/multimodal.py`, `install_sidar.sh`,

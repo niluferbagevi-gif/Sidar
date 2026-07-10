@@ -319,7 +319,11 @@ quality-gate koşusu baseline üretmelidir. Yerel profil varsayılanı
 seed eder ve sonraki koşularda `--benchmark-compare` otomatik devreye girer:
 
 ```bash
-BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh
+# Önerilen yerel kısayol: Makefile hedefi benchmark baseline bootstrap akışını görünür kılar.
+make benchmark-seed
+
+# Eşdeğer açık komut:
+BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all
 ```
 
 CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
@@ -341,7 +345,10 @@ oluştuktan sonra normal CI veya production readiness gate'ini tekrar koşun.
 > production-readiness gate'ini çalıştırmadan yalnız benchmark baseline cache/artifact
 > üretir. Job tamamlandıktan sonra normal CI veya `make production-readiness` gate'ini
 > tekrar çalıştırın. Baseline olmadan gated CI'ın fail-closed kırılması beklenen
-> güvenli davranıştır; testlerin bozuk olduğu anlamına tek başına gelmez.
+> güvenli davranıştır; testlerin bozuk olduğu anlamına tek başına gelmez. Seed artifact
+> retention süresi 30 gündür; aktif geliştirmede cache/artifact düşerse aynı uyarının
+> tekrar görünmesi hata değil, aynı bootstrap prosedürünün yeniden uygulanması gerektiği
+> anlamına gelir.
 Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
 `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
 çalıştırın.
@@ -1090,8 +1097,10 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'ini kaydeder.
 > Artifact'i review etmeden cache'i kalıcı güven sinyali kabul etmeyin.
 > Yeni makine veya boş cache/bootstrap durumunda ilk baseline'ı üretmek için
-> `RUN_BENCHMARKS=required ./run_tests.sh` çalıştırın; bu koşu
-> `--benchmark-save=baseline` ile `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.
+> `make benchmark-seed` çalıştırın; bu Makefile hedefi
+> `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all`
+> akışına bağlanır. Bu koşu `--benchmark-save=baseline` ile
+> `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.
 > Sonraki koşularda `./run_tests.sh` otomatik olarak version-sort ile en güncel `*_baseline.json`
 > kaydını `--benchmark-compare` hedefi yapar. Yeni `*_baseline.json` artifact'ini commit etmeden
 > önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
