@@ -442,7 +442,7 @@ run_test_artifact_audit() {
 }
 
 sidar_install_production_gate_required() {
-    local env_choice="${AUTO_ENV_TYPE:-ask}"
+    local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"
     local env_file_value=""
     local production_readiness_raw=""
 

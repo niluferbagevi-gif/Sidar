@@ -993,6 +993,9 @@ prompt_post_install_sidar_env_mode() {
     if [[ "$AUTO_ENV_TYPE" != "ask" ]]; then
         selected_env="$AUTO_ENV_TYPE"
         info "AUTO_INSTALL: ENV_TYPE=$selected_env olarak uygulandı."
+    elif [[ -n "${SIDAR_SELECTED_ENV_TYPE:-}" ]]; then
+        selected_env="$SIDAR_SELECTED_ENV_TYPE"
+        info "Önceden seçilen SIDAR_ENV=$selected_env tekrar uygulanıyor."
     elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
     else
@@ -1017,6 +1020,27 @@ prompt_post_install_sidar_env_mode() {
         fi
     fi
 
+    SIDAR_SELECTED_ENV_TYPE="$selected_env"
+    export SIDAR_SELECTED_ENV_TYPE
+
+    if [[ "$selected_env" == "production" ]]; then
+        local production_ready=""
+        if declare -F sidar_install_summary_field_or_empty >/dev/null; then
+            production_ready="$(sidar_install_summary_field_or_empty production_ready)"
+        fi
+        if [[ "$production_ready" != "true" ]]; then
+            info "Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."
+            return 0
+        fi
+
+        if is_alembic_at_head; then
+            info "Production seçimi için Alembic current=head doğrulandı."
+        else
+            info "Production seçimi için Alembic current/head uyuşmuyor; veritabanı migrasyonu doğrulanıyor..."
+            run_migrations
+        fi
+    fi
+
     if grep -qE '^SIDAR_ENV=' "$env_file"; then
         sed_inplace "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
     else
@@ -1024,7 +1048,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if [[ "$selected_env" == "production" ]]; then
-        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
+        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness gate ve migration doğrulaması tamamlandı."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
         if is_alembic_at_head; then

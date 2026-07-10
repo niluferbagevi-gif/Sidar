@@ -398,11 +398,14 @@ print_summary() {
 sidar_phase_finish() {
     sidar_ensure_autonomy_scripts_executable
     sidar_configure_autonomous_cron
+    prompt_post_install_sidar_env_mode
     run_install_ci_full_validation
+    if [[ "${SIDAR_SELECTED_ENV_TYPE:-}" == "production" ]]; then
+        prompt_post_install_sidar_env_mode
+    fi
     print_summary
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
-    prompt_post_install_sidar_env_mode
     # En son adım: IDE başlatma onayı
     launch_ide
 }

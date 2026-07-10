@@ -1549,6 +1549,128 @@ EOF
   [[ "$output" == *"SIDAR_ENV değişti (production -> development) ve Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."* ]]
 }
 
+@test "production environment selection requires production-readiness before persisting SIDAR_ENV" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    summary_production_ready=false
+    validation_calls=0
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "%s" "$summary_production_ready"
+    }
+    is_alembic_at_head() { return 0; }
+    run_migrations() { return 0; }
+    run_install_ci_full_validation() {
+      validation_calls=$((validation_calls + 1))
+      [[ "$SIDAR_SELECTED_ENV_TYPE" == "production" ]]
+      sidar_install_production_gate_required
+      summary_production_ready=true
+    }
+
+    sidar_phase_finish
+
+    [[ "$validation_calls" -eq 1 ]]
+    grep -q "^SIDAR_ENV=production$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
+  [[ "$output" == *"production-readiness gate ve migration doğrulaması tamamlandı"* ]]
+}
+
+@test "production gate failure does not leave .env in production mode" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "false"
+    }
+    run_install_ci_full_validation() { return 23; }
+
+    sidar_phase_finish
+  '
+  [ "$status" -eq 23 ]
+  [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
+}
+
+@test "production gate failure keeps persisted SIDAR_ENV out of production" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "false"
+    }
+
+    prompt_post_install_sidar_env_mode
+
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+    ! grep -q "^SIDAR_ENV=production$" "$tmpdir/.env"
+    rm -rf "$tmpdir"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "development environment selection preserves current validation behavior" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=development
+    NO_INTERACTION=true
+    validation_calls=0
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    is_alembic_at_head() { return 0; }
+    run_migrations() { return 0; }
+    run_install_ci_full_validation() {
+      validation_calls=$((validation_calls + 1))
+      ! sidar_install_production_gate_required
+    }
+
+    sidar_phase_finish
+
+    [[ "$validation_calls" -eq 1 ]]
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Ortam değişkenleri 'Development'"* ]]
+}
+
 @test "06 services phases gate local migrations models smoke and audit in order" {
   run_installer_function '
     events=()

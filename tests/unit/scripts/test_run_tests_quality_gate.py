@@ -666,6 +666,17 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "lint, typecheck, test:coverage, test:e2e:smoke" in validation_phase
     assert "SIDAR_PRODUCTION_READINESS" in install_script
     assert "sidar_install_production_gate_required()" in validation_phase
+    env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+    finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+    assert 'SIDAR_SELECTED_ENV_TYPE="$selected_env"' in env_phase
+    assert "production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
+    assert 'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
+    assert "production-readiness gate ve migration doğrulaması tamamlandı" in env_phase
+    assert 'local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"' in validation_phase
+    assert finish_phase.index("prompt_post_install_sidar_env_mode") < finish_phase.index(
+        "run_install_ci_full_validation"
+    )
+    assert 'if [[ "${SIDAR_SELECTED_ENV_TYPE:-}" == "production" ]]; then' in finish_phase
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
     assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all" in validation_phase
