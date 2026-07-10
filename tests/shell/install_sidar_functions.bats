@@ -2177,6 +2177,30 @@ ENV
   [[ "$output" != *"izinleri güvenli değil"* ]]
 }
 
+@test "collect_api_keys_interactive warns once when real keys are not synced to .env.test" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    HOME="$tmpdir"
+    NO_INTERACTION=true
+    SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=0
+    env_file="$tmpdir/.env"
+    : > "$env_file"
+    : > "$tmpdir/.env.test"
+    while IFS= read -r key; do
+      printf "%s=value_%s\\n" "$key" "$key" >> "$env_file"
+    done < <(sidar_user_api_key_names)
+
+    collect_api_keys_interactive "$env_file"
+
+    grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$env_file"
+    ! grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$tmpdir/.env.test"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$(grep -c "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV" <<<"$output")" -eq 1 ]]
+}
+
 @test "ensure_auto_secrets preserves existing MEMORY_ENCRYPTION_KEY and logs reuse" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

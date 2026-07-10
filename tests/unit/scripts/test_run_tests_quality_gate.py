@@ -1344,8 +1344,10 @@ def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> N
     ]
     assert "if _sync_real_keys_to_test_env_enabled; then" in test_target_block
     assert 'targets+=("$optional_env_file")' in test_target_block
-    assert "varsayılan güvenli davranış" in test_target_block
-    assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1" in test_target_block
+    assert "varsayılan güvenli davranış" not in test_target_block
+    assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1" in collect_block
+    assert "api_key_target_env_files" in collect_block
+    assert "mapfile -t api_key_target_env_files" in collect_block
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
@@ -1367,7 +1369,7 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
         collect_start : install_script.index("report_env_api_key_status()", collect_start)
     ]
     assert "mapfile -t KEY_ORDER < <(sidar_user_api_key_names)" in collect_block
-    assert "_api_key_env_targets()" in collect_block
+    assert "_api_key_env_targets_without_warning()" in collect_block
     assert 'local -a targets=("$env_file")' in collect_block
     assert 'local advanced_env_file="$SCRIPT_DIR/.env.advanced"' in collect_block
     assert 'optional_env_file="$SCRIPT_DIR/.env.development"' in collect_block
@@ -1376,8 +1378,8 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "_sync_real_keys_to_test_env_enabled" in collect_block
     assert 'targets+=("$optional_env_file")' in collect_block
     assert "varsayılan güvenli davranış" in collect_block
-    assert "mapfile -t target_env_files < <(_api_key_env_targets)" in collect_block
-    assert 'for target in "${target_env_files[@]}"' in collect_block
+    assert "mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)" in collect_block
+    assert 'for target in "${api_key_target_env_files[@]}"' in collect_block
     assert "_sync_existing_api_keys_to_env_targets" in collect_block
     assert collect_block.count("_sync_existing_api_keys_to_env_targets") >= 6
     no_interaction_pos = collect_block.index('if [[ "$NO_INTERACTION" == true ]]')

@@ -183,9 +183,6 @@ collect_api_keys_interactive() {
         esac
     }
 
-
-    local sidar_test_key_sync_skip_warned=false
-
     _sync_real_keys_to_test_env_enabled() {
         local raw="${SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0}"
         raw="${raw,,}"
@@ -196,7 +193,7 @@ collect_api_keys_interactive() {
         esac
     }
 
-    _api_key_env_targets() {
+    _api_key_env_targets_without_warning() {
         local -a targets=("$env_file")
         local advanced_env_file="$SCRIPT_DIR/.env.advanced"
         local advanced_example_file="$SCRIPT_DIR/.env.advanced.example"
@@ -216,25 +213,27 @@ collect_api_keys_interactive() {
         if [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]]; then
             if _sync_real_keys_to_test_env_enabled; then
                 targets+=("$optional_env_file")
-            elif [[ "$sidar_test_key_sync_skip_warned" != true ]]; then
-                warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
-                sidar_test_key_sync_skip_warned=true
             fi
         fi
 
         printf '%s\n' "${targets[@]}"
     }
 
+    local -a api_key_target_env_files=()
+    mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)
+    if [[ -f "$SCRIPT_DIR/.env.test" && "$SCRIPT_DIR/.env.test" != "$env_file" ]] &&
+        ! _sync_real_keys_to_test_env_enabled; then
+        warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
+    fi
+
     # Anahtarı .env ve mevcut runtime env varyantlarına yazar; boşsa sessizce atlar.
     _write_key() {
         local key="$1"
         local val target target_name
-        local -a target_env_files=()
         val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
         [[ -z "$val" ]] && return
 
-        mapfile -t target_env_files < <(_api_key_env_targets)
-        for target in "${target_env_files[@]}"; do
+        for target in "${api_key_target_env_files[@]}"; do
             if grep -q "^${key}=" "$target" 2>/dev/null; then
                 sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
             else
