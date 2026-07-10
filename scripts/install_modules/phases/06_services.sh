@@ -1087,11 +1087,38 @@ sidar_phase_local_migrations_and_models() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
-        local pg_pw="${POSTGRES_PASSWORD:-}"
-        if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
-            pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
+        local runtime_db_url=""
+        local db_conn_info=""
+        if runtime_db_url="$(resolve_runtime_database_url)"; then
+            db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
+from urllib.parse import urlparse, unquote
+import sys
+
+url = sys.argv[1].replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urlparse(url)
+print("|".join([
+    parsed.hostname or "127.0.0.1",
+    str(parsed.port or 5432),
+    unquote(parsed.username or "sidar"),
+    unquote(parsed.password or ""),
+    parsed.path.lstrip("/") or "sidar",
+]))
+PY
+)
+            ensure_postgres_databases_exist \
+                "$(echo "$db_conn_info" | cut -d'|' -f1)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f2)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f3)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f4)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f5)"
+        else
+            local pg_pw="${POSTGRES_PASSWORD:-}"
+            if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
+                pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
+            fi
+            warn "PostgreSQL DSN çözümlenemedi; veritabanı varlık hazırlığı POSTGRES_* fallback değerleriyle sürdürülecek."
+            ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
         fi
-        ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
@@ -1375,10 +1402,30 @@ sidar_phase06_report_production_postgres_password_alignment() {
             ;;
     esac
 
-    local pg_user pg_password pg_db pg_container
-    pg_user=$(read_env_value_from_file "POSTGRES_USER" "$SCRIPT_DIR/.env" | tr -d '\n')
-    pg_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d '\n')
-    pg_db=$(read_env_value_from_file "POSTGRES_DB" "$SCRIPT_DIR/.env" | tr -d '\n')
+    local pg_user pg_password pg_db pg_container runtime_db_url db_conn_info
+    runtime_db_url="$(resolve_runtime_database_url || true)"
+    if [[ -n "$runtime_db_url" ]]; then
+        db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
+from urllib.parse import urlparse, unquote
+import sys
+
+url = sys.argv[1].replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urlparse(url)
+print("|".join([
+    unquote(parsed.username or "sidar"),
+    unquote(parsed.password or ""),
+    parsed.path.lstrip("/") or "postgres",
+]))
+PY
+)
+        pg_user=$(echo "$db_conn_info" | cut -d'|' -f1)
+        pg_password=$(echo "$db_conn_info" | cut -d'|' -f2)
+        pg_db=$(echo "$db_conn_info" | cut -d'|' -f3)
+    else
+        pg_user=$(read_env_value_from_file "POSTGRES_USER" "$SCRIPT_DIR/.env" | tr -d '\n')
+        pg_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d '\n')
+        pg_db=$(read_env_value_from_file "POSTGRES_DB" "$SCRIPT_DIR/.env" | tr -d '\n')
+    fi
     pg_container=$(read_env_value_from_file "SIDAR_POSTGRES_CONTAINER" "$SCRIPT_DIR/.env" | tr -d '\n')
 
     pg_user="${pg_user:-sidar}"

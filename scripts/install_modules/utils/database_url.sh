@@ -20,6 +20,88 @@ sidar_write_env_value() {
     echo "${key}=${value}" >> "$env_file"
 }
 
+resolve_runtime_database_url_from_file() {
+    local env_file="$1"
+    local db_url=""
+    local postgres_user=""
+    local postgres_password=""
+    local postgres_host=""
+    local postgres_port=""
+    local postgres_db=""
+
+    [[ -f "$env_file" ]] || return 1
+
+    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n[:space:]')"
+    if [[ -n "$db_url" ]]; then
+        printf '%s|%s\n' "$db_url" "${env_file}:DATABASE_URL"
+        return 0
+    fi
+
+    postgres_password="$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file" | tr -d '\n')"
+    [[ -n "${postgres_password//[[:space:]]/}" ]] || return 1
+    postgres_user="$(read_env_value_from_file "POSTGRES_USER" "$env_file" | tr -d '\n')"
+    postgres_host="$(read_env_value_from_file "POSTGRES_HOST" "$env_file" | tr -d '\n')"
+    postgres_port="$(read_env_value_from_file "POSTGRES_PORT" "$env_file" | tr -d '\n')"
+    postgres_db="$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')"
+
+    postgres_user="${postgres_user:-sidar}"
+    postgres_host="${postgres_host:-127.0.0.1}"
+    postgres_port="${postgres_port:-5432}"
+    postgres_db="${postgres_db:-sidar}"
+
+    printf 'postgresql+asyncpg://%s:%s@%s:%s/%s|%s\n' \
+        "$postgres_user" "$postgres_password" "$postgres_host" "$postgres_port" "$postgres_db" "-"
+}
+
+resolve_runtime_database_url() {
+    local db_url=""
+    local env_file=""
+    local sidar_env=""
+    local -a candidate_env_files=()
+    local resolved=""
+    local source=""
+
+    db_url="${DATABASE_URL:-}"
+    db_url="$(printf '%s' "$db_url" | tr -d '\n[:space:]')"
+    if [[ -n "$db_url" ]]; then
+        RUNTIME_DATABASE_URL="$db_url"
+        RUNTIME_DATABASE_URL_SOURCE="process:DATABASE_URL"
+        printf '%s\n' "$RUNTIME_DATABASE_URL"
+        return 0
+    fi
+
+    candidate_env_files+=("${SCRIPT_DIR:-.}/.env")
+    sidar_env="$(read_env_value_from_file "SIDAR_ENV" "${SCRIPT_DIR:-.}/.env" 2>/dev/null | tr -d '\n[:space:]' | tr '[:upper:]' '[:lower:]')"
+    candidate_env_files+=("${SCRIPT_DIR:-.}/.env.advanced")
+    [[ -n "$sidar_env" ]] && candidate_env_files+=("${SCRIPT_DIR:-.}/.env.${sidar_env}")
+    if [[ -n "${DOTENV_FILE:-}" ]]; then
+        if [[ "$DOTENV_FILE" = /* ]]; then
+            candidate_env_files+=("$DOTENV_FILE")
+        else
+            candidate_env_files+=("${SCRIPT_DIR:-.}/$DOTENV_FILE")
+        fi
+    fi
+
+    for env_file in "${candidate_env_files[@]}"; do
+        [[ -n "$env_file" && -f "$env_file" ]] || continue
+        if resolved="$(resolve_runtime_database_url_from_file "$env_file")"; then
+            db_url="${resolved%%|*}"
+            source="${resolved#*|}"
+            if [[ "$source" == "-" ]]; then
+                source="${env_file}:POSTGRES_*"
+            fi
+            RUNTIME_DATABASE_URL="$db_url"
+            RUNTIME_DATABASE_URL_SOURCE="$source"
+            printf '%s\n' "$RUNTIME_DATABASE_URL"
+            return 0
+        fi
+    done
+
+    RUNTIME_DATABASE_URL=""
+    RUNTIME_DATABASE_URL_SOURCE=""
+    return 1
+}
+
 sync_postgres_env_variants_with_source() {
     local source_env_file="$1"
     shift || true

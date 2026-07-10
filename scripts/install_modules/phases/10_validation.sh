@@ -24,6 +24,7 @@ sync_pytorch_cuda_wheels() {
 }
 
 verify_torch_cuda() {
+    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
@@ -221,7 +222,7 @@ run_smoke_tests() {
     local smoke_postgres_password=""
     local smoke_redis_url=""
     if [[ -f "$env_file" ]]; then
-        smoke_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+        smoke_database_url=$(resolve_runtime_database_url || true)
         smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
         smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
         if [[ -z "$smoke_redis_url" ]]; then
@@ -230,7 +231,7 @@ run_smoke_tests() {
 
         if [[ -n "$smoke_database_url" ]]; then
             pytest_smoke_env+=("DATABASE_URL=$smoke_database_url")
-            info "Smoke test DATABASE_URL değeri .env dosyasından yenilendi."
+            info "Smoke test DATABASE_URL değeri ${RUNTIME_DATABASE_URL_SOURCE:-dotenv zinciri} üzerinden yenilendi."
         fi
         if [[ -n "$smoke_postgres_password" ]]; then
             pytest_smoke_env+=("POSTGRES_PASSWORD=$smoke_postgres_password")
@@ -323,6 +324,7 @@ wait_for_core_docker_health_before_smoke_tests() {
 run_install_integration_api_tests() {
     step "Kurulum Entegrasyon Testleri"
 
+    # shellcheck disable=SC2153  # RUN_INSTALL_INTEGRATION_TESTS is initialized by installer argument parsing.
     if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
         info "--with-integration verilmediği için bash run_tests.sh --stage integration çalıştırılmadı."
         INTEGRATION_TEST_STATUS="atlandi_bayrak"
@@ -343,7 +345,7 @@ run_install_integration_api_tests() {
     local integration_postgres_password=""
     local integration_redis_url=""
     if [[ -f "$env_file" ]]; then
-        integration_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
+        integration_database_url=$(resolve_runtime_database_url || true)
         integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
         integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
         if [[ -z "$integration_redis_url" ]]; then
@@ -352,7 +354,7 @@ run_install_integration_api_tests() {
 
         if [[ -n "$integration_database_url" ]]; then
             integration_env+=("DATABASE_URL=$integration_database_url")
-            info "Entegrasyon test DATABASE_URL değeri .env dosyasından yenilendi."
+            info "Entegrasyon test DATABASE_URL değeri ${RUNTIME_DATABASE_URL_SOURCE:-dotenv zinciri} üzerinden yenilendi."
         fi
         if [[ -n "$integration_postgres_password" ]]; then
             integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")

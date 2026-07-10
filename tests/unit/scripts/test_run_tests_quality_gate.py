@@ -668,6 +668,12 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "sidar_install_production_gate_required()" in validation_phase
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+    database_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
+        encoding="utf-8"
+    )
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
+        encoding="utf-8"
+    )
     assert 'SIDAR_SELECTED_ENV_TYPE="$selected_env"' in env_phase
     assert "production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
     assert 'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
@@ -677,6 +683,12 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         "run_install_ci_full_validation"
     )
     assert 'if [[ "${SIDAR_SELECTED_ENV_TYPE:-}" == "production" ]]; then' in finish_phase
+    assert "resolve_runtime_database_url()" in database_url_utils
+    assert "resolve_runtime_database_url_from_file()" in database_url_utils
+    assert "POSTGRES_HOST" in database_url_utils
+    assert "resolve_runtime_database_url" in alembic_phase
+    assert "current --check-heads" in alembic_phase
+    assert "alembic_revision_sets_match" in alembic_phase
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
     assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all" in validation_phase

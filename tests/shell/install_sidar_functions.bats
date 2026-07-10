@@ -1445,6 +1445,7 @@ EOF
 #!/usr/bin/env bash
 printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
+  "-m alembic current --check-heads") exit 2 ;;
   "-m alembic current")
     echo "INFO  [alembic.runtime.migration] Context impl PostgresqlImpl." >&2
     echo "  0006_access_control_schema (head)"
@@ -1457,11 +1458,48 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
+}
+
+@test "is_alembic_at_head derives DATABASE_URL from POSTGRES parts when explicit URL is absent" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
+    touch "$tmpdir/alembic.ini"
+    cat > "$tmpdir/.env" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=secret
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=sidar
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
+case "\$*" in
+  "-m alembic current --check-heads") exit 2 ;;
+  "-m alembic current") echo "  0006_access_control_schema (head)" ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    export PATH="$tmpdir/bin:$PATH"
+
+    is_alembic_at_head
+
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Alembic DB URL kaynağı:"* ]]
 }
 
 @test "is_alembic_at_head prefers the project venv Python over system python3" {
@@ -1479,6 +1517,7 @@ EOF
 #!/usr/bin/env bash
 printf "venv|%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
+  "-m alembic current --check-heads") exit 2 ;;
   "-m alembic current") echo "  0006_access_control_schema (head)" ;;
   "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
 esac
@@ -1493,7 +1532,8 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
     ! grep -q "^system|" "$tmpdir/python.log"

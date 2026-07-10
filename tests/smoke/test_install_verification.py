@@ -1459,6 +1459,59 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Path) -> None:
+    script_dir = tmp_path / "sidar"
+    venv_bin = script_dir / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (script_dir / ".env").write_text(
+        "\n".join(
+            [
+                "POSTGRES_USER=sidar",
+                "POSTGRES_PASSWORD=secret",
+                "POSTGRES_HOST=localhost",
+                "POSTGRES_PORT=5432",
+                "POSTGRES_DB=sidar",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (script_dir / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+    fake_python = venv_bin / "python"
+    fake_python.write_text(
+        textwrap.dedent(
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s|%s\n' "${DATABASE_URL:-}" "$*" >> "$SCRIPT_DIR/dburl.log"
+            case "$*" in
+              "-m alembic current --check-heads") exit 2 ;;
+              "-m alembic current") printf '%s\n' "  0006_access_control_schema (head)" ;;
+              "-m alembic heads") printf '%s\n' "  0006_access_control_schema (head)" ;;
+              *) exit 2 ;;
+            esac
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    result = _run_bash_smoke(
+        f"""
+        set -euo pipefail
+        source ./install_sidar.sh
+        SCRIPT_DIR={shlex.quote(str(script_dir))}
+        export SCRIPT_DIR
+        unset DATABASE_URL
+        is_alembic_at_head
+        grep -q '^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$' "$SCRIPT_DIR/dburl.log"
+        """,
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
