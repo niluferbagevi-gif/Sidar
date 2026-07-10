@@ -2,7 +2,7 @@
 
 Bu doküman, `pyproject.toml` içindeki mevcut bağımlılık yüzeyini bozmadan uzun vadede
 production-minimal paket profiline geçiş planını tanımlar. Mevcut repo standardı korunur:
-`uv sync --all-extras` local geliştirme, CI ve ekip paritesi için geçerli ana kurulum komutudur.
+`uv sync --all-extras` CI/tam doğrulama ve developer-full profili için korunur; normal etkileşimli installer varsayılanı hafif `dev-light` profiline çekilmiştir.
 Bu doküman ile `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan]` metadata'sı
 birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığını denetler.
 
@@ -22,7 +22,8 @@ birlikte güncellenmelidir; docs drift check bu iki kaynağın senkron kaldığ�
 |---|---|---|---|
 | `runtime` | Sidar çekirdeğinin minimum import/runtime bağımlılıkları | config, FastAPI, DB base, HTTP client, güvenlik, temel RAG olmayan core paketler | Ana `dependencies` uzun vadede buna indirgenir. |
 | `dev` | Test/lint/type/security kalite araçları | `pytest`, `pytest-*`, `ruff`, `mypy`, `pyright`, `bandit`, `safety`, type stubs, test doubles | CI ve local kalite kapıları bu profile bağlı kalır. |
-| `all` | Mevcut tam geliştirici deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi kırılmamalıdır. |
+| `dev-light` | Varsayılan normal geliştirici kurulumu | `postgres` + `dev` | Installer etkileşimli/normal akışta hızlı ve sistem başlığı gerektirmeyen varsayılandır. |
+| `developer-full` | Tam geliştirici/CI deneyimi | Tüm provider/integration extras + `dev` | `uv sync --all-extras` sözleşmesi CI/tam doğrulama için korunur. |
 | `production` | Web/API deploy için gözlemlenebilirlik dahil runtime | `runtime` + `postgres` + `telemetry` (+ gerekli provider seçimi) | `uv export --extra production --no-dev` ve `Dockerfile.production` tarafından kullanılan deploy profili. |
 | `production-minimal` | Telemetry dahil etmeden en dar no-dev Web/API smoke yüzeyi | `sidar[postgres]` | CI dry-run ve hızlı production-minimal import smoke için kullanılır; telemetry isteyen deploy `production` profilini seçmelidir. |
 
@@ -56,7 +57,7 @@ içindeki `[tool.sidar.dependency_inventory.labels]` altında tutulur; izin veri
 | `optional-provider` | `gemini`, `anthropic`, `openai`, `litellm`, `lora`, `gpu`, `voice` extras | Model sağlayıcıları ve ağır ML/GPU/STT yüzeyi varsayılan production-minimal profile zorunlu olmamalı. |
 | `optional-integration` | `PyGithub`, `duckduckgo-search`, `pillow`, `pyttsx3`; extras: `sandbox`, `gui`, `slack`, `browser`, `tools`, `aws`, `jira`, `teams` | Dış servis, browser, GUI ve sandbox entegrasyonları kullanım bazlı extras olarak kalmalı. |
 | `dev-quality` | `pytest`, `pytest-*`, `hypothesis`, `respx`, `fakeredis`, `testcontainers`, `ruff`, `mypy`, `pyright`, `pre-commit`, `shellcheck-py`, `types-*`, `bandit`, `safety` | Faz 1'de ana runtime listesinden `dev` extra'ya taşındı; `uv sync --all-extras` standardı bu araçları kurmaya devam eder. Pyright LSP reviewer diagnostics için dev/all veya `uv tool install pyright` yoluyla sağlanır, production profile'a girmez. |
-| `dev-light` | `postgres` + `dev` | Hızlı PR/local kontrolleri için voice/browser/GPU gibi sistem bağımlılığı gerektiren extras'ı dışarıda bırakır; standart full kurulumun yerine geçmez. Komut: `uv sync --frozen --extra dev-light`. |
+| `dev-light` | `postgres` + `dev` | Hızlı PR/local kontrolleri için voice/browser/GPU gibi sistem bağımlılığı gerektiren extras'ı dışarıda bırakır; normal installer varsayılanıdır. Komut: `uv sync --frozen --extra dev-light`. |
 
 
 ## HTTP client standardization policy (`httpx` only)
@@ -141,8 +142,21 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 
 ## Installer profil seçimi ve production-minimal takip kapısı
 
-Installer tarafında varsayılan profil artık isim olarak görünürdür: `--dev-full`
-(`uv sync --frozen --all-extras`) local/CI paritesi için standart kalır. Dar runtime
+Installer artık çalışma modu seçiminden sonra bağımlılık profilini de çözer. Etkileşimli
+normal kurulum varsayılanı `dev-light` profilidir; tam test/CI veya
+`--production-readiness` akışı `developer-full` / `dev-full` profilini kullanarak
+`uv sync --frozen --all-extras` sözleşmesini korur. Kullanıcı menüsü:
+
+1. `dev-light` — önerilen normal geliştirici kurulumu.
+2. `developer-full` / `dev-full` — tüm extras ve tam CI/test paritesi.
+3. `production-minimal` — dar no-dev runtime.
+4. `production` — runtime + postgres + telemetry.
+5. `custom` — `SIDAR_DEPENDENCY_EXTRAS=dev,openai,postgres` gibi özel provider/extra seçimi.
+
+Etkileşimsiz normal kurulum `dev-light` seçer; `RUN_CI_FULL_VALIDATION=true` /
+`--production-readiness` ise otomatik olarak `dev-full` seçer.
+
+Installer tarafında varsayılan normal profil artık `dev-light` olarak görünürdür (`uv sync --frozen --extra dev-light`). `--dev-full` / `developer-full` (`uv sync --frozen --all-extras`) tam CI ve kapsamlı geliştirici paritesi için korunur. Dar runtime
 yüzeyi denemeleri için opt-in komut `--production-minimal` veya
 `--dependency-profile=production-minimal` değeridir; bu yol dev/test araçlarını ve
 Pyright LSP yükünü kurmaz. Bu nedenle production-minimal, release kabulü değil

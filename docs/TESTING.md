@@ -301,6 +301,10 @@ brew install portaudio
 uv sync --all-extras
 ```
 
+Normal installer geliştirme kurulumu artık daha hafif `dev-light` profiliyle başlar.
+Tam CI/production-readiness paritesi veya tüm provider/browser/GPU/voice extras gerektiğinde
+`--dependency-profile=dev-full` ya da doğrudan `uv sync --frozen --all-extras` kullanın.
+
 ### Geliştirici ön koşulu
 
 ```bash

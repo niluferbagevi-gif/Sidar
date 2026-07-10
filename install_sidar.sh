@@ -504,7 +504,7 @@ read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || tru
 f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
 7e4ecc4d6bfa1ec5ac772d598df7b21cc047a4a9b24de13a336ceff0eca8138f  scripts/install_modules/phases/01_context.sh
 57e71d61437133d573eec64c81749610f5d5ce60017f9e49aa3a17c671159019  scripts/install_modules/phases/02_repo.sh
-f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
+9c8f5a042c38703bbab0100dcd0ec2edb6ca9162c6bd6e0086877d9335e66c6c  scripts/install_modules/phases/03_runtime.sh
 987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
 b2a79704bc05ded9fb283cc5eaafb75b5b21b9f63e0b387c417f337d60bd8aa9  scripts/install_modules/phases/03_system.sh
 74239b350bd85a7982be8516555c76c31f59bcd09492ed6c38b2f8fdcea9a99c  scripts/install_modules/phases/04_workspace.sh
@@ -526,7 +526,7 @@ b6a4662c922d136474abebf1337202ea6c1eab6d92dd62361612e1a31eee6b77  scripts/instal
 78e1529ee04275b19dd851836f9f8ee7443dc21802fba70a9e889091bcdd5971  scripts/install_modules/utils/installer_hash_guard.sh
 53f71d30511429c35763c4f1c53bc557f92674dbbd2a1b60dd807b17fcdf5968  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
-76e060d6e4c14cf71dc9cdac9eeb0cb4cb17d24d228d058b71d5effcb050abd6  scripts/install_modules/utils/python_env.sh
+5170acb8d4576522a35fb699e05605b1b0dd18c9e8c6829ca019a48a98f032a8  scripts/install_modules/utils/python_env.sh
 9823612f2782fad09a2001f040a5777190b0a57a13f9e35e127ac2955618761e  scripts/install_modules/utils/remote_script.sh
 0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -1532,7 +1532,7 @@ RUN_SMOKE_TESTS_MODE="always"
 RUN_AUDIT=true
 RUN_INSTALL_INTEGRATION_TESTS=false
 RUN_CI_FULL_VALIDATION=false
-DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-dev-full}"
+DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-ask}"
 ENABLE_AUTONOMOUS_CRON=false
 NO_INTERACTION=false
 DOCKER_ONLY=false
@@ -1597,7 +1597,7 @@ ENV_API_KEYS_MISSING=()
 print_install_help() {
     if sidar_is_english_locale; then
         cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-full|dev-light|production|production-minimal] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
@@ -1615,9 +1615,9 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --with-integration / --with-integration-tests  Also run bash run_tests.sh --stage integration after smoke tests
   --ci-full  After installation, run TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
   --production-readiness  Production gate alias for --ci-full; fails installation unless the full CI/e2e/benchmark gate passes
-  --dev-full  Explicit default dependency profile: uv sync --frozen --all-extras
+  --dev-full  Explicit full developer/CI dependency profile: uv sync --frozen --all-extras
   --production-minimal  Narrow runtime dependency profile: uv sync --frozen --extra production-minimal --no-dev
-  --dependency-profile=dev-full|dev-light|production|production-minimal  Select installer dependency sync profile
+  --dependency-profile=dev-light|dev-full|production-minimal|production|custom  Select installer dependency sync profile
   --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
   --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
   --skip-models  Skip Ollama model downloads
@@ -1666,7 +1666,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
 EOF
     else
         cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-full|dev-light|production|production-minimal] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
+Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--dev-full|--production-minimal|--dependency-profile=dev-light|dev-full|production-minimal|production|custom] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
   doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
@@ -1684,9 +1684,9 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --with-integration / --with-integration-tests  Smoke sonrası bash run_tests.sh --stage integration çalıştır
   --ci-full  Kurulum sonunda TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all çalıştır
   --production-readiness  --ci-full için üretim geçiş kapısı aliası; tam CI/e2e/benchmark geçmeden kurulumu başarılı saymaz
-  --dev-full  Açık varsayılan bağımlılık profili: uv sync --frozen --all-extras
+  --dev-full  Açık tam geliştirici/CI bağımlılık profili: uv sync --frozen --all-extras
   --production-minimal  Dar runtime bağımlılık profili: uv sync --frozen --extra production-minimal --no-dev
-  --dependency-profile=dev-full|dev-light|production|production-minimal  Installer bağımlılık sync profilini seç
+  --dependency-profile=dev-light|dev-full|production-minimal|production|custom  Installer bağımlılık sync profilini seç
   --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
   --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
   --skip-models  Ollama model indirmelerini atla
@@ -1865,8 +1865,8 @@ if [[ "$SILENT_MODE" == true ]]; then
 fi
 
 case "${DEPENDENCY_PROFILE}" in
-    dev-full|dev-light|production|production-minimal) ;;
-    *) fail "Geçersiz dependency profile: ${DEPENDENCY_PROFILE}. Desteklenen: dev-full|dev-light|production|production-minimal" ;;
+    ask|dev-light|dev-full|production-minimal|production|custom) ;;
+    *) fail "Geçersiz dependency profile: ${DEPENDENCY_PROFILE}. Desteklenen: dev-light|dev-full|production-minimal|production|custom" ;;
 esac
 export DEPENDENCY_PROFILE
 

@@ -1663,6 +1663,43 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
     ) < testing_doc.index("uv sync --frozen --all-extras", testing_prereq_start)
 
 
+def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
+    python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
+    plan = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-ask}"' in install_script
+    assert (
+        "--dependency-profile=dev-light|dev-full|production-minimal|production|custom"
+        in install_script
+    )
+    assert 'sidar_source_install_utils "gpu_utils.sh" "python_env.sh"' in runtime_phase
+    assert runtime_phase.index("select_runtime_mode") < runtime_phase.index(
+        "select_dependency_profile"
+    )
+    assert "select_dependency_profile()" in python_env
+    assert "1) dev-light" in python_env
+    assert "2) developer-full" in python_env
+    assert "3) production-minimal" in python_env
+    assert "4) production" in python_env
+    assert "5) özel provider seçimi" in python_env
+    assert "RUN_CI_FULL_VALIDATION" in python_env
+    assert 'requested="dev-full"' in python_env
+    assert 'requested="dev-light"' in python_env
+    assert "build_custom_dependency_sync_args()" in python_env
+    assert "SIDAR_DEPENDENCY_EXTRAS" in python_env
+    assert "normal kurulum varsayılanı `dev-light`" in plan
+    assert "custom` — `SIDAR_DEPENDENCY_EXTRAS=dev,openai,postgres`" in plan
+    assert (
+        'current_install_standard = "installer default dev-light; CI/developer-full uv sync --all-extras"'
+        in pyproject
+    )
+    assert 'default_profile = "dev-light"' in pyproject
+    assert 'default_command = "./install_sidar.sh --dependency-profile=dev-light"' in pyproject
+
+
 def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config() -> None:
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 

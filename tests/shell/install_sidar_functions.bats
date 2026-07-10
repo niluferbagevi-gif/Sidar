@@ -1217,6 +1217,7 @@ EOF
     sidar_source_install_utils() { events+=("source:$*"); }
     ensure_prerequisites() { events+=(ensure_prerequisites); }
     select_runtime_mode() { events+=(select_runtime_mode); APP_RUNTIME_MODE_SELECTED=local; }
+    select_dependency_profile() { events+=(select_dependency_profile); DEPENDENCY_PROFILE=dev-light; }
     detect_gpu() { events+=(detect_gpu); }
     setup_nvidia_docker() { events+=(setup_nvidia_docker); }
     install_uv_cli() { events+=(unexpected_uv); return 99; }
@@ -1224,7 +1225,7 @@ EOF
     install_python_deps() { events+=(unexpected_deps); return 99; }
 
     sidar_phase_runtime_prerequisites
-    [[ "${events[*]}" == "source:gpu_utils.sh ensure_prerequisites select_runtime_mode detect_gpu setup_nvidia_docker" ]]
+    [[ "${events[*]}" == "source:gpu_utils.sh python_env.sh ensure_prerequisites select_runtime_mode select_dependency_profile detect_gpu setup_nvidia_docker" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1269,6 +1270,63 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "select_dependency_profile defaults noninteractive installer to dev-light" {
+  run_installer_function '
+    DEPENDENCY_PROFILE=ask
+    NO_INTERACTION=true
+    AUTO_INSTALL=false
+    RUN_CI_FULL_VALIDATION=false
+
+    select_dependency_profile
+
+    [[ "$DEPENDENCY_PROFILE" == "dev-light" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)"* ]]
+}
+
+@test "select_dependency_profile promotes production readiness validation to dev-full" {
+  run_installer_function '
+    DEPENDENCY_PROFILE=ask
+    NO_INTERACTION=true
+    AUTO_INSTALL=false
+    RUN_CI_FULL_VALIDATION=true
+
+    select_dependency_profile
+
+    [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"developer-full"* ]]
+}
+
+@test "install_python_deps custom profile syncs only selected extras" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf "$tmpdir"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=custom
+    SIDAR_DEPENDENCY_EXTRAS="dev openai postgres"
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    grep -q "^sync --frozen --extra dev --extra openai --extra postgres$" "$tmpdir/uv.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "install_python_deps skips PortAudio apt install when portaudio19-dev is already installed" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -1276,6 +1334,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
     validate_runtime_env_loading() { :; }
@@ -1335,6 +1394,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=0
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
@@ -1372,6 +1432,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=1000
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
@@ -1419,6 +1480,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=1000
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }

@@ -108,14 +108,119 @@ create_uv_venv() {
     ok "Ortam aktif: $VENV_DIR"
 }
 
+
+normalize_dependency_profile_value() {
+    local raw="${1:-}"
+    raw="${raw,,}"
+    raw="${raw//[[:space:]]/}"
+    case "$raw" in
+        dev|dev-light|light) printf 'dev-light' ;;
+        full|developer-full|dev-full|all|all-extras) printf 'dev-full' ;;
+        prod-min|prod-minimal|production-minimal|minimal) printf 'production-minimal' ;;
+        prod|production) printf 'production' ;;
+        custom|provider|providers|özel|ozel) printf 'custom' ;;
+        ask|"") printf 'ask' ;;
+        *) printf '%s' "$raw" ;;
+    esac
+}
+
+select_dependency_profile() {
+    local requested="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-ask}}"
+    requested="$(normalize_dependency_profile_value "$requested")"
+
+    if [[ "$requested" == "ask" ]]; then
+        if [[ "${RUN_CI_FULL_VALIDATION:-false}" == true ]]; then
+            requested="dev-full"
+            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full olarak ayarlandı."
+        elif [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true ]]; then
+            requested="dev-light"
+            info "Etkileşimsiz kurulum: varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)."
+        elif [[ -t 0 ]]; then
+            echo
+            echo "Bağımlılık profili seçin:"
+            echo "  1) dev-light (önerilen; hızlı yerel geliştirme + test araçları)"
+            echo "  2) developer-full (tüm extras; CI/tam doğrulama)"
+            echo "  3) production-minimal (dar no-dev runtime)"
+            echo "  4) production (runtime + postgres + telemetry)"
+            echo "  5) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            local profile_choice=""
+            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-5, varsayılan 1]: " profile_choice 2>/dev/tty; then
+                profile_choice="${profile_choice:-1}"
+            else
+                profile_choice="1"
+                echo
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; dev-light seçildi."
+            fi
+            case "$profile_choice" in
+                1) requested="dev-light" ;;
+                2) requested="dev-full" ;;
+                3) requested="production-minimal" ;;
+                4) requested="production" ;;
+                5) requested="custom" ;;
+                *)
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); dev-light kullanılacak."
+                    requested="dev-light"
+                    ;;
+            esac
+        else
+            requested="dev-light"
+            info "TTY yok; varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)."
+        fi
+    fi
+
+    if [[ "$requested" == "custom" && -z "${SIDAR_DEPENDENCY_EXTRAS:-}" ]]; then
+        if [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true || ! -t 0 ]]; then
+            fail "custom dependency profile için SIDAR_DEPENDENCY_EXTRAS zorunlu (örn. SIDAR_DEPENDENCY_EXTRAS='dev,openai,postgres')."
+        fi
+        local custom_extras=""
+        if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Özel extras listesini virgül/boşluk ile girin (örn. dev,openai,postgres): " custom_extras 2>/dev/tty; then
+            SIDAR_DEPENDENCY_EXTRAS="$custom_extras"
+        fi
+        [[ -n "${SIDAR_DEPENDENCY_EXTRAS:-}" ]] || fail "custom dependency profile seçildi ancak extras listesi boş."
+    fi
+
+    case "$requested" in
+        dev-light|dev-full|production-minimal|production|custom) ;;
+        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|production-minimal|production|custom" ;;
+    esac
+
+    DEPENDENCY_PROFILE="$requested"
+    export DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS
+    ok "Bağımlılık profili seçildi: ${DEPENDENCY_PROFILE}${SIDAR_DEPENDENCY_EXTRAS:+ (extras=${SIDAR_DEPENDENCY_EXTRAS})}"
+}
+
+build_custom_dependency_sync_args() {
+    local raw_extras="${SIDAR_DEPENDENCY_EXTRAS:-}"
+    local extra=""
+    local -a args=(--frozen)
+
+    raw_extras="${raw_extras//,/ }"
+    for extra in $raw_extras; do
+        extra="${extra//[[:space:]]/}"
+        [[ -z "$extra" ]] && continue
+        args+=(--extra "$extra")
+    done
+
+    if [[ "${#args[@]}" -le 1 ]]; then
+        fail "custom dependency profile için en az bir extra seçilmelidir."
+    fi
+
+    printf '%s\0' "${args[@]}"
+}
+
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
-    local sync_command_label="uv sync --frozen --all-extras"
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
+    if [[ "$dependency_profile" == "ask" ]]; then
+        select_dependency_profile
+        dependency_profile="${DEPENDENCY_PROFILE:-dev-light}"
+    fi
+    local sync_command_label="uv sync --frozen --extra dev-light"
     local -a SYNC_ARGS=()
 
     case "$dependency_profile" in
@@ -129,6 +234,10 @@ install_python_deps() {
             SYNC_ARGS=(--frozen --extra dev-light)
             sync_command_label="uv sync --frozen --extra dev-light"
             ;;
+        custom)
+            mapfile -d '' -t SYNC_ARGS < <(build_custom_dependency_sync_args)
+            sync_command_label="uv sync ${SYNC_ARGS[*]}"
+            ;;
         production)
             SYNC_ARGS=(--frozen --extra production --no-dev)
             sync_command_label="uv sync --frozen --extra production --no-dev"
@@ -138,7 +247,7 @@ install_python_deps() {
             sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-full|dev-light|production|production-minimal"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|production-minimal|production|custom"
             ;;
     esac
     export DEPENDENCY_PROFILE="$dependency_profile"
