@@ -1326,7 +1326,8 @@ def test_install_alembic_logs_revision_and_db_source_observability() -> None:
     assert "Alembic head revizyon:" in alembic_phase
     assert "resolve_runtime_database_url" in alembic_phase
     assert "RUNTIME_DATABASE_URL_SOURCE" in alembic_phase
-    assert 'DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE:-bilinmiyor}"' in alembic_phase
+    assert 'DB_URL_SOURCE="$RUNTIME_DATABASE_URL_SOURCE"' in alembic_phase
+    assert 'if resolve_runtime_database_url >/dev/null; then' in alembic_phase
     assert "post_current_output=" in alembic_phase
     assert "post_heads_output=" in alembic_phase
     assert 'log_alembic_revision_observation "$current_rev" "$head_rev"' in alembic_phase

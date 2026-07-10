@@ -1089,7 +1089,8 @@ sidar_phase_local_migrations_and_models() {
         prepare_docker_for_migrations
         local runtime_db_url=""
         local db_conn_info=""
-        if runtime_db_url="$(resolve_runtime_database_url)"; then
+        if resolve_runtime_database_url >/dev/null; then
+            runtime_db_url="$RUNTIME_DATABASE_URL"
             db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
 from urllib.parse import urlparse, unquote
 import sys
@@ -1403,8 +1404,8 @@ sidar_phase06_report_production_postgres_password_alignment() {
     esac
 
     local pg_user pg_password pg_db pg_container runtime_db_url db_conn_info
-    runtime_db_url="$(resolve_runtime_database_url || true)"
-    if [[ -n "$runtime_db_url" ]]; then
+    if resolve_runtime_database_url >/dev/null; then
+        runtime_db_url="$RUNTIME_DATABASE_URL"
         db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
 from urllib.parse import urlparse, unquote
 import sys

@@ -81,8 +81,9 @@ run_migrations() {
 
     DB_URL=""
     DB_URL_SOURCE=""
-    if DB_URL="$(resolve_runtime_database_url)"; then
-        DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE:-bilinmiyor}"
+    if resolve_runtime_database_url >/dev/null; then
+        DB_URL="$RUNTIME_DATABASE_URL"
+        DB_URL_SOURCE="$RUNTIME_DATABASE_URL_SOURCE"
         if [[ "$DB_URL_SOURCE" == *":POSTGRES_*" ]]; then
             info "DATABASE_URL dotenv zincirinde kasıtlı olarak tek kaynak yaklaşımıyla tutulmuyor; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
         fi
@@ -258,12 +259,14 @@ PY
     if [[ -f "$ENV_FILE" ]]; then
         local refreshed_db_url=""
         local refreshed_postgres_password=""
-        refreshed_db_url=$(resolve_runtime_database_url || true)
+        if resolve_runtime_database_url >/dev/null; then
+            refreshed_db_url="$RUNTIME_DATABASE_URL"
+        fi
         refreshed_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$ENV_FILE")
 
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
-            DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE:-bilinmiyor} (yenilendi)"
+            DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE} (yenilendi)"
             export DATABASE_URL="$refreshed_db_url"
         fi
         if [[ -n "$refreshed_postgres_password" ]]; then
@@ -315,8 +318,9 @@ is_alembic_at_head() {
     [[ -f "$alembic_ini" ]] || return 1
     py_bin="$(resolve_alembic_python)" || return 1
 
-    if db_url="$(resolve_runtime_database_url)"; then
-        db_url_source="${RUNTIME_DATABASE_URL_SOURCE:-bilinmiyor}"
+    if resolve_runtime_database_url >/dev/null; then
+        db_url="$RUNTIME_DATABASE_URL"
+        db_url_source="$RUNTIME_DATABASE_URL_SOURCE"
     else
         debug "Alembic head kontrolü için DATABASE_URL çözümlenemedi: proses env, ${env_file} ve dotenv zincirinde DATABASE_URL/POSTGRES_* yok."
         return 1

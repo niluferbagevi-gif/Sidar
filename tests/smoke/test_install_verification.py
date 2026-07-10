@@ -174,6 +174,127 @@ def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: 
     assert "Geçici kurulum betiği kaldırıldı" in result.stdout
     assert "Resume kaynağı repo installer'ına geçirildi" in result.stdout
 
+
+def test_runtime_database_url_source_labels_survive_successful_resolution(tmp_path: Path) -> None:
+    script = textwrap.dedent(
+        """
+        set -euo pipefail
+        source scripts/install_modules/utils/env_utils.sh
+        source scripts/install_modules/utils/database_url.sh
+
+        SCRIPT_DIR="$1"
+        unset DATABASE_URL DOTENV_FILE RUNTIME_DATABASE_URL RUNTIME_DATABASE_URL_SOURCE
+
+        export DATABASE_URL="postgresql+asyncpg://sidar:proc@localhost:5432/sidar"
+        resolve_runtime_database_url >/dev/null
+        printf 'process=%s\n' "$RUNTIME_DATABASE_URL_SOURCE"
+
+        unset DATABASE_URL RUNTIME_DATABASE_URL RUNTIME_DATABASE_URL_SOURCE
+        cat > "$SCRIPT_DIR/.env" <<'EOF'
+DATABASE_URL=postgresql+asyncpg://sidar:env@localhost:5432/sidar
+EOF
+        resolve_runtime_database_url >/dev/null
+        printf 'env_database=%s\n' "$RUNTIME_DATABASE_URL_SOURCE"
+
+        unset RUNTIME_DATABASE_URL RUNTIME_DATABASE_URL_SOURCE
+        cat > "$SCRIPT_DIR/.env" <<'EOF'
+SIDAR_ENV=development
+EOF
+        cat > "$SCRIPT_DIR/.env.development" <<'EOF'
+DATABASE_URL=postgresql+asyncpg://sidar:dev@localhost:5432/sidar
+EOF
+        resolve_runtime_database_url >/dev/null
+        printf 'development_database=%s\n' "$RUNTIME_DATABASE_URL_SOURCE"
+
+        unset RUNTIME_DATABASE_URL RUNTIME_DATABASE_URL_SOURCE
+        cat > "$SCRIPT_DIR/.env" <<'EOF'
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=parts
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=sidar
+EOF
+        rm -f "$SCRIPT_DIR/.env.development"
+        resolve_runtime_database_url >/dev/null
+        printf 'env_postgres=%s\n' "$RUNTIME_DATABASE_URL_SOURCE"
+        """
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script, "sidar-db-url-source", str(tmp_path)],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "process=process:DATABASE_URL" in result.stdout
+    assert "env_database=.env:DATABASE_URL" in result.stdout
+    assert "development_database=.env.development:DATABASE_URL" in result.stdout
+    assert "env_postgres=.env:POSTGRES_*" in result.stdout
+    assert "bilinmiyor" not in result.stdout
+
+
+def test_run_migrations_logs_resolved_database_url_source_not_unknown(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python_stub = fake_bin / "python3"
+    python_stub.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            if [[ "${1:-}" == "-m" && "${2:-}" == "alembic" ]]; then
+              case "${3:-}" in
+                upgrade) echo "upgrade ok"; exit 0 ;;
+                current) echo "  0001_initial (head)"; exit 0 ;;
+                heads) echo "  0001_initial (head)"; exit 0 ;;
+              esac
+            fi
+            exit 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    python_stub.chmod(0o755)
+    (tmp_path / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+
+    script = textwrap.dedent(
+        """
+        set -euo pipefail
+        source scripts/install_modules/utils/env_utils.sh
+        source scripts/install_modules/utils/database_url.sh
+        source scripts/install_modules/phases/12_alembic.sh
+
+        step() { :; }
+        info() { printf 'INFO:%s\n' "$*"; }
+        ok() { printf 'OK:%s\n' "$*"; }
+        warn() { printf 'WARN:%s\n' "$*"; }
+        fail() { printf 'FAIL:%s\n' "$*" >&2; exit 1; }
+        debug() { :; }
+
+        export SCRIPT_DIR="$1"
+        export PATH="$2:$PATH"
+        export DATABASE_URL="sqlite:///$1/alembic-smoke.db"
+        export DOCKER_ONLY=false
+        export MIGRATION_DOCKER_POLICY=disabled
+
+        run_migrations
+        """
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script, "sidar-alembic-source", str(tmp_path), str(fake_bin)],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Alembic DB URL kaynağı: process:DATABASE_URL" in result.stdout
+    assert "Alembic DB URL kaynağı: bilinmiyor" not in result.stdout
+
+
 def test_install_sidar_embedded_manifests_in_sync() -> None:
     repo_root = Path(os.getcwd())
     for tool, extra in (

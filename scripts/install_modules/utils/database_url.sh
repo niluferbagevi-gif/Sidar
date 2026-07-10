@@ -28,12 +28,14 @@ resolve_runtime_database_url_from_file() {
     local postgres_host=""
     local postgres_port=""
     local postgres_db=""
+    local source_label=""
 
     [[ -f "$env_file" ]] || return 1
+    source_label="$(basename "$env_file")"
 
     db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n[:space:]')"
     if [[ -n "$db_url" ]]; then
-        printf '%s|%s\n' "$db_url" "${env_file}:DATABASE_URL"
+        printf '%s|%s\n' "$db_url" "${source_label}:DATABASE_URL"
         return 0
     fi
 
@@ -88,7 +90,7 @@ resolve_runtime_database_url() {
             db_url="${resolved%%|*}"
             source="${resolved#*|}"
             if [[ "$source" == "-" ]]; then
-                source="${env_file}:POSTGRES_*"
+                source="$(basename "$env_file"):POSTGRES_*"
             fi
             RUNTIME_DATABASE_URL="$db_url"
             RUNTIME_DATABASE_URL_SOURCE="$source"

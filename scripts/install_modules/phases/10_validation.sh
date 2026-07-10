@@ -222,7 +222,9 @@ run_smoke_tests() {
     local smoke_postgres_password=""
     local smoke_redis_url=""
     if [[ -f "$env_file" ]]; then
-        smoke_database_url=$(resolve_runtime_database_url || true)
+        if resolve_runtime_database_url >/dev/null; then
+            smoke_database_url="$RUNTIME_DATABASE_URL"
+        fi
         smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
         smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
         if [[ -z "$smoke_redis_url" ]]; then
@@ -345,7 +347,9 @@ run_install_integration_api_tests() {
     local integration_postgres_password=""
     local integration_redis_url=""
     if [[ -f "$env_file" ]]; then
-        integration_database_url=$(resolve_runtime_database_url || true)
+        if resolve_runtime_database_url >/dev/null; then
+            integration_database_url="$RUNTIME_DATABASE_URL"
+        fi
         integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
         integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
         if [[ -z "$integration_redis_url" ]]; then
