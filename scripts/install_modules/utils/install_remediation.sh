@@ -527,8 +527,26 @@ sidar_resume_after_remediation() {
     local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
     local resume_failure_signature="${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}"
     local resume_failure_phase="${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}"
+    local resume_script=""
 
-    warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
+    if declare -F sidar_resolve_resume_installer_path >/dev/null 2>&1; then
+        resume_script="$(sidar_resolve_resume_installer_path)"
+    elif [[ -n "${SCRIPT_DIR:-}" && -f "${SCRIPT_DIR}/install_sidar.sh" ]]; then
+        resume_script="${SCRIPT_DIR}/install_sidar.sh"
+    elif [[ -n "${ORIGINAL_SCRIPT_PATH:-}" && -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+        resume_script="$ORIGINAL_SCRIPT_PATH"
+    else
+        fail "Auto-heal resume için çalıştırılabilir install_sidar.sh bulunamadı. Denenenler: SCRIPT_DIR=${SCRIPT_DIR:-boş}, ORIGINAL_SCRIPT_PATH=${ORIGINAL_SCRIPT_PATH:-boş}."
+    fi
+
+    if declare -F sidar_verify_resume_installer_or_fail >/dev/null 2>&1; then
+        sidar_verify_resume_installer_or_fail "$resume_script"
+    elif declare -F verify_reexec_installer_or_fail >/dev/null 2>&1; then
+        verify_reexec_installer_or_fail "$resume_script" "Auto-heal resume re-exec"
+    fi
+    chmod +x "$resume_script" 2>/dev/null || true
+
+    warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt}, installer=${resume_script})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
     export SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt"
     # shellcheck disable=SC2016  # Inner bash expands env-provided cwd and argv after exec.
@@ -543,7 +561,7 @@ sidar_resume_after_remediation() {
         SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$resume_failure_signature" \
         SIDAR_INSTALL_LAST_FAILURE_PHASE="$resume_failure_phase" \
         bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \
-        "$ORIGINAL_SCRIPT_PATH" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+        "$resume_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
 sidar_handle_install_failure() {

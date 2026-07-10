@@ -92,6 +92,8 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
     for function_name in (
         "check_installer_hash",
         "verify_reexec_installer_or_fail",
+        "sidar_resolve_resume_installer_path",
+        "sidar_verify_resume_installer_or_fail",
         "verify_home_reexec_candidate_if_present",
     ):
         module_function = _normalize_bash_function(_extract_bash_function(module, function_name))
@@ -100,6 +102,75 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
         )
         assert installer_function == module_function
 
+
+def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
+    home_dir = tmp_path / "home"
+    repo_dir = tmp_path / "Sidar"
+    marker = tmp_path / "resume-marker.txt"
+    home_dir.mkdir()
+    repo_dir.mkdir()
+
+    temporary_installer = home_dir / "install_sidar.sh"
+    temporary_installer.write_text("#!/usr/bin/env bash\nexit 77\n", encoding="utf-8")
+    temporary_installer.chmod(0o755)
+
+    repo_installer = repo_dir / "install_sidar.sh"
+    repo_installer.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s|%s|%s\n' "$0" "${{SIDAR_INSTALL_RESUME_FROM_PHASE:-}}" "${{SIDAR_INSTALL_REMEDIATION_ATTEMPT:-}}" > {shlex.quote(str(marker))}
+            """
+        ),
+        encoding="utf-8",
+    )
+    repo_installer.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """
+                set -euo pipefail
+                info() { printf 'INFO:%s\n' "$*"; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; exit 1; }
+                compute_sha256() { sha256sum "$1" | awk '{print $1}'; }
+
+                source scripts/install_modules/utils/installer_hash_guard.sh
+                source scripts/install_modules/phases/11_post_install.sh
+                source scripts/install_modules/utils/install_remediation.sh
+
+                export TARGET_DIR="$1"
+                export SCRIPT_DIR="$1"
+                export ORIGINAL_SCRIPT_PATH="$2"
+                export ORIGINAL_SCRIPT_DIR="$(dirname "$2")"
+                SIDAR_INSTALL_ORIGINAL_ARGS=()
+
+                cleanup_bootstrap_script_copy
+                [[ ! -e "$2" ]]
+                [[ "$ORIGINAL_SCRIPT_PATH" == "$1/install_sidar.sh" ]]
+                [[ "$ORIGINAL_SCRIPT_DIR" == "$1" ]]
+
+                sidar_resume_after_remediation 06_services 2
+                """
+            ),
+            "sidar-resume-smoke",
+            str(repo_dir),
+            str(temporary_installer),
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert marker.read_text(encoding="utf-8") == f"{repo_installer}|06_services|2\n"
+    assert "Geçici kurulum betiği kaldırıldı" in result.stdout
+    assert "Resume kaynağı repo installer'ına geçirildi" in result.stdout
 
 def test_install_sidar_embedded_manifests_in_sync() -> None:
     repo_root = Path(os.getcwd())

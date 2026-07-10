@@ -239,12 +239,23 @@ cleanup_bootstrap_script_copy() {
         return
     fi
 
+    local repo_installer="$TARGET_DIR/install_sidar.sh"
+
     if [[ -f "$ORIGINAL_SCRIPT_PATH" ]]; then
         if rm -f "$ORIGINAL_SCRIPT_PATH"; then
             ok "Geçici kurulum betiği kaldırıldı: $ORIGINAL_SCRIPT_PATH"
         else
             warn "Geçici kurulum betiği silinemedi: $ORIGINAL_SCRIPT_PATH"
         fi
+    fi
+
+    if [[ -f "$repo_installer" ]]; then
+        ORIGINAL_SCRIPT_PATH="$repo_installer"
+        ORIGINAL_SCRIPT_DIR="$TARGET_DIR"
+        export ORIGINAL_SCRIPT_PATH ORIGINAL_SCRIPT_DIR
+        info "Resume kaynağı repo installer'ına geçirildi: $ORIGINAL_SCRIPT_PATH"
+    else
+        warn "Repo installer bulunamadı; resume kaynağı güncellenemedi: $repo_installer"
     fi
 
     info "Kurulum bundan sonra $TARGET_DIR dizininden yönetilmelidir."

@@ -67,6 +67,37 @@ verify_reexec_installer_or_fail() {
     check_installer_hash "$ORIGINAL_SCRIPT_PATH" "$next_script" "$reexec_label"
 }
 
+
+sidar_resolve_resume_installer_path() {
+    local repo_script="${SCRIPT_DIR:-}/install_sidar.sh"
+
+    if [[ -n "${SCRIPT_DIR:-}" && -f "$repo_script" ]]; then
+        printf '%s\n' "$repo_script"
+        return 0
+    fi
+
+    if [[ -n "${ORIGINAL_SCRIPT_PATH:-}" && -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+        printf '%s\n' "$ORIGINAL_SCRIPT_PATH"
+        return 0
+    fi
+
+    fail "Auto-heal resume için çalıştırılabilir install_sidar.sh bulunamadı. Denenenler: SCRIPT_DIR=${SCRIPT_DIR:-boş}, ORIGINAL_SCRIPT_PATH=${ORIGINAL_SCRIPT_PATH:-boş}. Repo içindeki install_sidar.sh ile kurulumu yeniden başlatın."
+}
+
+sidar_verify_resume_installer_or_fail() {
+    local resume_script="$1"
+    local current_script="${ORIGINAL_SCRIPT_PATH:-}"
+
+    [[ -n "$resume_script" ]] || fail "Auto-heal resume hedefi boş."
+    [[ -f "$resume_script" ]] || fail "Auto-heal resume hedef install_sidar.sh bulunamadı: $resume_script"
+
+    if [[ -z "$current_script" || ! -f "$current_script" ]]; then
+        current_script="$resume_script"
+    fi
+    check_installer_hash "$current_script" "$resume_script" "Auto-heal resume re-exec"
+}
+
+
 verify_home_reexec_candidate_if_present() {
     local home_script="$HOME/Sidar/install_sidar.sh"
 

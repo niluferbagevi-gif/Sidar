@@ -514,7 +514,7 @@ a3cc9bb0097ea5e4d3bd60fa5138d0d92962e3ba64f7eb1fa7f76f9540048db6  scripts/instal
 5f68c471e78e5c4da007ba7ed978800d06a945bac6673b02d92cde23c86f9ea7  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
 c83b0cd74c97d0be22e84c8cbc09d7f1c78ffec1b8d39f0487d53b1dc0f88aee  scripts/install_modules/phases/10_validation.sh
-36202d5144780b33345d1554e658af65f99b7f961b6a05eef0a4eeb1efe4f8e1  scripts/install_modules/phases/11_post_install.sh
+046396e0f445e99422c17d4f28db05a40adf716d6e4a0d110c6b538e1a9ebdfb  scripts/install_modules/phases/11_post_install.sh
 b6a4662c922d136474abebf1337202ea6c1eab6d92dd62361612e1a31eee6b77  scripts/install_modules/phases/12_alembic.sh
 41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
@@ -522,8 +522,8 @@ b6a4662c922d136474abebf1337202ea6c1eab6d92dd62361612e1a31eee6b77  scripts/instal
 6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
 61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
 10995d9a3b23763f7f7a596b09609ee0fe0fc738aaededacc47c3dd8b1b16044  scripts/install_modules/utils/gpu_utils.sh
-30010afd406be1f30a74d3dc5fd9b4ea617adade767146396cec33fe13bf9679  scripts/install_modules/utils/install_remediation.sh
-78e1529ee04275b19dd851836f9f8ee7443dc21802fba70a9e889091bcdd5971  scripts/install_modules/utils/installer_hash_guard.sh
+5e6fd809f7a168d57a53c3de941fff772366686e475e830121cae0019816a80a  scripts/install_modules/utils/install_remediation.sh
+f2dabe212383f00c9aed2311ef4ae771e2afe4ad8ca0f90e0845b4776217ddc2  scripts/install_modules/utils/installer_hash_guard.sh
 53f71d30511429c35763c4f1c53bc557f92674dbbd2a1b60dd807b17fcdf5968  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
 5170acb8d4576522a35fb699e05605b1b0dd18c9e8c6829ca019a48a98f032a8  scripts/install_modules/utils/python_env.sh
@@ -969,6 +969,40 @@ if ! declare -F verify_reexec_installer_or_fail >/dev/null 2>&1; then
         local reexec_label="$2"
 
         check_installer_hash "$ORIGINAL_SCRIPT_PATH" "$next_script" "$reexec_label"
+    }
+fi
+
+
+if ! declare -F sidar_resolve_resume_installer_path >/dev/null 2>&1; then
+    sidar_resolve_resume_installer_path() {
+        local repo_script="${SCRIPT_DIR:-}/install_sidar.sh"
+
+        if [[ -n "${SCRIPT_DIR:-}" && -f "$repo_script" ]]; then
+            printf '%s\n' "$repo_script"
+            return 0
+        fi
+
+        if [[ -n "${ORIGINAL_SCRIPT_PATH:-}" && -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+            printf '%s\n' "$ORIGINAL_SCRIPT_PATH"
+            return 0
+        fi
+
+        fail "Auto-heal resume için çalıştırılabilir install_sidar.sh bulunamadı. Denenenler: SCRIPT_DIR=${SCRIPT_DIR:-boş}, ORIGINAL_SCRIPT_PATH=${ORIGINAL_SCRIPT_PATH:-boş}. Repo içindeki install_sidar.sh ile kurulumu yeniden başlatın."
+    }
+fi
+
+if ! declare -F sidar_verify_resume_installer_or_fail >/dev/null 2>&1; then
+    sidar_verify_resume_installer_or_fail() {
+        local resume_script="$1"
+        local current_script="${ORIGINAL_SCRIPT_PATH:-}"
+
+        [[ -n "$resume_script" ]] || fail "Auto-heal resume hedefi boş."
+        [[ -f "$resume_script" ]] || fail "Auto-heal resume hedef install_sidar.sh bulunamadı: $resume_script"
+
+        if [[ -z "$current_script" || ! -f "$current_script" ]]; then
+            current_script="$resume_script"
+        fi
+        check_installer_hash "$current_script" "$resume_script" "Auto-heal resume re-exec"
     }
 fi
 
