@@ -20,7 +20,8 @@ def load_pytest_dotenv_chain() -> None:
     profile_env_path = PROJECT_ROOT / f".env.{os.getenv('SIDAR_ENV', '').strip()}"
 
     # config.py ile aynı temel önceliği koru: .env ve .env.advanced mevcut
-    # process ortamını ezmez; profil/explicit/secret dosyaları bilinçli override eder.
+    # process ortamını ezmez; profil/explicit dosyaları bilinçli override eder.
+    # Testlerde secret overlay yalnız SIDAR_TEST_LOAD_REAL_KEYS opt-in ile yüklenir.
     load_dotenv(dotenv_path=base_env_path, override=False)
     load_dotenv(dotenv_path=advanced_env_path, override=False)
     if profile_env_path.name != ".env." and profile_env_path.exists():
@@ -33,8 +34,13 @@ def load_pytest_dotenv_chain() -> None:
             explicit_path = PROJECT_ROOT / explicit_path
         load_dotenv(dotenv_path=explicit_path, override=True)
 
-    keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-    if keys_file:
+    load_real_keys = os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    keys_file = os.getenv("SIDAR_KEYS_FILE", "").strip()
+    if load_real_keys and keys_file:
         load_dotenv(dotenv_path=Path(keys_file).expanduser(), override=True)
 
 
