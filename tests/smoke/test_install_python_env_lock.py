@@ -4,6 +4,8 @@ import textwrap
 
 import pytest
 
+pytestmark = pytest.mark.installer_smoke
+
 _ENV_VARS_THAT_CAN_CHANGE_INSTALLER_PROFILE = (
     "DEPENDENCY_PROFILE",
     "SIDAR_DEPENDENCY_PROFILE",

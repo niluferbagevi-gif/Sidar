@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.installer_smoke
+
 
 def _sha256_for_test(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()

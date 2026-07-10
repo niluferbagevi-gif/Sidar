@@ -3,6 +3,10 @@ import subprocess
 import textwrap
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.installer_smoke
+
 
 def test_repo_phase_copies_dark_mode_css_into_htmlcov_assets(tmp_path):
     repo_root = Path(os.getcwd())

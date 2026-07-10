@@ -3916,18 +3916,23 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
         "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}"
         in ci
     )
+    assert "Report benchmark baseline availability" in ci
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
-    assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' in ci
+    assert 'echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"' in ci
+    assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
+    assert "Base lint/smoke/unit/coverage/frontend gates will still run" in ci
     assert "Benchmark baseline missing" in ci
     assert "exit 1" in ci
-    assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
+    assert "benchmark-compare:" in ci
+    assert "Production readiness aggregate" in ci
+    assert "needs: [test, benchmark-compare]" in ci
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
-    assert "CI production-readiness is fail-closed" in ci
-    assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in ci
-    assert 'BENCHMARK_COMPARE_REQUIRED: "1"' not in ci
-    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in ci
+    assert "benchmark compare is fail-closed" in ci
+    assert '--benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"' in ci
+    assert 'BENCHMARK_COMPARE_FAIL: mean:10%' in ci
     assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes

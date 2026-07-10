@@ -444,6 +444,7 @@ markers = [
   "integration: harici sistem entegrasyonları",
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
+  "installer_smoke: release-critical installer smoke tests",
 ]
 filterwarnings = [
   "error",

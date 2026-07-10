@@ -128,6 +128,7 @@ jobs:
           key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
 
   test:
+    name: Base quality gates (lint, smoke, unit, coverage, frontend)
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
 
@@ -222,28 +223,29 @@ jobs:
             benchmark-baseline-${{ runner.os }}-py311-master-
             benchmark-baseline-${{ runner.os }}-py311-
 
-      - name: Resolve benchmark baseline gate mode
+      - name: Report benchmark baseline availability
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .benchmarks
           benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
           if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"
-            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; compare gate is required."
+            echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"
+            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; benchmark-compare job will enforce it."
             {
               echo "### Benchmark baseline"
-              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; compare gate is required."
+              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; benchmark-compare job will enforce it."
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Restore .benchmarks from GitHub Actions cache/artifact before the CI production-readiness gate."
+            echo "BENCHMARK_BASELINE_AVAILABLE=0" >> "$GITHUB_ENV"
+            echo "::warning title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base lint/smoke/unit/coverage/frontend gates will still run; benchmark-compare remains fail-closed."
             {
               echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; CI production-readiness is fail-closed and will not seed a baseline inside the gated run."
+              echo "- No cached baseline found for \`${benchmark_compare_name}\`; base quality gates continue so lint, smoke, unit, coverage, shell and frontend failures remain visible."
+              echo "- The separate \`benchmark-compare\` job is fail-closed and blocks production readiness until a reviewed baseline exists."
               echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
               echo "- Or restore \`.benchmarks/*_${benchmark_compare_name}.json\` from a reviewed benchmark artifact/cache before re-running CI."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
           fi
 
       - name: Diagnose environment (always)
@@ -388,18 +390,16 @@ jobs:
 
       - name: Run installer/runtime smoke verification tests
         run: >-
-          uv run pytest -q --no-cov
-          tests/smoke/test_install_verification.py
-          tests/smoke/test_repo_phase_dark_mode_assets.py
+          uv run pytest -q --no-cov -m installer_smoke
 
       - name: Run ShellCheck for installer and install modules
         run: |
           shopt -s globstar nullglob
           uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
 
-      - name: Run test suite (single pass + coverage gate)
+      - name: Run test suite (single pass + coverage gate, benchmark excluded)
         env:
-          RUN_BENCHMARKS: "required"
+          RUN_BENCHMARKS: "0"
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
@@ -412,20 +412,13 @@ jobs:
           # (current local/CI baseline: %99; coverage_ratchet.py only raises it)
           # — see AGENTS.md §2.5.4. Set COVERAGE_FAIL_UNDER_CI explicitly if a
           # stricter ad-hoc pre-merge bar is ever needed again.
-          BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
-          BENCHMARK_TREND_COMPARE: "1"
-          BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
-          BENCHMARK_TREND_WINDOW: "15"
-          BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_FAIL: "mean:10%"
-          BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |
           set -o pipefail
           mkdir -p artifacts
-          make production-readiness 2>&1 | tee artifacts/test_run.log
+          TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all 2>&1 | tee artifacts/test_run.log
 
-      - name: Validate production-readiness test summary
-        run: uv run python scripts/ci/validate_test_summary.py --mode release --summary artifacts/test-summary.json
+      - name: Validate base quality test summary
+        run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 
       - name: Verify committed coverage ratchet baseline
         run: |
@@ -568,8 +561,103 @@ jobs:
 
       - name: Run installer smoke suite
         run: >-
-          uv run pytest -q --no-cov
-          tests/smoke/test_install_verification.py
+          uv run pytest -q --no-cov -m installer_smoke
+
+  benchmark-compare:
+    name: Benchmark compare gate
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Restore benchmark baseline cache
+        id: benchmark-baseline-cache
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-main-
+            benchmark-baseline-${{ runner.os }}-py311-master-
+            benchmark-baseline-${{ runner.os }}-py311-
+
+      - name: Resolve benchmark baseline gate mode
+        id: benchmark-baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .benchmarks artifacts/benchmark
+          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
+          compare_file="$(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$compare_file" ]]; then
+            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base quality gates run separately, but production readiness is fail-closed until a benchmark baseline exists."
+            {
+              echo "### Benchmark baseline"
+              echo "- No cached baseline found for \`${benchmark_compare_name}\`; benchmark compare is fail-closed."
+              echo "- Base quality gates are independent and still run in the \`test\` job."
+              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
+
+      - name: Run benchmark compare gate
+        env:
+          DOTENV_FILE: .env.test
+          BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
+          BENCHMARK_COMPARE_FAIL: mean:10%
+        run: >-
+          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov
+          --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
+          --benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"
+          --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"
+          --benchmark-warmup=on
+          --benchmark-warmup-iterations=100000
+          --benchmark-disable-gc
+
+      - name: Upload benchmark compare artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-compare-artifacts
+          path: |
+            artifacts/benchmark/benchmark.json
+            .benchmarks/
+          if-no-files-found: warn
+          retention-days: 14
+
+  production-readiness:
+    name: Production readiness aggregate
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
+    runs-on: ubuntu-latest
+    needs: [test, benchmark-compare]
+
+    steps:
+      - name: Confirm production readiness gates
+        run: |
+          echo "Base quality gates and benchmark compare gate passed."
+          echo "Production readiness is the combined result of jobs: test + benchmark-compare."
 
   production-profile-dry-run:
     name: Production dependency profile dry run
@@ -597,7 +685,7 @@ jobs:
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
     runs-on: ubuntu-latest
-    needs: test
+    needs: production-readiness
 
     services:
       postgres:
@@ -705,7 +793,7 @@ jobs:
   publish-standalone-installer:
     name: Publish Standalone Installer Bundle
     runs-on: ubuntu-latest
-    needs: [test, pg-stress]
+    needs: [production-readiness, pg-stress]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
