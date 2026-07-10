@@ -223,11 +223,43 @@ ensure_project_venv
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-run_precommit_autofix() {
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "⚠️ 'uv' bulunamadı; pre-commit autofix adımı atlanıyor."
+report_git_diff_state() {
+  local label="$1"
+
+  if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ℹ️ ${label}: git çalışma ağacı durumu raporlanamadı (git repo değil)."
     return 0
   fi
+
+  if git diff --exit-code --quiet; then
+    echo "✅ ${label}: git diff --exit-code temiz."
+  else
+    echo "⚠️ ${label}: git diff --exit-code değişiklik görüyor."
+    git diff --stat || true
+  fi
+}
+
+run_precommit_autofix() {
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "⚠️ 'uv' bulunamadı; Ruff kalite kapısı atlanıyor."
+    return 0
+  fi
+
+  if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then
+    echo "🔍 Ruff kalite kapısı: uv run ruff check ."
+    if ! uv run ruff check .; then
+      echo "❌ Ruff lint kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
+      return 1
+    fi
+    echo "🔍 Ruff format kapısı: uv run ruff format --check ."
+    if ! uv run ruff format --check .; then
+      echo "❌ Ruff format kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
+      return 1
+    fi
+    return 0
+  fi
+
+  report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"
 
   local ruff_autofix_cmd=(uv run ruff check --fix)
   local unsafe_fixes="${RUFF_AUTOFIX_UNSAFE:-0}"
@@ -242,11 +274,20 @@ run_precommit_autofix() {
   fi
   ruff_autofix_cmd+=(.)
 
-  echo "🧹 Pre-commit autofix: ${ruff_autofix_cmd[*]}"
+  echo "🧹 Ruff autofix opt-in: ${ruff_autofix_cmd[*]}"
   if ! "${ruff_autofix_cmd[@]}"; then
     echo "❌ Ruff autofix sonrası lint kontrolleri başarısız. Testler durduruldu."
+    report_git_diff_state "RUFF_AUTOFIX bitiş durumu"
     return 1
   fi
+  echo "🧹 Ruff format opt-in: uv run ruff format ."
+  if ! uv run ruff format .; then
+    echo "❌ Ruff format autofix başarısız. Testler durduruldu."
+    report_git_diff_state "RUFF_AUTOFIX bitiş durumu"
+    return 1
+  fi
+
+  report_git_diff_state "RUFF_AUTOFIX bitiş durumu"
 }
 
 check_python_version() {

@@ -205,6 +205,23 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
 
 
+def test_run_tests_ruff_autofix_is_explicit_opt_in() -> None:
+    script = _script()
+    precommit_block = _extract_run_tests_function("run_precommit_autofix")
+
+    assert 'if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then' in precommit_block
+    assert "uv run ruff check ." in precommit_block
+    assert "uv run ruff format --check ." in precommit_block
+    assert "RUFF_AUTOFIX=1 bash run_tests.sh --stage all" in precommit_block
+    assert "uv run ruff check --fix" in precommit_block
+    assert "uv run ruff format ." in precommit_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"' in precommit_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX bitiş durumu"' in precommit_block
+    assert script.index('if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then') < script.index(
+        "uv run ruff check --fix"
+    )
+
+
 def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     mutation = Path(".github/workflows/weekly-mutation-and-critical-tests.yml").read_text(
@@ -488,7 +505,10 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "### İlk yerel kurulum: benchmark baseline bootstrap" in readme
     assert "yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0`" in readme
     assert "make benchmark-seed" in readme
-    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all" in readme
+    assert (
+        "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+        in readme
+    )
     assert "İlk yerel benchmark koşusunda `.benchmarks` baseline yoksa" in agents
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in agents
     assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
@@ -636,14 +656,14 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
 
     assert "--production-readiness" in install_script
     assert (
-        "--production-readiness) RUN_CI_FULL_VALIDATION=true; "
-        "NO_INTERACTION=true ;;"
+        "--production-readiness) RUN_CI_FULL_VALIDATION=true; NO_INTERACTION=true ;;"
     ) in install_script
     assert (
-        'if [[ "$AUTO_ENV_TYPE" == "production" '
-        '&& "$RUN_CI_FULL_VALIDATION" != true ]]; then'
+        'if [[ "$AUTO_ENV_TYPE" == "production" && "$RUN_CI_FULL_VALIDATION" != true ]]; then'
     ) in install_script
-    assert "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
+    assert (
+        "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
+    )
     run_tests_script = Path("run_tests.sh").read_text(encoding="utf-8")
     assert (
         'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
@@ -671,15 +691,19 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     database_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
         encoding="utf-8"
     )
-    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
-        encoding="utf-8"
-    )
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(encoding="utf-8")
     makefile = Path("Makefile").read_text(encoding="utf-8")
     assert 'SIDAR_SELECTED_ENV_TYPE="$selected_env"' in env_phase
-    assert "production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
-    assert 'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
+    assert (
+        "production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
+    )
+    assert (
+        'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
+    )
     assert "production-readiness gate ve migration doğrulaması tamamlandı" in env_phase
-    assert 'local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"' in validation_phase
+    assert (
+        'local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"' in validation_phase
+    )
     assert finish_phase.index("prompt_post_install_sidar_env_mode") < finish_phase.index(
         "run_install_ci_full_validation"
     )
@@ -693,11 +717,13 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
     assert 'local optional_command="make dev-full"' in validation_phase
-    assert 'env AUTO_OPEN_ARTIFACTS=0 make dev-full' in validation_phase
+    assert "env AUTO_OPEN_ARTIFACTS=0 make dev-full" in validation_phase
     assert "make production-readiness" in validation_phase
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in makefile
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in makefile
-    assert "production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir" in validation_phase
+    assert (
+        "production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir" in validation_phase
+    )
     assert "Tam doğrulama sonucu: HATA" in validation_phase
     assert "uygulama geliştirme amacıyla çalışabilir" in validation_phase
     assert "production-ready sayılmaz" in validation_phase
@@ -764,7 +790,10 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "Next step: rerun the normal CI / production-readiness gate" in ci
     assert "GitHub Actions → CI → Run workflow" in ci
     assert "seed_benchmark_baseline=true" in ci
-    assert "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}" in ci
+    assert (
+        "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}"
+        in ci
+    )
     assert "Benchmark baseline missing" in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
     assert "seed_benchmark_baseline" in testing
@@ -876,8 +905,7 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
     assert "make production-readiness" in result.stdout
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
-        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
-        in result.stdout
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
     )
 
 
@@ -1035,8 +1063,6 @@ print_install_validation_coverage""",
     assert "Benchmark:    ATLANDI" not in result.stdout
 
 
-
-
 def test_optional_full_validation_syncs_frontend_status_from_run_tests_summary(
     tmp_path: Path,
 ) -> None:
@@ -1080,7 +1106,6 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' ${FRONTEND_QUALITY_STATUS}""",
 
     assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
     assert "artifacts/test-summary.json üzerinden tamamlandı" in result.stdout
-
 
 
 def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Path) -> None:
@@ -1136,7 +1161,6 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 
     assert "CI_FULL_VALIDATION_STATUS=hata" in result.stdout
     assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
-
 
 
 def test_optional_dev_full_validation_failure_syncs_frontend_status_from_summary(
@@ -1196,6 +1220,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
     assert "CI_FULL_VALIDATION_STATUS=hata" in result.stdout
     assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
 
+
 def test_finish_frontend_qa_block_refreshes_summary_before_printing(tmp_path: Path) -> None:
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").resolve()
 
@@ -1223,6 +1248,7 @@ print_react_frontend_qa_status_block""",
 
     assert "✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı." in result.stdout
     assert "FRONTEND QA ÇALIŞTIRILMADI" not in result.stdout
+
 
 def test_install_validation_summary_separates_development_full_validation_from_production_gate(
     tmp_path: Path,
@@ -1291,9 +1317,7 @@ print_install_validation_coverage""",
 
 
 def test_install_alembic_logs_revision_and_db_source_observability() -> None:
-    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
-        encoding="utf-8"
-    )
+    alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(encoding="utf-8")
 
     assert "mask_alembic_db_url()" in alembic_phase
     assert "log_alembic_revision_observation()" in alembic_phase
@@ -1308,6 +1332,7 @@ def test_install_alembic_logs_revision_and_db_source_observability() -> None:
     assert "post_heads_output=" in alembic_phase
     assert 'log_alembic_revision_observation "$current_rev" "$head_rev"' in alembic_phase
 
+
 def test_install_summary_prints_masked_runtime_key_source_report() -> None:
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
@@ -1316,7 +1341,7 @@ def test_install_summary_prints_masked_runtime_key_source_report() -> None:
     assert "config.get_dotenv_key_source_report()" in env_phase
     assert 'os.environ.setdefault("SIDAR_CONFIG_QUIET", "true")' in env_phase
     assert "Kritik key kaynak özeti (değerler maskeli)" in env_phase
-    assert "return \"process-env\"" in env_phase
+    assert 'return "process-env"' in env_phase
     assert 'print(f"  {display_key:<26}  ***        {source_display}")' in env_phase
     assert 'print(f"  {display_key:<26}  eksik      -")' in env_phase
     for key in (
@@ -1333,6 +1358,7 @@ def test_install_summary_prints_masked_runtime_key_source_report() -> None:
     assert "declare -F print_runtime_key_source_summary" in finish_phase
     assert "print_runtime_key_source_summary" in finish_phase
 
+
 def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> None:
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     collect_start = env_phase.index("collect_api_keys_interactive()")
@@ -1343,15 +1369,14 @@ def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> N
     assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0" in collect_block
     assert "_sync_real_keys_to_test_env_enabled()" in collect_block
     test_start = collect_block.index('optional_env_file="$SCRIPT_DIR/.env.test"')
-    test_target_block = collect_block[
-        test_start : collect_block.index("printf '%s", test_start)
-    ]
+    test_target_block = collect_block[test_start : collect_block.index("printf '%s", test_start)]
     assert "if _sync_real_keys_to_test_env_enabled; then" in test_target_block
     assert 'targets+=("$optional_env_file")' in test_target_block
     assert "varsayılan güvenli davranış" not in test_target_block
     assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1" in collect_block
     assert "api_key_target_env_files" in collect_block
     assert "mapfile -t api_key_target_env_files" in collect_block
+
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
@@ -1376,7 +1401,7 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "_api_key_env_targets_without_warning()" in collect_block
     assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0" in collect_block
     assert "_materialize_real_keys_to_env_enabled()" in collect_block
-    assert 'local -a targets=()' in collect_block
+    assert "local -a targets=()" in collect_block
     assert 'targets+=("$sidar_keys_file")' in collect_block
     assert 'targets+=("$env_file")' in collect_block
     assert 'local advanced_env_file="$SCRIPT_DIR/.env.advanced"' in collect_block
@@ -1387,7 +1412,10 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "Gerçek servis anahtarları env dosyalarına kopyalanmayacak" in collect_block
     assert 'targets+=("$optional_env_file")' in collect_block
     assert "varsayılan güvenli davranış" in collect_block
-    assert "mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)" in collect_block
+    assert (
+        "mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)"
+        in collect_block
+    )
     assert 'for target in "${api_key_target_env_files[@]}"' in collect_block
     assert "_sync_existing_api_keys_to_env_targets" in collect_block
     assert collect_block.count("_sync_existing_api_keys_to_env_targets") >= 6
@@ -1476,7 +1504,9 @@ def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
     assert (
         "ensure_env_file_secrets_after_uv_sync"
         in python_env[
-            python_env.index("install_python_deps()") : python_env.index("install_pyright_lsp_tool()")
+            python_env.index("install_python_deps()") : python_env.index(
+                "install_pyright_lsp_tool()"
+            )
         ]
     )
     assert "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu." in env_phase
@@ -1612,10 +1642,14 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
     assert "make deps-dev-light" in readme
     assert "make deps-dev-light" in testing_doc
     deps_full_block = makefile[makefile.index("deps-full:") : makefile.index("deps-dev-light:")]
-    deps_dev_light_block = makefile[makefile.index("deps-dev-light:") : makefile.index("test-shell:")]
+    deps_dev_light_block = makefile[
+        makefile.index("deps-dev-light:") : makefile.index("test-shell:")
+    ]
     assert "bash scripts/install_ci_system_deps.sh" in deps_full_block
     assert "uv sync --all-extras" in deps_full_block
-    assert deps_full_block.index("bash scripts/install_ci_system_deps.sh") < deps_full_block.index("uv sync --all-extras")
+    assert deps_full_block.index("bash scripts/install_ci_system_deps.sh") < deps_full_block.index(
+        "uv sync --all-extras"
+    )
     assert "uv sync --extra dev-light" in deps_dev_light_block
     readme_prereq_start = readme.index("#### Geliştirici ön koşulu")
     testing_prereq_start = testing_doc.index("### Geliştirici ön koşulu")
@@ -1760,7 +1794,9 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
     assert "TEST_PROFILE=ci" not in benchmark_seed_block
 
-    assert "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in production_readiness_block
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in production_readiness_block
+    )
     assert "SIDAR_PRODUCTION_READINESS=1" in production_readiness_block
     assert "bash run_tests.sh --stage all" in production_readiness_block
 
@@ -1793,7 +1829,10 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB)" in makefile
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)" in makefile
     assert "frontend-gate:" in makefile
-    assert "RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend" in makefile
+    assert (
+        "RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend"
+        in makefile
+    )
     assert "backend-integration:" in makefile
     assert "bash run_tests.sh --stage integration" in makefile
     assert "sudo apt-get install -y bats shellcheck" not in ci_workflow
@@ -1865,9 +1904,7 @@ def test_install_sidar_core_manifest_hashes_match_current_security_files() -> No
 
 def test_sync_install_manifest_updates_core_manifest_contract() -> None:
     sync_script = Path("scripts/sync_install_manifest.sh").read_text(encoding="utf-8")
-    update_tool = Path("scripts/tools/update_core_install_manifest.py").read_text(
-        encoding="utf-8"
-    )
+    update_tool = Path("scripts/tools/update_core_install_manifest.py").read_text(encoding="utf-8")
 
     assert "uv run python scripts/tools/update_core_install_manifest.py" in sync_script
     assert 'Path("core/memory.py")' in update_tool
@@ -1927,7 +1964,10 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert '"v*"' in ci_workflow
     assert "bash scripts/tools/bundle_install_sidar.sh" in ci_workflow
     assert "bash -n dist/install_sidar.sh" in ci_workflow
-    assert "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh" in ci_workflow
+    assert (
+        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh"
+        in ci_workflow
+    )
     assert "name: standalone-install-sidar" in ci_workflow
     assert "path: |" in ci_workflow
     assert "dist/install_sidar.sh" in ci_workflow
@@ -1935,7 +1975,10 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "dist/INSTALLER_USAGE.md" in ci_workflow
     assert "softprops/action-gh-release@v2" in ci_workflow
     assert "github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')" in ci_workflow
-    assert "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}" in ci_workflow
+    assert (
+        "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}"
+        in ci_workflow
+    )
     assert "`main` pushes update this prerelease snapshot" in ci_workflow
     assert "overwrite_files: true" in ci_workflow
     assert "files: |" in ci_workflow
@@ -1947,11 +1990,19 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "OUTPUT_USAGE=" in bundle_script
     assert "RELEASE_INSTALLER_URL=" in bundle_script
     assert "RAW_INSTALLER_URL=" in bundle_script
-    assert r'export SIDAR_INSTALLER_BOOTSTRAP_MODE=\"${SIDAR_INSTALLER_BOOTSTRAP_MODE:-bundle}\"' in bundle_script
-    assert r'export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\"' in bundle_script
+    assert (
+        r"export SIDAR_INSTALLER_BOOTSTRAP_MODE=\"${SIDAR_INSTALLER_BOOTSTRAP_MODE:-bundle}\""
+        in bundle_script
+    )
+    assert (
+        r"export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\""
+        in bundle_script
+    )
     assert "Preferred release/bundle install" in bundle_script
     assert "Last-resort raw fallback" in bundle_script
-    assert "raw main/install_sidar.sh yalnız release bundle mevcut değilse son çare" in bundle_script
+    assert (
+        "raw main/install_sidar.sh yalnız release bundle mevcut değilse son çare" in bundle_script
+    )
     assert release_url in readme
     assert release_url in modularization_note
     for content in (readme, modularization_note):
@@ -1986,20 +2037,24 @@ def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clon
     assert '"${HOME}/Sidar/scripts/install_modules"' in install_script
     assert "Mevcut repo kurulum modülleri doğrudan kullanılacak" in install_script
     module_resolution_flow = install_script[
-        install_script.index("use_existing_install_module_tree_if_available || true") : install_script.index(
-            "if [[ \"${INSTALL_MODULES_DOWNLOADED:-0}\" != \"1\" ]]; then"
-        )
+        install_script.index(
+            "use_existing_install_module_tree_if_available || true"
+        ) : install_script.index('if [[ "${INSTALL_MODULES_DOWNLOADED:-0}" != "1" ]]; then')
     ]
-    assert module_resolution_flow.index("use_existing_install_module_tree_if_available || true") < module_resolution_flow.index(
-        "download_install_modules_to_temp"
-    )
-    missing_module_flow = install_script[install_script.index("use_existing_install_module_tree_if_available || true") :]
-    assert missing_module_flow.index("download_install_modules_to_temp \"$REMOTE_MODULE_BASE\"") < missing_module_flow.index(
-        "bootstrap_clone_and_reexec"
-    )
+    assert module_resolution_flow.index(
+        "use_existing_install_module_tree_if_available || true"
+    ) < module_resolution_flow.index("download_install_modules_to_temp")
+    missing_module_flow = install_script[
+        install_script.index("use_existing_install_module_tree_if_available || true") :
+    ]
+    assert missing_module_flow.index(
+        'download_install_modules_to_temp "$REMOTE_MODULE_BASE"'
+    ) < missing_module_flow.index("bootstrap_clone_and_reexec")
 
 
-def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(tmp_path: Path) -> None:
+def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
+    tmp_path: Path,
+) -> None:
     runner_dir = tmp_path / "runner"
     runner_dir.mkdir()
     shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
@@ -2089,7 +2144,10 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
 def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
-    assert 'SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-5}"' in install_script
+    assert (
+        'SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-5}"'
+        in install_script
+    )
     assert "--retry-all-errors" in install_script
     assert "--connect-timeout" in install_script
     assert "--max-time" in install_script
@@ -2105,7 +2163,10 @@ def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache
     assert "SIDAR_INSTALL_MODULE_CACHE_HITS" in install_script
     assert 'cache_sentinel="${cache_path}.ok"' in install_script
     assert "Fallback modül cache'den kullanıldı" in install_script
-    assert "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır." in install_script
+    assert (
+        "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır."
+        in install_script
+    )
     assert "Fallback modül indirme başarısız (${module_rel})" in install_script
 
 
@@ -3141,7 +3202,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
 ) -> None:
     checksum_file = tmp_path / "remote_checksums.env"
     checksum_file.write_text(
-        ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n' ': "${UV_INSTALL_SHA256:=file-uv}"\n',
+        ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n: "${UV_INSTALL_SHA256:=file-uv}"\n',
         encoding="utf-8",
     )
 
@@ -3532,7 +3593,9 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
     assert 'record_backend_failure "security_failed"' in script
     assert 'record_backend_failure "ratchet_failed"' in script
     assert "Backend kalite akışı başarısız olduğu için coverage ratchet atlandı" in ratchet_block
-    assert "Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı" in script
+    assert (
+        "Test fazlarından biri başarısız olduğu için final coverage quality gate atlandı" in script
+    )
     assert "$(format_backend_failure_reasons)" in ratchet_block
     assert "Backend Hata Nedenleri: $(format_backend_failure_reasons)" in script
     assert (
@@ -3839,7 +3902,10 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "baseline-seed-manifest.json" in ci
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
-    assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
+    assert (
+        "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}"
+        in seed_workflow
+    )
     assert "Benchmark baseline seed" in readme
     assert "Benchmark baseline seed" in notes
 
@@ -4103,12 +4169,16 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert "preinstall" not in scripts
     assert scripts["build:budget"] == "npm run build && node scripts/check-bundle-budget.mjs"
     assert scripts["bundle:budget"] == "node scripts/check-bundle-budget.mjs"
-    bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(encoding="utf-8")
+    bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(
+        encoding="utf-8"
+    )
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in bundle_budget_script
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in bundle_budget_script
     assert "productionBudgetGateActive" in bundle_budget_script
     assert "requireBudgetForProductionGate" in bundle_budget_script
-    assert "must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci" in bundle_budget_script
+    assert (
+        "must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci" in bundle_budget_script
+    )
     assert "artifacts/frontend-bundle-budget.json" in bundle_budget_script
     assert "Top ${topChunks.length} JS chunks" in bundle_budget_script
     assert "hasInstallScript" not in locked_root
@@ -4852,8 +4922,7 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
     assert '"${filtered_phase2_cmd[@]}"' in phase2_block
     assert '"${phase2_cov_args[@]}"' in phase2_block
     assert (
-        '"--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-integration-smoke-e2e.xml"'
-        in phase2_block
+        '"--junitxml=${TEST_SUMMARY_JUNIT_DIR}/backend-integration-smoke-e2e.xml"' in phase2_block
     )
     assert '-n "${phase2_workers}"' in phase2_block
     assert '"${phase2_dirs[@]}"' in phase2_block

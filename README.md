@@ -1245,6 +1245,17 @@ uv run ruff check .
 uv run mypy .
 ```
 
+`run_tests.sh` varsayılan olarak Ruff kontrollerini düzeltme modunda çalıştırmaz;
+kaynak kodu değiştirmeden `uv run ruff check .` ve `uv run ruff format --check .`
+kapılarını uygular. Otomatik düzeltme gerekiyorsa bilinçli opt-in kullanın:
+
+```bash
+RUFF_AUTOFIX=1 bash run_tests.sh --stage all
+```
+
+Bu opt-in modunda betik başlangıç ve bitiş için `git diff --exit-code` durumunu
+raporlar.
+
 ---
 
 ## Sürüm Geçmişi

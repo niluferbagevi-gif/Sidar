@@ -329,6 +329,26 @@ uv run shellcheck --severity=warning -x run_tests.sh
 Repo geneli shell doğrulaması gerektiğinde `make lint-shell`, installer modülleri
 için daha dar doğrulama gerektiğinde `make installer-shellcheck` kullanılmalıdır.
 
+### Ruff autofix politikası
+
+`run_tests.sh` varsayılan olarak kaynak kodu değiştirmez. Test öncesi kalite kapısı
+şu iki kontrolü sadece doğrulama modunda çalıştırır:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
+
+Otomatik düzeltme bilinçli opt-in gerektirir:
+
+```bash
+RUFF_AUTOFIX=1 bash run_tests.sh --stage all
+```
+
+Bu modda betik autofix başlangıcında ve bitişinde `git diff --exit-code` durumunu
+raporlar; böylece testlerin otomatik değiştirilmiş fakat commit edilmemiş bir çalışma
+ağacı üzerinde geçtiği açıkça görülür.
+
 > **Pydantic ve pytest warning filtresi:** `pydantic` ile
 > `pydantic-settings` Sidar için runtime bağımlılığıdır; konfigürasyon, araç
 > şemaları ve web request doğrulamalarında kullanılır. Pytest tarafında Pydantic
