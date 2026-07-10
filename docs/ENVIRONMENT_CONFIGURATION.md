@@ -47,13 +47,13 @@ repo-local `.env`, `.env.advanced`, and `.env.${SIDAR_ENV}`. `DOTENV_FILE` and
 
 | File | Purpose | Commit? | Notes |
 | --- | --- | --- | --- |
-| `.env` | Primary local runtime config generated from `.env.example`. | No | Canonical for local secrets and DB credentials. |
-| `.env.advanced` | Optional advanced runtime knobs generated from `.env.advanced.example`. | No | Use for uncommon tuning, not duplicate baseline secrets manually. |
+| `.env` | Primary local runtime config generated from `.env.example`. | No | Canonical for local DB credentials and generated app secrets. Personal provider API keys should live in `SIDAR_KEYS_FILE`. |
+| `.env.advanced` | Optional advanced runtime knobs generated from `.env.advanced.example`. | No | Use for uncommon tuning, not duplicate baseline secrets or real provider API keys manually. |
 | `.env.development` | Development-profile overrides generated from `.env.development.example`. | No | Keep only values that should differ from `.env`. |
 | `.env.test` | Smoke/unit-test profile overrides generated from `.env.test.example`. | No | Real service API keys are not copied here unless explicitly opted in. |
 | `.env.production` | Production-profile overrides generated from `.env.production.example`. | No | Review manually before production use. |
 | `.env.*.example` | Versioned templates. | Yes | Add new keys here when a new setting is introduced. |
-| `~/.sidar_keys.env` or `SIDAR_KEYS_FILE` | User-private secret overlay. | No | Preferred place for personal provider API keys. |
+| `~/.sidar_keys.env` or `SIDAR_KEYS_FILE` | User-private secret overlay. | No | Preferred and default installer target for personal provider API keys. Keep mode `600` or stricter. |
 
 ## Recommended workflows
 
@@ -91,6 +91,18 @@ For personal secrets shared across checkouts, prefer `SIDAR_KEYS_FILE`:
 ```bash
 SIDAR_KEYS_FILE=~/.sidar_keys.env ./install_sidar.sh
 ```
+
+By default, `install_sidar.sh` writes real service/provider API keys only to
+`SIDAR_KEYS_FILE` and leaves repo-local `.env*` files as non-secret runtime
+configuration. If you need the legacy behavior for an isolated environment, opt in
+explicitly:
+
+```bash
+SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ./install_sidar.sh
+```
+
+When this opt-in is used, `.env.test` is still protected separately and receives real
+keys only with `SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1`.
 
 ## Troubleshooting drift
 

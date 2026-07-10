@@ -2199,6 +2199,28 @@ ENV
   [[ "$output" != *"izinleri güvenli değil"* ]]
 }
 
+@test "verify_sidar_keys_file_permissions repairs generated env secret file permissions" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    for env_name in .env .env.advanced .env.development .env.test .env.production; do
+      printf "API_KEY=secret_%s\\n" "$env_name" > "$tmpdir/$env_name"
+      chmod 644 "$tmpdir/$env_name"
+    done
+
+    verify_sidar_keys_file_permissions
+
+    for env_name in .env .env.advanced .env.development .env.test .env.production; do
+      [[ "$(stat -c %a "$tmpdir/$env_name")" == "600" ]]
+    done
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env izinleri güvenli değil"* ]]
+  [[ "$output" == *".env.production izinleri 600 olarak düzeltildi"* ]]
+}
+
 @test "collect_api_keys_interactive warns once when real keys are not synced to .env.test" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -2207,6 +2229,7 @@ ENV
     HOME="$tmpdir"
     NO_INTERACTION=true
     SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=0
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
     env_file="$tmpdir/.env"
     : > "$env_file"
     : > "$tmpdir/.env.test"
@@ -2216,8 +2239,36 @@ ENV
 
     collect_api_keys_interactive "$env_file"
 
+    grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$SIDAR_KEYS_FILE"
     grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$env_file"
     ! grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$tmpdir/.env.test"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$(grep -c "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV" <<<"$output")" -eq 1 ]]
+  [[ "$(grep -c "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV" <<<"$output")" -eq 0 ]]
+}
+
+@test "collect_api_keys_interactive materializes real keys to env files only with explicit opt-in" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    HOME="$tmpdir"
+    NO_INTERACTION=true
+    SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1
+    SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=0
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    env_file="$tmpdir/.env"
+    : > "$env_file"
+    : > "$tmpdir/.env.development"
+    : > "$tmpdir/.env.test"
+    printf "OPENAI_API_KEY=from_env\\n" >> "$env_file"
+
+    collect_api_keys_interactive "$env_file"
+
+    grep -q "^OPENAI_API_KEY=from_env$" "$env_file"
+    grep -q "^OPENAI_API_KEY=from_env$" "$tmpdir/.env.development"
+    ! grep -q "^OPENAI_API_KEY=from_env$" "$tmpdir/.env.test"
   '
   [ "$status" -eq 0 ]
   [[ "$(grep -c "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV" <<<"$output")" -eq 1 ]]

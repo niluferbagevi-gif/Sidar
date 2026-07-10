@@ -1374,12 +1374,17 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     ]
     assert "mapfile -t KEY_ORDER < <(sidar_user_api_key_names)" in collect_block
     assert "_api_key_env_targets_without_warning()" in collect_block
-    assert 'local -a targets=("$env_file")' in collect_block
+    assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0" in collect_block
+    assert "_materialize_real_keys_to_env_enabled()" in collect_block
+    assert 'local -a targets=()' in collect_block
+    assert 'targets+=("$sidar_keys_file")' in collect_block
+    assert 'targets+=("$env_file")' in collect_block
     assert 'local advanced_env_file="$SCRIPT_DIR/.env.advanced"' in collect_block
     assert 'optional_env_file="$SCRIPT_DIR/.env.development"' in collect_block
     assert 'optional_env_file="$SCRIPT_DIR/.env.test"' in collect_block
     assert "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0" in collect_block
     assert "_sync_real_keys_to_test_env_enabled" in collect_block
+    assert "Gerçek servis anahtarları env dosyalarına kopyalanmayacak" in collect_block
     assert 'targets+=("$optional_env_file")' in collect_block
     assert "varsayılan güvenli davranış" in collect_block
     assert "mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)" in collect_block

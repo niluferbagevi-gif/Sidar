@@ -193,12 +193,29 @@ collect_api_keys_interactive() {
         esac
     }
 
+    _materialize_real_keys_to_env_enabled() {
+        local raw="${SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0}"
+        raw="${raw,,}"
+        raw="${raw//[[:space:]]/}"
+        case "$raw" in
+            1|true|yes|y|evet|e) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
     _api_key_env_targets_without_warning() {
-        local -a targets=("$env_file")
+        local -a targets=()
         local advanced_env_file="$SCRIPT_DIR/.env.advanced"
         local advanced_example_file="$SCRIPT_DIR/.env.advanced.example"
         local optional_env_file
 
+        if ! _materialize_real_keys_to_env_enabled; then
+            targets+=("$sidar_keys_file")
+            printf '%s\n' "${targets[@]}"
+            return 0
+        fi
+
+        targets+=("$env_file")
         if [[ ! -f "$advanced_env_file" && -f "$advanced_example_file" ]]; then
             cp "$advanced_example_file" "$advanced_env_file"
             ok ".env.advanced dosyası .env.advanced.example'dan API anahtarı senkronizasyonu için oluşturuldu."
@@ -221,8 +238,11 @@ collect_api_keys_interactive() {
 
     local -a api_key_target_env_files=()
     mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)
+    if ! _materialize_real_keys_to_env_enabled; then
+        info "Gerçek servis anahtarları env dosyalarına kopyalanmayacak; kalıcı kaynak: ${sidar_keys_file}. Gerekirse SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ile bilinçli etkinleştirin."
+    fi
     if [[ -f "$SCRIPT_DIR/.env.test" && "$SCRIPT_DIR/.env.test" != "$env_file" ]] &&
-        ! _sync_real_keys_to_test_env_enabled; then
+        _materialize_real_keys_to_env_enabled && ! _sync_real_keys_to_test_env_enabled; then
         warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
     fi
 
@@ -234,6 +254,9 @@ collect_api_keys_interactive() {
         [[ -z "$val" ]] && return
 
         for target in "${api_key_target_env_files[@]}"; do
+            mkdir -p "$(dirname "$target")"
+            [[ -f "$target" ]] || : > "$target"
+            chmod 600 "$target" 2>/dev/null || true
             if grep -q "^${key}=" "$target" 2>/dev/null; then
                 sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
             else
@@ -250,10 +273,16 @@ collect_api_keys_interactive() {
 
         openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file" | tr -d '[:space:]')
         anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$env_file" | tr -d '[:space:]')
+        if [[ -z "$openai_key" && -f "$sidar_keys_file" ]]; then
+            openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$sidar_keys_file" | tr -d '[:space:]')
+        fi
+        if [[ -z "$anthropic_key" && -f "$sidar_keys_file" ]]; then
+            anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$sidar_keys_file" | tr -d '[:space:]')
+        fi
 
         if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
             warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
-            warn "[UYARI] Kurulum durdurulmadı. Lütfen .env dosyasını sonradan manuel güncelleyin."
+            warn "[UYARI] Kurulum durdurulmadı. Lütfen SIDAR_KEYS_FILE veya .env dosyasını sonradan manuel güncelleyin."
         fi
     }
 
@@ -511,9 +540,18 @@ repair_private_file_permissions() {
 verify_sidar_keys_file_permissions() {
     local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
     local sidar_session_file="${SIDAR_SESSION_FILE:-$HOME/.sidar_session.json}"
+    local env_secret_file=""
 
     repair_private_file_permissions "$sidar_keys_file" "SIDAR_KEYS_FILE"
     repair_private_file_permissions "$sidar_session_file" "SIDAR_SESSION_FILE"
+    for env_secret_file in \
+        "$SCRIPT_DIR/.env" \
+        "$SCRIPT_DIR/.env.advanced" \
+        "$SCRIPT_DIR/.env.development" \
+        "$SCRIPT_DIR/.env.test" \
+        "$SCRIPT_DIR/.env.production"; do
+        repair_private_file_permissions "$env_secret_file" "$(basename "$env_secret_file")"
+    done
 }
 
 validate_runtime_env_loading() {
