@@ -31,6 +31,7 @@ def _extract_bash_function(script_text: str, function_name: str) -> str:
             break
     return "\n".join(collected) + "\n"
 
+
 def _normalize_bash_function(function_text: str) -> str:
     return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
 
@@ -93,9 +94,7 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
         "verify_reexec_installer_or_fail",
         "verify_home_reexec_candidate_if_present",
     ):
-        module_function = _normalize_bash_function(
-            _extract_bash_function(module, function_name)
-        )
+        module_function = _normalize_bash_function(_extract_bash_function(module, function_name))
         installer_function = _normalize_bash_function(
             _extract_bash_function(installer, function_name)
         )
@@ -134,9 +133,9 @@ def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
         if start is not None and line.strip() == "SIDAR_MODULE_HASHES_EOF":
             end = idx
             break
-    assert (
-        start is not None and end is not None
-    ), f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
+    assert start is not None and end is not None, (
+        f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
+    )
     return "\n".join(lines[start:end])
 
 
@@ -492,8 +491,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         f"{debug_context}"
     )
     assert "Mevcut" in combined and "re-exec install_sidar.sh SHA256 farklı" in combined, (
-        "Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n"
-        f"{debug_context}"
+        f"Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n{debug_context}"
     )
     assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
     assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in combined
@@ -551,9 +549,9 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
     )
     combined = result.stdout + result.stderr
 
-    assert (
-        result.returncode != 0
-    ), "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
+    assert result.returncode != 0, (
+        "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
+    )
     assert "Bootstrap clone re-exec install_sidar.sh SHA256 farklı" in combined
     assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
     assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC=1" in combined
@@ -652,8 +650,7 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
             f"--- combined ---\n{combined}"
         )
     assert "Kurulum modül hash doğrulaması başarısız" not in combined, (
-        "Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n"
-        f"--- combined ---\n{combined}"
+        f"Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n--- combined ---\n{combined}"
     )
 
 
@@ -820,9 +817,9 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
     assert "--- xtrace probe ---" in diagnosis
     assert "probe real=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, diagnosis
     assert "timed_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, diagnosis
-    assert (
-        "xtrace_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis
-    ), diagnosis
+    assert "xtrace_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, (
+        diagnosis
+    )
 
 
 def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_shadowed(
@@ -1161,7 +1158,10 @@ def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
     )
 
     assert result.returncode == 0
-    assert "REPORT:02_repo|installer-hash-drift|no-retry;remove-stale-home-installer-or-refresh-clone" in result.stdout
+    assert (
+        "REPORT:02_repo|installer-hash-drift|no-retry;remove-stale-home-installer-or-refresh-clone"
+        in result.stdout
+    )
     assert "installer hash drift hatası" in result.stdout
     assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in result.stdout
     assert "git pull --ff-only" in result.stdout
@@ -1232,7 +1232,7 @@ def test_docker_compose_start_checks_daemon_access_before_up() -> None:
     assert "ensure_docker_compose_access_or_fail()" in phase
     assert "docker info" in phase
     assert "sudo -n docker info" in phase
-    assert "ensure_docker_compose_access_or_fail \"${compose_cmd[@]}\"" in start_body
+    assert 'ensure_docker_compose_access_or_fail "${compose_cmd[@]}"' in start_body
     assert "permission denied" in phase
     assert "docker grubuna ekleyin" in phase
     assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(
@@ -1545,26 +1545,24 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         ENV_FILE="$SCRIPT_DIR/.env"
         NO_INTERACTION=true
-        unset SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
-        export SCRIPT_DIR ENV_FILE NO_INTERACTION
+        unset SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV
+        SIDAR_KEYS_FILE="$SCRIPT_DIR/.sidar_keys.env"
+        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_KEYS_FILE
         collect_api_keys_interactive "$ENV_FILE"
-        for profile in .env.advanced .env.development; do
-          for key in $(sidar_user_api_key_names); do
-            expected=$(read_env_value_from_file "$key" "$ENV_FILE")
+        for key in $(sidar_user_api_key_names); do
+          expected=$(read_env_value_from_file "$key" "$ENV_FILE")
+          actual_secret=$(read_env_value_from_file "$key" "$SIDAR_KEYS_FILE")
+          if [[ "$actual_secret" != "$expected" ]]; then
+            echo "SIDAR_KEYS_FILE:$key expected=$expected actual=$actual_secret" >&2
+            exit 1
+          fi
+          for profile in .env.advanced .env.development .env.test; do
             actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/$profile")
-            if [[ "$actual" != "$expected" ]]; then
-              echo "$profile:$key expected=$expected actual=$actual" >&2
+            if [[ -n "$actual" && "$actual" == "$expected" ]]; then
+              echo "$profile:$key unexpectedly received real key value: $actual" >&2
               exit 1
             fi
           done
-        done
-        for key in $(sidar_user_api_key_names); do
-          expected=$(read_env_value_from_file "$key" "$ENV_FILE")
-          actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/.env.test")
-          if [[ -n "$actual" && "$actual" == "$expected" ]]; then
-            echo ".env.test:$key unexpectedly received real key value: $actual" >&2
-            exit 1
-          fi
         done
         report_env_api_key_status "$ENV_FILE"
         test "$ENV_API_KEYS_TOTAL" -eq 18
@@ -1608,8 +1606,10 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
         SCRIPT_DIR={shlex.quote(str(script_dir))}
         ENV_FILE="$SCRIPT_DIR/.env"
         NO_INTERACTION=true
+        SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1
         SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1
-        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
+        SIDAR_KEYS_FILE="$SCRIPT_DIR/.sidar_keys.env"
+        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV SIDAR_KEYS_FILE
         collect_api_keys_interactive "$ENV_FILE"
         for profile in .env.advanced .env.development .env.test; do
           for key in $(sidar_user_api_key_names); do

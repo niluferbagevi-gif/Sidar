@@ -1124,9 +1124,8 @@ def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Pa
         + "\n",
         encoding="utf-8",
     )
-    run_tests = tmp_path / "run_tests.sh"
-    run_tests.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
-    run_tests.chmod(0o755)
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("production-readiness:\n\t@exit 1\n", encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -1325,9 +1324,9 @@ def test_install_alembic_logs_revision_and_db_source_observability() -> None:
     assert "Alembic DB URL (maskeli):" in alembic_phase
     assert "Alembic current revizyon:" in alembic_phase
     assert "Alembic head revizyon:" in alembic_phase
-    assert 'DB_URL_SOURCE=".env:DATABASE_URL"' in alembic_phase
-    assert 'DB_URL_SOURCE=".env:POSTGRES_*"' in alembic_phase
-    assert 'DB_URL_SOURCE=".env:DATABASE_URL (yenilendi)"' in alembic_phase
+    assert "resolve_runtime_database_url" in alembic_phase
+    assert "RUNTIME_DATABASE_URL_SOURCE" in alembic_phase
+    assert 'DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE:-bilinmiyor}"' in alembic_phase
     assert "post_current_output=" in alembic_phase
     assert "post_heads_output=" in alembic_phase
     assert 'log_alembic_revision_observation "$current_rev" "$head_rev"' in alembic_phase
@@ -3446,11 +3445,15 @@ def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
 
 def test_install_sidar_centralizes_env_value_reads() -> None:
     script = installer_contract_sources()
+    database_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert "read_env_value_from_file()" in script
     assert 'current_backend=$(read_env_value_from_file "RAG_VECTOR_BACKEND" "$env_file")' in script
     assert 'openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file"' in script
-    assert 'DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")' in script
+    assert "resolve_runtime_database_url_from_file()" in database_url_utils
+    assert 'db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file"' in database_url_utils
     assert 'compose_profiles=$(read_env_value_from_file "COMPOSE_PROFILES" "$env_file"' in script
     assert "cut -d= -f2-" not in script
     assert 'grep -E "^${key}="' not in script
