@@ -4,6 +4,18 @@
 # shellcheck disable=SC2034  # Set by remote_script.sh and consumed by phase helpers.
 DOWNLOADED_SCRIPT_FILE=""
 
+# GPU/CUDA detection is single-sourced from utils/gpu_utils.sh. Keep this phase
+# focused on system provisioning and NVIDIA container-toolkit setup.
+if [[ -z "${SIDAR_INSTALL_UTIL_GPU_UTILS_SH_LOADED:-}" ]]; then
+    _sidar_03_system_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _sidar_gpu_utils="${_sidar_03_system_dir}/../utils/gpu_utils.sh"
+    if [[ -f "$_sidar_gpu_utils" ]]; then
+        # shellcheck source=../utils/gpu_utils.sh
+        source "$_sidar_gpu_utils"
+    fi
+    unset _sidar_03_system_dir _sidar_gpu_utils
+fi
+
 validate_downloaded_script_file() {
     local script_file="${1:-}"
     local script_label="${2:-indirilen_betik}"
@@ -862,185 +874,9 @@ ensure_prerequisites() {
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
-detect_cuda_driver_capability() {
-    local smi_cmd="$1"
-    local query_out=""
-    local parsed_version=""
-
-    if [[ -z "$smi_cmd" ]]; then
-        return 0
-    fi
-
-    # Yeni nvidia-smi sürümlerinde banner başlığı değişebildiği için önce
-    # makine-okunur query alanını kullan. Eski sürücülerde cuda_version alanı
-    # yoksa klasik banner parse fallback'i korunur.
-    query_out=$("$smi_cmd" --query-gpu=cuda_version --format=csv,noheader 2>/dev/null | head -1 || true)
-    parsed_version=$(echo "${query_out:-}" | tr -d '[:space:]' | grep -Eo '^[0-9]+([.][0-9]+)*' | head -1 || true)
-    if [[ -n "$parsed_version" ]]; then
-        printf '%s\n' "$parsed_version"
-        return 0
-    fi
-
-    parsed_version=$("$smi_cmd" 2>/dev/null | grep -Eo 'CUDA Version:[[:space:]]*[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
-    if [[ -n "$parsed_version" ]]; then
-        printf '%s\n' "$parsed_version"
-        return 0
-    fi
-
-    if command -v nvcc &>/dev/null; then
-        parsed_version=$(nvcc --version 2>/dev/null | grep -Eo 'release[[:space:]]+[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
-        [[ -n "$parsed_version" ]] && printf '%s\n' "$parsed_version"
-    fi
-}
-
-detect_pytorch_runtime_cuda_version() {
-    local python_cmd=()
-
-    if command -v uv &>/dev/null; then
-        python_cmd=(uv run python)
-    elif command -v python3 &>/dev/null; then
-        python_cmd=(python3)
-    elif command -v python &>/dev/null; then
-        python_cmd=(python)
-    else
-        return 0
-    fi
-
-    "${python_cmd[@]}" - <<'PY_TORCH_CUDA' 2>/dev/null | head -1
-try:
-    import torch
-except Exception:
-    raise SystemExit(0)
-print(getattr(torch.version, "cuda", None) or "")
-PY_TORCH_CUDA
-}
-
-report_gpu_cuda_diagnostics() {
-    local cuda_driver_cap="${1:-}"
-    local driver_version="${2:-}"
-    local pytorch_runtime_cuda="${PYTORCH_RUNTIME_CUDA_VERSION:-}"
-
-    [[ -n "$driver_version" ]] && ok "Sürücü  : $driver_version"
-    if [[ -n "$cuda_driver_cap" ]]; then
-        ok "CUDA Driver Cap : $cuda_driver_cap"
-    else
-        ok "CUDA Driver Cap : bilinmiyor"
-    fi
-
-    if [[ "${WSL2:-false}" == true ]]; then
-        [[ -n "$driver_version" ]] && ok "WSL Windows Driver : $driver_version"
-        if [[ -n "$cuda_driver_cap" ]]; then
-            ok "WSL CUDA Passthrough : $cuda_driver_cap"
-        else
-            ok "WSL CUDA Passthrough : bilinmiyor"
-        fi
-        if [[ -n "$pytorch_runtime_cuda" ]]; then
-            ok "PyTorch Runtime CUDA : $pytorch_runtime_cuda"
-        else
-            info "PyTorch Runtime CUDA : torch kurulumundan sonra doğrulanacak."
-        fi
-    elif [[ -n "$pytorch_runtime_cuda" ]]; then
-        ok "PyTorch Runtime CUDA : $pytorch_runtime_cuda"
-    fi
-}
-
-configure_wsl2_cuda_library_paths() {
-    [[ "${WSL2:-false}" == true ]] || return 0
-    [[ "${GPU_AVAILABLE:-false}" == true ]] || return 0
-
-    local -a preferred_cuda_paths=(
-        "/usr/lib/wsl/lib"
-        "/usr/local/cuda/lib64"
-        "/usr/local/nvidia/lib64"
-        "/usr/local/nvidia/lib"
-    )
-    local existing_ld_path="${LD_LIBRARY_PATH:-}"
-    local combined_ld_path="$existing_ld_path"
-    local path_entry=""
-
-    for path_entry in "${preferred_cuda_paths[@]}"; do
-        [[ -d "$path_entry" ]] || continue
-        if [[ ":$combined_ld_path:" != *":$path_entry:"* ]]; then
-            if [[ -n "$combined_ld_path" ]]; then
-                combined_ld_path="${path_entry}:${combined_ld_path}"
-            else
-                combined_ld_path="$path_entry"
-            fi
-        fi
-    done
-
-    if [[ -n "$combined_ld_path" ]]; then
-        export LD_LIBRARY_PATH="$combined_ld_path"
-        export OLLAMA_LLM_LIBRARY="cuda"
-        info "WSL2 CUDA/Tensor/Ollama için LD_LIBRARY_PATH ayarlandı: $LD_LIBRARY_PATH"
-    fi
-}
-
-detect_gpu() {
-    step "GPU Tespiti"
-    GPU_AVAILABLE=false
-    CUDA_VERSION=""
-    GPU_COMPUTE_CAPABILITY=""
-
-    if [[ "$FORCE_CPU" == true ]]; then
-        warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
-        return
-    fi
-
-    local SMI_CMD=""
-    local smi_ping_out=""
-    local query_out=""
-    if command -v nvidia-smi &>/dev/null; then
-        SMI_CMD="nvidia-smi"
-    elif command -v nvidia-smi.exe &>/dev/null; then
-        SMI_CMD="nvidia-smi.exe"
-    fi
-
-    if [[ -n "$SMI_CMD" ]]; then
-        smi_ping_out=$("$SMI_CMD" -L 2>/dev/null | head -1 || true)
-    fi
-
-    if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
-        query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_NAME="${query_out:-Bilinmiyor}"
-
-        query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
-        VRAM_MB=$(echo "${query_out:-0}" | tr -d ' ,' )
-        if [[ -z "$VRAM_MB" ]]; then
-            VRAM_MB="0"
-        fi
-
-        query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
-        CUDA_VERSION=$(detect_cuda_driver_capability "$SMI_CMD")
-        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
-        PYTORCH_RUNTIME_CUDA_VERSION=$(detect_pytorch_runtime_cuda_version || true)
-
-        GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
-            export RUN_GPU_STRESS=1
-            persist_run_gpu_stress_dotenv
-            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
-        fi
-        ok "GPU     : $GPU_NAME"
-        ok "VRAM    : ${VRAM_MB} MiB"
-        report_gpu_cuda_diagnostics "$CUDA_VERSION" "$DRIVER_VER"
-        [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
-
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
-            configure_wsl2_cuda_library_paths
-        fi
-    else
-        if command -v rocm-smi &>/dev/null || lspci 2>/dev/null | grep -qi "AMD/ATI"; then
-            warn "AMD GPU tespit edildi. Bu kurulum akışı NVIDIA/CUDA odaklıdır; Docker için CPU profili kullanılacak."
-        fi
-        if [[ "$(uname -s)" == "Darwin" ]] && [[ "$(uname -m)" == "arm64" ]]; then
-            warn "Apple Silicon (arm64) tespit edildi. CUDA/NVIDIA akışı devre dışı; CPU profili kullanılacak."
-        fi
-        warn "NVIDIA GPU bulunamadı veya nvidia-smi erişilemez — CPU modunda kurulum yapılacak."
-    fi
-}
+# detect_gpu, detect_cuda_driver_capability, detect_pytorch_runtime_cuda_version
+# ve configure_wsl2_cuda_library_paths tek kaynak olarak utils/gpu_utils.sh
+# içinden yüklenir. Bu faz yalnız NVIDIA Container Toolkit kurulumunu sürdürür.
 
 # ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
 print_docker_desktop_restart_notice() {
