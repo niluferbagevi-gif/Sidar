@@ -102,8 +102,13 @@ run_wsl2_gpu_preflight() {
 
             [[ -n "$gpu_name" ]] && ok "GPU: $gpu_name"
             [[ -n "$driver_version" ]] && ok "Windows NVIDIA sürücüsü: $driver_version"
-            [[ -n "$cuda_version" ]] && ok "WSL2 CUDA passthrough sürümü: $cuda_version"
+            [[ -n "$cuda_version" ]] && ok "Driver CUDA API capability: $cuda_version"
             [[ -n "$compute_capability" ]] && ok "Compute capability: $compute_capability"
+            export SIDAR_GPU_PREFLIGHT_NAME="$gpu_name"
+            export SIDAR_GPU_PREFLIGHT_DRIVER_VERSION="$driver_version"
+            export SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY="$cuda_version"
+            export SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="$compute_capability"
+            export SIDAR_GPU_PREFLIGHT_VRAM_MB="$vram_mb"
             if [[ "$vram_mb" =~ ^[0-9]+$ ]]; then
                 ok "VRAM: ${vram_mb} MiB"
                 if (( vram_mb < 8192 )); then
@@ -126,7 +131,9 @@ run_wsl2_gpu_preflight() {
 
     if [[ -e /usr/lib/wsl/lib/libcuda.so || -e /usr/lib/wsl/lib/libcuda.so.1 ]] || ldconfig -p 2>/dev/null | grep -q 'libcuda.so'; then
         ok "libcuda WSL2 içinde görünür durumda."
+        export SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=true
     else
+        export SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=false
         sidar_report_wsl_gpu_problem fail "libcuda.so WSL2 içinde bulunamadı. NVIDIA Windows sürücüsü WSL2'ye aktarılmamış görünüyor."
         failures=$((failures + 1))
     fi

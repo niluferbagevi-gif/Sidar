@@ -55,21 +55,21 @@ report_gpu_cuda_diagnostics() {
     local cuda_driver_cap="${1:-}"
     local driver_version="${2:-}"
     local pytorch_runtime_cuda="${PYTORCH_RUNTIME_CUDA_VERSION:-}"
+    local wsl_passthrough_active="${SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE:-}"
 
-    [[ -n "$driver_version" ]] && ok "Sürücü  : $driver_version"
+    [[ -n "$driver_version" ]] && ok "NVIDIA Windows Driver : $driver_version"
     if [[ -n "$cuda_driver_cap" ]]; then
-        ok "CUDA Driver Cap : $cuda_driver_cap"
+        ok "Driver CUDA API Capability : $cuda_driver_cap"
     else
-        ok "CUDA Driver Cap : bilinmiyor"
+        info "Driver CUDA API Capability : bilinmiyor"
     fi
 
     if [[ "${WSL2:-false}" == true ]]; then
-        [[ -n "$driver_version" ]] && ok "WSL Windows Driver : $driver_version"
-        if [[ -n "$cuda_driver_cap" ]]; then
-            ok "WSL CUDA Passthrough : $cuda_driver_cap"
-        else
-            ok "WSL CUDA Passthrough : bilinmiyor"
-        fi
+        case "$wsl_passthrough_active" in
+            true) ok "WSL CUDA Passthrough : aktif" ;;
+            false) warn "WSL CUDA Passthrough : pasif" ;;
+            *) info "WSL CUDA Passthrough : bilinmiyor" ;;
+        esac
         if [[ -n "$pytorch_runtime_cuda" ]]; then
             ok "PyTorch Runtime CUDA : $pytorch_runtime_cuda"
         else
@@ -142,18 +142,18 @@ detect_gpu() {
 
     if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
         query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_NAME="${query_out:-Bilinmiyor}"
+        GPU_NAME="${SIDAR_GPU_PREFLIGHT_NAME:-${query_out:-Bilinmiyor}}"
 
         query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
-        VRAM_MB=$(echo "${query_out:-0}" | tr -d ' ,' )
+        VRAM_MB="${SIDAR_GPU_PREFLIGHT_VRAM_MB:-$(echo "${query_out:-0}" | tr -d ' ,' )}"
         if [[ -z "$VRAM_MB" ]]; then
             VRAM_MB="0"
         fi
 
         query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
-        CUDA_VERSION=$(detect_cuda_driver_capability "$SMI_CMD")
-        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
+        GPU_COMPUTE_CAPABILITY="${SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY:-$(echo "${query_out:-}" | tr -d '[:space:]')}"
+        CUDA_VERSION="${SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY:-$(detect_cuda_driver_capability "$SMI_CMD")}"
+        DRIVER_VER="${SIDAR_GPU_PREFLIGHT_DRIVER_VERSION:-$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)}"
         PYTORCH_RUNTIME_CUDA_VERSION=$(detect_pytorch_runtime_cuda_version || true)
 
         GPU_AVAILABLE=true

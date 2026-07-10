@@ -2222,7 +2222,7 @@ ENV
     grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
+  [[ "$output" == *"Driver CUDA API Capability : 12.9"* ]]
 }
 
 @test "detect_gpu reports unknown CUDA driver cap and separate WSL runtime CUDA" {
@@ -2265,10 +2265,59 @@ ENV
     [[ "$PYTORCH_RUNTIME_CUDA_VERSION" == "13.0" ]]
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"CUDA Driver Cap : bilinmiyor"* ]]
-  [[ "$output" == *"WSL Windows Driver : 610.62"* ]]
+  [[ "$output" == *"Driver CUDA API Capability : bilinmiyor"* ]]
+  [[ "$output" == *"NVIDIA Windows Driver : 610.62"* ]]
   [[ "$output" == *"WSL CUDA Passthrough : bilinmiyor"* ]]
   [[ "$output" == *"PyTorch Runtime CUDA : 13.0"* ]]
+}
+
+@test "detect_gpu reuses WSL preflight GPU facts when available" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf "$tmpdir"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: Runtime GPU (UUID: GPU-runtime)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "Runtime GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "1024" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "7.5" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") echo "12.1" ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "500.00" ;;
+  *) echo "unexpected nvidia-smi args: \$*" >&2; exit 1 ;;
+esac
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=true
+    RUN_GPU_STRESS=0
+    SIDAR_GPU_PREFLIGHT_NAME="Preflight GPU"
+    SIDAR_GPU_PREFLIGHT_DRIVER_VERSION="610.62"
+    SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY="13.0"
+    SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="8.6"
+    SIDAR_GPU_PREFLIGHT_VRAM_MB="8192"
+    SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=true
+
+    detect_gpu
+
+    [[ "$GPU_NAME" == "Preflight GPU" ]]
+    [[ "$DRIVER_VER" == "610.62" ]]
+    [[ "$CUDA_VERSION" == "13.0" ]]
+    [[ "$GPU_COMPUTE_CAPABILITY" == "8.6" ]]
+    [[ "$VRAM_MB" == "8192" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"GPU     : Preflight GPU"* ]]
+  [[ "$output" == *"NVIDIA Windows Driver : 610.62"* ]]
+  [[ "$output" == *"Driver CUDA API Capability : 13.0"* ]]
+  [[ "$output" == *"WSL CUDA Passthrough : aktif"* ]]
+  [[ "$output" == *"Compute : 8.6"* ]]
 }
 
 @test "persist_run_gpu_stress_dotenv creates development dotenv from example" {
