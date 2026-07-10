@@ -674,6 +674,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(
         encoding="utf-8"
     )
+    makefile = Path("Makefile").read_text(encoding="utf-8")
     assert 'SIDAR_SELECTED_ENV_TYPE="$selected_env"' in env_phase
     assert "production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
     assert 'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
@@ -691,8 +692,11 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "alembic_revision_sets_match" in alembic_phase
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
-    assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all" in validation_phase
-    assert "env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 AUTO_OPEN_ARTIFACTS=0" in validation_phase
+    assert 'local optional_command="make dev-full"' in validation_phase
+    assert 'env AUTO_OPEN_ARTIFACTS=0 make dev-full' in validation_phase
+    assert "make production-readiness" in validation_phase
+    assert "SIDAR_TOTAL_JS_BUDGET_KB" in makefile
+    assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in makefile
     assert "production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir" in validation_phase
     assert "Tam doğrulama sonucu: HATA" in validation_phase
     assert "uygulama geliştirme amacıyla çalışabilir" in validation_phase
@@ -704,10 +708,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Development validation ≠ release/merge onayı" in validation_phase
     assert "Release/merge için tek zorunlu komut" in validation_phase
     assert "DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS" in validation_phase
-    assert (
-        "env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
-        "SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0"
-    ) in validation_phase
+    assert "env AUTO_OPEN_ARTIFACTS=0 make production-readiness" in validation_phase
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
@@ -4094,6 +4095,9 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(encoding="utf-8")
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in bundle_budget_script
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in bundle_budget_script
+    assert "productionBudgetGateActive" in bundle_budget_script
+    assert "requireBudgetForProductionGate" in bundle_budget_script
+    assert "must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci" in bundle_budget_script
     assert "artifacts/frontend-bundle-budget.json" in bundle_budget_script
     assert "Top ${topChunks.length} JS chunks" in bundle_budget_script
     assert "hasInstallScript" not in locked_root
@@ -4110,6 +4114,38 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"
     assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "1.0.3"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
+
+
+def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:
+    assets_dir = Path("web_ui_react/dist/assets")
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    chunk_path = assets_dir / "react-dom-test.js"
+    previous = chunk_path.read_text(encoding="utf-8") if chunk_path.exists() else None
+    chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    try:
+        result = subprocess.run(
+            ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "TEST_PROFILE": "ci",
+                "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+                "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            },
+        )
+    finally:
+        if previous is None:
+            chunk_path.unlink(missing_ok=True)
+        else:
+            chunk_path.write_text(previous, encoding="utf-8")
+
+    assert result.returncode != 0
+    assert "SIDAR_TOTAL_JS_BUDGET_KB must be set" in result.stderr
+    assert "SIDAR_TOTAL_GZIP_BUDGET_KB must be set" in result.stderr
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:

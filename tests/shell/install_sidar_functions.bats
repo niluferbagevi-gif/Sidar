@@ -906,22 +906,33 @@ EOF
   [[ "$output" == *"bash run_tests.sh --stage all"* ]]
 }
 
-@test "ci-full validation runs run_tests stage all with CI profile" {
+@test "ci-full validation runs canonical production-readiness make target" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
     SCRIPT_DIR="$tmpdir"
     RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s|%s|%s\\n" "\${TEST_PROFILE:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
     cat > "$tmpdir/run_tests.sh" <<EOF
 #!/usr/bin/env bash
-printf "%s|%s|%s|%s\n" "\${TEST_PROFILE:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\$*" > "$tmpdir/run_tests.log"
+exit 99
 EOF
     chmod +x "$tmpdir/run_tests.sh"
 
     run_install_ci_full_validation
 
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
-    grep -q "^ci|required|1|--stage all$" "$tmpdir/run_tests.log"
+    grep -q "^|||0|production-readiness$" "$tmpdir/make.log"
   '
   [ "$status" -eq 0 ]
 }
@@ -939,13 +950,24 @@ EOF
     AUTO_INSTALL=false
     SILENT_MODE=false
     prompt_yes_no_with_timeout_default_no() { printf "e"; }
-    cat > "$tmpdir/run_tests.sh" <<EOF
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+dev-full:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
 #!/usr/bin/env bash
-printf "%s|%s|%s|%s|%s|%s\n" "\${RUN_GPU_STRESS:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/run_tests.log"
+printf "%s|%s\\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/make.log"
 mkdir -p "$tmpdir/artifacts"
 cat > "$tmpdir/artifacts/test-summary.json" <<JSON
 {"frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
 JSON
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
 EOF
     chmod +x "$tmpdir/run_tests.sh"
     TEST_PROFILE=local
@@ -958,7 +980,7 @@ EOF
 
     [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
     [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
-    grep -q "^1|required|1|1|0|--stage all$" "$tmpdir/run_tests.log"
+    grep -q "^0|dev-full$" "$tmpdir/make.log"
   '
   [ "$status" -eq 0 ]
 }

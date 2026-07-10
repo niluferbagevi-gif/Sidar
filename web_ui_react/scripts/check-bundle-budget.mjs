@@ -17,6 +17,8 @@ const distAssetsDir = join(frontendRoot, "dist", "assets");
 const reactDomBudgetKb = Number(process.env.SIDAR_REACT_DOM_CHUNK_BUDGET_KB || "220");
 const totalJsBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_JS_BUDGET_KB);
 const totalGzipBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_GZIP_BUDGET_KB);
+const productionBudgetGateActive =
+  truthy(process.env.SIDAR_PRODUCTION_READINESS) || process.env.TEST_PROFILE === "ci";
 const reportPath = resolve(
   repoRoot,
   process.env.SIDAR_BUNDLE_BUDGET_REPORT_PATH || "artifacts/frontend-bundle-budget.json",
@@ -27,6 +29,12 @@ function optionalNumber(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function truthy(value) {
+  return ["1", "true", "yes", "y", "evet", "e"].includes(
+    String(value ?? "").trim().toLowerCase(),
+  );
 }
 
 function fail(message) {
@@ -51,6 +59,12 @@ function validateBudget(name, value) {
   return true;
 }
 
+function requireBudgetForProductionGate(name, value) {
+  if (!productionBudgetGateActive || value !== null) return true;
+  fail(`${name} must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci.`);
+  return false;
+}
+
 function writeReport(report) {
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -70,6 +84,8 @@ try {
 validateBudget("SIDAR_REACT_DOM_CHUNK_BUDGET_KB", reactDomBudgetKb);
 validateBudget("SIDAR_TOTAL_JS_BUDGET_KB", totalJsBudgetKb);
 validateBudget("SIDAR_TOTAL_GZIP_BUDGET_KB", totalGzipBudgetKb);
+requireBudgetForProductionGate("SIDAR_TOTAL_JS_BUDGET_KB", totalJsBudgetKb);
+requireBudgetForProductionGate("SIDAR_TOTAL_GZIP_BUDGET_KB", totalGzipBudgetKb);
 
 const jsChunks = entries
   .filter((name) => name.endsWith(".js"))

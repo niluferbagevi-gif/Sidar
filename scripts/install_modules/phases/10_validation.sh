@@ -544,7 +544,7 @@ sync_frontend_quality_status_from_test_summary() {
 }
 
 run_optional_dev_full_validation_prompt() {
-    local optional_command="RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+    local optional_command="make dev-full"
     local reply=""
 
     if ! sidar_install_optional_dev_full_validation_available; then
@@ -565,9 +565,8 @@ run_optional_dev_full_validation_prompt() {
     esac
 
     info "Development tam doğrulama başlıyor: ${optional_command}"
-    if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 AUTO_OPEN_ARTIFACTS=0 \
-        bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
-        ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 run_tests.sh --stage all)."
+    if (cd "$SCRIPT_DIR" && env AUTO_OPEN_ARTIFACTS=0 make dev-full); then
+        ok "Development tam doğrulaması başarıyla tamamlandı (make dev-full)."
         info "Production readiness uyarısı final kurulum doğrulama özetinde tek merkezden raporlanacak."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
@@ -593,32 +592,31 @@ run_install_ci_full_validation() {
         return
     fi
 
-    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
+    local makefile_path="$SCRIPT_DIR/Makefile"
     local ci_full_failure_policy="${CI_FULL_VALIDATION_FAILURE_POLICY:-fail}"
-    if [[ ! -f "$run_tests_script" ]]; then
+    if [[ ! -f "$makefile_path" ]]; then
         CI_FULL_VALIDATION_STATUS="betik_yok"
         if [[ "$production_gate_required" == true ]]; then
-            fail "Production readiness gate çalıştırılamadı: tam doğrulama betiği bulunamadı ($run_tests_script)."
+            fail "Production readiness gate çalıştırılamadı: Makefile bulunamadı ($makefile_path)."
         fi
-        warn "Tam doğrulama betiği bulunamadı: $run_tests_script"
+        warn "Tam doğrulama hedefi çalıştırılamadı: Makefile bulunamadı ($makefile_path)"
         return
     fi
 
-    info "Tam doğrulama başlıyor: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-    if env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0 \
-        bash "$run_tests_script" --stage all; then
-        ok "Tam CI doğrulaması başarıyla tamamlandı (run_tests.sh --stage all)."
+    info "Tam doğrulama başlıyor: make production-readiness"
+    if (cd "$SCRIPT_DIR" && env AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
+        ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
         sync_frontend_quality_status_from_test_summary || true
         if [[ "$production_gate_required" == true ]]; then
-            fail "Production readiness gate başarısız. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+            fail "Production readiness gate başarısız. Tekrar için: make production-readiness"
         elif [[ "$ci_full_failure_policy" == "warn" ]]; then
             warn "Tam CI doğrulamasında hata var. CI_FULL_VALIDATION_FAILURE_POLICY=warn nedeniyle development/local kurulum devam ediyor."
         else
-            fail "Tam CI doğrulamasında hata var. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+            fail "Tam CI doğrulamasında hata var. Tekrar için: make production-readiness"
         fi
     fi
 }
