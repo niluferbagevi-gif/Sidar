@@ -711,7 +711,9 @@ _PROVIDER_IMPORTS: dict[str, tuple[str, str]] = {
     "anthropic": ("core.llm.anthropic", "AnthropicClient"),
     "litellm": ("core.llm.litellm", "LiteLLMClient"),
 }
-_PROVIDER_CLASS_NAMES = {class_name: provider for provider, (_, class_name) in _PROVIDER_IMPORTS.items()}
+_PROVIDER_CLASS_NAMES = {
+    class_name: provider for provider, (_, class_name) in _PROVIDER_IMPORTS.items()
+}
 _PROVIDER_REGISTRY_CACHE: dict[str, type[BaseLLMClient]] = {}
 
 
@@ -980,5 +982,7 @@ class LLMClient:
                 yield chunk
             return
 
-        async for chunk in _provider_class("gemini")(self.config)._stream_gemini_generator(response_stream):
+        async for chunk in _provider_class("gemini")(self.config)._stream_gemini_generator(
+            response_stream
+        ):
             yield chunk

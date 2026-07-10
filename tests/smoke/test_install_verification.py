@@ -59,7 +59,9 @@ def _installer_test_env(tmp_path: Path | None = None) -> dict[str, str]:
     return env
 
 
-def test_installer_test_env_scrubs_sensitive_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_installer_test_env_scrubs_sensitive_keys(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     for key in _SENSITIVE_ENV_KEYS:
         monkeypatch.setenv(key, f"secret-{key.lower()}")
     monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
@@ -141,8 +143,8 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     assert "background-color" in coverage_css.read_text(encoding="utf-8")
     html = html_report.read_text(encoding="utf-8")
     assert 'class="dark-mode"' in html
-    assert '/light-mode/help' in html
-    assert '>light-mode text<' in html
+    assert "/light-mode/help" in html
+    assert ">light-mode text<" in html
 
 
 def test_python_version() -> None:
@@ -178,9 +180,9 @@ def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
     assert 'git clone "$REPO_URL" --depth=1 --branch "$repo_branch" "$TARGET_DIR"' in phase
     assert 'git fetch origin "$repo_branch"' in phase
     assert 'git rebase "origin/${repo_branch}"' in phase
-    assert 'git pull --rebase origin main' not in phase
-    assert 'git fetch origin main' not in phase
-    assert 'git reset --hard origin/main' not in phase
+    assert "git pull --rebase origin main" not in phase
+    assert "git fetch origin main" not in phase
+    assert "git reset --hard origin/main" not in phase
 
 
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
@@ -441,11 +443,25 @@ def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
 
     git = ["git", "-C", str(origin)]
     subprocess.run([*git, "init", "-q", "-b", "main"], env=_installer_test_env(origin), check=True)
-    subprocess.run([*git, "config", "user.email", "smoke@example.com"], env=_installer_test_env(origin), check=True)
-    subprocess.run([*git, "config", "user.name", "smoke"], env=_installer_test_env(origin), check=True)
-    subprocess.run([*git, "config", "commit.gpgsign", "false"], env=_installer_test_env(origin), check=True)
-    subprocess.run([*git, "add", "-A"], env=_installer_test_env(origin), check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "synthetic bootstrap origin"], env=_installer_test_env(origin), check=True)
+    subprocess.run(
+        [*git, "config", "user.email", "smoke@example.com"],
+        env=_installer_test_env(origin),
+        check=True,
+    )
+    subprocess.run(
+        [*git, "config", "user.name", "smoke"], env=_installer_test_env(origin), check=True
+    )
+    subprocess.run(
+        [*git, "config", "commit.gpgsign", "false"], env=_installer_test_env(origin), check=True
+    )
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(origin), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "synthetic bootstrap origin"],
+        env=_installer_test_env(origin),
+        check=True,
+    )
     return "main"
 
 
@@ -561,7 +577,9 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
 
         host = tmp_path / "host"
         host.mkdir()
-        subprocess.run(["wget", "-q", raw_url], cwd=host, env=_installer_test_env(tmp_path), check=True)
+        subprocess.run(
+            ["wget", "-q", raw_url], cwd=host, env=_installer_test_env(tmp_path), check=True
+        )
         standalone = host / "install_sidar.sh"
         standalone.chmod(0o755)
 
@@ -633,8 +651,12 @@ def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -
         tampered.read_text(encoding="utf-8") + "# smoke-test drift\n", encoding="utf-8"
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper drift"], env=_installer_test_env(tmp_path), check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper drift"], env=_installer_test_env(tmp_path), check=True
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -788,8 +810,14 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper installer drift"], env=_installer_test_env(tmp_path), check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper installer drift"],
+        env=_installer_test_env(tmp_path),
+        check=True,
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -852,8 +880,14 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper core drift"], env=_installer_test_env(tmp_path), check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper core drift"],
+        env=_installer_test_env(tmp_path),
+        check=True,
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -1589,7 +1623,10 @@ def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
     )
 
     assert result.returncode == 0
-    assert "Başarısız test: tests/smoke/test_install_verification.py::test_dark_mode_assets_exist" in result.stdout
+    assert (
+        "Başarısız test: tests/smoke/test_install_verification.py::test_dark_mode_assets_exist"
+        in result.stdout
+    )
     assert "bilinmiyor" not in result.stdout
 
 

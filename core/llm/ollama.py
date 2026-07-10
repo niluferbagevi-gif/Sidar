@@ -23,6 +23,7 @@ from core.llm_client import (
 
 llm_facade = import_module("core.llm_client")
 
+
 def _setting(*args: Any, **kwargs: Any) -> Any:
     return llm_facade._setting(*args, **kwargs)
 

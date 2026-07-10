@@ -60,4 +60,3 @@ def test_installer_smoke_does_not_import_real_secret_file(
     dotenv.load_pytest_dotenv_chain()
 
     assert "OPENAI_API_KEY" not in os.environ
-
