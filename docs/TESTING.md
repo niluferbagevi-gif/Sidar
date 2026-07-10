@@ -314,6 +314,21 @@ Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gere
 `uv sync --frozen --extra dev-light` veya `make deps-dev-light` sistemi başlık paketlerine ihtiyaç duymadan
 `postgres` + `dev` araçlarını kuran hafif profildir.
 
+
+### Linter komut yönlendirmesi
+
+`ruff` yalnız Python dosyaları için kullanılmalıdır; `run_tests.sh` gibi shell
+script'lerini parse etmeye çalışması proje hatası değildir. Shell script kapsamı
+ShellCheck ile doğrulanır. Bu nedenle bu dosya kümesi için doğru hızlı komutlar:
+
+```bash
+uv run ruff check tests/unit/scripts/test_run_tests_quality_gate.py
+uv run shellcheck --severity=warning -x run_tests.sh
+```
+
+Repo geneli shell doğrulaması gerektiğinde `make lint-shell`, installer modülleri
+için daha dar doğrulama gerektiğinde `make installer-shellcheck` kullanılmalıdır.
+
 > **Pydantic ve pytest warning filtresi:** `pydantic` ile
 > `pydantic-settings` Sidar için runtime bağımlılığıdır; konfigürasyon, araç
 > şemaları ve web request doğrulamalarında kullanılır. Pytest tarafında Pydantic

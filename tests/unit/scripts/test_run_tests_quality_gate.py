@@ -852,6 +852,24 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
     )
 
 
+def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert "ruff` Python dosyaları içindir" in readme
+    assert "`ruff` yalnız Python dosyaları için kullanılmalıdır" in testing_doc
+    assert "uv run ruff check tests/unit/scripts/test_run_tests_quality_gate.py" in readme
+    assert "uv run ruff check tests/unit/scripts/test_run_tests_quality_gate.py" in testing_doc
+    assert "uv run shellcheck --severity=warning -x run_tests.sh" in readme
+    assert "uv run shellcheck --severity=warning -x run_tests.sh" in testing_doc
+    assert "make lint-shell" in readme
+    assert "make lint-shell" in testing_doc
+    assert "installer-shellcheck:" in makefile
+    assert "lint-shell:" in makefile
+    assert "$(SHELLCHECK) --severity=warning -x $(SHELLCHECK_FILES)" in makefile
+
+
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
     script = _script()
     summary_json = tmp_path / "test-summary.json"

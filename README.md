@@ -297,6 +297,11 @@ make deps-full
 > Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
 > `uv sync --frozen --extra dev-light` veya `make deps-dev-light` kullanılabilir.
 
+> Linter notu: `ruff` Python dosyaları içindir; shell script'ler için ShellCheck
+> kullanın. Örn. `uv run ruff check tests/unit/scripts/test_run_tests_quality_gate.py`
+> ve `uv run shellcheck --severity=warning -x run_tests.sh`. Repo geneli shell
+> doğrulaması için `make lint-shell` kullanılabilir.
+
 ```bash
 cd Sidar
 python -m venv .venv
