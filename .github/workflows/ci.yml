@@ -559,6 +559,20 @@ jobs:
           bash -n install_sidar.sh
           SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 bash install_sidar.sh
 
+      - name: Verify installer smoke isolation from user secrets
+        run: |
+          set -euo pipefail
+          test_home="$(mktemp -d)"
+          printf 'OPENAI_API_KEY=%0200000d\n' 0 > "$test_home/.sidar_keys.env"
+
+          HOME="$test_home" \
+          SIDAR_KEYS_FILE="$test_home/.sidar_keys.env" \
+          SIDAR_TEST_LOAD_REAL_KEYS=0 \
+          uv run pytest \
+            -q --no-cov -p no:xdist -x \
+            --confcutdir=tests/smoke \
+            tests/smoke/test_install_verification.py
+
       - name: Run installer smoke suite
         run: >-
           uv run pytest -q --no-cov -m installer_smoke

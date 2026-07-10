@@ -1551,6 +1551,12 @@ PY
         # shellcheck disable=SC2034  # scripts/install_modules/phases/10_validation.sh reads this sourced state.
         SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="hata"
         local persisted_smoke_log=""
+        SIDAR_LAST_FAILED_TEST="$(
+            grep -m1 -E '^FAILED[[:space:]]+tests/' "$smoke_log" 2>/dev/null |
+                sed -E 's/^FAILED[[:space:]]+([^[:space:]]+).*/\1/' ||
+                true
+        )"
+        export SIDAR_LAST_FAILED_TEST
         persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"
         warn "Smoke gate çıktısı: $smoke_log"
         if [[ -n "${persisted_smoke_log//[[:space:]]/}" ]]; then
@@ -1564,7 +1570,15 @@ PY
         else
             sed -n '1,200p' "$smoke_log" | sed 's/^/  | /' || true
         fi
-        warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
+        if grep -qE 'INSTALL_SIDAR_VERSION|_run_bash_smoke .* tamamlanamadı|TimeoutExpired' "$smoke_log" 2>/dev/null; then
+            warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
+            warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
+            warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
+            warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
+        elif grep -q 'Argument list too long' "$smoke_log" 2>/dev/null; then
+            warn "Smoke subprocess environment boyutu işletim sistemi sınırını aştı."
+            warn "SIDAR_KEYS_FILE ve dotenv zincirindeki büyük değerleri kontrol edin."
+        fi
         if grep -q "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" "$smoke_log" 2>/dev/null; then
             warn "Installer core manifest drift smoke testi başarısız oldu; install_sidar.sh içinde SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY erken çıkışının core_manifest_status=2 durumunu maskelemediğini kontrol edin."
         fi
@@ -1573,9 +1587,6 @@ PY
             warn "Varsayılan güvenlik davranışı gerçek servis anahtarlarını .env.test içine kopyalamaz."
             warn "Test gerekiyorsa SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 opt-in davranışı ayrı test edilmelidir."
         fi
-        warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
-        warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
-        warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
         sidar_phase06_fail_with_smoke_cleanup "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
     fi
     sidar_phase06_cleanup_pre_service_smoke_log

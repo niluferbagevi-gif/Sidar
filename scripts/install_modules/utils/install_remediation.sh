@@ -116,7 +116,13 @@ sidar_test_gate_failure_guidance() {
     local test_ref=""
     local rerun_command=""
 
-    test_ref="$(printf '%s\n' "$signal" | sed -nE 's/.*(FAILED[[:space:]]+)?(tests\/[^[:space:]]+).*/\2/p' | head -n1 || true)"
+    test_ref="${SIDAR_LAST_FAILED_TEST:-}"
+    if [[ -n "$test_ref" && "$test_ref" != tests/* ]]; then
+        test_ref=""
+    fi
+    if [[ -z "$test_ref" ]]; then
+        test_ref="$(printf '%s\n' "$signal" | sed -nE 's/.*(FAILED[[:space:]]+)?(tests\/[^[:space:]]+).*/\2/p' | head -n1 || true)"
+    fi
     if [[ -n "$test_ref" ]]; then
         rerun_command="uv run pytest ${test_ref} -v --no-cov"
     else

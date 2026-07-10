@@ -1511,6 +1511,12 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "güncel akış Conda değil `uv` kullanır" in troubleshooting
     assert "60 saniyelik varsayılan timeout" in troubleshooting
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
+    assert "SIDAR_LAST_FAILED_TEST" in phase
+    assert "Smoke subprocess environment boyutu işletim sistemi sınırını aştı." in phase
+    assert "SIDAR_KEYS_FILE ve dotenv zincirindeki büyük değerleri kontrol edin." in phase
+    assert "Argument list too long" in troubleshooting
+    assert "TOTAL_ENV_BYTES" in troubleshooting
+    assert "--confcutdir=tests/smoke" in troubleshooting
     assert "Smoke gate probe timeout belirtisi" in phase
     assert "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" in phase
     assert "core_manifest_status=2 durumunu maskelemediğini kontrol edin" in phase
@@ -1530,6 +1536,39 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     )
     assert "SIDAR_INSTALL_SUPPRESS_AUTO_HEAL" in remediation_utils
     assert "sidar_install_auto_heal_enabled || return 1" in remediation_utils
+
+
+def test_ci_verifies_installer_smoke_isolation_from_user_secrets() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Verify installer smoke isolation from user secrets" in ci
+    assert "OPENAI_API_KEY=%0200000d" in ci
+    assert "SIDAR_TEST_LOAD_REAL_KEYS=0" in ci
+    assert "--confcutdir=tests/smoke" in ci
+    assert "tests/smoke/test_install_verification.py" in ci
+
+
+def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            export SIDAR_LAST_FAILED_TEST=tests/smoke/test_install_verification.py::test_dark_mode_assets_exist
+            sidar_test_gate_failure_guidance fail 'Servis öncesi installer smoke gate başarısız'
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Başarısız test: tests/smoke/test_install_verification.py::test_dark_mode_assets_exist" in result.stdout
+    assert "bilinmiyor" not in result.stdout
 
 
 def test_docker_compose_start_checks_daemon_access_before_up() -> None:
