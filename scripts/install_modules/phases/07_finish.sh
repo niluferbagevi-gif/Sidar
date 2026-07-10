@@ -222,6 +222,17 @@ print_release_readiness_next_action() {
     echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
 }
 
+
+sidar_summary_materialize_real_keys_to_env_enabled() {
+    local raw="${SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0}"
+    raw="${raw,,}"
+    raw="${raw//[[:space:]]/}"
+    case "$raw" in
+        1|true|yes|y|evet|e) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
@@ -241,6 +252,10 @@ print_summary() {
     echo -e "${BOLD}.env API anahtar durumu:${NC}"
     if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
         echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
+    elif ! sidar_summary_materialize_real_keys_to_env_enabled; then
+        echo -e "  ${BLUE}ℹ️  .env dosyasında ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL} API anahtarı dolu; bu beklenen güvenli kurulum davranışıdır.${NC}"
+        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE (${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}) kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
+        echo "  .env içinde boş görünen servis anahtarları, SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 verilmedikçe uyarı değildir."
     else
         echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
         if [[ "${#ENV_API_KEYS_MISSING[@]}" -gt 0 ]]; then

@@ -1453,6 +1453,25 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     assert "mapfile -t key_order < <(sidar_user_api_key_names)" in report_block
 
 
+def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:
+    finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+    summary_start = finish_phase.index("print_summary()")
+    summary_block = finish_phase[
+        summary_start : finish_phase.index("verify_sidar_keys_file_permissions", summary_start)
+    ]
+
+    assert "sidar_summary_materialize_real_keys_to_env_enabled" in finish_phase
+    assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0" in finish_phase
+    assert "ℹ️  .env dosyasında" in summary_block
+    assert "beklenen güvenli kurulum davranışıdır" in summary_block
+    assert "SIDAR_KEYS_FILE" in summary_block
+    assert "Kritik key kaynak özeti" in summary_block
+    assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1" in summary_block
+    assert summary_block.index(
+        "elif ! sidar_summary_materialize_real_keys_to_env_enabled"
+    ) < summary_block.index("⚠️  Dolu anahtar")
+
+
 def test_install_sidar_reports_api_key_write_failures_without_missing_err_function() -> None:
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     collect_start = env_phase.index("collect_api_keys_interactive()")
