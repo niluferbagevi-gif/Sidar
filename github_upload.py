@@ -34,6 +34,8 @@ FORBIDDEN_PATHS = [
 
 # Test ve kalite kapısı çıktıları kaynak kod değildir; .gitignore drift veya
 # otomatik stage akışındaki geniş .json izinleri nedeniyle repoya girmemelidir.
+SUBPROCESS_ENV_VALUE_MAX_BYTES = 32 * 1024
+
 GENERATED_ARTIFACT_PATHS = {
     "coverage.json",
     "coverage.xml",
@@ -62,8 +64,26 @@ class Colors:
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
+def _build_subprocess_env() -> dict[str, str]:
+    """Return a bounded environment so large loaded secrets do not break execve.
+
+    Config loading can materialize very large keys into ``os.environ``. Linux passes
+    environment values through the same execve argument block as argv, so a single
+    oversized secret can make even ``git --version`` fail with E2BIG. Git commands
+    used here only need normal process context (PATH/HOME/etc.), not large API keys.
+    """
+
+    bounded_env: dict[str, str] = {}
+    for key, value in os.environ.items():
+        text_value = str(value)
+        if len(key.encode()) + len(text_value.encode()) > SUBPROCESS_ENV_VALUE_MAX_BYTES:
+            continue
+        bounded_env[key] = text_value
+    return bounded_env
+
+
 def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, str]:
-    """Komutu shell=False ile güvenli şekilde çalıştırır."""
+    """Komutu shell=False ile güvenli ve sınırlı environment ile çalıştırır."""
     try:
         result = subprocess.run(  # nosec B603  # args listesi sistem içi oluşturulur, shell kullanılmaz.
             args,
@@ -71,6 +91,7 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
             check=True,
             capture_output=True,
             text=True,
+            env=_build_subprocess_env(),
         )
         if show_output and result.stdout.strip():
             print(result.stdout.strip())
@@ -82,6 +103,11 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
 
         if show_output and err_msg:
             print(f"{Colors.WARNING}Git ciktisi: {err_msg}{Colors.ENDC}")
+        return False, err_msg
+    except OSError as e:
+        err_msg = str(e)
+        if show_output and err_msg:
+            print(f"{Colors.WARNING}Komut baslatilamadi: {err_msg}{Colors.ENDC}")
         return False, err_msg
 
 

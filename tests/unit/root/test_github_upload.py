@@ -38,6 +38,42 @@ def test_run_command_success_and_error(monkeypatch, capsys):
     assert "boom" in err and "x" in err
 
 
+def test_run_command_filters_oversized_environment(monkeypatch):
+    captured = {}
+
+    class Result:
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(*_args, **kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setenv("SIDAR_HUGE_SECRET", "x" * (gu.SUBPROCESS_ENV_VALUE_MAX_BYTES + 1))
+    monkeypatch.setenv("SIDAR_SMALL_FLAG", "1")
+    monkeypatch.setattr(gu.subprocess, "run", fake_run)
+
+    ok, out = gu.run_command(["git", "--version"], show_output=False)
+
+    assert ok is True
+    assert out == "ok"
+    assert "SIDAR_HUGE_SECRET" not in captured["env"]
+    assert captured["env"]["SIDAR_SMALL_FLAG"] == "1"
+
+
+def test_run_command_reports_oserror(monkeypatch, capsys):
+    def fail(*_args, **_kwargs):
+        raise OSError(7, "Argument list too long", "git")
+
+    monkeypatch.setattr(gu.subprocess, "run", fail)
+
+    ok, err = gu.run_command(["git", "--version"], show_output=True)
+
+    assert ok is False
+    assert "Argument list too long" in err
+    assert "Komut baslatilamadi" in capsys.readouterr().out
+
+
 def test_url_and_path_helpers(tmp_path):
     assert gu._is_valid_repo_url("https://github.com/a/b")
     assert gu._is_valid_repo_url("https://github.com/a/b.git")
