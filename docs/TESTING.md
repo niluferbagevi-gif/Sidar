@@ -198,6 +198,23 @@ Local başarıdan release onayına geçmek için tek kanonik komut:
 make production-readiness
 ```
 
+## CI branch protection / required checks
+
+GitHub repository settings dosya içinde doğrulanamaz; ancak merge güvenliği için branch
+protection altında en az şu CI job'ları required check olmalıdır:
+
+- `test` — normal CI yolunda benchmark baseline restore edilir, `make production-readiness`
+  çalışır ve `scripts/ci/validate_test_summary.py --mode release` ile
+  `artifacts/test-summary.json` release modunda doğrulanır.
+- `Installer manifest and smoke gate` (`installer-smoke` job'ı) — installer manifest/hash
+  drift'i, raw installer smoke ve kritik kurulum zinciri kontrollerini merge öncesi zorunlu
+  yapar.
+
+Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu iki required check ve
+production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
+Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
+bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+
 ## CI benchmark baseline cache boşsa ne yapılır?
 
 > **Kısa cevap:** GitHub Actions → **CI** → **Run workflow** →
