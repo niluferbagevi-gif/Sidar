@@ -16,6 +16,7 @@ run_checked() {
 }
 
 RUN_TESTS_STAGE="${RUN_TESTS_STAGE:-all}"
+PRODUCTION_READINESS_MAKE_COMMAND="make production-readiness"
 PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
 print_usage() {
   cat <<USAGE
@@ -33,6 +34,8 @@ Stage scopes:
   bats         Installer/shell quality gate: tests/shell via BATS.
 
 Production readiness gate:
+  ${PRODUCTION_READINESS_MAKE_COMMAND}
+  # Equivalent direct command:
   ${PRODUCTION_READINESS_COMMAND}
 USAGE
 }
@@ -1015,7 +1018,8 @@ summary = {
     "production_readiness_detail": {
         "status": production_readiness_status,
         "reason": production_readiness_reason,
-        "required_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+        "required_command": "make production-readiness",
+        "equivalent_direct_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
         "validation_class": validation_class,
         "release_blocking": release_blocking == "true",
         "release_gate_exit_code": _safe_int(release_gate_exit_code),
@@ -2761,6 +2765,8 @@ print_release_scope_warning_once() {
    artifacts/test-summary.json içinde production_ready=false kalır.
    PR template ve merge checklist üzerinde bu alan zorunlu kontrol edilmelidir.
    Production readiness için kanonik komut:
+   ${PRODUCTION_READINESS_MAKE_COMMAND}
+   Eşdeğer doğrudan komut:
    ${PRODUCTION_READINESS_COMMAND}
 RELEASE_SCOPE_WARNING
     if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
@@ -2774,6 +2780,8 @@ RELEASE_SCOPE_WARNING
    kapılar geçse bile integration, frontend E2E ve benchmark tam koşullarda
    çalışmadıysa projeyi production-ready kabul etmeyin.
    Production readiness için kanonik komut:
+   ${PRODUCTION_READINESS_MAKE_COMMAND}
+   Eşdeğer doğrudan komut:
    ${PRODUCTION_READINESS_COMMAND}
 RELEASE_SCOPE_WARNING
   fi

@@ -804,6 +804,12 @@ write_test_summary_json false
     assert summary["frontend_e2e_scope"] == "smoke"
     assert summary["installer_mode"] == "development_local"
     assert summary["production_readiness_detail"]["status"] == "partial_stage"
+    assert summary["production_readiness_detail"]["required_command"] == "make production-readiness"
+    assert (
+        summary["production_readiness_detail"]["equivalent_direct_command"]
+        == "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    )
     assert summary["benchmark_baseline"] == {
         "name": "baseline",
         "compare_required": False,
@@ -827,6 +833,23 @@ write_test_summary_json false
         "remote_module_cache_hits": 3,
         "remote_module_base_url": "https://mirror.example/install_modules",
     }
+
+
+def test_run_tests_help_lists_make_and_direct_production_readiness_commands() -> None:
+    result = subprocess.run(
+        ["bash", "run_tests.sh", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Production readiness gate:" in result.stdout
+    assert "make production-readiness" in result.stdout
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+        "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+        in result.stdout
+    )
 
 
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
