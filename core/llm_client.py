@@ -784,7 +784,7 @@ class LLMClient:
         ollama_cls = _provider_class("ollama")
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)
-            return cast(str, ollama_client.base_url)
+            return ollama_client.base_url
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
         )
@@ -985,14 +985,14 @@ class LLMClient:
         ollama_cls = _provider_class("ollama")
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)
-            return cast(list[str], await ollama_client.list_models())
+            return await ollama_client.list_models()
         return []
 
     async def is_ollama_available(self) -> bool:
         ollama_cls = _provider_class("ollama")
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)
-            return cast(bool, await ollama_client.is_available())
+            return await ollama_client.is_available()
         return False
 
     async def _stream_gemini_generator(
