@@ -50,7 +50,7 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
@@ -97,6 +97,12 @@ jobs:
             artifacts/benchmark/benchmark.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Save benchmark baseline cache for CI
+        uses: actions/cache/save@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
 
   test:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}

@@ -730,6 +730,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline:" in ci
     assert "seed-benchmark-baseline:" in ci
     assert "Seed benchmark baseline cache" in ci
+    assert "uses: actions/cache/restore@v4" in ci
+    assert "uses: actions/cache/save@v4" in ci
     assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
     assert "benchmark-baseline-seed" in ci
     assert "Next step: rerun the normal CI / production-readiness gate" in ci
