@@ -469,6 +469,21 @@ sidar_install_optional_dev_full_validation_available() {
 }
 
 
+
+print_install_final_readiness_block() {
+    local dev_state="$1"
+    local release_state="$2"
+    local release_reason="$3"
+
+    echo ""
+    echo -e "${BOLD}🎯 Final doğrulama sonucu:${NC}"
+    echo -e "   ${GREEN}Geliştirici ortamı sağlıklı: ${dev_state}${NC}"
+    echo -e "   ${YELLOW}Release hazır: ${release_state}${NC}"
+    if [[ -n "$release_reason" ]]; then
+        echo -e "   ${YELLOW}Neden: ${release_reason}${NC}"
+    fi
+}
+
 print_install_production_readiness_notice() {
     local status="${1:-not_requested}"
     local development_passed="${2:-false}"
@@ -864,6 +879,20 @@ print_install_validation_coverage() {
                 echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
             fi
         fi
+    fi
+
+    if [[ "${summary_production_ready:-}" == true ]]; then
+        print_install_final_readiness_block "Evet — production-readiness gate geçti" "Evet — release/merge kapısı tamamlandı" ""
+    elif [[ "$ci_status" == "tamamlandi" ]]; then
+        if sidar_install_production_gate_required; then
+            print_install_final_readiness_block "Evet — tam doğrulama komutu tamamlandı" "Hayır — production-readiness özeti doğrulanamadı" "artifacts/test-summary.json içinde production_ready=true görülmeden release/merge onayı vermeyin."
+        else
+            print_install_final_readiness_block "Evet — development full validation geçti" "Hayır" "Production-readiness gate çalıştırılmadı; release/merge için ./install_sidar.sh --production-readiness zorunlu."
+        fi
+    elif [[ "$smoke_status" == "tamamlandi" ]]; then
+        print_install_final_readiness_block "Kısmi — smoke doğrulaması geçti" "Hayır" "Development full validation ve production-readiness gate çalıştırılmadı."
+    else
+        print_install_final_readiness_block "Hayır veya bilinmiyor — smoke/dev-full tamamlanmadı" "Hayır" "Tam doğrulama kapsamı eksik; release/merge için production-readiness gate zorunlu."
     fi
 
     print_install_coverage_gate_note
