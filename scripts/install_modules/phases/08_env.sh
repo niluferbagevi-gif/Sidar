@@ -267,6 +267,32 @@ collect_api_keys_interactive() {
         done
     }
 
+    _api_key_target_display_name() {
+        local target="$1"
+        if [[ "$target" == "$sidar_keys_file" ]]; then
+            printf 'SIDAR_KEYS_FILE (%s)' "$target"
+        else
+            basename "$target"
+        fi
+    }
+
+    _report_imported_api_key_targets() {
+        local source_file="$1"
+        local imported_count="$2"
+        local target target_name
+
+        if ! _materialize_real_keys_to_env_enabled; then
+            ok "${imported_count} API anahtarı SIDAR_KEYS_FILE (${sidar_keys_file}) içinde doğrulandı/güncellendi."
+            return 0
+        fi
+
+        ok "${imported_count} API anahtarı ${source_file} kaynağından alındı; materialization açık."
+        for target in "${api_key_target_env_files[@]}"; do
+            target_name="$(_api_key_target_display_name "$target")"
+            ok "${target_name}: ${imported_count} API anahtarı güncellendi."
+        done
+    }
+
     _warn_if_missing_critical_provider_keys() {
         local openai_key=""
         local anthropic_key=""
@@ -288,11 +314,17 @@ collect_api_keys_interactive() {
 
     _sync_existing_api_keys_to_env_targets() {
         local key current_val
+        local synced_count=0
         for key in "${KEY_ORDER[@]}"; do
             current_val=$(read_env_value_from_file "$key" "$env_file" | tr -d '\n')
             [[ -z "${current_val//[[:space:]]/}" ]] && continue
             _write_key "$key" "$current_val"
+            ((synced_count += 1))
         done
+
+        if (( synced_count > 0 )); then
+            _report_imported_api_key_targets "$env_file" "$synced_count"
+        fi
     }
 
     if [[ "$NO_INTERACTION" == true ]]; then
@@ -330,7 +362,7 @@ collect_api_keys_interactive() {
         done
 
         if (( imported_count > 0 )); then
-            ok "${imported_count} API anahtarı ${source_file} üzerinden .env dosyasına aktarıldı."
+            _report_imported_api_key_targets "$source_file" "$imported_count"
         else
             warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri dolu değil."
         fi

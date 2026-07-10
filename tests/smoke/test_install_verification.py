@@ -1332,7 +1332,6 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
     assert "REPORT:06_services|learned-non-retryable-failure|" in result.stdout
 
 
-
 def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
     result = subprocess.run(
         [
@@ -1361,7 +1360,10 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
     assert result.returncode == 0
     assert "UNEXPECTED_RESUME" not in result.stdout
     assert "deterministik test gate hatası" in result.stdout
-    assert "Başarısız test: tests/smoke/test_install_python_env_lock.py::test_profile_matrix" in result.stdout
+    assert (
+        "Başarısız test: tests/smoke/test_install_python_env_lock.py::test_profile_matrix"
+        in result.stdout
+    )
     assert (
         "Tekrar komutu: uv run pytest tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
         in result.stdout
@@ -1374,7 +1376,11 @@ def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
 
     assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
     assert 'local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"' in installer
-    assert 'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason"' in installer
+    assert (
+        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason"'
+        in installer
+    )
+
 
 def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
     result = subprocess.run(
@@ -1809,6 +1815,10 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
         tmp_path,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    combined_output = result.stdout + result.stderr
+    assert "18 API anahtarı SIDAR_KEYS_FILE" in combined_output
+    assert "içinde doğrulandı/güncellendi" in combined_output
+    assert "üzerinden .env dosyasına aktarıldı" not in combined_output
 
 
 def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) -> None:
@@ -1863,6 +1873,13 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
         tmp_path,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    combined_output = result.stdout + result.stderr
+    assert "18 API anahtarı" in combined_output
+    assert "materialization açık" in combined_output
+    assert ".env: 18 API anahtarı güncellendi." in combined_output
+    assert ".env.advanced: 18 API anahtarı güncellendi." in combined_output
+    assert ".env.development: 18 API anahtarı güncellendi." in combined_output
+    assert ".env.test: 18 API anahtarı güncellendi." in combined_output
 
 
 def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
