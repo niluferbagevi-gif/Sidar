@@ -2354,6 +2354,11 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert 'for module in ("pytest", "pydantic", "pydantic_settings")' in services_phase
     assert "uv sync --frozen --extra dev-light" in services_phase
     assert "Manuel doğrulama: uv sync --frozen --extra dev-light" in services_phase
+    assert "SIDAR_ENV=test" in services_phase
+    assert 'SIDAR_KEYS_FILE=""' in services_phase
+    assert "SIDAR_TEST_LOAD_REAL_KEYS=0" in services_phase
+    assert '--confcutdir="$SCRIPT_DIR/tests/smoke"' in services_phase
+    assert "tests/smoke/test_install_verification.py" in services_phase
     assert services_phase.index(
         "Servis öncesi installer smoke gate Python bağımlılıkları doğrulanıyor"
     ) < services_phase.index(
@@ -2361,7 +2366,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     )
     assert services_phase.index(
         "Servis öncesi installer smoke gate başlamadan PostgreSQL dotenv profilleri eşitleniyor"
-    ) < services_phase.index("uv run pytest -q --no-cov -p no:xdist -x")
+    ) < services_phase.index("uv run pytest")
     assert services_phase.index(
         "scripts/sync_database_passwords.py --all-envs"
     ) < services_phase.index("ensure_env_test_postgres_password_matches_base_before_smoke")

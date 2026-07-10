@@ -1438,6 +1438,10 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "Add-MpPreference -ExclusionPath" in troubleshooting
     assert "pyproject.toml" in version_contract_block
     assert 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"' in phase
+    assert "SIDAR_ENV=test" in phase
+    assert 'SIDAR_KEYS_FILE=""' in phase
+    assert "SIDAR_TEST_LOAD_REAL_KEYS=0" in phase
+    assert '--confcutdir="$SCRIPT_DIR/tests/smoke"' in phase
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "WSL2 ortamında smoke bash helper timeout değeri 180 saniyeye yükseltildi" in installer
     assert "export SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in installer

@@ -1529,9 +1529,18 @@ PY
         set -o pipefail
         (
             cd "$SCRIPT_DIR" && \
+                SIDAR_ENV=test \
+                SIDAR_KEYS_FILE="" \
+                SIDAR_TEST_LOAD_REAL_KEYS=0 \
                 SIDAR_INSTALL_TEST_MODE=1 \
                 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}" \
-                uv run pytest -q --no-cov -p no:xdist -x tests/smoke/test_install_verification.py \
+                uv run pytest \
+                    -q \
+                    --no-cov \
+                    -p no:xdist \
+                    -x \
+                    --confcutdir="$SCRIPT_DIR/tests/smoke" \
+                    tests/smoke/test_install_verification.py \
                 </dev/null
         ) 2>&1 | tee "$smoke_log"
     ); then
