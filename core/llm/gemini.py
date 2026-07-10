@@ -6,12 +6,10 @@ import inspect
 import json
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from importlib import import_module
 from typing import Any, cast
 
+import core.llm_client as llm_facade
 from core.llm_client import BaseLLMClient, logger
-
-llm_facade = import_module("core.llm_client")
 
 
 def _setting(*args: Any, **kwargs: Any) -> Any:

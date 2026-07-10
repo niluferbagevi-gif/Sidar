@@ -7,14 +7,12 @@ import os
 import sys
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from importlib import import_module
 from typing import Any, cast
 
 import httpx
 
+import core.llm_client as llm_facade
 from core.llm_client import SIDAR_TOOL_JSON_SCHEMA, BaseLLMClient, LLMAPIError, logger
-
-llm_facade = import_module("core.llm_client")
 
 
 def _setting(*args: Any, **kwargs: Any) -> Any:

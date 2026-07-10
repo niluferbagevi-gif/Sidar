@@ -704,7 +704,9 @@ class BaseLLMClient(ABC):
             yield chunk
 
 
-_PROVIDER_IMPORTS: dict[str, tuple[str, str]] = {
+ProviderRegistryEntry = tuple[str, str] | type[BaseLLMClient]
+
+_PROVIDER_IMPORTS: dict[str, ProviderRegistryEntry] = {
     "ollama": ("core.llm.ollama", "OllamaClient"),
     "gemini": ("core.llm.gemini", "GeminiClient"),
     "openai": ("core.llm.openai", "OpenAIClient"),
@@ -712,7 +714,10 @@ _PROVIDER_IMPORTS: dict[str, tuple[str, str]] = {
     "litellm": ("core.llm.litellm", "LiteLLMClient"),
 }
 _PROVIDER_CLASS_NAMES = {
-    class_name: provider for provider, (_, class_name) in _PROVIDER_IMPORTS.items()
+    class_name: provider
+    for provider, entry in _PROVIDER_IMPORTS.items()
+    if isinstance(entry, tuple)
+    for _, class_name in (entry,)
 }
 _PROVIDER_REGISTRY_CACHE: dict[str, type[BaseLLMClient]] = {}
 
@@ -722,8 +727,13 @@ def _provider_class(provider: str) -> type[BaseLLMClient]:
     cached = _PROVIDER_REGISTRY_CACHE.get(provider_name)
     if cached is not None:
         return cached
-    module_name, class_name = _PROVIDER_IMPORTS[provider_name]
-    provider_cls = getattr(importlib.import_module(module_name), class_name)
+    entry = _PROVIDER_IMPORTS[provider_name]
+    if isinstance(entry, type):
+        provider_cls = entry
+        class_name = entry.__name__
+    else:
+        module_name, class_name = entry
+        provider_cls = getattr(importlib.import_module(module_name), class_name)
     if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
         raise TypeError(f"{class_name} BaseLLMClient alt sınıfı olmalıdır.")
     _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
@@ -767,7 +777,9 @@ class LLMClient:
     @property
     def _ollama_base_url(self) -> str:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
-        if isinstance(self._client, _provider_class("ollama")):
+        from core.llm.ollama import OllamaClient
+
+        if isinstance(self._client, OllamaClient):
             return self._client.base_url
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
@@ -775,7 +787,9 @@ class LLMClient:
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
-        if isinstance(self._client, _provider_class("ollama")):
+        from core.llm.ollama import OllamaClient
+
+        if isinstance(self._client, OllamaClient):
             return self._client._build_timeout()
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
@@ -964,12 +978,16 @@ class LLMClient:
         return response
 
     async def list_ollama_models(self) -> list[str]:
-        if isinstance(self._client, _provider_class("ollama")):
+        from core.llm.ollama import OllamaClient
+
+        if isinstance(self._client, OllamaClient):
             return await self._client.list_models()
         return []
 
     async def is_ollama_available(self) -> bool:
-        if isinstance(self._client, _provider_class("ollama")):
+        from core.llm.ollama import OllamaClient
+
+        if isinstance(self._client, OllamaClient):
             return await self._client.is_available()
         return False
 
@@ -977,12 +995,10 @@ class LLMClient:
         self, response_stream: AsyncIterator[Any]
     ) -> AsyncGenerator[str, None]:
         """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
-        if isinstance(self._client, _provider_class("gemini")):
-            async for chunk in self._client._stream_gemini_generator(response_stream):
-                yield chunk
-            return
+        from core.llm.gemini import GeminiClient
 
-        async for chunk in _provider_class("gemini")(self.config)._stream_gemini_generator(
-            response_stream
-        ):
+        gemini_client = (
+            self._client if isinstance(self._client, GeminiClient) else GeminiClient(self.config)
+        )
+        async for chunk in gemini_client._stream_gemini_generator(response_stream):
             yield chunk
