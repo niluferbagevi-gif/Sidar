@@ -58,6 +58,8 @@ production-readiness:
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
 	bash run_tests.sh --stage all
 
+# Lokal benchmark baseline bootstrap içindir; CI baseline için workflow_dispatch
+# seed_benchmark_baseline=true kullanılmalıdır.
 benchmark-seed:
 	BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED) RUN_BENCHMARKS=required bash run_tests.sh --stage all
 
