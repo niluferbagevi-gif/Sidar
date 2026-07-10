@@ -15,6 +15,7 @@
     "audit": "npm audit --audit-level=moderate",
     "audit:high": "node ../scripts/npm_audit_safe.js --level=high --retries=2",
     "audit:moderate": "npm audit --audit-level=moderate",
+    "deps:update": "npm install",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",

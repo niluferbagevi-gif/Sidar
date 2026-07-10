@@ -4000,7 +4000,13 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script
-    assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm install")
+    assert script.index("export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1") < script.index("npm ci")
+    assert "package-lock.json bulundu; local/CI paritesi için 'npm ci'" in script
+    assert "package-lock.json bulunamadı; doğrulama için 'npm install' fallback" in script
+    assert script.index('if [ -f "package-lock.json" ]; then') < script.index("run_checked npm ci")
+    assert script.index("run_checked npm ci") < script.index("run_checked npm install")
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    assert package_json["scripts"]["deps:update"] == "npm install"
     frontend_gate_block = script[
         script.index("# 3) Frontend React testleri") : script.index(
             "# 4) Final Durum Değerlendirmesi"

@@ -2656,12 +2656,11 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
   else
     echo "🚀 Frontend (React) Testleri Başlıyor..."
     if pushd web_ui_react > /dev/null; then
-      # Yerel ortamda yavaşlığı önlemek için CI değişkenine göre davran.
-      if [ "${CI:-0}" = "true" ] || [ "${CI:-0}" = "1" ]; then
-        echo "ℹ️ CI ortamı tespit edildi, 'npm ci' çalıştırılıyor..."
+      if [ -f "package-lock.json" ]; then
+        echo "ℹ️ package-lock.json bulundu; local/CI paritesi için 'npm ci' çalıştırılıyor..."
         run_checked npm ci
       else
-        echo "ℹ️ Yerel ortam tespit edildi, 'npm install' çalıştırılıyor..."
+        echo "⚠️ package-lock.json bulunamadı; doğrulama için 'npm install' fallback olarak çalıştırılıyor."
         run_checked npm install
       fi
       local_npm_ci_exit=$?
