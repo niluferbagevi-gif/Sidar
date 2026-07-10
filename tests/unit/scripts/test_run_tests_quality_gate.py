@@ -487,7 +487,8 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
     assert "version-sort" in readme
     assert "### İlk yerel kurulum: benchmark baseline bootstrap" in readme
     assert "yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0`" in readme
-    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in readme
+    assert "make benchmark-seed" in readme
+    assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all" in readme
     assert "İlk yerel benchmark koşusunda `.benchmarks` baseline yoksa" in agents
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in agents
     assert "BENCHMARK_COMPARE_REQUIRED=1" in readme
@@ -649,11 +650,12 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
     ) in run_tests_script
     assert "Development full validation başarıyla tamamlandı" in run_tests_script
-    assert "RELEASE KAPSAMI EKSİK" in run_tests_script
+    assert "RELEASE / MERGE ONAYI VERMEYİN [summary-code=10]" in run_tests_script
+    assert "RELEASE / MERGE ONAYI VERMEYİN [summary-code=20]" in run_tests_script
     assert "print_release_scope_warning_once()" in run_tests_script
     assert "RELEASE_SCOPE_WARNING_PRINTED=1" in run_tests_script
-    assert "stage all çalıştı" in run_tests_script
-    assert "SIDAR_PRODUCTION_READINESS=1 / TEST_PROFILE=ci profili aktif olmadığı" in run_tests_script
+    assert "artifacts/test-summary.json içinde production_ready=false kalır" in run_tests_script
+    assert "Production readiness için kanonik komut" in run_tests_script
     assert "Production readiness profili çalıştırılmadı" not in run_tests_script
     assert "Tam doğrulama durumu: ÇALIŞTIRILMADI" not in run_tests_script
     assert "assert_production_readiness_request" in run_tests_script
@@ -1648,6 +1650,35 @@ exit 99
     brew_output = brew_log.read_text(encoding="utf-8")
     assert "list --versions portaudio" in brew_output
     assert "install" not in brew_output
+
+
+def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_release_gate() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    pr_template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+    benchmark_seed_block = makefile[
+        makefile.index("benchmark-seed:") : makefile.index("frontend-gate:")
+    ]
+    production_readiness_block = makefile[
+        makefile.index("production-readiness:") : makefile.index("# Lokal benchmark baseline")
+    ]
+
+    assert "Lokal benchmark baseline bootstrap içindir" in makefile
+    assert "seed_benchmark_baseline=true" in makefile
+    assert "BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED)" in benchmark_seed_block
+    assert "RUN_BENCHMARKS=required bash run_tests.sh --stage all" in benchmark_seed_block
+    assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
+    assert "TEST_PROFILE=ci" not in benchmark_seed_block
+
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in production_readiness_block
+    assert "SIDAR_PRODUCTION_READINESS=1" in production_readiness_block
+    assert "bash run_tests.sh --stage all" in production_readiness_block
+
+    assert "make benchmark-seed" in testing
+    assert "make production-readiness" in testing
+    assert "seed_benchmark_baseline=true" in pr_template
+    assert "docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır" in pr_template
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
