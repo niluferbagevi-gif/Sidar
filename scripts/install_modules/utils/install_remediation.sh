@@ -92,6 +92,42 @@ sidar_is_deterministic_failure_signal() {
     esac
 }
 
+
+sidar_is_test_gate_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        *"smoke testlerde hata var"*|*"smoke test failed"*|*"pytest"*|*"failed tests/"*|*"installer smoke gate başarısız"*|*"test gate failure"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sidar_test_gate_failure_guidance() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local test_ref=""
+    local rerun_command=""
+
+    test_ref="$(printf '%s\n' "$signal" | sed -nE 's/.*(FAILED[[:space:]]+)?(tests\/[^[:space:]]+).*/\2/p' | head -n1 || true)"
+    if [[ -n "$test_ref" ]]; then
+        rerun_command="uv run pytest ${test_ref} -v --no-cov"
+    else
+        rerun_command="uv run pytest tests/smoke --rootdir=\"${SCRIPT_DIR:-.}\" -v --no-cov"
+    fi
+
+    cat <<EOF
+Test gate failure deterministiktir; aynı kodu yeniden çalıştırmak sonucu değiştirmez. Başarısız test: ${test_ref:-bilinmiyor}. Tekrar komutu: ${rerun_command}
+EOF
+}
+
 sidar_failure_signature() {
     local phase="${1:-}"
     local failed_cmd="${2:-}"
@@ -420,6 +456,10 @@ sidar_phase_remediation_strategy() {
 
     # Tüm fazlarda geçerli: uzak betik checksum metadata eksikse self-heal
     # uygulanamaz; retry aynı duvara çarpar. Fail-fast davran ve operatöre yönlendir.
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
     if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
         local missing_var=""
         missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
@@ -589,6 +629,16 @@ sidar_handle_install_failure() {
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında deterministik test gate hatası algılandı; retry/resume atlanıyor."
+        local test_gate_guidance=""
+        test_gate_guidance="$(sidar_test_gate_failure_guidance "$failed_cmd" "$reason" || true)"
+        if [[ -n "$test_gate_guidance" ]]; then
+            warn "Auto-heal: ${test_gate_guidance}"
+        fi
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
         return 1
     fi
     if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then

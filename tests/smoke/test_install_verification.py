@@ -1209,6 +1209,50 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
     assert "REPORT:06_services|learned-non-retryable-failure|" in result.stdout
 
 
+
+def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            warn() { printf 'WARN:%s\n' "$*"; }
+            sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\n' "$1" "$2" "$3"; }
+            sidar_resume_after_remediation() { printf 'UNEXPECTED_RESUME\n'; exit 99; }
+            export SIDAR_CURRENT_INSTALL_PHASE=06_services
+            export SCRIPT_DIR=/repo/Sidar
+            sidar_handle_install_failure \
+              1 \
+              42 \
+              fail \
+              'Smoke testlerde hata var. FAILED tests/smoke/test_install_python_env_lock.py::test_profile_matrix - AssertionError' || true
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "UNEXPECTED_RESUME" not in result.stdout
+    assert "deterministik test gate hatası" in result.stdout
+    assert "Başarısız test: tests/smoke/test_install_python_env_lock.py::test_profile_matrix" in result.stdout
+    assert (
+        "Tekrar komutu: uv run pytest tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
+        in result.stdout
+    )
+    assert "REPORT:06_services|test-gate-failure|fail-fast;no-retry;no-resume;" in result.stdout
+
+
+def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
+    assert 'local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"' in installer
+    assert 'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason"' in installer
+
 def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
     result = subprocess.run(
         [

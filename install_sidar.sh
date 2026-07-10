@@ -33,8 +33,10 @@ on_install_error() {
         exit "$exit_code"
     fi
 
+    local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"
+
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
-        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
+        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason" || true
     fi
     echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
     sidar_t failed_command "$failed_cmd" >&2
@@ -422,6 +424,8 @@ debug() {
 warn() { printf '%s\n' "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
     local fail_reason="$*"
+    SIDAR_LAST_FAIL_MESSAGE="$fail_reason"
+    export SIDAR_LAST_FAIL_MESSAGE
     printf '%s\n' "${RED}❌  ${fail_reason}${NC}" >&2
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
         sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "fail" "$fail_reason" || true
@@ -522,7 +526,7 @@ b6a4662c922d136474abebf1337202ea6c1eab6d92dd62361612e1a31eee6b77  scripts/instal
 6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
 61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
 10995d9a3b23763f7f7a596b09609ee0fe0fc738aaededacc47c3dd8b1b16044  scripts/install_modules/utils/gpu_utils.sh
-5e6fd809f7a168d57a53c3de941fff772366686e475e830121cae0019816a80a  scripts/install_modules/utils/install_remediation.sh
+8730028c04ddd17eedaa4e72a78eb1962dc45283f85b3f8fc27a451f66f18b32  scripts/install_modules/utils/install_remediation.sh
 f2dabe212383f00c9aed2311ef4ae771e2afe4ad8ca0f90e0845b4776217ddc2  scripts/install_modules/utils/installer_hash_guard.sh
 53f71d30511429c35763c4f1c53bc557f92674dbbd2a1b60dd807b17fcdf5968  scripts/install_modules/utils/ollama_models.sh
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
