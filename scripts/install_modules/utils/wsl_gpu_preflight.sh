@@ -94,7 +94,11 @@ run_wsl2_gpu_preflight() {
             driver_version="$($smi_cmd --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
             vram_mb="$($smi_cmd --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1 | tr -d ' ,' || true)"
             compute_capability="$($smi_cmd --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
-            cuda_version="$($smi_cmd 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' | head -n1 || true)"
+            if declare -F detect_cuda_driver_capability >/dev/null 2>&1; then
+                cuda_version=$(detect_cuda_driver_capability "$smi_cmd")
+            else
+                cuda_version="$($smi_cmd 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' | head -n1 || true)"
+            fi
 
             [[ -n "$gpu_name" ]] && ok "GPU: $gpu_name"
             [[ -n "$driver_version" ]] && ok "Windows NVIDIA sürücüsü: $driver_version"

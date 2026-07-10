@@ -2225,6 +2225,52 @@ ENV
   [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
 }
 
+@test "detect_gpu reports unknown CUDA driver cap and separate WSL runtime CUDA" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf "$tmpdir"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: WSL Test GPU (UUID: GPU-test)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "WSL Test GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "24576" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "8.9" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") exit 1 ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "610.62" ;;
+  *) echo "NVIDIA-SMI WSL banner without CUDA token" ;;
+esac
+SMI
+    cat > "$tmpdir/uv" <<UV
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "run python" ]]; then
+  echo "13.0"
+fi
+UV
+    chmod +x "$tmpdir/nvidia-smi" "$tmpdir/uv"
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=true
+    RUN_GPU_STRESS=0
+
+    detect_gpu
+
+    [[ "$GPU_AVAILABLE" == "true" ]]
+    [[ -z "$CUDA_VERSION" ]]
+    [[ "$PYTORCH_RUNTIME_CUDA_VERSION" == "13.0" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CUDA Driver Cap : bilinmiyor"* ]]
+  [[ "$output" == *"WSL Windows Driver : 610.62"* ]]
+  [[ "$output" == *"WSL CUDA Passthrough : bilinmiyor"* ]]
+  [[ "$output" == *"PyTorch Runtime CUDA : 13.0"* ]]
+}
+
 @test "persist_run_gpu_stress_dotenv creates development dotenv from example" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

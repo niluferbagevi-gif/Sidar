@@ -2,6 +2,84 @@
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_GPU_UTILS_SH_LOADED=1
 
+
+detect_cuda_driver_capability() {
+    local smi_cmd="${1:-}"
+    local query_out=""
+    local parsed_version=""
+
+    [[ -n "$smi_cmd" ]] || return 0
+
+    query_out=$("$smi_cmd" --query-gpu=cuda_version --format=csv,noheader 2>/dev/null | head -1 || true)
+    parsed_version=$(echo "${query_out:-}" | tr -d '[:space:]' | grep -Eo '^[0-9]+([.][0-9]+)*' | head -1 || true)
+    if [[ -n "$parsed_version" ]]; then
+        printf '%s\n' "$parsed_version"
+        return 0
+    fi
+
+    parsed_version=$("$smi_cmd" 2>/dev/null | grep -Eo 'CUDA Version:[[:space:]]*[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
+    if [[ -n "$parsed_version" ]]; then
+        printf '%s\n' "$parsed_version"
+        return 0
+    fi
+
+    if command -v nvcc &>/dev/null; then
+        parsed_version=$(nvcc --version 2>/dev/null | grep -Eo 'release[[:space:]]+[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
+        [[ -n "$parsed_version" ]] && printf '%s\n' "$parsed_version"
+    fi
+}
+
+detect_pytorch_runtime_cuda_version() {
+    local python_cmd=()
+
+    if command -v uv &>/dev/null; then
+        python_cmd=(uv run python)
+    elif command -v python3 &>/dev/null; then
+        python_cmd=(python3)
+    elif command -v python &>/dev/null; then
+        python_cmd=(python)
+    else
+        return 0
+    fi
+
+    "${python_cmd[@]}" - <<'PY_TORCH_CUDA' 2>/dev/null | head -1
+try:
+    import torch
+except Exception:
+    raise SystemExit(0)
+print(getattr(torch.version, "cuda", None) or "")
+PY_TORCH_CUDA
+}
+
+report_gpu_cuda_diagnostics() {
+    local cuda_driver_cap="${1:-}"
+    local driver_version="${2:-}"
+    local pytorch_runtime_cuda="${PYTORCH_RUNTIME_CUDA_VERSION:-}"
+
+    [[ -n "$driver_version" ]] && ok "Sürücü  : $driver_version"
+    if [[ -n "$cuda_driver_cap" ]]; then
+        ok "CUDA Driver Cap : $cuda_driver_cap"
+    else
+        ok "CUDA Driver Cap : bilinmiyor"
+    fi
+
+    if [[ "${WSL2:-false}" == true ]]; then
+        [[ -n "$driver_version" ]] && ok "WSL Windows Driver : $driver_version"
+        if [[ -n "$cuda_driver_cap" ]]; then
+            ok "WSL CUDA Passthrough : $cuda_driver_cap"
+        else
+            ok "WSL CUDA Passthrough : bilinmiyor"
+        fi
+        if [[ -n "$pytorch_runtime_cuda" ]]; then
+            ok "PyTorch Runtime CUDA : $pytorch_runtime_cuda"
+        else
+            info "PyTorch Runtime CUDA : torch kurulumundan sonra doğrulanacak."
+        fi
+    elif [[ -n "$pytorch_runtime_cuda" ]]; then
+        ok "PyTorch Runtime CUDA : $pytorch_runtime_cuda"
+    fi
+}
+
 # Functional install helpers for the phase-based Sidar installer.
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
@@ -74,8 +152,9 @@ detect_gpu() {
 
         query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
         GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
-        CUDA_VERSION=$("$SMI_CMD" 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || true)
+        CUDA_VERSION=$(detect_cuda_driver_capability "$SMI_CMD")
         DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
+        PYTORCH_RUNTIME_CUDA_VERSION=$(detect_pytorch_runtime_cuda_version || true)
 
         GPU_AVAILABLE=true
         if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
@@ -85,8 +164,7 @@ detect_gpu() {
         fi
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
-        ok "Sürücü  : $DRIVER_VER"
-        ok "CUDA    : $CUDA_VERSION"
+        report_gpu_cuda_diagnostics "$CUDA_VERSION" "$DRIVER_VER"
         [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
 
         if [[ "$WSL2" == true ]]; then
