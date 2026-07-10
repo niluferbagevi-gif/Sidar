@@ -20,6 +20,8 @@ if str(PROJECT_ROOT) not in sys.path:
 # Pytest collection aşamasında test-env işaretleri henüz garanti olmadığından
 # kritik ayarların boş gelmesini önlemek için en erken noktada varsayılanları set ediyoruz.
 os.environ.setdefault("SIDAR_ENV", "test")
+if os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() not in {"1", "true", "yes"}:
+    os.environ["SIDAR_KEYS_FILE"] = ""
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
 
 import pytest
@@ -73,15 +75,6 @@ if _missing_test_deps:
 import pytest_asyncio
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
-
-try:
-    importlib.import_module("agent.sidar_agent")
-    importlib.import_module("agent.core.event_stream")
-    importlib.import_module("core.db")
-except ModuleNotFoundError as exc:
-    raise pytest.UsageError(
-        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --all-extras` çalıştırın."
-    ) from exc
 
 from tests._fixtures.agent import agent_factory as agent_factory
 from tests._fixtures.agent import fake_event_stream as fake_event_stream
@@ -162,6 +155,21 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
 
 
+def _test_needs_web_server_runtime(request: pytest.FixtureRequest) -> bool:
+    """Return whether a test path intentionally exercises the root web_server module."""
+    nodeid = str(request.node.nodeid)
+    return nodeid.startswith(
+        (
+            "tests/unit/root/",
+            "tests/unit/web/",
+            "tests/integration/api/",
+            "tests/integration/web/",
+            "tests/e2e/web/",
+            "tests/smoke/test_boot.py",
+        )
+    )
+
+
 @pytest.fixture(autouse=True)
 def _isolate_root_web_server_database_url(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, tmp_path: Path
@@ -186,8 +194,13 @@ def _isolate_root_web_server_database_url(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_webhook_secrets(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
     """Prevent local webhook secrets from leaking into signature-optional tests."""
+    if not _test_needs_web_server_runtime(request):
+        return
+
     for key in (
         "GITHUB_WEBHOOK_SECRET",
         "AUTONOMY_WEBHOOK_SECRET",
@@ -216,7 +229,9 @@ def _reset_web_route_dependency_factories() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_route_dependency_factories() -> Generator[None, None, None]:
+def _reset_route_dependency_factories(
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
     """Keep module-scoped web route dependency factories isolated between tests.
 
     ``web.routes.federation`` and ``web.routes.autonomy`` keep their dependency
@@ -226,6 +241,10 @@ def _reset_route_dependency_factories() -> Generator[None, None, None]:
     worker can inherit those stubs and bypass monkeypatched ``web_server``
     dependencies, which makes xdist ordering affect HMAC/signature behavior.
     """
+    if not _test_needs_web_server_runtime(request):
+        yield
+        return
+
     _reset_web_route_dependency_factories()
     yield
     _reset_web_route_dependency_factories()

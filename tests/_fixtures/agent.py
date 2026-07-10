@@ -7,8 +7,6 @@ from typing import Any
 
 import pytest
 
-import agent.sidar_agent as sidar_agent_module
-
 
 @pytest.fixture
 def agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
@@ -33,7 +31,9 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
                 "Örn: sidar_agent_factory(cfg=mock_config(USE_GPU=True))"
             )
 
-        return sidar_agent_module.SidarAgent(config=config)
+        from agent.sidar_agent import SidarAgent
+
+        return SidarAgent(config=config)
 
     return _create_agent
 
