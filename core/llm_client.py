@@ -15,7 +15,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import nullcontext
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 from opentelemetry import trace
@@ -32,6 +32,10 @@ from core.utils.json_repair import (
     repair_json_text,
     repair_json_text_async,
 )
+
+if TYPE_CHECKING:
+    from core.llm.gemini import GeminiClient
+    from core.llm.ollama import OllamaClient
 
 logger = logging.getLogger(__name__)
 _COMPAT_IMPORTED_MODULES = (codecs, importlib)
@@ -777,20 +781,20 @@ class LLMClient:
     @property
     def _ollama_base_url(self) -> str:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
-        from core.llm.ollama import OllamaClient
-
-        if isinstance(self._client, OllamaClient):
-            return self._client.base_url
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return cast(str, ollama_client.base_url)
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
         )
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
-        from core.llm.ollama import OllamaClient
-
-        if isinstance(self._client, OllamaClient):
-            return self._client._build_timeout()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return ollama_client._build_timeout()
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
@@ -978,27 +982,28 @@ class LLMClient:
         return response
 
     async def list_ollama_models(self) -> list[str]:
-        from core.llm.ollama import OllamaClient
-
-        if isinstance(self._client, OllamaClient):
-            return await self._client.list_models()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return cast(list[str], await ollama_client.list_models())
         return []
 
     async def is_ollama_available(self) -> bool:
-        from core.llm.ollama import OllamaClient
-
-        if isinstance(self._client, OllamaClient):
-            return await self._client.is_available()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return cast(bool, await ollama_client.is_available())
         return False
 
     async def _stream_gemini_generator(
         self, response_stream: AsyncIterator[Any]
     ) -> AsyncGenerator[str, None]:
         """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
-        from core.llm.gemini import GeminiClient
-
+        gemini_cls = _provider_class("gemini")
         gemini_client = (
-            self._client if isinstance(self._client, GeminiClient) else GeminiClient(self.config)
+            cast("GeminiClient", self._client)
+            if isinstance(self._client, gemini_cls)
+            else cast("GeminiClient", gemini_cls(self.config))
         )
         async for chunk in gemini_client._stream_gemini_generator(response_stream):
             yield chunk
