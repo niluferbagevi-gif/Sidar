@@ -306,10 +306,12 @@ uv sync --all-extras
 ```bash
 bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
 uv sync --frozen --all-extras
+# veya aynı sıralamayı Make hedefiyle çalıştırmak için:
+make deps-full
 ```
 
 Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
-`uv sync --frozen --extra dev-light` sistemi başlık paketlerine ihtiyaç duymadan
+`uv sync --frozen --extra dev-light` veya `make deps-dev-light` sistemi başlık paketlerine ihtiyaç duymadan
 `postgres` + `dev` araçlarını kuran hafif profildir.
 
 > **Pydantic ve pytest warning filtresi:** `pydantic` ile

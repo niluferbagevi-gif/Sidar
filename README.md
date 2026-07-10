@@ -287,13 +287,15 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ```bash
 bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
 uv sync --frozen --all-extras
+# veya aynı sıralamayı Make hedefiyle çalıştırmak için:
+make deps-full
 ```
 
 > `sidar[voice]` içindeki `pyaudio` için platform marker eklenmedi; sorun çoğu zaman
 > işletim sisteminden bağımsız olarak eksik PortAudio header'ıdır. Bu yüzden standart
 > çözüm, `uv sync` öncesinde yukarıdaki sistem bağımlılığı scriptini çalıştırmaktır.
 > Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
-> `uv sync --frozen --extra dev-light` kullanılabilir.
+> `uv sync --frozen --extra dev-light` veya `make deps-dev-light` kullanılabilir.
 
 ```bash
 cd Sidar

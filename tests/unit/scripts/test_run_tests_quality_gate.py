@@ -1549,8 +1549,20 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
     assert "PyAudio is intentionally not hidden behind a platform marker" in pyproject
     assert "dev-light = [" in pyproject
     assert '"sidar[postgres,dev]"' in pyproject
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
     assert "uv sync --frozen --extra dev-light" in readme
     assert "uv sync --frozen --extra dev-light" in testing_doc
+    assert "make deps-full" in readme
+    assert "make deps-full" in testing_doc
+    assert "make deps-dev-light" in readme
+    assert "make deps-dev-light" in testing_doc
+    deps_full_block = makefile[makefile.index("deps-full:") : makefile.index("deps-dev-light:")]
+    deps_dev_light_block = makefile[makefile.index("deps-dev-light:") : makefile.index("test-shell:")]
+    assert "bash scripts/install_ci_system_deps.sh" in deps_full_block
+    assert "uv sync --all-extras" in deps_full_block
+    assert deps_full_block.index("bash scripts/install_ci_system_deps.sh") < deps_full_block.index("uv sync --all-extras")
+    assert "uv sync --extra dev-light" in deps_dev_light_block
     readme_prereq_start = readme.index("#### Geliştirici ön koşulu")
     testing_prereq_start = testing_doc.index("### Geliştirici ön koşulu")
     assert readme.index(
