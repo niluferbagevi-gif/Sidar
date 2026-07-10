@@ -637,16 +637,9 @@ sidar_handle_install_failure() {
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
         return 1
     fi
-    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
-        warn "Auto-heal: ${phase} fazında deterministik test gate hatası algılandı; retry/resume atlanıyor."
-        local test_gate_guidance=""
-        test_gate_guidance="$(sidar_test_gate_failure_guidance "$failed_cmd" "$reason" || true)"
-        if [[ -n "$test_gate_guidance" ]]; then
-            warn "Auto-heal: ${test_gate_guidance}"
-        fi
-        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
-        return 1
-    fi
+    # Daha spesifik öğrenilmiş imza kontrolü, genel test-gate deseninden (ör. "pytest"
+    # geçen her komut) önce çalışmalı; aksi halde environment.yml gibi bilinen
+    # kalıcı hatalar yanlışlıkla genel "test gate failure" olarak sınıflandırılır.
     if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
         warn "Auto-heal: ${phase} fazında öğrenilmiş kalıcı hata imzası algılandı; retry/resume atlanıyor."
         local non_retryable_guidance=""
@@ -655,6 +648,16 @@ sidar_handle_install_failure() {
             warn "Auto-heal: ${non_retryable_guidance}"
         fi
         sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;signature=${failure_signature}"
+        return 1
+    fi
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında deterministik test gate hatası algılandı; retry/resume atlanıyor."
+        local test_gate_guidance=""
+        test_gate_guidance="$(sidar_test_gate_failure_guidance "$failed_cmd" "$reason" || true)"
+        if [[ -n "$test_gate_guidance" ]]; then
+            warn "Auto-heal: ${test_gate_guidance}"
+        fi
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
         return 1
     fi
     if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
