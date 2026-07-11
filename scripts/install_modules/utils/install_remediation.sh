@@ -460,12 +460,9 @@ sidar_phase_remediation_strategy() {
     local failed_cmd="$2"
     local reason="$3"
 
-    # Tüm fazlarda geçerli: uzak betik checksum metadata eksikse self-heal
-    # uygulanamaz; retry aynı duvara çarpar. Fail-fast davran ve operatöre yönlendir.
-    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
-        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
-        return 1
-    fi
+    # Tüm fazlarda geçerli deterministic imzalar en özelden en genele sınıflandırılır.
+    # Generic test-gate deseni "installer smoke gate başarısız" metnini de kapsadığı
+    # için installer-specific sınıflandırmalar mutlaka önce çalışmalıdır.
     if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
         local missing_var=""
         missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
@@ -480,6 +477,14 @@ sidar_phase_remediation_strategy() {
     fi
     if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
         sidar_write_remediation_report "$phase" "installer-hash-drift" "no-retry;remove-stale-home-installer-or-refresh-clone"
+        return 1
+    fi
+    if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
         return 1
     fi
 
@@ -635,6 +640,22 @@ sidar_handle_install_failure() {
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+    if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
+        local missing_var=""
+        missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
+        local action="no-retry;manual-fix-required;signature=${failure_signature}"
+        [[ -n "$missing_var" ]] && action="${action};missing-var=${missing_var}"
+        sidar_write_remediation_report "$phase" "remote-script-checksum-missing" "$action"
+        return 1
+    fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-smoke-gate-failure" "no-retry;manual-fix-required;signature=${failure_signature}"
+        return 1
+    fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-hash-drift" "no-retry;remove-stale-home-installer-or-refresh-clone;signature=${failure_signature}"
         return 1
     fi
     # Daha spesifik öğrenilmiş imza kontrolü, genel test-gate deseninden (ör. "pytest"
