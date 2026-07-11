@@ -109,6 +109,7 @@ run_wsl2_gpu_preflight() {
             export SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY="$cuda_version"
             export SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="$compute_capability"
             export SIDAR_GPU_PREFLIGHT_VRAM_MB="$vram_mb"
+            export SIDAR_USE_GPU_PREFLIGHT_FACTS=true
             if [[ "$vram_mb" =~ ^[0-9]+$ ]]; then
                 ok "VRAM: ${vram_mb} MiB"
                 if (( vram_mb < 8192 )); then

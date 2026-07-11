@@ -121,8 +121,12 @@ detect_gpu() {
     GPU_AVAILABLE=false
     CUDA_VERSION=""
     GPU_COMPUTE_CAPABILITY=""
+    GPU_NAME=""
+    VRAM_MB="0"
+    DRIVER_VER=""
+    PYTORCH_RUNTIME_CUDA_VERSION=""
 
-    if [[ "$FORCE_CPU" == true ]]; then
+    if [[ "${FORCE_CPU:-false}" == true ]]; then
         warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
         return
     fi
@@ -141,19 +145,36 @@ detect_gpu() {
     fi
 
     if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
+        local use_preflight_facts="${SIDAR_USE_GPU_PREFLIGHT_FACTS:-false}"
+
         query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_NAME="${SIDAR_GPU_PREFLIGHT_NAME:-${query_out:-Bilinmiyor}}"
+        GPU_NAME="${query_out:-Bilinmiyor}"
+        if [[ "$use_preflight_facts" == true && -n "${SIDAR_GPU_PREFLIGHT_NAME:-}" ]]; then
+            GPU_NAME="$SIDAR_GPU_PREFLIGHT_NAME"
+        fi
 
         query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
-        VRAM_MB="${SIDAR_GPU_PREFLIGHT_VRAM_MB:-$(echo "${query_out:-0}" | tr -d ' ,' )}"
+        VRAM_MB="$(echo "${query_out:-0}" | tr -d ' ,' )"
+        if [[ "$use_preflight_facts" == true && -n "${SIDAR_GPU_PREFLIGHT_VRAM_MB:-}" ]]; then
+            VRAM_MB="$SIDAR_GPU_PREFLIGHT_VRAM_MB"
+        fi
         if [[ -z "$VRAM_MB" ]]; then
             VRAM_MB="0"
         fi
 
         query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_COMPUTE_CAPABILITY="${SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY:-$(echo "${query_out:-}" | tr -d '[:space:]')}"
-        CUDA_VERSION="${SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY:-$(detect_cuda_driver_capability "$SMI_CMD")}"
-        DRIVER_VER="${SIDAR_GPU_PREFLIGHT_DRIVER_VERSION:-$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)}"
+        GPU_COMPUTE_CAPABILITY="$(echo "${query_out:-}" | tr -d '[:space:]')"
+        if [[ "$use_preflight_facts" == true && -n "${SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY:-}" ]]; then
+            GPU_COMPUTE_CAPABILITY="$SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY"
+        fi
+        CUDA_VERSION="$(detect_cuda_driver_capability "$SMI_CMD")"
+        if [[ "$use_preflight_facts" == true && -n "${SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY:-}" ]]; then
+            CUDA_VERSION="$SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY"
+        fi
+        DRIVER_VER="$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)"
+        if [[ "$use_preflight_facts" == true && -n "${SIDAR_GPU_PREFLIGHT_DRIVER_VERSION:-}" ]]; then
+            DRIVER_VER="$SIDAR_GPU_PREFLIGHT_DRIVER_VERSION"
+        fi
         PYTORCH_RUNTIME_CUDA_VERSION=$(detect_pytorch_runtime_cuda_version || true)
 
         GPU_AVAILABLE=true
@@ -167,7 +188,7 @@ detect_gpu() {
         report_gpu_cuda_diagnostics "$CUDA_VERSION" "$DRIVER_VER"
         [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
 
-        if [[ "$WSL2" == true ]]; then
+        if [[ "${WSL2:-false}" == true ]]; then
             info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
             configure_wsl2_cuda_library_paths
         fi

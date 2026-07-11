@@ -906,6 +906,18 @@ EOF
   [[ "$output" == *"bash run_tests.sh --stage all"* ]]
 }
 
+
+@test "installer source exposes validation and GPU functions from modular files" {
+  run_installer_function '
+    shopt -s extdebug
+    validation_source="$(declare -F run_install_ci_full_validation)"
+    gpu_source="$(declare -F detect_gpu)"
+    [[ "$validation_source" == *"scripts/install_modules/phases/10_validation.sh" ]]
+    [[ "$gpu_source" == *"scripts/install_modules/utils/gpu_utils.sh" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "ci-full validation runs canonical production-readiness make target" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -2215,6 +2227,14 @@ ENV
     FORCE_CPU=false
     WSL2=false
     RUN_GPU_STRESS=0
+    unset SIDAR_GPU_PREFLIGHT_NAME
+    unset SIDAR_GPU_PREFLIGHT_DRIVER_VERSION
+    unset SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_VRAM_MB
+    unset SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE
+    unset SIDAR_USE_GPU_PREFLIGHT_FACTS
+
     detect_gpu
     [[ "$GPU_AVAILABLE" == "true" ]]
     [[ "$CUDA_VERSION" == "12.9" ]]
@@ -2257,6 +2277,14 @@ ENV
     FORCE_CPU=false
     WSL2=true
     RUN_GPU_STRESS=0
+
+    unset SIDAR_GPU_PREFLIGHT_NAME
+    unset SIDAR_GPU_PREFLIGHT_DRIVER_VERSION
+    unset SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_VRAM_MB
+    unset SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE
+    unset SIDAR_USE_GPU_PREFLIGHT_FACTS
 
     detect_gpu
 
@@ -2303,6 +2331,7 @@ ENV
     SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="8.6"
     SIDAR_GPU_PREFLIGHT_VRAM_MB="8192"
     SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=true
+    SIDAR_USE_GPU_PREFLIGHT_FACTS=true
 
     detect_gpu
 

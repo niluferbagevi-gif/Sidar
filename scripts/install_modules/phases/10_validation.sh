@@ -79,7 +79,8 @@ print(f'available={avail} cuda={ver} device={dev}')
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
 wait_for_redis_before_smoke_tests() {
-    local env_file="$SCRIPT_DIR/.env"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local env_file="$script_dir/.env"
     local redis_url=""
     local redis_host=""
     local redis_port=""
@@ -352,13 +353,14 @@ run_install_integration_api_tests() {
     step "Kurulum Entegrasyon Testleri"
 
     # shellcheck disable=SC2153  # RUN_INSTALL_INTEGRATION_TESTS is initialized by installer argument parsing.
-    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+    if [[ "${RUN_INSTALL_INTEGRATION_TESTS:-false}" != true ]]; then
         info "--with-integration verilmediği için bash run_tests.sh --stage integration çalıştırılmadı."
         INTEGRATION_TEST_STATUS="atlandi_bayrak"
         return
     fi
 
-    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local run_tests_script="$script_dir/run_tests.sh"
     local -a integration_env=(AUTO_OPEN_ARTIFACTS=0)
     local integration_failure_policy="${INTEGRATION_TEST_FAILURE_POLICY:-fail}"
 
@@ -367,7 +369,7 @@ run_install_integration_api_tests() {
         fail "--with-integration entegrasyon kapısı çalıştırılamadı: $run_tests_script bulunamadı."
     fi
 
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$script_dir/.env"
     local integration_database_url=""
     local integration_postgres_password=""
     local integration_redis_url=""
@@ -418,7 +420,7 @@ run_install_integration_api_tests() {
 run_install_frontend_quality_validation() {
     step "Frontend Kalite Kapısı"
 
-    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+    if [[ "${RUN_INSTALL_INTEGRATION_TESTS:-false}" != true ]]; then
         info "--with-integration verilmediği için frontend stage çalıştırılmadı. Manuel komut: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         FRONTEND_QUALITY_STATUS="atlandi_bayrak"
         return
@@ -621,7 +623,8 @@ run_install_ci_full_validation() {
         return
     fi
 
-    local makefile_path="$SCRIPT_DIR/Makefile"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local makefile_path="$script_dir/Makefile"
     local ci_full_failure_policy="${CI_FULL_VALIDATION_FAILURE_POLICY:-fail}"
     if [[ ! -f "$makefile_path" ]]; then
         CI_FULL_VALIDATION_STATUS="betik_yok"
@@ -633,7 +636,7 @@ run_install_ci_full_validation() {
     fi
 
     info "Tam doğrulama başlıyor: make production-readiness"
-    if (cd "$SCRIPT_DIR" && env AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
+    if (cd "$script_dir" && env -u TEST_PROFILE -u RUN_BENCHMARKS -u RUN_FRONTEND_E2E -u SIDAR_PRODUCTION_READINESS AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
         ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
