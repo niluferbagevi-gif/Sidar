@@ -24,6 +24,7 @@ const reportPath = resolve(
   process.env.SIDAR_BUNDLE_BUDGET_REPORT_PATH || "artifacts/frontend-bundle-budget.json",
 );
 const topChunkCount = 5;
+const missingRequiredBudgets = [];
 
 function optionalNumber(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
@@ -61,6 +62,7 @@ function validateBudget(name, value) {
 
 function requireBudgetForProductionGate(name, value) {
   if (!productionBudgetGateActive || value !== null) return true;
+  missingRequiredBudgets.push(name);
   fail(`${name} must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci.`);
   return false;
 }
@@ -165,6 +167,7 @@ writeReport({
     totalJs: totalJsBudgetKb,
     totalGzip: totalGzipBudgetKb,
   },
+  missingRequiredBudgets,
   totals: {
     jsBytes: totalJsBytes,
     jsKb: Number(formatKb(totalJsBytes)),

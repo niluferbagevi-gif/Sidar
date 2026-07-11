@@ -4328,18 +4328,24 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
+    env = os.environ.copy()
+    env.pop("SIDAR_TOTAL_JS_BUDGET_KB", None)
+    env.pop("SIDAR_TOTAL_GZIP_BUDGET_KB", None)
+    env.update(
+        {
+            "TEST_PROFILE": "ci",
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+        }
+    )
+
     try:
         result = subprocess.run(
             ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
             check=False,
             capture_output=True,
             text=True,
-            env={
-                **os.environ,
-                "TEST_PROFILE": "ci",
-                "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
-                "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
-            },
+            env=env,
         )
     finally:
         if previous is None:
@@ -4350,6 +4356,11 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     assert result.returncode != 0
     assert "SIDAR_TOTAL_JS_BUDGET_KB must be set" in result.stderr
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB must be set" in result.stderr
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["missingRequiredBudgets"] == [
+        "SIDAR_TOTAL_JS_BUDGET_KB",
+        "SIDAR_TOTAL_GZIP_BUDGET_KB",
+    ]
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
