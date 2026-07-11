@@ -63,6 +63,10 @@ def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
     assert status.missing_pyproject_markers == []
     assert status.missing_plan_markers == []
     assert status.pyproject_markers["phase1_runtime_dependency_note"] is True
+    assert status.pyproject_markers["installer_default_profile_declared"] is True
+    assert status.pyproject_markers["developer_full_sync_declared"] is True
+    assert status.pyproject_markers["ci_full_sync_declared"] is True
+    assert status.pyproject_markers["production_minimal_profile_declared"] is True
     assert status.pyproject_markers["planned_profile_groups_declared"] is True
     assert status.plan_markers["mentions_tool_plan_table"] is True
     assert status.plan_markers["mentions_planned_profile_groups"] is True
@@ -73,13 +77,18 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
     plan = tmp_path / "docs" / "DEPENDENCY_PROFILE_PLAN.md"
     plan.parent.mkdir()
     pyproject.write_text(
+        "[project.optional-dependencies]\n"
+        'production = ["sidar[postgres,telemetry]"]\n'
         "[tool.sidar.dependency_profile_plan]\n"
-        'current_install_standard = "uv sync --all-extras"\n'
+        'current_install_standard = "legacy prose"\n'
+        'installer_default_profile = "all"\n'
+        'developer_full_sync = "uv sync --extra dev"\n'
+        'ci_full_sync = "uv sync --extra dev"\n'
+        'production_profile = "production"\n'
+        'production_minimal_profile = "production-minimal"\n'
         'owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"\n'
         "preserve_all_extras_standard = false\n"
-        'planned_profile_groups = ["base", "web"]\n'
-        "[[tool.sidar.dependency_profile_plan.profiles]]\n"
-        'name = "runtime"\n',
+        'planned_profile_groups = ["base", "web"]\n',
         encoding="utf-8",
     )
     plan.write_text("# Plan\nUse uv sync only.\n", encoding="utf-8")
@@ -88,7 +97,10 @@ def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: 
 
     assert status.status == "drift"
     assert "phase1_runtime_dependency_note" in status.missing_pyproject_markers
-    assert "production_profile_declared" in status.missing_pyproject_markers
+    assert "installer_default_profile_declared" in status.missing_pyproject_markers
+    assert "developer_full_sync_declared" in status.missing_pyproject_markers
+    assert "ci_full_sync_declared" in status.missing_pyproject_markers
+    assert "production_minimal_profile_declared" in status.missing_pyproject_markers
     assert "preserves_all_extras_standard" in status.missing_pyproject_markers
     assert "planned_profile_groups_declared" in status.missing_pyproject_markers
     assert "mentions_production_minimal" in status.missing_plan_markers

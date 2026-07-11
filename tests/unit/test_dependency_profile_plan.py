@@ -10,22 +10,49 @@ from packaging.requirements import Requirement
 def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
     docs = Path(plan["owner_doc"]).read_text(encoding="utf-8")
 
-    assert plan["current_install_standard"] == "uv sync --all-extras"
-    assert plan["status"] == "phase-1-dev-split"
-    profile_names = {item["name"] for item in plan["profiles"]}
-    assert {"runtime", "dev", "all", "production"} <= profile_names
-    assert (
-        "sidar[postgres,telemetry]" in pyproject["project"]["optional-dependencies"]["production"]
+    assert plan["current_install_standard"] == (
+        "installer default dev-light; CI/developer-full uv sync --all-extras"
     )
-    assert pyproject["project"]["optional-dependencies"]["production-minimal"] == [
-        "sidar[postgres]"
-    ]
+    assert plan["installer_default_profile"] == "dev-light"
+    assert plan["developer_full_sync"] == "uv sync --all-extras"
+    assert plan["ci_full_sync"] == "uv sync --all-extras"
+    assert plan["production_profile"] == "production"
+    assert plan["production_minimal_profile"] == "production-minimal"
+    assert plan["status"] == "phase-1-dev-split"
+    assert {"dev-light", "production", "production-minimal"} <= set(optional_dependencies)
+    assert optional_dependencies["production"] == ["sidar[postgres,telemetry]"]
+    assert optional_dependencies["production-minimal"] == ["sidar[postgres]"]
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
         assert tool_name in docs
+
+
+def test_installer_dependency_profile_contract_matches_plan_metadata() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+    plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
+    python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
+
+    assert plan["installer_default_profile"] == "dev-light"
+    assert 'requested="dev-light"' in python_env
+    assert "uv sync --frozen --extra dev-light" in python_env
+    assert 'requested="dev-full"' in python_env
+    assert "uv sync --frozen --all-extras" in python_env
+    assert plan["developer_full_sync"] == "uv sync --all-extras"
+    assert plan["ci_full_sync"] == "uv sync --all-extras"
+    assert "Tam CI/production-readiness doğrulaması seçildi" in python_env
+    assert "uv sync --frozen --extra production-minimal --no-dev" in python_env
+    assert optional_dependencies["production"] != optional_dependencies["production-minimal"]
+
+    heavy_extras = {"rag", "gpu", "voice", "browser"}
+    production_minimal = optional_dependencies["production-minimal"]
+    for dependency in production_minimal:
+        requirement = Requirement(dependency)
+        assert heavy_extras.isdisjoint(requirement.extras)
 
 
 def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
@@ -196,8 +223,11 @@ def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() ->
     ):
         assert target in docs
     assert "Bu doküman Dockerfile veya installer davranışını bu aşamada değiştirmez" in docs
-    assert "`--dependency-profile=all|production`" in docs
-    assert "varsayılan `all` kalmalı" in docs
+    assert (
+        "dev-light`, `dev-full`, `dev-gpu`, `gpu-runtime`, `production`, "
+        "`production-minimal` ve `custom`" in docs
+    )
+    assert "normal kurulum varsayılanı `dev-light`" in docs
     assert "varsayılan production install akışı değiştirilmez" in docs
 
 

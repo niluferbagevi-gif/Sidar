@@ -331,6 +331,11 @@ websockets = "runtime"
 
 [tool.sidar.dependency_profile_plan]
 current_install_standard = "installer default dev-light; CI/developer-full uv sync --all-extras"
+installer_default_profile = "dev-light"
+developer_full_sync = "uv sync --all-extras"
+ci_full_sync = "uv sync --all-extras"
+production_profile = "production"
+production_minimal_profile = "production-minimal"
 status = "phase-1-dev-split"
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
 preserve_all_extras_standard = true

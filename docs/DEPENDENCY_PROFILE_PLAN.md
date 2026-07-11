@@ -160,7 +160,7 @@ normal kurulum varsayılanı `dev-light` profilidir; tam test/CI veya
 Etkileşimsiz normal kurulum `dev-light` seçer; `RUN_CI_FULL_VALIDATION=true` /
 `--production-readiness` ise otomatik olarak `dev-full` seçer.
 
-Installer tarafında varsayılan normal profil artık `dev-light` olarak görünürdür (`uv sync --frozen --extra dev-light`). `--dev-full` / `developer-full` (`uv sync --frozen --all-extras`) tam CI ve kapsamlı geliştirici paritesi için korunur. Dar runtime
+Installer tarafında varsayılan normal profil artık `dev-light` olarak görünürdür (`uv sync --frozen --extra dev-light`). `--dev-full` / `developer-full` (`uv sync --frozen --all-extras`) tam CI ve kapsamlı geliştirici paritesi için korunur. Desteklenen gerçek CLI profil değerleri `dev-light`, `dev-full`, `dev-gpu`, `gpu-runtime`, `production`, `production-minimal` ve `custom` değerleridir; eski `all` varsayılanı yeni installer sözleşmesi değildir. Dar runtime
 yüzeyi denemeleri için opt-in komut `--production-minimal` veya
 `--dependency-profile=production-minimal` değeridir; bu yol dev/test araçlarını ve
 Pyright LSP yükünü kurmaz. Bu nedenle production-minimal, release kabulü değil
