@@ -868,7 +868,8 @@ async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
         f"artifacts/coverage_candidate_validation/test_candidate_{expected_digest}.py"
         in details["isolated_pytest_command"]
     )
-    assert not Path(details["isolated_test_file"]).exists()
+    exists = await asyncio.to_thread(Path(details["isolated_test_file"]).exists)
+    assert not exists
     fake_coverage_code_manager.run_pytest_and_collect.assert_awaited_once()
 
 

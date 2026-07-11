@@ -353,7 +353,8 @@ class DatasetExporter:
             await self.store.mark_exported(ids)
 
         logger.info("DatasetExporter: %d kayıt → %s (%s)", len(ids), output_path, fmt)
-        return {"path": str(out.resolve()), "count": len(ids), "format": fmt}
+        resolved_out = await asyncio.to_thread(out.resolve)
+        return {"path": str(resolved_out), "count": len(ids), "format": fmt}
 
 
 class ContinuousLearningPipeline:

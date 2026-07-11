@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import re
 from collections.abc import Callable
@@ -144,7 +145,8 @@ class YouTubeManager:
         extra_notes: str = "",
     ) -> dict[str, Any]:
         source = Path(video_path)
-        if not source.exists():
+        source_exists = await asyncio.to_thread(source.exists)
+        if not source_exists:
             return {"success": False, "reason": f"Video dosyası bulunamadı: {source}"}
         if self.llm_client is None:
             return {"success": False, "reason": "Vision analizi için llm_client gerekli."}

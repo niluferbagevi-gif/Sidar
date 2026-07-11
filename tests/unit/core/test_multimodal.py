@@ -252,7 +252,10 @@ def test_materialize_remote_media_for_ffmpeg_happy_path(monkeypatch, tmp_path):
         }
 
     async def fake_to_thread(_fn, command):
-        Path(command[-1]).write_bytes(b"x")
+        def write_output() -> None:
+            Path(command[-1]).write_bytes(b"x")
+
+        write_output()
 
     monkeypatch.setattr(multimodal, "resolve_remote_media_stream", fake_resolve)
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
@@ -432,7 +435,7 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
 
     async def fake_transcribe(path, **_kwargs):
-        assert Path(path).exists()
+        assert await asyncio.to_thread(Path(path).exists)
         return {"success": True, "text": "ses"}
 
     monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
