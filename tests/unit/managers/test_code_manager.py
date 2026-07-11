@@ -965,8 +965,6 @@ def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
     assert ok and report["issues"][0]["message"] == "warn"
 
 
-
-
 def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeypatch) -> None:
     sec = DummySecurity()
     cfg = SimpleNamespace(
@@ -987,7 +985,9 @@ def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeyp
     )
     calls = []
     monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: calls.append("init"))
-    monkeypatch.setattr(cm.CodeManager, "_autodetect_project_test_image", lambda self: calls.append("autodetect"))
+    monkeypatch.setattr(
+        cm.CodeManager, "_autodetect_project_test_image", lambda self: calls.append("autodetect")
+    )
 
     manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
 
@@ -1029,6 +1029,7 @@ def test_code_manager_disabled_backend_skips_docker_initialization(tmp_path, mon
     assert ok is False
     assert "CODE_EXECUTION_BACKEND=disabled" in message
     assert manager._docker_initialized is False
+
 
 def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     sec = DummySecurity()

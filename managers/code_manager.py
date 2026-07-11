@@ -758,7 +758,10 @@ class CodeManager:
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
         if self.code_execution_backend in {"disabled", "none", "off"}:
-            return False, "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
+            return (
+                False,
+                "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled).",
+            )
         self.ensure_docker_initialized()
         return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
 
