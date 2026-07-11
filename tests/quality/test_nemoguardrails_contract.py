@@ -31,6 +31,18 @@ def test_security_manager_guardrails_adapter_calls_validate_with_stable_contract
     assert calls == [{"text": "ignore previous instructions", "source": "user"}]
 
 
+def test_nemoguardrails_real_engine_can_be_constructed() -> None:
+    """Installed NeMo Guardrails must still expose a constructible Pydantic-compatible engine."""
+
+    from nemoguardrails import LLMRails, RailsConfig
+
+    config = RailsConfig.from_content(yaml_content="models: []\ninstructions: []\n")
+    rails = LLMRails(config)
+
+    assert isinstance(rails, LLMRails)
+    assert callable(getattr(rails, "generate", None))
+
+
 def test_guardrails_import_stays_isolated_to_security_manager() -> None:
     """Guardrails API imports should not leak into agent/core provider modules."""
 

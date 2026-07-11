@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -301,52 +300,73 @@ def test_init_guardrails_stores_available_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_module = type("NemoguardrailsModule", (), {"LLMRails": object()})
-    monkeypatch.setitem(sys.modules, "nemoguardrails", fake_module)
+    monkeypatch.setattr("managers.security.importlib.import_module", lambda _name: fake_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is fake_module.LLMRails
+    assert mgr.guardrails_degraded_reason is None
 
 
 def test_init_guardrails_import_error_falls_back_without_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    original_import = __import__
+    SecurityManager._guardrails_import_log_keys.clear()
 
-    def fake_import(name, *args, **kwargs):
-        if name == "nemoguardrails":
-            raise RuntimeError("boom")
-        return original_import(name, *args, **kwargs)
+    def fake_import_module(_name: str):
+        raise RuntimeError("boom")
 
-    monkeypatch.setattr("builtins.__import__", fake_import)
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     with caplog.at_level("WARNING"):
         mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is None
-    assert "Guardrails başlatılamadı" in caplog.text
+    assert mgr.guardrails_degraded_reason == "import-error: boom"
+    assert "regex tabanlı prompt koruması degraded mode'da çalışıyor" in caplog.text
 
 
 def test_init_guardrails_missing_dependency_logs_info(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    original_import = __import__
+    SecurityManager._guardrails_import_log_keys.clear()
 
-    def fake_import(name, *args, **kwargs):
-        if name == "nemoguardrails":
-            raise ImportError("No module named 'nemoguardrails'")
-        return original_import(name, *args, **kwargs)
+    def fake_import_module(_name: str):
+        raise ModuleNotFoundError("No module named 'nemoguardrails'", name="nemoguardrails")
 
-    monkeypatch.setattr("builtins.__import__", fake_import)
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     with caplog.at_level("INFO"):
         mgr = SecurityManager(cfg=cfg)
+        second_mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is None
-    assert "NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı." in caplog.text
+    assert second_mgr._guardrails_engine is None
+    assert mgr.guardrails_degraded_reason.startswith("missing-dependency:")
+    assert caplog.text.count("regex tabanlı prompt koruması degraded mode'da çalışıyor") == 1
+
+
+def test_init_guardrails_required_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    SecurityManager._guardrails_import_log_keys.clear()
+
+    def fake_import_module(_name: str):
+        raise RuntimeError("pydantic incompatibility")
+
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
+    cfg = SimpleNamespace(
+        ACCESS_LEVEL="sandbox",
+        BASE_DIR=tmp_path,
+        PROMPT_GUARD_ENABLED=True,
+        GUARDRAILS_REQUIRED=True,
+    )
+
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        SecurityManager(cfg=cfg)
 
 
 def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path) -> None:

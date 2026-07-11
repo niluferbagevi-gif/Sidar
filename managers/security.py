@@ -4,7 +4,9 @@ OpenClaw erişim kontrol sistemi.
 Sürüm: 2.7.0
 """
 
+import importlib
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -87,6 +89,14 @@ _SUSPICIOUS_OUTPUT_PATTERNS = [
 ]
 
 
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     allowed: bool
@@ -105,6 +115,8 @@ class SecurityManager:
       2. Yol geçişi (path traversal) koruması — "../" dizileri ve tehlikeli sistem yolları
       3. Sembolik bağlantı (symlink) koruması — resolve() ile gerçek yol doğrulama
     """
+
+    _guardrails_import_log_keys: set[str] = set()
 
     def __init__(
         self,
@@ -128,25 +140,61 @@ class SecurityManager:
         self.base_dir: Path = Path(raw_base_dir).resolve()
         self.temp_dir: Path = (self.base_dir / "temp").resolve()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.prompt_guard_enabled = bool(getattr(self.cfg, "PROMPT_GUARD_ENABLED", True))
+        self.prompt_guard_enabled = _coerce_bool(
+            getattr(self.cfg, "PROMPT_GUARD_ENABLED", os.getenv("PROMPT_GUARD_ENABLED", "1")),
+            default=True,
+        )
+        self.guardrails_required = _coerce_bool(
+            getattr(self.cfg, "GUARDRAILS_REQUIRED", os.getenv("GUARDRAILS_REQUIRED", "0")),
+            default=False,
+        )
+        self.guardrails_degraded_reason: str | None = None
         self._guardrails_engine: Any = None
         if self.prompt_guard_enabled:
             self._init_guardrails()
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
 
     def _init_guardrails(self) -> None:
-        """NeMo Guardrails motorunu başlatır."""
+        """NeMo Guardrails motorunu başlatır veya açık degraded/fail-closed moda geçer."""
         try:
-            from nemoguardrails import LLMRails  # type: ignore
-        except ImportError:
-            logger.info("NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı.")
-            self._guardrails_engine = None
+            guardrails_module = importlib.import_module("nemoguardrails")
+            llm_rails = guardrails_module.LLMRails
+        except ModuleNotFoundError as exc:
+            if exc.name != "nemoguardrails":
+                self._handle_guardrails_unavailable("import-error", exc)
+                return
+            self._handle_guardrails_unavailable("missing-dependency", exc)
             return
         except Exception as exc:  # pragma: no cover - ortama bağlı import hatası
-            logger.warning("NeMo Guardrails başlatılamadı, guardrails devre dışı: %s", exc)
-            self._guardrails_engine = None
+            self._handle_guardrails_unavailable("import-error", exc)
             return
-        self._guardrails_engine = LLMRails
+        self.guardrails_degraded_reason = None
+        self._guardrails_engine = llm_rails
+
+    def _handle_guardrails_unavailable(self, reason: str, exc: BaseException) -> None:
+        """Report Guardrails unavailability once per process and optionally fail closed."""
+        message = str(exc) or exc.__class__.__name__
+        self.guardrails_degraded_reason = f"{reason}: {message}"
+        self._guardrails_engine = None
+        if self.guardrails_required:
+            raise RuntimeError(
+                "NeMo Guardrails zorunlu fakat başlatılamadı; fail-closed uygulandı: "
+                f"{self.guardrails_degraded_reason}"
+            ) from exc
+
+        log_key = f"{reason}:{exc.__class__.__name__}:{message}"
+        if log_key in SecurityManager._guardrails_import_log_keys:
+            return
+        SecurityManager._guardrails_import_log_keys.add(log_key)
+        if reason == "missing-dependency":
+            logger.info(
+                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da çalışıyor."
+            )
+        else:
+            logger.warning(
+                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded mode'da çalışıyor: %s",
+                exc,
+            )
 
     # ─────────────────────────────────────────────
     #  YARDIMCI — YOL GÜVENLİĞİ

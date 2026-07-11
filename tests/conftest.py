@@ -25,6 +25,7 @@ if os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() not in {"1", "tru
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
 os.environ.setdefault("CODE_EXECUTION_BACKEND", "disabled")
 os.environ.setdefault("DOCKER_AUTODETECT", "0")
+os.environ.setdefault("PROMPT_GUARD_ENABLED", "0")
 
 import pytest
 
@@ -49,6 +50,14 @@ def _isolate_github_env_for_tests() -> None:
     os.environ["GITHUB_TOKEN"] = ""
     os.environ["GITHUB_REPO"] = ""
 
+
+def _disable_prompt_guard_for_tests() -> None:
+    """Avoid eager NeMo Guardrails imports during default unit-test collection."""
+    if _is_truthy_env(os.getenv("SIDAR_TEST_ENABLE_PROMPT_GUARD")):
+        return
+    os.environ["PROMPT_GUARD_ENABLED"] = "0"
+
+
 def _sync_dotenv_fixture_project_root() -> None:
     _dotenv_fixtures.PROJECT_ROOT = PROJECT_ROOT
 
@@ -68,6 +77,7 @@ def _assert_test_dotenv_postgres_parity() -> None:
 
 _load_pytest_dotenv_chain()
 _isolate_github_env_for_tests()
+_disable_prompt_guard_for_tests()
 _assert_test_dotenv_postgres_parity()
 
 _REQUIRED_TEST_MODULES = {
