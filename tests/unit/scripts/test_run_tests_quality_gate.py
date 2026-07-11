@@ -1871,6 +1871,9 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     benchmark_seed_block = makefile[
         makefile.index("benchmark-seed:") : makefile.index("frontend-gate:")
     ]
+    base_quality_block = makefile[
+        makefile.index("base-quality-gates:") : makefile.index("production-readiness:")
+    ]
     production_readiness_block = makefile[
         makefile.index("production-readiness:") : makefile.index("# Lokal benchmark baseline")
     ]
@@ -1882,11 +1885,13 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
     assert "TEST_PROFILE=ci" not in benchmark_seed_block
 
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1" in base_quality_block
+    assert "SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS)" in base_quality_block
+    assert "bash run_tests.sh --stage all" in base_quality_block
     assert (
-        "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in production_readiness_block
+        "$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1"
+        in production_readiness_block
     )
-    assert "SIDAR_PRODUCTION_READINESS=1" in production_readiness_block
-    assert "bash run_tests.sh --stage all" in production_readiness_block
 
     assert "make benchmark-seed" in testing
     assert "make production-readiness" in testing
@@ -3993,7 +3998,9 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "benchmark-compare:" in ci
     assert "Production readiness aggregate" in ci
     assert "needs: [test, benchmark-compare]" in ci
-    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in ci
+    assert "Run canonical production-readiness gate" in ci
+    assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" not in ci
     assert "GITHUB_STEP_SUMMARY" in ci
     assert "benchmark compare is fail-closed" in ci
     assert '--benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"' in ci

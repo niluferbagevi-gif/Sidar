@@ -3,6 +3,8 @@ SHELL := /usr/bin/env bash
 SHELLCHECK ?= uv run shellcheck
 BATS ?= bats
 BENCHMARK_COMPARE_REQUIRED ?= 0
+CI_RUN_BENCHMARKS ?= 0
+CI_PRODUCTION_READINESS ?= 0
 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL ?= 1
 SIDAR_TOTAL_JS_BUDGET_KB ?= 500
 SIDAR_TOTAL_GZIP_BUDGET_KB ?= 170
@@ -20,7 +22,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full ci-parity production-readiness benchmark-seed frontend-gate backend-integration
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full ci-parity base-quality-gates production-readiness benchmark-seed frontend-gate backend-integration
 
 lint: lint-shell check-install-manifests
 
@@ -58,12 +60,15 @@ ci-parity:
 		SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 		SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)
 
-production-readiness:
-	TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 \
-	SIDAR_PRODUCTION_READINESS=1 \
+base-quality-gates:
+	TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1 \
+	SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS) \
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
 	bash run_tests.sh --stage all
+
+production-readiness:
+	$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1
 
 # Lokal benchmark baseline bootstrap içindir; CI baseline için workflow_dispatch
 # seed_benchmark_baseline=true kullanılmalıdır.
