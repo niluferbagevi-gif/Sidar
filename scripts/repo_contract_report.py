@@ -227,9 +227,7 @@ def check_dependency_profile_plan_sync(
     plan_table = pyproject_data.get("tool", {}).get("sidar", {}).get("dependency_profile_plan", {})
     optional_dependencies = pyproject_data.get("project", {}).get("optional-dependencies", {})
     optional_profile_names = {
-        str(name).strip()
-        for name in optional_dependencies
-        if str(name).strip()
+        str(name).strip() for name in optional_dependencies if str(name).strip()
     }
     planned_profile_groups = {
         str(item).strip()
