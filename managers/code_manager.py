@@ -77,6 +77,14 @@ _sanitize_docker_token = sanitize_docker_token
 _sanitize_docker_network = sanitize_docker_network
 
 
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+
+
 def _path_to_file_uri(path: Path) -> str:
     """Backwards-compatible facade for LSP URI encoding."""
     return path_to_file_uri(path, path_separator=os.sep)
@@ -124,6 +132,22 @@ class CodeManager:
         self.security_adapter = CodeSecurityAdapter(security)
         self.base_dir = Path(base_dir).resolve()
         self.cfg = cfg or Config()
+        self.code_execution_backend = (
+            str(
+                getattr(
+                    self.cfg,
+                    "CODE_EXECUTION_BACKEND",
+                    os.getenv("CODE_EXECUTION_BACKEND", "docker"),
+                )
+                or "docker"
+            )
+            .strip()
+            .lower()
+        )
+        self.docker_autodetect = _coerce_bool(
+            getattr(self.cfg, "DOCKER_AUTODETECT", os.getenv("DOCKER_AUTODETECT", "1")),
+            default=True,
+        )
         self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", "") or "").strip()
         self.docker_allowed_runtimes = list(
             getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
@@ -179,8 +203,21 @@ class CodeManager:
         # Docker İstemcisi Bağlantısı
         self.docker_available = False
         self.docker_client: Any | None = None
+        self._docker_initialized = False
+
+    def ensure_docker_initialized(self) -> None:
+        """Initialize Docker lazily when code execution actually needs it."""
+        if self._docker_initialized:
+            return
+        self._docker_initialized = True
+        if self.code_execution_backend in {"disabled", "none", "off"}:
+            logger.info("Code execution backend disabled; Docker initialization skipped.")
+            self.docker_available = False
+            self.docker_client = None
+            return
         self._init_docker()
-        self._autodetect_project_test_image()
+        if self.docker_autodetect:
+            self._autodetect_project_test_image()
 
     def _resolve_runtime(self) -> str:
         runtime = self.docker_runtime
@@ -495,6 +532,10 @@ class CodeManager:
         """
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
+        if self.code_execution_backend in {"disabled", "none", "off"}:
+            return False, "Kod çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
+
+        self.ensure_docker_initialized()
 
         if not self.docker_available:
             if self.security.level == SANDBOX:
@@ -716,6 +757,9 @@ class CodeManager:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
+        if self.code_execution_backend in {"disabled", "none", "off"}:
+            return False, "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
+        self.ensure_docker_initialized()
         return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
 
     @staticmethod

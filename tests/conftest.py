@@ -23,6 +23,8 @@ os.environ.setdefault("SIDAR_ENV", "test")
 if os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() not in {"1", "true", "yes"}:
     os.environ["SIDAR_KEYS_FILE"] = ""
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
+os.environ.setdefault("CODE_EXECUTION_BACKEND", "disabled")
+os.environ.setdefault("DOCKER_AUTODETECT", "0")
 
 import pytest
 

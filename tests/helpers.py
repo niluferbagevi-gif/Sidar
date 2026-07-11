@@ -32,6 +32,8 @@ def make_test_config(**overrides: Any) -> MagicMock:
         "GITHUB_TOKEN": "",
         "GITHUB_REPO": "",
         "PROMPT_GUARD_ENABLED": False,
+        "CODE_EXECUTION_BACKEND": "disabled",
+        "DOCKER_AUTODETECT": False,
         "DOCKER_TEST_IMAGE": "",
         "DOCKER_TEST_IMAGE_EXPLICIT": False,
         "ENABLE_SEMANTIC_CACHE": True,
