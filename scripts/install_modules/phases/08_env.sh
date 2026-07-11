@@ -217,7 +217,7 @@ collect_api_keys_interactive() {
 
         targets+=("$env_file")
         if [[ ! -f "$advanced_env_file" && -f "$advanced_example_file" ]]; then
-            cp "$advanced_example_file" "$advanced_env_file"
+            install -m 600 "$advanced_example_file" "$advanced_env_file"
             ok ".env.advanced dosyası .env.advanced.example'dan API anahtarı senkronizasyonu için oluşturuldu."
         fi
 
@@ -240,6 +240,7 @@ collect_api_keys_interactive() {
     local -a api_key_write_failures=()
     local api_key_write_success_count=0
     local api_key_write_failure_count=0
+    local api_key_validated_count=0
     mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)
     if ! _materialize_real_keys_to_env_enabled; then
         info "Gerçek servis anahtarları env dosyalarına kopyalanmayacak; kalıcı kaynak: ${sidar_keys_file}. Gerekirse SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ile bilinçli etkinleştirin."
@@ -252,16 +253,23 @@ collect_api_keys_interactive() {
     # Anahtarı .env ve mevcut runtime env varyantlarına yazar; boşsa sessizce atlar.
     _write_key() {
         local key="$1"
-        local val target target_name
+        local val target target_name max_value_bytes
         val=$(printf '%s' "${2:-}" | tr -d '\r\n')
         [[ -z "$val" ]] && return 0
+        if ! _validate_api_key_value "$key" "$val"; then
+            api_key_write_failures+=("validation:${key}")
+            ((api_key_write_failure_count += 1))
+            return 1
+        fi
+        ((api_key_validated_count += 1))
+        max_value_bytes="$(_api_key_max_value_bytes "$key")"
 
         for target in "${api_key_target_env_files[@]}"; do
             mkdir -p "$(dirname "$target")"
             [[ -f "$target" ]] || : > "$target"
             chmod 600 "$target" 2>/dev/null || true
             target_name="$(_api_key_target_display_name "$target")"
-            if printf '%s' "$val" | uv run python scripts/update_dotenv_value.py --file "$target" --key "$key"; then
+            if printf '%s' "$val" | uv run python scripts/update_dotenv_value.py --file "$target" --key "$key" --max-value-bytes "$max_value_bytes"; then
                 ok "${target_name}: ${key} güncellendi."
                 ((api_key_write_success_count += 1))
             else
@@ -271,6 +279,34 @@ collect_api_keys_interactive() {
                 return 1
             fi
         done
+    }
+
+    _api_key_max_value_bytes() {
+        case "$1" in
+            SLACK_WEBHOOK_URL|TEAMS_WEBHOOK_URL) echo 8192 ;;
+            GOOGLE_SEARCH_CX|SLACK_DEFAULT_CHANNEL|JIRA_DEFAULT_PROJECT) echo 1024 ;;
+            *) echo 16384 ;;
+        esac
+    }
+
+    _validate_api_key_value() {
+        local key="$1"
+        local val="$2"
+        local max_value_bytes
+        max_value_bytes="$(_api_key_max_value_bytes "$key")"
+        if (( ${#val} > max_value_bytes )); then
+            warn "${key}: değer ${max_value_bytes} bayt sınırını aşıyor; configured sayılmayacak."
+            return 1
+        fi
+        case "$key" in
+            SLACK_WEBHOOK_URL|TEAMS_WEBHOOK_URL|JIRA_URL)
+                if [[ ! "$val" =~ ^https:// ]]; then
+                    warn "${key}: webhook/URL değeri https:// şemasıyla başlamalı; configured sayılmayacak."
+                    return 1
+                fi
+                ;;
+        esac
+        return 0
     }
 
     _api_key_target_display_name() {
@@ -289,17 +325,17 @@ collect_api_keys_interactive() {
 
         total_expected=$((imported_count * ${#api_key_target_env_files[@]}))
         if (( api_key_write_failure_count > 0 )); then
-            warn "${source_file}: ${total_expected} API anahtarı yazma denemesinden ${api_key_write_success_count} başarılı, ${api_key_write_failure_count} başarısız."
+            warn "${source_file}: ${api_key_validated_count} doğrulama, ${total_expected} API anahtarı yazma denemesinden ${api_key_write_success_count} başarılı, ${api_key_write_failure_count} başarısız."
             warn "Başarısız API anahtarı hedefleri: ${api_key_write_failures[*]}"
             return 1
         fi
 
         if ! _materialize_real_keys_to_env_enabled; then
-            ok "${imported_count} API anahtarı SIDAR_KEYS_FILE (${sidar_keys_file}) içinde doğrulandı/güncellendi."
+            ok "${imported_count} API anahtarı SIDAR_KEYS_FILE (${sidar_keys_file}) içinde doğrulandı/güncellendi (${api_key_validated_count} başarılı doğrulama)."
             return 0
         fi
 
-        ok "${imported_count} API anahtarı ${source_file} kaynağından alındı; materialization açık."
+        ok "${imported_count} API anahtarı ${source_file} kaynağından alındı; ${api_key_validated_count} doğrulama başarılı; materialization açık."
         for target in "${api_key_target_env_files[@]}"; do
             target_name="$(_api_key_target_display_name "$target")"
             ok "${target_name}: ${imported_count} API anahtarı güncellendi."
@@ -351,6 +387,7 @@ collect_api_keys_interactive() {
     _import_api_keys_from_file() {
         local source_file="$1"
         local imported_count=0
+        local read_count=0
         local key raw_val
 
         [[ -f "$source_file" ]] || return 1
@@ -369,15 +406,30 @@ collect_api_keys_interactive() {
             fi
 
             if [[ -n "$raw_val" ]]; then
-                _write_key "$key" "$raw_val" || true
-                ((imported_count += 1))
+                ((read_count += 1))
+                if [[ -f "$sidar_keys_file" && "$source_file" -ef "$sidar_keys_file" ]]; then
+                    if _validate_api_key_value "$key" "$raw_val"; then
+                        ((api_key_validated_count += 1))
+                        ((api_key_write_success_count += 1))
+                        ((imported_count += 1))
+                    else
+                        api_key_write_failures+=("SIDAR_KEYS_FILE:${key}")
+                        ((api_key_write_failure_count += 1))
+                        [[ "$NO_INTERACTION" == true ]] && return 1
+                    fi
+                elif _write_key "$key" "$raw_val"; then
+                    ((imported_count += 1))
+                else
+                    [[ "$NO_INTERACTION" == true ]] && return 1
+                fi
             fi
         done
 
         if (( imported_count > 0 )); then
             _report_imported_api_key_targets "$source_file" "$imported_count"
         else
-            warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri dolu değil."
+            warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri geçerli/dolu değil (okunan: ${read_count})."
+            (( read_count > 0 && api_key_write_failure_count > 0 )) && return 1
         fi
 
         return 0
@@ -981,7 +1033,7 @@ propagate_shared_secrets_to_env_variants() {
 
         if [[ ! -f "$target" ]]; then
             if [[ -f "$example" ]]; then
-                cp "$example" "$target"
+                install -m 600 "$example" "$target"
                 ok "${name} dosyası ${pair##*:} üzerinden oluşturuldu."
             else
                 warn "${pair##*:} bulunamadı; ${name} secret senkronizasyonu atlandı."
@@ -1327,7 +1379,7 @@ setup_env_file() {
     # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
     # ile .env dosyasından senkronize edilir.
     if [[ ! -f "$PRODUCTION_ENV_FILE" && -f "$PRODUCTION_EXAMPLE_FILE" ]]; then
-        cp "$PRODUCTION_EXAMPLE_FILE" "$PRODUCTION_ENV_FILE"
+        install -m 600 "$PRODUCTION_EXAMPLE_FILE" "$PRODUCTION_ENV_FILE"
         ok ".env.production dosyası .env.production.example'dan oluşturuldu."
     fi
 

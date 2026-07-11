@@ -91,6 +91,14 @@ def localized_log_message(key: str) -> str:
     return logging_config.localized_log_message(key)
 
 
+def _get_external_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool) -> bool:
+    """Read namespaced/legacy booleans while accepting common external 0/1 forms."""
+    prefixed_value = os.getenv(prefix_key)
+    if prefixed_value is not None:
+        return get_external_bool_env(prefix_key, default)
+    return get_external_bool_env(legacy_key, default)
+
+
 def _log_first_load_info(message: str, *args: Any) -> None:
     """Log as INFO only on first config load cycle, DEBUG on later reloads."""
     if _FIRST_CONFIG_LOAD_LOGGED:
@@ -865,6 +873,14 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: dict[str, Any] = dict(SANDBOX_LIMITS)
+    CODE_EXECUTION_BACKEND: str = safe_choice_for_reload(
+        get_prefixed_env("SIDAR_CODE_EXECUTION_BACKEND", "CODE_EXECUTION_BACKEND", "docker"),
+        "docker",
+        {"docker", "disabled"},
+    )
+    DOCKER_AUTODETECT: bool = _get_external_bool_prefixed_env(
+        "SIDAR_DOCKER_AUTODETECT", "DOCKER_AUTODETECT", True
+    )
     DOCKER_PYTHON_IMAGE: str = get_prefixed_env(
         "SIDAR_DOCKER_PYTHON_IMAGE", "DOCKER_PYTHON_IMAGE", "python:3.11-slim"
     )
@@ -892,6 +908,14 @@ class Config:
     DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
     # Docker zorunlu mod: True ise Docker erişilemezse yerel subprocess fallback engellenir
     DOCKER_REQUIRED: bool = get_bool_prefixed_env("SIDAR_DOCKER_REQUIRED", "DOCKER_REQUIRED", False)
+    PROMPT_GUARD_ENABLED: bool = _get_external_bool_prefixed_env(
+        "SIDAR_PROMPT_GUARD_ENABLED", "PROMPT_GUARD_ENABLED", True
+    )
+    GUARDRAILS_REQUIRED: bool = _get_external_bool_prefixed_env(
+        "SIDAR_GUARDRAILS_REQUIRED",
+        "GUARDRAILS_REQUIRED",
+        os.getenv("SIDAR_ENV", "").strip().lower() == "production",
+    )
     PYTHON_VIRTUAL_ENV: str = os.getenv("VIRTUAL_ENV", "")
     PYTHON_CONDA_PREFIX: str = os.getenv("CONDA_PREFIX", "")
 

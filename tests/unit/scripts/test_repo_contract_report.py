@@ -21,6 +21,7 @@ def test_role_contract_report_has_no_current_builtin_drift() -> None:
         "coverage",
         "qa",
     }
+    assert all(item["checklist"]["tests"] for item in role_report["roles"])
 
 
 def test_scan_repo_standards_flags_direct_pip_legacy_name_and_low_model_default(

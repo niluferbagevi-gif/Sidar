@@ -746,7 +746,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Development validation ≠ release/merge onayı" in validation_phase
     assert "Release/merge için tek zorunlu komut" in validation_phase
     assert "DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS" in validation_phase
-    assert "env AUTO_OPEN_ARTIFACTS=0 make production-readiness" in validation_phase
+    assert "AUTO_OPEN_ARTIFACTS=0 make production-readiness" in validation_phase
     assert (
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
@@ -1486,7 +1486,8 @@ def test_install_sidar_reports_api_key_write_failures_without_missing_err_functi
     assert "bkz. yukarıdaki update_dotenv_value hatası" in collect_block
     assert "Başarısız API anahtarı hedefleri" in collect_block
     assert "API anahtarı yazma denemesinden" in collect_block
-    assert '_write_key "$key" "$raw_val" || true' in collect_block
+    assert '_write_key "$key" "$raw_val"' in collect_block
+    assert "_validate_api_key_value" in collect_block
     assert '_write_key "${grp_missing[$i]}" "${_vals[$i]:-}" || true' in collect_block
 
 
@@ -1885,7 +1886,10 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
     assert "TEST_PROFILE=ci" not in benchmark_seed_block
 
-    assert "TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1" in base_quality_block
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1"
+        in base_quality_block
+    )
     assert "SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS)" in base_quality_block
     assert "bash run_tests.sh --stage all" in base_quality_block
     assert (
@@ -1911,14 +1915,15 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "uv run shellcheck" in makefile
     assert "--severity=warning -x" in makefile
     assert "dev-full:" in makefile
-    assert "RUN_GPU_STRESS=1" in makefile
+    assert "dev-full-gpu:" in makefile
+    assert "RUN_GPU_STRESS=1 $(MAKE) dev-full" in makefile
     assert "RUN_BENCHMARKS=required" in makefile
     assert "RUN_FRONTEND_E2E=1" in makefile
     assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL)" in makefile
     assert "bash run_tests.sh --stage all" in makefile
     assert "production-readiness:" in makefile
-    assert "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1" in makefile
-    assert "SIDAR_PRODUCTION_READINESS=1" in makefile
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1" in makefile
+    assert "CI_PRODUCTION_READINESS=1" in makefile
     assert "SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB)" in makefile
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)" in makefile
     assert "frontend-gate:" in makefile
@@ -2444,7 +2449,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "setup_env_file()" in env_utils
     assert 'ADVANCED_ENV_FILE="$SCRIPT_DIR/.env.advanced"' in env_utils
     assert 'ADVANCED_EXAMPLE_FILE="$SCRIPT_DIR/.env.advanced.example"' in env_utils
-    assert 'cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
+    assert 'install -m 600 "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"' in env_utils
     assert "propagate_shared_secrets_to_env_variants" in env_utils
     assert "sync_database_env_chain_after_setup()" in env_utils
     assert "uv run python -m scripts.sync_database_passwords --all-envs" in env_utils
@@ -4000,10 +4005,14 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "needs: [test, benchmark-compare]" in ci
     assert "Run canonical production-readiness gate" in ci
     assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
-    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" not in ci
+    assert (
+        "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+        not in ci
+    )
     assert "GITHUB_STEP_SUMMARY" in ci
     assert "benchmark compare is fail-closed" in ci
-    assert '--benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"' in ci
+    assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
+    assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
     assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu

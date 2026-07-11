@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+from enum import Enum
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -82,7 +83,23 @@ def _coerce_bool(value: Any, *, default: bool = False) -> bool:
         return default
     if isinstance(value, bool):
         return value
-    return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    logger.warning("Unknown boolean value %r; using default=%s.", value, default)
+    return default
+
+
+class DockerState(Enum):
+    """Lazy Docker initialization lifecycle for code execution backends."""
+
+    UNINITIALIZED = "uninitialized"
+    INITIALIZING = "initializing"
+    READY = "ready"
+    FAILED = "failed"
+    DISABLED = "disabled"
 
 
 def _path_to_file_uri(path: Path) -> str:
@@ -203,21 +220,57 @@ class CodeManager:
         # Docker İstemcisi Bağlantısı
         self.docker_available = False
         self.docker_client: Any | None = None
-        self._docker_initialized = False
+        self._docker_state = DockerState.UNINITIALIZED
+        self._docker_init_lock = threading.RLock()
+        self._docker_init_attempts = 0
+        self._docker_init_max_attempts = max(
+            1, _to_int(getattr(self.cfg, "DOCKER_INIT_MAX_ATTEMPTS", 2), 2)
+        )
+        if self.code_execution_backend not in {"docker", "disabled", "none", "off"}:
+            raise ValueError(
+                "Unsupported CODE_EXECUTION_BACKEND value "
+                f"{self.code_execution_backend!r}; expected 'docker' or 'disabled'."
+            )
+
+    @property
+    def _docker_initialized(self) -> bool:
+        """Backward-compatible test facade for legacy lazy-init assertions."""
+        return self._docker_state in {DockerState.READY, DockerState.DISABLED}
 
     def ensure_docker_initialized(self) -> None:
         """Initialize Docker lazily when code execution actually needs it."""
-        if self._docker_initialized:
-            return
-        self._docker_initialized = True
-        if self.code_execution_backend in {"disabled", "none", "off"}:
-            logger.info("Code execution backend disabled; Docker initialization skipped.")
-            self.docker_available = False
-            self.docker_client = None
-            return
-        self._init_docker()
-        if self.docker_autodetect:
-            self._autodetect_project_test_image()
+        with self._docker_init_lock:
+            if self._docker_state in {DockerState.READY, DockerState.DISABLED}:
+                return
+            if self.code_execution_backend in {"disabled", "none", "off"}:
+                logger.info("Code execution backend disabled; Docker initialization skipped.")
+                self.docker_available = False
+                self.docker_client = None
+                self._docker_state = DockerState.DISABLED
+                return
+            if self._docker_init_attempts >= self._docker_init_max_attempts:
+                logger.warning(
+                    "Docker initialization retry limit reached (%s attempts); leaving backend degraded.",
+                    self._docker_init_attempts,
+                )
+                self._docker_state = DockerState.FAILED
+                return
+
+            self._docker_state = DockerState.INITIALIZING
+            self._docker_init_attempts += 1
+            try:
+                self._init_docker()
+                if self.docker_available:
+                    self._docker_state = DockerState.READY
+                    if self.docker_autodetect:
+                        self._autodetect_project_test_image()
+                else:
+                    self._docker_state = DockerState.FAILED
+            except Exception:
+                self._docker_state = DockerState.FAILED
+                self.docker_available = False
+                self.docker_client = None
+                raise
 
     def _resolve_runtime(self) -> str:
         runtime = self.docker_runtime
@@ -758,7 +811,10 @@ class CodeManager:
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
         if self.code_execution_backend in {"disabled", "none", "off"}:
-            return False, "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
+            return (
+                False,
+                "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled).",
+            )
         self.ensure_docker_initialized()
         return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
 

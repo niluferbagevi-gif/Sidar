@@ -257,19 +257,14 @@ jobs:
           echo "=== shellcheck ===" && shellcheck --version 2>/dev/null || echo "shellcheck not found"
           echo "=== bats ===" && bats --version 2>/dev/null || echo "bats not found"
 
-      - name: Verify core install manifest integrity
-        run: |
-          sha256sum -c .sidar_manifest.txt
-          uv run python scripts/tools/update_core_install_manifest.py --check
+      - name: Verify installer manifests
+        run: make check-install-manifests
 
-      - name: Verify installer module hash manifest integrity
-        run: |
-          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+      - name: Run installer ShellCheck
+        run: make lint-shell
 
-      - name: Run installer shell gates
-        run: |
-          make lint
-          make test-shell
+      - name: Run installer BATS tests
+        run: make test-shell
 
       - name: Build standalone installer bundle
         run: |
@@ -400,6 +395,7 @@ jobs:
       - name: Run canonical production-readiness gate
         env:
           FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
+          RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
@@ -639,14 +635,41 @@ jobs:
           DOTENV_FILE: .env.test
           BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
           BENCHMARK_COMPARE_FAIL: mean:10%
-        run: >-
-          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov
-          --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
-          --benchmark-compare="${{ steps.benchmark-baseline.outputs.compare_file }}"
-          --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"
-          --benchmark-warmup=on
-          --benchmark-warmup-iterations=100000
-          --benchmark-disable-gc
+          BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/benchmark
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
+          metadata = {
+              "baseline_file": str(baseline),
+              "baseline_exists": baseline.exists(),
+              "baseline_size_bytes": baseline.stat().st_size if baseline.exists() else 0,
+          }
+          Path("artifacts/benchmark/baseline-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-warmup-iterations=100000 \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/benchmark/benchmark-junit.xml \
+            2>&1 | tee artifacts/benchmark/benchmark-compare.log
+          status=${PIPESTATUS[0]}
+          test -s "${BENCHMARK_JSON_OUTPUT}" || {
+            printf '{"status":"failed-before-json","exit_code":%s}\n' "$status" \
+              > artifacts/benchmark/failure.json
+          }
+          exit "$status"
 
       - name: Upload benchmark compare artifacts
         if: always()
@@ -655,6 +678,10 @@ jobs:
           name: benchmark-compare-artifacts
           path: |
             artifacts/benchmark/benchmark.json
+            artifacts/benchmark/benchmark-compare.log
+            artifacts/benchmark/benchmark-junit.xml
+            artifacts/benchmark/baseline-metadata.json
+            artifacts/benchmark/failure.json
             .benchmarks/
           if-no-files-found: warn
           retention-days: 14

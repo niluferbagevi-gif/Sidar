@@ -119,6 +119,11 @@ def build_role_contract_report() -> dict[str, Any]:
     roles: list[RoleContractStatus] = []
     for contract in BUILTIN_ROLE_CONTRACTS:
         role_file = REPO_ROOT / (contract.module_name.replace(".", "/") + ".py")
+        role_test_paths = (
+            REPO_ROOT / f"tests/unit/agent/test_{contract.role_name}_agent.py",
+            REPO_ROOT / f"tests/unit/agent/roles/test_{contract.role_name}_agent.py",
+            REPO_ROOT / "tests/unit/agent/test_builtin_role_contracts.py",
+        )
         checklist = {
             "role_file": role_file.exists(),
             "roles_init_export": contract.class_name in role_exports,
@@ -127,6 +132,7 @@ def build_role_contract_report() -> dict[str, Any]:
             "supervisor_intent": bool(contract.supervisor_intents),
             "swarm_intent": bool(contract.swarm_intents),
             "agents_docs": contract.class_name in agents_text,
+            "tests": any(path.exists() for path in role_test_paths),
         }
         roles.append(
             RoleContractStatus(
@@ -227,9 +233,7 @@ def check_dependency_profile_plan_sync(
     plan_table = pyproject_data.get("tool", {}).get("sidar", {}).get("dependency_profile_plan", {})
     optional_dependencies = pyproject_data.get("project", {}).get("optional-dependencies", {})
     optional_profile_names = {
-        str(name).strip()
-        for name in optional_dependencies
-        if str(name).strip()
+        str(name).strip() for name in optional_dependencies if str(name).strip()
     }
     planned_profile_groups = {
         str(item).strip()

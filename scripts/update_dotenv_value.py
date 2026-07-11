@@ -46,12 +46,12 @@ def _read_value(max_value_bytes: int) -> str:
 
 
 def _replace_or_append(lines: list[str], key: str, value: str) -> list[str]:
-    prefix = f"{key}="
-    replacement = f"{prefix}{value}\n"
+    key_pattern = re.compile(rf"^(\s*{re.escape(key)}\s*)=")
+    replacement = f"{key}={value}\n"
     updated: list[str] = []
     replaced = False
     for line in lines:
-        if not replaced and line.startswith(prefix):
+        if not replaced and key_pattern.match(line):
             updated.append(replacement)
             replaced = True
         else:
@@ -70,7 +70,7 @@ def update_dotenv_value(path: Path, key: str, value: str) -> None:
         raise ValueError(f"invalid dotenv key: {key!r}")
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        mode = stat.S_IMODE(path.stat().st_mode)
+        mode = stat.S_IMODE(path.stat().st_mode) & 0o600
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     else:
         mode = 0o600
@@ -86,6 +86,11 @@ def update_dotenv_value(path: Path, key: str, value: str) -> None:
             os.fsync(handle.fileno())
         os.chmod(tmp_path, mode or 0o600)
         os.replace(tmp_path, path)
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     except Exception:
         try:
             tmp_path.unlink(missing_ok=True)

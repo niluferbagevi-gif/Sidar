@@ -7,6 +7,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -965,8 +966,6 @@ def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
     assert ok and report["issues"][0]["message"] == "warn"
 
 
-
-
 def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeypatch) -> None:
     sec = DummySecurity()
     cfg = SimpleNamespace(
@@ -986,8 +985,15 @@ def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeyp
         SANDBOX_LIMITS={},
     )
     calls = []
-    monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: calls.append("init"))
-    monkeypatch.setattr(cm.CodeManager, "_autodetect_project_test_image", lambda self: calls.append("autodetect"))
+
+    def _init_success(self):
+        calls.append("init")
+        self.docker_available = True
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _init_success)
+    monkeypatch.setattr(
+        cm.CodeManager, "_autodetect_project_test_image", lambda self: calls.append("autodetect")
+    )
 
     manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
 
@@ -995,6 +1001,7 @@ def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeyp
     assert manager._docker_initialized is False
     manager.ensure_docker_initialized()
     assert calls == ["init", "autodetect"]
+    assert manager._docker_state is cm.DockerState.READY
     manager.ensure_docker_initialized()
     assert calls == ["init", "autodetect"]
 
@@ -1029,6 +1036,112 @@ def test_code_manager_disabled_backend_skips_docker_initialization(tmp_path, mon
     assert ok is False
     assert "CODE_EXECUTION_BACKEND=disabled" in message
     assert manager._docker_initialized is False
+    assert manager._docker_state is cm.DockerState.UNINITIALIZED
+
+
+def test_code_manager_retries_after_failed_lazy_docker_init(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
+        DOCKER_INIT_MAX_ATTEMPTS=2,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    attempts = []
+
+    def _flaky_init(self):
+        attempts.append("init")
+        self.docker_available = len(attempts) == 2
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _flaky_init)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    manager.ensure_docker_initialized()
+    assert manager._docker_state is cm.DockerState.FAILED
+    assert manager._docker_initialized is False
+
+    manager.ensure_docker_initialized()
+    assert manager._docker_state is cm.DockerState.READY
+    assert attempts == ["init", "init"]
+
+
+def test_code_manager_lazy_docker_init_is_thread_safe(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    calls = []
+
+    def _slow_init(self):
+        time.sleep(0.01)
+        calls.append("init")
+        self.docker_available = True
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _slow_init)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    threads = [threading.Thread(target=manager.ensure_docker_initialized) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert calls == ["init"]
+    assert manager._docker_state is cm.DockerState.READY
+
+
+def test_code_manager_rejects_unknown_backend(tmp_path) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="podman",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported CODE_EXECUTION_BACKEND"):
+        cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+
+def test_code_manager_bool_coercion_uses_default_for_unknown_text(caplog) -> None:
+    assert cm._coerce_bool("maybe", default=False) is False
+    assert cm._coerce_bool("maybe", default=True) is True
+    assert "Unknown boolean value" in caplog.text
+
 
 def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     sec = DummySecurity()

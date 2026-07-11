@@ -368,7 +368,7 @@ ensure_test_dotenv() {
   fi
 
   echo "ℹ️ '${target}' bulunamadı; '${template}' şablonundan otomatik oluşturuluyor."
-  if cp "${template}" "${target}"; then
+  if install -m 600 "${template}" "${target}"; then
     render_generated_secret_sentinels "${target}" || true
     echo "✅ '${target}' oluşturuldu. Lokal ihtiyaçlarınıza göre düzenleyebilirsiniz (sırlar yalnızca bu dosyada tutulur)."
   else

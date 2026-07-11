@@ -1941,6 +1941,30 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
         config.Config()
 
 
+def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("CODE_EXECUTION_BACKEND", "disabled")
+    monkeypatch.setenv("DOCKER_AUTODETECT", "false")
+    monkeypatch.setenv("PROMPT_GUARD_ENABLED", "false")
+    monkeypatch.setenv("GUARDRAILS_REQUIRED", "true")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.CODE_EXECUTION_BACKEND == "disabled"
+    assert reloaded.Config.DOCKER_AUTODETECT is False
+    assert reloaded.Config.PROMPT_GUARD_ENABLED is False
+    assert reloaded.Config.GUARDRAILS_REQUIRED is True
+
+
+def test_invalid_code_execution_backend_falls_back_to_safe_config_default(monkeypatch):
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("CODE_EXECUTION_BACKEND", "podman")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.CODE_EXECUTION_BACKEND == "docker"
+
+
 def test_production_accepts_strong_database_url_password_without_postgres_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.setenv("SIDAR_ENV", "production")

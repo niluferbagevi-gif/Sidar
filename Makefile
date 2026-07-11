@@ -22,7 +22,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full ci-parity base-quality-gates production-readiness benchmark-seed frontend-gate backend-integration
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full dev-full-gpu ci-parity base-quality-gates production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
 
 lint: lint-shell check-install-manifests
 
@@ -48,12 +48,26 @@ test-shell:
 
 test: test-shell
 
+format:
+	uv run ruff format .
+
+format-check:
+	uv run ruff format --check .
+
+python-quality:
+	uv run ruff check .
+	uv run ruff format --check .
+	uv run mypy --strict core/ agent/ web/ managers/
+
 dev-full:
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
-	RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 \
+	RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 \
 	FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL) \
 	bash run_tests.sh --stage all
+
+dev-full-gpu:
+	RUN_GPU_STRESS=1 $(MAKE) dev-full
 
 ci-parity:
 	$(MAKE) dev-full FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 \
