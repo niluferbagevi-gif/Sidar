@@ -254,7 +254,13 @@ collect_api_keys_interactive() {
     _write_key() {
         local key="$1"
         local val target target_name max_value_bytes
-        val=$(printf '%s' "${2:-}" | tr -d '\r\n')
+        val="${2:-}"
+        if [[ "$val" == *$'\n'* || "$val" == *$'\r'* ]]; then
+            warn "${key}: değer tek satır olmalıdır; configured sayılmayacak."
+            api_key_write_failures+=("validation:${key}")
+            ((api_key_write_failure_count += 1))
+            return 1
+        fi
         [[ -z "$val" ]] && return 0
         if ! _validate_api_key_value "$key" "$val"; then
             api_key_write_failures+=("validation:${key}")
@@ -292,9 +298,14 @@ collect_api_keys_interactive() {
     _validate_api_key_value() {
         local key="$1"
         local val="$2"
-        local max_value_bytes
+        local max_value_bytes value_bytes
         max_value_bytes="$(_api_key_max_value_bytes "$key")"
-        if (( ${#val} > max_value_bytes )); then
+        if [[ "$val" == *$'\n'* || "$val" == *$'\r'* ]]; then
+            warn "${key}: değer tek satır olmalıdır; configured sayılmayacak."
+            return 1
+        fi
+        value_bytes="$(LC_ALL=C printf '%s' "$val" | wc -c | tr -d '[:space:]')"
+        if (( value_bytes > max_value_bytes )); then
             warn "${key}: değer ${max_value_bytes} bayt sınırını aşıyor; configured sayılmayacak."
             return 1
         fi

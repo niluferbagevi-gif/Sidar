@@ -2419,8 +2419,18 @@ ENV
     env_file="$tmpdir/.env"
     : > "$env_file"
     : > "$tmpdir/.env.test"
+    valid_user_api_value() {
+      case "$1" in
+        SLACK_WEBHOOK_URL) printf "https://hooks.slack.com/services/test/%s" "$2" ;;
+        JIRA_URL) printf "https://example-%s.atlassian.net" "$2" ;;
+        TEAMS_WEBHOOK_URL) printf "https://example.invalid/teams/%s" "$2" ;;
+        *) printf "value_%s" "$1" ;;
+      esac
+    }
+    idx=0
     while IFS= read -r key; do
-      printf "%s=value_%s\\n" "$key" "$key" >> "$env_file"
+      idx=$((idx + 1))
+      printf "%s=%s\\n" "$key" "$(valid_user_api_value "$key" "$idx")" >> "$env_file"
     done < <(sidar_user_api_key_names)
 
     collect_api_keys_interactive "$env_file"

@@ -1918,6 +1918,18 @@ def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Pa
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def _valid_user_api_value(key: str, index: int) -> str:
+    """Return installer-valid synthetic values for user supplied integration keys."""
+
+    if key == "SLACK_WEBHOOK_URL":
+        return f"https://hooks.slack.com/services/test/{index}"
+    if key == "JIRA_URL":
+        return f"https://example-{index}.atlassian.net"
+    if key == "TEAMS_WEBHOOK_URL":
+        return f"https://example.invalid/teams/{index}"
+    return f"value_{index}"
+
+
 def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
@@ -1937,7 +1949,9 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
     keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
     assert len(keys) == 18
 
-    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
+    env_lines = [
+        f"{key}={_valid_user_api_value(key, idx)}" for idx, key in enumerate(keys, start=1)
+    ]
     (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
     for name in (".env.advanced", ".env.development", ".env.test"):
         (script_dir / name).write_text(
@@ -2002,7 +2016,9 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
     keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
     assert len(keys) == 18
 
-    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
+    env_lines = [
+        f"{key}={_valid_user_api_value(key, idx)}" for idx, key in enumerate(keys, start=1)
+    ]
     (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
     for name in (".env.advanced", ".env.development", ".env.test"):
         (script_dir / name).write_text(
@@ -2033,6 +2049,7 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
         done
         """,
         tmp_path,
+        timeout_seconds=90,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     combined_output = result.stdout + result.stderr
