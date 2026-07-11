@@ -4,8 +4,72 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+
+def _build_null_agent_dependencies(config: Any) -> Any:
+    """Build deterministic SidarAgent dependencies for unit-test factories."""
+    from agent.sidar_agent import AgentDependencies
+
+    security = MagicMock()
+    security.level_name = getattr(config, "ACCESS_LEVEL", "safe")
+    security.set_level.return_value = True
+
+    code = MagicMock()
+    code.get_metrics.return_value = {"files_read": 0, "files_written": 0}
+    code.read_file.return_value = (False, "")
+
+    health = MagicMock()
+    health.full_report.return_value = "System health unavailable in unit fixture."
+
+    github = MagicMock()
+    github.is_available.return_value = False
+    github.status.return_value = "GitHub: disabled for unit tests"
+
+    memory = MagicMock()
+    memory.initialize = AsyncMock(return_value=None)
+    memory._ensure_initialized = AsyncMock(return_value=None)
+    memory.add = AsyncMock(return_value=None)
+    memory.get_history = AsyncMock(return_value=[])
+    memory.clear = AsyncMock(return_value=None)
+    memory.apply_summary = AsyncMock(return_value=None)
+    memory.get_last_file.return_value = None
+    memory.__len__.return_value = 0
+
+    llm = MagicMock()
+    llm.chat = AsyncMock(return_value="mock-response")
+
+    web = MagicMock()
+    web.is_available.return_value = False
+    web.status.return_value = "WebSearch: disabled for unit tests"
+
+    pkg = MagicMock()
+    pkg.status.return_value = "PackageInfo: disabled for unit tests"
+
+    docs = MagicMock()
+    docs.collection = None
+    docs.status.return_value = "RAG: disabled for unit tests"
+    docs.search = MagicMock(return_value=[])
+    docs.add_document = AsyncMock(return_value=None)
+
+    todo = MagicMock()
+    todo.__len__.return_value = 0
+    todo.list_tasks.return_value = ""
+
+    return AgentDependencies(
+        security=security,
+        code=code,
+        health=health,
+        github=github,
+        memory=memory,
+        llm=llm,
+        web=web,
+        pkg=pkg,
+        docs=docs,
+        todo=todo,
+    )
 
 
 @pytest.fixture
@@ -33,7 +97,8 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
 
         from agent.sidar_agent import SidarAgent
 
-        return SidarAgent(config=config)
+        deps = _build_null_agent_dependencies(config)
+        return SidarAgent(config=config, deps=deps)
 
     return _create_agent
 

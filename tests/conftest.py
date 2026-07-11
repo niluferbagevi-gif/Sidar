@@ -35,6 +35,18 @@ from tests._fixtures.dotenv import (
 )
 
 
+def _is_truthy_env(value: str | None) -> bool:
+    """Return whether an environment flag is explicitly enabled."""
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _isolate_github_env_for_tests() -> None:
+    """Keep real GitHub credentials/repositories out of default pytest runs."""
+    if _is_truthy_env(os.getenv("SIDAR_TEST_LOAD_REAL_GITHUB")):
+        return
+    os.environ["GITHUB_TOKEN"] = ""
+    os.environ["GITHUB_REPO"] = ""
+
 def _sync_dotenv_fixture_project_root() -> None:
     _dotenv_fixtures.PROJECT_ROOT = PROJECT_ROOT
 
@@ -53,6 +65,7 @@ def _assert_test_dotenv_postgres_parity() -> None:
 
 
 _load_pytest_dotenv_chain()
+_isolate_github_env_for_tests()
 _assert_test_dotenv_postgres_parity()
 
 _REQUIRED_TEST_MODULES = {
