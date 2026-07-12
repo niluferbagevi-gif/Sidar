@@ -1941,10 +1941,42 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
         config.Config()
 
 
+def _read_dotenv_example_values(relative_path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    dotenv_path = Path(__file__).resolve().parents[3] / relative_path
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def test_prefixed_legacy_env_example_pairs_stay_in_parity() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    base_values = _read_dotenv_example_values(".env.example")
+    prefixed_legacy_pairs = {
+        key: key.removeprefix("SIDAR_")
+        for key in base_values
+        if key.startswith("SIDAR_") and key.removeprefix("SIDAR_") in base_values
+    }
+
+    assert prefixed_legacy_pairs["SIDAR_CODE_EXECUTION_BACKEND"] == "CODE_EXECUTION_BACKEND"
+    for example_path in repo_root.glob(".env*.example"):
+        values = _read_dotenv_example_values(example_path.name)
+        for prefixed_key, legacy_key in prefixed_legacy_pairs.items():
+            if legacy_key not in values:
+                continue
+
+            assert values[prefixed_key] == values[legacy_key], example_path.name
+
+
 def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
     monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
     monkeypatch.setenv("DOTENV_FILE", "")
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("SIDAR_CODE_EXECUTION_BACKEND", raising=False)
     monkeypatch.setenv("CODE_EXECUTION_BACKEND", "disabled")
     monkeypatch.setenv("DOCKER_AUTODETECT", "false")
     monkeypatch.setenv("PROMPT_GUARD_ENABLED", "false")
@@ -1962,6 +1994,7 @@ def test_invalid_code_execution_backend_falls_back_to_safe_config_default(monkey
     monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
     monkeypatch.setenv("DOTENV_FILE", "")
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("SIDAR_CODE_EXECUTION_BACKEND", raising=False)
     monkeypatch.setenv("CODE_EXECUTION_BACKEND", "podman")
 
     reloaded = importlib.reload(config)
