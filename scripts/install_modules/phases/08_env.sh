@@ -306,7 +306,7 @@ collect_api_keys_interactive() {
         fi
         value_bytes="$(LC_ALL=C printf '%s' "$val" | wc -c | tr -d '[:space:]')"
         if (( value_bytes > max_value_bytes )); then
-            warn "${key}: değer ${max_value_bytes} bayt sınırını aşıyor; configured sayılmayacak."
+            warn "${key}: değer ${value_bytes} bayt (sınır: ${max_value_bytes}) — configured sayılmayacak."
             return 1
         fi
         case "$key" in

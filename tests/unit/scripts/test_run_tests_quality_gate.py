@@ -1488,6 +1488,8 @@ def test_install_sidar_reports_api_key_write_failures_without_missing_err_functi
     assert "API anahtarı yazma denemesinden" in collect_block
     assert '_write_key "$key" "$raw_val"' in collect_block
     assert "_validate_api_key_value" in collect_block
+    assert 'value_bytes="$(LC_ALL=C printf' in collect_block
+    assert "değer ${value_bytes} bayt (sınır: ${max_value_bytes})" in collect_block
     assert '_write_key "${grp_missing[$i]}" "${_vals[$i]:-}" || true' in collect_block
 
 
