@@ -295,6 +295,21 @@ def sync_install_manifests_before_commit() -> tuple[bool, str]:
     return True, ""
 
 
+def run_pre_push_quality_gate() -> tuple[bool, str]:
+    """Push öncesi hızlı Python format/lint kapısını fail-closed çalıştırır."""
+    quality_steps = [
+        ["uv", "run", "ruff", "format", "--check", "."],
+        ["uv", "run", "ruff", "check", "."],
+    ]
+
+    for cmd in quality_steps:
+        success, output = run_command(cmd, show_output=False)
+        if not success:
+            return False, f"{' '.join(cmd)}\n{output}".strip()
+
+    return True, ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -637,6 +652,14 @@ def main() -> None:
                 f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
             )
 
+    gate_success, gate_err = run_pre_push_quality_gate()
+    if not gate_success:
+        print(
+            f"{Colors.FAIL}❌ Push öncesi kalite kapısı başarısız oldu; GitHub'a yükleme durduruldu:\n"
+            f"{gate_err}{Colors.ENDC}"
+        )
+        sys.exit(1)
+
     print(
         f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}"
     )
@@ -683,6 +706,14 @@ def main() -> None:
                 print(
                     f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}"
                 )
+
+                gate_success, gate_err = run_pre_push_quality_gate()
+                if not gate_success:
+                    print(
+                        f"{Colors.FAIL}❌ Push retry öncesi kalite kapısı başarısız oldu; "
+                        f"GitHub'a yükleme durduruldu:\n{gate_err}{Colors.ENDC}"
+                    )
+                    sys.exit(1)
 
                 retry_success, retry_err = run_command(
                     ["git", "push", "-u", "origin", current_branch], show_output=False

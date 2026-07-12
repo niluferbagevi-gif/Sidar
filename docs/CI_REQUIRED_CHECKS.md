@@ -26,6 +26,29 @@ changes in `.github/workflows/ci.yml`, update branch protection at the same time
 or PRs may either be blocked forever by a stale required context or allowed to
 merge without the intended release gate.
 
+
+## Autonomous/direct push guardrails
+
+Branch protection remains the authoritative control for keeping red CI off
+`main`, but local automation must also fail closed before it attempts a direct
+push. The bundled `github_upload.py` flow therefore runs this synchronous
+pre-push gate after creating any local commit and again before a retry push
+following an automatic pull/merge:
+
+```bash
+uv run ruff format --check .
+uv run ruff check .
+```
+
+If either command fails, the upload tool exits without calling `git push`. This
+keeps the fastest deterministic Python format/lint failures from being pushed by
+autonomous backup/deployment loops while the broader GitHub required checks still
+cover production-readiness, installer smoke, dependency-profile, PostgreSQL
+stress, and benchmark compare behavior. Repository administrators should still
+periodically inspect GitHub branch protection/rulesets and confirm the required
+contexts in the table above are selected for `main`; the local guard is a defense
+in depth, not a replacement for required status checks.
+
 ## Installer manifest and smoke gate
 
 GitHub branch protection for `main`/`master` should require the CI job named

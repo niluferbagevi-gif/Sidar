@@ -10,11 +10,13 @@ import pytest
 import github_upload as gu
 
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
+ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
 
 
 @pytest.fixture(autouse=True)
-def _stub_install_manifest_sync(monkeypatch):
+def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
+    monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
 
 
 def test_run_command_success_and_error(monkeypatch, capsys):
@@ -208,6 +210,44 @@ def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
         ["bash", "scripts/sync_install_module_hashes.sh"],
         ["bash", "scripts/sync_install_manifest.sh"],
     ]
+
+
+def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append((cmd, show_output))
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        (["uv", "run", "ruff", "format", "--check", "."], False),
+        (["uv", "run", "ruff", "check", "."], False),
+    ]
+
+
+def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
+            return False, "Would reformat: bad.py"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is False
+    assert "uv run ruff format --check ." in err
+    assert "Would reformat: bad.py" in err
+    assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
 
 
 def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
@@ -459,6 +499,34 @@ def test_main_commit_fail(monkeypatch):
         ],
         inputs=[""],
     )
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_aborts_when_pre_push_quality_gate_fails(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
+    monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
+    monkeypatch.setattr(
+        gu,
+        "run_pre_push_quality_gate",
+        lambda: (False, "uv run ruff format --check .\nWould reformat: a.py"),
+    )
+
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "commit ok"),
+        ],
+        inputs=["commit msg"],
+    )
+
     assert run_main_and_exit_code() == 1
 
 
