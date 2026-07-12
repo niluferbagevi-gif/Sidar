@@ -29,12 +29,26 @@ def _build_null_agent_dependencies(config: Any) -> Any:
     github.status.return_value = "GitHub: disabled for unit tests"
 
     memory = MagicMock()
+    memory.db = MagicMock()
+    memory.db.get_active_prompt = AsyncMock(return_value=None)
+    memory_turns: list[dict[str, Any]] = []
+
+    async def _add_memory_turn(role: str, content: str, **_: Any) -> None:
+        memory_turns.append({"role": role, "content": content})
+
+    async def _get_memory_history(n_last: int | None = None) -> list[dict[str, Any]]:
+        return memory_turns if n_last is None else memory_turns[-n_last:]
+
+    async def _clear_memory() -> None:
+        memory_turns.clear()
+
     memory.initialize = AsyncMock(return_value=None)
     memory._ensure_initialized = AsyncMock(return_value=None)
-    memory.add = AsyncMock(return_value=None)
-    memory.get_history = AsyncMock(return_value=[])
-    memory.clear = AsyncMock(return_value=None)
+    memory.add = AsyncMock(side_effect=_add_memory_turn)
+    memory.get_history = AsyncMock(side_effect=_get_memory_history)
+    memory.clear = AsyncMock(side_effect=_clear_memory)
     memory.apply_summary = AsyncMock(return_value=None)
+    memory.set_active_user = AsyncMock(return_value=None)
     memory.get_last_file.return_value = None
     memory.__len__.return_value = 0
 
