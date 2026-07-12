@@ -16,6 +16,7 @@ run_installer_function() {
     test_snippet="$2"
     cd "$repo_root"
     export SIDAR_INSTALL_TEST_MODE=1
+    unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
     set --
     source ./install_sidar.sh
     eval "$test_snippet"

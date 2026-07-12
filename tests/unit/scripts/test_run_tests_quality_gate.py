@@ -3790,8 +3790,21 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
         in script
     )
     assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
+    assert "env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD" in bats_block
     assert 'bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell' in bats_block
     assert "${BATS_REPORT_DIR}/report.xml" in bats_block
+
+
+def test_install_sidar_bats_helper_clears_runtime_database_env() -> None:
+    bats_file = Path("tests/shell/install_sidar_functions.bats").read_text(encoding="utf-8")
+    helper_block = bats_file[
+        bats_file.index("run_installer_function()") : bats_file.index(
+            '@test "normalize_bool maps accepted true/false values and rejects unknown input"'
+        )
+    ]
+
+    assert "unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD" in helper_block
+    assert helper_block.index("unset DATABASE_URL") < helper_block.index("source ./install_sidar.sh")
 
 
 def test_ci_uploads_bats_junit_report_artifact() -> None:
