@@ -1968,7 +1968,24 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert ".sidar_manifest" in config
     assert "core/(memory|multimodal)" in config
     assert "scripts/install_modules/.*\\.(sh|ps1)" in config
+    python_env_utils = Path("scripts/install_modules/utils/python_env.sh").read_text(
+        encoding="utf-8"
+    )
+    workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
+        encoding="utf-8"
+    )
+
     assert "uv run pre-commit install --hook-type pre-commit --hook-type pre-push" in readme
+    assert "install_pre_commit_hooks()" in python_env_utils
+    assert (
+        "uv run pre-commit install --hook-type pre-commit --hook-type pre-push" in python_env_utils
+    )
+    assert workspace_phase.index("install_python_deps") < workspace_phase.index(
+        "install_pre_commit_hooks"
+    )
+    assert workspace_phase.index("install_pre_commit_hooks") < workspace_phase.index(
+        "install_pyright_lsp_tool"
+    )
     assert "check-core-install-manifest" in readme
     assert "check-install-module-hashes" in readme
     assert "installer manifest drift" in readme

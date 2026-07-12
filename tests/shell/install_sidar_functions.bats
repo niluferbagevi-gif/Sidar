@@ -1251,6 +1251,7 @@ EOF
     install_uv_cli() { events+=(install_uv_cli); }
     create_uv_venv() { events+=(create_uv_venv); }
     install_python_deps() { events+=(install_python_deps); }
+    install_pre_commit_hooks() { events+=(install_pre_commit_hooks); }
     install_pyright_lsp_tool() { events+=(install_pyright_lsp_tool); }
     verify_torch_cuda() { events+=(verify_torch_cuda); }
     create_directories() { events+=(create_directories); }
@@ -1258,7 +1259,7 @@ EOF
     setup_env_file() { events+=(setup_env_file); }
 
     sidar_phase_workspace_config
-    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
+    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pre_commit_hooks install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
   '
   [ "$status" -eq 0 ]
 }

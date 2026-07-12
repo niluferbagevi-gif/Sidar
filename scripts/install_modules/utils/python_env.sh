@@ -303,6 +303,32 @@ install_python_deps() {
     validate_runtime_env_loading
 }
 
+install_pre_commit_hooks() {
+    step "Pre-commit Hook Kurulumu"
+
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+
+    case "$dependency_profile" in
+        production|production-minimal|gpu-runtime)
+            warn "Dependency profile ${dependency_profile}: pre-commit dev bağımlılıkları kurulmaz; hook kurulumu atlandı."
+            return 0
+            ;;
+    esac
+
+    if [[ ! -d "$SCRIPT_DIR/.git" ]]; then
+        warn "Git deposu bulunamadı; pre-commit hook kurulumu atlandı."
+        return 0
+    fi
+
+    if ! uv run pre-commit install --hook-type pre-commit --hook-type pre-push; then
+        fail "pre-commit/pre-push hook kurulumu başarısız oldu. Manuel doğrulama: uv run pre-commit install --hook-type pre-commit --hook-type pre-push"
+    fi
+
+    ok "pre-commit ve pre-push hook'ları kuruldu."
+}
+
 install_pyright_lsp_tool() {
     step "Pyright LSP Aracı"
 
