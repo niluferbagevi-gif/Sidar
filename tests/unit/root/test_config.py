@@ -1943,6 +1943,8 @@ def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
 
 def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
     monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.setenv("CODE_EXECUTION_BACKEND", "disabled")
     monkeypatch.setenv("DOCKER_AUTODETECT", "false")
     monkeypatch.setenv("PROMPT_GUARD_ENABLED", "false")
@@ -1958,6 +1960,8 @@ def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
 
 def test_invalid_code_execution_backend_falls_back_to_safe_config_default(monkeypatch):
     monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.setenv("CODE_EXECUTION_BACKEND", "podman")
 
     reloaded = importlib.reload(config)
