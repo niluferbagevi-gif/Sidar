@@ -3804,7 +3804,9 @@ def test_install_sidar_bats_helper_clears_runtime_database_env() -> None:
     ]
 
     assert "unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD" in helper_block
-    assert helper_block.index("unset DATABASE_URL") < helper_block.index("source ./install_sidar.sh")
+    assert helper_block.index("unset DATABASE_URL") < helper_block.index(
+        "source ./install_sidar.sh"
+    )
 
 
 def test_ci_uploads_bats_junit_report_artifact() -> None:
