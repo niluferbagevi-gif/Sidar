@@ -13,7 +13,7 @@ import argparse
 import asyncio
 import os
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from statistics import mean
 from typing import Any
 
@@ -98,7 +98,7 @@ async def run_load_test(
         await db.close()
 
 
-def run_async(coro: Awaitable[Any]) -> Any:
+def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run an async entrypoint through a patchable module-local wrapper."""
     return asyncio.run(coro)
 
@@ -145,7 +145,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(
     argv: list[str] | None = None,
-    runner: Callable[[Awaitable[Any]], Any] = run_async,
+    runner: Callable[[Coroutine[Any, Any, Any]], Any] = run_async,
 ) -> None:
     """Run the CLI with injectable arguments and async runner for tests."""
     args = parse_args(argv)

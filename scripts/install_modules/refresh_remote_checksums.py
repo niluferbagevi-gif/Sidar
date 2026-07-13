@@ -10,6 +10,7 @@ import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ def fetch_remote_bytes(url: str) -> bytes:
         },
     )
     with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310  # pinned installer refresh utility
-        return response.read()
+        return cast(bytes, response.read())
 
 
 def replace_pin(content: str, env_var: str, sha256: str) -> str:

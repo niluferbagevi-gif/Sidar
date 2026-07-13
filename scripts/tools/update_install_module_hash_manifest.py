@@ -96,7 +96,10 @@ def check_target(target: Path) -> bool:
 
 def _format_drift_report(target: Path, drift: list[tuple[str, str | None, str | None]]) -> str:
     rel_target = target.relative_to(ROOT)
-    short = lambda h: (h or "yok").ljust(64) if h else "yok".ljust(64)  # noqa: E731
+
+    def short(h: str | None) -> str:
+        return (h or "yok").ljust(64)
+
     lines = [
         f"Manifest drift tespit edildi: {rel_target} içindeki gömülü modül hash bloğu",
         "scripts/install_modules altındaki gerçek dosyalarla uyumsuz.",
