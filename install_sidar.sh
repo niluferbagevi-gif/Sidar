@@ -447,6 +447,8 @@ sed_inplace() {
 
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
+# shellcheck disable=SC2034  # External probes/operators may read the plural alias after sourcing the installer.
+INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 INSTALL_MODULES_DOWNLOADED=0
@@ -460,6 +462,16 @@ export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADE
 export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
 export SIDAR_INSTALL_MODULE_HTTP_429_RETRIES="${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}"
 export SIDAR_INSTALL_MODULE_CACHE_HITS="${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}"
+
+sidar_set_install_module_dir() {
+    INSTALL_MODULE_DIR="$1"
+    # INSTALL_MODULE_DIR is the historical internal variable. Keep the plural
+    # alias in sync because operator notes and external probes often refer to
+    # the tree as INSTALL_MODULES_DIR.
+    # shellcheck disable=SC2034  # External probes/operators may read the plural alias after sourcing the installer.
+    INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+}
 
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
@@ -847,8 +859,7 @@ use_existing_install_module_tree_if_available() {
         if [[ -z "$candidate_status" ]]; then
             if [[ "$candidate_dir" != "$INSTALL_MODULE_DIR" ]]; then
                 info "Mevcut repo kurulum modülleri doğrudan kullanılacak: $candidate_dir"
-                INSTALL_MODULE_DIR="$candidate_dir"
-                INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+                sidar_set_install_module_dir "$candidate_dir"
             fi
             if [[ "${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}" == "unknown" ]]; then
                 if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
@@ -869,8 +880,7 @@ download_install_modules_to_temp() {
     local remote_module_base="$1"
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+    sidar_set_install_module_dir "${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     download_remote_install_modules "$remote_module_base" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $remote_module_base"
     INSTALL_MODULES_DOWNLOADED=1
     SIDAR_INSTALLER_BOOTSTRAP_MODE="raw-module-fallback"

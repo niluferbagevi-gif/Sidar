@@ -2201,6 +2201,42 @@ def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
     assert "Fallback modül indirildi" not in result.stderr
 
 
+def test_install_sidar_keeps_plural_module_dir_alias_synced(tmp_path: Path) -> None:
+    runner_dir = tmp_path / "runner"
+    runner_dir.mkdir()
+    shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                'set -Eeuo pipefail; script_path="$1"; set --; '
+                'source "$script_path"; '
+                'printf "%s\\n%s\\n%s\\n" '
+                '"$INSTALL_MODULE_DIR" "$INSTALL_MODULES_DIR" "$INSTALL_HELPERS_MODULE"'
+            ),
+            "bash",
+            str(runner_dir / "install_sidar.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "HOME": str(tmp_path),
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "SIDAR_INSTALL_MODULE_BASE_URL": (tmp_path / "missing-remote").as_uri(),
+        },
+        text=True,
+    )
+
+    module_dir, plural_alias, helpers_module = result.stdout.strip().splitlines()
+    expected_module_dir = str((Path.cwd() / "scripts/install_modules").resolve())
+    assert module_dir == expected_module_dir
+    assert plural_alias == expected_module_dir
+    assert helpers_module == f"{expected_module_dir}/install_helpers.sh"
+
+
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
     remote_modules = tmp_path / "remote"
     runner_dir = tmp_path / "runner"
