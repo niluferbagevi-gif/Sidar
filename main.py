@@ -20,6 +20,7 @@ import os
 import shlex
 import subprocess  # nosec B404
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -277,7 +278,7 @@ def _default_launch_selection() -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def _launcher_session_lock(session_path: Path, *, exclusive: bool):
+def _launcher_session_lock(session_path: Path, *, exclusive: bool) -> Iterator[None]:
     """Lock launcher session cache access across concurrent terminal processes."""
     lock_path = session_path.with_suffix(session_path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1076,7 +1077,7 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         try:
             import httpx
 
-            httpx_http_error = getattr(httpx, "HTTPError", RuntimeError)
+            httpx_http_error: type[BaseException] = getattr(httpx, "HTTPError", RuntimeError)
             base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
             tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
             with httpx.Client(timeout=2) as client:
