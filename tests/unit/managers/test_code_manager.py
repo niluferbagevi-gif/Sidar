@@ -1265,6 +1265,35 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
     assert manager.docker_available is False
 
 
+def test_init_docker_uses_cached_docker_module_from_sys_modules(manager, monkeypatch):
+    original_import = builtins.__import__
+
+    def _fail_if_docker_imported(name, *args, **kwargs):
+        if name == "docker":
+            raise AssertionError("cached docker module should avoid import")
+        return original_import(name, *args, **kwargs)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.pinged = False
+
+        def ping(self) -> None:
+            self.pinged = True
+
+    fake_client = FakeClient()
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: fake_client
+
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    monkeypatch.setattr(builtins, "__import__", _fail_if_docker_imported)
+
+    _real_init_docker(manager)
+
+    assert manager.docker_available is True
+    assert manager.docker_client is fake_client
+    assert fake_client.pinged is True
+
+
 def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
