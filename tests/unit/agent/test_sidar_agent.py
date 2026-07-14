@@ -1363,11 +1363,6 @@ async def test_try_multi_agent_handles_supervisor_constructor_returning_none(
     )
     monkeypatch.setattr(sidar_agent, "import_module", lambda name: fake_supervisor_mod)
 
-    def _unexpected_reload(_module):
-        raise AssertionError("role modules are valid; reload should not be needed")
-
-    monkeypatch.setattr(sidar_agent.importlib, "reload", _unexpected_reload)
-
     result = await agent._try_multi_agent("implement feature")
 
     assert result == "⚠ Supervisor başlatılamadı."
@@ -2033,44 +2028,9 @@ async def test_try_multi_agent_imports_supervisor_when_missing(
     supervisor_instance.run_task.return_value = "ok:hello"
     supervisor_cls.return_value = supervisor_instance
     monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
-    monkeypatch.setattr(sidar_agent.importlib, "reload", lambda module: module)
 
     result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
-
-
-async def test_try_multi_agent_triggers_reload_if_module_corrupted(
-    sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Supervisor rol sembolleri stub ise modül reload dalına girildiğini doğrular."""
-    agent = sidar_agent_factory()
-    agent._supervisor = None
-
-    from agent.core import supervisor as supervisor_mod
-
-    original_researcher = getattr(supervisor_mod, "ResearcherAgent", None)
-
-    with monkeypatch.context() as scoped_monkeypatch:
-        corrupted_role = Mock()
-        corrupted_role.__module__ = "tests.stub.roles"
-        scoped_monkeypatch.setattr(supervisor_mod, "ResearcherAgent", corrupted_role, raising=False)
-
-        reload_mock = Mock(return_value=supervisor_mod)
-        scoped_monkeypatch.setattr(sidar_agent.importlib, "reload", reload_mock)
-
-        supervisor_cls = Mock()
-        supervisor_instance = AsyncMock()
-        supervisor_instance.run_task.return_value = "ok:reloaded"
-        supervisor_cls.return_value = supervisor_instance
-        scoped_monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
-
-        result = await agent._try_multi_agent("hello")
-
-        assert result == "ok:reloaded"
-        reload_mock.assert_called_once_with(supervisor_mod)
-
-    assert getattr(supervisor_mod, "ResearcherAgent", None) is original_researcher
 
 
 async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory) -> None:

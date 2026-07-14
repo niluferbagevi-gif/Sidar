@@ -5,7 +5,6 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 
 import asyncio
 import contextlib
-import importlib
 import inspect
 import json
 import logging
@@ -1121,31 +1120,6 @@ class SidarAgent:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             supervisor_mod = import_module("agent.core.supervisor")
-            # Bazı izolasyon testleri `agent.core.supervisor` modülünü stub rol sınıflarıyla
-            # import eder ve modülü cache'te bırakabilir. Bu durumda gerçek role-agent
-            # zinciri yerine `stub:*` çıktıları dönebilir. Role sınıflarının kaynak modülünü
-            # doğrulayarak gerekiyorsa supervisor modülünü yeniden yükle.
-            # TODO(test-isolation-cleanup): bu da agent/swarm.py ve agent/core/supervisor.py
-            # içindeki contracts self-heal'iyle aynı sınıftan bir test-izolasyon savunma
-            # ağıdır, ama contracts'tan farklı olarak tests/conftest.py'de bu modül için
-            # henüz bir `_isolate_*_module` autouse fixture'ı yok. Bu reload'u kaldırmadan
-            # önce ya sızıntıyı yapan testleri düzeltin ya da eşdeğer bir fixture ekleyin.
-            role_symbols = (
-                "ResearcherAgent",
-                "CoderAgent",
-                "ReviewerAgent",
-                "PoyrazAgent",
-                "QAAgent",
-                "CoverageAgent",
-            )
-            needs_reload = any(
-                not str(
-                    getattr(getattr(supervisor_mod, symbol, None), "__module__", "")
-                ).startswith("agent.roles.")
-                for symbol in role_symbols
-            )
-            if needs_reload:
-                supervisor_mod = importlib.reload(supervisor_mod)
             SupervisorAgent = supervisor_mod.SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)
             if self._supervisor is not None:

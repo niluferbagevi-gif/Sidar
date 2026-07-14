@@ -719,33 +719,6 @@ def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
     assert calls == [("coder", "code")]
 
 
-def test_ensure_delegation_request_shape_uses_existing_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    assert supervisor_mod._ensure_delegation_request_shape() is DelegationRequest
-
-
-def test_ensure_delegation_request_shape_builds_compat_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=object)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    compat_cls = supervisor_mod._ensure_delegation_request_shape()
-    req = compat_cls(
-        task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"}
-    )
-    bumped = req.bumped()
-
-    assert req.handoff_depth == 2
-    assert bumped.handoff_depth == 3
-    assert bumped.meta == {"k": "v"}
-    assert contracts_mod.DelegationRequest is compat_cls
-
-
 def test_null_span_noop_methods() -> None:
     span = supervisor_mod._NullSpan()
     with span as ctx:

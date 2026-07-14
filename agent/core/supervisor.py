@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import logging
 import re
@@ -28,55 +27,6 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-
-# TODO(test-isolation-cleanup): This re-imports agent.core.contracts and, if the
-# module's DelegationRequest looks unhealthy, patches a compat stand-in directly
-# onto sys.modules — a defensive workaround for tests that leave that module
-# swapped with stubs/mocks, not something normal runtime operation needs.
-# tests/conftest.py's autouse `_isolate_contracts_module` fixture now restores
-# sys.modules["agent.core.contracts"] after every test, which addresses the same
-# root cause at the fixture level. Before deleting this function (and the
-# matching one in agent/swarm.py), confirm the full test suite still passes
-# without it in an environment where the whole suite can actually run.
-def _ensure_delegation_request_shape() -> type[DelegationRequest]:
-    contracts_mod = importlib.import_module("agent.core.contracts")
-    req_cls = getattr(contracts_mod, "DelegationRequest", None)
-    if isinstance(req_cls, type) and req_cls is not object:
-        return cast(type[DelegationRequest], req_cls)
-
-    class _CompatDelegationRequest:
-        def __init__(self, **kwargs: object) -> None:
-            self.task_id = kwargs.get("task_id", "")
-            self.reply_to = kwargs.get("reply_to", "")
-            self.target_agent = kwargs.get("target_agent", "")
-            self.payload = kwargs.get("payload", "")
-            self.intent = kwargs.get("intent", "mixed")
-            self.parent_task_id = kwargs.get("parent_task_id")
-            handoff_depth_raw = kwargs.get("handoff_depth", 0)
-            self.handoff_depth = int(handoff_depth_raw) if isinstance(handoff_depth_raw, int) else 0
-            self.protocol = kwargs.get("protocol", "p2p.v1")
-            meta_raw = kwargs.get("meta", {})
-            self.meta = dict(meta_raw) if isinstance(meta_raw, dict) else {}
-
-        def bumped(self) -> _CompatDelegationRequest:
-            return type(self)(
-                task_id=self.task_id,
-                reply_to=self.reply_to,
-                target_agent=self.target_agent,
-                payload=self.payload,
-                intent=self.intent,
-                parent_task_id=self.parent_task_id,
-                handoff_depth=self.handoff_depth + 1,
-                protocol=self.protocol,
-                meta=dict(self.meta),
-            )
-
-    contracts_mod_any = cast(Any, contracts_mod)
-    contracts_mod_any.DelegationRequest = _CompatDelegationRequest
-    return cast(type[DelegationRequest], _CompatDelegationRequest)
-
-
-_ensure_delegation_request_shape()
 
 try:
     from opentelemetry import trace as otel_trace

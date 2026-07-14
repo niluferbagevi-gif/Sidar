@@ -174,6 +174,37 @@ def _isolate_contracts_module() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_supervisor_module() -> Generator[None, None, None]:
+    """Restore supervisor imports so production code does not need reload guards."""
+
+    module_name = "agent.core.supervisor"
+    package_name = "agent.core"
+    package = sys.modules.get(package_name)
+    original_module = sys.modules.get(module_name, _CONTRACTS_MODULE_SENTINEL)
+    original_package_attr = (
+        getattr(package, "supervisor", _CONTRACTS_MODULE_SENTINEL)
+        if package is not None
+        else _CONTRACTS_MODULE_SENTINEL
+    )
+
+    yield
+
+    if original_module is _CONTRACTS_MODULE_SENTINEL:
+        sys.modules.pop(module_name, None)
+    else:
+        sys.modules[module_name] = cast(ModuleType, original_module)
+
+    current_package = sys.modules.get(package_name)
+    if current_package is None:
+        return
+    if original_package_attr is _CONTRACTS_MODULE_SENTINEL:
+        with contextlib.suppress(AttributeError):
+            delattr(current_package, "supervisor")
+    else:
+        current_package.supervisor = original_package_attr
+
+
+@pytest.fixture(autouse=True)
 def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gemini/Google istemci yolları için testte güvenli sahte anahtarlar tanımlar."""
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test_key"))
