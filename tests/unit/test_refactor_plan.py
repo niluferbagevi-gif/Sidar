@@ -10,6 +10,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
 
     for target in (
         "web_server.py",
+        "run_tests.sh",
+        "install_sidar.sh",
+        "config.py",
         "core/db.py",
         "core/rag/__init__.py",
         "managers/code_manager.py",
@@ -28,6 +31,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/routes/ws_chat.py",
         "web/routes/webhooks.py",
         "web/app_factory.py",
+        "scripts/test_gates/benchmark.sh",
+        "scripts/install_modules/validation.sh",
         "web/bootstrap.py",
         "web/middleware/cors.py",
         "core/db/auth.py",
@@ -60,6 +65,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
+    assert "Güncel bakım hotspot snapshot" in plan
+    assert "Quality gate orchestration büyüdü" in plan
+    assert "ana script bootstrap/UX facade" in plan
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
