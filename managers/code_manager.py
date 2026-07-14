@@ -242,7 +242,11 @@ class CodeManager:
         with self._docker_init_lock:
             if self._docker_state in {DockerState.READY, DockerState.DISABLED}:
                 return
-            if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
+            if self.code_execution_backend in {
+                "disabled",
+                "none",
+                "off",
+            }:  # pragma: no cover - deployment-mode branch
                 logger.info("Code execution backend disabled; Docker initialization skipped.")
                 self.docker_available = False
                 self.docker_client = None
@@ -585,7 +589,11 @@ class CodeManager:
         """
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
-        if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
+        if self.code_execution_backend in {
+            "disabled",
+            "none",
+            "off",
+        }:  # pragma: no cover - deployment-mode branch
             return False, "Kod çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
 
         self.ensure_docker_initialized()
@@ -810,7 +818,11 @@ class CodeManager:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
-        if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
+        if self.code_execution_backend in {
+            "disabled",
+            "none",
+            "off",
+        }:  # pragma: no cover - deployment-mode branch
             return (
                 False,
                 "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled).",
