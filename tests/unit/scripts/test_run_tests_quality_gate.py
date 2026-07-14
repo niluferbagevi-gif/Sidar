@@ -2150,6 +2150,10 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "Release bundle (önerilen)" in readme
     assert "varsayılan Release bundle, raw fallback son çare" in modularization_note
     assert "Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı" in readme
+    assert "Raw fallback notu" in readme
+    assert "raw.githubusercontent.com" in readme
+    assert "Raw fallback modül indirme: 30 modül indirildi" in readme
+    assert "kusur değildir" in readme
     assert "monolitik Release bundle" in modularization_note
 
 

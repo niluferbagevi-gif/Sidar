@@ -721,6 +721,14 @@ Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı or
 CI/CD tarafından `bundle_install_sidar.sh` ile üretilir ve bootstrap sırasında
 30+ ayrı GitHub raw modül isteğini ortadan kaldırır:
 
+> **Raw fallback notu:** `~/Sidar` gibi mevcut yerel repo dizinini silip yalnız
+> raw `main/install_sidar.sh` dosyasını çalıştırırsanız installer yerel
+> `scripts/install_modules` ağacını bulamaz ve kendini bootstrap etmek için
+> `raw.githubusercontent.com` üzerinden modül setini indirir. Bu durumda özetlerde
+> `Raw fallback modül indirme: 30 modül indirildi` benzeri bir satır görmek
+> beklenen davranıştır; kusur değildir. Bunu istemiyorsanız Release bundle'ı veya
+> `git clone && ./install_sidar.sh` yolunu kullanın.
+
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
 # veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
