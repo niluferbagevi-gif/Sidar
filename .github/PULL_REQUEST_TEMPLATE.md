@@ -29,6 +29,7 @@
 > [`docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır`](docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır).
 
 - [ ] CI benchmark baseline cache/artifact mevcut veya `seed_benchmark_baseline=true` ile yeniden seed edildi.
+- [ ] Yerel `.benchmarks/.../*_baseline.json` dosyalarının CI baseline yerine geçmediği doğrulandı.
 - [ ] Baseline seed sonrası normal CI / production-readiness gate tekrar çalıştırıldı.
 
 ## Installer manifest checklist

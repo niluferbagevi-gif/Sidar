@@ -186,8 +186,11 @@ Bu çıktıyı şu şekilde yorumlayın:
   çalıştırıldığında bundle budget kapısı varsayılan olarak açıktır. Geçici olarak
   kapatmak için `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=0 make dev-full` kullanın.
 - İlk lokal benchmark koşusunda `seeded_not_compared` veya “baseline sonradan
-  oluşturuldu” mesajı görmek normaldir. CI/production-readiness tarafında baseline
-  restore edilemezse bu durum normalleştirilmez; gate fail-closed davranır.
+  oluşturuldu” mesajı görmek normaldir. Bu koşuda oluşan
+  `.benchmarks/.../*_baseline.json` dosyası yalnız bulunduğu makinede kullanılır;
+  repo commit'ine eklenmemeli ve CI baseline kanıtı sayılmamalıdır.
+  CI/production-readiness tarafında baseline restore edilemezse bu durum
+  normalleştirilmez; gate fail-closed davranır.
 - `production_ready=false`, `validation_class=development_full` veya
   `release_blocking=true` değerleri `artifacts/test-summary.json` içinde görülürse
   bu, local doğrulamanın başarılı ama release için henüz yeterli olmadığını anlatır.
