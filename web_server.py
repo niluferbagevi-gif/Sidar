@@ -85,6 +85,7 @@ from web import app_factory as _app_factory
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
+from web.middleware.access_policy import access_policy_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
     ddos_rate_limit_middleware_impl,
@@ -2144,58 +2145,17 @@ def _register_plugin_agent(
 async def access_policy_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    user = getattr(request.state, "user", None)
-    if not user:
-        return await call_next(request)
-    resource_type, action, resource_id = _resolve_policy_from_request(request)
-    if not resource_type:
-        return await call_next(request)
-    client_ip = _get_client_ip(request)
-    if _is_admin_user(user):
-        _schedule_access_audit_log(
-            user=user,
-            resource_type=resource_type,
-            action=action,
-            resource_id=resource_id,
-            ip_address=client_ip,
-            allowed=True,
-        )
-        return await call_next(request)
-
-    allowed = False
-    try:
-        agent = await _resolve_agent_instance()
-        checker = getattr(agent.memory.db, "check_access_policy", None)
-        if checker is None:
-            allowed = True
-        else:
-            allowed = await checker(
-                user_id=str(getattr(user, "id", "") or ""),
-                tenant_id=_get_user_tenant(user),
-                resource_type=resource_type,
-                action=action,
-                resource_id=resource_id,
-            )
-    except Exception as exc:
-        logger.warning("ACL kontrolü başarısız (%s), erişim reddedildi.", exc)
-        allowed = False
-
-    _schedule_access_audit_log(
-        user=user,
-        resource_type=resource_type,
-        action=action,
-        resource_id=resource_id,
-        ip_address=client_ip,
-        allowed=allowed,
+    return await access_policy_middleware_impl(
+        request,
+        call_next,
+        resolve_policy_from_request=_resolve_policy_from_request,
+        get_client_ip=_get_client_ip,
+        is_admin_user=_is_admin_user,
+        schedule_access_audit_log=_schedule_access_audit_log,
+        resolve_agent_instance=_resolve_agent_instance,
+        get_user_tenant=_get_user_tenant,
+        logger_obj=logger,
     )
-    if not allowed:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "Yetki yok", "resource": resource_type, "action": action},
-        )
-    return await call_next(request)
 
 
 # ─────────────────────────────────────────────

@@ -36,6 +36,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "scripts/install_modules/validation.sh",
         "web/bootstrap.py",
         "web/middleware/cors.py",
+        "web/middleware/access_policy.py",
         "core/db/auth.py",
         "core/db/audit.py",
         "core/rag/embeddings.py",
@@ -69,6 +70,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
+    assert "access policy middleware orchestration'ı `web/middleware/access_policy.py`" in plan
     assert "Güncel bakım hotspot snapshot" in plan
     assert "Quality gate orchestration büyüdü" in plan
     assert "ana script bootstrap/UX facade" in plan
@@ -87,6 +89,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     import core.db.models as db_models
     import core.db.session as db_session
     import core.rag.facade as rag_facade
+    import web.middleware.access_policy as access_policy_middleware
 
     assert db_auth.UserRecord is db_models.UserRecord
     assert db_session.SessionRecord is db_models.SessionRecord
@@ -94,6 +97,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
     assert callable(rag_facade.build_embedding_function)
     assert callable(self_heal_executor.execute_self_heal_plan)
+    assert callable(access_policy_middleware.access_policy_middleware_impl)
 
 
 def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
