@@ -67,3 +67,16 @@ def test_ruff_enables_pydocstyle_incrementally():
     assert "Kademeli dokümantasyon kampanyası" in agents
     for milestone in ("2026-07-15", "2026-08-15", "2026-09-30"):
         assert milestone in agents
+
+
+def test_setuptools_security_floor_is_enforced_in_build_and_lock():
+    pyproject_text = (ROOT / "pyproject.toml").read_text()
+    pyproject = tomllib.loads(pyproject_text)
+    lock_text = (ROOT / "uv.lock").read_text()
+
+    assert "setuptools>=83.0.0" in pyproject["build-system"]["requires"]
+    assert "setuptools>=83.0.0" in pyproject["tool"]["uv"]["override-dependencies"]
+    assert 'overrides = [{ name = "setuptools", specifier = ">=83.0.0" }]' in lock_text
+    assert 'name = "setuptools"' in lock_text
+    assert 'version = "83.0.0"' in lock_text
+    assert "setuptools-81.0.0" not in lock_text

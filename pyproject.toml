@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.0", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -547,6 +547,7 @@ extra_css = "assets/dark_mode.css"
 [tool.uv]
 index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
+override-dependencies = ["setuptools>=83.0.0"]
 
 [tool.uv.sources]
 torch = [

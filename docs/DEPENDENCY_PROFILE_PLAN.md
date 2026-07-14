@@ -130,6 +130,10 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
   yeniden çalıştırılmalıdır.
+- `torch` transitive bağımlılığı olarak gelen `setuptools` çözümü, `PYSEC-2026-3447`
+  için ignore eklenmeden `83.0.0` ve üstüne zorlanır. `pyproject.toml` build-system alt sınırı
+  `setuptools>=83.0.0` tutar; `[tool.uv].override-dependencies` aynı güvenlik tabanını lock
+  çözümünde korur.
 - `security/pip-audit-ignores.tsv` içindeki her istisna `expires` alanı taşır ve
   `scripts/pip_audit_ignore_args.py` tarafından `run_tests.sh` ile GitHub Actions security audit
   adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed
