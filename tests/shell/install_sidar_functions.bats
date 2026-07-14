@@ -1284,7 +1284,7 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "select_dependency_profile defaults noninteractive installer to dev-light" {
+@test "select_dependency_profile defaults noninteractive installer to dev-full" {
   run_installer_function '
     DEPENDENCY_PROFILE=ask
     NO_INTERACTION=true
@@ -1293,10 +1293,10 @@ EOF
 
     select_dependency_profile
 
-    [[ "$DEPENDENCY_PROFILE" == "dev-light" ]]
+    [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)"* ]]
+  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)"* ]]
 }
 
 @test "select_dependency_profile promotes production readiness validation to dev-full" {

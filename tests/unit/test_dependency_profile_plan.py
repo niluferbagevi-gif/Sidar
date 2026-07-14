@@ -14,9 +14,9 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     docs = Path(plan["owner_doc"]).read_text(encoding="utf-8")
 
     assert plan["current_install_standard"] == (
-        "installer default dev-light; CI/developer-full uv sync --all-extras"
+        "installer default developer-full; uv sync --all-extras"
     )
-    assert plan["installer_default_profile"] == "dev-light"
+    assert plan["installer_default_profile"] == "dev-full"
     assert plan["developer_full_sync"] == "uv sync --all-extras"
     assert plan["ci_full_sync"] == "uv sync --all-extras"
     assert plan["production_profile"] == "production"
@@ -37,8 +37,8 @@ def test_installer_dependency_profile_contract_matches_plan_metadata() -> None:
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
     python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
 
-    assert plan["installer_default_profile"] == "dev-light"
-    assert 'requested="dev-light"' in python_env
+    assert plan["installer_default_profile"] == "dev-full"
+    assert 'requested="dev-full"' in python_env
     assert "uv sync --frozen --extra dev-light" in python_env
     assert 'requested="dev-full"' in python_env
     assert "uv sync --frozen --all-extras" in python_env
@@ -227,7 +227,7 @@ def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() ->
         "dev-light`, `dev-full`, `dev-gpu`, `gpu-runtime`, `production`, "
         "`production-minimal` ve `custom`" in docs
     )
-    assert "normal kurulum varsayılanı `dev-light`" in docs
+    assert "normal kurulum varsayılanı ve önerisi `developer-full` / `dev-full`" in docs
     assert "varsayılan production install akışı değiştirilmez" in docs
 
 

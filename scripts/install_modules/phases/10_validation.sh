@@ -7,9 +7,9 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
-    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-full"
 
     local -a sync_args=(--frozen)
     local sync_profile_label="$dependency_profile"

@@ -135,25 +135,25 @@ select_dependency_profile() {
             requested="dev-full"
             info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full olarak ayarlandı."
         elif [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true ]]; then
-            requested="dev-light"
-            info "Etkileşimsiz kurulum: varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)."
+            requested="dev-full"
+            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
         elif [[ -t 0 ]]; then
             echo
             echo "Bağımlılık profili seçin:"
-            echo "  1) dev-light (önerilen; hızlı yerel geliştirme + test araçları)"
-            echo "  2) developer-full (tüm extras; CI/tam doğrulama)"
+            echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
+            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama)"
             echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
             echo "  4) production-minimal (dar no-dev runtime)"
             echo "  5) production (runtime + postgres + telemetry)"
             echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
             echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
             local profile_choice=""
-            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 1]: " profile_choice 2>/dev/tty; then
-                profile_choice="${profile_choice:-1}"
+            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty; then
+                profile_choice="${profile_choice:-2}"
             else
-                profile_choice="1"
+                profile_choice="2"
                 echo
-                warn "Bağımlılık profili seçimi zaman aşımına uğradı; dev-light seçildi."
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full seçildi."
             fi
             case "$profile_choice" in
                 1) requested="dev-light" ;;
@@ -164,13 +164,13 @@ select_dependency_profile() {
                 6) requested="gpu-runtime" ;;
                 7) requested="custom" ;;
                 *)
-                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); dev-light kullanılacak."
-                    requested="dev-light"
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full kullanılacak."
+                    requested="dev-full"
                     ;;
             esac
         else
-            requested="dev-light"
-            info "TTY yok; varsayılan hafif geliştirici bağımlılık profili seçildi (dev-light)."
+            requested="dev-full"
+            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
         fi
     fi
 
@@ -220,13 +220,13 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
     if [[ "$dependency_profile" == "ask" ]]; then
         select_dependency_profile
-        dependency_profile="${DEPENDENCY_PROFILE:-dev-light}"
+        dependency_profile="${DEPENDENCY_PROFILE:-dev-full}"
     fi
-    local sync_command_label="uv sync --frozen --extra dev-light"
+    local sync_command_label="uv sync --frozen --all-extras"
     local -a SYNC_ARGS=()
 
     case "$dependency_profile" in
@@ -306,9 +306,9 @@ install_python_deps() {
 install_pre_commit_hooks() {
     step "Pre-commit Hook Kurulumu"
 
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
-    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-full"
 
     case "$dependency_profile" in
         production|production-minimal|gpu-runtime)
@@ -400,9 +400,9 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-light}}"
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
-    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-light"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-full"
 
     local -a sync_args=(--frozen)
     local sync_profile_label="$dependency_profile"

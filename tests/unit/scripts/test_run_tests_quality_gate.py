@@ -1744,14 +1744,14 @@ def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
     assert 'requested="dev-light"' in python_env
     assert "build_custom_dependency_sync_args()" in python_env
     assert "SIDAR_DEPENDENCY_EXTRAS" in python_env
-    assert "normal kurulum varsayılanı `dev-light`" in plan
+    assert "normal kurulum varsayılanı ve önerisi `developer-full` / `dev-full`" in plan
     assert "custom` — `SIDAR_DEPENDENCY_EXTRAS=dev,openai,postgres`" in plan
     assert (
-        'current_install_standard = "installer default dev-light; CI/developer-full uv sync --all-extras"'
+        'current_install_standard = "installer default developer-full; uv sync --all-extras"'
         in pyproject
     )
-    assert 'default_profile = "dev-light"' in pyproject
-    assert 'default_command = "./install_sidar.sh --dependency-profile=dev-light"' in pyproject
+    assert 'default_profile = "dev-full"' in pyproject
+    assert 'default_command = "./install_sidar.sh --dev-full"' in pyproject
 
 
 def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config() -> None:

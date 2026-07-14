@@ -254,7 +254,7 @@ def check_dependency_profile_plan_sync(
     pyproject_markers = {
         "phase1_runtime_dependency_note": "faz 1 runtime yüzeyi" in pyproject_lower,
         "owner_doc_points_to_plan": owner_doc == normalized_plan_path,
-        "installer_default_profile_declared": installer_default_profile == "dev-light",
+        "installer_default_profile_declared": installer_default_profile == "dev-full",
         "developer_full_sync_declared": developer_full_sync == "uv sync --all-extras",
         "ci_full_sync_declared": ci_full_sync == "uv sync --all-extras",
         "production_profile_declared": production_profile == "production"

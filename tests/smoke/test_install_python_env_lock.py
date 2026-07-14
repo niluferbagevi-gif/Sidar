@@ -118,7 +118,7 @@ EOS
 @pytest.mark.parametrize(
     ("profile_exports", "expected_sync_call"),
     [
-        ("", "sync --frozen --extra dev-light"),
+        ("", "sync --frozen --all-extras"),
         ('export DEPENDENCY_PROFILE="dev-light"', "sync --frozen --extra dev-light"),
         ('export DEPENDENCY_PROFILE="dev-full"', "sync --frozen --all-extras"),
         ('export DEPENDENCY_PROFILE="dev-gpu"', "sync --frozen --extra dev-gpu"),
@@ -173,8 +173,8 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
             set -euo pipefail
             printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
             case "$*" in
-              "sync --frozen --extra dev-light") exit 0 ;;
               "sync --frozen --all-extras") exit 0 ;;
+              "sync --frozen --extra dev-light") exit 0 ;;
               "sync --frozen --extra dev-gpu") exit 0 ;;
               "sync --frozen --extra gpu-runtime --no-dev") exit 0 ;;
               "sync --frozen --extra production --no-dev") exit 0 ;;

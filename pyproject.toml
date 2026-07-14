@@ -330,8 +330,8 @@ uvicorn = "runtime"
 websockets = "runtime"
 
 [tool.sidar.dependency_profile_plan]
-current_install_standard = "installer default dev-light; CI/developer-full uv sync --all-extras"
-installer_default_profile = "dev-light"
+current_install_standard = "installer default developer-full; uv sync --all-extras"
+installer_default_profile = "dev-full"
 developer_full_sync = "uv sync --all-extras"
 ci_full_sync = "uv sync --all-extras"
 production_profile = "production"
@@ -356,11 +356,11 @@ blocking_transition_pr_required = true
 summary = "production-minimal remains an opt-in runtime profile until installer sync, web boot smoke, DB migration smoke, and release gate evidence are attached to CI/release artifacts."
 
 [tool.sidar.dependency_profile_plan.installer_profile_visibility]
-default_profile = "dev-light"
-default_command = "./install_sidar.sh --dependency-profile=dev-light"
+default_profile = "dev-full"
+default_command = "./install_sidar.sh --dev-full"
 production_minimal_command = "./install_sidar.sh --production-minimal"
 status = "visible-opt-in"
-summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-light is the normal default, dev-full preserves uv sync --all-extras for CI/full validation, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
+summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-full is the normal recommended default via uv sync --all-extras, dev-light remains an opt-in fast local profile, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
 
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 current_lock = "torch 2.11.0"
