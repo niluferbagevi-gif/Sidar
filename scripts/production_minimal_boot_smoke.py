@@ -40,6 +40,7 @@ def _wait_for_health() -> httpx.Response | None:
 
 
 def main() -> int:
+    """Boot web_server:app under uvicorn and assert the agent role catalog loaded cleanly."""
     server = subprocess.Popen(  # nosec B603 - fixed argv, no shell, no untrusted input
         [sys.executable, "-m", "uvicorn", "web_server:app", "--host", HOST, "--port", str(PORT)],
         stdout=subprocess.PIPE,

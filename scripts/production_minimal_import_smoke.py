@@ -28,6 +28,7 @@ MODULES = [
 
 
 def main() -> int:
+    """Import every boot-path module and report all missing dependencies at once."""
     failures: list[tuple[str, str]] = []
     for module_name in MODULES:
         try:
