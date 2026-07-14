@@ -79,6 +79,50 @@ def test_load_symbol_reraises_transitive_module_not_found(
     assert export_name not in core_init.__dict__
 
 
+def test_load_module_returns_requested_module_and_caches_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_name = "fake_module_export"
+    module_name = "core.fake_module_export_target"
+    _clear_core_cache(export_name)
+    sentinel_module = SimpleNamespace(__name__=module_name)
+
+    def fake_import(requested_module: str):
+        assert requested_module == module_name
+        return sentinel_module
+
+    monkeypatch.setitem(core_init._MODULE_EXPORTS, export_name, module_name)
+    monkeypatch.setattr(core_init, "import_module", fake_import)
+
+    resolved = core_init._load_module(export_name)
+
+    assert resolved is sentinel_module
+    assert core_init.__dict__[export_name] is sentinel_module
+    _clear_core_cache(export_name)
+
+
+def test_getattr_module_export_delegates_to_load_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_name = "fake_module_export_via_getattr"
+    module_name = "core.fake_module_export_via_getattr_target"
+    _clear_core_cache(export_name)
+    sentinel_module = SimpleNamespace(__name__=module_name)
+
+    def fake_import(requested_module: str):
+        assert requested_module == module_name
+        return sentinel_module
+
+    monkeypatch.setitem(core_init._MODULE_EXPORTS, export_name, module_name)
+    monkeypatch.setattr(core_init, "import_module", fake_import)
+
+    resolved = core_init.__getattr__(export_name)
+
+    assert resolved is sentinel_module
+    assert core_init.__dict__[export_name] is sentinel_module
+    _clear_core_cache(export_name)
+
+
 def test_getattr_unknown_name_raises_attribute_error() -> None:
     with pytest.raises(AttributeError, match="UnknownCoreExport"):
         core_init.__getattr__("UnknownCoreExport")
