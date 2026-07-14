@@ -58,6 +58,9 @@ dependencies = [
   "cryptography>=46.0.6",
   "argon2-cffi>=25.1.0,<26.0.0",
   "PyJWT>=2.12.0",
+  # agent/roles/coverage_agent.py XML raporlarını XXE-güvenli ayrıştırmak için
+  # defusedxml'i çalışma zamanında (dev/test kapsamı dışında da) gerektirir.
+  "defusedxml>=0.7.1",
   # ── HTTP istemcisi ─────────────────────────────────────────────────────
   "requests>=2.32.5",
   "tenacity>=8.0.0,<10.0.0",
@@ -233,7 +236,6 @@ dev = [
   "pre-commit>=4.0.0,<5.0.0",
   "shellcheck-py>=0.10.0.1,<0.11.0",
   "types-bleach>=6.4.0.20260607",
-  "defusedxml>=0.7.1",
   "types-defusedxml",
   "types-requests",
   "types-PyYAML",
@@ -267,7 +269,7 @@ bleach = "runtime"
 cachetools = "runtime"
 chromadb = "runtime"
 cryptography = "runtime"
-defusedxml = "dev"
+defusedxml = "runtime"
 "duckduckgo-search" = "integration"
 fakeredis = "test-double"
 fastapi = "runtime"
@@ -345,15 +347,20 @@ production_dockerfile = "Dockerfile.production"
 summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares distinct production (postgres+telemetry) and production-minimal (postgres-only) extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
 
 [tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
-status = "planned-blocking"
+status = "blocking"
 owner = "qa+release"
 review_by = "2026-08-15"
 required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test"
 follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
 current_ci_job = "production-profile-dry-run"
-next_action = "Promote the production-minimal dry-run into a real CI/release blocking gate with installer sync, web boot smoke, DB migration smoke, and release artifact evidence."
-blocking_transition_pr_required = true
-summary = "production-minimal remains an opt-in runtime profile until installer sync, web boot smoke, DB migration smoke, and release gate evidence are attached to CI/release artifacts."
+blocking_evidence = [
+  "uv sync --frozen --extra production-minimal --no-dev",
+  "scripts/production_minimal_import_smoke.py",
+  "alembic upgrade head against an isolated sidar_prodmin database",
+  "scripts/production_minimal_boot_smoke.py",
+  "production-minimal-validation artifact (artifacts/production-minimal/validation.json)",
+]
+summary = "production-minimal is now a CI/release blocking gate: production-profile-dry-run runs installer sync, a runtime import smoke, an Alembic migration smoke against an isolated database, and a web boot smoke asserting the agent role catalog loads without import failures, then writes a release artifact; the production-readiness aggregate job requires it to pass."
 
 [tool.sidar.dependency_profile_plan.installer_profile_visibility]
 default_profile = "dev-full"
