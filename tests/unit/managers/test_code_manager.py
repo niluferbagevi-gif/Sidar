@@ -3043,8 +3043,10 @@ def test_init_docker_imports_real_module_when_not_cached(manager, monkeypatch) -
     # yakalanan `_real_init_docker`) doğrudan çağırıyoruz.
     _real_init_docker(manager)
 
-    # Gerçek `docker` paketi importlanıp sys.modules'e eklenmiş olmalı; daemon'a
-    # bağlanma denemesi ortamda çalışan bir Docker olmadan başarısız olabilir,
-    # asıl doğrulanan şey `import docker` başarı yolunun (378. satır) çalışmasıdır.
+    # Gerçek `docker` paketi importlanıp sys.modules'e eklenmiş olmalı; asıl
+    # doğrulanan şey `import docker` başarı yolunun (378. satır) çalışmasıdır.
+    # `docker_available`'ın son değeri kasıtlı olarak assert edilmiyor: CI
+    # runner'larında (GitHub Actions dahil) genellikle çalışan gerçek bir Docker
+    # daemon vardır ve `client.ping()` başarılı olabilir, oysa bu sandbox gibi
+    # daemon'suz ortamlarda başarısız olur — ikisi de line 378 kapsamı için geçerlidir.
     assert "docker" in sys.modules
-    assert manager.docker_available is False
