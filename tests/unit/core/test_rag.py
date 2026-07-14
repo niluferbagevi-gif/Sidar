@@ -25,8 +25,10 @@ def _clear_embedding_function_cache() -> Iterator[None]:
     """Keep monkeypatched embedding factories isolated between RAG tests."""
 
     rag._build_embedding_function_cached.cache_clear()
+    rag._DOCUMENT_STORE_SINGLETONS.clear()
     yield
     rag._build_embedding_function_cached.cache_clear()
+    rag._DOCUMENT_STORE_SINGLETONS.clear()
 
 
 def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
@@ -395,6 +397,31 @@ async def test_shared_document_store_keys_custom_embedding_builders(tmp_path: Pa
     assert store_one is not store_two
     assert store_one._embedding_function_builder is builder_one
     assert store_two._embedding_function_builder is builder_two
+
+
+async def test_shared_document_store_reuses_cached_store_for_same_key(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        RAG_VECTOR_BACKEND="chroma",
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=1000,
+        RAG_CHUNK_OVERLAP=200,
+        USE_GPU=False,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+    )
+
+    store_one = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+    )
+    store_two = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+    )
+
+    assert store_one is store_two
 
 
 async def test_public_build_embedding_function_delegates_to_internal_builder(
