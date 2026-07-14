@@ -189,6 +189,12 @@ Bu çıktıyı şu şekilde yorumlayın:
   oluşturuldu” mesajı görmek normaldir. Bu koşuda oluşan
   `.benchmarks/.../*_baseline.json` dosyası yalnız bulunduğu makinede kullanılır;
   repo commit'ine eklenmemeli ve CI baseline kanıtı sayılmamalıdır.
+  Aynı şekilde “Benchmark karşılaştırması atlandı ... baseline ile eşleşen kayıt
+  bulunamadı” uyarısı temiz checkout veya yeni GPU/runner profilindeki ilk lokal
+  bootstrap koşusunda beklenen davranıştır; örneğin bir RTX sınıfı geliştirici
+  makinesinde üretilen `.benchmarks/.../0001_baseline.json` dosyası o makinenin
+  CPU/GPU/driver/WSL/Ollama profilini temsil eder ve CI'ın cache/artifact üzerinden
+  seed edilen baseline'ıyla karıştırılmamalıdır.
   CI/production-readiness tarafında baseline restore edilemezse bu durum
   normalleştirilmez; gate fail-closed davranır.
 - `production_ready=false`, `validation_class=development_full` veya

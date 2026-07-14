@@ -811,6 +811,11 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
     assert "production readiness gate'ini tekrar koşun" in testing
+    assert "Benchmark karşılaştırması atlandı ... baseline ile eşleşen kayıt" in testing
+    assert "bulunamadı” uyarısı temiz checkout" in testing
+    assert ".benchmarks/.../0001_baseline.json" in testing
+    assert "CI'ın cache/artifact üzerinden" in testing
+    assert "seed edilen baseline'ıyla karıştırılmamalıdır" in testing
     assert "yerelde oluşan ilk baseline'ı normal kabul edin" in readme
     assert "cache/artifact" in readme
     assert "cp -a /tmp/sidar-benchmark-baseline/.benchmarks/. .benchmarks/" in testing
