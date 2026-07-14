@@ -5,6 +5,9 @@ import importlib
 import importlib.util
 import os
 from collections.abc import Callable
+from configparser import ConfigParser
+from logging.config import fileConfig
+from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -50,6 +53,21 @@ _InvalidRequestError = cast(
 )
 
 config = context.config
+
+
+def _configure_logging_from_ini(config_file_name: str | PathLike[str]) -> None:
+    """Load Alembic logging only when the INI includes the standard sections."""
+
+    parser = ConfigParser()
+    loaded_files = parser.read(config_file_name)
+    required_sections = {"loggers", "handlers", "formatters"}
+    if loaded_files and not required_sections.issubset(parser.sections()):
+        return
+    fileConfig(config_file_name, disable_existing_loggers=False)
+
+
+if config.config_file_name is not None:
+    _configure_logging_from_ini(config.config_file_name)
 
 
 target_metadata = Base.metadata

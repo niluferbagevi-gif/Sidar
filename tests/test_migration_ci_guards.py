@@ -8,6 +8,7 @@ a malformed revision graph fails CI before it ever touches a database.
 
 from __future__ import annotations
 
+import filecmp
 import re
 from pathlib import Path
 
@@ -17,6 +18,41 @@ from alembic.script import ScriptDirectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS_DIR = PROJECT_ROOT / "migrations" / "versions"
+PACKAGED_MIGRATIONS_DIR = PROJECT_ROOT / "sidar_assets" / "migrations"
+MIGRATION_PARITY_PATTERNS = ("*.py", "*.mako")
+
+
+def _migration_manifest(root: Path) -> list[Path]:
+    return sorted(
+        path.relative_to(root)
+        for pattern in MIGRATION_PARITY_PATTERNS
+        for path in root.rglob(pattern)
+        if "__pycache__" not in path.parts
+    )
+
+
+def test_packaged_migrations_match_source_tree() -> None:
+    """Keep PyPI/sdist Alembic assets byte-for-byte aligned with migrations/."""
+
+    source_root = PROJECT_ROOT / "migrations"
+    source_manifest = _migration_manifest(source_root)
+    packaged_manifest = _migration_manifest(PACKAGED_MIGRATIONS_DIR)
+
+    assert packaged_manifest == source_manifest
+    mismatched_files = [
+        relative_path.as_posix()
+        for relative_path in source_manifest
+        if not filecmp.cmp(
+            source_root / relative_path,
+            PACKAGED_MIGRATIONS_DIR / relative_path,
+            shallow=False,
+        )
+    ]
+    assert not mismatched_files, (
+        "sidar_assets/migrations must be generated from migrations/. "
+        "Run `uv run python scripts/sync_packaged_migrations.py`; mismatches: "
+        f"{mismatched_files}"
+    )
 
 
 @pytest.fixture(scope="module")

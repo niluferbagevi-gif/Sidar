@@ -12,8 +12,8 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.engine import Dialect
-from sqlalchemy.types import TypeDecorator, TypeEngine
+from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.types import TypeEngine
 
 revision = "0006_access_control_schema"
 down_revision = "0005_pgvector_hnsw_index"
@@ -21,7 +21,7 @@ branch_labels = None
 depends_on = None
 
 
-class SidarUUID(TypeDecorator[str]):
+class SidarUUID(sa.TypeDecorator[str]):
     """Use PostgreSQL native UUID while preserving SQLite string fallback."""
 
     impl = sa.String
@@ -34,7 +34,7 @@ class SidarUUID(TypeDecorator[str]):
             return dialect.type_descriptor(UUID(as_uuid=True))
         return dialect.type_descriptor(sa.String(length=36))
 
-    def process_bind_param(self, value: object | None, dialect: Dialect) -> str | uuid.UUID | None:
+    def process_bind_param(self, value: object, dialect: Dialect) -> uuid.UUID | str | None:
         if value is None:
             return None
         parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -42,7 +42,7 @@ class SidarUUID(TypeDecorator[str]):
             return parsed
         return str(parsed)
 
-    def process_result_value(self, value: object | None, dialect: Dialect) -> str | None:
+    def process_result_value(self, value: object, dialect: Dialect) -> str | None:
         if value is None:
             return None
         return str(value)
@@ -51,17 +51,25 @@ class SidarUUID(TypeDecorator[str]):
 UUID_TYPE = SidarUUID()
 
 
-def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
-    if engine_name == "postgresql":
-        from sqlalchemy.dialects.postgresql import UUID
+def _resolve_engine_name(bind: object) -> str:
+    engine = getattr(bind, "engine", None)
+    if engine is not None and getattr(engine, "name", None):
+        return str(engine.name).strip().lower()
+    dialect = getattr(bind, "dialect", None)
+    if dialect is not None and getattr(dialect, "name", None):
+        return str(dialect.name).strip().lower()
+    return ""
 
-        return UUID(as_uuid=True)
-    return sa.String(length=36)
+
+def _user_fk_type_for_backend(engine_name: str) -> sa.types.TypeEngine[Any]:
+    _ = engine_name
+    # Backend-aware TypeDecorator: PostgreSQL'de native UUID, diğerlerinde string.
+    return SidarUUID()
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    engine_name = str(bind.engine.name).strip().lower()
+    engine_name = _resolve_engine_name(bind)
     inspector = sa.inspect(bind)
     table_names = set(inspector.get_table_names())
     user_columns = {
@@ -115,7 +123,28 @@ def upgrade() -> None:
             if isinstance(index, dict)
         }
 
-    if "idx_access_policies_user_tenant" not in existing_indexes:
+    global_index_conflict = False
+    if engine_name == "postgresql":
+        conflict_table = bind.execute(
+            sa.text(
+                """
+                SELECT tablename
+                FROM pg_indexes
+                WHERE schemaname = ANY (current_schemas(false))
+                  AND indexname = :index_name
+                LIMIT 1
+                """
+            ),
+            {"index_name": "idx_access_policies_user_tenant"},
+        ).scalar()
+        if conflict_table and str(conflict_table) != "access_policies":
+            global_index_conflict = True
+            raise RuntimeError(
+                "Index name conflict detected: idx_access_policies_user_tenant already exists "
+                f"on table '{conflict_table}'. Resolve the naming conflict before applying 0006_access_control_schema."
+            )
+
+    if not global_index_conflict and "idx_access_policies_user_tenant" not in existing_indexes:
         op.create_index(
             "idx_access_policies_user_tenant",
             "access_policies",
