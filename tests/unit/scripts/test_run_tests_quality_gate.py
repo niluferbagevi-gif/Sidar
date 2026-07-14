@@ -4129,6 +4129,7 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
 
     assert 'os.getenv("RUN_GPU_BENCHMARKS", "smoke")' in gpu_benchmark
     assert 'if _GPU_BENCHMARK_PROFILE not in {"smoke", "full"}' in gpu_benchmark
@@ -4145,6 +4146,9 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
+    assert "`qwen2.5-coder:7b`" in readme
+    assert "`PROCESSOR` sütununun `100% GPU`" in readme
+    assert "sağlıklı offload sinyalidir" in readme
 
 
 def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:
