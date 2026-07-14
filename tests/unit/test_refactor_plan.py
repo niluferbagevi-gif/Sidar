@@ -31,6 +31,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/routes/ws_chat.py",
         "web/routes/webhooks.py",
         "web/app_factory.py",
+        "web/plugins/sandbox.py",
         "scripts/test_gates/benchmark.sh",
         "scripts/install_modules/validation.sh",
         "web/bootstrap.py",
@@ -62,6 +63,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "GitHub webhook router çıkarımı yapıldı" in plan
     assert "`/ws/chat` router factory" in plan
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
+    assert "AST-validated `exec()`" in plan
+    assert "plugin kaynak yürütmesini `web/plugins/sandbox.py`" in plan
+    assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
