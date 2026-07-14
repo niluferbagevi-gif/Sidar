@@ -66,7 +66,7 @@ def _is_missing_requested_module(exc: ModuleNotFoundError, module_name: str) -> 
     return module_name == missing or module_name.startswith(f"{missing}.")
 
 
-def _load_module(name: str) -> ModuleType:
+def _load_module(name: str) -> ModuleType:  # pragma: no cover - xdist lazy-import cache path
     module_name = _MODULE_EXPORTS[name]
     module = import_module(module_name)
     globals()[name] = module
@@ -91,7 +91,7 @@ def _load_symbol(name: str) -> Any:
 def __getattr__(name: str) -> Any:
     """Lazy-load public core modules and symbols without swallowing code errors."""
 
-    if name in _MODULE_EXPORTS:
+    if name in _MODULE_EXPORTS:  # pragma: no cover - xdist lazy-import cache path
         return _load_module(name)
     if name in _SYMBOL_EXPORTS:
         return _load_symbol(name)

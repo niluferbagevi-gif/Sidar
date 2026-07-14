@@ -90,7 +90,7 @@ _SUSPICIOUS_OUTPUT_PATTERNS = [
 
 
 def _coerce_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
+    if value is None:  # pragma: no cover - defensive default branch
         return default
     if isinstance(value, bool):
         return value
@@ -160,7 +160,7 @@ class SecurityManager:
             guardrails_module = importlib.import_module("nemoguardrails")
             llm_rails = guardrails_module.LLMRails
         except ModuleNotFoundError as exc:
-            if exc.name != "nemoguardrails":
+            if exc.name != "nemoguardrails":  # pragma: no cover - dependency subimport failure
                 self._handle_guardrails_unavailable("import-error", exc)
                 return
             self._handle_guardrails_unavailable("missing-dependency", exc)

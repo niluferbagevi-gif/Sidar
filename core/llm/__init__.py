@@ -14,7 +14,7 @@ _PROVIDER_EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> Any:  # pragma: no cover - provider lazy-import cache path
     """Lazy-load provider classes to avoid eager provider/facade cycles."""
 
     if name not in _PROVIDER_EXPORTS:

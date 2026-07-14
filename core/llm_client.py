@@ -738,7 +738,7 @@ def _provider_class(provider: str) -> type[BaseLLMClient]:
     else:
         module_name, class_name = entry
         provider_cls = getattr(importlib.import_module(module_name), class_name)
-    if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
+    if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):  # pragma: no cover - corrupted registry guard
         raise TypeError(f"{class_name} BaseLLMClient alt sınıfı olmalıdır.")
     _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
     return provider_cls

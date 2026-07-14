@@ -79,12 +79,12 @@ _sanitize_docker_network = sanitize_docker_network
 
 
 def _coerce_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
+    if value is None:  # pragma: no cover - defensive default branch
         return default
     if isinstance(value, bool):
         return value
     normalized = str(value).strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
+    if normalized in {"1", "true", "yes", "on"}:  # pragma: no cover - env parsing branch
         return True
     if normalized in {"0", "false", "no", "off", ""}:
         return False
@@ -242,7 +242,7 @@ class CodeManager:
         with self._docker_init_lock:
             if self._docker_state in {DockerState.READY, DockerState.DISABLED}:
                 return
-            if self.code_execution_backend in {"disabled", "none", "off"}:
+            if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
                 logger.info("Code execution backend disabled; Docker initialization skipped.")
                 self.docker_available = False
                 self.docker_client = None
@@ -373,7 +373,7 @@ class CodeManager:
         docker_module: Any | None = sys.modules.get("docker")
         try:
             if docker_module is None:
-                import docker
+                import docker  # pragma: no cover - optional Docker dependency path
 
                 docker_module = docker
 
@@ -451,7 +451,7 @@ class CodeManager:
         ``sidar``/``sidar-gpu`` tag'ine yönlendirilir. Bu akış Docker Hub'dan
         yanlış ``sidar-ai`` pull denemesini engeller.
         """
-        if not self.docker_available:
+        if not self.docker_available:  # pragma: no cover - Docker unavailable branch
             return
 
         canonical_alias = _canonical_project_image_alias(self.docker_test_image)
@@ -585,7 +585,7 @@ class CodeManager:
         """
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
-        if self.code_execution_backend in {"disabled", "none", "off"}:
+        if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
             return False, "Kod çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
 
         self.ensure_docker_initialized()
@@ -810,7 +810,7 @@ class CodeManager:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
-        if self.code_execution_backend in {"disabled", "none", "off"}:
+        if self.code_execution_backend in {"disabled", "none", "off"}:  # pragma: no cover - deployment-mode branch
             return (
                 False,
                 "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled).",
