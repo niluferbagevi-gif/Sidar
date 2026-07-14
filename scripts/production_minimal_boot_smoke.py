@@ -40,7 +40,7 @@ def _wait_for_health() -> httpx.Response | None:
 
 
 def main() -> int:
-    server = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no untrusted input
+    server = subprocess.Popen(  # nosec B603 - fixed argv, no shell, no untrusted input
         [sys.executable, "-m", "uvicorn", "web_server:app", "--host", HOST, "--port", str(PORT)],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
