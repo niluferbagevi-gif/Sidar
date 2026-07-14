@@ -101,3 +101,36 @@ async def test_anthropic_close_client_accepts_sync_close() -> None:
     await module._close_anthropic_client(client)
 
     assert client.closed is True
+
+
+def test_llm_package_getattr_raises_for_unknown_provider() -> None:
+    llm_package = importlib.import_module("core.llm")
+
+    with pytest.raises(AttributeError, match="unknown_attribute"):
+        _ = llm_package.unknown_attribute
+
+
+def test_llm_package_getattr_lazily_imports_and_caches_known_provider() -> None:
+    llm_package = importlib.import_module("core.llm")
+    llm_package.__dict__.pop("OllamaClient", None)
+    ollama_module = importlib.import_module("core.llm.ollama")
+
+    result = llm_package.OllamaClient
+
+    assert result is ollama_module.OllamaClient
+    # `__getattr__` yalnız modül `globals()`'ında eksikse çağrılır; cache sonrası
+    # doğrudan öznitelik erişimi ikinci kez `import_module` tetiklemeden döner.
+    assert llm_package.__dict__["OllamaClient"] is ollama_module.OllamaClient
+    assert llm_package.OllamaClient is ollama_module.OllamaClient
+
+
+def test_llm_package_all_lists_every_provider_export() -> None:
+    llm_package = importlib.import_module("core.llm")
+
+    assert set(llm_package.__all__) == {
+        "AnthropicClient",
+        "GeminiClient",
+        "LiteLLMClient",
+        "OllamaClient",
+        "OpenAIClient",
+    }

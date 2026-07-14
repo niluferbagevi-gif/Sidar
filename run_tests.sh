@@ -325,7 +325,16 @@ render_generated_secret_sentinels() {
     return 0
   fi
 
-  generated_password="$(generate_test_secret_value)"
+  # CI (ve benzeri orkestrasyon) zaten POSTGRES_PASSWORD'ü gerçek servis
+  # kimlik bilgisiyle env'e enjekte ediyorsa onu kullan; aksi halde bağımsız
+  # rastgele bir parola üretmek DATABASE_URL ile POSTGRES_PASSWORD'ün
+  # senkron kalmasını bozar (explicit DOTENV_FILE override=True ile bu
+  # üretilen değeri sonradan os.environ içine yazar).
+  if [ -n "${POSTGRES_PASSWORD:-}" ]; then
+    generated_password="${POSTGRES_PASSWORD}"
+  else
+    generated_password="$(generate_test_secret_value)"
+  fi
   if [ -z "${generated_password}" ]; then
     echo "⚠️ POSTGRES_PASSWORD=__GENERATE__ için parola üretilemedi; '${target}' dosyasını elle güncelleyin."
     return 1
@@ -2223,7 +2232,7 @@ run_bats_shell_tests() {
   echo "🐚 BATS shell testleri çalıştırılıyor..."
   mkdir -p "${BATS_REPORT_DIR}"
   if env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD \
-    bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell; then
+    bats --print-output-on-failure --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell; then
     echo "✅ BATS shell testleri geçti. JUnit raporu: ${BATS_REPORT_DIR}/report.xml"
     return 0
   fi

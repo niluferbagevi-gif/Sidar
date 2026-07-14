@@ -1143,6 +1143,16 @@ def test_code_manager_bool_coercion_uses_default_for_unknown_text(caplog) -> Non
     assert "Unknown boolean value" in caplog.text
 
 
+def test_code_manager_bool_coercion_none_and_truthy_string_branches() -> None:
+    assert cm._coerce_bool(None, default=False) is False
+    assert cm._coerce_bool(None, default=True) is True
+    assert cm._coerce_bool(True) is True
+    assert cm._coerce_bool(False, default=True) is False
+    assert cm._coerce_bool("true") is True
+    assert cm._coerce_bool("YES") is True
+    assert cm._coerce_bool("off", default=True) is False
+
+
 def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
@@ -2910,3 +2920,133 @@ def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
 
     assert ok is False
     assert "Listeleme dizini proje kökü dışında" in msg
+
+
+def test_constructor_keeps_explicit_docker_test_image_without_default_fallback(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: None)
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
+        DOCKER_TEST_IMAGE="sidar-custom:test",
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    assert manager.docker_test_image == "sidar-custom:test"
+
+
+def test_ensure_docker_initialized_disabled_backend_sets_disabled_state(
+    tmp_path, monkeypatch
+) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="disabled",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    monkeypatch.setattr(
+        cm.CodeManager,
+        "_init_docker",
+        lambda self: (_ for _ in ()).throw(AssertionError("unexpected docker init")),
+    )
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    manager.ensure_docker_initialized()
+
+    assert manager._docker_state is cm.DockerState.DISABLED
+    assert manager.docker_available is False
+    assert manager.docker_client is None
+
+    # İkinci çağrı DISABLED state'te erken dönmeli, tekrar _init_docker denememeli.
+    manager.ensure_docker_initialized()
+    assert manager._docker_state is cm.DockerState.DISABLED
+
+
+def test_run_shell_in_sandbox_disabled_backend_returns_without_docker(
+    tmp_path, monkeypatch
+) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="disabled",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    monkeypatch.setattr(
+        cm.CodeManager,
+        "_init_docker",
+        lambda self: (_ for _ in ()).throw(AssertionError("unexpected docker init")),
+    )
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    ok, message = manager.run_shell_in_sandbox("echo 1")
+
+    assert ok is False
+    assert "CODE_EXECUTION_BACKEND=disabled" in message
+    assert manager._docker_state is cm.DockerState.UNINITIALIZED
+
+
+def test_autodetect_project_test_image_returns_early_when_docker_unavailable(
+    manager,
+) -> None:
+    manager.docker_available = False
+    manager.docker_test_image = "sidar:latest"
+
+    manager._autodetect_project_test_image()
+
+    assert manager.docker_test_image == "sidar:latest"
+
+
+def test_init_docker_imports_real_module_when_not_cached(manager, monkeypatch) -> None:
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda _mod: False)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+
+    # `manager` fixture'ı yapıcıda gerçek docker bağlantısını önlemek için
+    # `_init_docker`'ı no-op ile patch'liyor; burada gerçek metodu (dosya başında
+    # yakalanan `_real_init_docker`) doğrudan çağırıyoruz.
+    _real_init_docker(manager)
+
+    # Gerçek `docker` paketi importlanıp sys.modules'e eklenmiş olmalı; asıl
+    # doğrulanan şey `import docker` başarı yolunun (378. satır) çalışmasıdır.
+    # `docker_available`'ın son değeri kasıtlı olarak assert edilmiyor: CI
+    # runner'larında (GitHub Actions dahil) genellikle çalışan gerçek bir Docker
+    # daemon vardır ve `client.ping()` başarılı olabilir, oysa bu sandbox gibi
+    # daemon'suz ortamlarda başarısız olur — ikisi de line 378 kapsamı için geçerlidir.
+    assert "docker" in sys.modules
