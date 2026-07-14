@@ -575,6 +575,9 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
     project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    environment_configuration = Path("docs/ENVIRONMENT_CONFIGURATION.md").read_text(
+        encoding="utf-8"
+    )
 
     for content in (readme, technical_reference, project_report):
         assert ".env.advanced" in content
@@ -594,6 +597,12 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
 
     assert "Yükleme zinciri `config.py` varsayılanları" in project_report
     assert "kalıcı kaynak politikası yalnız `.env`" in project_report
+
+    assert "`.env` report `0/18` filled service API keys" in environment_configuration
+    assert "not a failure when" in environment_configuration
+    assert "runtime loader still reads the final" in environment_configuration
+    assert "`600` or stricter" in environment_configuration
+    assert "explicit materialization opt-in" in environment_configuration
 
 
 def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
