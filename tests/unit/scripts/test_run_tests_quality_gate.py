@@ -2439,8 +2439,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     )
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
     install_script = installer_contract_sources()
+    ux_utils = Path("scripts/install_modules/utils/ux.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
+    assert 'sidar_source_install_utils "install_remediation.sh" "ux.sh"' in install_script
+    assert "print_install_help()" in ux_utils
+    assert "print_install_help() {" not in Path("install_sidar.sh").read_text(encoding="utf-8")
     assert "sidar_run_install_phase()" in remediation_utils
     assert "sidar_handle_install_failure()" in remediation_utils
     assert "sidar_remediate_uv_sync_failure()" in remediation_utils

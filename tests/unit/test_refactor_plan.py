@@ -35,6 +35,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "scripts/test_gates/benchmark.sh",
         "scripts/test_gates/summary.py",
         "scripts/install_modules/validation.sh",
+        "scripts/install_modules/utils/ux.sh",
         "web/bootstrap.py",
         "web/middleware/cors.py",
         "web/middleware/access_policy.py",
@@ -74,7 +75,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "access policy middleware orchestration'ı `web/middleware/access_policy.py`" in plan
     assert "Güncel bakım hotspot snapshot" in plan
     assert "Quality gate orchestration büyüdü" in plan
-    assert "ana script bootstrap/UX facade" in plan
+    assert "ana script bootstrap facade" in plan
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
