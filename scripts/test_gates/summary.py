@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import json
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any, cast
+
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 
 def _safe_int(value: str) -> int:
@@ -21,13 +24,13 @@ def _flag_enabled(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on", "required"}
 
 
-def _testcase_nodeid(testcase: ET.Element) -> str:
-    name = testcase.attrib.get("name", "").strip()
-    file_path = testcase.attrib.get("file", "").strip()
+def _testcase_nodeid(testcase: Any) -> str:
+    name = cast(str, testcase.attrib.get("name", "")).strip()
+    file_path = cast(str, testcase.attrib.get("file", "")).strip()
     if file_path and name:
         return f"{file_path}::{name}"
 
-    classname = testcase.attrib.get("classname", "").strip()
+    classname = cast(str, testcase.attrib.get("classname", "")).strip()
     if classname and name:
         candidate = classname.replace(".", "/")
         if candidate.startswith("tests/") and not candidate.endswith(".py"):
@@ -42,7 +45,7 @@ def _failed_backend_tests(report_dir: str) -> list[str]:
     for report_path in sorted(Path(report_dir).glob("backend-*.xml")):
         try:
             root = ET.parse(report_path).getroot()
-        except ET.ParseError:
+        except (ET.ParseError, DefusedXmlException):
             continue
         for testcase in root.iter("testcase"):
             if not any(child.tag.rsplit("}", 1)[-1] in {"failure", "error"} for child in testcase):

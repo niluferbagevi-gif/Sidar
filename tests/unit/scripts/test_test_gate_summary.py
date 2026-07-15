@@ -106,3 +106,31 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
 
     captured = capsys.readouterr()
     assert "expected 37 arguments" in captured.err
+
+
+def test_summary_helper_skips_malicious_backend_junit_xml(tmp_path: Path) -> None:
+    junit_dir = tmp_path / "pytest"
+    junit_dir.mkdir()
+    (junit_dir / "backend-unit.xml").write_text(
+        textwrap.dedent(
+            """\
+            <!DOCTYPE testsuites [
+              <!ENTITY xxe SYSTEM "file:///etc/passwd">
+            ]>
+            <testsuites>
+              <testsuite name="pytest">
+                <testcase classname="tests.unit.root.test_config" name="test_failure">
+                  <failure message="&xxe;">details</failure>
+                </testcase>
+              </testsuite>
+            </testsuites>
+            """
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "test-summary.json"
+
+    assert summary.main(_summary_args(output_path, junit_dir)) == 0
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["backend_failed_tests"] == []
