@@ -17,7 +17,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import config_autonomy
-import config_database
 import config_gpu
 import config_llm
 import config_quality
@@ -356,11 +355,21 @@ _QUALITY_GATE_SETTINGS = config_quality.load_quality_gate_settings(
 gpu_mixed_precision_default = config_gpu.gpu_mixed_precision_default
 normalize_gpu_memory_fractions = config_gpu.normalize_gpu_memory_fractions
 resolve_adaptive_gpu_pool_size = config_gpu.resolve_adaptive_gpu_pool_size
-build_postgres_dsn = config_database.build_postgres_dsn
-get_database_url = config_database.get_database_url
-get_container_database_url = config_database.get_container_database_url
-_default_auto_migrate_enabled = config_database.default_auto_migrate_enabled
-get_db_pool_size_default = config_database.get_db_pool_size_default
+build_postgres_dsn = config_postgres.build_postgres_dsn
+get_database_url = config_postgres.get_database_url
+get_container_database_url = config_postgres.get_container_database_url
+
+
+def _default_auto_migrate_enabled() -> bool:
+    """Enable runtime Alembic auto-migrate outside production by default."""
+    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+
+
+def get_db_pool_size_default() -> int:
+    """Return the profile-aware default PostgreSQL pool size."""
+    return config_postgres.get_db_pool_size_default(
+        get_int_env=get_int_env, cpu_count=os.cpu_count()
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
