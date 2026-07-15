@@ -15,18 +15,26 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import nullcontext
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from opentelemetry import trace
 
 import core.utils.token_counter as token_counter
 from config import OLLAMA_BATCH_POLICY
-from core.cache.semantic_cache import SemanticCacheManager
 from core.cache_metrics import record_cache_skip
 from core.dlp import mask_messages as _dlp_mask_messages
+from core.llm.cache import SemanticChatCache
+from core.llm.facade import LLMProvider as LLMProvider
+from core.llm.router import LLMRoutingService
+from core.llm.streaming import (
+    fallback_stream,
+    trace_stream_metrics,
+    track_stream_completion,
+    track_stream_routing_cost,
+)
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
-from core.router import CostAwareRouter, record_routing_cost
+from core.router import record_routing_cost
 from core.utils.json_repair import (
     is_safe_literal_eval_candidate,
     repair_json_text,
@@ -387,7 +395,8 @@ async def _ensure_json_text_async(text: str, provider: str) -> str:
 
 async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
     """Hata durumlarında tek elemanlı asenkron akış döndürür."""
-    yield msg
+    async for chunk in fallback_stream(msg):
+        yield chunk
 
 
 def _get_tracer(config: Any) -> Any:
@@ -540,40 +549,14 @@ async def _track_stream_completion(
     model: str,
     started_at: float,
 ) -> AsyncIterator[str]:
-    partial_parts: list[str] = []
-    partial_chars = 0
-    partial_cap = 2_000
-    try:
-        async for chunk in stream_iter:
-            if chunk and partial_chars < partial_cap:
-                remaining = partial_cap - partial_chars
-                partial_parts.append(str(chunk)[:remaining])
-                partial_chars += min(len(str(chunk)), remaining)
-            yield chunk
-        _record_llm_metric(provider=provider, model=model, started_at=started_at, success=True)
-    except Exception as exc:
-        partial_response = "".join(partial_parts)
-        logger.warning(
-            "%s stream interrupted after partial response (%d chars): %s",
-            provider,
-            len(partial_response),
-            partial_response,
-        )
-        try:
-            _record_llm_metric(
-                provider=provider,
-                model=model,
-                started_at=started_at,
-                success=False,
-                error=str(exc),
-            )
-        except Exception as metric_exc:
-            logger.debug(
-                "%s stream failure metric could not be recorded: %s",
-                provider,
-                metric_exc,
-            )
-        raise
+    async for chunk in track_stream_completion(
+        stream_iter,
+        provider=provider,
+        model=model,
+        started_at=started_at,
+        record_metric=_record_llm_metric,
+    ):
+        yield chunk
 
 
 async def _track_stream_routing_cost(
@@ -583,62 +566,27 @@ async def _track_stream_routing_cost(
     config: Any,
     model: str = "",
 ) -> AsyncIterator[str]:
-    response_parts: list[str] = []
+    tracked = track_stream_routing_cost(
+        stream_iter,
+        messages=messages,
+        config=config,
+        model=model,
+        estimate_tokens=lambda text: _estimate_tokens_bounded(text, model=model),
+        resolve_cost_per_token=_resolve_cost_per_token_usd,
+        record_cost=record_routing_cost,
+    )
     try:
-        async for chunk in stream_iter:
-            if chunk:
-                response_parts.append(chunk)
+        async for chunk in tracked:
             yield chunk
     finally:
-        prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
-        completion_text = "".join(response_parts)
-        est_tokens = _estimate_tokens_bounded(prompt_text, model=model) + _estimate_tokens_bounded(
-            completion_text, model=model
-        )
-        if est_tokens > 0:
-            cost_per_token = _resolve_cost_per_token_usd(config, model=model)
-            record_routing_cost(est_tokens * cost_per_token)
+        await cast(Any, tracked).aclose()
 
 
 async def _trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
-    first_token_at = None
-    try:
-        async for chunk in stream_iter:
-            if first_token_at is None and chunk:
-                first_token_at = time.monotonic()
-            yield chunk
-        if span is not None:
-            span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            if first_token_at is not None:
-                span.set_attribute("sidar.llm.ttft_ms", (first_token_at - started_at) * 1000)
-    finally:
-        if span is not None:
-            span.end()
-
-
-class LLMProvider(Protocol):
-    """Strategy contract implemented by provider adapters behind the LLM facade."""
-
-    async def generate(
-        self,
-        messages: list[dict[str, str]],
-        **kwargs: Any,
-    ) -> AsyncIterator[str]:
-        """Generate streaming text chunks for the given chat messages."""
-        ...
-
-    async def chat(
-        self,
-        messages: list[dict[str, str]],
-        model: str | None = None,
-        temperature: float = 0.3,
-        stream: bool = False,
-        json_mode: bool = True,
-    ) -> str | AsyncIterator[str]:
-        """Provider-specific chat call used by the compatibility facade."""
-        ...
+    async for chunk in trace_stream_metrics(stream_iter, span, started_at):
+        yield chunk
 
 
 class BaseLLMClient(ABC):
@@ -763,8 +711,8 @@ class LLMClient:
     def __init__(self, provider: str, config: Any) -> None:
         self.provider = provider.lower()
         self.config = config
-        self._semantic_cache = SemanticCacheManager(config)
-        self._router = CostAwareRouter(config)
+        self._semantic_cache = SemanticChatCache(config)
+        self._router = LLMRoutingService(config)
         if self.provider not in self.PROVIDER_REGISTRY:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
         self._client = _provider_class(self.provider)(config)

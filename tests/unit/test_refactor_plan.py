@@ -60,6 +60,10 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/llm/gemini.py",
         "core/llm/ollama.py",
         "core/llm/litellm.py",
+        "core/llm/router.py",
+        "core/llm/streaming.py",
+        "core/llm/cache.py",
+        "core/llm/facade.py",
         "core/doctor/checks/gpu.py",
         "core/doctor/models.py",
         "core/doctor/reporting.py",
@@ -184,5 +188,9 @@ def test_p2_llm_provider_boundaries_are_importable() -> None:
         "core.llm.gemini",
         "core.llm.ollama",
         "core.llm.litellm",
+        "core.llm.router",
+        "core.llm.streaming",
+        "core.llm.cache",
+        "core.llm.facade",
     ):
         assert importlib.import_module(module_name) is not None
