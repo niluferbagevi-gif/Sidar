@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 import shlex
+import shutil
+import subprocess  # nosec B404
 from collections.abc import Callable
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def build_sanitized_shell_args(
@@ -158,4 +165,88 @@ def find_destructive_shell_pattern(command: str) -> str | None:
     return None
 
 
-__all__ = ["build_sanitized_shell_args", "find_destructive_shell_pattern"]
+
+def run_shell_command(
+    manager: Any,
+    command: str,
+    cwd: str | None = None,
+    *,
+    allow_shell_features: bool = False,
+) -> tuple[bool, str]:
+    """Run a local shell command using CodeManager's security and output policy."""
+    if not manager.security.can_run_shell():
+        return False, (
+            "[OpenClaw] Kabuk komutu çalıştırma yetkisi yok.\n"
+            "Shell erişimi yalnızca ACCESS_LEVEL=full modunda aktiftir.\n"
+            "Değiştirmek için: .env → ACCESS_LEVEL=full"
+        )
+
+    if not command or not command.strip():
+        return False, "⚠ Çalıştırılacak komut belirtilmedi."
+
+    work_dir = cwd or str(manager.base_dir)
+
+    shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
+    uses_shell_features = any(token in command for token in shell_meta_chars)
+    if uses_shell_features and not allow_shell_features:
+        return False, (
+            "⚠ Komut shell operatörleri içeriyor (|, >, &&, vb.).\n"
+            "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
+            "Gerekliyse allow_shell_features=True ile tekrar deneyin."
+        )
+
+    if allow_shell_features:
+        detected_pattern = find_destructive_shell_pattern(command)
+        if detected_pattern is not None:
+            return False, (
+                f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({detected_pattern!r}). "
+                "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
+            )
+
+    try:
+        if allow_shell_features:
+            logger.warning(
+                "[GÜVENLİK] Shell özellikleri etkin; Python subprocess shell=True kapalı, "
+                "sabit yorumlayıcı argv listesi kullanılacak. "
+                "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
+                "Komut (ilk 200 kar): %.200s",
+                command,
+            )
+        args = build_sanitized_shell_args(
+            command, allow_shell_features=allow_shell_features, find_executable=shutil.which
+        )
+        result = subprocess.run(  # nosec B603
+            args,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=work_dir,
+            env={**os.environ},
+        )
+        output_parts = []
+        if result.stdout.strip():
+            output_parts.append(result.stdout.strip())
+        if result.stderr.strip():
+            output_parts.append(f"[stderr]\n{result.stderr.strip()}")
+
+        combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
+
+        if len(combined) > manager.max_output_chars:
+            combined = combined[: manager.max_output_chars] + (
+                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] ..."
+            )
+
+        if result.returncode != 0:
+            return False, f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}"
+        return True, combined
+
+    except ValueError as exc:
+        return False, f"Komut ayrıştırılamadı: {exc}"
+    except subprocess.TimeoutExpired:
+        return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
+    except Exception as exc:
+        return False, f"Kabuk hatası: {exc}"
+
+
+__all__ = ["build_sanitized_shell_args", "find_destructive_shell_pattern", "run_shell_command"]

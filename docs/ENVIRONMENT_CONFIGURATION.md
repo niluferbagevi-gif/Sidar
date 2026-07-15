@@ -97,6 +97,13 @@ By default, `install_sidar.sh` writes real service/provider API keys only to
 configuration. If you need the legacy behavior for an isolated environment, opt in
 explicitly:
 
+Seeing `.env` report `0/18` filled service API keys is therefore not a failure when
+`SIDAR_KEYS_FILE`/`~/.sidar_keys.env` contains the real keys. The `.env` status line
+describes only repo-local materialization; the runtime loader still reads the final
+secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository with mode
+`600` or stricter, and do not copy personal provider keys into `.env` unless the
+explicit materialization opt-in below is intentional.
+
 ```bash
 SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ./install_sidar.sh
 ```

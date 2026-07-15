@@ -20,7 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from managers.code import docker as docker_helpers
-from managers.code import file_io_security, linter_runners, test_runner_orchestrator
+from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
     LEGACY_PROJECT_IMAGE_PREFIXES as _LEGACY_PROJECT_IMAGE_PREFIXES,
 )
@@ -53,7 +53,7 @@ from managers.code.pytest_parser import (
     command_requires_uv_tooling,
     extract_pytest_args,
 )
-from managers.code.runner import build_sanitized_shell_args, find_destructive_shell_pattern
+from managers.code.runner import build_sanitized_shell_args
 from managers.code.security_adapter import CodeSecurityAdapter
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
@@ -847,101 +847,10 @@ class CodeManager:
         cwd: str | None = None,
         allow_shell_features: bool = False,
     ) -> tuple[bool, str]:
-        """
-        Kabuk komutunu güvenli subprocess ile çalıştırır.
-        Claude Code'daki Bash aracına eşdeğer.
-
-        Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
-        - Varsayılan modda `shell=False` ve `shlex.split(...)` kullanır.
-        - Pipe/redirect gibi shell operatörleri için `allow_shell_features=True` gerekir.
-        - 60 saniyelik zaman aşımı koruması vardır.
-
-        Args:
-            command: Çalıştırılacak komut
-            cwd: Çalışma dizini (None ise base_dir kullanılır)
-            allow_shell_features: True ise shell operatörleri (|, >, &&, vb.) aktif edilir.
-
-        Returns:
-            (başarı, çıktı_veya_hata)
-        """
-        if not self.security.can_run_shell():
-            return False, (
-                "[OpenClaw] Kabuk komutu çalıştırma yetkisi yok.\n"
-                "Shell erişimi yalnızca ACCESS_LEVEL=full modunda aktiftir.\n"
-                "Değiştirmek için: .env → ACCESS_LEVEL=full"
-            )
-
-        if not command or not command.strip():
-            return False, "⚠ Çalıştırılacak komut belirtilmedi."
-
-        work_dir = cwd or str(self.base_dir)
-
-        shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
-        uses_shell_features = any(token in command for token in shell_meta_chars)
-        if uses_shell_features and not allow_shell_features:
-            return False, (
-                "⚠ Komut shell operatörleri içeriyor (|, >, &&, vb.).\n"
-                "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
-                "Gerekliyse allow_shell_features=True ile tekrar deneyin."
-            )
-
-        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle.
-        # find_destructive_shell_pattern token bazlı analiz yapar (bayrak sırası/
-        # boşluk/uzun-form varyasyonlarına dayanıklı) ve statik olarak çözülemeyen
-        # değişken/komut ikamesi içeren segmentleri fail-closed engeller — ama bu
-        # yalnızca kazara/dikkatsiz yıkıcı komutlara karşı bir güvenlik ağıdır,
-        # bilinçli atlatmaya karşı tam bir sınır DEĞİLDİR (bkz. managers/code/runner.py).
-        if allow_shell_features:
-            _detected_pattern = find_destructive_shell_pattern(command)
-            if _detected_pattern is not None:
-                return False, (
-                    f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_detected_pattern!r}). "
-                    "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
-                )
-
-        try:
-            if allow_shell_features:
-                logger.warning(
-                    "[GÜVENLİK] Shell özellikleri etkin; Python subprocess shell=True kapalı, "
-                    "sabit yorumlayıcı argv listesi kullanılacak. "
-                    "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
-                    "Komut (ilk 200 kar): %.200s",
-                    command,
-                )
-            args = _build_sanitized_shell_args(command, allow_shell_features=allow_shell_features)
-            result = subprocess.run(  # nosec B603
-                args,
-                shell=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=work_dir,
-                env={**os.environ},
-            )
-            output_parts = []
-            if result.stdout.strip():
-                output_parts.append(result.stdout.strip())
-            if result.stderr.strip():
-                output_parts.append(f"[stderr]\n{result.stderr.strip()}")
-
-            combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
-
-            # Çıktı Boyutu Limiti (Güvenlik)
-            if len(combined) > self.max_output_chars:
-                combined = combined[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
-                )
-
-            if result.returncode != 0:
-                return False, (f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}")
-            return True, combined
-
-        except ValueError as exc:
-            return False, f"Komut ayrıştırılamadı: {exc}"
-        except subprocess.TimeoutExpired:
-            return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
-        except Exception as exc:
-            return False, f"Kabuk hatası: {exc}"
+        """Kabuk komutunu güvenli subprocess helper'ı üzerinden çalıştırır."""
+        return runner.run_shell_command(
+            self, command, cwd=cwd, allow_shell_features=allow_shell_features
+        )
 
     # ─────────────────────────────────────────────
     #  GLOB DOSYA ARAMA

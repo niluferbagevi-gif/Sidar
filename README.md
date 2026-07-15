@@ -521,7 +521,7 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 >
 > **⚠️ Kritik uyarı:** `wsl --unregister docker-desktop` komutunu **ASLA** çalıştırmayın. Bu komut Docker Desktop'ın engine backend dağıtımını siler; genellikle yalnızca **Docker Desktop → Settings → Troubleshoot → Reset to factory defaults** veya Docker Desktop'ı tamamen yeniden kurma ile geri gelir.
 
-> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir. Sidar istemcisindeki güvenli `OLLAMA_NUM_BATCH=2048` ve Ollama servis tarafındaki `OLLAMA_NUM_CTX=8192` varsayılanları, uzun prompt/GPU smoke isteklerinin Ollama `n_batch=512` / düşük context varsayılanlarına çarpıp `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` ile düşmesini önlemek içindir. Küçük/CPU-only makinelerde bilinçli olarak `OLLAMA_NUM_BATCH=0` verilirse küçük bağlamlarda Ollama sunucu varsayılanı korunur; `OLLAMA_CODING_NUM_CTX>2048` olduğunda istemci yine güvenli `num_batch` değerini otomatik ekler ve en fazla `4096` olarak sınırlar. Throughput tuning gerektiğinde `.env` üzerinden örneğin `1024`, `2048` veya `4096` verilebilir. GPU işi harici Ollama sürecinde yürüdüğünden Sidar sürecine `torch.cuda.Stream` veya `torch.cuda.empty_cache()` eklemek Ollama VRAM yönetimini değiştirmez.
+> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `qwen2.5-coder:7b` için `ollama ps` çıktısında `PROCESSOR` sütununun `100% GPU` görünmesi sağlıklı offload sinyalidir; bu tek başına hata değildir, aksine inference'ın GPU üzerinde çalıştığını doğrular. `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir. Sidar istemcisindeki güvenli `OLLAMA_NUM_BATCH=2048` ve Ollama servis tarafındaki `OLLAMA_NUM_CTX=8192` varsayılanları, uzun prompt/GPU smoke isteklerinin Ollama `n_batch=512` / düşük context varsayılanlarına çarpıp `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` ile düşmesini önlemek içindir. Küçük/CPU-only makinelerde bilinçli olarak `OLLAMA_NUM_BATCH=0` verilirse küçük bağlamlarda Ollama sunucu varsayılanı korunur; `OLLAMA_CODING_NUM_CTX>2048` olduğunda istemci yine güvenli `num_batch` değerini otomatik ekler ve en fazla `4096` olarak sınırlar. Throughput tuning gerektiğinde `.env` üzerinden örneğin `1024`, `2048` veya `4096` verilebilir. GPU işi harici Ollama sürecinde yürüdüğünden Sidar sürecine `torch.cuda.Stream` veya `torch.cuda.empty_cache()` eklemek Ollama VRAM yönetimini değiştirmez.
 
 > **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
 > Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
@@ -720,6 +720,14 @@ Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı or
 öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya
 CI/CD tarafından `bundle_install_sidar.sh` ile üretilir ve bootstrap sırasında
 30+ ayrı GitHub raw modül isteğini ortadan kaldırır:
+
+> **Raw fallback notu:** `~/Sidar` gibi mevcut yerel repo dizinini silip yalnız
+> raw `main/install_sidar.sh` dosyasını çalıştırırsanız installer yerel
+> `scripts/install_modules` ağacını bulamaz ve kendini bootstrap etmek için
+> `raw.githubusercontent.com` üzerinden modül setini indirir. Bu durumda özetlerde
+> `Raw fallback modül indirme: 30 modül indirildi` benzeri bir satır görmek
+> beklenen davranıştır; kusur değildir. Bunu istemiyorsanız Release bundle'ı veya
+> `git clone && ./install_sidar.sh` yolunu kullanın.
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh

@@ -111,6 +111,60 @@ def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, st
         return False, err_msg
 
 
+def extract_merge_conflict_paths(git_output: str) -> list[str]:
+    """Return conflicted file paths from common git merge/pull output lines."""
+    paths: list[str] = []
+    seen: set[str] = set()
+    patterns = (
+        re.compile(r"^CONFLICT \([^)]*\): .* in (.+)$"),
+        re.compile(r"^\s*both (?:added|modified|deleted):\s+(.+)$"),
+    )
+    for raw_line in str(git_output or "").splitlines():
+        line = raw_line.strip()
+        for pattern in patterns:
+            match = pattern.match(line)
+            if not match:
+                continue
+            path = match.group(1).strip()
+            if path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+            break
+    return paths
+
+
+def format_merge_conflict_guidance(git_output: str) -> str:
+    """Build actionable, copy-pasteable guidance for manual merge conflict recovery."""
+    paths = extract_merge_conflict_paths(git_output)
+    lines = [
+        "Çakışma çözüm özeti:",
+        "  1. Durumu görmek için: git status --short",
+    ]
+    if paths:
+        lines.append("  2. Çakışan dosyalar:")
+        lines.extend(f"     - {path}" for path in paths)
+        lines.append(
+            "  3. Her dosyada doğru tarafı seçin/düzenleyin; aynı refactor dosyaları tekrar geldiyse "
+            "main veya gelen dal tarafını bilinçli seçin."
+        )
+        lines.append(
+            "     Hızlı seçim örnekleri: git checkout --ours -- <dosya>  veya  "
+            "git checkout --theirs -- <dosya>"
+        )
+        lines.append("  4. Çözdükten sonra: git add -- " + " ".join(paths))
+        lines.append("  5. Merge commit'i alın: git commit")
+        lines.append("  6. Ardından aracı argümansız tekrar çalıştırın: uv run python github_upload.py")
+    else:
+        lines.extend(
+            [
+                "  2. Çakışan dosyaları git status çıktısından bulun ve marker'ları temizleyin.",
+                "  3. Çözdükten sonra: git add -- <dosyalar>",
+                "  4. Merge commit'i alın: git commit",
+                "  5. Ardından aracı argümansız tekrar çalıştırın: uv run python github_upload.py",
+            ]
+        )
+    return "\n".join(lines)
+
 def _is_valid_repo_url(url: str) -> bool:
     """GitHub origin URL'ini temel enjeksiyon ve yazım hatalarına karşı doğrular."""
     normalized = str(url or "").strip()
@@ -545,7 +599,7 @@ def main() -> None:
                 f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}"
             )
             print(
-                f"{Colors.WARNING}Lütfen çakışan dosyaları manuel düzenleyip aracı argümansız tekrar çalıştırın.{Colors.ENDC}"
+                f"{Colors.WARNING}{format_merge_conflict_guidance(pull_err)}{Colors.ENDC}"
             )
             sys.exit(1)
 

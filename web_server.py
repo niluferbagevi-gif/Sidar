@@ -9,7 +9,6 @@ Başlatmak için:
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import atexit
 import builtins
@@ -85,11 +84,13 @@ from web import app_factory as _app_factory
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
+from web.middleware.access_policy import access_policy_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
     ddos_rate_limit_middleware_impl,
     rate_limit_middleware_impl,
 )
+from web.plugins import sandbox as plugin_sandbox
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
 from web.routes import federation as federation_routes
@@ -1802,87 +1803,7 @@ def _build_restricted_plugin_builtins() -> dict[str, Any]:
 
 def _validate_plugin_source(source_code: str) -> None:
     """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
-    try:
-        tree = ast.parse(source_code, mode="exec")
-    except SyntaxError as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin söz dizimi hatası: {exc}") from exc
-
-    banned_calls = {
-        "exec",
-        "eval",
-        "compile",
-        "__import__",
-        "open",
-        "input",
-        "getattr",
-        "setattr",
-        "delattr",
-    }
-    banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
-    banned_attribute_roots = banned_import_roots | {"builtins", "importlib", "pathlib", "shutil"}
-    banned_introspection_attrs = {
-        "__base__",
-        "__bases__",
-        "__class__",
-        "__closure__",
-        "__code__",
-        "__dict__",
-        "__getattribute__",
-        "__globals__",
-        "__mro__",
-        "__subclasses__",
-    }
-
-    def _attribute_root_name(expr: ast.AST) -> str:
-        """Return the left-most name in a chained attribute expression, if any."""
-        current = expr
-        while isinstance(current, ast.Attribute):
-            current = current.value
-        if isinstance(current, ast.Name):
-            return current.id
-        if isinstance(current, ast.Call):
-            return _attribute_root_name(current.func)
-        if isinstance(current, ast.Subscript):
-            return _attribute_root_name(current.value)
-        return ""
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom):
-            modules = []
-            if isinstance(node, ast.Import):
-                modules = [alias.name.split(".")[0] for alias in node.names]
-            else:
-                modules = [(node.module or "").split(".")[0]]
-            if any(mod in banned_import_roots for mod in modules if mod):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
-                )
-        if isinstance(node, ast.Attribute) and node.attr in banned_introspection_attrs:
-            raise HTTPException(
-                status_code=400,
-                detail="Plugin güvenlik politikası: tehlikeli introspection erişimi engellendi.",
-            )
-        if isinstance(node, ast.Call):
-            fn_name = ""
-            if isinstance(node.func, ast.Name):
-                fn_name = node.func.id
-            elif isinstance(node.func, ast.Attribute):
-                root_name = _attribute_root_name(node.func)
-                fn_name = f"{root_name}.{node.func.attr}" if root_name else node.func.attr
-            if fn_name in banned_calls or fn_name.endswith(".exec") or fn_name.endswith(".eval"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: dinamik kod çalıştırma çağrısı engellendi.",
-                )
-            if (
-                isinstance(node.func, ast.Attribute)
-                and _attribute_root_name(node.func) in banned_attribute_roots
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül çağrısı engellendi.",
-                )
+    plugin_sandbox.validate_plugin_source(source_code)
 
 
 def _execute_validated_plugin_source(
@@ -1890,8 +1811,7 @@ def _execute_validated_plugin_source(
 ) -> None:
     """Derlenmiş plugin kaynağını daraltılmış namespace içinde çalıştırır."""
 
-    code = compile(source_code, _plugin_source_filename(module_label), "exec")
-    exec(code, namespace)  # nosec B102
+    plugin_sandbox.execute_validated_plugin_source(source_code, module_label, namespace)
 
 
 def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
@@ -1905,6 +1825,7 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
 
     try:
         _validate_plugin_source(source_code)
+        plugin_sandbox.assert_in_process_plugin_execution_allowed()
     except HTTPException:
         raise
     except Exception as exc:
@@ -2144,58 +2065,17 @@ def _register_plugin_agent(
 async def access_policy_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    user = getattr(request.state, "user", None)
-    if not user:
-        return await call_next(request)
-    resource_type, action, resource_id = _resolve_policy_from_request(request)
-    if not resource_type:
-        return await call_next(request)
-    client_ip = _get_client_ip(request)
-    if _is_admin_user(user):
-        _schedule_access_audit_log(
-            user=user,
-            resource_type=resource_type,
-            action=action,
-            resource_id=resource_id,
-            ip_address=client_ip,
-            allowed=True,
-        )
-        return await call_next(request)
-
-    allowed = False
-    try:
-        agent = await _resolve_agent_instance()
-        checker = getattr(agent.memory.db, "check_access_policy", None)
-        if checker is None:
-            allowed = True
-        else:
-            allowed = await checker(
-                user_id=str(getattr(user, "id", "") or ""),
-                tenant_id=_get_user_tenant(user),
-                resource_type=resource_type,
-                action=action,
-                resource_id=resource_id,
-            )
-    except Exception as exc:
-        logger.warning("ACL kontrolü başarısız (%s), erişim reddedildi.", exc)
-        allowed = False
-
-    _schedule_access_audit_log(
-        user=user,
-        resource_type=resource_type,
-        action=action,
-        resource_id=resource_id,
-        ip_address=client_ip,
-        allowed=allowed,
+    return await access_policy_middleware_impl(
+        request,
+        call_next,
+        resolve_policy_from_request=_resolve_policy_from_request,
+        get_client_ip=_get_client_ip,
+        is_admin_user=_is_admin_user,
+        schedule_access_audit_log=_schedule_access_audit_log,
+        resolve_agent_instance=_resolve_agent_instance,
+        get_user_tenant=_get_user_tenant,
+        logger_obj=logger,
     )
-    if not allowed:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "Yetki yok", "resource": resource_type, "action": action},
-        )
-    return await call_next(request)
 
 
 # ─────────────────────────────────────────────

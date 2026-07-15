@@ -21,6 +21,10 @@ def _summary(
             "status": status,
             "reason": "test fixture",
             "required_command": "make production-readiness",
+            "equivalent_direct_command": (
+                "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+                "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+            ),
             "validation_class": validation_class,
             "release_blocking": release_blocking,
             "release_gate_exit_code": exit_code,
@@ -54,6 +58,8 @@ def test_release_mode_rejects_development_summary() -> None:
     assert "release mode production_ready=true bekler" in errors
     assert "release mode validation_class=production_readiness bekler" in errors
     assert "release mode release_gate_exit_code=0 bekler" in errors
+    assert "release/merge öncesi zorunlu komut: make production-readiness" in errors
+    assert any("SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in e for e in errors)
 
 
 def test_development_mode_validates_schema_without_requiring_release() -> None:
@@ -86,6 +92,8 @@ def test_cli_fails_release_mode_when_production_ready_false(tmp_path: Path, caps
     assert main(["--mode", "release", "--summary", str(summary_path)]) == 1
     captured = capsys.readouterr()
     assert "production_ready=true" in captured.err
+    assert "make production-readiness" in captured.err
+    assert "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in captured.err
 
 
 def test_cli_passes_release_mode_when_production_ready_true(tmp_path: Path, capsys) -> None:

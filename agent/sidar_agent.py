@@ -24,6 +24,15 @@ try:
 except Exception:  # OpenTelemetry opsiyoneldir
     trace = None  # type: ignore[assignment]
 
+from agent.autonomy.service import (
+    append_autonomy_history as append_autonomy_history_service,
+)
+from agent.autonomy.service import (
+    ensure_autonomy_runtime_state as ensure_autonomy_runtime_state_service,
+)
+from agent.autonomy.service import (
+    get_autonomy_activity as get_autonomy_activity_service,
+)
 from agent.bootstrap import log_sidar_agent_startup
 from agent.core.contracts_fallback import (
     bind_fallback_contracts,
@@ -418,19 +427,10 @@ class SidarAgent:
             logger.warning("Nightly distributed lock release failed: %s", exc)
 
     def _ensure_autonomy_runtime_state(self) -> None:
-        if not hasattr(self, "_autonomy_history") or self._autonomy_history is None:
-            self._autonomy_history = []
-        if not hasattr(self, "_autonomy_lock"):
-            self._autonomy_lock = None
+        ensure_autonomy_runtime_state_service(self)
 
     async def _append_autonomy_history(self, record: dict[str, Any]) -> None:
-        self._ensure_autonomy_runtime_state()
-        if self._autonomy_lock is None:
-            self._autonomy_lock = asyncio.Lock()
-        async with self._autonomy_lock:
-            history = list(self._autonomy_history[-49:])
-            history.append(dict(record))
-            self._autonomy_history = history
+        await append_autonomy_history_service(self, record)
 
     @staticmethod
     def _update_remediation_step(
@@ -1096,25 +1096,7 @@ class SidarAgent:
 
     def get_autonomy_activity(self, limit: int = 20) -> dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
-        self._ensure_autonomy_runtime_state()
-        normalized_limit = max(1, int(limit or 20))
-        items = [dict(item) for item in self._autonomy_history[-normalized_limit:]]
-        counts_by_status: dict[str, int] = {}
-        counts_by_source: dict[str, int] = {}
-        for item in items:
-            status = str(item.get("status", "unknown") or "unknown")
-            source = str(item.get("source", "unknown") or "unknown")
-            counts_by_status[status] = counts_by_status.get(status, 0) + 1
-            counts_by_source[source] = counts_by_source.get(source, 0) + 1
-
-        return {
-            "items": items,
-            "total": len(self._autonomy_history),
-            "returned": len(items),
-            "counts_by_status": counts_by_status,
-            "counts_by_source": counts_by_source,
-            "latest_trigger_id": items[-1]["trigger_id"] if items else "",
-        }
+        return get_autonomy_activity_service(self, limit)
 
     async def _try_multi_agent(self, user_input: str) -> str:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""

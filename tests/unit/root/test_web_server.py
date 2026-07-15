@@ -2087,6 +2087,26 @@ def test_validate_plugin_source_rejects_dynamic_getattr_bypass():
     assert "dinamik kod" in exc.value.detail
 
 
+def test_plugin_source_execution_fails_closed_in_production(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", raising=False)
+
+    with pytest.raises(HTTPException) as exc:
+        web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_blocked")
+
+    assert exc.value.status_code == 403
+    assert "process-içi" in exc.value.detail
+
+
+def test_plugin_source_execution_production_override_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    namespace = web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_allowed")
+
+    assert namespace["VALUE"] == 1
+
+
 def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
     """AST doğrulayıcı statik olarak yakalayamayan dinamik bypass denemeleri,
     runtime'da `__builtins__` kısıtlaması sayesinde NameError ile düşmeli."""

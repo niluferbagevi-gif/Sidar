@@ -76,6 +76,26 @@ def test_run_command_reports_oserror(monkeypatch, capsys):
     assert "Komut baslatilamadi" in capsys.readouterr().out
 
 
+def test_merge_conflict_guidance_extracts_add_add_paths() -> None:
+    output = """Auto-merging install_sidar.sh
+CONFLICT (add/add): Merge conflict in install_sidar.sh
+CONFLICT (add/add): Merge conflict in web/plugins/sandbox.py
+Automatic merge failed; fix conflicts and then commit the result."""
+
+    assert gu.extract_merge_conflict_paths(output) == [
+        "install_sidar.sh",
+        "web/plugins/sandbox.py",
+    ]
+
+    guidance = gu.format_merge_conflict_guidance(output)
+
+    assert "git status --short" in guidance
+    assert "install_sidar.sh" in guidance
+    assert "web/plugins/sandbox.py" in guidance
+    assert "git checkout --ours -- <dosya>" in guidance
+    assert "uv run python github_upload.py" in guidance
+
+
 def test_url_and_path_helpers(tmp_path):
     assert gu._is_valid_repo_url("https://github.com/a/b")
     assert gu._is_valid_repo_url("https://github.com/a/b.git")
@@ -426,7 +446,7 @@ def test_main_rollback_cancel(monkeypatch):
     assert run_main_and_exit_code() == 0
 
 
-def test_main_pull_branch_conflict(monkeypatch):
+def test_main_pull_branch_conflict(monkeypatch, capsys):
     MainHarness(
         monkeypatch,
         ["remote-branch"],
@@ -435,10 +455,15 @@ def test_main_pull_branch_conflict(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
-            (False, "fatal conflict"),
+            (False, "CONFLICT (add/add): Merge conflict in install_sidar.sh"),
         ],
     )
     assert run_main_and_exit_code() == 1
+
+    output = capsys.readouterr().out
+    assert "Çakışma çözüm özeti" in output
+    assert "install_sidar.sh" in output
+    assert "uv run python github_upload.py" in output
 
 
 def test_main_add_failure(monkeypatch):

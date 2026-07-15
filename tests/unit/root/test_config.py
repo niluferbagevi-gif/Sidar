@@ -2528,6 +2528,15 @@ def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(mon
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:second@localhost:5432/sidar"
 
 
+def test_config_logging_facade_uses_dedicated_setup_module() -> None:
+    import core.config_logging_setup as config_logging_setup
+
+    assert config.get_sidar_locale is not None
+    assert config.localized_log_message("env_loaded") == config_logging_setup.localized_log_message("env_loaded")
+    assert config._configure_noisy_dependency_loggers is not None
+    assert config_logging_setup.log_first_load_info.__name__ == "log_first_load_info"
+
+
 def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", False)
     caplog.set_level("DEBUG", logger="Sidar.Config")

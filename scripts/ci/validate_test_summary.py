@@ -77,6 +77,16 @@ def _validate_release(summary: dict[str, Any]) -> list[str]:
         errors.append("release mode release_blocking=false bekler")
     if detail.get("release_gate_exit_code") != 0:
         errors.append("release mode release_gate_exit_code=0 bekler")
+
+    if errors:
+        required_command = str(detail.get("required_command") or "make production-readiness")
+        direct_command = str(
+            detail.get("equivalent_direct_command")
+            or "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+            "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+        )
+        errors.append(f"release/merge öncesi zorunlu komut: {required_command}")
+        errors.append(f"eşdeğer doğrudan komut: {direct_command}")
     return errors
 
 

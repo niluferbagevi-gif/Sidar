@@ -575,6 +575,9 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
     project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    environment_configuration = Path("docs/ENVIRONMENT_CONFIGURATION.md").read_text(
+        encoding="utf-8"
+    )
 
     for content in (readme, technical_reference, project_report):
         assert ".env.advanced" in content
@@ -594,6 +597,12 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
 
     assert "Yükleme zinciri `config.py` varsayılanları" in project_report
     assert "kalıcı kaynak politikası yalnız `.env`" in project_report
+
+    assert "`.env` report `0/18` filled service API keys" in environment_configuration
+    assert "not a failure when" in environment_configuration
+    assert "runtime loader still reads the final" in environment_configuration
+    assert "`600` or stricter" in environment_configuration
+    assert "explicit materialization opt-in" in environment_configuration
 
 
 def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
@@ -811,6 +820,11 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
     assert "production readiness gate'ini tekrar koşun" in testing
+    assert "Benchmark karşılaştırması atlandı ... baseline ile eşleşen kayıt" in testing
+    assert "bulunamadı” uyarısı temiz checkout" in testing
+    assert ".benchmarks/.../0001_baseline.json" in testing
+    assert "CI'ın cache/artifact üzerinden" in testing
+    assert "seed edilen baseline'ıyla karıştırılmamalıdır" in testing
     assert "yerelde oluşan ilk baseline'ı normal kabul edin" in readme
     assert "cache/artifact" in readme
     assert "cp -a /tmp/sidar-benchmark-baseline/.benchmarks/. .benchmarks/" in testing
@@ -2136,6 +2150,10 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "Release bundle (önerilen)" in readme
     assert "varsayılan Release bundle, raw fallback son çare" in modularization_note
     assert "Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı" in readme
+    assert "Raw fallback notu" in readme
+    assert "raw.githubusercontent.com" in readme
+    assert "Raw fallback modül indirme: 30 modül indirildi" in readme
+    assert "kusur değildir" in readme
     assert "monolitik Release bundle" in modularization_note
 
 
@@ -2421,8 +2439,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     )
     bundler = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
     install_script = installer_contract_sources()
+    ux_utils = Path("scripts/install_modules/utils/ux.sh").read_text(encoding="utf-8")
 
     assert "sidar_source_install_utils()" in helper
+    assert 'sidar_source_install_utils "install_remediation.sh" "ux.sh"' in install_script
+    assert "print_install_help()" in ux_utils
+    assert "print_install_help() {" not in Path("install_sidar.sh").read_text(encoding="utf-8")
     assert "sidar_run_install_phase()" in remediation_utils
     assert "sidar_handle_install_failure()" in remediation_utils
     assert "sidar_remediate_uv_sync_failure()" in remediation_utils
@@ -4111,6 +4133,7 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
 
     assert 'os.getenv("RUN_GPU_BENCHMARKS", "smoke")' in gpu_benchmark
     assert 'if _GPU_BENCHMARK_PROFILE not in {"smoke", "full"}' in gpu_benchmark
@@ -4127,6 +4150,9 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
     assert "GPU_BENCH_CONCURRENT_ROUNDS=10" in notes
     assert "RUN_GPU_BENCHMARKS=smoke" in env_test_example
     assert "RUN_GPU_BENCHMARKS=smoke" in env_advanced
+    assert "`qwen2.5-coder:7b`" in readme
+    assert "`PROCESSOR` sütununun `100% GPU`" in readme
+    assert "sağlıklı offload sinyalidir" in readme
 
 
 def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:
