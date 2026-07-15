@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import json
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from defusedxml import ElementTree as ET
 
 
 def _safe_int(value: str) -> int:
