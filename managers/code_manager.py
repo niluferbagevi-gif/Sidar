@@ -9,7 +9,6 @@ import logging
 import os
 import shlex
 import shutil
-import stat
 import subprocess  # nosec B404
 import sys
 import tempfile
@@ -25,21 +24,17 @@ from managers.code.docker import (
     LEGACY_PROJECT_IMAGE_PREFIXES as _LEGACY_PROJECT_IMAGE_PREFIXES,
 )
 from managers.code.docker import (
-    PROJECT_TEST_IMAGE_CANDIDATES as _PROJECT_TEST_IMAGE_CANDIDATES,
-)
-from managers.code.docker import (
     build_docker_cli_command,
     execute_code_with_docker_cli,
     resolve_sandbox_limits,
+    sanitize_docker_image,
     sanitize_docker_network,
     sanitize_docker_token,
 )
 from managers.code.docker import (
-    sanitize_docker_image as _sanitize_docker_image,
-)
-from managers.code.docker import (
     to_int as _to_int,
 )
+from managers.code.docker_lifecycle import DockerLifecycleAdapter
 from managers.code.lsp import (
     LSPProtocolError,
     decode_lsp_stream,
@@ -55,6 +50,7 @@ from managers.code.pytest_parser import (
 )
 from managers.code.runner import build_sanitized_shell_args
 from managers.code.security_adapter import CodeSecurityAdapter
+from managers.code.shell_sandbox import ShellSandboxAdapter
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 try:
@@ -76,6 +72,7 @@ _DOCKER_NETWORK_ALLOWED = docker_helpers.DOCKER_NETWORK_ALLOWED
 _DOCKER_IMAGE_RE = docker_helpers.DOCKER_IMAGE_RE
 _sanitize_docker_token = sanitize_docker_token
 _sanitize_docker_network = sanitize_docker_network
+_sanitize_docker_image = sanitize_docker_image
 
 
 def _coerce_bool(value: Any, *, default: bool = False) -> bool:
@@ -226,6 +223,8 @@ class CodeManager:
         self._docker_init_max_attempts = max(
             1, _to_int(getattr(self.cfg, "DOCKER_INIT_MAX_ATTEMPTS", 2), 2)
         )
+        self.docker_lifecycle = DockerLifecycleAdapter(self)
+        self.shell_sandbox = ShellSandboxAdapter(self)
         if self.code_execution_backend not in {"docker", "disabled", "none", "off"}:
             raise ValueError(
                 "Unsupported CODE_EXECUTION_BACKEND value "
@@ -277,20 +276,7 @@ class CodeManager:
                 raise
 
     def _resolve_runtime(self) -> str:
-        runtime = self.docker_runtime
-        if self.docker_microvm_mode in ("gvisor", "runsc") and not runtime:
-            runtime = "runsc"
-        elif self.docker_microvm_mode in ("kata", "firecracker") and not runtime:
-            runtime = "kata-runtime"
-
-        if runtime not in self.docker_allowed_runtimes:
-            logger.warning(
-                "Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.",
-                runtime,
-                self.docker_allowed_runtimes,
-            )
-            return ""
-        return runtime
+        return self.docker_lifecycle.resolve_runtime()
 
     def _resolve_sandbox_limits(self) -> dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
@@ -308,229 +294,32 @@ class CodeManager:
 
     def _try_wsl_socket_fallback(self, docker_module: Any) -> bool:
         """Docker Desktop/WSL2 socket yollarını deneyerek istemci başlatır."""
-        wsl_sockets = [
-            "unix:///var/run/docker.sock",
-            "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock",
-        ]
-        for socket_path in wsl_sockets:
-            fs_path = socket_path.removeprefix("unix://")
-            try:
-                file_stat = os.stat(fs_path)
-            except OSError:
-                continue
-            if not stat.S_ISSOCK(file_stat.st_mode):
-                logger.warning("Beklenen socket değil, atlanıyor: %s", fs_path)
-                continue
-            try:
-                candidate = docker_module.DockerClient(base_url=socket_path)
-                candidate.ping()
-            except RuntimeError as exc:
-                logger.warning("WSL2 socket ping başarısız (%s): %s", socket_path, exc)
-                continue
-            except self._docker_exception_types(docker_module):
-                continue
-            self.docker_client = candidate
-            self.docker_available = True
-            logger.info("Docker bağlantısı WSL2 socket ile kuruldu: %s", socket_path)
-            return True
-        return False
+        return self.docker_lifecycle.try_wsl_socket_fallback(docker_module)
 
     def _try_docker_cli_fallback(self) -> bool:
         """Docker SDK yoksa CLI üzerinden daemon erişimini doğrular."""
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False
-        try:
-            result = subprocess.run(  # nosec B603
-                [docker_bin, "info"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=str(self.base_dir),
-            )
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            return False
-
-        if result.returncode != 0:
-            return False
-
-        self.docker_client = None
-        self.docker_available = True
-        logger.info(
-            "Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi."
-        )
-        return True
+        return self.docker_lifecycle.try_docker_cli_fallback()
 
     @staticmethod
     def _docker_exception_types(docker_module: Any) -> tuple[type[BaseException], ...]:
         """Docker bağlantı denemelerinde yakalanacak güvenli exception tiplerini döndürür."""
-        docker_errors = getattr(docker_module, "errors", None)
-        docker_exception = getattr(docker_errors, "DockerException", None)
-        if isinstance(docker_exception, type) and issubclass(docker_exception, BaseException):
-            return (docker_exception, OSError, ValueError)
-        return (OSError, ValueError)
+        return DockerLifecycleAdapter.docker_exception_types(docker_module)
 
     def _init_docker(self) -> None:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
-        self.docker_available = False
-        self.docker_client = None
-        docker_module: Any | None = sys.modules.get("docker")
-        try:
-            if docker_module is None:
-                import docker  # pragma: no cover - optional Docker dependency path
-
-                docker_module = docker
-
-            client = docker_module.from_env()
-            client.ping()
-            self.docker_client = client
-            self.docker_available = True
-            logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
-        except ImportError:
-            if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
-                return
-            if self._try_docker_cli_fallback():
-                return
-            logger.warning("Docker SDK kurulu değil. (uv pip install docker)")
-        except Exception as first_err:
-            # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
-            # (docker modülü try bloğunda import edildiyse kullan; yoksa yeniden import dene)
-            fallback_module = docker_module
-            if fallback_module is None:
-                try:
-                    import docker as fallback_module  # type: ignore[no-redef]
-                except ImportError:
-                    fallback_module = None
-
-            if fallback_module is not None and self._try_wsl_socket_fallback(fallback_module):
-                return
-            # SDK kurulu ama daemon/socket erişimi başarısız olduğunda CLI fallback'e
-            # geçmeyiz; bu durum mevcut daemon erişim problemini maskeleyip test/üretim
-            # davranışını belirsizleştirebilir. CLI fallback yalnızca SDK yoksa denenir.
-            logger.warning(
-                "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
-                "WSL2 kullanıcıları: Docker Desktop'u açın ve "
-                "Settings > Resources > WSL Integration'dan bu dağıtımı etkinleştirin. "
-                "Hata: %s",
-                first_err,
-            )
+        self.docker_lifecycle.init_docker()
 
     def _docker_image_exists(self, image: str) -> bool:
         """Docker daemon'da verilen imajın mevcut olup olmadığını SDK/CLI ile kontrol et."""
-        safe_image = _sanitize_docker_image(image)
-        if safe_image != image:
-            return False
-
-        if self.docker_client is not None:
-            images_api = getattr(self.docker_client, "images", None)
-            get_image = getattr(images_api, "get", None)
-            if callable(get_image):
-                try:
-                    get_image(safe_image)
-                    return True
-                except Exception:
-                    return False
-
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False
-        try:
-            result = subprocess.run(  # nosec B603
-                [docker_bin, "image", "inspect", safe_image],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=str(self.base_dir),
-            )
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            return False
-        return result.returncode == 0
+        return self.docker_lifecycle.docker_image_exists(image)
 
     def _autodetect_project_test_image(self) -> None:
-        """Docker daemon'da bulunan Sidar test imajını güvenli biçimde seç.
-
-        Güncel proje imaj adı ``sidar:latest``tir. Eski dokümantasyon veya .env
-        dosyalarından gelen ``sidar-ai``/``sidar-ai-gpu`` değerleri yalnızca aynı
-        imaj gerçekten lokalde varsa kullanılır; aksi halde lokalde bulunan güncel
-        ``sidar``/``sidar-gpu`` tag'ine yönlendirilir. Bu akış Docker Hub'dan
-        yanlış ``sidar-ai`` pull denemesini engeller.
-        """
-        if not self.docker_available:  # pragma: no cover - Docker unavailable branch
-            return
-
-        canonical_alias = _canonical_project_image_alias(self.docker_test_image)
-        if self._docker_test_image_explicit:
-            if not canonical_alias:
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-                return
-            if self._docker_image_exists(self.docker_test_image):
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-                return
-            if self._docker_image_exists(canonical_alias):
-                logger.warning(
-                    "DOCKER_TEST_IMAGE eski Sidar imaj adını gösteriyor (%s) ancak bu imaj "
-                    "lokalde yok; bulunan güncel imaj kullanılacak: %s",
-                    self.docker_test_image,
-                    canonical_alias,
-                )
-                self.docker_test_image = canonical_alias
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-            return
-
-        prefer_gpu_image = (
-            bool(getattr(self.cfg, "USE_GPU", False)) and self._gpu_runtime_available()
-        )
-        if bool(getattr(self.cfg, "USE_GPU", False)) and not prefer_gpu_image:
-            logger.warning(
-                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
-            )
-
-        for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
-            if _is_gpu_project_image(candidate) and not prefer_gpu_image:
-                logger.warning(
-                    "GPU runtime uygun olmadığı için GPU test imajı otomatik seçimde atlanıyor: %s",
-                    candidate,
-                )
-                continue
-            if self._docker_image_exists(candidate):
-                self.docker_test_image = candidate
-                logger.info(
-                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
-                    candidate,
-                )
-                self._warn_gpu_image_runtime_mismatch(candidate)
-                return
-
-        logger.warning(
-            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
-            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
-            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik hazırlık için "
-            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` çalıştırın "
-            "(4) Docker dışı fallback için `uv sync --frozen --all-extras` çalıştırın.",
-            self.docker_test_image,
-        )
+        """Docker daemon'da bulunan Sidar test imajını güvenli biçimde seç."""
+        self.docker_lifecycle.autodetect_project_test_image()
 
     def _gpu_runtime_available(self) -> bool:
-        cached = getattr(self, "_gpu_runtime_available_cached", None)
-        if cached is not None:
-            return bool(cached)
-
-        available = False
-        try:
-            probe = subprocess.run(  # nosec B603
-                [shutil.which("nvidia-smi") or "nvidia-smi"],
-                capture_output=True,
-                text=True,
-                timeout=3,
-                cwd=str(self.base_dir),
-            )
-            if probe.returncode == 0:
-                available = True
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            pass
-
-        self._gpu_runtime_available_cached = available
-        return available
+        """CUDA/NVIDIA runtime kullanılabilirliğini önbellekli olarak kontrol et."""
+        return self.docker_lifecycle.gpu_runtime_available()
 
     def _warn_gpu_image_runtime_mismatch(self, image_name: str) -> None:
         if not _is_gpu_project_image(image_name):
@@ -796,11 +585,7 @@ class CodeManager:
 
     def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
         """Test/uv komutlarında proje test imajını, diğerlerinde normal sandbox imajını seç."""
-        if image:
-            return image
-        if self._command_requires_uv_tooling(command):
-            return self.docker_test_image
-        return self.docker_image
+        return self.shell_sandbox.select_shell_sandbox_image(command, image)
 
     @staticmethod
     def _command_invokes_pytest(command: str) -> bool:
@@ -809,7 +594,7 @@ class CodeManager:
 
     def _build_shell_preflight_command(self, command: str) -> str:
         """Sandbox shell komutları için PATH ve uv/pytest pre-flight koruması ekle."""
-        return test_runner_orchestrator.build_shell_preflight_command(self, command)
+        return self.shell_sandbox.build_shell_preflight_command(command)
 
     def run_shell_in_sandbox(
         self,
@@ -818,17 +603,7 @@ class CodeManager:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
-        if self.code_execution_backend in {
-            "disabled",
-            "none",
-            "off",
-        }:  # pragma: no cover - deployment-mode branch
-            return (
-                False,
-                "Sandbox komutu çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled).",
-            )
-        self.ensure_docker_initialized()
-        return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
+        return self.shell_sandbox.run_shell_in_sandbox(command, cwd=cwd, image=image)
 
     @staticmethod
     def analyze_pytest_output(output: str) -> dict[str, Any]:

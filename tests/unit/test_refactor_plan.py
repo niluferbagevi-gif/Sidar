@@ -48,6 +48,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/rag/embeddings.py",
         "managers/code/patcher.py",
         "managers/code/runner.py",
+        "managers/code/docker_lifecycle.py",
+        "managers/code/shell_sandbox.py",
         "agent/self_heal/executor.py",
         "agent/autonomy/service.py",
         "agent/federation/service.py",
