@@ -22,7 +22,7 @@ import config_gpu
 import config_llm
 import config_quality
 import config_rag
-import core.logging_config as logging_config
+import core.config_logging_setup as config_logging_setup
 from config_security import (
     get_missing_security_runtime_keys,
     has_weak_postgres_runtime_secret,
@@ -83,12 +83,12 @@ logger = logging.getLogger("Sidar.Config")
 
 def get_sidar_locale() -> str:
     """Resolve the runtime log locale from SIDAR_LOCALE."""
-    return logging_config.get_sidar_locale()
+    return config_logging_setup.get_sidar_locale()
 
 
 def localized_log_message(key: str) -> str:
     """Return a localized log format string for the active Sidar locale."""
-    return logging_config.localized_log_message(key)
+    return config_logging_setup.localized_log_message(key)
 
 
 def _get_external_bool_prefixed_env(prefix_key: str, legacy_key: str, default: bool) -> bool:
@@ -101,10 +101,7 @@ def _get_external_bool_prefixed_env(prefix_key: str, legacy_key: str, default: b
 
 def _log_first_load_info(message: str, *args: Any) -> None:
     """Log as INFO only on first config load cycle, DEBUG on later reloads."""
-    if _FIRST_CONFIG_LOAD_LOGGED:
-        logger.debug(message, *args)
-    else:
-        logger.info(message, *args)
+    config_logging_setup.log_first_load_info(logger, _FIRST_CONFIG_LOAD_LOGGED, message, *args)
 
 
 def _parse_dotenv_source_values(path: Path) -> dict[str, str]:
@@ -373,7 +370,7 @@ def _repair_log_file_permissions(path: Path) -> None:
     repair_log_file_permissions(path)
 
 
-_logging_state = logging_config.configure_sidar_logging(
+_logging_state = config_logging_setup.configure_sidar_logging(
     base_dir=BASE_DIR,
     get_int_env=get_int_env,
     get_bool_env=get_bool_env,
@@ -390,7 +387,7 @@ _NOISY_DEPENDENCY_LOGGERS = _logging_state.noisy_dependency_loggers
 
 def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LOGS) -> None:
     """Keep chatty HTTP/HF dependency logs quiet unless explicitly requested."""
-    logging_config.configure_noisy_dependency_loggers(
+    config_logging_setup.configure_noisy_dependency_loggers(
         _NOISY_DEPENDENCY_LOGGERS, verbose_http=verbose_http
     )
 
