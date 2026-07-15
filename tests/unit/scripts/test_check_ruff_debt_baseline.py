@@ -24,7 +24,7 @@ def test_count_diagnostics_fills_missing_debt_codes_with_zero() -> None:
 
 def test_format_counts_uses_stable_campaign_code_order() -> None:
     """Formatted CI output keeps the campaign rule order deterministic."""
-    rendered = checker._format_counts({"D200": 1, "D202": 2, "ASYNC240": 3})
+    rendered = checker._format_counts({"E501": 4, "D200": 1, "D202": 2, "ASYNC240": 3})
 
-    assert rendered.startswith("D200=1, D202=2, D205=0")
+    assert rendered.startswith("E501=4, D200=1, D202=2, D205=0")
     assert rendered.endswith("D417=0, ASYNC240=3")

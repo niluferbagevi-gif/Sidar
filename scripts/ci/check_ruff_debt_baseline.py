@@ -1,4 +1,4 @@
-"""Enforce the temporary Ruff docstring and ASYNC240 debt baseline."""
+"""Enforce the temporary Ruff E501, docstring, and ASYNC240 debt baseline."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 RUFF_DEBT_CODES = (
+    "E501",
     "D200",
     "D202",
     "D205",
@@ -28,7 +29,11 @@ RUFF_DEBT_CODES = (
 def _load_baseline(pyproject_path: Path) -> dict[str, int]:
     """Load the machine-readable Ruff debt ceiling from pyproject metadata."""
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    raw_baseline = data["tool"]["sidar"]["ruff_debt"]["docstring_async_debt_baseline"]
+    ruff_debt = data["tool"]["sidar"]["ruff_debt"]
+    raw_baseline = {
+        "E501": ruff_debt["e501_debt_baseline"],
+        **ruff_debt["docstring_async_debt_baseline"],
+    }
     return {str(code): int(limit) for code, limit in raw_baseline.items()}
 
 
@@ -94,14 +99,14 @@ def main(argv: list[str] | None = None) -> int:
         if current[code] > baseline[code]
     }
     if regressions:
-        print("Ruff docstring/ASYNC240 debt baseline grew:", file=sys.stderr)
+        print("Ruff E501/docstring/ASYNC240 debt baseline grew:", file=sys.stderr)
         for code, (actual, expected) in regressions.items():
             print(f"- {code}: {actual} > {expected}", file=sys.stderr)
         print(f"Current counts: {_format_counts(current)}", file=sys.stderr)
         print(f"Baseline counts: {_format_counts(baseline)}", file=sys.stderr)
         return 1
 
-    print(f"Ruff docstring/ASYNC240 debt within baseline: {_format_counts(current)}")
+    print(f"Ruff E501/docstring/ASYNC240 debt within baseline: {_format_counts(current)}")
     return 0
 
 
