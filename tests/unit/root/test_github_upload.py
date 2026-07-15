@@ -19,6 +19,10 @@ def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
 
 
+def test_github_upload_version_marks_conflict_guidance_release() -> None:
+    assert gu.GITHUB_UPLOAD_TOOL_VERSION == "2.3"
+
+
 def test_run_command_success_and_error(monkeypatch, capsys):
     class Result:
         def __init__(self, stdout="ok", stderr=""):

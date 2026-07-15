@@ -20,6 +20,7 @@ from config import Config
 from managers.code.git_validation import is_valid_git_ref_name
 
 cfg = Config()
+GITHUB_UPLOAD_TOOL_VERSION = "2.3"
 
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
 FORBIDDEN_PATHS = [
@@ -394,7 +395,7 @@ def main() -> None:
 
     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     print(
-        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.2) {Colors.ENDC}"
+        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{GITHUB_UPLOAD_TOOL_VERSION}) {Colors.ENDC}"
     )
     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}\n")
 
