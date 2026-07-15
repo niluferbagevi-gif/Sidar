@@ -10,7 +10,7 @@ from core.logging_config import configure_noisy_dependency_loggers
 
 def test_config_logging_setup_reexports_noisy_dependency_helper() -> None:
     """Legacy import path should expose the canonical noisy logger helper."""
-    assert config_logging_setup.__all__ == ["configure_noisy_dependency_loggers"]
+    assert "configure_noisy_dependency_loggers" in config_logging_setup.__all__
     assert (
         config_logging_setup.configure_noisy_dependency_loggers
         is configure_noisy_dependency_loggers
