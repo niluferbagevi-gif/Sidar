@@ -41,6 +41,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/bootstrap.py",
         "web/middleware/cors.py",
         "web/middleware/access_policy.py",
+        "core/config_runtime_paths.py",
+        "core/config_secret_hardening.py",
         "core/db/auth.py",
         "core/db/audit.py",
         "core/rag/embeddings.py",

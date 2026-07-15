@@ -23,11 +23,7 @@ import config_llm
 import config_quality
 import config_rag
 import core.config_logging_setup as config_logging_setup
-from config_security import (
-    get_missing_security_runtime_keys,
-    has_weak_postgres_runtime_secret,
-    load_security_settings,
-)
+from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
@@ -49,6 +45,11 @@ from core.config_gpu_detect import HardwareInfo
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
+from core.config_runtime_paths import apply_reload_runtime_paths, load_runtime_path_settings
+from core.config_secret_hardening import (
+    collect_missing_critical_runtime_keys,
+    warn_on_silent_security_fallbacks,
+)
 from core.config_secrets import is_nonempty_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 
@@ -554,6 +555,7 @@ def check_hardware() -> HardwareInfo:
 
 
 _APP_SETTINGS = load_app_runtime_settings()
+_RUNTIME_PATHS = load_runtime_path_settings(base_dir=BASE_DIR)
 _OBSERVABILITY_SETTINGS = load_observability_settings()
 _ORCHESTRATOR_SETTINGS = load_orchestrator_settings()
 _SELF_HEAL_SETTINGS = config_autonomy.load_self_heal_settings()
@@ -596,13 +598,13 @@ class Config:
     RUFF_AUTOFIX_UNSAFE_RULES: str | None = _SELF_HEAL_SETTINGS["RUFF_AUTOFIX_UNSAFE_RULES"]  # type: ignore[assignment]
 
     # ─── Dizinler ────────────────────────────────────────────
-    BASE_DIR: Path = BASE_DIR
-    TEMP_DIR: Path = BASE_DIR / "temp"
-    LOGS_DIR: Path = BASE_DIR / "logs"
-    DATA_DIR: Path = BASE_DIR / "data"
-    MEMORY_FILE: Path = DATA_DIR / "memory.json"
+    BASE_DIR: Path = _RUNTIME_PATHS.base_dir
+    TEMP_DIR: Path = _RUNTIME_PATHS.temp_dir
+    LOGS_DIR: Path = _RUNTIME_PATHS.logs_dir
+    DATA_DIR: Path = _RUNTIME_PATHS.data_dir
+    MEMORY_FILE: Path = _RUNTIME_PATHS.memory_file
 
-    REQUIRED_DIRS: list[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
+    REQUIRED_DIRS: list[Path] = _RUNTIME_PATHS.required_dirs
 
     # ─── AI Sağlayıcı ────────────────────────────────────────
     AI_PROVIDER: str = (
@@ -854,7 +856,7 @@ class Config:
     PACKAGE_INFO_CACHE_TTL: int = get_int_env("PACKAGE_INFO_CACHE_TTL", 1800)
 
     # ─── RAG — Belge Deposu ──────────────────────────────────
-    RAG_DIR: Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
+    RAG_DIR: Path = _RUNTIME_PATHS.rag_dir
     RAG_TOP_K: int = get_int_env("RAG_TOP_K", config_rag.RAG_TOP_K_DEFAULT)
     RAG_CHUNK_SIZE: int = get_int_env("RAG_CHUNK_SIZE", config_rag.RAG_CHUNK_SIZE_DEFAULT)
     RAG_CHUNK_OVERLAP: int = get_int_env("RAG_CHUNK_OVERLAP", config_rag.RAG_CHUNK_OVERLAP_DEFAULT)
@@ -1102,64 +1104,16 @@ class Config:
     @classmethod
     def get_missing_critical_runtime_keys(cls) -> list[str]:
         """Return critical keys that remain unresolved after the dotenv load chain."""
-        missing: list[str] = []
-        is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-        missing.extend(
-            get_missing_security_runtime_keys(
-                api_key=cls.API_KEY,
-                jwt_secret_key=cls.JWT_SECRET_KEY,
-                jwt_secret_key_explicitly_configured=cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED,
-                is_production=is_production,
-                is_test_env=cls._is_test_env(),
-                web_concurrency=get_int_env("WEB_CONCURRENCY", 1),
-                postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
-                database_url=cls.DATABASE_URL,
-            )
+        return collect_missing_critical_runtime_keys(
+            cls,
+            provider_required_settings=_PROVIDER_REQUIRED_SETTINGS,
+            get_int_env=get_int_env,
         )
-
-        provider = normalize_ai_provider(cls.AI_PROVIDER)
-        for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):
-            raw_value = getattr(cls, setting_name, "")
-            if setting_name.endswith("_GATEWAY_URL"):
-                if not is_valid_http_url(raw_value):
-                    missing.append(setting_name)
-            elif not is_nonempty_secret(raw_value):
-                missing.append(setting_name)
-
-        if is_production and not str(cls.MEMORY_ENCRYPTION_KEY or "").strip():
-            missing.append("MEMORY_ENCRYPTION_KEY")
-
-        return missing
 
     @classmethod
     def _warn_on_silent_security_fallbacks(cls) -> None:
-        """Log otherwise-silent JWT/PostgreSQL credential fallbacks.
-
-        `get_missing_critical_runtime_keys` only blocks startup for these in
-        production (or multi-worker for JWT); outside that, the ephemeral JWT
-        secret and the "sidar" PostgreSQL default are used without any log
-        trace. Skipped in test runs to avoid log noise across the suite.
-        """
-        if cls._is_test_env():
-            return
-        if not cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED:
-            logger.warning(
-                "JWT_SECRET_KEY tanımlanmamış; bu process için rastgele ve kalıcı olmayan bir "
-                "secret üretildi. Process yeniden başladığında mevcut tüm JWT token'lar sessizce "
-                "geçersiz olacaktır. Kalıcı oturumlar için .env/DOTENV_FILE/SIDAR_KEYS_FILE içine "
-                "sabit bir JWT_SECRET_KEY tanımlayın."
-            )
-
-        is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
-        if not is_production and has_weak_postgres_runtime_secret(
-            postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
-            database_url=cls.DATABASE_URL,
-        ):
-            logger.warning(
-                'POSTGRES_PASSWORD zayıf/varsayılan bir değerde (ör. "sidar"); bu yalnızca '
-                "production'da engellenir. Staging/test ortamlarında da güçlü bir parola "
-                "tanımlamanız önerilir."
-            )
+        """Log otherwise-silent JWT/PostgreSQL credential fallbacks."""
+        warn_on_silent_security_fallbacks(cls, logger=logger)
 
     @classmethod
     def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
@@ -1785,6 +1739,7 @@ def reload_environment(*, profile: str | None = None) -> "Config":
         get_container_database_url=get_container_database_url,
         normalize_ai_provider=normalize_ai_provider,
     )
+    apply_reload_runtime_paths(Config, base_dir=BASE_DIR)
     with _HARDWARE_LOAD_LOCK:
         Config._hardware_loaded = False
     with _CONFIG_STATE_LOCK:
