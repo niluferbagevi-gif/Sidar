@@ -699,7 +699,7 @@ jobs:
           echo "Production readiness is the combined result of jobs: test + benchmark-compare."
 
   production-profile-dry-run:
-    name: Production dependency profile dry run
+    name: Production-minimal runtime validation
     runs-on: ubuntu-latest
 
     steps:
@@ -716,10 +716,71 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Dry-run production-minimal dependency profile
+      - name: Validate production-minimal installer sync
         run: |
-          uv sync --frozen --extra production-minimal --no-dev
-          uv run --no-sync python -c "import fastapi, sqlalchemy, alembic; print('production-minimal imports ok')"
+          mkdir -p artifacts/production-minimal
+          SIDAR_DEPENDENCY_PROFILE=production-minimal \
+            ./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction \
+            2>&1 | tee artifacts/production-minimal/installer-sync.log
+
+      - name: Run production-minimal web boot smoke
+        run: |
+          uv run --no-sync python - <<'PY' 2>&1 | tee artifacts/production-minimal/web-boot-smoke.log
+          from web.app_factory import create_app
+
+          app = create_app(register_handlers=False)
+          routes = [route.path for route in app.routes]
+          assert "/docs" in routes
+          print({"profile": "production-minimal", "web_boot": "ok", "routes": len(routes)})
+          PY
+
+      - name: Run production-minimal DB migration smoke
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./artifacts/production-minimal/migration-smoke.db
+        run: |
+          uv run --no-sync alembic upgrade head 2>&1 | tee artifacts/production-minimal/db-migration-smoke.log
+
+      - name: Write production-minimal runtime evidence
+        if: ${{ always() }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifact_dir = Path("artifacts/production-minimal")
+          artifact_dir.mkdir(parents=True, exist_ok=True)
+          logs = {
+              "installer_sync": artifact_dir / "installer-sync.log",
+              "web_boot_smoke": artifact_dir / "web-boot-smoke.log",
+              "db_migration_smoke": artifact_dir / "db-migration-smoke.log",
+          }
+          evidence = {
+              "schema_version": 1,
+              "profile": "production-minimal",
+              "release_blocking": True,
+              "checks": {
+                  name: {"log": str(path), "present": path.exists(), "bytes": path.stat().st_size if path.exists() else 0}
+                  for name, path in logs.items()
+              },
+          }
+          (artifact_dir / "runtime-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload production-minimal runtime evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-minimal-runtime-evidence
+          path: |
+            artifacts/production-minimal/installer-sync.log
+            artifacts/production-minimal/web-boot-smoke.log
+            artifacts/production-minimal/db-migration-smoke.log
+            artifacts/production-minimal/runtime-evidence.json
+          if-no-files-found: error
+          retention-days: 30
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test

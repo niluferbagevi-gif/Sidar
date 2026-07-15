@@ -143,23 +143,41 @@ def test_posthog_major_cap_is_documented_as_chromadb_telemetry_constraint() -> N
     assert "PostHog v6" in docs
 
 
-def test_ci_has_blocking_production_profile_dry_run() -> None:
+def test_ci_has_blocking_production_profile_runtime_validation() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    validation = pyproject["tool"]["sidar"]["dependency_profile_plan"][
+        "production_minimal_runtime_validation"
+    ]
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_words = " ".join(workflow.split())
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
+    job_slice = workflow[
+        workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")
+    ]
 
-    assert "production-profile-dry-run:" in workflow
-    assert (
-        "continue-on-error"
-        not in workflow[
-            workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")
-        ]
+    assert validation["status"] == "release-blocking"
+    assert validation["review_by"] == "2026-08-15"
+    assert validation["blocking_transition_pr_required"] is False
+    assert validation["release_artifact"] == "production-minimal-runtime-evidence"
+    assert validation["release_artifact_path"] == (
+        "artifacts/production-minimal/runtime-evidence.json"
     )
-    assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
-    assert "production-minimal imports ok" in workflow
+    assert "production-profile-dry-run:" in workflow
+    assert "continue-on-error" not in job_slice
+    assert "./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction" in (
+        workflow_words
+    )
+    assert "web.app_factory import create_app" in workflow
+    assert "uv run --no-sync alembic upgrade head" in workflow
+    assert "actions/upload-artifact@v4" in job_slice
+    assert "production-minimal-runtime-evidence" in workflow
+    assert "artifacts/production-minimal/runtime-evidence.json" in workflow
     assert "production-profile-dry-run" in docs
     assert "`sidar[postgres]`" in docs
     assert "ana CI kalite kapısının parçası" in docs
     assert "continue-on-error` kullanılmamalıdır" in docs
+    assert "release-blocking runtime" in docs
+    assert "runtime-evidence.json" in docs
 
 
 def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:

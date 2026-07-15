@@ -11,7 +11,7 @@ the expected required contexts should mirror the release-critical jobs in
 | --- | --- | --- |
 | `test` | `CI / test` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
 | `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
-| `production-profile-dry-run` | `CI / Production dependency profile dry run` | Verifies the production-minimal dependency profile can be installed without dev extras and still import core runtime dependencies. |
+| `production-profile-dry-run` | `CI / Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
 | `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
 
 The `seed-benchmark-baseline` / `Seed benchmark baseline cache` workflow path is

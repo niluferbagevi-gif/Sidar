@@ -165,30 +165,37 @@ Etkileşimsiz normal kurulum `dev-full` seçer; `RUN_CI_FULL_VALIDATION=true` /
 `--production-readiness` ise otomatik olarak `dev-full` seçer.
 
 Installer tarafında varsayılan normal profil `dev-full` / `developer-full` olarak görünürdür (`uv sync --frozen --all-extras`). `dev-light` (`uv sync --frozen --extra dev-light`) hızlı yerel geliştirme için opt-in profildir. Desteklenen gerçek CLI profil değerleri `dev-light`, `dev-full`, `dev-gpu`, `gpu-runtime`, `production`, `production-minimal` ve `custom` değerleridir; eski `all` varsayılanı yeni installer sözleşmesi değildir. Dar runtime
-yüzeyi denemeleri için opt-in komut `--production-minimal` veya
+yüzeyi doğrulaması için opt-in komut `--production-minimal` veya
 `--dependency-profile=production-minimal` değeridir; bu yol dev/test araçlarını ve
-Pyright LSP yükünü kurmaz. Bu nedenle production-minimal, release kabulü değil
-runtime sync/dry-run kanıtı üretmek için kullanılmalıdır.
+Pyright LSP yükünü kurmaz. Production-minimal artık varsayılan installer davranışı
+değil, ancak CI/release tarafında gerçek runtime kanıtı üreten blocking bir doğrulama
+kapısıdır.
 
 Takip kapıları `pyproject.toml` içindeki
 `[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]` ve
 `[tool.sidar.dependency_profile_plan.installer_profile_visibility]` bloklarında
-makine-okunur tutulur. Mevcut CI job'ı `production-profile-dry-run` yalnız no-dev
-import/sync kanıtı üretir; bir sonraki geliştirme PR'ında bu dry-run gerçek CI/release
-blocking gate'e çevrilmeden production-minimal release kabulü sayılmamalıdır.
-Production-minimal varsayılan installer davranışına ancak şu kanıtlar blocking hale
-geldiğinde terfi edebilir:
+makine-okunur tutulur. CI job'ı `production-profile-dry-run` adı geriye dönük
+required-check uyumluluğu için korunur, fakat içerik olarak release-blocking runtime
+validation kapısıdır ve `continue-on-error` olmadan çalışır. Production-minimal
+varsayılan installer davranışına ancak bu blocking kanıtlar düzenli olarak temiz
+kaldığında terfi edebilir:
 
 1. `SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test`
-   komutu lock değiştirmeden geçer.
-2. Web/API boot smoke, DB migration smoke ve no-dev import smoke artifact'leri CI/release
-   çıktısına eklenir. Mevcut CI `production-profile-dry-run` job'ı
-   `uv sync --frozen --extra production-minimal --no-dev` ve no-dev import smoke
-   doğrulamasını ana CI içinde çalıştırır; bu job `continue-on-error` olmadan kalmalıdır.
-3. RAG/GPU/voice/browser gibi ağır extras production-minimal profile alınmaz.
+   komutu `--ci --no-interaction` ile lock değiştirmeden geçer ve
+   `artifacts/production-minimal/installer-sync.log` olarak saklanır.
+2. Web/API boot smoke `web.app_factory.create_app(register_handlers=False)` ile FastAPI
+   kabuğunu ayağa kaldırır ve `artifacts/production-minimal/web-boot-smoke.log`
+   artifact'ini üretir.
+3. DB migration smoke, izole SQLite URL'siyle `uv run --no-sync alembic upgrade head`
+   çalıştırır ve `artifacts/production-minimal/db-migration-smoke.log` çıktısını
+   release kanıtına ekler.
+4. CI her koşulda `production-minimal-runtime-evidence` artifact'ini upload eder;
+   `runtime-evidence.json` installer sync, web boot ve DB migration loglarının varlığını
+   makine-okunur şekilde taşır.
+5. RAG/GPU/voice/browser gibi ağır extras production-minimal profile alınmaz.
    `tests/unit/test_dependency_profile_plan.py::test_production_minimal_excludes_heavy_optional_extras`
    bu sınırı pyproject metadata'sı üzerinden korur.
-4. Release/merge için ayrı production-readiness gate'i yine çalışır:
+6. Release/merge için ayrı production-readiness gate'i yine çalışır:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
 ## Ruff docstring / ASYNC borç kapatma takibi
