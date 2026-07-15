@@ -35,6 +35,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "scripts/test_gates/benchmark.sh",
         "scripts/test_gates/summary.py",
         "scripts/install_modules/validation.sh",
+        "scripts/install_modules/install_cli.sh",
+        "scripts/install_modules/install_dispatcher.sh",
         "scripts/install_modules/utils/ux.sh",
         "web/bootstrap.py",
         "web/middleware/cors.py",
@@ -79,6 +81,23 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "Güncel bakım hotspot snapshot" in plan
     assert "Quality gate orchestration büyüdü" in plan
     assert "ana script bootstrap facade" in plan
+
+
+def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
+    dispatcher = Path("scripts/install_modules/install_dispatcher.sh").read_text(encoding="utf-8")
+
+    assert 'source "${INSTALL_MODULE_DIR}/install_cli.sh"' in installer
+    assert 'sidar_parse_install_cli "$@"' in installer
+    assert 'source "${INSTALL_MODULE_DIR}/install_dispatcher.sh"' in installer
+    assert 'sidar_dispatch_install_phases "$@"' in installer
+    assert "sidar_parse_install_cli()" in cli
+    assert 'for arg in "$@"' in cli
+    assert "sidar_dispatch_install_phases()" in dispatcher
+    assert 'sidar_run_install_phase "01_context"' in dispatcher
+    assert 'sidar_run_install_phase "07_finish"' in dispatcher
+    assert 'for arg in "$@"' not in installer
 
 
 def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
