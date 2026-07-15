@@ -501,7 +501,14 @@ jobs:
           retention-days: 14
 
       - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
+        run: |
+          # DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL ve SELF_HEAL_DATABASE_URL
+          # bilinçli olarak env şablonlarında tanımlanmaz: config_postgres.py
+          # bunları POSTGRES_* değerlerinden runtime'da türetir; şablonlarda boş
+          # bile olsa aktif bir satır (test_database_url_examples_do_not_ship_blank_runtime_overrides)
+          # tarafından yasaklanmıştır.
+          bash scripts/check_env_parity.sh \
+            --ignore DATABASE_URL,SIDAR_CONTAINER_DATABASE_URL,SELF_HEAL_DATABASE_URL
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
