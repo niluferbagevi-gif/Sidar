@@ -1184,6 +1184,8 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
+    dispatcher_module = repo_root / "scripts" / "install_modules" / "install_dispatcher.sh"
+    dispatcher_text = dispatcher_module.read_text(encoding="utf-8")
     alembic_phase = repo_root / "scripts" / "install_modules" / "phases" / "12_alembic.sh"
     alembic_prelude = alembic_phase.read_text(encoding="utf-8").split(
         "resolve_alembic_python", maxsplit=1
@@ -1262,7 +1264,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
         'sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system\n'
         "    cleanup_bootstrap_script_copy\n"
         '    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites'
-    ) in installer_text
+    ) in dispatcher_text
     assert "Accepted values:" in installer_text
     assert "  Commands: doctor | prepare-system" in installer_text
     assert "Kabul edilen değerler:" in installer_text
