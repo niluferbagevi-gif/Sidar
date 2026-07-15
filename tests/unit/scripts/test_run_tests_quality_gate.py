@@ -1769,16 +1769,17 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
 
 
 def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
-    install_script = installer_contract_sources()
+    install_cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
+    install_contract = installer_contract_sources()
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
     plan = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-ask}"' in install_script
+    assert 'DEPENDENCY_PROFILE="${SIDAR_DEPENDENCY_PROFILE:-ask}"' in install_cli
     assert (
         "--dependency-profile=dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
-        in install_script
+        in install_contract
     )
     assert 'sidar_source_install_utils "gpu_utils.sh" "python_env.sh"' in runtime_phase
     assert runtime_phase.index("select_runtime_mode") < runtime_phase.index(
