@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -19,6 +19,24 @@ _T = TypeVar("_T")
 
 class DatabaseConnectionMixin:
     """Connection lifecycle facade shared by the legacy ``Database`` class."""
+
+    cfg: Any
+    database_url: str
+    primary_database_url: str
+    pool_size: int
+    pool_min_size: int
+    statement_cache_size: int
+    max_cached_statement_lifetime: float
+    _backend: str
+    _sqlite_path: Path | None
+    _sqlite_conn: sqlite3.Connection | None
+    _sqlite_write_lock: asyncio.Lock | None
+    _sqlite_executor: ThreadPoolExecutor | None
+    _sqlite_closed: bool
+    _pg_pool: Any
+    _pg_pool_factory: Callable[..., Any] | None
+    degraded_mode: bool
+    degraded_reason: str
 
     @property
     def _sqlite_lock(self) -> asyncio.Lock | None:
@@ -208,7 +226,7 @@ class DatabaseConnectionMixin:
         """Resolve the legacy-monkeypatchable PostgreSQL action message facade."""
         from core import db as core_db
 
-        return core_db._postgres_user_action_message(reason, exc)
+        return cast(str, cast(Any, core_db)._postgres_user_action_message(reason, exc))
 
     async def _enter_degraded_mode(self, reason: str, exc: BaseException) -> None:
         if not bool(getattr(self.cfg, "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True)):
