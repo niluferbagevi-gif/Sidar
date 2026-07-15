@@ -43,6 +43,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/db/audit.py",
         "core/rag/embeddings.py",
         "managers/code/patcher.py",
+        "managers/code/runner.py",
         "agent/self_heal/executor.py",
         "agent/roles/coverage/analyzer.py",
         "core/llm/providers/ollama.py",
@@ -91,6 +92,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     import core.db.models as db_models
     import core.db.session as db_session
     import core.rag.facade as rag_facade
+    import managers.code.runner as code_runner
     import scripts.test_gates.summary as test_gate_summary
     import web.middleware.access_policy as access_policy_middleware
 
@@ -100,6 +102,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
     assert callable(rag_facade.build_embedding_function)
     assert callable(self_heal_executor.execute_self_heal_plan)
+    assert callable(code_runner.run_shell_command)
     assert callable(test_gate_summary.build_summary)
     assert callable(access_policy_middleware.access_policy_middleware_impl)
 
