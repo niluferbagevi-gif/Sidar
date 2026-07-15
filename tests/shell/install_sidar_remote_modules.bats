@@ -181,6 +181,31 @@ FAKE_CURL
   [[ "$output" == *"Fallback modül cache'den kullanıldı: install_helpers.sh"* ]]
 }
 
+@test "INSTALL_REMOTE_MODULES covers every module in the embedded hash manifest" {
+  run_remote_module_snippet '
+    missing=()
+    for module_rel in "${!INSTALL_REMOTE_MODULE_HASHES[@]}"; do
+      found=0
+      for m in "${INSTALL_REMOTE_MODULES[@]}"; do
+        if [[ "$m" == "$module_rel" ]]; then
+          found=1
+          break
+        fi
+      done
+      if [[ "$found" -eq 0 ]]; then
+        missing+=("$module_rel")
+      fi
+    done
+    if [[ "${#missing[@]}" -gt 0 ]]; then
+      printf "MISSING: %s\n" "${missing[*]}"
+      exit 1
+    fi
+    echo "install remote modules cover embedded manifest"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"install remote modules cover embedded manifest"* ]]
+}
+
 @test "fallback raw downloader honors SIDAR_INSTALL_MODULE_BASE_URL" {
   run_remote_module_snippet '
     tmpdir="$(mktemp -d)"

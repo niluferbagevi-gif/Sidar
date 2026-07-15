@@ -77,6 +77,16 @@ NR == 1 && /^#!/ { next }
         emit_module(helper)
     }
 
+    cli = module_dir "/install_cli.sh"
+    if (system("test -f \"" cli "\"") == 0) {
+        emit_module(cli)
+    }
+
+    dispatcher = module_dir "/install_dispatcher.sh"
+    if (system("test -f \"" dispatcher "\"") == 0) {
+        emit_module(dispatcher)
+    }
+
     while ((("find \"" module_dir "/utils\" -type f -name \"*.sh\" 2>/dev/null | sort") | getline f) > 0) {
         emit_module(f)
     }
