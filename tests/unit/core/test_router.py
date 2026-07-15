@@ -631,3 +631,38 @@ def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(
     tracker.add(0.0)
     assert tracker._redis.pipe.execute_called == 0
     assert tracker.daily_usage() == 0.0
+
+
+def test_llm_routing_service_delegates_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.llm.router import LLMRoutingService
+
+    class FakeCostAwareRouter:
+        def __init__(self, config: SimpleNamespace) -> None:
+            self.config = config
+
+        def select(
+            self, messages: list[dict[str, str]], provider: str, model: str | None
+        ) -> tuple[str, str | None]:
+            assert messages == [{"role": "user", "content": "analyze"}]
+            assert (provider, model) == ("openai", "gpt-4o-mini")
+            assert self.config.ENABLE_COST_ROUTING is True
+            return "ollama", "qwen2.5-coder:7b"
+
+    monkeypatch.setattr("core.llm.router.CostAwareRouter", FakeCostAwareRouter)
+
+    service = LLMRoutingService(_make_config())
+
+    assert service.select(
+        [{"role": "user", "content": "analyze"}], "openai", "gpt-4o-mini"
+    ) == ("ollama", "qwen2.5-coder:7b")
+
+
+def test_llm_routing_service_records_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.llm.router import LLMRoutingService
+
+    recorded: list[float] = []
+    monkeypatch.setattr("core.llm.router.record_routing_cost", recorded.append)
+
+    LLMRoutingService.record_cost(0.42)
+
+    assert recorded == [0.42]
