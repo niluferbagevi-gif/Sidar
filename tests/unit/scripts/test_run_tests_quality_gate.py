@@ -951,6 +951,18 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
     )
 
 
+def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
+    """Local security gate mirrors CI's Ruff debt ratchet before SAST scans."""
+    body = _extract_run_tests_function("run_security_analysis_gates")
+
+    debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
+    bandit_check = "uv run bandit -r . -c pyproject.toml"
+    assert debt_check in body
+    assert bandit_check in body
+    assert body.index(debt_check) < body.index(bandit_check)
+    assert "Ruff docstring/E501/ASYNC240 borç baseline kontrolü başarısız" in body
+
+
 def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")

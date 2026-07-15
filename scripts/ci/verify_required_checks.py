@@ -29,7 +29,8 @@ class RequiredCheckAuditError(RuntimeError):
 def _repo_from_git_remote() -> str:
     """Resolve owner/repo from the local git remote when GITHUB_REPOSITORY is absent."""
     try:
-        remote = subprocess.check_output(  # noqa: S603 - fixed git command without user shell.
+        # Fixed git command without user shell or user-controlled executable.
+        remote = subprocess.check_output(  # nosec B603 B607
             ["git", "remote", "get-url", "origin"], text=True, stderr=subprocess.DEVNULL
         ).strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -97,7 +98,8 @@ def _fetch_required_contexts(
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers)
     try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - URL is GitHub API or explicit operator override.
+        # URL is GitHub API or an explicit operator override.
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw_payload = response.read().decode("utf-8")
     except HTTPError as exc:
         raise RequiredCheckAuditError(

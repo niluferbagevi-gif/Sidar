@@ -222,11 +222,15 @@ def assert_no_unmerged_files() -> None:
     if not unmerged_files:
         return
 
-    print(f"{Colors.FAIL}❌ Çözülmemiş Git çakışmaları var; commit/push durduruldu:{Colors.ENDC}")
+    print(
+        f"{Colors.FAIL}❌ Çözülmemiş Git çakışmaları var; "
+        f"commit/push durduruldu:{Colors.ENDC}"
+    )
     for file_path in unmerged_files:
         print(f"  - {file_path}")
     print(
-        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra aracı tekrar çalıştırın.{Colors.ENDC}"
+        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra "
+        f"aracı tekrar çalıştırın.{Colors.ENDC}"
     )
     sys.exit(1)
 
@@ -246,7 +250,8 @@ def abort_in_progress_merge() -> None:
     abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
     if abort_success:
         print(
-            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; çalışma ağacı temizlendi.{Colors.ENDC}"
+            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; "
+            f"çalışma ağacı temizlendi.{Colors.ENDC}"
         )
     elif abort_err:
         print(
@@ -266,10 +271,14 @@ def create_rollback_backup_tag() -> str:
     tag_name = f"backup/pre-rollback-{datetime.now():%Y%m%d%H%M%S}"
     tag_success, tag_err = run_command(["git", "tag", tag_name], show_output=False)
     if tag_success:
-        print(f"{Colors.OKGREEN}🛟 Rollback öncesi yedek tag oluşturuldu: {tag_name}{Colors.ENDC}")
+        print(
+            f"{Colors.OKGREEN}🛟 Rollback öncesi yedek tag oluşturuldu: "
+            f"{tag_name}{Colors.ENDC}"
+        )
     else:
         print(
-            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; işlem güvenlik için durduruldu:\n"
+            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; "
+            "işlem güvenlik için durduruldu:\n"
             f"{tag_err}{Colors.ENDC}"
         )
         sys.exit(1)
@@ -278,12 +287,15 @@ def create_rollback_backup_tag() -> str:
 
 def report_ours_strategy_changes() -> None:
     """`-X ours` merge sonrasında değişen dosyaları görünür hale getirir."""
-    _, changed = run_command(["git", "diff", "--name-only", "ORIG_HEAD..HEAD"], show_output=False)
+    _, changed = run_command(
+        ["git", "diff", "--name-only", "ORIG_HEAD..HEAD"], show_output=False
+    )
     changed_files = [line.strip() for line in changed.splitlines() if line.strip()]
     if not changed_files:
         return
     print(
-        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel sürümün korunduğu dosyalar:{Colors.ENDC}"
+        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel "
+        f"sürümün korunduğu dosyalar:{Colors.ENDC}"
     )
     for file_path in changed_files:
         print(f"  - {file_path}")
@@ -628,7 +640,8 @@ def main() -> None:
     if target_branch:
         print(f"\n{Colors.HEADER}📥 Dış dal (branch) algılandı: '{target_branch}'{Colors.ENDC}")
         print(
-            f"{Colors.OKBLUE}🔄 '{target_branch}' GitHub'dan çekilip '{current_branch}' ile birleştiriliyor...{Colors.ENDC}"
+            f"{Colors.OKBLUE}🔄 '{target_branch}' GitHub'dan çekilip "
+            f"'{current_branch}' ile birleştiriliyor...{Colors.ENDC}"
         )
 
         pull_cmd = [
@@ -654,7 +667,8 @@ def main() -> None:
             abort_in_progress_merge()
             print(
                 f"{Colors.WARNING}Başarısız merge geri alındı. "
-                "Lütfen ilgili dalı güncelleyip/çakışmayı manuel test ederek aracı tekrar çalıştırın."
+                "Lütfen ilgili dalı güncelleyip/çakışmayı manuel test ederek "
+                "aracı tekrar çalıştırın."
                 f"{Colors.ENDC}"
             )
             sys.exit(1)
