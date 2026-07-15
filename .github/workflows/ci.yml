@@ -293,6 +293,9 @@ jobs:
       - name: Run Python lint gate (ruff)
         run: uv run ruff check .
 
+      - name: Check Ruff docstring and ASYNC240 debt baseline
+        run: uv run python scripts/ci/check_ruff_debt_baseline.py
+
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
 

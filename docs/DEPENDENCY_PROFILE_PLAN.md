@@ -206,12 +206,16 @@ planlanan doğrulama komutları:
 
 ```bash
 uv run ruff check . --select D,ASYNC
+uv run python scripts/ci/check_ruff_debt_baseline.py
 uv run ruff check .
 ```
 
 Yeni veya anlamlı şekilde değişen public API'lerde Google-style docstring eklemek ve
 yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmemek zorunludur;
-ignore listesi yeni borç eklemek için genişletilmemelidir.
+ignore listesi yeni borç eklemek için genişletilmemelidir. CI, mevcut D200-D417 ve
+ASYNC240 sayımlarını `docstring_async_debt_baseline` üst sınırıyla karşılaştırır; yeni
+veya anlamlı düzenlenen kod bu baseline'ı artırırsa `scripts/ci/check_ruff_debt_baseline.py`
+fail-closed davranır.
 
 ## Aşamalı geçiş
 

@@ -9,4 +9,4 @@
 - **Durum:** UV tabanlı modern paket mimarisiyle uyumlu.
 - **2026-08-15 torch reminder:** `torch 2.11.0` lock/policy penceresi için takip metadata'sı `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğunda ve takvim girdisi `docs/reminders/torch-cve-review-2026-08-15.ics` dosyasında tutulur.
 - **Production-minimal doğrulama:** CI `production-profile-dry-run` job'ı artık release-blocking runtime validation kapısıdır; installer sync, FastAPI web boot smoke, Alembic DB migration smoke ve `production-minimal-runtime-evidence` artifact'ini doğrular.
-- **Ruff E501 borcu:** `line-length=100` korunur; global E501 ignore geçici legacy uyumluluk borcu olarak `[tool.sidar.ruff_debt]` altında tarihli takip edilir.
+- **Ruff E501 / docstring / ASYNC borcu:** `line-length=100` korunur; global E501, D200-D417 ve ASYNC240 ignore'ları geçici legacy uyumluluk borcu olarak `[tool.sidar.ruff_debt]` altında tarihli takip edilir ve `scripts/ci/check_ruff_debt_baseline.py` baseline kapısıyla büyütülmez.
