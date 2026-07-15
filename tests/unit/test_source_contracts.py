@@ -16,7 +16,7 @@ def test_expanded_bash_source_inlines_script_dir_sources(tmp_path: Path) -> None
 
     expanded = expanded_bash_source(source, root=tmp_path)
 
-    assert '# --- expanded from ' in expanded
+    assert "# --- expanded from " in expanded
     assert "helper_function() {" in expanded
     assert expanded.index('source "${SCRIPT_DIR}/helpers.sh"') < expanded.index(
         "helper_function() {"
