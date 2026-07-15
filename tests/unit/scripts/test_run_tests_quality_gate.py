@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import textwrap
@@ -14,24 +13,14 @@ import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
+from tests._helpers.source_contracts import expanded_bash_source, shell_function_body
+
 RUN_TESTS = Path("run_tests.sh")
-RUN_TESTS_MODULE_SOURCE_RE = re.compile(
-    r'^source "\$\{SCRIPT_DIR\}/(scripts/test_gates/[^" ]+\.sh)"$'
-)
 
 
 def _script() -> str:
     """Return run_tests.sh with sourced test gate modules expanded in-place."""
-    expanded_lines: list[str] = []
-    for line in RUN_TESTS.read_text(encoding="utf-8").splitlines():
-        expanded_lines.append(line)
-        match = RUN_TESTS_MODULE_SOURCE_RE.match(line.strip())
-        if match:
-            module_path = Path(match.group(1))
-            expanded_lines.append(f"# --- expanded from {module_path} for contract tests ---")
-            expanded_lines.extend(module_path.read_text(encoding="utf-8").splitlines())
-            expanded_lines.append(f"# --- end expanded from {module_path} ---")
-    return "\n".join(expanded_lines) + "\n"
+    return expanded_bash_source(RUN_TESTS)
 
 
 def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
@@ -45,16 +34,6 @@ def installer_contract_sources() -> str:
     """Return the modular installer contract surface as one searchable string."""
     paths = [Path("install_sidar.sh"), *sorted(Path("scripts/install_modules").rglob("*.sh"))]
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
-
-
-def _extract_shell_function_from_text(script: str, name: str) -> str:
-    """Return a shell function body from arbitrary shell source text."""
-    start_marker = f"{name}() {{"
-    start = script.index(start_marker)
-    next_function = re.search(r"\n[a-zA-Z_][a-zA-Z0-9_]*\(\) \{", script[start + 1 :])
-    if next_function is None:
-        return script[start:]
-    return script[start : start + 1 + next_function.start()]
 
 
 def _run_tests_frontend_playwright_helpers() -> str:
@@ -79,13 +58,7 @@ def _sha256_file(path: Path) -> str:
 
 def _extract_run_tests_function(name: str) -> str:
     """Return a shell function body from run_tests.sh or its test gate modules."""
-    script = _script()
-    start_marker = f"{name}() {{"
-    start = script.index(start_marker)
-    next_function = re.search(r"\n[a-zA-Z_][a-zA-Z0-9_]*\(\) \{", script[start + 1 :])
-    if next_function is None:
-        return script[start:]
-    return script[start : start + 1 + next_function.start()]
+    return shell_function_body(_script(), name)
 
 
 def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
@@ -2395,7 +2368,7 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = installer_contract_sources()
-    main_body = _extract_shell_function_from_text(script, "sidar_dispatch_install_phases")
+    main_body = shell_function_body(script, "sidar_dispatch_install_phases")
 
     expected_modules = (
         "phases/01_context.sh",
@@ -2709,7 +2682,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = installer_contract_sources()
-    main_body = _extract_shell_function_from_text(script, "sidar_dispatch_install_phases")
+    main_body = shell_function_body(script, "sidar_dispatch_install_phases")
     remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
         encoding="utf-8"
     )
