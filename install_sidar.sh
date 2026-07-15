@@ -509,9 +509,9 @@ INSTALL_PHASE_MODULES=(
 )
 
 INSTALL_REMOTE_MODULES=(
+    "install_helpers.sh"
     "install_cli.sh"
     "install_dispatcher.sh"
-    "install_helpers.sh"
     "${INSTALL_UTILITY_MODULES[@]}"
     "utils/wsl_integration_autofix.ps1"
     "${INSTALL_PHASE_MODULES[@]}"

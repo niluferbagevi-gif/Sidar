@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Düzeltmeler (Fixed)
+- **`INSTALL_REMOTE_MODULES` fallback indirme listesi `install_cli.sh`/`install_dispatcher.sh` modüllerini atlıyordu:** `install_sidar.sh` yerel repo yokken (örn. `wget install_sidar.sh` + boş dizin) fallback modülleri `INSTALL_REMOTE_MODULES` dizisine göre indiriyor; bu dizi `install_cli.sh` ve `install_dispatcher.sh`'ı içermiyordu (embedded `EMBEDDED_MODULE_HASHES_MANIFEST`'te hash'leri olmasına ve script sonradan bu modülleri `source` etmesine rağmen). Sonuç: bu iki dosya hiç indirilmiyor, ardından hash doğrulama adımı "dosya yok" hatasıyla kurulumu durduruyordu. `install_sidar.sh:511-517` düzeltildi; `tests/shell/install_sidar_remote_modules.bats` içindeki "INSTALL_REMOTE_MODULES covers every module in the embedded hash manifest" testi artık doğrulanıyor.
+
 ### Dokümantasyon
 - **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; günlük local/CI coverage baseline `pyproject.toml [tool.coverage.report].fail_under = 99` olarak izlenir, ratchet yalnız yukarı taşır ve `%100` hedef yalnız coverage campaign / strict opt-in profilinde uygulanır.
 
