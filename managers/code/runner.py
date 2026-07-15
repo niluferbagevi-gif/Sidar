@@ -165,7 +165,6 @@ def find_destructive_shell_pattern(command: str) -> str | None:
     return None
 
 
-
 def run_shell_command(
     manager: Any,
     command: str,

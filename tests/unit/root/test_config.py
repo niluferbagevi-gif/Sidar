@@ -2532,7 +2532,9 @@ def test_config_logging_facade_uses_dedicated_setup_module() -> None:
     import core.config_logging_setup as config_logging_setup
 
     assert config.get_sidar_locale is not None
-    assert config.localized_log_message("env_loaded") == config_logging_setup.localized_log_message("env_loaded")
+    assert config.localized_log_message("env_loaded") == config_logging_setup.localized_log_message(
+        "env_loaded"
+    )
     assert config._configure_noisy_dependency_loggers is not None
     assert config_logging_setup.log_first_load_info.__name__ == "log_first_load_info"
 

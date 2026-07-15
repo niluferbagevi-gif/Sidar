@@ -27,7 +27,17 @@ PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
     }
 )
 PLUGIN_SAFE_IMPORT_ROOTS: frozenset[str] = frozenset(
-    {"agent", "collections", "dataclasses", "datetime", "enum", "fastapi", "math", "typing", "web_server"}
+    {
+        "agent",
+        "collections",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "fastapi",
+        "math",
+        "typing",
+        "web_server",
+    }
 )
 PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS: frozenset[str] = frozenset({"BaseAgent"})
 PLUGIN_SAFE_FASTAPI_FROM_IMPORTS: frozenset[str] = frozenset({"HTTPException"})
@@ -35,7 +45,9 @@ PLUGIN_SAFE_FASTAPI_FROM_IMPORTS: frozenset[str] = frozenset({"HTTPException"})
 
 def plugin_source_filename(module_label: str) -> str:
     """Return a synthetic filename for plugin compile errors."""
-    safe_label = "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in module_label)
+    safe_label = "".join(
+        ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in module_label
+    )
     return f"<sidar-plugin:{safe_label or 'inline'}>"
 
 

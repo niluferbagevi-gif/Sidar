@@ -37,9 +37,7 @@ async def test_access_policy_middleware_allows_and_audits_when_checker_allows() 
 
     async def _resolve_agent_instance() -> Any:
         return SimpleNamespace(
-            memory=SimpleNamespace(
-                db=SimpleNamespace(check_access_policy=_check_access_policy)
-            )
+            memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=_check_access_policy))
         )
 
     response = await access_policy_middleware_impl(
@@ -79,9 +77,7 @@ async def test_access_policy_middleware_denies_and_audits_when_checker_denies() 
 
     async def _resolve_agent_instance() -> Any:
         return SimpleNamespace(
-            memory=SimpleNamespace(
-                db=SimpleNamespace(check_access_policy=_check_access_policy)
-            )
+            memory=SimpleNamespace(db=SimpleNamespace(check_access_policy=_check_access_policy))
         )
 
     response = await access_policy_middleware_impl(
