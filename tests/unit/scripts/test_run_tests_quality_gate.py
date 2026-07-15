@@ -4075,7 +4075,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
     assert "Production readiness aggregate" in ci
-    assert "needs: [test, benchmark-compare]" in ci
+    assert "needs: [test, benchmark-compare, production-profile-dry-run]" in ci
     assert "Run canonical production-readiness gate" in ci
     assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
     assert (
