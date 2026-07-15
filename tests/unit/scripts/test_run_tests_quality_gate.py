@@ -3868,7 +3868,10 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
     )
     assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
     assert "env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD" in bats_block
-    assert 'bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell' in bats_block
+    assert (
+        'bats --print-output-on-failure --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell'
+        in bats_block
+    )
     assert "${BATS_REPORT_DIR}/report.xml" in bats_block
 
 
