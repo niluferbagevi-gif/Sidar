@@ -518,6 +518,8 @@ INSTALL_REMOTE_MODULES=(
 # Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
+6599593140c780f586305de2a43836678d2edc1abe34a19282d061ad2a47fc7a  scripts/install_modules/install_cli.sh
+a73a534bec5e8fbfaa04a2a4119e1d2f91b18fd83e61850a36dda3ac96226b58  scripts/install_modules/install_dispatcher.sh
 f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
 7e4ecc4d6bfa1ec5ac772d598df7b21cc047a4a9b24de13a336ceff0eca8138f  scripts/install_modules/phases/01_context.sh
 5c594a7aa5d5c7e708211f13373c7d4d5f87e1483f66c7d72536b7437986072f  scripts/install_modules/phases/02_repo.sh
