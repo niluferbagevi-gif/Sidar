@@ -141,7 +141,9 @@ def test_fetch_required_contexts_wraps_http_errors(monkeypatch: pytest.MonkeyPat
         )
 
 
-def test_cli_offline_mode_fails_when_context_is_missing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_offline_mode_fails_when_context_is_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     workflow = _workflow(tmp_path / "ci.yml")
 
     exit_code = audit.main(
