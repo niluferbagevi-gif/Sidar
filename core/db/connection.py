@@ -132,7 +132,6 @@ class DatabaseConnectionMixin:
                     raise
         raise sqlite3.OperationalError("SQLite işlemi deneme sınırına ulaştı ve tamamlanamadı.")
 
-
     @staticmethod
     def _sqlite_retry_range(start: int, stop: int) -> Any:
         """Resolve the legacy-monkeypatchable retry range helper."""

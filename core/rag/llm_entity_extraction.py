@@ -58,10 +58,10 @@ def build_llm_entity_extraction_prompt(
         f"Return at most {max(1, active_settings.max_entities)} entities. "
         f"Allowed labels: {sorted(ALLOWED_ENTITY_LABELS)}. "
         f"Allowed relation types: {sorted(ALLOWED_RELATION_TYPES)}. "
-        "Use shape {\"schema_version\": str, \"entities\": "
-        "[{\"label\": str, \"name\": str, \"properties\": object}], "
-        "\"relations\": [{\"source_label\": str, \"source_name\": str, "
-        "\"target_label\": str, \"target_name\": str, \"type\": str}]}.\n"
+        'Use shape {"schema_version": str, "entities": '
+        '[{"label": str, "name": str, "properties": object}], '
+        '"relations": [{"source_label": str, "source_name": str, '
+        '"target_label": str, "target_name": str, "type": str}]}.\n'
         f"Title: {title}\nSource: {source}\nTags: {tag_text}\nContent:\n{content}"
     )
 

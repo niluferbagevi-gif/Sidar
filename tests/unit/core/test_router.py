@@ -652,9 +652,10 @@ def test_llm_routing_service_delegates_selection(monkeypatch: pytest.MonkeyPatch
 
     service = LLMRoutingService(_make_config())
 
-    assert service.select(
-        [{"role": "user", "content": "analyze"}], "openai", "gpt-4o-mini"
-    ) == ("ollama", "qwen2.5-coder:7b")
+    assert service.select([{"role": "user", "content": "analyze"}], "openai", "gpt-4o-mini") == (
+        "ollama",
+        "qwen2.5-coder:7b",
+    )
 
 
 def test_llm_routing_service_records_cost(monkeypatch: pytest.MonkeyPatch) -> None:

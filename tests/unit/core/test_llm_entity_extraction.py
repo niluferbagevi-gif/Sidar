@@ -161,7 +161,11 @@ def test_normalize_llm_entity_payload_accepts_relation_raw_ids_and_filters_bad_e
                 "not-a-mapping",
                 {"type": "RUNS_ON", "source_label": "Campaign", "target_name": "Developers"},
                 {"type": "CITES_SOURCE", "source_id": campaign_id, "target_id": "source:missing"},
-                {"type": "targets_audience", "source_id": f" {campaign_id} ", "target_id": audience_id},
+                {
+                    "type": "targets_audience",
+                    "source_id": f" {campaign_id} ",
+                    "target_id": audience_id,
+                },
             ],
         },
         clean_entity_value=clean_entity_value,
@@ -191,7 +195,11 @@ def test_extract_llm_entity_payload_respects_feature_flag_and_coerces_json() -> 
     disabled = LLMEntityExtractionSettings(enabled=False)
     assert (
         extract_llm_entity_payload(
-            "Launch", "content", tags=["campaign:Launch"], settings=disabled, extractor=fake_extractor
+            "Launch",
+            "content",
+            tags=["campaign:Launch"],
+            settings=disabled,
+            extractor=fake_extractor,
         )
         is None
     )

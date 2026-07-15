@@ -4122,10 +4122,12 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "next_strict_command" in seed_workflow
     assert (
         "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 "
-        "RUN_BENCHMARKS=required ./run_tests.sh"
+        "RUN_BENCHMARKS=required ./run_tests.sh" in seed_workflow
+    )
+    assert (
+        "Rerun normal CI / production-readiness after this cache/artifact is saved."
         in seed_workflow
     )
-    assert "Rerun normal CI / production-readiness after this cache/artifact is saved." in seed_workflow
     assert "actions/cache/save@v4" in seed_workflow
     assert "actions/upload-artifact@v4" in seed_workflow
     assert "baseline-seed-manifest.json" in ci

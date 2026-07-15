@@ -264,7 +264,9 @@ class DocumentStore:
         self._llm_entity_extraction_settings = LLMEntityExtractionSettings(
             enabled=bool(getattr(self.cfg, "ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)),
             max_entities=self._entity_max_per_doc,
-            review_target=str(getattr(self.cfg, "RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3") or "2026-Q3"),
+            review_target=str(
+                getattr(self.cfg, "RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3") or "2026-Q3"
+            ),
         )
         self._llm_entity_extractor = getattr(self.cfg, "RAG_LLM_ENTITY_EXTRACTOR", None)
 
@@ -604,7 +606,9 @@ class DocumentStore:
         settings = getattr(
             self,
             "_llm_entity_extraction_settings",
-            LLMEntityExtractionSettings(enabled=False, max_entities=getattr(self, "_entity_max_per_doc", 24)),
+            LLMEntityExtractionSettings(
+                enabled=False, max_entities=getattr(self, "_entity_max_per_doc", 24)
+            ),
         )
         extractor = getattr(self, "_llm_entity_extractor", None)
         llm_factory = None if extractor is not None else self._build_llm_entity_client
