@@ -58,10 +58,11 @@ describe("ChatMessage — kullanıcı mesajı", () => {
 });
 
 describe("ChatMessage — asistan mesajı", () => {
-  it("renders assistant content through ReactMarkdown", () => {
+  it("renders assistant content through the lazy Markdown renderer", async () => {
     const msg = makeMsg({ role: "assistant", content: "**Kalın metin**" });
     render(<ChatMessage message={msg} />);
-    expect(screen.getByTestId("markdown")).toHaveTextContent("**Kalın metin**");
+    expect(screen.getByText("**Kalın metin**")).toHaveClass("message__text--markdown-loading");
+    expect(await screen.findByTestId("markdown")).toHaveTextContent("**Kalın metin**");
   });
 
   it("shows default author 'SİDAR' for assistant role", () => {
@@ -79,10 +80,10 @@ describe("ChatMessage — asistan mesajı", () => {
     expect(container.querySelector(".message--assistant")).toBeInTheDocument();
   });
 
-
-  it("wraps markdown code blocks in .code-block-wrapper", () => {
+  it("wraps markdown code blocks in .code-block-wrapper", async () => {
     const msg = makeMsg({ role: "assistant", content: "```js\nconsole.log('x')\n```" });
     const { container } = render(<ChatMessage message={msg} />);
+    await screen.findByTestId("markdown");
     expect(container.querySelector(".code-block-wrapper")).toBeInTheDocument();
   });
 });
