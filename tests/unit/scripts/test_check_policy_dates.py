@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from scripts.ci.check_policy_dates import check_policy_dates, main
+from scripts.ci.check_policy_dates import check_policy_date_warnings, check_policy_dates, main
 
 
 def _write_policy_pyproject(path: Path, *, ruff: str, review: str, expires: str) -> None:
@@ -24,6 +24,18 @@ def test_check_policy_dates_accepts_active_repository_dates() -> None:
     failures = check_policy_dates(Path("pyproject.toml"), today=date(2026, 7, 7))
 
     assert failures == []
+
+
+def test_check_policy_dates_warns_for_torch_review_window() -> None:
+    warnings = check_policy_date_warnings(Path("pyproject.toml"), today=date(2026, 7, 15))
+
+    assert warnings == [
+        (
+            "Torch CVE policy review "
+            "(tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by) "
+            "is due on 2026-08-15 (31 days remaining)"
+        )
+    ]
 
 
 def test_check_policy_dates_fails_after_ruff_and_torch_policy_dates(tmp_path: Path) -> None:
@@ -53,6 +65,14 @@ def test_check_policy_dates_fails_after_ruff_and_torch_policy_dates(tmp_path: Pa
             "expired on 2026-09-15"
         ),
     ]
+
+
+def test_check_policy_dates_cli_warns_without_failing_before_review_date(capsys) -> None:
+    assert main(["--today", "2026-07-15", "--warn-within-days", "45"]) == 0
+
+    captured = capsys.readouterr()
+    assert "Upcoming Sidar policy/debt dates" in captured.err
+    assert "31 days remaining" in captured.err
 
 
 def test_check_policy_dates_cli_returns_nonzero_for_expired_policy(tmp_path: Path) -> None:

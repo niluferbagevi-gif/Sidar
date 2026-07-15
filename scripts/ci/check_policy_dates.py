@@ -32,6 +32,57 @@ def _add_if_expired(
         failures.append(f"{label} ({key}) expired on {policy_date.isoformat()}")
 
 
+def _add_if_due_soon(
+    warnings: list[str],
+    *,
+    label: str,
+    value: Any,
+    key: str,
+    today: date,
+    warn_within_days: int,
+) -> None:
+    policy_date = _parse_date(value, key=key)
+    days_remaining = (policy_date - today).days
+    if 0 <= days_remaining <= warn_within_days:
+        warnings.append(
+            f"{label} ({key}) is due on {policy_date.isoformat()} ({days_remaining} days remaining)"
+        )
+
+
+def check_policy_date_warnings(
+    pyproject_path: Path, *, today: date | None = None, warn_within_days: int | None = None
+) -> list[str]:
+    """Return active dated policy/debt markers that are approaching review/expiry."""
+
+    effective_today = today or date.today()
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    sidar = data.get("tool", {}).get("sidar", {})
+    torch_reminder = sidar.get("dependency_profile_plan", {}).get("torch_upgrade_reminder", {})
+    configured_window = torch_reminder.get("warning_window_days", 45)
+    warning_window = (
+        warn_within_days if warn_within_days is not None else int(configured_window or 45)
+    )
+    warnings: list[str] = []
+
+    _add_if_due_soon(
+        warnings,
+        label="Torch CVE policy review",
+        value=torch_reminder.get("review_by", ""),
+        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by",
+        today=effective_today,
+        warn_within_days=warning_window,
+    )
+    _add_if_due_soon(
+        warnings,
+        label="Torch CVE policy exception",
+        value=torch_reminder.get("expires", ""),
+        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
+        today=effective_today,
+        warn_within_days=warning_window,
+    )
+    return warnings
+
+
 def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> list[str]:
     """Return expired dated policy/debt markers from pyproject.toml."""
 
@@ -71,14 +122,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
     parser.add_argument("--today", default="", help="Override current date for tests (YYYY-MM-DD).")
+    parser.add_argument(
+        "--warn-within-days",
+        type=int,
+        default=None,
+        help="Print non-failing warnings for policy dates due within this many days.",
+    )
     args = parser.parse_args(argv)
 
     today = date.fromisoformat(args.today) if args.today else None
     try:
         failures = check_policy_dates(args.pyproject, today=today)
+        warnings = check_policy_date_warnings(
+            args.pyproject, today=today, warn_within_days=args.warn_within_days
+        )
     except (OSError, ValueError) as exc:
         print(f"policy date check error: {exc}", file=sys.stderr)
         return 2
+
+    if warnings:
+        print("Upcoming Sidar policy/debt dates:", file=sys.stderr)
+        for warning in warnings:
+            print(f"- {warning}", file=sys.stderr)
 
     if failures:
         print("Expired Sidar policy/debt dates:", file=sys.stderr)

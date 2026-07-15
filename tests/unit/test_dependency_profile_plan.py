@@ -175,6 +175,7 @@ def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> N
     assert reminder["tracked_policy_exception"] == "CVE-2025-3000"
     assert reminder["review_by"] == "2026-08-15"
     assert reminder["expires"] == "2026-09-15"
+    assert reminder["warning_window_days"] == 45
     assert reminder["upgrade_command"] == (
         "uv lock --upgrade-package torch --upgrade-package torchvision"
     )
@@ -187,8 +188,10 @@ def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> N
     assert str(runbook) in docs
     for required in (
         "Review by:** 2026-08-15",
+        "inside the 45-day warning window",
         "Exception expires:** 2026-09-15",
         "uv lock --upgrade-package torch --upgrade-package torchvision",
+        "uv run python scripts/ci/check_policy_dates.py --warn-within-days 45",
         "uv run --with pip-audit pip-audit --skip-editable --timeout 30",
         "security/pip-audit-ignores.tsv",
         "Do not move `torch` / `torchvision` into `production-minimal`",

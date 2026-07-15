@@ -367,6 +367,7 @@ current_lock = "torch 2.11.0"
 tracked_policy_exception = "CVE-2025-3000"
 review_by = "2026-08-15"
 expires = "2026-09-15"
+warning_window_days = 45
 calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
 runbook_file = "docs/runbooks/torch-cve-upgrade.md"
 tracked_files = [
