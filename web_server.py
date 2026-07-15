@@ -9,7 +9,6 @@ Başlatmak için:
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import atexit
 import builtins
@@ -91,6 +90,7 @@ from web.middleware.ratelimit import (
     ddos_rate_limit_middleware_impl,
     rate_limit_middleware_impl,
 )
+from web.plugins import sandbox as plugin_sandbox
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
 from web.routes import federation as federation_routes
@@ -1803,87 +1803,7 @@ def _build_restricted_plugin_builtins() -> dict[str, Any]:
 
 def _validate_plugin_source(source_code: str) -> None:
     """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
-    try:
-        tree = ast.parse(source_code, mode="exec")
-    except SyntaxError as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin söz dizimi hatası: {exc}") from exc
-
-    banned_calls = {
-        "exec",
-        "eval",
-        "compile",
-        "__import__",
-        "open",
-        "input",
-        "getattr",
-        "setattr",
-        "delattr",
-    }
-    banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
-    banned_attribute_roots = banned_import_roots | {"builtins", "importlib", "pathlib", "shutil"}
-    banned_introspection_attrs = {
-        "__base__",
-        "__bases__",
-        "__class__",
-        "__closure__",
-        "__code__",
-        "__dict__",
-        "__getattribute__",
-        "__globals__",
-        "__mro__",
-        "__subclasses__",
-    }
-
-    def _attribute_root_name(expr: ast.AST) -> str:
-        """Return the left-most name in a chained attribute expression, if any."""
-        current = expr
-        while isinstance(current, ast.Attribute):
-            current = current.value
-        if isinstance(current, ast.Name):
-            return current.id
-        if isinstance(current, ast.Call):
-            return _attribute_root_name(current.func)
-        if isinstance(current, ast.Subscript):
-            return _attribute_root_name(current.value)
-        return ""
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom):
-            modules = []
-            if isinstance(node, ast.Import):
-                modules = [alias.name.split(".")[0] for alias in node.names]
-            else:
-                modules = [(node.module or "").split(".")[0]]
-            if any(mod in banned_import_roots for mod in modules if mod):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
-                )
-        if isinstance(node, ast.Attribute) and node.attr in banned_introspection_attrs:
-            raise HTTPException(
-                status_code=400,
-                detail="Plugin güvenlik politikası: tehlikeli introspection erişimi engellendi.",
-            )
-        if isinstance(node, ast.Call):
-            fn_name = ""
-            if isinstance(node.func, ast.Name):
-                fn_name = node.func.id
-            elif isinstance(node.func, ast.Attribute):
-                root_name = _attribute_root_name(node.func)
-                fn_name = f"{root_name}.{node.func.attr}" if root_name else node.func.attr
-            if fn_name in banned_calls or fn_name.endswith(".exec") or fn_name.endswith(".eval"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: dinamik kod çalıştırma çağrısı engellendi.",
-                )
-            if (
-                isinstance(node.func, ast.Attribute)
-                and _attribute_root_name(node.func) in banned_attribute_roots
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül çağrısı engellendi.",
-                )
+    plugin_sandbox.validate_plugin_source(source_code)
 
 
 def _execute_validated_plugin_source(
@@ -1891,8 +1811,7 @@ def _execute_validated_plugin_source(
 ) -> None:
     """Derlenmiş plugin kaynağını daraltılmış namespace içinde çalıştırır."""
 
-    code = compile(source_code, _plugin_source_filename(module_label), "exec")
-    exec(code, namespace)  # nosec B102
+    plugin_sandbox.execute_validated_plugin_source(source_code, module_label, namespace)
 
 
 def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
@@ -1906,6 +1825,7 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
 
     try:
         _validate_plugin_source(source_code)
+        plugin_sandbox.assert_in_process_plugin_execution_allowed()
     except HTTPException:
         raise
     except Exception as exc:

@@ -69,7 +69,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "`/ws/chat` router factory" in plan
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
     assert "AST-validated `exec()`" in plan
-    assert "plugin kaynak yürütmesini `web/plugins/sandbox.py`" in plan
+    assert "plugin AST/policy helperları `web/plugins/sandbox.py`" in plan
+    assert "process-içi plugin exec varsayılan olarak fail-closed" in plan
     assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
@@ -97,6 +98,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     import managers.code.runner as code_runner
     import scripts.test_gates.summary as test_gate_summary
     import web.middleware.access_policy as access_policy_middleware
+    import web.plugins.sandbox as plugin_sandbox
 
     assert db_auth.UserRecord is db_models.UserRecord
     assert db_session.SessionRecord is db_models.SessionRecord
@@ -108,6 +110,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert callable(code_runner.run_shell_command)
     assert callable(test_gate_summary.build_summary)
     assert callable(access_policy_middleware.access_policy_middleware_impl)
+    assert callable(plugin_sandbox.validate_plugin_source)
 
 
 def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
