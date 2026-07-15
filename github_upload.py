@@ -196,6 +196,92 @@ def get_file_content(path: str) -> str | None:
         return None
 
 
+CONFLICT_MARKER_RE = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
+
+
+def get_unmerged_files() -> list[str]:
+    """Çözülmemiş Git merge çakışması bulunan dosyaları döndürür."""
+    success, output = run_command(
+        ["git", "diff", "--name-only", "--diff-filter=U"], show_output=False
+    )
+    if not success or not output:
+        return []
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def assert_no_unmerged_files() -> None:
+    """Unmerged dosya varsa commit/push akışını fail-closed durdurur."""
+    unmerged_files = get_unmerged_files()
+    if not unmerged_files:
+        return
+
+    print(f"{Colors.FAIL}❌ Çözülmemiş Git çakışmaları var; commit/push durduruldu:{Colors.ENDC}")
+    for file_path in unmerged_files:
+        print(f"  - {file_path}")
+    print(
+        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra aracı tekrar çalıştırın.{Colors.ENDC}"
+    )
+    sys.exit(1)
+
+
+def print_unmerged_files(prefix: str = "Çakışan dosyalar") -> None:
+    """Kullanıcıya açması gereken unmerged dosyaları okunur biçimde listeler."""
+    unmerged_files = get_unmerged_files()
+    if not unmerged_files:
+        return
+    print(f"{Colors.WARNING}{prefix}:{Colors.ENDC}")
+    for file_path in unmerged_files:
+        print(f"  - {file_path}")
+
+
+def abort_in_progress_merge() -> None:
+    """Başarısız pull/merge sonrası çalışma ağacını temiz state'e döndürmeye çalışır."""
+    abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
+    if abort_success:
+        print(
+            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; çalışma ağacı temizlendi.{Colors.ENDC}"
+        )
+    elif abort_err:
+        print(
+            f"{Colors.WARNING}⚠️ Otomatik `git merge --abort` başarısız oldu; "
+            f"manuel kontrol gerekebilir:\n{abort_err}{Colors.ENDC}"
+        )
+
+
+def has_conflict_markers(path: str) -> bool:
+    """Metin dosyasında kalmış klasik merge conflict marker satırlarını tespit eder."""
+    content = get_file_content(path)
+    return bool(content and CONFLICT_MARKER_RE.search(content))
+
+
+def create_rollback_backup_tag() -> str:
+    """Force-push rollback öncesi mevcut HEAD için kurtarma etiketi oluşturur."""
+    tag_name = f"backup/pre-rollback-{datetime.now():%Y%m%d%H%M%S}"
+    tag_success, tag_err = run_command(["git", "tag", tag_name], show_output=False)
+    if tag_success:
+        print(f"{Colors.OKGREEN}🛟 Rollback öncesi yedek tag oluşturuldu: {tag_name}{Colors.ENDC}")
+    else:
+        print(
+            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; işlem güvenlik için durduruldu:\n"
+            f"{tag_err}{Colors.ENDC}"
+        )
+        sys.exit(1)
+    return tag_name
+
+
+def report_ours_strategy_changes() -> None:
+    """`-X ours` merge sonrasında değişen dosyaları görünür hale getirir."""
+    _, changed = run_command(["git", "diff", "--name-only", "ORIG_HEAD..HEAD"], show_output=False)
+    changed_files = [line.strip() for line in changed.splitlines() if line.strip()]
+    if not changed_files:
+        return
+    print(
+        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel sürümün korunduğu dosyalar:{Colors.ENDC}"
+    )
+    for file_path in changed_files:
+        print(f"  - {file_path}")
+
+
 def get_deleted_files() -> list[str]:
     """Sistemden silinmiş ama Git'in geçmişte takip ettiği dosyaları bulur."""
     success, output = run_command(["git", "ls-files", "-d"], show_output=False)
@@ -264,6 +350,9 @@ def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[lis
             if get_file_content(file_path) is None:
                 blocked_files.append(file_path)
                 continue
+            if has_conflict_markers(file_path):
+                blocked_files.append(file_path)
+                continue
 
         safe_files.append(file_path)
 
@@ -274,6 +363,10 @@ def stage_files(file_paths: list[str]) -> tuple[bool, str]:
     """Dosyaları git'e literal pathspec ile güvenli biçimde ekler."""
     if not file_paths:
         return True, ""
+
+    unmerged_files = get_unmerged_files()
+    if unmerged_files:
+        return False, "Çözülmemiş çakışmalar var: " + ", ".join(unmerged_files)
 
     literal_paths = [f":(literal){path}" for path in file_paths]
     return run_command(["git", "add", "--"] + literal_paths, show_output=False)
@@ -396,6 +489,8 @@ def main() -> None:
     _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
     current_branch = branch_out.strip() if branch_out else "main"
 
+    assert_no_unmerged_files()
+
     # Çalışma akışını her zaman main dalında sürdür.
     if current_branch != "main":
         print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
@@ -482,6 +577,8 @@ def main() -> None:
                 )
                 sys.exit(1)
 
+            create_rollback_backup_tag()
+
             reset_success, reset_err = run_command(
                 ["git", "reset", "--hard", f"HEAD~{rollback_steps}"], show_output=False
             )
@@ -544,14 +641,20 @@ def main() -> None:
             print(
                 f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}"
             )
+            print_unmerged_files()
+            abort_in_progress_merge()
             print(
-                f"{Colors.WARNING}Lütfen çakışan dosyaları manuel düzenleyip aracı argümansız tekrar çalıştırın.{Colors.ENDC}"
+                f"{Colors.WARNING}Başarısız merge geri alındı. "
+                "Lütfen ilgili dalı güncelleyip/çakışmayı manuel test ederek aracı tekrar çalıştırın."
+                f"{Colors.ENDC}"
             )
             sys.exit(1)
 
     # ═══════════════════════════════════════════════════════════════
     # STANDART YÜKLEME İŞLEMİ
     # ═══════════════════════════════════════════════════════════════
+    assert_no_unmerged_files()
+
     print(f"\n{Colors.OKBLUE}📦 Yerel dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
 
@@ -703,6 +806,8 @@ def main() -> None:
             pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
             if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
+                report_ours_strategy_changes()
+                assert_no_unmerged_files()
                 print(
                     f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}"
                 )

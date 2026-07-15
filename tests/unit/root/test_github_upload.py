@@ -11,12 +11,14 @@ import github_upload as gu
 
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
 ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
+ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 
 
 @pytest.fixture(autouse=True)
 def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
+    monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
 
 
 def test_run_command_success_and_error(monkeypatch, capsys):
@@ -118,6 +120,8 @@ def test_url_and_path_helpers(tmp_path):
 def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     text_file = tmp_path / "a.py"
     text_file.write_text("print('x')", encoding="utf-8")
+    conflict_file = tmp_path / "conflict.py"
+    conflict_file.write_text("<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> branch\n", encoding="utf-8")
     binary_file = tmp_path / "bad.json"
     binary_file.write_bytes(b"\xff\xfe")
     generated_file = "coverage.json"
@@ -129,7 +133,10 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
         if cmd[:3] == ["git", "ls-files", "-d"]:
             return True, "gone.txt\n"
         if cmd[:4] == ["git", "ls-files", "-co", "--exclude-standard"]:
-            return True, f"{text_file}\n{binary_file}\n{generated_file}\n.env\ngone.txt\n"
+            return (
+                True,
+                f"{text_file}\n{conflict_file}\n{binary_file}\n{generated_file}\n.env\ngone.txt\n",
+            )
         return True, ""
 
     monkeypatch.setattr(gu, "run_command", fake_run)
@@ -139,6 +146,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
 
     safe, blocked = gu.collect_safe_files(deleted)
     assert str(text_file) in safe
+    assert str(conflict_file) in blocked
     assert str(binary_file) in blocked
     assert generated_file in blocked
     assert ".env" in blocked
@@ -159,16 +167,81 @@ def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch)
 def test_stage_files(monkeypatch):
     assert gu.stage_files([]) == (True, "")
 
-    captured = {}
+    calls = []
 
     def fake_run(cmd, show_output=True):
-        captured["cmd"] = cmd
+        calls.append(cmd)
+        if cmd == ["git", "diff", "--name-only", "--diff-filter=U"]:
+            return True, ""
         return True, "ok"
 
     monkeypatch.setattr(gu, "run_command", fake_run)
     ok, _ = gu.stage_files(["a.txt", "b.py"])
     assert ok
-    assert captured["cmd"] == ["git", "add", "--", ":(literal)a.txt", ":(literal)b.py"]
+    assert calls[-1] == ["git", "add", "--", ":(literal)a.txt", ":(literal)b.py"]
+
+
+def test_stage_files_rejects_unmerged_paths(monkeypatch):
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=True: (
+            (True, "a.py\nb.py\n")
+            if cmd == ["git", "diff", "--name-only", "--diff-filter=U"]
+            else (True, "")
+        ),
+    )
+
+    ok, err = gu.stage_files(["a.py"])
+
+    assert ok is False
+    assert "Çözülmemiş çakışmalar var" in err
+    assert "a.py" in err
+
+
+def test_assert_no_unmerged_files_exits_with_file_list(monkeypatch, capsys):
+    monkeypatch.setattr(gu, "assert_no_unmerged_files", ORIGINAL_ASSERT_NO_UNMERGED_FILES)
+    monkeypatch.setattr(
+        gu, "get_unmerged_files", lambda: ["tests/smoke/test_install_verification.py"]
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.assert_no_unmerged_files()
+
+    assert exc_info.value.code == 1
+    assert "tests/smoke/test_install_verification.py" in capsys.readouterr().out
+
+
+def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    gu.abort_in_progress_merge()
+    tag = gu.create_rollback_backup_tag()
+
+    assert calls[0] == ["git", "merge", "--abort"]
+    assert calls[1][:2] == ["git", "tag"]
+    assert tag.startswith("backup/pre-rollback-")
+    assert "Başarısız merge otomatik" in capsys.readouterr().out
+
+
+def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=True: (True, "remote.py\nlocal.md\n"),
+    )
+
+    gu.report_ours_strategy_changes()
+
+    out = capsys.readouterr().out
+    assert "remote.py" in out
+    assert "local.md" in out
 
 
 def test_sync_install_manifests_before_commit_runs_sync_scripts_and_stages(monkeypatch):
