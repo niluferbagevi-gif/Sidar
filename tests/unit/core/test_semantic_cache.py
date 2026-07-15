@@ -9,6 +9,7 @@ import pytest
 
 import core.cache.semantic_cache as semantic_cache_module
 from core.cache.semantic_cache import SemanticCacheManager
+from core.llm.cache import SemanticChatCache
 from core.llm_client import LLMClient, OllamaClient
 
 
@@ -25,6 +26,54 @@ def _cfg(**overrides: object) -> SimpleNamespace:
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_skips_empty_prompt_and_preserves_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=None)
+    cache_set = AsyncMock()
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(SemanticCacheManager, "set", cache_set)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("") is None
+    assert await chat_cache.get("cache miss") is None
+    await chat_cache.set("", "ignored-response")
+
+    cache_get.assert_awaited_once_with("cache miss")
+    cache_set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_stringifies_cached_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=123)
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("cached prompt") == "123"
+    cache_get.assert_awaited_once_with("cached prompt")
+
+
+def test_semantic_chat_cache_records_stream_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_record_cache_skip() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("core.llm.cache.record_cache_skip", fake_record_cache_skip)
+
+    SemanticChatCache.record_stream_skip()
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio
