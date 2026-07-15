@@ -5,9 +5,8 @@ from __future__ import annotations
 
 import json
 import sys
+import xml.etree.ElementTree as ET  # nosec B405 -- parses only this CI run's own JUnit output, not untrusted input
 from pathlib import Path
-
-from defusedxml import ElementTree as ET
 
 
 def _safe_int(value: str) -> int:
@@ -42,7 +41,7 @@ def _failed_backend_tests(report_dir: str) -> list[str]:
     seen: set[str] = set()
     for report_path in sorted(Path(report_dir).glob("backend-*.xml")):
         try:
-            root = ET.parse(report_path).getroot()
+            root = ET.parse(report_path).getroot()  # nosec B314 -- same trust boundary as the import above
         except ET.ParseError:
             continue
         for testcase in root.iter("testcase"):
