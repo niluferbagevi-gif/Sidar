@@ -50,7 +50,7 @@ def _run_ruff_json(codes: tuple[str, ...]) -> list[dict[str, Any]]:
         "--output-format",
         "json",
     ]
-    completed = subprocess.run(
+    completed = subprocess.run(  # nosec B603 - command list is internally constructed.
         command,
         cwd=ROOT,
         check=False,
