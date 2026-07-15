@@ -16,124 +16,35 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import threading
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, cast
 from urllib.parse import quote, unquote, urlparse
 
 from core.config_secrets import DEFAULT_WEAK_SECRET_VALUES, is_weak_secret
+from core.doctor.models import (
+    DoctorCheck,
+    DoctorCheckContract,
+    validate_auto_fix_command,
+    validate_doctor_check_contract,
+)
+from core.doctor.models import (
+    redact_sensitive_text as _redact_sensitive_text,
+)
+from core.doctor.reporting import build_doctor_report, write_doctor_report
 from core.rag.readiness import build_readiness_report
 from sidar_assets.paths import migrations_path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
 
-
-@runtime_checkable
-class DoctorCheckContract(Protocol):
-    """Formal contract implemented by all doctor check results."""
-
-    name: str
-    status: str
-    message: str
-    details: dict[str, Any]
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable doctor check payload."""
-
-
-_STATUS_VALUES = {"pass", "warn", "fail"}
-_SENSITIVE_ASSIGNMENT_RE = re.compile(
-    r"(?i)(password|passwd|pwd|secret|token|api[_-]?key)=([^\s&;,'\"]+)"
-)
-_URL_PASSWORD_RE = re.compile(r"([a-z][a-z0-9+.-]*://[^:/@\s]+:)([^@/\s]+)(@)", re.IGNORECASE)
-_AUTO_FIX_ARG_RE = re.compile(r"^[A-Za-z0-9_./:=,@+\-]+$")
-_AUTO_FIX_MODULE_RE = re.compile(r"^(scripts|core\.doctor)(\.[A-Za-z_][A-Za-z0-9_]*)*$")
-_ALLOWED_DOCKER_COMPOSE_AUTO_FIXES = {
-    ("ps", "postgres"),
-    ("pull", "postgres"),
-    ("up", "-d", "postgres"),
-}
-
-
-def _redact_sensitive_text(value: str) -> str:
-    """Mask credentials in free-form doctor details, errors and command output."""
-
-    text = _URL_PASSWORD_RE.sub(r"\1***\3", str(value or ""))
-    return _SENSITIVE_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=***", text)
-
-
-def _sanitize_doctor_details(value: Any) -> Any:
-    """Recursively redact sensitive scalar values before report serialization."""
-
-    if isinstance(value, dict):
-        return {str(key): _sanitize_doctor_details(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_doctor_details(item) for item in value]
-    if isinstance(value, tuple):
-        return [_sanitize_doctor_details(item) for item in value]
-    if isinstance(value, str):
-        return _redact_sensitive_text(value)
-    return value
-
-
-def validate_doctor_check_contract(check: DoctorCheckContract) -> DoctorCheckContract:
-    """Validate the formal DoctorCheck result contract fail-fast."""
-
-    if not isinstance(getattr(check, "name", None), str) or not check.name.strip():
-        raise TypeError("Doctor check contract violation: non-empty string name is required")
-    if getattr(check, "status", None) not in _STATUS_VALUES:
-        raise ValueError("Doctor check contract violation: status must be one of pass, warn, fail")
-    if not isinstance(getattr(check, "message", None), str):
-        raise TypeError("Doctor check contract violation: string message is required")
-    if not isinstance(getattr(check, "details", None), dict):
-        raise TypeError("Doctor check contract violation: details must be a dict")
-    if not callable(getattr(check, "as_dict", None)):
-        raise TypeError("Doctor check contract violation: as_dict() is required")
-    return check
-
-
-def validate_auto_fix_command(auto_fix: str) -> list[str]:
-    """Validate and tokenize a Doctor auto-fix command for sandboxed shell-free execution."""
-
-    import shlex
-
-    command = str(auto_fix or "").strip()
-    if not command:
-        raise ValueError("Doctor auto_fix command is empty")
-    tokens = shlex.split(command)
-    if tokens[:4] == ["uv", "run", "python", "-m"] and len(tokens) >= 5:
-        module = tokens[4]
-        if not _AUTO_FIX_MODULE_RE.fullmatch(module):
-            raise ValueError(f"Doctor auto_fix module is not allowlisted: {module}")
-        for arg in tokens[5:]:
-            if not _AUTO_FIX_ARG_RE.fullmatch(arg):
-                raise ValueError(f"Doctor auto_fix argument is not safe: {arg}")
-        return tokens
-    if (
-        tokens[:2] == ["docker", "compose"]
-        and tuple(tokens[2:]) in _ALLOWED_DOCKER_COMPOSE_AUTO_FIXES
-    ):
-        return tokens
-    raise ValueError("Doctor auto_fix command is not allowlisted for sandboxed execution")
-
-
-@dataclass
-class DoctorCheck:
-    name: str
-    status: str
-    message: str
-    details: dict[str, Any] = field(default_factory=dict)
-
-    def as_dict(self) -> dict[str, Any]:
-        validate_doctor_check_contract(self)
-        return {
-            "name": self.name,
-            "status": self.status,
-            "message": _redact_sensitive_text(self.message),
-            "details": _sanitize_doctor_details(self.details),
-        }
+__all__ = [
+    "DoctorCheck",
+    "DoctorCheckContract",
+    "main",
+    "run_doctor_report",
+    "validate_auto_fix_command",
+    "validate_doctor_check_contract",
+]
 
 
 WEAK_SECRET_VALUES = set(DEFAULT_WEAK_SECRET_VALUES)
@@ -1687,20 +1598,8 @@ def run_doctor_report(
         gpu_check(),
         check_model(smoke=include_model_smoke),
     ]
-    statuses = [check.status for check in checks]
-    overall = "fail" if "fail" in statuses else ("warn" if "warn" in statuses else "pass")
-    report = {
-        "schema_version": 1,
-        "generated_at_unix": int(time.time()),
-        "overall_status": overall,
-        "run_gpu_stress": any(
-            check.name == "gpu" and bool(check.details.get("run_gpu_stress")) for check in checks
-        ),
-        "checks": [validate_doctor_check_contract(check).as_dict() for check in checks],
-    }
-    target = Path(output_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    report = build_doctor_report(checks)
+    write_doctor_report(report, output_path)
     return report
 
 

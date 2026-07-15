@@ -61,6 +61,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/llm/ollama.py",
         "core/llm/litellm.py",
         "core/doctor/checks/gpu.py",
+        "core/doctor/models.py",
+        "core/doctor/reporting.py",
         "agent/roles/reviewer/judge.py",
         "core/ci_remediation/validation.py",
         "managers/browser/visual_drift.py",
