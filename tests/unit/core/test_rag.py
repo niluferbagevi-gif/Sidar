@@ -3630,6 +3630,48 @@ async def test_entity_graph_loading_normalization_and_json_extraction_branches(
     assert store._extract_json_entities([{"platform": "LinkedIn"}])[0].label == "Channel"
 
 
+async def test_document_store_llm_entity_extraction_feature_flag_merges_payload(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+    store._llm_entity_extraction_settings = rag.LLMEntityExtractionSettings(enabled=True)
+
+    def fake_extractor(title, content, tags, source, settings):
+        assert title == "Launch brief"
+        assert "Brand: Sidar" in content
+        assert tags == ["channel:Email"]
+        assert source == "memory://launch"
+        assert settings.enabled is True
+        return {
+            "schema_version": rag.LLM_ENTITY_SCHEMA_VERSION,
+            "entities": [
+                {"label": "Campaign", "name": "LLM Launch"},
+                {"label": "Audience", "name": "Developers"},
+            ],
+            "relations": [
+                {
+                    "source_label": "Campaign",
+                    "source_name": "LLM Launch",
+                    "target_label": "Audience",
+                    "target_name": "Developers",
+                    "type": "TARGETS_AUDIENCE",
+                }
+            ],
+        }
+
+    store._llm_entity_extractor = fake_extractor
+
+    entities, relations = store.extract_document_entities(
+        "Launch brief", "Brand: Sidar", tags=["channel:Email"], source="memory://launch"
+    )
+
+    entity_names = {(entity.label, entity.name) for entity in entities}
+    assert ("Campaign", "LLM Launch") in entity_names
+    assert ("Audience", "Developers") in entity_names
+    assert any(relation.relation == "TARGETS_AUDIENCE" for relation in relations)
+
+
 async def test_extract_document_entities_json_tags_empty_and_invalid_branches(
     tmp_path: Path,
 ) -> None:

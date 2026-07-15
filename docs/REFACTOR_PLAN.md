@@ -58,7 +58,7 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 
 ## Gerçek TODO envanteri
 
-- `core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO`, bilinen tek anlamlı ürün/mimari TODO olarak izlenir: deterministic GraphRAG entity extraction, 2026-Q3 hedefiyle feature flag arkasında LLM-destekli extractor ile genişletilecektir. İlk güvenli sınır olarak `core/rag/llm_entity_extraction.py` içindeki schema validator eklendi; LLM çıktısı bu sınırı geçmeden entity graph'a yazılmamalıdır.
+- `core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO` (eski TODO), 2026-Q3 başlangıcında kapatıldı: deterministic GraphRAG entity extraction artık `ENABLE_RAG_LLM_ENTITY_EXTRACTION` feature flag'i arkasında LLM-destekli extractor ile genişletilebilir. `core/rag/llm_entity_extraction.py` içindeki prompt/coercion/schema validator sınırı korunur; LLM çıktısı bu sınırı geçmeden entity graph'a yazılmamalıdır.
 - Repo genelindeki diğer `TODO` / `FIXME` eşleşmeleri ağırlıklı olarak `todo_manager.py` ve ilgili testlerinin tarama fixture'larıdır; bunlar açık ürün borcu değil, TODO/FIXME algılama mantığını doğrulayan test verileridir.
 
 ## Faz planı

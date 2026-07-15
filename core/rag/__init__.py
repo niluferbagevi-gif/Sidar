@@ -116,6 +116,9 @@ from .llm_entity_extraction import (
     LLMEntityExtractionSettings as LLMEntityExtractionSettings,
 )
 from .llm_entity_extraction import (
+    extract_llm_entity_payload as _extract_llm_entity_payload_impl,
+)
+from .llm_entity_extraction import (
     normalize_llm_entity_payload as normalize_llm_entity_payload,
 )
 from .metadata import (
@@ -258,6 +261,12 @@ class DocumentStore:
             getattr(self.cfg, "ENABLE_RAG_ENTITY_EXTRACTION", True)
         )
         self._entity_max_per_doc = int(getattr(self.cfg, "RAG_ENTITY_MAX_PER_DOC", 24) or 24)
+        self._llm_entity_extraction_settings = LLMEntityExtractionSettings(
+            enabled=bool(getattr(self.cfg, "ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)),
+            max_entities=self._entity_max_per_doc,
+            review_target=str(getattr(self.cfg, "RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3") or "2026-Q3"),
+        )
+        self._llm_entity_extractor = getattr(self.cfg, "RAG_LLM_ENTITY_EXTRACTOR", None)
 
         self._vector_backend = (
             str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
@@ -572,6 +581,44 @@ class DocumentStore:
             entity_id=self._entity_id,
         )
 
+    def _build_llm_entity_client(self) -> Any:
+        """Build the configured LLM client for feature-flagged entity extraction."""
+        from core.llm_client import LLMClient
+
+        provider = str(
+            getattr(self.cfg, "RAG_LLM_ENTITY_PROVIDER", "")
+            or getattr(self.cfg, "AI_PROVIDER", "ollama")
+            or "ollama"
+        )
+        return LLMClient(provider, self.cfg)
+
+    def _extract_llm_entity_payload(
+        self,
+        title: str,
+        content: str,
+        *,
+        tags: builtins.list[str] | None = None,
+        source: str = "",
+    ) -> dict[str, Any] | None:
+        """Run optional LLM-assisted GraphRAG extraction behind its feature flag."""
+        settings = getattr(
+            self,
+            "_llm_entity_extraction_settings",
+            LLMEntityExtractionSettings(enabled=False, max_entities=getattr(self, "_entity_max_per_doc", 24)),
+        )
+        extractor = getattr(self, "_llm_entity_extractor", None)
+        llm_factory = None if extractor is not None else self._build_llm_entity_client
+        return _extract_llm_entity_payload_impl(
+            title,
+            content,
+            tags=tags,
+            source=source,
+            settings=settings,
+            extractor=extractor,
+            llm_client_factory=llm_factory,
+            model=getattr(self.cfg, "RAG_LLM_ENTITY_MODEL", None),
+        )
+
     def extract_document_entities(
         self,
         title: str,
@@ -580,7 +627,7 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         source: str = "",
     ) -> tuple[builtins.list[ExtractedKnowledgeEntity], builtins.list[ExtractedKnowledgeRelation]]:
-        """RAG belgesinden deterministik pazarlama/kurumsal entity ilişkileri çıkarır."""
+        """RAG belgesinden deterministik ve opsiyonel LLM entity ilişkileri çıkarır."""
         return _extract_document_entities_impl(
             title,
             content,
@@ -589,6 +636,7 @@ class DocumentStore:
             entity_max_per_doc=getattr(self, "_entity_max_per_doc", 24),
             clean_entity_value=self._clean_entity_value,
             entity_id=self._entity_id,
+            llm_payload=self._extract_llm_entity_payload(title, content, tags=tags, source=source),
         )
 
     def _upsert_document_entities(

@@ -16,8 +16,8 @@ from core.utils.network_validation import is_local_only_host
 logger = logging.getLogger(__name__)
 
 LLM_ENTITY_EXTRACTION_TODO = (
-    "TODO(2026-Q3): deterministic GraphRAG entity extraction should be augmented with "
-    "an LLM-assisted extractor behind a feature flag and the "
+    "DONE(2026-Q3): deterministic GraphRAG entity extraction can now be augmented with "
+    "an LLM-assisted extractor behind ENABLE_RAG_LLM_ENTITY_EXTRACTION and the "
     "core.rag.llm_entity_extraction schema validation boundary."
 )
 

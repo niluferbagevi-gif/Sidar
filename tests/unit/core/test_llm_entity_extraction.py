@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
+import pytest
+
 from core.rag.entity_extraction import extract_document_entities
 from core.rag.entity_helpers import clean_entity_value, entity_id
-from core.rag.llm_entity_extraction import LLM_ENTITY_SCHEMA_VERSION, normalize_llm_entity_payload
+from core.rag.llm_entity_extraction import (
+    LLM_ENTITY_SCHEMA_VERSION,
+    LLMEntityExtractionSettings,
+    coerce_llm_entity_payload,
+    extract_llm_entity_payload,
+    normalize_llm_entity_payload,
+)
 
 
 def test_normalize_llm_entity_payload_validates_schema_and_relation_endpoints() -> None:
@@ -167,3 +177,117 @@ def test_normalize_llm_entity_payload_accepts_relation_raw_ids_and_filters_bad_e
     assert [(relation.source, relation.target, relation.relation) for relation in relations] == [
         (campaign_id, audience_id, "TARGETS_AUDIENCE")
     ]
+
+
+def test_extract_llm_entity_payload_respects_feature_flag_and_coerces_json() -> None:
+    calls: list[str] = []
+
+    def fake_extractor(title, content, tags, source, settings):
+        calls.append(title)
+        return """```json
+        {"schema_version":"graphrag.entity.v1","entities":[{"label":"Campaign","name":"Launch"}],"relations":[]}
+        ```"""
+
+    disabled = LLMEntityExtractionSettings(enabled=False)
+    assert (
+        extract_llm_entity_payload(
+            "Launch", "content", tags=["campaign:Launch"], settings=disabled, extractor=fake_extractor
+        )
+        is None
+    )
+    assert calls == []
+
+    enabled = LLMEntityExtractionSettings(enabled=True)
+    payload = extract_llm_entity_payload(
+        "Launch", "content", tags=["campaign:Launch"], settings=enabled, extractor=fake_extractor
+    )
+
+    assert payload is not None
+    assert payload["schema_version"] == LLM_ENTITY_SCHEMA_VERSION
+    assert calls == ["Launch"]
+
+
+async def test_extract_llm_entity_payload_uses_llm_client_factory_when_enabled() -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        async def chat(self, messages, **kwargs):
+            captured["messages"] = messages
+            captured["kwargs"] = kwargs
+            return {
+                "schema_version": LLM_ENTITY_SCHEMA_VERSION,
+                "entities": [{"label": "Channel", "name": "LinkedIn"}],
+                "relations": [],
+            }
+
+    payload = extract_llm_entity_payload(
+        "Launch",
+        "Channel: LinkedIn",
+        source="memory://launch",
+        settings=LLMEntityExtractionSettings(enabled=True),
+        llm_client_factory=FakeClient,
+        model="qwen2.5-coder:7b",
+    )
+
+    assert payload is not None
+    assert payload["entities"][0]["name"] == "LinkedIn"
+    assert captured["kwargs"] == {
+        "model": "qwen2.5-coder:7b",
+        "temperature": 0.0,
+        "stream": False,
+        "json_mode": True,
+    }
+    messages = cast(list[dict[str, Any]], captured["messages"])
+    assert "Allowed labels" in messages[0]["content"]
+
+
+def test_coerce_llm_entity_payload_rejects_non_json_and_non_mapping_values() -> None:
+    assert coerce_llm_entity_payload(123) is None
+    assert coerce_llm_entity_payload("not-json") is None
+    assert coerce_llm_entity_payload('["not", "mapping"]') is None
+    assert coerce_llm_entity_payload('{"schema_version":"graphrag.entity.v1"}') == {
+        "schema_version": LLM_ENTITY_SCHEMA_VERSION
+    }
+
+
+def test_extract_llm_entity_payload_returns_none_without_extractor_or_client() -> None:
+    assert (
+        extract_llm_entity_payload(
+            "Launch", "content", settings=LLMEntityExtractionSettings(enabled=True)
+        )
+        is None
+    )
+
+
+def test_extract_llm_entity_payload_uses_llm_client_factory_without_running_loop() -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        async def chat(self, messages, **kwargs):
+            captured["messages"] = messages
+            return '{"schema_version":"graphrag.entity.v1","entities":[],"relations":[]}'
+
+    payload = extract_llm_entity_payload(
+        "Launch",
+        "content",
+        settings=LLMEntityExtractionSettings(enabled=True),
+        llm_client_factory=FakeClient,
+    )
+
+    assert payload == {"schema_version": LLM_ENTITY_SCHEMA_VERSION, "entities": [], "relations": []}
+    messages = cast(list[dict[str, Any]], captured["messages"])
+    assert "GraphRAG marketing entities" in messages[0]["content"]
+
+
+async def test_extract_llm_entity_payload_reraises_threaded_llm_errors() -> None:
+    class FailingClient:
+        async def chat(self, messages, **kwargs):
+            raise RuntimeError("llm unavailable")
+
+    with pytest.raises(RuntimeError, match="llm unavailable"):
+        extract_llm_entity_payload(
+            "Launch",
+            "content",
+            settings=LLMEntityExtractionSettings(enabled=True),
+            llm_client_factory=FailingClient,
+        )
