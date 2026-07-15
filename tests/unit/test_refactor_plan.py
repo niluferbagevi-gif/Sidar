@@ -81,6 +81,16 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "ana script bootstrap facade" in plan
 
 
+def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "Gerçek TODO envanteri" in plan
+    assert "`core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO`" in plan
+    assert "2026-Q3 hedefiyle feature flag ve schema validation" in plan
+    assert "todo_manager.py" in plan
+    assert "açık ürün borcu değil" in plan
+
+
 def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt() -> None:
     claude = Path("docs/CLAUDE.md").read_text(encoding="utf-8")
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")

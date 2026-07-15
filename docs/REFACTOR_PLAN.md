@@ -56,6 +56,11 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 | `managers/browser_manager.py` | Playwright, Selenium fallback, scraping, screenshot, visual drift ve multimodal escalation tek sınıfta. | `managers/browser/playwright.py`, `managers/browser/selenium.py`, `managers/browser/screenshot.py`, `managers/browser/visual_drift.py`, `managers/browser/scraping.py`, `managers/browser/models.py` | P2 Playwright/Selenium adapter arayüzlerini ayırıp screenshot ve visual-drift pure helper'larını alt modüllere taşımak. | `tests/unit/managers/test_browser_manager.py`, browser visual QA tests |
 | `agent/swarm.py` | Task routing, parallel/pipeline execution, P2P handoff, retry/loop guard ve distributed dispatch tek orchestration dosyasında. | `agent/swarm/router.py`, `agent/swarm/executor.py`, `agent/swarm/handoff.py`, `agent/swarm/distributed.py`, `agent/swarm/models.py` | `SwarmTask`/`SwarmResult` modellerini ve `TaskRouter`'ı alt modüllere taşıyıp `agent.swarm` facade export'unu korumak. | `tests/test_swarm_orchestrator.py`, `tests/unit/agent/core/test_supervisor.py` |
 
+## Gerçek TODO envanteri
+
+- `core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO`, bilinen tek anlamlı ürün/mimari TODO olarak izlenir: deterministic GraphRAG entity extraction, 2026-Q3 hedefiyle feature flag ve schema validation arkasında LLM-destekli extractor ile genişletilecektir.
+- Repo genelindeki diğer `TODO` / `FIXME` eşleşmeleri ağırlıklı olarak `todo_manager.py` ve ilgili testlerinin tarama fixture'larıdır; bunlar açık ürün borcu değil, TODO/FIXME algılama mantığını doğrulayan test verileridir.
+
 ## Faz planı
 
 1. **Faz 1 — Boundary ve facade:** Her hedef dosya için public API listesi çıkarılır, yeni modül oluşturulur,
