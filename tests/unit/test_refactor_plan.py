@@ -45,6 +45,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "managers/code/patcher.py",
         "managers/code/runner.py",
         "agent/self_heal/executor.py",
+        "agent/autonomy/service.py",
         "agent/roles/coverage/analyzer.py",
         "core/llm/providers/ollama.py",
         "core/llm/openai.py",
@@ -85,6 +86,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     # ``core.db`` to be the real package, not a plain ModuleType stub.
     sys.modules.pop("core.db", None)
 
+    import agent.autonomy.service as autonomy_service
     import agent.self_heal.executor as self_heal_executor
     import core.db.auth as db_auth
     import core.db.coverage as db_coverage
@@ -102,6 +104,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
     assert callable(rag_facade.build_embedding_function)
     assert callable(self_heal_executor.execute_self_heal_plan)
+    assert callable(autonomy_service.append_autonomy_history)
     assert callable(code_runner.run_shell_command)
     assert callable(test_gate_summary.build_summary)
     assert callable(access_policy_middleware.access_policy_middleware_impl)
