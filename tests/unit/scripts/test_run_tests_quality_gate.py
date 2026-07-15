@@ -828,6 +828,10 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         in ci
     )
     assert "Benchmark baseline missing" in ci
+    assert "Run canonical production-readiness gate" in ci
+    assert "Validate production-readiness test summary" in ci
+    assert "--mode release --summary artifacts/test-summary.json" in ci
+    assert "--mode development --summary artifacts/test-summary.json" not in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
