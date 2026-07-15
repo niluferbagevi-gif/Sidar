@@ -109,6 +109,15 @@ from .graph import (
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
 from .graph_formatting import format_graph_impact_analysis as _format_graph_impact_analysis_impl
 from .graph_formatting import format_graph_search_results as _format_graph_search_results_impl
+from .llm_entity_extraction import (
+    LLM_ENTITY_SCHEMA_VERSION as LLM_ENTITY_SCHEMA_VERSION,
+)
+from .llm_entity_extraction import (
+    LLMEntityExtractionSettings as LLMEntityExtractionSettings,
+)
+from .llm_entity_extraction import (
+    normalize_llm_entity_payload as normalize_llm_entity_payload,
+)
 from .metadata import (
     build_chunk_ids as _build_chunk_ids_impl,
 )

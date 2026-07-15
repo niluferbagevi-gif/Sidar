@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from core.rag.graph import ExtractedKnowledgeEntity, ExtractedKnowledgeRelation
+from core.rag.llm_entity_extraction import normalize_llm_entity_payload
 
 CleanEntityValue = Callable[[Any], str]
 EntityIdFactory = Callable[[str, str], str]
@@ -106,6 +107,7 @@ def extract_document_entities(
     entity_max_per_doc: int = 24,
     clean_entity_value: CleanEntityValue,
     entity_id: EntityIdFactory,
+    llm_payload: dict[str, Any] | None = None,
 ) -> tuple[list[ExtractedKnowledgeEntity], list[ExtractedKnowledgeRelation]]:
     """Extract deterministic marketing/corporate entities and relations from a RAG document."""
 
@@ -161,7 +163,17 @@ def extract_document_entities(
     if source:
         add_entity("Source", source, extraction="source")
 
+    llm_entities, llm_relations = normalize_llm_entity_payload(
+        llm_payload,
+        clean_entity_value=clean_entity_value,
+        entity_id=entity_id,
+        entity_max_per_doc=entity_max_per_doc,
+    )
+    for entity in llm_entities:
+        add_entity(entity.label, entity.name, **entity.properties)
+
     entities = list(by_id.values())[: max(1, entity_max_per_doc)]
+    entity_ids = {entity.id for entity in entities}
     ids_by_label: dict[str, list[str]] = {}
     for entity in entities:
         ids_by_label.setdefault(entity.label, []).append(entity.id)
@@ -182,5 +194,11 @@ def extract_document_entities(
     for brand_id in ids_by_label.get("Brand", []):
         for tone_id in ids_by_label.get("Tone", []):
             relations.append(ExtractedKnowledgeRelation(brand_id, tone_id, "HAS_BRAND_VOICE"))
+
+    relations.extend(
+        relation
+        for relation in llm_relations
+        if relation.source in entity_ids and relation.target in entity_ids
+    )
 
     return entities, relations

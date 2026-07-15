@@ -118,7 +118,8 @@ def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
 
     assert "Gerçek TODO envanteri" in plan
     assert "`core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO`" in plan
-    assert "2026-Q3 hedefiyle feature flag ve schema validation" in plan
+    assert "2026-Q3 hedefiyle feature flag arkasında LLM-destekli extractor" in plan
+    assert "`core/rag/llm_entity_extraction.py` içindeki schema validator" in plan
     assert "todo_manager.py" in plan
     assert "açık ürün borcu değil" in plan
 
