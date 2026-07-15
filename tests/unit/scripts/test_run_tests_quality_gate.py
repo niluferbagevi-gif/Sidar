@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import textwrap
@@ -14,10 +15,23 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 RUN_TESTS = Path("run_tests.sh")
+RUN_TESTS_MODULE_SOURCE_RE = re.compile(
+    r'^source "\$\{SCRIPT_DIR\}/(scripts/test_gates/[^" ]+\.sh)"$'
+)
 
 
 def _script() -> str:
-    return RUN_TESTS.read_text(encoding="utf-8")
+    """Return run_tests.sh with sourced test gate modules expanded in-place."""
+    expanded_lines: list[str] = []
+    for line in RUN_TESTS.read_text(encoding="utf-8").splitlines():
+        expanded_lines.append(line)
+        match = RUN_TESTS_MODULE_SOURCE_RE.match(line.strip())
+        if match:
+            module_path = Path(match.group(1))
+            expanded_lines.append(f"# --- expanded from {module_path} for contract tests ---")
+            expanded_lines.extend(module_path.read_text(encoding="utf-8").splitlines())
+            expanded_lines.append(f"# --- end expanded from {module_path} ---")
+    return "\n".join(expanded_lines) + "\n"
 
 
 def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
@@ -33,6 +47,28 @@ def installer_contract_sources() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
+def _extract_shell_function_from_text(script: str, name: str) -> str:
+    """Return a shell function body from arbitrary shell source text."""
+    start_marker = f"{name}() {{"
+    start = script.index(start_marker)
+    next_function = re.search(r"\n[a-zA-Z_][a-zA-Z0-9_]*\(\) \{", script[start + 1 :])
+    if next_function is None:
+        return script[start:]
+    return script[start : start + 1 + next_function.start()]
+
+
+def _run_tests_frontend_playwright_helpers() -> str:
+    """Return frontend Playwright helper definitions with required run_tests defaults."""
+    run_tests = RUN_TESTS.read_text(encoding="utf-8")
+    defaults = run_tests[
+        run_tests.index("FRONTEND_PLAYWRIGHT_SENTINEL=") : run_tests.index(
+            "# 3) Frontend React testleri"
+        )
+    ]
+    helpers = Path("scripts/test_gates/frontend_helpers.sh").read_text(encoding="utf-8")
+    return defaults + "\n" + helpers
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -42,11 +78,14 @@ def _sha256_file(path: Path) -> str:
 
 
 def _extract_run_tests_function(name: str) -> str:
+    """Return a shell function body from run_tests.sh or its test gate modules."""
     script = _script()
     start_marker = f"{name}() {{"
     start = script.index(start_marker)
-    next_function = script.index("\nresolve_docker_compose_cmd()", start)
-    return script[start:next_function]
+    next_function = re.search(r"\n[a-zA-Z_][a-zA-Z0-9_]*\(\) \{", script[start + 1 :])
+    if next_function is None:
+        return script[start:]
+    return script[start : start + 1 + next_function.start()]
 
 
 def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
@@ -1730,7 +1769,7 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
 
 
 def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
-    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = installer_contract_sources()
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
     plan = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
@@ -2355,11 +2394,7 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     script = installer_contract_sources()
-    main_body = script[
-        script.index("main() {") : script.index(
-            '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
-        )
-    ]
+    main_body = _extract_shell_function_from_text(script, "sidar_dispatch_install_phases")
 
     expected_modules = (
         "phases/01_context.sh",
@@ -2673,11 +2708,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     script = installer_contract_sources()
-    main_body = script[
-        script.index("main() {") : script.index(
-            '\n}\n\nif [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]'
-        )
-    ]
+    main_body = _extract_shell_function_from_text(script, "sidar_dispatch_install_phases")
     remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
         encoding="utf-8"
     )
@@ -3812,10 +3843,7 @@ def test_run_tests_preserves_explicit_coverage_fail_under_after_ratchet() -> Non
 
 
 def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
-    script = _script()
-    bats_block = script[
-        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
-    ]
+    bats_block = _extract_run_tests_function("run_bats_shell_tests")
 
     assert 'if [ "${RUN_BATS_TESTS}" != "1" ]; then' in bats_block
     assert "❌ bats yok — shell testleri çalıştırılamadı" in bats_block
@@ -3837,9 +3865,7 @@ def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> N
     auto_install_block = script[
         script.index("try_auto_install_ci_system_deps()") : script.index("run_bats_shell_tests()")
     ]
-    bats_block = script[
-        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
-    ]
+    bats_block = _extract_run_tests_function("run_bats_shell_tests")
 
     assert 'AUTO_INSTALL_CI_SYSTEM_DEPS="${AUTO_INSTALL_CI_SYSTEM_DEPS:-0}"' in script
     assert 'if [ "${AUTO_INSTALL_CI_SYSTEM_DEPS}" != "1" ]; then' in auto_install_block
@@ -3851,9 +3877,7 @@ def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> N
 
 def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> None:
     script = _script()
-    bats_block = script[
-        script.index("run_bats_shell_tests()") : script.index("enforce_combined_coverage_gate()")
-    ]
+    bats_block = _extract_run_tests_function("run_bats_shell_tests")
 
     assert 'BATS_REPORT_DIR="${BATS_REPORT_DIR:-artifacts/bats}"' in script
     assert (
@@ -4899,14 +4923,9 @@ def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_rem
     ubuntu_version: str,
     expects_ubuntu_override: bool,
 ) -> None:
-    script = _script()
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
-        script[
-            script.index("FRONTEND_PLAYWRIGHT_SENTINEL=") : script.index(
-                "# 3) Frontend React testleri"
-            )
-        ],
+        _run_tests_frontend_playwright_helpers(),
         encoding="utf-8",
     )
     bin_dir = tmp_path / "bin"
@@ -5023,14 +5042,9 @@ resolve_local_frontend_e2e_mode
 def test_forced_frontend_playwright_mode_attempts_cache_install_before_failing(
     tmp_path: Path,
 ) -> None:
-    script = _script()
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
-        script[
-            script.index("FRONTEND_PLAYWRIGHT_SENTINEL=") : script.index(
-                "# 3) Frontend React testleri"
-            )
-        ],
+        _run_tests_frontend_playwright_helpers(),
         encoding="utf-8",
     )
     bin_dir = tmp_path / "bin"
