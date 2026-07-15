@@ -2994,3 +2994,37 @@ def test_shell_sandbox_run_initializes_docker_and_delegates(manager, monkeypatch
         "cwd": "/repo",
         "image": "img",
     }
+
+
+def test_canonical_project_image_alias_facade_uses_legacy_prefixes() -> None:
+    assert cm._canonical_project_image_alias("sidar-ai:dev") == "sidar:dev"
+    assert cm._canonical_project_image_alias("external:dev") is None
+
+
+def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch) -> None:
+    original_import = builtins.__import__
+
+    class _Client:
+        def __init__(self) -> None:
+            self.ping_called = False
+
+        def ping(self) -> None:
+            self.ping_called = True
+
+    client = _Client()
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: client
+
+    def _import_fake_docker(name, *args, **kwargs):
+        if name == "docker":
+            return fake_docker
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(builtins, "__import__", _import_fake_docker)
+
+    _real_init_docker(manager)
+
+    assert manager.docker_client is client
+    assert manager.docker_available is True
+    assert client.ping_called is True
