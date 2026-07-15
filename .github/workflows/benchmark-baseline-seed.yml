@@ -61,7 +61,7 @@ jobs:
             --benchmark-save="${BENCHMARK_BASELINE_NAME}"
             --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
             --benchmark-warmup=on
-            --benchmark-warmup-iterations=1
+            --benchmark-warmup-iterations=100000
             --benchmark-disable-gc
           )
           if [[ -n "${BENCHMARK_FILTER:-}" ]]; then
@@ -72,6 +72,36 @@ jobs:
             echo "::error title=Benchmark baseline seed failed::No *_${BENCHMARK_COMPARE_NAME}.json file was produced under .benchmarks"
             exit 1
           }
+          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" | sort -V)
+          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          baseline_files = [line for line in os.environ["BASELINE_FILES"].splitlines() if line]
+          manifest = {
+              "schema_version": 1,
+              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
+              "compare_name": os.environ["BENCHMARK_COMPARE_NAME"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_ref": os.environ["GITHUB_REF"],
+              "github_sha": os.environ["GITHUB_SHA"],
+              "benchmark_files": baseline_files,
+              "next_strict_command": "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh",
+          }
+          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          {
+            echo "### Benchmark baseline seed"
+            echo "- Baseline name: \`${BENCHMARK_BASELINE_NAME}\`"
+            echo "- Baseline files: \`${#baseline_files[@]}\`"
+            echo "- Manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
+            echo "- Next strict gate: \`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh\`"
+            echo "- Rerun normal CI / production-readiness after this cache/artifact is saved."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload reviewed baseline artifact
         uses: actions/upload-artifact@v4
@@ -80,6 +110,7 @@ jobs:
           path: |
             .benchmarks/
             artifacts/benchmark/benchmark.json
+            artifacts/benchmark/baseline-seed-manifest.json
           retention-days: 30
 
       - name: Save benchmark baseline cache for CI

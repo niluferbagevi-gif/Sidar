@@ -4117,6 +4117,15 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "workflow_dispatch:" in seed_workflow
     assert 'BENCHMARK_COMPARE_REQUIRED: "0"' in seed_workflow
     assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
+    assert "--benchmark-warmup-iterations=100000" in seed_workflow
+    assert "baseline-seed-manifest.json" in seed_workflow
+    assert "next_strict_command" in seed_workflow
+    assert (
+        "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 "
+        "RUN_BENCHMARKS=required ./run_tests.sh"
+        in seed_workflow
+    )
+    assert "Rerun normal CI / production-readiness after this cache/artifact is saved." in seed_workflow
     assert "actions/cache/save@v4" in seed_workflow
     assert "actions/upload-artifact@v4" in seed_workflow
     assert "baseline-seed-manifest.json" in ci
@@ -4127,7 +4136,12 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
         in seed_workflow
     )
     assert "Benchmark baseline seed" in readme
+    assert ".github/workflows/benchmark-baseline-seed.yml" in readme
+    assert "--benchmark-warmup-iterations=100000" in readme
+    assert "baseline-seed-manifest.json" in readme
     assert "Benchmark baseline seed" in notes
+    assert "baseline-seed-manifest.json" in notes
+    assert "sonraki sıkı kapı komutunu" in notes
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:

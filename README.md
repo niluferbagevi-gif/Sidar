@@ -336,9 +336,11 @@ BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage a
 CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
 `BENCHMARK_COMPARE_REQUIRED=1` ile baseline yokluğu fail-closed kalmalıdır.
 GitHub Actions tarafında boş cache / yeni branch / yeni runner durumunda önce manuel
-**Benchmark baseline seed** workflow'unu (`workflow_dispatch`) çalıştırın. Bu job
-`BENCHMARK_COMPARE_REQUIRED=0` ve `BENCHMARK_ENFORCE_COMPARE=0` ile yalnız baseline
-üretir, `.benchmarks/` dizinini artifact olarak yükler ve
+**Benchmark baseline seed** workflow'unu (`.github/workflows/benchmark-baseline-seed.yml`,
+`workflow_dispatch`) çalıştırın. Bu job `BENCHMARK_COMPARE_REQUIRED=0` ve
+`BENCHMARK_ENFORCE_COMPARE=0` ile yalnız baseline üretir, CI ile aynı
+`--benchmark-warmup-iterations=100000` ayarını kullanır, `.benchmarks/` dizinini ve
+`artifacts/benchmark/baseline-seed-manifest.json` manifestini artifact olarak yükler ve
 `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'iyle kaydeder.
 Ana `CI` workflow'u daha sonra aynı branch, `main/master` veya genel restore-key
 zincirinden bu cache'i bulamazsa production-readiness gate'i seed moduna düşmeden
