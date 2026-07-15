@@ -81,6 +81,17 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "ana script bootstrap facade" in plan
 
 
+def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt() -> None:
+    claude = Path("docs/CLAUDE.md").read_text(encoding="utf-8")
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "Açık kritik / yüksek / orta / düşük audit bulgusu yok" in claude
+    assert "Zero-Debt kapsamı" in claude
+    assert "otomatik audit/quality-gate taramalarında açık bulgu olmamasını" in claude
+    assert "plugin sandbox gibi bilinçli mimari refactor/güvenlik borçları" in claude
+    assert "plugin sandbox policy üretimde fail-closed" in plan
+
+
 def test_phase_one_refactor_boundaries_are_importable() -> None:
     # Guard this boundary smoke test against stale fake modules left by
     # earlier tests in the same worker: importing submodules requires
