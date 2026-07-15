@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 import sys
 import types
 import warnings
@@ -27,8 +26,6 @@ import web_server
 from agent.core import contracts as agent_contracts
 from web import security as web_security
 from web.routes import webhooks as webhook_routes
-
-_DECORATOR_RE = re.compile(r'@app\.(get|post|put|delete|patch)\(\s*"([^"]+)"')
 
 
 def test_web_server_uses_canonical_agent_contracts_only():
@@ -68,9 +65,36 @@ class _DummyWebSocket:
         self.messages.append(payload)
 
 
+def _collect_app_route_entries() -> list[tuple[str, str]]:
+    """Return concrete FastAPI route method/path pairs registered at runtime."""
+
+    def _walk_routes(routes: list[object], prefix: str = "") -> list[tuple[str, str]]:
+        entries: list[tuple[str, str]] = []
+        for route in routes:
+            included_router = getattr(route, "original_router", None)
+            if included_router is not None:
+                context = getattr(route, "include_context", None)
+                route_prefix = getattr(context, "prefix", "") if context is not None else ""
+                entries.extend(
+                    _walk_routes(getattr(included_router, "routes", []), f"{prefix}{route_prefix}")
+                )
+                continue
+            path = getattr(route, "path", "")
+            methods = getattr(route, "methods", None)
+            if not path or not methods:
+                continue
+            entries.extend(
+                (method.upper(), f"{prefix}{path}")
+                for method in sorted(methods)
+                if method.upper() not in {"HEAD", "OPTIONS"}
+            )
+        return entries
+
+    return _walk_routes(list(web_server.app.router.routes))
+
+
 def _collect_app_routes() -> set[tuple[str, str]]:
-    source = Path("web_server.py").read_text(encoding="utf-8")
-    return {(method.upper(), path) for method, path in _DECORATOR_RE.findall(source)}
+    return set(_collect_app_route_entries())
 
 
 def test_auth_and_admin_endpoints_are_declared():
@@ -138,8 +162,7 @@ def test_session_file_git_and_rag_endpoints_are_declared():
 
 
 def test_web_server_route_table_has_no_duplicate_method_path_pairs():
-    source = Path("web_server.py").read_text(encoding="utf-8")
-    matches = [(method.upper(), path) for method, path in _DECORATOR_RE.findall(source)]
+    matches = _collect_app_route_entries()
     assert len(matches) == len(set(matches))
 
 

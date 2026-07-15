@@ -34,11 +34,10 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 import anyio
 from fastapi import (
-    Body,
     Depends,
     FastAPI,
     File,
@@ -2608,84 +2607,6 @@ admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
 admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
 admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
 github_webhook = webhooks_router.legacy_exports["github_webhook"]
-
-
-# Legacy endpoint declarations kept in web_server.py for backwards-compatible
-# static route discovery tests that scan this file for @app.<method>(...) usage.
-@app.post("/auth/register")
-async def _legacy_route_auth_register(payload: dict[str, Any]) -> Any:
-    return await register_user(payload)
-
-
-@app.post("/auth/login")
-async def _legacy_route_auth_login(payload: dict[str, Any]) -> Any:
-    return await login_user(payload)
-
-
-@app.get("/auth/me")
-async def _legacy_route_auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
-    return await auth_me(request, user)
-
-
-@app.get("/admin/stats")
-async def _legacy_route_admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
-    return await admin_stats(_user)
-
-
-@app.get("/admin/prompts")
-async def _legacy_route_admin_prompts(
-    role_name: str = "", _user: Any = Depends(_require_admin_user)
-) -> Any:
-    return await admin_list_prompts(role_name, _user)
-
-
-@app.post("/admin/prompts")
-async def _legacy_route_admin_upsert_prompt(
-    payload: Annotated[dict[str, Any], Body()],
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return await admin_upsert_prompt(payload, _user)
-
-
-@app.post("/admin/prompts/activate")
-async def _legacy_route_admin_activate_prompt(
-    payload: Annotated[dict[str, Any], Body()],
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return await admin_activate_prompt(payload, _user)
-
-
-@app.post("/api/agents/register")
-@app.post("/api/agents/register-file")
-@app.get("/api/plugin-marketplace/catalog")
-@app.post("/api/plugin-marketplace/install")
-@app.delete("/api/plugin-marketplace/install/{plugin_id}")
-@app.post("/api/swarm/execute")
-@app.get("/api/hitl/pending")
-@app.post("/api/hitl/request")
-@app.post("/api/hitl/respond/{request_id}")
-@app.get("/healthz")
-@app.get("/readyz")
-@app.get("/metrics")
-@app.get("/metrics/llm/prometheus")
-@app.get("/metrics/llm")
-@app.get("/api/budget")
-@app.get("/sessions/{session_id}")
-@app.post("/sessions/new")
-@app.delete("/sessions/{session_id}")
-@app.get("/files")
-@app.get("/file-content")
-@app.get("/git-info")
-@app.get("/git-branches")
-@app.post("/set-branch")
-@app.get("/github-repos")
-@app.post("/set-repo")
-@app.get("/rag/docs")
-@app.post("/rag/add-url")
-@app.delete("/rag/docs/{doc_id}")
-@app.post("/api/rag/upload")
-async def _legacy_route_declaration_marker(*_args: Any, **_kwargs: Any) -> Any:
-    raise HTTPException(status_code=410, detail="Legacy marker route should not be called.")
 
 
 async def register_agent_plugin_file(
