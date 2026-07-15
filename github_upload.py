@@ -226,7 +226,8 @@ def assert_no_unmerged_files() -> None:
     for file_path in unmerged_files:
         print(f"  - {file_path}")
     print(
-        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra aracı tekrar çalıştırın.{Colors.ENDC}"
+        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra "
+        f"aracı tekrar çalıştırın.{Colors.ENDC}"
     )
     sys.exit(1)
 
@@ -246,7 +247,8 @@ def abort_in_progress_merge() -> None:
     abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
     if abort_success:
         print(
-            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; çalışma ağacı temizlendi.{Colors.ENDC}"
+            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; "
+            f"çalışma ağacı temizlendi.{Colors.ENDC}"
         )
     elif abort_err:
         print(
@@ -269,7 +271,8 @@ def create_rollback_backup_tag() -> str:
         print(f"{Colors.OKGREEN}🛟 Rollback öncesi yedek tag oluşturuldu: {tag_name}{Colors.ENDC}")
     else:
         print(
-            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; işlem güvenlik için durduruldu:\n"
+            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; "
+            f"işlem güvenlik için durduruldu:\n"
             f"{tag_err}{Colors.ENDC}"
         )
         sys.exit(1)
@@ -283,7 +286,8 @@ def report_ours_strategy_changes() -> None:
     if not changed_files:
         return
     print(
-        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel sürümün korunduğu dosyalar:{Colors.ENDC}"
+        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel sürümün "
+        f"korunduğu dosyalar:{Colors.ENDC}"
     )
     for file_path in changed_files:
         print(f"  - {file_path}")
@@ -654,7 +658,8 @@ def main() -> None:
             abort_in_progress_merge()
             print(
                 f"{Colors.WARNING}Başarısız merge geri alındı. "
-                "Lütfen ilgili dalı güncelleyip/çakışmayı manuel test ederek aracı tekrar çalıştırın."
+                "Lütfen ilgili dalı güncelleyip/çakışmayı manuel test ederek "
+                "aracı tekrar çalıştırın."
                 f"{Colors.ENDC}"
             )
             sys.exit(1)
