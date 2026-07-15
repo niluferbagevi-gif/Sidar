@@ -1633,7 +1633,7 @@ def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
 
 
 def test_docker_compose_start_checks_daemon_access_before_up() -> None:
-    phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
+    phase = Path("scripts/install_modules/utils/services_docker.sh").read_text(encoding="utf-8")
     start_idx = phase.index("start_docker_services_or_fail()")
     start_body = phase[start_idx : phase.index("wait_for_compose_services_health()", start_idx)]
 
