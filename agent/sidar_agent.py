@@ -8,7 +8,6 @@ import contextlib
 import inspect
 import json
 import logging
-import sys
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -34,9 +33,36 @@ from agent.autonomy.service import (
     get_autonomy_activity as get_autonomy_activity_service,
 )
 from agent.bootstrap import log_sidar_agent_startup
+from agent.core.contracts import ExternalTrigger
 from agent.core.contracts_fallback import (
-    bind_fallback_contracts,
-    default_derive_correlation_id,
+    default_derive_correlation_id as _default_derive_correlation_id,
+)
+from agent.definitions import SIDAR_SYSTEM_PROMPT
+from agent.federation.service import (
+    ActionFeedback,
+    FederationTaskEnvelope,
+    derive_correlation_id,
+)
+from agent.federation.service import (
+    FallbackActionFeedback as _FallbackActionFeedback,
+)
+from agent.federation.service import (
+    FallbackFederationTaskEnvelope as _FallbackFederationTaskEnvelope,
+)
+from agent.federation.service import (
+    build_trigger_prompt as build_trigger_prompt_service,
+)
+from agent.federation.service import (
+    trigger_attr as trigger_attr_service,
+)
+from agent.federation.service import (
+    trigger_meta as trigger_meta_service,
+)
+from agent.federation.service import (
+    trigger_payload as trigger_payload_service,
+)
+from agent.federation.service import (
+    trigger_to_prompt as trigger_to_prompt_service,
 )
 from agent.github import smart_pr as github_smart_pr
 from agent.maintenance.nightly import (
@@ -69,11 +95,6 @@ from managers.system_health import SystemHealthManager
 from managers.todo_manager import TodoManager
 from managers.web_search import WebSearchManager
 
-agent_contracts = sys.modules.get("agent.core.contracts") or import_module("agent.core.contracts")
-agent_definitions = sys.modules.get("agent.definitions") or import_module("agent.definitions")
-
-SIDAR_SYSTEM_PROMPT = agent_definitions.SIDAR_SYSTEM_PROMPT
-ExternalTrigger = agent_contracts.ExternalTrigger
 if TYPE_CHECKING:
     from agent.core.contracts import ExternalTrigger as ExternalTriggerType
 else:
@@ -86,25 +107,17 @@ def get_agent_metrics_collector() -> Any:
     return _get_agent_metrics_collector()
 
 
-_default_derive_correlation_id = default_derive_correlation_id
-
-
-derive_correlation_id = getattr(
-    agent_contracts, "derive_correlation_id", _default_derive_correlation_id
-)
-
-
-(
-    _FallbackFederationTaskEnvelope,
-    _FallbackActionFeedback,
-) = bind_fallback_contracts(derive_correlation_id)
-
-FederationTaskEnvelope = getattr(
-    agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope
-)
-ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedback)
-
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ActionFeedback",
+    "FederationTaskEnvelope",
+    "SidarAgent",
+    "ToolCall",
+    "_FallbackActionFeedback",
+    "_default_derive_correlation_id",
+    "_FallbackFederationTaskEnvelope",
+]
 
 ARCHIVE_CONTEXT_HEADER = "[Geçmiş Sohbet Arşivinden İlgili Notlar]"
 CONTEXT_GEMINI_MODEL_LABEL = "Gemini Modeli"
@@ -839,34 +852,19 @@ class SidarAgent:
     def _trigger_attr(
         trigger: ExternalTriggerType | dict[str, Any], name: str, default: Any = ""
     ) -> Any:
-        if isinstance(trigger, dict):
-            return trigger.get(name, default)
-        return getattr(trigger, name, default)
+        return trigger_attr_service(trigger, name, default)
 
     @staticmethod
     def _trigger_payload(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
-        raw_payload = SidarAgent._trigger_attr(trigger, "payload", {})
-        return dict(raw_payload or {}) if isinstance(raw_payload, dict) else {}
+        return trigger_payload_service(trigger)
 
     @staticmethod
     def _trigger_meta(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
-        raw_meta = SidarAgent._trigger_attr(trigger, "meta", {})
-        return dict(raw_meta or {}) if isinstance(raw_meta, dict) else {}
+        return trigger_meta_service(trigger)
 
     @staticmethod
     def _trigger_to_prompt(trigger: ExternalTriggerType | dict[str, Any]) -> str:
-        if isinstance(trigger, dict):
-            event_name = str(trigger.get("event_name", "event"))
-            payload = dict(trigger.get("payload", {}) or {})
-            source = str(trigger.get("source", "external"))
-            return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
-        to_prompt = getattr(trigger, "to_prompt", None)
-        if callable(to_prompt):
-            return str(to_prompt())
-        event_name = str(getattr(trigger, "event_name", "event"))
-        source = str(getattr(trigger, "source", "external"))
-        payload = SidarAgent._trigger_payload(trigger)
-        return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+        return trigger_to_prompt_service(trigger)
 
     @staticmethod
     def _build_trigger_prompt(
@@ -876,63 +874,7 @@ class SidarAgent:
     ) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
-
-        if payload_dict.get("kind") == "federation_task":
-            federation_payload = dict(payload_dict.get("federation_task") or payload_dict)
-            if payload_dict.get("federation_prompt"):
-                return str(payload_dict.get("federation_prompt"))
-            return FederationTaskEnvelope(
-                task_id=str(
-                    federation_payload.get("task_id")
-                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
-                ),
-                source_system=str(
-                    federation_payload.get("source_system")
-                    or SidarAgent._trigger_attr(trigger, "source", "external")
-                ),
-                source_agent=str(federation_payload.get("source_agent") or "external"),
-                target_system=str(federation_payload.get("target_system") or "sidar"),
-                target_agent=str(federation_payload.get("target_agent") or "supervisor"),
-                goal=str(federation_payload.get("goal") or ""),
-                protocol=str(federation_payload.get("protocol") or "federation.v1"),
-                intent=str(federation_payload.get("intent") or "mixed"),
-                context=dict(federation_payload.get("context") or {}),
-                inputs=list(federation_payload.get("inputs") or []),
-                meta=dict(federation_payload.get("meta") or {}),
-                correlation_id=str(
-                    federation_payload.get("correlation_id")
-                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
-                ),
-            ).to_prompt()
-
-        event_name = str(SidarAgent._trigger_attr(trigger, "event_name", "event"))
-        if payload_dict.get("kind") == "action_feedback" or event_name == "action_feedback":
-            return ActionFeedback(
-                feedback_id=str(
-                    payload_dict.get("feedback_id")
-                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
-                ),
-                source_system=str(
-                    payload_dict.get("source_system")
-                    or SidarAgent._trigger_attr(trigger, "source", "external")
-                ),
-                source_agent=str(payload_dict.get("source_agent") or "external"),
-                action_name=str(payload_dict.get("action_name") or event_name),
-                status=str(payload_dict.get("status") or "received"),
-                summary=str(
-                    payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."
-                ),
-                related_task_id=str(payload_dict.get("related_task_id") or ""),
-                related_trigger_id=str(payload_dict.get("related_trigger_id") or ""),
-                details=dict(payload_dict.get("details") or {}),
-                meta=dict(payload_dict.get("meta") or SidarAgent._trigger_meta(trigger) or {}),
-                correlation_id=str(
-                    payload_dict.get("correlation_id")
-                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
-                ),
-            ).to_prompt()
-
-        return SidarAgent._trigger_to_prompt(trigger)
+        return build_trigger_prompt_service(trigger, payload_dict, None)
 
     def _build_trigger_correlation(
         self,

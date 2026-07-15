@@ -50,6 +50,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "managers/code/runner.py",
         "agent/self_heal/executor.py",
         "agent/autonomy/service.py",
+        "agent/federation/service.py",
         "agent/roles/coverage/analyzer.py",
         "core/llm/providers/ollama.py",
         "core/llm/openai.py",
