@@ -71,7 +71,7 @@ def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) ->
 
 def _extract_required_contexts(payload: dict[str, Any]) -> set[str]:
     """Normalize required status-check contexts from GitHub branch protection JSON."""
-    contexts = set()
+    contexts: set[str] = set()
     raw_contexts = payload.get("contexts", [])
     if isinstance(raw_contexts, list):
         contexts.update(str(item) for item in raw_contexts if item)
