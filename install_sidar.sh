@@ -485,6 +485,8 @@ INSTALL_UTILITY_MODULES=(
     "utils/database_url.sh"
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
+    "utils/env_secrets.sh"
+    "utils/services_docker.sh"
     "utils/ollama_models.sh"
     "utils/playwright_ubuntu_override.sh"
 )
@@ -530,9 +532,9 @@ f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/instal
 a3cc9bb0097ea5e4d3bd60fa5138d0d92962e3ba64f7eb1fa7f76f9540048db6  scripts/install_modules/phases/03_system.sh
 9f7508f0d309d0d285891f16c8ff286ea7340db8c65e00651a6e3ce6f3e74035  scripts/install_modules/phases/04_workspace.sh
 76041c983eefaf3d97b2af8cec7744edc0eaeb0f95a1f3fa3e6bc70123d3e75d  scripts/install_modules/phases/05_frontend.sh
-b0639fa091235c7c149cb78e0cf0e204ee25b0e0696128a7119ed9a64e5faab3  scripts/install_modules/phases/06_services.sh
+691febe5a43e6901ade260b04b58451bb11256ced4d9c4712d4b8ab4ced9941f  scripts/install_modules/phases/06_services.sh
 649a7fed944cc188edd23ac22b8645058b973070f27e478849b954d8ed6f317c  scripts/install_modules/phases/07_finish.sh
-c1af096a83440258cfb9e3a6173fbcef42d81bfdafcbfdf0243673d74c777380  scripts/install_modules/phases/08_env.sh
+47008da14fe043f22cd126cffc14394b34e658801b4730710304c76e6a43f845  scripts/install_modules/phases/08_env.sh
 960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
 32b98cf0caee4b8ff750b51757a7eab3c0464390ccc81deca95e97936e48f2b7  scripts/install_modules/phases/10_validation.sh
 046396e0f445e99422c17d4f28db05a40adf716d6e4a0d110c6b538e1a9ebdfb  scripts/install_modules/phases/11_post_install.sh
@@ -541,6 +543,7 @@ c1af096a83440258cfb9e3a6173fbcef42d81bfdafcbfdf0243673d74c777380  scripts/instal
 3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
 b7a985336773d99bf6606f06f2f857468ed6ab0368e27882a52604fb448ba00a  scripts/install_modules/utils/database_url.sh
 6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
+4ac7b7cdacef589599f7959cdaeefcacfaee68323780b413f7370380b25ebb2c  scripts/install_modules/utils/env_secrets.sh
 b58e421208ef32b935bd95a57ff7925538cf9096717e59e2aa147b115e199446  scripts/install_modules/utils/env_utils.sh
 98255ef4a6508f9a3602f384f31ee347cb9e76fbe1e2869f7397b78897fc2d57  scripts/install_modules/utils/gpu_utils.sh
 3f9c721169a68ce4d8f93ed96a771cf21bcb117e903a454da39c5825e7a97f45  scripts/install_modules/utils/install_remediation.sh
@@ -549,6 +552,7 @@ f2dabe212383f00c9aed2311ef4ae771e2afe4ad8ca0f90e0845b4776217ddc2  scripts/instal
 878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
 22a9e0fcc9f0ba3327a9e7d1ee53ebcee0321fd257cfac1464574314bd258146  scripts/install_modules/utils/python_env.sh
 9823612f2782fad09a2001f040a5777190b0a57a13f9e35e127ac2955618761e  scripts/install_modules/utils/remote_script.sh
+899e075ec0e0eb160cf0a58d61f0d808394fd174a05bdac9f7e404a370e38b10  scripts/install_modules/utils/services_docker.sh
 9054922888ca85ff7d79b8923d5a4563f0e0a31d3b8eff13d6d1007a557dbaa8  scripts/install_modules/utils/ux.sh
 e147e75522e9ea1baa9c1a08ec632a5456ff2e407b5b9a574bf56738b14a9a0d  scripts/install_modules/utils/wsl_gpu_preflight.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -1424,6 +1428,8 @@ sidar_source_install_utils \
     "database_url.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
+    "env_secrets.sh" \
+    "services_docker.sh" \
     "ollama_models.sh" \
     "playwright_ubuntu_override.sh"
 SIDAR_INSTALL_REQUESTED_VERSION="${INSTALL_SIDAR_VERSION:-}"

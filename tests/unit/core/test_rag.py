@@ -3672,6 +3672,58 @@ async def test_document_store_llm_entity_extraction_feature_flag_merges_payload(
     assert any(relation.relation == "TARGETS_AUDIENCE" for relation in relations)
 
 
+async def test_document_store_llm_entity_extraction_builds_configured_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+    store.cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        RAG_LLM_ENTITY_PROVIDER="anthropic",
+        RAG_LLM_ENTITY_MODEL="entity-model",
+    )
+    store._llm_entity_extraction_settings = rag.LLMEntityExtractionSettings(enabled=True)
+
+    calls: dict[str, object] = {}
+
+    class FakeLLMClient:
+        def __init__(self, provider: str, cfg: object) -> None:
+            calls["provider"] = provider
+            calls["cfg"] = cfg
+
+        async def chat(self, messages, *, model, temperature, stream, json_mode):
+            calls["messages"] = messages
+            calls["model"] = model
+            calls["temperature"] = temperature
+            calls["stream"] = stream
+            calls["json_mode"] = json_mode
+            return {
+                "schema_version": rag.LLM_ENTITY_SCHEMA_VERSION,
+                "entities": [{"label": "Campaign", "name": "Constructor Path"}],
+                "relations": [],
+            }
+
+    monkeypatch.setattr("core.llm_client.LLMClient", FakeLLMClient)
+
+    entities, relations = store.extract_document_entities(
+        "Constructor brief",
+        "Brand: Sidar",
+        tags=["channel:Email"],
+        source="memory://constructor",
+    )
+
+    assert calls["provider"] == "anthropic"
+    assert calls["cfg"] is store.cfg
+    assert calls["model"] == "entity-model"
+    assert calls["temperature"] == 0.0
+    assert calls["stream"] is False
+    assert calls["json_mode"] is True
+    assert "Constructor brief" in calls["messages"][0]["content"]
+    entity_pairs = {(entity.label, entity.name) for entity in entities}
+    assert ("Campaign", "Constructor Path") in entity_pairs
+    assert all(relation.source or relation.target for relation in relations)
+
+
 async def test_extract_document_entities_json_tags_empty_and_invalid_branches(
     tmp_path: Path,
 ) -> None:

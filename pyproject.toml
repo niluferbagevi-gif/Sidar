@@ -592,7 +592,6 @@ py-modules = [
   "gui_launcher",
   "config",
   "config_autonomy",
-  "config_database",
   "config_gpu",
   "config_llm",
   "config_quality",

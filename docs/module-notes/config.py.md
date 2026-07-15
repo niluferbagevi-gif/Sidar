@@ -7,8 +7,8 @@ sorumlulukları artık domain dosyalarına ayrılmıştır. Eski `from config im
 ve `import config` kalıpları desteklenmeye devam ederken, yeni yardımcılar aşağıdaki
 modüllerden beslenir:
 
-- `config_database.py`: PostgreSQL/SQLite DSN üretimi, container DB URL'i ve pool
-  varsayılanları.
+- `core/config_postgres.py`: PostgreSQL DSN üretimi, container DB URL'i ve pool
+  varsayılanlarının canonical modülü; `config.py` bu helperları doğrudan re-export eder.
 - `config_llm.py`: LLM provider/model ayarları, `LLMClientSettings` ve Ollama batch
   policy.
 - `config_rag.py`: RAG chunk/top-k/semantic-cache varsayılanları.
@@ -27,6 +27,20 @@ modüllerden beslenir:
 > path'lerinin kırılmaması ve domain helper'larının testlerle korunması üzerinden
 > değerlendirilmelidir.
 
+
+## Kök/Core yerleşim kuralı
+
+Config split modülleri için yerleşim kuralı:
+
+- `core/config_*.py`: Runtime domain helperları, provider/domain-specific ayarlar ve
+  başka modüller tarafından doğrudan tüketilebilen saf yardımcılar için canonical
+  konumdur. PostgreSQL DSN/pool helperları bu nedenle `core/config_postgres.py`
+  altında tutulur.
+- Kök `config_*.py`: `config.py` facade'ına yakın, üst seviye orkestrasyon veya
+  legacy import uyumluluğu gerektiren ayar grupları için kullanılır. Sıfır ek mantık
+  içeren pass-through wrapper eklenmemelidir; facade doğrudan canonical core
+  modülünden re-export etmelidir.
+
 ## Import uyumluluk sözleşmesi
 
 Korunan legacy import örnekleri:
@@ -41,9 +55,8 @@ Bu yüzey `tests/unit/root/test_config.py` içinde korunur. Yeni kod, yalnızca 
 domain helper'a ihtiyaç duyuyorsa doğrudan split modülü tercih etmelidir:
 
 ```python
-import config_database
 import config_llm
-from core import config_env_helpers
+from core import config_env_helpers, config_postgres
 ```
 
 Yeni split modül eklendiğinde iki güvence birlikte sağlanmalıdır:

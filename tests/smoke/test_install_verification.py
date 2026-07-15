@@ -1633,16 +1633,20 @@ def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
 
 
 def test_docker_compose_start_checks_daemon_access_before_up() -> None:
-    phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
-    start_idx = phase.index("start_docker_services_or_fail()")
-    start_body = phase[start_idx : phase.index("wait_for_compose_services_health()", start_idx)]
+    services_docker = Path("scripts/install_modules/utils/services_docker.sh").read_text(
+        encoding="utf-8"
+    )
+    start_idx = services_docker.index("start_docker_services_or_fail()")
+    start_body = services_docker[
+        start_idx : services_docker.index("wait_for_compose_services_health()", start_idx)
+    ]
 
-    assert "ensure_docker_compose_access_or_fail()" in phase
-    assert "docker info" in phase
-    assert "sudo -n docker info" in phase
+    assert "ensure_docker_compose_access_or_fail()" in services_docker
+    assert "docker info" in services_docker
+    assert "sudo -n docker info" in services_docker
     assert 'ensure_docker_compose_access_or_fail "${compose_cmd[@]}"' in start_body
-    assert "permission denied" in phase
-    assert "docker grubuna ekleyin" in phase
+    assert "permission denied" in services_docker
+    assert "docker grubuna ekleyin" in services_docker
     assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(
         "maybe_reset_postgres_volume_after_password_hardening"
     )

@@ -1,0 +1,38 @@
+name: Branch protection audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly fail-closed audit that GitHub branch protection still requires the
+    # release-critical CI contexts documented in docs/CI_REQUIRED_CHECKS.md.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  required-checks:
+    name: Required release checks audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install audit dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Verify main branch required checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run python scripts/ci/verify_required_checks.py --branch main

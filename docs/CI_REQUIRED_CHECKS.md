@@ -9,7 +9,7 @@ the expected required contexts should mirror the release-critical jobs in
 
 | Workflow job id | Required GitHub check name | Why it must be required |
 | --- | --- | --- |
-| `test` | `CI / test` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
+| `test` | `CI / Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
 | `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
 | `production-profile-dry-run` | `CI / Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
 | `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
@@ -21,10 +21,28 @@ remain fail-closed when no reviewed `.benchmarks/*_baseline.json` cache/artifact
 is restored.
 
 Repository administrators should periodically verify that the required check
-names above are selected for protected `main`/`master` branches. If a job `name:`
-changes in `.github/workflows/ci.yml`, update branch protection at the same time
-or PRs may either be blocked forever by a stale required context or allowed to
+names above are selected for protected `main`/`master` branches. This repository
+now includes a scheduled/manual audit workflow (`Branch protection audit`) that
+runs `scripts/ci/verify_required_checks.py` against GitHub's branch protection
+API and compares the protected branch contexts with the release-critical job
+`name:` values in `.github/workflows/ci.yml`. If a job `name:` changes, update
+branch protection at the same time or this audit will fail; without that sync,
+PRs may either be blocked forever by a stale required context or allowed to
 merge without the intended release gate.
+
+### Automated required-check audit
+
+Run the same audit locally when reviewing CI job-name or branch-protection
+changes:
+
+```bash
+uv run python scripts/ci/verify_required_checks.py --repo <owner>/<repo> --branch main
+```
+
+For deterministic tests or dry-runs, pass `--required-context` values instead of
+calling GitHub. The script intentionally fails closed when a release-critical job
+from `.github/workflows/ci.yml` is absent from branch protection, or when the
+GitHub API cannot be reached/authorized during the scheduled audit.
 
 
 ## Autonomous/direct push guardrails

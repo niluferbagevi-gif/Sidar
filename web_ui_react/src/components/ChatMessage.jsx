@@ -3,31 +3,17 @@
  * Asistan mesajları Markdown (kod vurgulamalı) olarak gösterilir.
  */
 
-import React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSidarHighlight from "../lib/rehypeSidarHighlight.js";
+import React, { Suspense } from "react";
 
-const markdownRenderers = {
-  pre: ({ node: _node, ...props }) => (
-    <div className="code-block-wrapper">
-      <pre {...props} />
-    </div>
-  ),
-};
+const LazyChatMarkdownRenderer = React.lazy(() =>
+  import("./ChatMarkdownRenderer.jsx").then((module) => ({
+    default: module.ChatMarkdownRenderer,
+  })),
+);
 
-const MemoMarkdown = React.memo(function MemoMarkdown({ content }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeSidarHighlight]}
-      className="message__markdown"
-      components={markdownRenderers}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-});
+function MarkdownFallback({ content }) {
+  return <span className="message__text message__text--markdown-loading">{content}</span>;
+}
 
 export const ChatMessage = React.memo(function ChatMessage({ message, isStreaming = false }) {
   const isUser = message.role === "user";
@@ -43,7 +29,9 @@ export const ChatMessage = React.memo(function ChatMessage({ message, isStreamin
         {isUser ? (
           <span className="message__text">{message.content}</span>
         ) : (
-          <MemoMarkdown content={message.content} />
+          <Suspense fallback={<MarkdownFallback content={message.content} />}>
+            <LazyChatMarkdownRenderer content={message.content} />
+          </Suspense>
         )}
         {isStreaming && <span className="message__cursor" aria-hidden>▊</span>}
       </div>
