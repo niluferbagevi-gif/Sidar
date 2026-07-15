@@ -78,6 +78,15 @@ def test_run_command_reports_oserror(monkeypatch, capsys):
     assert "Komut baslatilamadi" in capsys.readouterr().out
 
 
+def test_resolve_upload_version_uses_config_then_product_version(monkeypatch):
+    monkeypatch.setattr(gu, "cfg", types.SimpleNamespace(VERSION="5.2.0"))
+    assert gu.resolve_upload_version() == "5.2.0"
+
+    monkeypatch.setattr(gu, "cfg", types.SimpleNamespace())
+    monkeypatch.setattr(gu, "PRODUCT_VERSION", "5.2.0")
+    assert gu.resolve_upload_version() == "5.2.0"
+
+
 def test_url_and_path_helpers(tmp_path):
     assert gu._is_valid_repo_url("https://github.com/a/b")
     assert gu._is_valid_repo_url("https://github.com/a/b.git")

@@ -1,6 +1,6 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
-Sürüm: 2.2
+Sürüm: Sidar ürün sürümüyle senkronize edilir.
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
 Kullanım:
@@ -18,6 +18,7 @@ from datetime import datetime
 
 from config import Config
 from managers.code.git_validation import is_valid_git_ref_name
+from sidar_version import PRODUCT_VERSION
 
 cfg = Config()
 
@@ -165,6 +166,12 @@ def resolve_github_token() -> str:
         if token:
             return token
     return ""
+
+
+def resolve_upload_version() -> str:
+    """Commit mesajı ve başlık için merkezi Sidar sürümünü çöz."""
+    configured_version = str(getattr(cfg, "VERSION", "") or "").strip()
+    return configured_version or PRODUCT_VERSION
 
 
 def is_forbidden_path(path: str) -> bool:
@@ -432,8 +439,10 @@ def main() -> None:
             target_branch = arg
 
     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+    upload_version = resolve_upload_version()
     print(
-        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.2) {Colors.ENDC}"
+        f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı "
+        f"(Sidar v{upload_version}) {Colors.ENDC}"
     )
     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}\n")
 
@@ -711,9 +720,8 @@ def main() -> None:
     _, staged_status = run_command(["git", "diff", "--cached", "--name-status"], show_output=False)
 
     if staged_status.strip():
-        version_str = getattr(cfg, "VERSION", "2.1")
         default_msg = (
-            f"🚀 Sidar {version_str} - Otomatik Dağıtım "
+            f"🚀 Sidar {upload_version} - Otomatik Dağıtım "
             f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
         )
         if target_branch:
