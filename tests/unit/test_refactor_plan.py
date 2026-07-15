@@ -46,6 +46,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/db/auth.py",
         "core/db/audit.py",
         "core/rag/embeddings.py",
+        "core/rag/entity_extraction.py",
+        "core/rag/entity_graph_store.py",
         "managers/code/patcher.py",
         "managers/code/runner.py",
         "managers/code/docker_lifecycle.py",
