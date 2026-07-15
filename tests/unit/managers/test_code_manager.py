@@ -2939,3 +2939,58 @@ def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
 
     assert ok is False
     assert "Listeleme dizini proje kökü dışında" in msg
+
+
+def test_shell_sandbox_selects_explicit_and_default_images(manager) -> None:
+    adapter = manager.shell_sandbox
+
+    assert adapter.select_shell_sandbox_image("python -V", "custom:image") == "custom:image"
+    assert adapter.select_shell_sandbox_image("python -V", None) == manager.docker_image
+    assert adapter.select_shell_sandbox_image("uv run pytest -q", None) == manager.docker_test_image
+
+
+def test_shell_sandbox_command_invokes_pytest_static_helper() -> None:
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("pytest -q") is True
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m pytest tests") is True
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m unittest") is False
+
+
+def test_shell_sandbox_builds_preflight_via_orchestrator(manager, monkeypatch) -> None:
+    def fake_build(owner, command):
+        assert owner is manager
+        assert command == "pytest -q"
+        return "preflight"
+
+    monkeypatch.setattr(cm.test_runner_orchestrator, "build_shell_preflight_command", fake_build)
+
+    assert manager.shell_sandbox.build_shell_preflight_command("pytest -q") == "preflight"
+
+
+def test_shell_sandbox_run_initializes_docker_and_delegates(manager, monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_ensure() -> None:
+        calls["initialized"] = True
+
+    def fake_run(owner, command, cwd=None, image=None):
+        calls["owner"] = owner
+        calls["command"] = command
+        calls["cwd"] = cwd
+        calls["image"] = image
+        return True, "ok"
+
+    manager.code_execution_backend = "docker"
+    monkeypatch.setattr(manager, "ensure_docker_initialized", fake_ensure)
+    monkeypatch.setattr(cm.test_runner_orchestrator, "run_shell_in_sandbox", fake_run)
+
+    assert manager.shell_sandbox.run_shell_in_sandbox("pytest -q", cwd="/repo", image="img") == (
+        True,
+        "ok",
+    )
+    assert calls == {
+        "initialized": True,
+        "owner": manager,
+        "command": "pytest -q",
+        "cwd": "/repo",
+        "image": "img",
+    }
