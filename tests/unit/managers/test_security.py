@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import managers.security as security_module
 from managers.security import FULL, RESTRICTED, SANDBOX, SecurityManager
 
 
@@ -433,3 +434,31 @@ def test_validate_prompt_text_allows_empty_or_none_text(
     assert result.allowed is True
     assert result.risk_score == 0
     assert result.reasons == []
+
+
+def test_coerce_bool_none_bool_and_string_branches() -> None:
+    assert security_module._coerce_bool(None, default=False) is False
+    assert security_module._coerce_bool(None, default=True) is True
+    assert security_module._coerce_bool(True) is True
+    assert security_module._coerce_bool(False, default=True) is False
+    assert security_module._coerce_bool("true") is True
+    assert security_module._coerce_bool("0") is False
+
+
+def test_init_guardrails_nested_dependency_missing_uses_import_error_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    SecurityManager._guardrails_import_log_keys.clear()
+
+    def fake_import_module(_name: str):
+        raise ModuleNotFoundError("No module named 'yaml'", name="yaml")
+
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
+    cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
+
+    with caplog.at_level("WARNING"):
+        mgr = SecurityManager(cfg=cfg)
+
+    assert mgr._guardrails_engine is None
+    assert mgr.guardrails_degraded_reason.startswith("import-error:")
+    assert "regex tabanlı prompt koruması degraded mode'da çalışıyor" in caplog.text

@@ -173,22 +173,38 @@ runtime sync/dry-run kanıtı üretmek için kullanılmalıdır.
 Takip kapıları `pyproject.toml` içindeki
 `[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]` ve
 `[tool.sidar.dependency_profile_plan.installer_profile_visibility]` bloklarında
-makine-okunur tutulur. Mevcut CI job'ı `production-profile-dry-run` yalnız no-dev
-import/sync kanıtı üretir; bir sonraki geliştirme PR'ında bu dry-run gerçek CI/release
-blocking gate'e çevrilmeden production-minimal release kabulü sayılmamalıdır.
-Production-minimal varsayılan installer davranışına ancak şu kanıtlar blocking hale
-geldiğinde terfi edebilir:
+makine-okunur tutulur. `production_minimal_runtime_validation.status` artık
+`"blocking"`dir: CI job'ı `production-profile-dry-run`, `production-readiness`
+aggregate job'ının (`needs:`) zorunlu bir bağımlılığıdır ve şu kanıt zincirini
+üretir:
 
-1. `SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test`
-   komutu lock değiştirmeden geçer.
-2. Web/API boot smoke, DB migration smoke ve no-dev import smoke artifact'leri CI/release
-   çıktısına eklenir. Mevcut CI `production-profile-dry-run` job'ı
-   `uv sync --frozen --extra production-minimal --no-dev` ve no-dev import smoke
-   doğrulamasını ana CI içinde çalıştırır; bu job `continue-on-error` olmadan kalmalıdır.
-3. RAG/GPU/voice/browser gibi ağır extras production-minimal profile alınmaz.
+1. `uv sync --frozen --extra production-minimal --no-dev` lock değiştirmeden geçer.
+2. `scripts/production_minimal_import_smoke.py` — `web_server`, `config`, `core`,
+   `core.llm_client`, `managers.security`, `managers.code_manager`, `agent`,
+   `agent.roles` dahil boot yolundaki modüllerin no-dev profilde gerçekten
+   importlanabildiğini doğrular (bu script `defusedxml`'in `dev` extra'dan ana
+   `dependencies` listesine taşınmasının doğrudan nedeni oldu: `agent/roles/__init__.py`
+   eager-import zincirinde `agent/roles/coverage_agent.py` çalışma zamanında
+   `defusedxml` gerektiriyordu ama no-dev profilde eksikti).
+3. `alembic upgrade head`, izole `sidar_prodmin` veritabanına karşı DB migration
+   smoke'u çalıştırır.
+4. `scripts/production_minimal_boot_smoke.py` — `web_server:app`'i gerçek `uvicorn`
+   altında ayağa kaldırır ve `/health` yanıtındaki `agent_catalog.degraded` alanının
+   `false` olduğunu doğrular. Üst seviye `status` alanının CI'da canlı Ollama
+   olmadığı için `degraded` (503) dönmesi beklenir ve bilinçli olarak bu gate'in
+   kapsamı dışıdır; asıl doğrulanan sinyal agent role katalogunun no-dev bağımlılık
+   yüzeyiyle import hatasız yüklenmesidir.
+5. `production-minimal-validation` artifact'i (`artifacts/production-minimal/validation.json`)
+   commit SHA'sı ve çalışan kontrol listesiyle her CI koşusunda yüklenir.
+
+Mevcut CI `production-profile-dry-run` job'ı bu adımları ana CI içinde çalıştırır;
+bu job `continue-on-error` olmadan kalmalıdır. Production-minimal varsayılan
+installer davranışına terfi etmesi için ayrıca:
+
+1. RAG/GPU/voice/browser gibi ağır extras production-minimal profile alınmaz.
    `tests/unit/test_dependency_profile_plan.py::test_production_minimal_excludes_heavy_optional_extras`
    bu sınırı pyproject metadata'sı üzerinden korur.
-4. Release/merge için ayrı production-readiness gate'i yine çalışır:
+2. Release/merge için ayrı production-readiness gate'i yine çalışır:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
 ## Ruff docstring / ASYNC borç kapatma takibi

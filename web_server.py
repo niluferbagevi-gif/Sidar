@@ -168,8 +168,13 @@ print = builtins.print
 
 
 def _resolve_psutil_module() -> Any:
-    """Resolve psutil through Python import hooks for testable fallback behavior."""
-    return importlib.import_module("psutil")
+    """Resolve psutil through Python import hooks for testable fallback behavior.
+
+    Uses the ``__import__`` builtin (not ``importlib.import_module``) because
+    the latter bypasses ``builtins.__import__`` overrides, which would make
+    this function unpatchable via ``monkeypatch.setattr("builtins.__import__", ...)``.
+    """
+    return builtins.__import__("psutil")
 
 
 # ─────────────────────────────────────────────

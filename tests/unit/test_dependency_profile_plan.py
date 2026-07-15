@@ -148,18 +148,78 @@ def test_ci_has_blocking_production_profile_dry_run() -> None:
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert "production-profile-dry-run:" in workflow
-    assert (
-        "continue-on-error"
-        not in workflow[
-            workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")
-        ]
-    )
+    dry_run_job = workflow[
+        workflow.index("production-profile-dry-run:") : workflow.index("pg-stress:")
+    ]
+    assert "continue-on-error" not in dry_run_job
     assert "uv sync --frozen --extra production-minimal --no-dev" in workflow
     assert "production-minimal imports ok" in workflow
+    assert "scripts/production_minimal_import_smoke.py" in dry_run_job
+    assert "alembic upgrade head" in dry_run_job
+    assert "scripts/production_minimal_boot_smoke.py" in dry_run_job
+    assert "production-minimal-validation" in dry_run_job
     assert "production-profile-dry-run" in docs
     assert "`sidar[postgres]`" in docs
     assert "ana CI kalite kapısının parçası" in docs
     assert "continue-on-error` kullanılmamalıdır" in docs
+
+
+def test_production_profile_dry_run_gates_production_readiness_aggregate() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    validation = pyproject["tool"]["sidar"]["dependency_profile_plan"][
+        "production_minimal_runtime_validation"
+    ]
+
+    aggregate_job = workflow[
+        workflow.index("production-readiness:") : workflow.index("production-profile-dry-run:")
+    ]
+    assert "needs: [test, benchmark-compare, production-profile-dry-run]" in aggregate_job
+    assert validation["status"] == "blocking"
+    assert "blocking_transition_pr_required" not in validation
+    assert set(validation["blocking_evidence"]) == {
+        "uv sync --frozen --extra production-minimal --no-dev",
+        "scripts/production_minimal_import_smoke.py",
+        "alembic upgrade head against an isolated sidar_prodmin database",
+        "scripts/production_minimal_boot_smoke.py",
+        "production-minimal-validation artifact (artifacts/production-minimal/validation.json)",
+    }
+
+
+def test_production_minimal_import_smoke_script_covers_boot_path_modules() -> None:
+    script = Path("scripts/production_minimal_import_smoke.py").read_text(encoding="utf-8")
+
+    for module_name in (
+        "web_server",
+        "config",
+        "core",
+        "core.llm_client",
+        "managers.security",
+        "managers.code_manager",
+        "agent",
+        "agent.roles",
+    ):
+        assert f'"{module_name}"' in script
+
+
+def test_production_minimal_boot_smoke_script_checks_agent_catalog_not_top_level_status() -> None:
+    script = Path("scripts/production_minimal_boot_smoke.py").read_text(encoding="utf-8")
+
+    assert "agent_catalog" in script
+    assert 'catalog.get("degraded")' in script
+    assert "/health" in script
+
+
+def test_defusedxml_is_a_runtime_dependency_not_dev_only() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+    dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
+    labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]
+
+    assert any(dep.startswith("defusedxml") for dep in dependencies)
+    assert not any(dep.startswith("defusedxml") for dep in dev_dependencies)
+    assert any(dep.startswith("types-defusedxml") for dep in dev_dependencies)
+    assert labels["defusedxml"] == "runtime"
 
 
 def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:

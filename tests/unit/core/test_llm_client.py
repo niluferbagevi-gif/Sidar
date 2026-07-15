@@ -1093,6 +1093,18 @@ def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> N
         llm_client.LLMClient("missing-provider", _make_config())
 
 
+def test_provider_class_rejects_registry_entry_not_a_base_llm_client_subclass(
+    monkeypatch,
+) -> None:
+    monkeypatch.setitem(llm_client._PROVIDER_IMPORTS, "not-a-client", object)
+    monkeypatch.delitem(llm_client._PROVIDER_REGISTRY_CACHE, "not-a-client", raising=False)
+
+    with pytest.raises(TypeError, match="BaseLLMClient alt sınıfı olmalıdır"):
+        llm_client._provider_class("not-a-client")
+
+    assert "not-a-client" not in llm_client._PROVIDER_REGISTRY_CACHE
+
+
 @pytest.mark.asyncio
 async def test_trace_stream_metrics_sets_ttft_and_total() -> None:
     class Span:
