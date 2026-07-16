@@ -1,3 +1,9 @@
+> **ARŞİV NOTU (2026-07-16):** Bu rapor tarihsel kalite/audit snapshot'ıdır.
+> Güncel coverage gate, refactor backlog ve production-readiness yorumu için aktif
+> kaynaklar `docs/REFACTOR_PLAN.md`, `docs/DEPENDENCY_PROFILE_PLAN.md` ve
+> `run_tests.sh` kalite kapılarıdır. Bu belgede geçen zero-debt/production-ready
+> özetleri güncel `%99` ratchet ve production-readiness gate yerine kullanılmamalıdır.
+
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu (v5.2 Faz E Aktivasyonu)
 **Sürüm:** v5.2.0-alpha belge baseline / v5.0.0-alpha runtime
 **Tarih:** 2026-03-21

@@ -33,6 +33,12 @@ Bu yaklaşım ile:
   `install_sidar.sh` içindeki legacy yardımcı fonksiyon bağımlılıkları azaltılmalı,
   phase modülü tek başına test edilebilir hale getirilmeli ve release bundle üretimi
   sonrasında bu sınırın korunması CI dokümantasyonunda açıkça izlenmelidir.
+- [ ] **Bootstrap facade inceltme (2026-07-16 durum notu):** `install_sidar.sh`
+  hâlâ remote module bootstrap, embedded manifest/hash doğrulama ve fallback cache
+  orchestration sorumluluklarını taşıyor. UID-scoped cache, symlink/owner guard ve
+  TOFU dokümantasyonu eklendi; sıradaki düşük riskli adım bu bootstrap/hash guard
+  akışını `scripts/install_modules/bootstrap.sh` gibi ayrı bir modüle taşırken raw
+  fallback modül indirme testlerini korumaktır.
 
 ## Cross-module değişken lint sözleşmesi
 

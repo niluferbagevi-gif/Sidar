@@ -114,6 +114,12 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 
 ## Güvenlik odaklı çözümleme sınırları
 
+> **Aktif takip durumu (2026-07-16):** `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
+> torch istisnası hâlâ `status=watch` durumundadır; review tarihi `2026-08-15`,
+> sert bitiş tarihi `2026-09-15` olarak korunur. Bu PR yeni bir lock yenilemesi
+> yapmaz; yapılacak iş, hatırlatıcı/runbook ile upgrade denemesini zamanında
+> çalıştırmak ve istisna süresi dolmadan sonucu kayıt altına almaktır.
+
 - `rag` extra içindeki PyTorch çözümlemesi geçici olarak `torch>=2.4.1,<2.12` ve
   `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, daha önce
   `pip-audit` tarafından raporlanan `torch 2.12.0 / CVE-2025-3000` bulgusu için
@@ -202,6 +208,11 @@ kaldığında terfi edebilir:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
 ## Ruff docstring / ASYNC borç kapatma takibi
+
+> **Aktif takip durumu (2026-07-16):** kapanış hedefi `2026-09-30` olarak
+> değişmeden kalır. Bu hedef, yeni veya anlamlı şekilde değişen public API'lerde
+> docstring ekleme varsayımını ve `ASYNC240` debt ratchet'ini genişletmeme
+> kuralını takip eder.
 
 `pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu docstring (`D*`) ve
 `ASYNC240` ignore'larının kapanış tarihini `2026-09-30` olarak taşır. Bu tarihe kadar
