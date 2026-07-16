@@ -1246,10 +1246,51 @@ run_static_analysis_gates() {
   done
 }
 
+ensure_security_tool_dependencies() {
+  if uv run python - <<'PY' >/dev/null 2>&1
+import bandit  # noqa: F401
+PY
+  then
+    return 0
+  fi
+
+  echo "⚠️ Güvenlik kalite araçları eksik (bandit)."
+  echo "ℹ️ Bandit/dev araçları için full extras öncesi CI sistem bağımlılıkları hazırlanıyor..."
+  if ! bash scripts/install_ci_system_deps.sh; then
+    echo "❌ CI sistem bağımlılıkları hazırlanamadı; bandit kurulumu full uv sync pyaudio/portaudio.h aşamasında kesildiği için eksik kalabilir."
+    echo "   Manuel hazırlık: bash scripts/install_ci_system_deps.sh && uv sync --frozen --all-extras"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  echo "ℹ️ Güvenlik kalite araçları uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
+  if ! uv sync --frozen --all-extras; then
+    echo "❌ Güvenlik kalite araçları kurulamadı; bandit çalıştırılamaz."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+import bandit  # noqa: F401
+PY
+  then
+    echo "❌ Bandit doğrulaması başarısız; dev extra ortamda kullanılabilir değil."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+}
+
 run_security_analysis_gates() {
   if [ "${RUN_SECURITY_ANALYSIS:-1}" != "1" ]; then
     echo "ℹ️ Güvenlik analizi adımı atlandı (RUN_SECURITY_ANALYSIS=${RUN_SECURITY_ANALYSIS:-1})."
     return 0
+  fi
+
+  if ! ensure_uv_available || ! ensure_security_tool_dependencies; then
+    echo "❌ Güvenlik analizi önkoşulları hazırlanamadı."
+    record_backend_failure "security_failed"
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   echo "🛡️ Ruff borç ratchet + SAST + bağımlılık güvenlik taraması çalıştırılıyor..."

@@ -955,12 +955,28 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     """Local security gate mirrors CI's Ruff debt ratchet before SAST scans."""
     body = _extract_run_tests_function("run_security_analysis_gates")
 
+    tooling_check = "ensure_security_tool_dependencies"
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
     bandit_check = "uv run bandit -r . -c pyproject.toml"
+    assert tooling_check in body
     assert debt_check in body
     assert bandit_check in body
-    assert body.index(debt_check) < body.index(bandit_check)
+    assert body.index(tooling_check) < body.index(debt_check) < body.index(bandit_check)
+    assert "Güvenlik analizi önkoşulları hazırlanamadı" in body
     assert "Ruff docstring/E501/ASYNC240 borç baseline kontrolü başarısız" in body
+
+
+def test_security_tooling_bootstrap_prepares_system_deps_before_full_uv_sync() -> None:
+    """Missing Bandit should trigger the same PortAudio-safe full-sync preparation."""
+    body = _extract_run_tests_function("ensure_security_tool_dependencies")
+
+    assert "import bandit" in body
+    assert "bash scripts/install_ci_system_deps.sh" in body
+    assert "pyaudio/portaudio.h" in body
+    assert "uv sync --frozen --all-extras" in body
+    assert body.index("bash scripts/install_ci_system_deps.sh") < body.index(
+        "uv sync --frozen --all-extras"
+    )
 
 
 def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
