@@ -116,9 +116,11 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 
 > **Aktif takip durumu (2026-07-16):** `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
 > torch istisnası hâlâ `status=watch` durumundadır; review tarihi `2026-08-15`,
-> sert bitiş tarihi `2026-09-15` olarak korunur. Bu PR yeni bir lock yenilemesi
-> yapmaz; yapılacak iş, hatırlatıcı/runbook ile upgrade denemesini zamanında
-> çalıştırmak ve istisna süresi dolmadan sonucu kayıt altına almaktır.
+> sert bitiş tarihi `2026-09-15` olarak korunur. 2026-07-16 kontrolünde upstream
+> advisory verisi hâlâ `last_affected=2.12.0` ve `patched_versions=none` gösterdiği
+> için bu PR yeni bir lock yenilemesi yapmaz; yapılacak iş, hatırlatıcı/runbook ile
+> upgrade denemesini zamanında çalıştırmak ve istisna süresi dolmadan sonucu kayıt
+> altına almaktır.
 
 - `rag` extra içindeki PyTorch çözümlemesi geçici olarak `torch>=2.4.1,<2.12` ve
   `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, daha önce

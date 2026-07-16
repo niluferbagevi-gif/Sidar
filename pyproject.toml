@@ -369,6 +369,9 @@ summary = "Installer now prompts/selects a dependency profile after runtime mode
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 current_lock = "torch 2.11.0"
 tracked_policy_exception = "CVE-2025-3000"
+advisory_checked_on = "2026-07-16"
+upstream_last_affected = "2.12.0"
+upstream_patched_versions = "none"
 review_by = "2026-08-15"
 expires = "2026-09-15"
 warning_window_days = 45

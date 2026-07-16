@@ -322,6 +322,12 @@ def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
     assert "scripts/pip_audit_ignore_args.py" in docs
     assert "2026-09-15" in docs
     assert "2026-08-15" in docs
+    reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
+    assert reminder["advisory_checked_on"] == "2026-07-16"
+    assert reminder["upstream_last_affected"] == "2.12.0"
+    assert reminder["upstream_patched_versions"] == "none"
+    assert "last_affected=2.12.0" in docs
+    assert "patched_versions=none" in docs
     assert "status=watch" in docs
     assert "fail-closed" in docs
     assert "CVE-2025-3000" in policy
