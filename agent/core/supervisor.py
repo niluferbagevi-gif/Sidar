@@ -494,8 +494,7 @@ class SupervisorAgent(BaseAgent):
 
         def _turn_limit_message() -> str:
             return (
-                "[P2P:STOP] Circuit breaker tetiklendi: "
-                f"maksimum tur limiti aşıldı ({max_turns})."
+                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
             )
 
         if intent == "research":
