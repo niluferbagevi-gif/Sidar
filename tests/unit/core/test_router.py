@@ -534,9 +534,41 @@ def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.Monkey
         "import_module",
         lambda name: _FakeTiktokenModule() if name == "tiktoken" else None,
     )
-    router._TIKTOKEN_ENCODER = None
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
 
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": "merhaba dünya"}]) == 5
+
+
+def test_estimate_tokens_reuses_cached_tiktoken_encoder(monkeypatch: pytest.MonkeyPatch) -> None:
+    import_calls: list[str] = []
+
+    class _FakeEncoder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode(self, text: str) -> list[int]:
+            self.calls += 1
+            return list(range(len(text.split())))
+
+    class _FakeTiktokenModule:
+        @staticmethod
+        def get_encoding(name: str):
+            assert name == "cl100k_base"
+            return _FakeEncoder()
+
+    def _fake_import_module(name: str):
+        import_calls.append(name)
+        assert name == "tiktoken"
+        return _FakeTiktokenModule()
+
+    monkeypatch.setattr(router.importlib, "import_module", _fake_import_module)
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
+
+    messages = [{"role": "user", "content": "bir iki üç"}]
+
+    assert CostAwareRouter._estimate_tokens(messages) == 3
+    assert CostAwareRouter._estimate_tokens(messages) == 3
+    assert import_calls == ["tiktoken"]
 
 
 def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
@@ -546,7 +578,7 @@ def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
         raise ModuleNotFoundError("tiktoken not installed")
 
     monkeypatch.setattr(router.importlib, "import_module", _raise_import_error)
-    router._TIKTOKEN_ENCODER = None
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
 
     content = "a" * 8
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": content}]) == 3
