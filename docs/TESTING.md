@@ -111,6 +111,15 @@ TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READ
 Aynı sözleşme `Makefile` içinde `production-readiness` hedefiyle sabitlenmiştir;
 operatörler isterse doğrudan `make production-readiness` çalıştırabilir.
 
+Production-readiness başında `scripts/install_ci_system_deps.sh --check` erken ve
+sert ön kontrol olarak çalışır. Eksik PortAudio/shellcheck/bats paketleri varsa gate
+`uv sync`, Bandit veya pytest aşamasına geçmeden durur; önce şu komutu çalıştırın:
+
+```bash
+bash scripts/install_ci_system_deps.sh
+make production-readiness
+```
+
 ## Make hedefleriyle CI/local komut paritesi
 
 Komut karmaşasını azaltmak için sık kullanılan kalite kapıları `Makefile`

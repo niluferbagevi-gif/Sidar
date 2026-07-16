@@ -733,8 +733,12 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Production readiness profili çalıştırılmadı" not in run_tests_script
     assert "Tam doğrulama durumu: ÇALIŞTIRILMADI" not in run_tests_script
     assert "assert_production_readiness_request" in run_tests_script
+    assert "check_production_readiness_system_dependencies" in run_tests_script
+    assert "scripts/install_ci_system_deps.sh --check" in run_tests_script
     assert "production_readiness_gate_active" in run_tests_script
     assert "SIDAR_PRODUCTION_READINESS=1" in validation_phase
+    assert "scripts/install_ci_system_deps.sh --check" in validation_phase
+    assert "sistem_bagimliligi_eksik" in validation_phase
     assert "run_install_frontend_quality_validation()" in validation_phase
     assert "run_tests.sh --stage frontend" in validation_phase
     assert "lint, typecheck, test:coverage, test:e2e:smoke" in validation_phase
@@ -971,6 +975,24 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
     )
 
+
+def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
+    script = _script()
+    body = _extract_run_tests_function("check_production_readiness_system_dependencies")
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "production_readiness_gate_active" in body
+    assert "bash scripts/install_ci_system_deps.sh --check" in body
+    assert "pyaudio derleme hatasının bandit/pytest" in body
+    assert "make production-readiness" in body
+    assert script.index("assert_production_readiness_request") < script.index(
+        "check_production_readiness_system_dependencies"
+    )
+    assert script.index("check_production_readiness_system_dependencies") < script.index(
+        "ensure_runtime_dependencies()"
+    )
+    assert "scripts/install_ci_system_deps.sh --check" in testing_doc
+    assert "`uv sync`, Bandit veya pytest aşamasına geçmeden durur" in testing_doc
 
 def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     """Local security gate mirrors CI's Ruff debt ratchet before SAST scans."""

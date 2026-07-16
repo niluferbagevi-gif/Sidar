@@ -636,6 +636,12 @@ run_install_ci_full_validation() {
         return
     fi
 
+    info "Production-readiness sistem bağımlılığı ön kontrolü çalıştırılıyor: scripts/install_ci_system_deps.sh --check"
+    if ! (cd "$script_dir" && bash scripts/install_ci_system_deps.sh --check); then
+        CI_FULL_VALIDATION_STATUS="sistem_bagimliligi_eksik"
+        fail "Production readiness sistem bağımlılıkları eksik. Önce 'bash scripts/install_ci_system_deps.sh' çalıştırın; ardından './install_sidar.sh --production-readiness' veya 'make production-readiness' ile tekrar deneyin."
+    fi
+
     info "Tam doğrulama başlıyor: make production-readiness"
     if (cd "$script_dir" && env -u TEST_PROFILE -u RUN_BENCHMARKS -u RUN_FRONTEND_E2E -u SIDAR_PRODUCTION_READINESS AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
         ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."

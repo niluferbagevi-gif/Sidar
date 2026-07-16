@@ -582,7 +582,26 @@ assert_production_readiness_request() {
   exit 2
 }
 
+check_production_readiness_system_dependencies() {
+  if ! production_readiness_gate_active; then
+    return 0
+  fi
+
+  echo "🧰 Production-readiness sistem bağımlılığı ön kontrolü çalıştırılıyor..."
+  if bash scripts/install_ci_system_deps.sh --check; then
+    echo "✅ Production-readiness sistem bağımlılıkları hazır (portaudio/shellcheck/bats)."
+    return 0
+  fi
+
+  echo "❌ Production-readiness sistem bağımlılıkları eksik." >&2
+  echo "   Önce şunu çalıştırın: bash scripts/install_ci_system_deps.sh" >&2
+  echo "   Ardından tekrar deneyin: make production-readiness" >&2
+  echo "   Bu erken ön kontrol, pyaudio derleme hatasının bandit/pytest gibi ikincil eksik araç hatalarına zincirlenmesini engeller." >&2
+  exit 2
+}
+
 assert_production_readiness_request
+check_production_readiness_system_dependencies
 
 if [ "${RUN_FRONTEND_E2E}" != "1" ]; then
   # Yerel auto/opt-out akışında npm paket kurulumu browser binary indirmemeli.
