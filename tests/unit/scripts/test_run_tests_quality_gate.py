@@ -451,6 +451,7 @@ def test_benchmark_tooling_bootstrap_prepares_system_deps_before_pytest_benchmar
         "uv run python -m pytest"
     )
 
+
 def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     script = _script()
 
@@ -491,10 +492,12 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
     assert "Local production-readiness için benchmark baseline bulunamadı" in script
     assert "Önerilen tek aksiyon: make benchmark-seed && make production-readiness" in script
-    assert script.index('if [ "${IS_CI_ENV}" -eq 1 ]; then') < script.index(
-        "elif production_readiness_gate_active; then"
-    ) < script.index(
-        "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
+    assert (
+        script.index('if [ "${IS_CI_ENV}" -eq 1 ]; then')
+        < script.index("elif production_readiness_gate_active; then")
+        < script.index(
+            "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
+        )
     )
     assert (
         "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
@@ -806,7 +809,9 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "print_install_dependency_profile_readiness_legend" in validation_phase
     assert "Profil farkı:" in validation_phase
     assert "dev-light: hızlı lokal geliştirme" in validation_phase
-    assert "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in validation_phase
+    assert (
+        "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in validation_phase
+    )
     assert (
         "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir"
         in validation_phase
@@ -1017,6 +1022,7 @@ def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
     )
     assert "scripts/install_ci_system_deps.sh --check" in testing_doc
     assert "`uv sync`, Bandit veya pytest aşamasına geçmeden durur" in testing_doc
+
 
 def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     """Local security gate mirrors CI's Ruff debt ratchet before SAST scans."""
@@ -2015,6 +2021,7 @@ def test_doctor_production_readiness_target_checks_environment_prerequisites() -
     assert "make benchmark-seed && make production-readiness" in doctor
     assert "make doctor-production-readiness" in testing
     assert "Release gate öncesi ortam doctor/preflight raporu" in testing
+
 
 def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_release_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
@@ -3946,9 +3953,10 @@ def test_run_tests_prepares_ci_system_deps_before_full_uv_sync() -> None:
 
     assert "bash scripts/install_ci_system_deps.sh" in runtime_deps_block
     assert "portaudio.h eksikliğiyle başarısız olabilir" in runtime_deps_block
-    assert runtime_deps_block.index("bash scripts/install_ci_system_deps.sh") < runtime_deps_block.index(
-        "uv sync --frozen --all-extras"
-    )
+    assert runtime_deps_block.index(
+        "bash scripts/install_ci_system_deps.sh"
+    ) < runtime_deps_block.index("uv sync --frozen --all-extras")
+
 
 def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
     bats_block = _extract_run_tests_function("run_bats_shell_tests")
