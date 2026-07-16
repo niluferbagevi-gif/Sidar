@@ -647,7 +647,10 @@ run_install_ci_full_validation() {
     info "Production-readiness sistem bağımlılığı ön kontrolü çalıştırılıyor: scripts/install_ci_system_deps.sh --check"
     if ! (cd "$script_dir" && bash scripts/install_ci_system_deps.sh --check); then
         CI_FULL_VALIDATION_STATUS="sistem_bagimliligi_eksik"
-        fail "Production readiness sistem bağımlılıkları eksik. Önce 'bash scripts/install_ci_system_deps.sh' çalıştırın; ardından './install_sidar.sh --production-readiness' veya 'make production-readiness' ile tekrar deneyin."
+        if [[ "$production_gate_required" == true ]]; then
+            fail "Production readiness sistem bağımlılıkları eksik. Önce 'bash scripts/install_ci_system_deps.sh' çalıştırın; ardından './install_sidar.sh --production-readiness' veya 'make production-readiness' ile tekrar deneyin."
+        fi
+        warn "Production readiness sistem bağımlılığı ön kontrolü tamamlanamadı. Development/local tam doğrulamada akış make production-readiness adımına devam edecek; eksikleri kurmak için: bash scripts/install_ci_system_deps.sh"
     fi
 
     info "Tam doğrulama başlıyor: make production-readiness"
