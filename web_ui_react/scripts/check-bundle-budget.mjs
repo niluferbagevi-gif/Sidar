@@ -17,11 +17,16 @@ const distAssetsDir = join(frontendRoot, "dist", "assets");
 const reactDomBudgetKb = Number(process.env.SIDAR_REACT_DOM_CHUNK_BUDGET_KB || "220");
 const totalJsBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_JS_BUDGET_KB);
 const totalGzipBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_GZIP_BUDGET_KB);
+const gzipTrendWarnKb = optionalNumber(process.env.SIDAR_BUNDLE_GZIP_TREND_WARN_KB || "5");
 const productionBudgetGateActive =
   truthy(process.env.SIDAR_PRODUCTION_READINESS) || process.env.TEST_PROFILE === "ci";
 const reportPath = resolve(
   repoRoot,
   process.env.SIDAR_BUNDLE_BUDGET_REPORT_PATH || "artifacts/frontend-bundle-budget.json",
+);
+const previousReportPath = resolve(
+  repoRoot,
+  process.env.SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH || reportPath,
 );
 const topChunkCount = 5;
 const missingRequiredBudgets = [];
@@ -60,11 +65,72 @@ function validateBudget(name, value) {
   return true;
 }
 
+function validateNonNegativeBudget(name, value) {
+  if (value === null) return true;
+  if (!Number.isFinite(value) || value < 0) {
+    fail(`${name} must be zero or a positive number when set.`);
+    return false;
+  }
+  return true;
+}
+
 function requireBudgetForProductionGate(name, value) {
   if (!productionBudgetGateActive || value !== null) return true;
   missingRequiredBudgets.push(name);
   fail(`${name} must be set when SIDAR_PRODUCTION_READINESS=1 or TEST_PROFILE=ci.`);
   return false;
+}
+
+function readPreviousReport() {
+  if (!previousReportPath || previousReportPath === reportPath) {
+    try {
+      return JSON.parse(readFileSync(reportPath, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return JSON.parse(readFileSync(previousReportPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function buildGzipTrend(previousReport, totalGzipBytes) {
+  const previousGzipBytes = Number(previousReport?.totals?.gzipBytes);
+  if (!Number.isFinite(previousGzipBytes) || previousGzipBytes <= 0) {
+    return { available: false };
+  }
+
+  const deltaBytes = totalGzipBytes - previousGzipBytes;
+  const trend = {
+    available: true,
+    previousGzipBytes,
+    previousGzipKb: Number(formatKb(previousGzipBytes)),
+    deltaBytes,
+    deltaKb: Number(formatKb(deltaBytes)),
+    warnThresholdKb: gzipTrendWarnKb,
+    warning: false,
+  };
+
+  console.log(
+    `Total gzip JS trend: ${formatKb(deltaBytes)} KB vs previous bundle report (${formatKb(previousGzipBytes)} KB).`,
+  );
+
+  if (
+    gzipTrendWarnKb !== null &&
+    Number.isFinite(gzipTrendWarnKb) &&
+    gzipTrendWarnKb > 0 &&
+    deltaBytes > gzipTrendWarnKb * 1024
+  ) {
+    trend.warning = true;
+    console.warn(
+      `⚠️ Total gzip JS grew by ${formatKb(deltaBytes)} KB since the previous bundle report (warning threshold +${gzipTrendWarnKb} KB).`,
+    );
+  }
+
+  return trend;
 }
 
 function writeReport(report) {
@@ -86,6 +152,7 @@ try {
 validateBudget("SIDAR_REACT_DOM_CHUNK_BUDGET_KB", reactDomBudgetKb);
 validateBudget("SIDAR_TOTAL_JS_BUDGET_KB", totalJsBudgetKb);
 validateBudget("SIDAR_TOTAL_GZIP_BUDGET_KB", totalGzipBudgetKb);
+validateNonNegativeBudget("SIDAR_BUNDLE_GZIP_TREND_WARN_KB", gzipTrendWarnKb);
 requireBudgetForProductionGate("SIDAR_TOTAL_JS_BUDGET_KB", totalJsBudgetKb);
 requireBudgetForProductionGate("SIDAR_TOTAL_GZIP_BUDGET_KB", totalGzipBudgetKb);
 
@@ -113,6 +180,8 @@ if (reactDomChunks.length === 0) {
 
 const totalJsBytes = jsChunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
 const totalGzipBytes = jsChunks.reduce((total, chunk) => total + chunk.gzipBytes, 0);
+const previousReport = readPreviousReport();
+const gzipTrend = buildGzipTrend(previousReport, totalGzipBytes);
 const topChunks = jsChunks.slice(0, topChunkCount);
 
 const oversizedChunks = reactDomChunks.filter(
@@ -166,6 +235,7 @@ writeReport({
     reactDomChunk: reactDomBudgetKb,
     totalJs: totalJsBudgetKb,
     totalGzip: totalGzipBudgetKb,
+    gzipTrendWarn: gzipTrendWarnKb,
   },
   missingRequiredBudgets,
   totals: {
@@ -173,6 +243,9 @@ writeReport({
     jsKb: Number(formatKb(totalJsBytes)),
     gzipBytes: totalGzipBytes,
     gzipKb: Number(formatKb(totalGzipBytes)),
+  },
+  trend: {
+    gzip: gzipTrend,
   },
   reactDomChunks: reactDomChunks.map((chunk) => ({
     ...chunk,

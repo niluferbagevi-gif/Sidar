@@ -81,8 +81,12 @@ src/
   Vite build sonrası React DOM chunk büyümesini, toplam JS boyutunu ve toplam gzip JS
   boyutunu izler. React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220` değeridir;
   opsiyonel toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB`
-  verilebilir. Her koşu en büyük 5 JS chunk'ı terminalde listeler ve makinece okunabilir
-  raporu `artifacts/frontend-bundle-budget.json` dosyasına yazar.
+  verilebilir. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB` varsayılan `5` KB artış eşiğiyle önceki
+  bundle raporuna göre toplam gzip büyümesini uyarı olarak raporlar; önceki rapor yolu
+  `SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH` ile verilebilir. Her koşu en büyük 5 JS chunk'ı
+  terminalde listeler ve makinece okunabilir raporu `artifacts/frontend-bundle-budget.json`
+  dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir;
+  `highlight.js/lib/core` ve sınırlı dil modülleri yalnız bu markdown chunk'ına dahildir.
 - CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
   uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
   `coverage-final.json` dosyaları tek artefakt altında saklanır.
