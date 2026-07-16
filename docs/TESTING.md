@@ -131,10 +131,19 @@ gösterir:
 make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget.
 make ci-parity             # dev-full ile aynı local/CI parite kısayolu.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
+make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
+
+`make doctor-production-readiness` hedefi production-readiness kapısından önce ortamı
+mutasyonsuz denetler: `uv`, Python 3.11, `portaudio.h`,
+`scripts/install_ci_system_deps.sh --check`, `uv sync --frozen --all-extras --dry-run`,
+`bandit`/`pytest`/`pytest-benchmark` importları, `web_ui_react/node_modules`,
+Playwright Chromium cache veya `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` ve `.benchmarks`
+baseline dosyası tek raporda listelenir. Eksik varsa rapor önerilen aksiyonu basar;
+örneğin baseline yoksa `make benchmark-seed && make production-readiness` önerilir.
 
 `make production-readiness` hedefi bilinçli olarak şu kanonik komutu çalıştırır:
 

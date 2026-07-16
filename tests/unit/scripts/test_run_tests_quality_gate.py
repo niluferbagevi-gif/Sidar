@@ -1992,6 +1992,30 @@ exit 99
     assert "install" not in brew_output
 
 
+def test_doctor_production_readiness_target_checks_environment_prerequisites() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    doctor = Path("scripts/doctor_production_readiness.py").read_text(encoding="utf-8")
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "doctor-production-readiness:" in makefile
+    assert "uv run python scripts/doctor_production_readiness.py" in makefile
+    assert "check_uv_available" in doctor
+    assert "check_python_version" in doctor
+    assert "check_portaudio_header" in doctor
+    assert "scripts/install_ci_system_deps.sh" in doctor
+    assert "sync" in doctor
+    assert "--frozen" in doctor
+    assert "--all-extras" in doctor
+    assert "--dry-run" in doctor
+    assert "bandit" in doctor
+    assert "pytest_benchmark" in doctor
+    assert "web_ui_react/node_modules" in doctor
+    assert "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" in doctor
+    assert "PLAYWRIGHT_BROWSERS_PATH" in doctor
+    assert "make benchmark-seed && make production-readiness" in doctor
+    assert "make doctor-production-readiness" in testing
+    assert "Release gate öncesi ortam doctor/preflight raporu" in testing
+
 def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_release_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")

@@ -22,7 +22,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full dev-full-gpu ci-parity base-quality-gates production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests deps-full deps-dev-light dev-full dev-full-gpu ci-parity base-quality-gates production-readiness doctor-production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
 
 lint: lint-shell check-install-manifests
 
@@ -83,6 +83,9 @@ base-quality-gates:
 
 production-readiness:
 	$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1
+
+doctor-production-readiness:
+	uv run python scripts/doctor_production_readiness.py
 
 # Lokal benchmark baseline bootstrap içindir; CI baseline için workflow_dispatch
 # seed_benchmark_baseline=true kullanılmalıdır.
