@@ -222,10 +222,8 @@ def assert_no_unmerged_files() -> None:
     if not unmerged_files:
         return
 
-    print(
-        f"{Colors.FAIL}❌ Çözülmemiş Git çakışmaları var; "
-        f"commit/push durduruldu:{Colors.ENDC}"
-    )
+    conflict_message = "❌ Çözülmemiş Git çakışmaları var; commit/push durduruldu:"
+    print(f"{Colors.FAIL}{conflict_message}{Colors.ENDC}")
     for file_path in unmerged_files:
         print(f"  - {file_path}")
     print(
@@ -271,10 +269,8 @@ def create_rollback_backup_tag() -> str:
     tag_name = f"backup/pre-rollback-{datetime.now():%Y%m%d%H%M%S}"
     tag_success, tag_err = run_command(["git", "tag", tag_name], show_output=False)
     if tag_success:
-        print(
-            f"{Colors.OKGREEN}🛟 Rollback öncesi yedek tag oluşturuldu: "
-            f"{tag_name}{Colors.ENDC}"
-        )
+        tag_message = f"🛟 Rollback öncesi yedek tag oluşturuldu: {tag_name}"
+        print(f"{Colors.OKGREEN}{tag_message}{Colors.ENDC}")
     else:
         print(
             f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; "
@@ -288,7 +284,8 @@ def create_rollback_backup_tag() -> str:
 def report_ours_strategy_changes() -> None:
     """`-X ours` merge sonrasında değişen dosyaları görünür hale getirir."""
     _, changed = run_command(
-        ["git", "diff", "--name-only", "ORIG_HEAD..HEAD"], show_output=False
+        ["git", "diff", "--name-only", "ORIG_HEAD..HEAD"],
+        show_output=False,
     )
     changed_files = [line.strip() for line in changed.splitlines() if line.strip()]
     if not changed_files:
