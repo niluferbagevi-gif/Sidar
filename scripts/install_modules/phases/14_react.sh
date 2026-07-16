@@ -105,5 +105,6 @@ setup_react_frontend() {
         return
     fi
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
+    # shellcheck disable=SC2034  # Consumed by finish-phase summary after module sourcing.
     REACT_UI_STATUS="hazır"
 }

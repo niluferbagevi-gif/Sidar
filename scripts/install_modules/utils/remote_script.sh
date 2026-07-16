@@ -151,6 +151,7 @@ download_verified_script_soft() {
         ok "${script_label} checksum doğrulaması başarılı."
     fi
 
+    # shellcheck disable=SC2034  # Read by callers after validate_downloaded_script_file succeeds.
     DOWNLOADED_SCRIPT_FILE="$script_file"
     return 0
 }

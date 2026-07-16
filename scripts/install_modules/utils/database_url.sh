@@ -101,6 +101,7 @@ resolve_runtime_database_url() {
     done
 
     RUNTIME_DATABASE_URL=""
+    # shellcheck disable=SC2034  # Read by later phase modules after sourcing.
     RUNTIME_DATABASE_URL_SOURCE=""
     return 1
 }

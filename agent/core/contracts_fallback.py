@@ -107,3 +107,14 @@ def bind_fallback_contracts(
     BoundFallbackFederationTaskEnvelope.__name__ = "FallbackFederationTaskEnvelope"
     BoundFallbackActionFeedback.__name__ = "FallbackActionFeedback"
     return BoundFallbackFederationTaskEnvelope, BoundFallbackActionFeedback
+
+
+__all__ = [
+    "ActionFeedback",
+    "DeriveCorrelationId",
+    "FallbackActionFeedback",
+    "FallbackFederationTaskEnvelope",
+    "FederationTaskEnvelope",
+    "bind_fallback_contracts",
+    "default_derive_correlation_id",
+]

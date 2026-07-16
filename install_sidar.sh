@@ -655,6 +655,7 @@ prepare_install_module_cache_root() {
         cache_root="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules_cache_${uid_suffix}.XXXXXX")" \
             || fail "Fallback modül cache dizini için güvenli geçici dizin oluşturulamadı."
         SIDAR_INSTALL_MODULE_CACHE_ROOT="$cache_root"
+        # shellcheck disable=SC2034  # Exposed for installer probes/tests to distinguish auto-created cache roots.
         SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=1
     fi
     if [[ -L "$cache_root" ]]; then
