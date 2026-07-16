@@ -1034,6 +1034,14 @@ def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> Non
         _guarded_invoke_doctor_auto_fix(result, check_func)
 
 
+def _run_provider_preflight(provider: str) -> None:
+    """Sağlayıcı ön kontrollerini geriye dönük uyumlu imzayla çalıştırır."""
+    try:
+        preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    except TypeError:
+        preflight(provider)
+
+
 def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
@@ -1356,10 +1364,7 @@ def run_wizard() -> int:
     )
     _save_launcher_session(selection)
 
-    try:
-        preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
-    except TypeError:
-        preflight(provider)
+    _run_provider_preflight(provider)
 
     runtime_ok, runtime_error = validate_runtime_dependencies(mode)
     if not runtime_ok:
@@ -1547,7 +1552,7 @@ def main() -> None:
         print(f"{RED}⛔ {runtime_error}{RESET}")
         sys.exit(2)
 
-    preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    _run_provider_preflight(provider)
     cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
     sys.exit(
         execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log)

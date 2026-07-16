@@ -1186,6 +1186,7 @@ def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch)
         ["main.py", "--quick", "cli", "--provider", "ollama", "--level", "full"],
     )
     monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+    monkeypatch.setattr(main, "preflight", lambda _provider, **_: None)
 
     seen: dict[str, object] = {}
 
