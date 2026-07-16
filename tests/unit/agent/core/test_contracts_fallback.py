@@ -61,3 +61,10 @@ def test_bind_fallback_contracts_centralizes_agent_specific_resolver() -> None:
     assert feedback.correlation_id == "bound-corr"
     assert issubclass(envelope_cls, FallbackFederationTaskEnvelope)
     assert issubclass(feedback_cls, FallbackActionFeedback)
+
+
+def test_fallback_contracts_subclass_canonical_contracts() -> None:
+    from agent.core.contracts import ActionFeedback, FederationTaskEnvelope
+
+    assert issubclass(FallbackFederationTaskEnvelope, FederationTaskEnvelope)
+    assert issubclass(FallbackActionFeedback, ActionFeedback)

@@ -2554,3 +2554,16 @@ def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     assert second_record.levelname == "DEBUG"
     assert [r.name for r in caplog.records if "first-load-message" in r.message] == ["Sidar.Config"]
     assert [r.name for r in caplog.records if "reload-message" in r.message] == ["Sidar.Config"]
+
+
+def test_config_domain_loaders_back_extracted_backend_settings() -> None:
+    """Config god-object should delegate extracted backend domains to typed loaders."""
+
+    assert (
+        config.Config.SIDAR_RATE_LIMIT_WINDOW == config._RATE_LIMIT_SETTINGS.sidar_rate_limit_window
+    )
+    assert (
+        config.Config.SIDAR_EVENT_BUS_BACKEND == config._EVENT_BUS_SETTINGS.sidar_event_bus_backend
+    )
+    assert config.Config.RAG_VECTOR_BACKEND == config._RAG_STORE_SETTINGS.rag_vector_backend
+    assert config.Config.DOCKER_TEST_IMAGE == config._SANDBOX_SETTINGS.docker_test_image

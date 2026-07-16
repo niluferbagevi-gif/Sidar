@@ -38,32 +38,7 @@ from agent.core.contracts_fallback import (
     default_derive_correlation_id as _default_derive_correlation_id,
 )
 from agent.definitions import SIDAR_SYSTEM_PROMPT
-from agent.federation.service import (
-    ActionFeedback,
-    FederationTaskEnvelope,
-    derive_correlation_id,
-)
-from agent.federation.service import (
-    FallbackActionFeedback as _FallbackActionFeedback,
-)
-from agent.federation.service import (
-    FallbackFederationTaskEnvelope as _FallbackFederationTaskEnvelope,
-)
-from agent.federation.service import (
-    build_trigger_prompt as build_trigger_prompt_service,
-)
-from agent.federation.service import (
-    trigger_attr as trigger_attr_service,
-)
-from agent.federation.service import (
-    trigger_meta as trigger_meta_service,
-)
-from agent.federation.service import (
-    trigger_payload as trigger_payload_service,
-)
-from agent.federation.service import (
-    trigger_to_prompt as trigger_to_prompt_service,
-)
+from agent.federation import service as federation_service
 from agent.github import smart_pr as github_smart_pr
 from agent.maintenance.nightly import (
     run_nightly_memory_maintenance as run_nightly_memory_maintenance_service,
@@ -108,6 +83,17 @@ def get_agent_metrics_collector() -> Any:
 
 
 logger = logging.getLogger(__name__)
+
+ActionFeedback = federation_service.ActionFeedback
+FederationTaskEnvelope = federation_service.FederationTaskEnvelope
+derive_correlation_id = federation_service.derive_correlation_id
+_FallbackActionFeedback = federation_service.FallbackActionFeedback
+_FallbackFederationTaskEnvelope = federation_service.FallbackFederationTaskEnvelope
+build_trigger_prompt_service = federation_service.build_trigger_prompt
+trigger_attr_service = federation_service.trigger_attr
+trigger_meta_service = federation_service.trigger_meta
+trigger_payload_service = federation_service.trigger_payload
+trigger_to_prompt_service = federation_service.trigger_to_prompt
 
 __all__ = [
     "ActionFeedback",

@@ -1,8 +1,9 @@
-"""Self-heal plan execution boundary extracted from ``agent.sidar_agent``.
+"""Self-heal patch execution and rollback boundary.
 
-Phase 1 keeps ``SidarAgent`` as the public facade and moves the patch/rollback
-execution mechanics into this service module. Planning and normalization remain
-wired through the facade while follow-up slices migrate more self-heal logic here.
+``SidarAgent`` remains the orchestration facade, while this module owns the
+side-effecting execution path: scope validation, patch application, validation
+commands and rollback. Planning stays in the facade because it depends on the
+agent runtime context and LLM prompt assembly.
 """
 
 from __future__ import annotations
