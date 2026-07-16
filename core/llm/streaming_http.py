@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -22,7 +22,7 @@ async def enter_httpx_stream(
     """
     entered = False
     try:
-        response = await stream_cm.__aenter__()
+        response = cast(httpx.Response, await stream_cm.__aenter__())
         entered = True
         response.raise_for_status()
         return response
