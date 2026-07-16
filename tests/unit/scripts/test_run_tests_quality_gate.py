@@ -4287,6 +4287,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
     assert "npx --no-install playwright install chromium" in script
+    assert "Domain forbidden|server returned code 403|Download failed" in script
+    assert "~/.cache/ms-playwright" in script
+    assert "make production-readiness" in script
     assert (
         'PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"'
         in script
@@ -4337,11 +4340,27 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "FRONTEND_E2E_EXIT_CODE=$?" in script
     assert 'if [ "${BENCHMARK_ENFORCE_RESULT}" = "1" ]; then' in script
     assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
+    assert "Restore Playwright browser cache" in ci
+    assert "~/.cache/ms-playwright" in ci
+    assert "playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}" in ci
+    assert ci.index("Restore Playwright browser cache") < ci.index(
+        "Install Playwright Chromium for frontend smoke tests"
+    )
     assert "npx playwright install --with-deps chromium" in ci
     assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
+    readme = Path("README.md").read_text(encoding="utf-8")
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    assert "Playwright Chromium cache / CDN 403" in readme
+    assert "Playwright Chromium cache / CDN 403" in testing_doc
+    assert (
+        "cd web_ui_react\nnpx playwright install chromium\ncd ..\nmake production-readiness"
+        in readme
+    )
+    assert "~/.cache/ms-playwright" in testing_doc
+    assert "403 Domain forbidden" in readme
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
     assert '"typecheck": "tsc --noEmit"' in package_json
     assert '"test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js"' in package_json

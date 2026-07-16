@@ -191,6 +191,8 @@ install_local_frontend_playwright_chromium_cache() {
   fi
 
   echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
+  local playwright_install_log
+  playwright_install_log="$(mktemp)"
   (
     unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
     local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
@@ -204,7 +206,19 @@ install_local_frontend_playwright_chromium_cache() {
     else
       npx --no-install playwright install chromium
     fi
-  )
+  ) 2>&1 | tee "${playwright_install_log}"
+  local install_exit_code=${PIPESTATUS[0]}
+  if [ "${install_exit_code}" -ne 0 ]; then
+    if grep -Eqi "Domain forbidden|server returned code 403|Download failed" "${playwright_install_log}"; then
+      echo "❌ Playwright Chromium indirilemedi; CDN/proxy/firewall 403 engeli algılandı."
+      echo "   Manuel yerel hazırlık: cd web_ui_react && npx playwright install chromium"
+      echo "   Kurumsal ağda cache/artifact restore edin: ~/.cache/ms-playwright dizinini önceden hazırlayın veya CI cache'ini kullanın."
+      echo "   Ardından release kapısı: make production-readiness"
+    fi
+    rm -f "${playwright_install_log}"
+    return "${install_exit_code}"
+  fi
+  rm -f "${playwright_install_log}"
 }
 
 run_frontend_e2e_with_retry() {

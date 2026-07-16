@@ -318,6 +318,14 @@ jobs:
           cd web_ui_react
           npm run audit:high
 
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright Chromium for frontend smoke tests
         run: |
           cd web_ui_react

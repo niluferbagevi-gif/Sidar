@@ -278,6 +278,27 @@ BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required
 > bootstrap'ı yalnız `seed_benchmark_baseline=true` workflow_dispatch job'ı üzerinden
 > yapılmalıdır.
 
+## Frontend Playwright Chromium cache / CDN 403
+
+`make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
+(`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium
+browser cache'i yoksa yerelde önce şu komutu çalıştırın:
+
+```bash
+cd web_ui_react
+npx playwright install chromium
+cd ..
+make production-readiness
+```
+
+`Download failed: server returned code 403 body 'Domain forbidden'` hatası genellikle
+şirket ağı, DNS, firewall veya proxy'nin Playwright CDN erişimini engellediğini
+gösterir. Bu durumda `~/.cache/ms-playwright` dizinini güvenilir bir ağda önceden
+hazırlayın veya CI runner'da cache/artifact olarak restore edin. GitHub Actions CI
+hattı `~/.cache/ms-playwright` dizinini `playwright-<OS>-<package-lock hash>`
+anahtarıyla cache'ler; cache hit olduğunda Chromium kurulumu indirme yapmadan
+mevcut browser binary'sini kullanabilir.
+
 ## Voice extra / PyAudio sistem bağımlılığı
 
 `pyproject.toml` içindeki `voice` extra grubu `pyaudio` içerir. `pyaudio`

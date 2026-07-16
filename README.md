@@ -333,6 +333,26 @@ make benchmark-seed
 BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all
 ```
 
+### Playwright Chromium cache / CDN 403 hazırlığı
+
+Production-readiness ve frontend gate `RUN_FRONTEND_E2E=1` ile Playwright smoke
+testlerini zorunlu çalıştırır. Temiz yerel ortamda Chromium browser cache'i yoksa
+önce şu hazırlığı yapın:
+
+```bash
+cd web_ui_react
+npx playwright install chromium
+cd ..
+make production-readiness
+```
+
+Kurumsal ağ, DNS, firewall veya proxy Playwright CDN erişimini `403 Domain forbidden`
+ile engelliyorsa `~/.cache/ms-playwright` browser cache'ini önceden hazırlayın ya da
+CI runner'da cache/artifact olarak restore edin. CI workflow'u bu dizini
+`playwright-<OS>-<package-lock hash>` anahtarıyla cache'ler; cache restore edilirse
+`npx playwright install --with-deps chromium` indirme yapmadan mevcut Chromium
+binary'sini kullanabilir.
+
 CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
 `BENCHMARK_COMPARE_REQUIRED=1` ile baseline yokluğu fail-closed kalmalıdır.
 GitHub Actions tarafında boş cache / yeni branch / yeni runner durumunda önce manuel
