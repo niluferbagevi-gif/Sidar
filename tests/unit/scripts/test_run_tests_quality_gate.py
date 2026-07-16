@@ -489,6 +489,13 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
     assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
+    assert "Local production-readiness için benchmark baseline bulunamadı" in script
+    assert "Önerilen tek aksiyon: make benchmark-seed && make production-readiness" in script
+    assert script.index('if [ "${IS_CI_ENV}" -eq 1 ]; then') < script.index(
+        "elif production_readiness_gate_active; then"
+    ) < script.index(
+        "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
+    )
     assert (
         "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
         in script
@@ -876,6 +883,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
     assert "production readiness gate'ini tekrar koşun" in testing
+    assert "make benchmark-seed\nmake production-readiness" in testing
+    assert "Local `make production-readiness` ilk kez çalışırken `.benchmarks` boşsa" in testing
     assert "Benchmark karşılaştırması atlandı ... baseline ile eşleşen kayıt" in testing
     assert "bulunamadı” uyarısı temiz checkout" in testing
     assert ".benchmarks/.../0001_baseline.json" in testing

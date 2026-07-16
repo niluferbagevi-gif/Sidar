@@ -1930,6 +1930,12 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
           echo "❌ BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı."
           echo "ℹ️ CI bootstrap için cache/artifact baseline restore edin veya seed job'ında BENCHMARK_COMPARE_REQUIRED=0 kullanın."
           BENCHMARK_EXIT_CODE=1
+        elif production_readiness_gate_active; then
+          BENCHMARK_COMPARE_STATUS="missing_required"
+          echo "❌ Local production-readiness için benchmark baseline bulunamadı."
+          echo "➡️ Önerilen tek aksiyon: make benchmark-seed && make production-readiness"
+          echo "   İlk komut .benchmarks baseline'ını üretir; ikinci komut release/merge kapısını karşılaştırmalı yeniden koşar."
+          BENCHMARK_EXIT_CODE=1
         else
           echo "⚠️ Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak."
           echo "ℹ️ Bu koşu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline seed eder; sonraki yerel koşular tekrar sıkı karşılaştırmaya döner."

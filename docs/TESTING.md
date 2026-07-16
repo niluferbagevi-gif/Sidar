@@ -266,6 +266,14 @@ Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
    `make production-readiness` veya kanonik
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
+Local `make production-readiness` ilk kez çalışırken `.benchmarks` boşsa gate baseline
+üretip devam etmek yerine aşağıdaki tek aksiyon sırasını önererek durur:
+
+```bash
+make benchmark-seed
+make production-readiness
+```
+
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 
 ```bash
