@@ -1609,6 +1609,13 @@ PY
   fi
 
   echo "⚠️ Runtime bağımlılıkları eksik (asyncpg/alembic/coverage/pytest eklentileri)."
+  echo "ℹ️ Tam extras senkronizasyonu öncesi CI sistem bağımlılıkları hazırlanıyor (PortAudio/shellcheck/bats)..."
+  if ! bash scripts/install_ci_system_deps.sh; then
+    echo "❌ CI sistem bağımlılıkları hazırlanamadı; pyaudio derlemesi portaudio.h eksikliğiyle başarısız olabilir."
+    echo "   Manuel hazırlık: bash scripts/install_ci_system_deps.sh && uv sync --frozen --all-extras"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
   echo "ℹ️ Dev + postgres extras uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
   if ! uv sync --frozen --all-extras; then
     echo "❌ Runtime bağımlılıklarının otomatik kurulumu başarısız oldu."

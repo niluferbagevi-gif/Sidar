@@ -38,10 +38,10 @@ check-install-manifests:
 
 deps-full:
 	bash scripts/install_ci_system_deps.sh
-	uv sync --all-extras
+	uv sync --frozen --all-extras
 
 deps-dev-light:
-	uv sync --extra dev-light
+	uv sync --frozen --extra dev-light
 
 test-shell:
 	$(BATS) tests/shell

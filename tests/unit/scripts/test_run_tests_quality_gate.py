@@ -1740,11 +1740,11 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
         makefile.index("deps-dev-light:") : makefile.index("test-shell:")
     ]
     assert "bash scripts/install_ci_system_deps.sh" in deps_full_block
-    assert "uv sync --all-extras" in deps_full_block
+    assert "uv sync --frozen --all-extras" in deps_full_block
     assert deps_full_block.index("bash scripts/install_ci_system_deps.sh") < deps_full_block.index(
-        "uv sync --all-extras"
+        "uv sync --frozen --all-extras"
     )
-    assert "uv sync --extra dev-light" in deps_dev_light_block
+    assert "uv sync --frozen --extra dev-light" in deps_dev_light_block
     readme_prereq_start = readme.index("#### Geliştirici ön koşulu")
     testing_prereq_start = testing_doc.index("### Geliştirici ön koşulu")
     assert readme.index(
@@ -3833,6 +3833,15 @@ def test_run_tests_preserves_explicit_coverage_fail_under_after_ratchet() -> Non
         'COVERAGE_FAIL_UNDER="${DEFAULT_COVERAGE_FAIL_UNDER}"'
     )
 
+
+def test_run_tests_prepares_ci_system_deps_before_full_uv_sync() -> None:
+    runtime_deps_block = _extract_run_tests_function("ensure_runtime_dependencies")
+
+    assert "bash scripts/install_ci_system_deps.sh" in runtime_deps_block
+    assert "portaudio.h eksikliğiyle başarısız olabilir" in runtime_deps_block
+    assert runtime_deps_block.index("bash scripts/install_ci_system_deps.sh") < runtime_deps_block.index(
+        "uv sync --frozen --all-extras"
+    )
 
 def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
     bats_block = _extract_run_tests_function("run_bats_shell_tests")
