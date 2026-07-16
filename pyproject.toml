@@ -464,6 +464,7 @@ markers = [
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
   "installer_smoke: release-critical installer smoke tests",
+  "allow_unit_network: explicit opt-out for rare unit tests that must exercise real sockets",
 ]
 filterwarnings = [
   "error",
