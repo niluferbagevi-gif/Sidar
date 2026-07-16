@@ -287,7 +287,7 @@ BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required
 > bootstrap'ı yalnız `seed_benchmark_baseline=true` workflow_dispatch job'ı üzerinden
 > yapılmalıdır.
 
-## Frontend Playwright Chromium cache / CDN 403
+## Frontend Playwright CDN 403 / restricted network
 
 `make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
 (`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium
@@ -302,11 +302,41 @@ make production-readiness
 
 `Download failed: server returned code 403 body 'Domain forbidden'` hatası genellikle
 şirket ağı, DNS, firewall veya proxy'nin Playwright CDN erişimini engellediğini
-gösterir. Bu durumda `~/.cache/ms-playwright` dizinini güvenilir bir ağda önceden
-hazırlayın veya CI runner'da cache/artifact olarak restore edin. GitHub Actions CI
-hattı `~/.cache/ms-playwright` dizinini `playwright-<OS>-<package-lock hash>`
-anahtarıyla cache'ler; cache hit olduğunda Chromium kurulumu indirme yapmadan
-mevcut browser binary'sini kullanabilir.
+gösterir. Bu durumda local ve CI paritesini korumak için aşağıdaki seçeneklerden
+birini bilinçli olarak kullanın:
+
+1. **Standart browser cache:** Playwright'ın varsayılan cache dizini
+   `~/.cache/ms-playwright` değeridir. Farklı bir kalıcı dizin kullanmak için hem
+   kurulumda hem testte aynı `PLAYWRIGHT_BROWSERS_PATH` değerini verin:
+
+   ```bash
+   export PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright"
+   cd web_ui_react
+   npx playwright install chromium
+   cd ..
+   RUN_FRONTEND_E2E=1 make production-readiness
+   ```
+
+2. **CI cache restore:** GitHub Actions CI hattı `~/.cache/ms-playwright` dizinini
+   `playwright-<OS>-<package-lock hash>` anahtarıyla cache'ler. Cache hit olduğunda
+   `npx playwright install --with-deps chromium` mevcut browser binary'sini kullanabilir
+   ve CDN indirmesine tekrar çıkmayabilir.
+
+3. **Offline/local mirror:** Kurumsal mirror kullanılıyorsa Playwright indirme host'unu
+   `PLAYWRIGHT_DOWNLOAD_HOST` veya Chromium'a özel
+   `PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST` ile iç mirror'a yönlendirin; aynı değer CI
+   secret/env konfigürasyonunda da verilmelidir.
+
+4. **Önceden kurulmuş Chromium:** Browser cache restore edilemiyorsa sistemde yüklü ve
+   CI/local ortamında versiyonu yönetilen Chromium binary'siyle smoke test çalıştırılabilir:
+
+   ```bash
+   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+     RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+   ```
+
+   Bu seçenek Playwright'ın kendi browser bundle'ı yerine verilen executable'ı kullanır;
+   bu yüzden binary versiyonunu runner imajı veya artifact politikasıyla sabit tutun.
 
 ## Voice extra / PyAudio sistem bağımlılığı
 

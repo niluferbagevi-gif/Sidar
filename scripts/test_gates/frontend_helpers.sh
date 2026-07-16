@@ -166,6 +166,15 @@ frontend_playwright_sentinel_cache_ready() {
 }
 
 frontend_playwright_chromium_cache_ready() {
+  if [[ -n "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}" ]]; then
+    if [[ -x "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}" || -f "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}" ]]; then
+      echo "✅ Önceden kurulu Chromium executable hazır: ${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}"
+      return 0
+    fi
+    echo "⚠️ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH verildi ancak dosya bulunamadı: ${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}"
+    return 1
+  fi
+
   local executable_path=""
   executable_path="$(node - <<'NODE_PLAYWRIGHT_CACHE_CHECK' 2>/dev/null
 const fs = require("node:fs");
@@ -212,7 +221,9 @@ install_local_frontend_playwright_chromium_cache() {
     if grep -Eqi "Domain forbidden|server returned code 403|Download failed" "${playwright_install_log}"; then
       echo "❌ Playwright Chromium indirilemedi; CDN/proxy/firewall 403 engeli algılandı."
       echo "   Manuel yerel hazırlık: cd web_ui_react && npx playwright install chromium"
-      echo "   Kurumsal ağda cache/artifact restore edin: ~/.cache/ms-playwright dizinini önceden hazırlayın veya CI cache'ini kullanın."
+      echo "   Kurumsal ağda PLAYWRIGHT_BROWSERS_PATH veya ~/.cache/ms-playwright dizinini önceden hazırlayın veya CI cache'ini kullanın."
+      echo "   Offline mirror için PLAYWRIGHT_DOWNLOAD_HOST / PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST ayarlayın."
+      echo "   Sistem Chromium kullanmak için PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium verin."
       echo "   Ardından release kapısı: make production-readiness"
     fi
     rm -f "${playwright_install_log}"
@@ -281,6 +292,7 @@ resolve_local_frontend_e2e_mode() {
       echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
     fi
     echo "   Manuel kurulum için: cd web_ui_react && npx playwright install chromium"
+    echo "   Restricted network için: PLAYWRIGHT_BROWSERS_PATH=/cache/ms-playwright veya PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium"
     return 1
   fi
 
@@ -290,5 +302,6 @@ resolve_local_frontend_e2e_mode() {
     echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
   fi
   echo "   Manuel kurulum için: cd web_ui_react && npx playwright install chromium"
+  echo "   Restricted network için: PLAYWRIGHT_BROWSERS_PATH=/cache/ms-playwright veya PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium"
   echo "   Ardından: RUN_FRONTEND_E2E=1 bash run_tests.sh"
 }

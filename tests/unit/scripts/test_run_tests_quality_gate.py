@@ -4311,6 +4311,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "npx --no-install playwright install chromium" in script
     assert "Domain forbidden|server returned code 403|Download failed" in script
     assert "~/.cache/ms-playwright" in script
+    assert "PLAYWRIGHT_BROWSERS_PATH" in script
+    assert "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" in script
+    assert "PLAYWRIGHT_DOWNLOAD_HOST / PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST" in script
     assert "make production-readiness" in script
     assert (
         'PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER="${PLAYWRIGHT_UBUNTU_OVERRIDE_HELPER:-${SCRIPT_DIR:-$(pwd)}/scripts/install_modules/utils/playwright_ubuntu_override.sh}"'
@@ -4376,12 +4379,16 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
     assert "Playwright Chromium cache / CDN 403" in readme
-    assert "Playwright Chromium cache / CDN 403" in testing_doc
+    assert "Frontend Playwright CDN 403 / restricted network" in testing_doc
     assert (
         "cd web_ui_react\nnpx playwright install chromium\ncd ..\nmake production-readiness"
         in readme
     )
     assert "~/.cache/ms-playwright" in testing_doc
+    assert "PLAYWRIGHT_BROWSERS_PATH" in testing_doc
+    assert "PLAYWRIGHT_DOWNLOAD_HOST" in testing_doc
+    assert "PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST" in testing_doc
+    assert "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium" in testing_doc
     assert "403 Domain forbidden" in readme
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
     assert '"typecheck": "tsc --noEmit"' in package_json
@@ -4390,6 +4397,9 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
     assert 'outputDir: "test-results"' in playwright
     assert 'process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect"' in playwright
+    assert "process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined" in playwright
+    assert "launchOptions: chromiumExecutablePath" in playwright
+    assert "executablePath: chromiumExecutablePath" in playwright
     assert "metadata: { playwrightHostPlatformOverride }" in playwright
     assert "timeout: 75_000" in playwright
     assert "expect: { timeout: 30_000 }" in playwright
