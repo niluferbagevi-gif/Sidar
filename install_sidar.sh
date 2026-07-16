@@ -456,7 +456,7 @@ SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-
 SIDAR_INSTALL_MODULE_RETRY_DELAY="${SIDAR_INSTALL_MODULE_RETRY_DELAY:-2}"
 SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15}"
 SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
-SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)}"
 export SIDAR_INSTALLER_BOOTSTRAP_MODE="${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}"
 export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
 export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
@@ -640,6 +640,33 @@ remote_install_module_cache_key() {
     printf '%s' "$remote_module_base" | sed -E 's#[^A-Za-z0-9._-]+#_#g'
 }
 
+
+prepare_install_module_cache_root() {
+    local cache_root="$SIDAR_INSTALL_MODULE_CACHE_ROOT"
+    local owner_uid=""
+    local current_uid=""
+
+    [[ -n "${cache_root:-}" ]] || fail "Fallback modül cache dizini boş olamaz."
+    if [[ -L "$cache_root" ]]; then
+        fail "Fallback modül cache dizini sembolik link olamaz: $cache_root"
+    fi
+    if [[ -e "$cache_root" && ! -d "$cache_root" ]]; then
+        fail "Fallback modül cache yolu dizin değil: $cache_root"
+    fi
+
+    mkdir -p "$cache_root" || fail "Fallback modül cache dizini oluşturulamadı: $cache_root"
+    chmod 700 "$cache_root" 2>/dev/null || true
+
+    current_uid="$(id -u 2>/dev/null || true)"
+    if [[ -n "$current_uid" ]]; then
+        if owner_uid="$(stat -c '%u' "$cache_root" 2>/dev/null || stat -f '%u' "$cache_root" 2>/dev/null)"; then
+            if [[ "$owner_uid" != "$current_uid" ]]; then
+                fail "Fallback modül cache dizini mevcut kullanıcıya ait değil: $cache_root (owner_uid=$owner_uid, current_uid=$current_uid)"
+            fi
+        fi
+    fi
+}
+
 remote_install_module_cached_path() {
     local module_rel="$1"
     local remote_module_base="$2"
@@ -659,7 +686,7 @@ remote_install_module_retry_sleep() {
         delay="$retry_after"
     else
         delay=$((SIDAR_INSTALL_MODULE_RETRY_DELAY * (2 ** (attempt - 1))))
-        jitter=$(( (RANDOM % 3) ))
+        jitter=$(( RANDOM % 3 ))
         delay=$((delay + jitter))
     fi
 
@@ -739,6 +766,7 @@ download_remote_install_module() {
     local retry_after=""
 
     mkdir -p "$(dirname "$destination_path")"
+    prepare_install_module_cache_root
     cache_path="$(remote_install_module_cached_path "$module_rel" "$remote_module_base")"
     cache_sentinel="${cache_path}.ok"
     if [[ -f "$cache_path" && -f "$cache_sentinel" ]]; then

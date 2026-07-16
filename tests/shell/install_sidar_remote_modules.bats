@@ -112,6 +112,28 @@ FAKE_CURL
   printf '%s' "$mode" > "$bin_dir/.mode"
 }
 
+@test "fallback module cache default is uid-scoped" {
+  run_remote_module_snippet '
+    expected_suffix="sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)"
+    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "${TMPDIR:-/tmp}/$expected_suffix" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "fallback module cache rejects symlink root" {
+  run_remote_module_snippet '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/real"
+    ln -s "$tmpdir/real" "$tmpdir/cache-link"
+    export SIDAR_INSTALL_MODULE_CACHE_ROOT="$tmpdir/cache-link"
+
+    ! ( prepare_install_module_cache_root )
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Fallback modül cache dizini sembolik link olamaz"* ]]
+}
+
 @test "download_remote_install_module retries HTTP 429" {
   run_remote_module_snippet '
     tmpdir="$(mktemp -d)"

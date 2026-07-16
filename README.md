@@ -812,6 +812,14 @@ içine gömülü modül hash listesi ile bootstrap sırasında klonlanan repo'da
 modül dosyalarının SHA-256'sı eşleşmiyor. Geçersiz bir modülün yüklenmesini
 önlemek için kurulum bilinçli olarak durduruldu.
 
+> **Güven kökü notu:** Raw installer tek dosya olarak indirildiğinde bu gömülü
+> hash manifesti bağımsız bir imza veya ayrı kanaldan doğrulanan kök güven
+> sağlamaz; aynı `install_sidar.sh` hem indirme mantığını hem beklenen hash'leri
+> taşır. Bu nedenle fallback modül bootstrap doğrulaması, installer içeriğinin
+> kendisine duyulan güvene bağlıdır (TOFU sınırı). Release/production kurulumlarında
+> installer'ı güvenilir bir tag/release üzerinden doğrulayın; ideal akış GPG/Sigstore
+> imzalı release asset'i veya hash manifestinin ayrı imzalı kanaldan pinlenmesidir.
+
 Ne yapmalısınız:
 
 - **Normal kullanıcı**: Bu hatayı raporlayın
