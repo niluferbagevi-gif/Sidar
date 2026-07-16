@@ -1246,6 +1246,43 @@ run_static_analysis_gates() {
   done
 }
 
+ensure_benchmark_tool_dependencies() {
+  if uv run python - <<'PY' >/dev/null 2>&1
+import pytest  # noqa: F401
+import pytest_benchmark  # noqa: F401
+PY
+  then
+    return 0
+  fi
+
+  echo "⚠️ Benchmark kalite araçları eksik (pytest/pytest-benchmark)."
+  echo "ℹ️ Benchmark/dev araçları için full extras öncesi CI sistem bağımlılıkları hazırlanıyor..."
+  if ! bash scripts/install_ci_system_deps.sh; then
+    echo "❌ CI sistem bağımlılıkları hazırlanamadı; pytest/pytest-benchmark kurulumu full uv sync pyaudio/portaudio.h aşamasında kesildiği için eksik kalabilir."
+    echo "   Manuel hazırlık: bash scripts/install_ci_system_deps.sh && uv sync --frozen --all-extras"
+    echo "   İlk yerel baseline için ardından: make benchmark-seed && make production-readiness"
+    BENCHMARK_EXIT_CODE=1
+    return 1
+  fi
+
+  echo "ℹ️ Benchmark kalite araçları uv ile senkronize ediliyor (uv sync --frozen --all-extras)..."
+  if ! uv sync --frozen --all-extras; then
+    echo "❌ Benchmark kalite araçları kurulamadı; python -m pytest benchmark fazı çalıştırılamaz."
+    BENCHMARK_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! uv run python - <<'PY' >/dev/null 2>&1
+import pytest  # noqa: F401
+import pytest_benchmark  # noqa: F401
+PY
+  then
+    echo "❌ Pytest/pytest-benchmark doğrulaması başarısız; dev extra ortamda kullanılabilir değil."
+    BENCHMARK_EXIT_CODE=1
+    return 1
+  fi
+}
+
 ensure_security_tool_dependencies() {
   if uv run python - <<'PY' >/dev/null 2>&1
 import bandit  # noqa: F401
@@ -1824,7 +1861,16 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Öneri (hedefli): uv run pytest -q ${PERFORMANCE_TEST_DIR} --benchmark-json=${BENCHMARK_JSON_OUTPUT}"
 elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   BENCHMARK_COMPARE_STATUS="not_requested"
-  echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
+  if ! ensure_uv_available || ! ensure_benchmark_tool_dependencies; then
+    echo "❌ Benchmark önkoşulları hazırlanamadı."
+    echo "   Bağımlılık kurulumu tamamlandıktan sonra yerel ilk baseline için: make benchmark-seed"
+    BENCHMARK_EXIT_CODE=1
+  fi
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
+    echo "📊 Aşama 2: Performans benchmark testleri tek çekirdek üzerinde koşturuluyor..."
+  else
+    echo "⚠️ Benchmark komutu önkoşul hatası nedeniyle çalıştırılmayacak."
+  fi
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
   benchmark_cmd=(

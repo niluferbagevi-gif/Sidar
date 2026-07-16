@@ -430,6 +430,27 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     )
 
 
+def test_benchmark_tooling_bootstrap_prepares_system_deps_before_pytest_benchmark() -> None:
+    """Missing pytest/pytest-benchmark should not surface as python -m pytest import errors."""
+    script = _script()
+    body = _extract_run_tests_function("ensure_benchmark_tool_dependencies")
+    benchmark_block = script[script.index("# 2) Kritik yol performans baseline testleri") :]
+
+    assert "import pytest" in body
+    assert "import pytest_benchmark" in body
+    assert "bash scripts/install_ci_system_deps.sh" in body
+    assert "pyaudio/portaudio.h" in body
+    assert "uv sync --frozen --all-extras" in body
+    assert "make benchmark-seed && make production-readiness" in body
+    assert body.index("bash scripts/install_ci_system_deps.sh") < body.index(
+        "uv sync --frozen --all-extras"
+    )
+    assert "ensure_benchmark_tool_dependencies" in benchmark_block
+    assert "Benchmark önkoşulları hazırlanamadı" in benchmark_block
+    assert benchmark_block.index("ensure_benchmark_tool_dependencies") < benchmark_block.index(
+        "uv run python -m pytest"
+    )
+
 def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     script = _script()
 
