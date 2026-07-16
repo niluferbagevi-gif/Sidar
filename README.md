@@ -819,6 +819,10 @@ modül dosyalarının SHA-256'sı eşleşmiyor. Geçersiz bir modülün yüklenm
 > kendisine duyulan güvene bağlıdır (TOFU sınırı). Release/production kurulumlarında
 > installer'ı güvenilir bir tag/release üzerinden doğrulayın; ideal akış GPG/Sigstore
 > imzalı release asset'i veya hash manifestinin ayrı imzalı kanaldan pinlenmesidir.
+> Fallback modül indirme cache'i varsayılan olarak `mktemp -d` ile oluşturulan
+> UID kapsamlı, tahmin edilemeyen bir dizindir; kalıcı cache gerekiyorsa
+> `SIDAR_INSTALL_MODULE_CACHE_ROOT` bilinçli override edilmeli ve dizin sahibi/izinleri
+> installer tarafından doğrulanır.
 
 Ne yapmalısınız:
 

@@ -456,7 +456,8 @@ SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-
 SIDAR_INSTALL_MODULE_RETRY_DELAY="${SIDAR_INSTALL_MODULE_RETRY_DELAY:-2}"
 SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15}"
 SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
-SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=0
 export SIDAR_INSTALLER_BOOTSTRAP_MODE="${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}"
 export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
 export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
@@ -644,11 +645,18 @@ remote_install_module_cache_key() {
 
 
 prepare_install_module_cache_root() {
-    local cache_root="$SIDAR_INSTALL_MODULE_CACHE_ROOT"
+    local cache_root="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
     local owner_uid=""
     local current_uid=""
+    local uid_suffix=""
 
-    [[ -n "${cache_root:-}" ]] || fail "Fallback modül cache dizini boş olamaz."
+    if [[ -z "${cache_root:-}" ]]; then
+        uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+        cache_root="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules_cache_${uid_suffix}.XXXXXX")" \
+            || fail "Fallback modül cache dizini için güvenli geçici dizin oluşturulamadı."
+        SIDAR_INSTALL_MODULE_CACHE_ROOT="$cache_root"
+        SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=1
+    fi
     if [[ -L "$cache_root" ]]; then
         fail "Fallback modül cache dizini sembolik link olamaz: $cache_root"
     fi

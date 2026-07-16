@@ -112,10 +112,14 @@ FAKE_CURL
   printf '%s' "$mode" > "$bin_dir/.mode"
 }
 
-@test "fallback module cache default is uid-scoped" {
+@test "fallback module cache default is mktemp uid-scoped" {
   run_remote_module_snippet '
-    expected_suffix="sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)"
-    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "${TMPDIR:-/tmp}/$expected_suffix" ]]
+    [[ -z "${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}" ]]
+    prepare_install_module_cache_root
+    expected_prefix="${TMPDIR:-/tmp}/sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)."
+    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "$expected_prefix"* ]]
+    [[ -d "$SIDAR_INSTALL_MODULE_CACHE_ROOT" ]]
+    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO" == "1" ]]
   '
   [ "$status" -eq 0 ]
 }
