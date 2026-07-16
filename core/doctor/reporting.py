@@ -18,7 +18,6 @@ def build_doctor_report(
     schema_version: int = 1,
 ) -> dict[str, Any]:
     """Build a JSON-serializable aggregate doctor report from check results."""
-
     validated_checks = [validate_doctor_check_contract(check) for check in checks]
     statuses = [check.status for check in validated_checks]
     overall = "fail" if "fail" in statuses else ("warn" if "warn" in statuses else "pass")
@@ -36,7 +35,6 @@ def build_doctor_report(
 
 def write_doctor_report(report: dict[str, Any], output_path: str | Path) -> None:
     """Persist a formatted doctor report as stable, pretty JSON."""
-
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

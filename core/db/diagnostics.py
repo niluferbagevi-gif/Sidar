@@ -80,7 +80,6 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
 
 def postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:
     """Convert PostgreSQL failure state to a secret-safe, user-facing action message."""
-
     diagnosis = postgres_failure_diagnosis(reason, exc)
     if diagnosis == "DATABASE_URL yok/kayboldu":
         return (

@@ -73,7 +73,6 @@ def _build_subprocess_env() -> dict[str, str]:
     oversized secret can make even ``git --version`` fail with E2BIG. Git commands
     used here only need normal process context (PATH/HOME/etc.), not large API keys.
     """
-
     bounded_env: dict[str, str] = {}
     for key, value in os.environ.items():
         text_value = str(value)

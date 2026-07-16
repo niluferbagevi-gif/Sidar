@@ -61,7 +61,6 @@ def _missing_dependency_proxy(attr_name: str) -> type:
 
 def _is_missing_requested_module(exc: ModuleNotFoundError, module_name: str) -> bool:
     """Return True only when the requested optional module itself is missing."""
-
     missing = exc.name or ""
     return module_name == missing or module_name.startswith(f"{missing}.")
 
@@ -90,7 +89,6 @@ def _load_symbol(name: str) -> Any:
 
 def __getattr__(name: str) -> Any:
     """Lazy-load public core modules and symbols without swallowing code errors."""
-
     if name in _MODULE_EXPORTS:  # pragma: no cover - xdist lazy-import cache path
         return _load_module(name)
     if name in _SYMBOL_EXPORTS:

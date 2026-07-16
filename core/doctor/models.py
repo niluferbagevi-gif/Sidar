@@ -36,14 +36,12 @@ class DoctorCheckContract(Protocol):
 
 def redact_sensitive_text(value: str) -> str:
     """Mask credentials in free-form doctor details, errors and command output."""
-
     text = _URL_PASSWORD_RE.sub(r"\1***\3", str(value or ""))
     return _SENSITIVE_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}=***", text)
 
 
 def sanitize_doctor_details(value: Any) -> Any:
     """Recursively redact sensitive scalar values before report serialization."""
-
     if isinstance(value, dict):
         return {str(key): sanitize_doctor_details(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -57,7 +55,6 @@ def sanitize_doctor_details(value: Any) -> Any:
 
 def validate_auto_fix_command(auto_fix: str) -> list[str]:
     """Validate and tokenize a Doctor auto-fix command for sandboxed shell-free execution."""
-
     command = str(auto_fix or "").strip()
     if not command:
         raise ValueError("Doctor auto_fix command is empty")
@@ -80,7 +77,6 @@ def validate_auto_fix_command(auto_fix: str) -> list[str]:
 
 def validate_doctor_check_contract(check: DoctorCheckContract) -> DoctorCheckContract:
     """Validate the formal DoctorCheck result contract fail-fast."""
-
     if not isinstance(getattr(check, "name", None), str) or not check.name.strip():
         raise TypeError("Doctor check contract violation: non-empty string name is required")
     if getattr(check, "status", None) not in _STATUS_VALUES:
@@ -105,7 +101,6 @@ class DoctorCheck:
 
     def as_dict(self) -> dict[str, Any]:
         """Return a redacted JSON-ready doctor check payload."""
-
         validate_doctor_check_contract(self)
         return {
             "name": self.name,

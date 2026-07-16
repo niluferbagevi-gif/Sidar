@@ -117,12 +117,10 @@ class AgentEventBus:
 
     def get_consumer_offsets(self) -> dict[str, str]:
         """Return the latest acknowledged/processed remote consumer offset per stream/topic."""
-
         return dict(self._consumer_offsets)
 
     def _record_consumer_offset(self, stream_name: object, offset: object) -> None:
         """Track the latest successfully processed consumer-group offset."""
-
         self._consumer_offsets[str(stream_name)] = str(offset)
 
     def _warn_missing_optional_backend_dependency(
@@ -690,7 +688,6 @@ class AgentEventBus:
         Resetting runtime state makes the singleton safe to reuse without changing
         subscription or publish semantics in production.
         """
-
         await self._cancel_background_task(self._dlq_persist_flush_task)
         self._dlq_persist_flush_task = None
         if self._dlq_persist_pending:

@@ -32,7 +32,6 @@ else:
 
 async def restore_self_heal_backups(code: _CodeManagerLike, backups: dict[str, str]) -> None:
     """Restore backed-up file contents after a failed self-heal execution."""
-
     for path, content in backups.items():
         await asyncio.to_thread(code.write_file, path, content, False)
 
@@ -45,7 +44,6 @@ async def execute_self_heal_plan(
     plan: dict[str, Any],
 ) -> dict[str, Any]:
     """Apply a normalized self-heal patch plan, validate it, and rollback on failure."""
-
     operations = list(plan.get("operations") or [])
     validation_commands = list(
         plan.get("validation_commands") or remediation_loop.get("validation_commands") or []

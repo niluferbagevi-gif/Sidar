@@ -8,7 +8,6 @@ from collections.abc import Mapping
 
 def coerce_review_approved(raw_approved: object) -> bool:
     """Safely coerce LLM reviewer approval variants into a bool."""
-
     if isinstance(raw_approved, bool):
         return raw_approved
     if isinstance(raw_approved, int | float):
@@ -23,7 +22,6 @@ def coerce_review_approved(raw_approved: object) -> bool:
 
 def coerce_review_weaknesses(raw_weaknesses: object) -> list[str]:
     """Normalize LLM reviewer weakness signals into a visible string list."""
-
     if isinstance(raw_weaknesses, list):
         return [str(item).strip() for item in raw_weaknesses if str(item).strip()]
     weakness_text = str(raw_weaknesses or "").strip()
@@ -32,7 +30,6 @@ def coerce_review_weaknesses(raw_weaknesses: object) -> list[str]:
 
 def derive_review_weaknesses_from_reason(reason: str | None) -> list[str]:
     """Use a concrete rejection reason as a fallback weakness signal."""
-
     normalized = " ".join(str(reason or "").split())
     if not normalized:
         return []
@@ -41,7 +38,6 @@ def derive_review_weaknesses_from_reason(reason: str | None) -> list[str]:
 
 def normalize_test_candidate_verdict(verdict: object) -> dict[str, object]:
     """Reduce direct or tool-wrapped reviewer JSON into the verdict contract."""
-
     if not isinstance(verdict, dict):
         return {}
 
@@ -67,7 +63,6 @@ def normalize_test_candidate_verdict(verdict: object) -> dict[str, object]:
 
 def candidate_preview(candidate: str, *, max_lines: int = 3) -> str:
     """Build a compact one-line preview for reviewer-gate logging."""
-
     lines = [line.rstrip() for line in str(candidate or "").splitlines()[:max_lines]]
     return " | ".join(line for line in lines if line.strip())[:500] or "<empty>"
 
@@ -80,7 +75,6 @@ def build_test_candidate_review_prompt(
     retry: bool = False,
 ) -> str:
     """Build the JSON-constrained semantic reviewer prompt for a coverage test candidate."""
-
     retry_clause = (
         "\nÖNEMLİ: Önceki reviewer çıktısı geçersizdi çünkü approved=false iken reason boştu. "
         "Bu tekrar değerlendirmesinde red veriyorsan reason alanını mutlaka somut, "

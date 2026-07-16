@@ -35,7 +35,6 @@ def load_runtime_path_settings(
     environ: Mapping[str, str] | None = None,
 ) -> RuntimePathSettings:
     """Resolve Config runtime paths outside the large Config class body."""
-
     env = os.environ if environ is None else environ
     temp_dir = base_dir / "temp"
     logs_dir = base_dir / "logs"
@@ -55,7 +54,6 @@ def apply_reload_runtime_paths(
     config_cls: Any, *, base_dir: Path, environ: Mapping[str, str] | None = None
 ) -> None:
     """Apply reload-time path overrides while preserving Config's legacy attributes."""
-
     paths = load_runtime_path_settings(base_dir=base_dir, environ=environ)
     config_cls.BASE_DIR = paths.base_dir
     config_cls.TEMP_DIR = paths.temp_dir

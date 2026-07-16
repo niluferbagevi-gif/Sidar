@@ -120,7 +120,6 @@ def _builtin_contract_by_role(role_name: str) -> BuiltinRoleContract | None:
 
 def _plugin_manifest_side_effect_level(role_name: str) -> str:
     """Return the manifest side-effect level for a plugin role, if declared."""
-
     try:
         from plugins.manifest import PLUGIN_MANIFESTS
     except Exception as exc:  # pragma: no cover - optional plugin package guard
@@ -135,13 +134,11 @@ def _plugin_manifest_side_effect_level(role_name: str) -> str:
 
 def _side_effect_requires_shell_gate(side_effect_level: str) -> bool:
     """Return whether the side effect level must pass shell-access authorization."""
-
     return str(side_effect_level or "none").startswith("external_")
 
 
 def _assert_runtime_side_effect_allowed(spec: AgentSpec, cfg: Any | None = None) -> None:
     """Fail closed when a plugin manifest declares host/external side effects."""
-
     if spec.is_builtin or not _side_effect_requires_shell_gate(spec.side_effect_level):
         return
     try:

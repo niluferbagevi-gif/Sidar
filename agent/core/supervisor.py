@@ -170,7 +170,6 @@ class SupervisorAgent(BaseAgent):
     @staticmethod
     def _extract_review_decision(review_summary: object) -> str | None:
         """Return a normalized reviewer decision when the summary carries one."""
-
         text = str(review_summary or "").strip()
         if not text:
             return None
@@ -200,7 +199,6 @@ class SupervisorAgent(BaseAgent):
     @staticmethod
     def _decision_from_review_payload(payload: object) -> str | None:
         """Extract reviewer decision variants from a decoded JSON payload."""
-
         if not isinstance(payload, dict):
             return None
         for key in ("decision", "verdict", "status", "result", "review_decision"):
@@ -430,7 +428,8 @@ class SupervisorAgent(BaseAgent):
                         task_id=str(uuid.uuid4()),
                         status="failed",
                         summary=(
-                            f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self._max_qa_retries()}). "
+                            "[P2P:STOP] Maksimum QA retry limiti aşıldı "
+                            f"({self._max_qa_retries()}). "
                             "Reviewer red zinciri fail-closed sonlandırıldı."
                         ),
                     )
@@ -493,10 +492,16 @@ class SupervisorAgent(BaseAgent):
             turn_count += 1
             return turn_count <= max_turns
 
+        def _turn_limit_message() -> str:
+            return (
+                "[P2P:STOP] Circuit breaker tetiklendi: "
+                f"maksimum tur limiti aşıldı ({max_turns})."
+            )
+
         if intent == "research":
             await self.events.publish("supervisor", "Researcher ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("researcher", task_prompt, "research")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
@@ -511,7 +516,7 @@ class SupervisorAgent(BaseAgent):
         if intent == "review":
             await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("reviewer", task_prompt, "review")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
@@ -526,7 +531,7 @@ class SupervisorAgent(BaseAgent):
         if intent == "marketing":
             await self.events.publish("supervisor", "Poyraz ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("poyraz", task_prompt, "marketing")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
@@ -542,7 +547,7 @@ class SupervisorAgent(BaseAgent):
             await self.events.publish("supervisor", "Coverage ajanına yönlendiriliyor...")
             receiver = "coverage" if self.registry.has("coverage") else "qa"
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate(receiver, task_prompt, "coverage")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
@@ -557,7 +562,7 @@ class SupervisorAgent(BaseAgent):
         if intent == "qa":
             await self.events.publish("supervisor", "QA ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("qa", task_prompt, "qa")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
@@ -571,9 +576,7 @@ class SupervisorAgent(BaseAgent):
 
         await self.events.publish("supervisor", "Coder ajanı kod üzerinde çalışıyor...")
         if not _consume_turn():
-            return (
-                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
-            )
+            return _turn_limit_message()
         code_result = await self._delegate("coder", task_prompt, "code")
         delegated = self._coerce_delegation_request(code_result.summary)
         if delegated is not None:
@@ -588,7 +591,8 @@ class SupervisorAgent(BaseAgent):
         if bool(getattr(getattr(self, "cfg", None), "CLI_FAST_MODE", False)):
             await self.events.publish(
                 "supervisor",
-                "CLI fast mode aktif: reviewer kalite kapısı atlandı, coder çıktısı döndürülüyor...",
+                "CLI fast mode aktif: reviewer kalite kapısı atlandı, "
+                "coder çıktısı döndürülüyor...",
             )
             return code_summary
 
@@ -597,9 +601,7 @@ class SupervisorAgent(BaseAgent):
             "supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor..."
         )
         if not _consume_turn():
-            return (
-                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
-            )
+            return _turn_limit_message()
         review_result = await self._delegate(
             "reviewer", review_goal, "review", parent_task_id=code_result.task_id
         )
@@ -622,7 +624,7 @@ class SupervisorAgent(BaseAgent):
                 return (
                     f"{latest_code_summary}\n\n---\n"
                     f"Reviewer QA Özeti (circuit breaker):\n{review_summary}\n"
-                    f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                    + _turn_limit_message()
                 )
             if retries > self._max_qa_retries():
                 return (
@@ -638,10 +640,11 @@ class SupervisorAgent(BaseAgent):
             )
             await self.events.publish(
                 "supervisor",
-                f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self._max_qa_retries()})...",
+                "Reviewer geri bildirimi sonrası kod turu başlatılıyor "
+                f"({retries}/{self._max_qa_retries()})...",
             )
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             next_code = await self._delegate(
                 "coder", revise_prompt, "code", parent_task_id=review_result.task_id
             )
@@ -657,7 +660,7 @@ class SupervisorAgent(BaseAgent):
             latest_code_summary = str(next_code.summary)
             await self.events.publish("supervisor", "Reviewer kontrolü tekrar çalıştırılıyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             review_result = await self._delegate(
                 "reviewer",
                 f"review_code|{latest_code_summary[:800]}",

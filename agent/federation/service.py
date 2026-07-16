@@ -32,7 +32,6 @@ ActionFeedback = getattr(agent_contracts, "ActionFeedback", FallbackActionFeedba
 
 def trigger_attr(trigger: Any, name: str, default: Any = "") -> Any:
     """Read an attribute/key from dict or contract-like external triggers."""
-
     if isinstance(trigger, dict):
         return trigger.get(name, default)
     return getattr(trigger, name, default)
@@ -40,21 +39,18 @@ def trigger_attr(trigger: Any, name: str, default: Any = "") -> Any:
 
 def trigger_payload(trigger: Any) -> dict[str, Any]:
     """Return a defensive payload copy from an external trigger."""
-
     raw_payload = trigger_attr(trigger, "payload", {})
     return dict(raw_payload or {}) if isinstance(raw_payload, dict) else {}
 
 
 def trigger_meta(trigger: Any) -> dict[str, Any]:
     """Return a defensive metadata copy from an external trigger."""
-
     raw_meta = trigger_attr(trigger, "meta", {})
     return dict(raw_meta or {}) if isinstance(raw_meta, dict) else {}
 
 
 def trigger_to_prompt(trigger: Any) -> str:
     """Render a generic external trigger prompt when no specialized builder applies."""
-
     if isinstance(trigger, dict):
         event_name = str(trigger.get("event_name", "event"))
         payload = dict(trigger.get("payload", {}) or {})
@@ -71,7 +67,6 @@ def trigger_to_prompt(trigger: Any) -> str:
 
 def build_federation_task_prompt(trigger: Any, payload_dict: dict[str, Any]) -> str:
     """Build the prompt for a federation task payload."""
-
     federation_payload = dict(payload_dict.get("federation_task") or payload_dict)
     if payload_dict.get("federation_prompt"):
         return str(payload_dict.get("federation_prompt"))
@@ -97,7 +92,6 @@ def build_federation_task_prompt(trigger: Any, payload_dict: dict[str, Any]) -> 
 
 def build_action_feedback_prompt(trigger: Any, payload_dict: dict[str, Any]) -> str:
     """Build the prompt for action feedback emitted by a federated system."""
-
     event_name = str(trigger_attr(trigger, "event_name", "event"))
     return ActionFeedback(
         feedback_id=str(payload_dict.get("feedback_id") or trigger_attr(trigger, "trigger_id", "")),
@@ -124,7 +118,6 @@ def build_trigger_prompt(
     ci_context: dict[str, Any] | None,
 ) -> str:
     """Build the specialized prompt for CI, federation, feedback, or generic triggers."""
-
     if ci_context:
         return build_ci_failure_prompt(ci_context)
 

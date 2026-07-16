@@ -31,9 +31,10 @@ def run_command(
     command: Sequence[str], *, cwd: Path = REPO_ROOT, timeout: int = 60
 ) -> subprocess.CompletedProcess[str]:
     """Run a command and capture text output without raising."""
-
-    return subprocess.run(
-        list(command),
+    safe_command = list(command)
+    # Doctor only dispatches fixed local prerequisite commands assembled in this module.
+    return subprocess.run(  # nosec B603
+        safe_command,
         cwd=cwd,
         text=True,
         capture_output=True,
@@ -44,14 +45,12 @@ def run_command(
 
 def short_output(result: subprocess.CompletedProcess[str]) -> str:
     """Return a compact diagnostic string for a subprocess result."""
-
     combined = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
     return combined.splitlines()[-1] if combined else f"exit={result.returncode}"
 
 
 def check_uv_available() -> DoctorCheck:
     """Check whether uv is available on PATH."""
-
     uv_path = shutil.which("uv")
     if uv_path:
         version = run_command([uv_path, "--version"], timeout=15)
@@ -62,7 +61,6 @@ def check_uv_available() -> DoctorCheck:
 
 def check_python_version() -> DoctorCheck:
     """Check that the active Python matches the repository support window."""
-
     version = sys.version_info
     ok = version.major == 3 and version.minor == 11
     detail = f"{sys.executable} -> {version.major}.{version.minor}.{version.micro}"
@@ -71,7 +69,6 @@ def check_python_version() -> DoctorCheck:
 
 def candidate_portaudio_headers() -> list[Path]:
     """Return likely PortAudio header locations."""
-
     paths = [
         Path("/usr/include/portaudio.h"),
         Path("/usr/local/include/portaudio.h"),
@@ -87,7 +84,6 @@ def candidate_portaudio_headers() -> list[Path]:
 
 def check_portaudio_header() -> DoctorCheck:
     """Check whether portaudio.h is visible before PyAudio builds."""
-
     for header in candidate_portaudio_headers():
         if header.exists():
             return DoctorCheck("portaudio.h", True, str(header))
@@ -106,7 +102,6 @@ def check_portaudio_header() -> DoctorCheck:
 
 def check_system_deps_script() -> DoctorCheck:
     """Run the project system-dependency checker in no-install mode."""
-
     result = run_command(["bash", "scripts/install_ci_system_deps.sh", "--check"], timeout=60)
     return DoctorCheck(
         "system-deps",
@@ -118,7 +113,6 @@ def check_system_deps_script() -> DoctorCheck:
 
 def check_uv_sync_dry_run() -> DoctorCheck:
     """Check whether uv can resolve the full locked extras without mutating the env."""
-
     uv_path = shutil.which("uv")
     if not uv_path:
         return DoctorCheck("uv-sync-dry-run", False, "uv yok", "Önce uv kurun.")
@@ -135,13 +129,13 @@ def check_uv_sync_dry_run() -> DoctorCheck:
         "uv-sync-dry-run",
         result.returncode == 0,
         short_output(result),
-        "Lockfile/full extras çözümü için: bash scripts/install_ci_system_deps.sh && uv sync --frozen --all-extras",
+        "Lockfile/full extras çözümü için: "
+        "bash scripts/install_ci_system_deps.sh && uv sync --frozen --all-extras",
     )
 
 
 def check_python_tool_imports() -> DoctorCheck:
     """Check dev quality tool imports required by production-readiness."""
-
     modules = ["bandit", "pytest", "pytest_benchmark"]
     missing = [name for name in modules if importlib.util.find_spec(name) is None]
     if not missing:
@@ -150,13 +144,13 @@ def check_python_tool_imports() -> DoctorCheck:
         "python-dev-tools",
         False,
         "eksik: " + ", ".join(missing),
-        "uv sync --frozen --all-extras veya hızlı test araçları için uv sync --frozen --extra dev-light",
+        "uv sync --frozen --all-extras veya hızlı test araçları için "
+        "uv sync --frozen --extra dev-light",
     )
 
 
 def check_frontend_node_modules() -> DoctorCheck:
     """Check whether frontend npm dependencies are installed."""
-
     node_modules = FRONTEND_DIR / "node_modules"
     playwright_pkg = node_modules / "@playwright" / "test"
     if node_modules.is_dir() and playwright_pkg.exists():
@@ -171,7 +165,6 @@ def check_frontend_node_modules() -> DoctorCheck:
 
 def check_playwright_chromium() -> DoctorCheck:
     """Check Playwright browser cache or externally managed Chromium executable."""
-
     external = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "")
     if external:
         path = Path(external)
@@ -202,13 +195,13 @@ process.stdout.write(executablePath);
         "playwright-chromium",
         False,
         f"Chromium cache bulunamadı ({cache_hint})",
-        "cd web_ui_react && npx playwright install chromium veya PLAYWRIGHT_BROWSERS_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH kullanın.",
+        "cd web_ui_react && npx playwright install chromium veya "
+        "PLAYWRIGHT_BROWSERS_PATH/PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH kullanın.",
     )
 
 
 def check_benchmark_baseline() -> DoctorCheck:
     """Check for a pytest-benchmark baseline file."""
-
     benchmark_dir = REPO_ROOT / ".benchmarks"
     baseline_name = os.environ.get(
         "BENCHMARK_COMPARE_NAME", os.environ.get("BENCHMARK_BASELINE_NAME", "baseline")
@@ -232,7 +225,6 @@ def check_benchmark_baseline() -> DoctorCheck:
 
 def collect_checks() -> list[DoctorCheck]:
     """Collect all production-readiness doctor checks."""
-
     return [
         check_uv_available(),
         check_python_version(),
@@ -248,7 +240,6 @@ def collect_checks() -> list[DoctorCheck]:
 
 def print_human(checks: Sequence[DoctorCheck]) -> None:
     """Print a human-readable doctor report."""
-
     print("Production-readiness doctor")
     print("===========================")
     for check in checks:
@@ -260,7 +251,6 @@ def print_human(checks: Sequence[DoctorCheck]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the production-readiness doctor."""
-
     args = list(argv if argv is not None else sys.argv[1:])
     json_output = "--json" in args
     checks = collect_checks()

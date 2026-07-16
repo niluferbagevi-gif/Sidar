@@ -19,7 +19,6 @@ def collect_missing_critical_runtime_keys(
     get_int_env: Callable[[str, int], int],
 ) -> list[str]:
     """Return unresolved security/provider keys after dotenv and process env resolution."""
-
     missing: list[str] = []
     is_production = os.getenv("SIDAR_ENV", "").strip().lower() == "production"
     missing.extend(
@@ -52,7 +51,6 @@ def collect_missing_critical_runtime_keys(
 
 def warn_on_silent_security_fallbacks(config_cls: Any, *, logger: logging.Logger) -> None:
     """Log non-production security fallbacks that would otherwise be silent."""
-
     if config_cls._is_test_env():
         return
     if not config_cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED:
