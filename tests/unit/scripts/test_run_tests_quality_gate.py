@@ -789,6 +789,21 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "DEVELOPMENT UYARISI" in validation_phase
     assert "production_readiness_status_reported=false" in validation_phase
     assert "Development full validation geçti = geliştirici ortamı sağlıklı" in validation_phase
+    assert "Profil farkı:" in finish_phase
+    assert "dev-light: hızlı lokal geliştirme" in finish_phase
+    assert "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in finish_phase
+    assert (
+        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir"
+        in finish_phase
+    )
+    assert "print_install_dependency_profile_readiness_legend" in validation_phase
+    assert "Profil farkı:" in validation_phase
+    assert "dev-light: hızlı lokal geliştirme" in validation_phase
+    assert "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in validation_phase
+    assert (
+        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir"
+        in validation_phase
+    )
     assert "Development validation ≠ release/merge onayı" in validation_phase
     assert "Release/merge için tek zorunlu komut" in validation_phase
     assert "DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS" in validation_phase

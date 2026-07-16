@@ -518,6 +518,13 @@ print_install_final_readiness_block() {
     fi
 }
 
+print_install_dependency_profile_readiness_legend() {
+    echo -e "   ${YELLOW}   Profil farkı:${NC}"
+    echo -e "   ${YELLOW}   • dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
+    echo -e "   ${YELLOW}   • dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+    echo -e "   ${YELLOW}   • production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
+}
+
 print_install_production_readiness_notice() {
     local status="${1:-not_requested}"
     local development_passed="${2:-false}"
@@ -540,6 +547,7 @@ print_install_production_readiness_notice() {
             echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
             if [[ "$development_passed" == true ]]; then
                 echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
+                print_install_dependency_profile_readiness_legend
             fi
             echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
             echo -e "   ${YELLOW}   DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS${NC}"

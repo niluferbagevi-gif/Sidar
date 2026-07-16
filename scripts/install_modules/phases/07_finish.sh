@@ -210,6 +210,10 @@ print_release_readiness_next_action() {
     if [[ "$ci_status" == "tamamlandi" ]]; then
         echo -e "       ${GREEN}✅ Development validation geçti.${NC}"
         echo -e "       ${YELLOW}${BOLD}⚠️  Bu sonuç yalnız yerel geliştirme ortamının sağlıklı olduğunu gösterir.${NC}"
+        echo -e "       ${YELLOW}Profil farkı:${NC}"
+        echo -e "       ${YELLOW}• dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
+        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+        echo -e "       ${YELLOW}• production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
     elif [[ "$ci_status" == "hata" ]]; then
         echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"
     else
