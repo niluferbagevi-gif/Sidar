@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 sidar_ensure_autonomy_scripts_executable() {
     local loop_script="${SCRIPT_DIR}/autonomous_loop.sh"

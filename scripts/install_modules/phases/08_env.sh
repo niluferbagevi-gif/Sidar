@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: .env and secret synchronization helpers.
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer Docker service orchestration helpers.
 
 validate_monitoring_mount_paths() {

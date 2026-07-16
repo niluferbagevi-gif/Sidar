@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: post-install service launch, runtime mode and subcommand helpers.
 
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────

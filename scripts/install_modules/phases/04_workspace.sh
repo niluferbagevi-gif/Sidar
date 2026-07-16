@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 sidar_run_or_warn() {
     local description="$1"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 extract_node_major_from_spec() {
     local version_spec="${1:-}"

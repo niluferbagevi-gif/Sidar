@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 verify_wsl_integration_listed() {
     [[ "$WSL2" == true ]] || return 0

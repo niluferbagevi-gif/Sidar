@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 sidar_phase_apply_coverage_dark_mode_assets() {
     local source_css="$SCRIPT_DIR/assets/dark_mode.css"

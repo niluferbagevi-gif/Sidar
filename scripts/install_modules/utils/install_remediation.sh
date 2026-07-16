@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_INSTALL_REMEDIATION_SH_LOADED=1
 
@@ -60,30 +61,60 @@ sidar_is_non_retryable_failure_code() {
     esac
 }
 
-sidar_is_deterministic_failure_signal() {
+
+sidar_failure_code_for_signal() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
     local signal="${failed_cmd} ${reason}"
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    # Eksik checksum / supply-chain doğrulama hataları deterministiktir:
-    # ortam değişkeni sağlanmadan retry aynı duvara çarpar.
+
     case "$normalized" in
         *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
+            echo "remote-script-checksum-missing"
             return 0
             ;;
         *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
+            echo "installer-smoke-gate-failure"
             return 0
             ;;
         *"install_sidar.sh sha256 farklı"*|*"hash drift kaynağını temizleyin"*|*"sidar_install_allow_stale_reexec"*)
+            echo "installer-hash-drift"
+            return 0
+            ;;
+        *"environmentfilenotfound"*|*"environment.yml"*|*"is_alembic_at_head failed"*)
+            echo "learned-non-retryable-failure"
+            return 0
+            ;;
+        *"smoke testlerde hata var"*|*"smoke test failed"*|*"pytest"*|*"failed tests/"*|*"test gate failure"*)
+            echo "test-gate-failure"
+            return 0
+            ;;
+        *"assert"*|*"unit test"*|*"test failed"*|*"deterministic"*)
+            echo "deterministic-failure"
             return 0
             ;;
     esac
-    case "$normalized" in
-        *"sudo: timed out"*|*"ollama_install"*)
-            return 1
-            ;;
-        *"assert"*|*"smoke test failed"*|*"pytest"*|*"unit test"*|*"test failed"*|*"deterministic"*)
+
+    return 1
+}
+
+sidar_is_deterministic_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local code=""
+
+    code="$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)"
+    if [[ "$code" != "remote-script-checksum-missing" ]]; then
+        case "$(printf '%s %s' "$failed_cmd" "$reason" | tr '[:upper:]' '[:lower:]')" in
+            *"sudo: timed out"*|*"ollama_install"*)
+                return 1
+                ;;
+        esac
+    fi
+
+    case "$code" in
+        remote-script-checksum-missing|installer-smoke-gate-failure|installer-hash-drift|learned-non-retryable-failure|test-gate-failure|deterministic-failure)
             return 0
             ;;
         *)
@@ -96,18 +127,9 @@ sidar_is_deterministic_failure_signal() {
 sidar_is_test_gate_failure_signal() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    case "$normalized" in
-        *"smoke testlerde hata var"*|*"smoke test failed"*|*"pytest"*|*"failed tests/"*|*"installer smoke gate başarısız"*|*"test gate failure"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "test-gate-failure" ]]
 }
+
 
 sidar_test_gate_failure_guidance() {
     local failed_cmd="${1:-}"
@@ -157,18 +179,9 @@ sidar_failure_signature() {
 sidar_is_non_retryable_failure_signal() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    case "$normalized" in
-        *"environmentfilenotfound"*|*"environment.yml"*|*"is_alembic_at_head failed"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "learned-non-retryable-failure" ]]
 }
+
 
 sidar_non_retryable_failure_guidance() {
     local failed_cmd="${1:-}"
@@ -192,50 +205,23 @@ EOF
 sidar_is_installer_smoke_gate_failure() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    case "$normalized" in
-        *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "installer-smoke-gate-failure" ]]
 }
+
 
 sidar_is_installer_hash_drift_failure() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    case "$normalized" in
-        *"install_sidar.sh sha256 farklı"*|*"hash drift kaynağını temizleyin"*|*"sidar_install_allow_stale_reexec"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "installer-hash-drift" ]]
 }
+
 
 sidar_is_remote_script_checksum_missing() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    case "$normalized" in
-        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"supply-chain doğrulamasını korumak"*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "remote-script-checksum-missing" ]]
 }
+
 
 sidar_detect_missing_checksum_var() {
     local failed_cmd="${1:-}"
@@ -275,6 +261,20 @@ sidar_retry_budget_for_failure() {
             echo "$default_budget"
             ;;
     esac
+}
+
+
+sidar_is_root_owned_venv_remediation_signal() {
+    local phase="${1:-}"
+    local failed_cmd="${2:-}"
+    local reason="${3:-}"
+    local venv_dir="${VENV_DIR:-.venv}"
+
+    [[ "$phase" == "04_workspace" ]] || return 1
+    [[ "$failed_cmd" == *"rm -rf"* ]] || return 1
+    [[ "$reason" == *"Permission denied"* || "$reason" == *"permission denied"* ]] || return 1
+    [[ "$failed_cmd" == *"$venv_dir"* || "$failed_cmd" == *".venv"* ]] || return 1
+    return 0
 }
 
 sidar_should_skip_phase_for_resume() {
@@ -500,7 +500,7 @@ sidar_phase_remediation_strategy() {
             fi
             ;;
         04_workspace)
-            if [[ "$failed_cmd" == *"rm -rf"* && "$reason" == *"Permission denied"* ]]; then
+            if sidar_is_root_owned_venv_remediation_signal "$phase" "$failed_cmd" "$reason"; then
                 sidar_remediate_root_owned_venv
                 return $?
             fi

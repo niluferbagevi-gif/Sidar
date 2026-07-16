@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 installer_hash_guard_git_root_for_script() {
     local script_path="$1"

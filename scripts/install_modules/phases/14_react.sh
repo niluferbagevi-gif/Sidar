@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # REACT_UI_STATUS is consumed by installer summary phases.
 
 # ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────

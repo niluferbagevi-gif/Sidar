@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 # Playwright upstream yeni Ubuntu sürümlerini tanımadan önce Chromium indirmesi
 # başarısız olabilir. Ubuntu 25-30 aralığındaki hostlarda Playwright

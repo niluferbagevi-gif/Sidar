@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: Docker service startup and validation orchestration.
 
 phase06_docker_daemon_gate_or_fail() {

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: CUDA, smoke, integration, audit and CI validation helpers.
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────

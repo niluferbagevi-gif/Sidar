@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
 resolve_alembic_python() {

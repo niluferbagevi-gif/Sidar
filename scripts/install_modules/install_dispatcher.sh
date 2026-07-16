@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck shell=bash
 # Phase dispatcher facade for install_sidar.sh.
 

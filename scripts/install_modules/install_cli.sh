@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # Sourced installer phases consume parsed globals.
 # CLI defaults, argument parsing, and environment normalization for install_sidar.sh.

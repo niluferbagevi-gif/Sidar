@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer .env secret generation and hardening helpers.
 
 generate_secure_token() {

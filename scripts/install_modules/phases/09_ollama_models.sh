@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: Ollama model runtime defaults and provisioning helpers.
 
 normalize_ollama_base_url() {

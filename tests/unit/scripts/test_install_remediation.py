@@ -66,6 +66,7 @@ def test_phase_remediation_strategy_classifies_signals_from_specific_to_generic(
     script = r"""
         set +e
         source scripts/install_modules/utils/install_remediation.sh
+        set +e
         info() { :; }
         warn() { :; }
         sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\n' "$1" "$2" "$3"; }
@@ -87,3 +88,47 @@ def test_phase_remediation_strategy_classifies_signals_from_specific_to_generic(
     assert f"RC:{expected_rc}" in result.stdout
     if expected_reason == "installer-smoke-gate-failure":
         assert "test-gate-failure" not in result.stdout
+
+
+def test_install_modules_declare_strict_mode_for_standalone_safety() -> None:
+    missing = []
+    for module in sorted((REPO_ROOT / "scripts/install_modules").rglob("*.sh")):
+        first_lines = module.read_text(encoding="utf-8").splitlines()[:5]
+        if "set -Eeuo pipefail" not in first_lines:
+            missing.append(str(module.relative_to(REPO_ROOT)))
+
+    assert missing == []
+
+
+def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_cleanup() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            source ./scripts/install_modules/utils/install_remediation.sh
+            sidar_failure_code_for_signal 'run_pre_service_installer_smoke_gate' 'installer smoke gate başarısız'
+            sidar_failure_code_for_signal 'pytest tests/smoke' 'FAILED tests/smoke/test_install.py::test_x'
+            if sidar_is_root_owned_venv_remediation_signal 04_workspace 'rm -rf .venv' 'Permission denied'; then
+                echo root-owned-venv
+            fi
+            if sidar_is_root_owned_venv_remediation_signal 06_services 'rm -rf /var/lib/sidar' 'Permission denied'; then
+                echo unsafe-service-cleanup
+            else
+                echo service-cleanup-blocked
+            fi
+            """,
+        ],
+        check=True,
+        capture_output=True,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "installer-smoke-gate-failure",
+        "test-gate-failure",
+        "root-owned-venv",
+        "service-cleanup-blocked",
+    ]
