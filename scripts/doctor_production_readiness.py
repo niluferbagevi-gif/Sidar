@@ -27,7 +27,9 @@ class DoctorCheck:
     action: str = ""
 
 
-def run_command(command: Sequence[str], *, cwd: Path = REPO_ROOT, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+def run_command(
+    command: Sequence[str], *, cwd: Path = REPO_ROOT, timeout: int = 60
+) -> subprocess.CompletedProcess[str]:
     """Run a command and capture text output without raising."""
 
     return subprocess.run(
@@ -190,8 +192,12 @@ process.stdout.write(executablePath);
         result = run_command(["node", "-e", script], cwd=FRONTEND_DIR, timeout=30)
         if result.returncode == 0:
             return DoctorCheck("playwright-chromium", True, result.stdout.strip())
-    browsers_path = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "~/.cache/ms-playwright")).expanduser()
-    cache_hint = browsers_path if browsers_path.exists() else Path("~/.cache/ms-playwright").expanduser()
+    browsers_path = Path(
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "~/.cache/ms-playwright")
+    ).expanduser()
+    cache_hint = (
+        browsers_path if browsers_path.exists() else Path("~/.cache/ms-playwright").expanduser()
+    )
     return DoctorCheck(
         "playwright-chromium",
         False,
@@ -204,7 +210,9 @@ def check_benchmark_baseline() -> DoctorCheck:
     """Check for a pytest-benchmark baseline file."""
 
     benchmark_dir = REPO_ROOT / ".benchmarks"
-    baseline_name = os.environ.get("BENCHMARK_COMPARE_NAME", os.environ.get("BENCHMARK_BASELINE_NAME", "baseline"))
+    baseline_name = os.environ.get(
+        "BENCHMARK_COMPARE_NAME", os.environ.get("BENCHMARK_BASELINE_NAME", "baseline")
+    )
     patterns = [f"*_{baseline_name}.json", "*.json"]
     matches: list[Path] = []
     if benchmark_dir.is_dir():
