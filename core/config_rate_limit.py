@@ -39,7 +39,6 @@ class RateLimitSettings:
 # mypy/pyright-friendly alias for the small LLM settings surface this loader needs.
 def load_rate_limit_settings(*, redis_max_connections_default: int) -> RateLimitSettings:
     """Load rate-limit, Redis and dependency-health settings from environment."""
-
     return RateLimitSettings(
         sidar_rate_limit_window=get_int_prefixed_env(
             "SIDAR_RATE_LIMIT_WINDOW", "RATE_LIMIT_WINDOW", 60

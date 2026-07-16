@@ -50,7 +50,6 @@ def load_sandbox_settings(
     get_external_bool_prefixed_env: Callable[[str, str, bool], bool],
 ) -> SandboxSettings:
     """Load Docker sandbox settings from environment variables."""
-
     docker_python_image = get_prefixed_env(
         "SIDAR_DOCKER_PYTHON_IMAGE", "DOCKER_PYTHON_IMAGE", "python:3.11-slim"
     )

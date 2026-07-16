@@ -174,7 +174,6 @@ def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> Non
 
 def _valid_user_api_value(key: str, index: int) -> str:
     """Return installer-valid synthetic values for user supplied integration keys."""
-
     if key == "SLACK_WEBHOOK_URL":
         return f"https://hooks.slack.com/services/test/{index}"
     if key == "JIRA_URL":

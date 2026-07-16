@@ -27,7 +27,6 @@ class RagStoreSettings:
 
 def load_rag_store_settings() -> RagStoreSettings:
     """Load RAG store and scrape limit settings from environment variables."""
-
     web_fetch_max_chars = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
     return RagStoreSettings(
         web_fetch_max_chars=web_fetch_max_chars,

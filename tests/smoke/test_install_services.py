@@ -30,12 +30,32 @@ def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
     fake_bin.mkdir()
     compose = fake_bin / "compose"
     compose.write_text(
-        "#!/usr/bin/env bash\nif [[ $1 == ps && $2 == -q ]]; then echo fake-container; exit 0; fi\nexit 2\n",
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "if [[ $1 == ps && $2 == -q ]]; then",
+                "  echo fake-container",
+                "  exit 0",
+                "fi",
+                "exit 2",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     docker = fake_bin / "docker"
     docker.write_text(
-        "#!/usr/bin/env bash\nif [[ $1 == inspect ]]; then echo starting; exit 0; fi\nexit 0\n",
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "if [[ $1 == inspect ]]; then",
+                "  echo starting",
+                "  exit 0",
+                "fi",
+                "exit 0",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     compose.chmod(0o755)

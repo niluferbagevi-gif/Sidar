@@ -30,7 +30,6 @@ class EventBusSettings:
 
 def load_event_bus_settings() -> EventBusSettings:
     """Load event bus settings from environment variables."""
-
     channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
     return EventBusSettings(
         sidar_event_bus_backend=os.getenv("SIDAR_EVENT_BUS_BACKEND", "redis"),

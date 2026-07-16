@@ -108,12 +108,18 @@ def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_clean
             """
             set -Eeuo pipefail
             source ./scripts/install_modules/utils/install_remediation.sh
-            sidar_failure_code_for_signal 'run_pre_service_installer_smoke_gate' 'installer smoke gate başarısız'
-            sidar_failure_code_for_signal 'pytest tests/smoke' 'FAILED tests/smoke/test_install.py::test_x'
-            if sidar_is_root_owned_venv_remediation_signal 04_workspace 'rm -rf .venv' 'Permission denied'; then
+            sidar_failure_code_for_signal \
+                'run_pre_service_installer_smoke_gate' \
+                'installer smoke gate başarısız'
+            sidar_failure_code_for_signal \
+                'pytest tests/smoke' \
+                'FAILED tests/smoke/test_install.py::test_x'
+            if sidar_is_root_owned_venv_remediation_signal \
+                04_workspace 'rm -rf .venv' 'Permission denied'; then
                 echo root-owned-venv
             fi
-            if sidar_is_root_owned_venv_remediation_signal 06_services 'rm -rf /var/lib/sidar' 'Permission denied'; then
+            if sidar_is_root_owned_venv_remediation_signal \
+                06_services 'rm -rf /var/lib/sidar' 'Permission denied'; then
                 echo unsafe-service-cleanup
             else
                 echo service-cleanup-blocked
