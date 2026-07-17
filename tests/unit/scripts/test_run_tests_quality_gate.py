@@ -1677,6 +1677,27 @@ def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
     assert "secrets.token_urlsafe(32)" in script
 
 
+def test_run_tests_prefers_ambient_postgres_password_over_random_secret() -> None:
+    # CI (and any caller that already exports POSTGRES_PASSWORD, e.g. matching a
+    # live Postgres service and DATABASE_URL) must reuse that value when creating
+    # a fresh .env.test instead of generating an unrelated random secret — an
+    # unrelated secret overrides the app's own dotenv chain with a password that
+    # matches neither the live DB role nor DATABASE_URL, failing Config's
+    # DATABASE_URL/POSTGRES_PASSWORD sync check at boot.
+    script = RUN_TESTS.read_text(encoding="utf-8")
+    render_fn = script[
+        script.index("render_generated_secret_sentinels() {") : script.index(
+            "\n}\n", script.index("render_generated_secret_sentinels() {")
+        )
+    ]
+
+    assert 'if [ -n "${POSTGRES_PASSWORD:-}" ]; then' in render_fn
+    assert 'generated_password="${POSTGRES_PASSWORD}"' in render_fn
+    assert render_fn.index('generated_password="${POSTGRES_PASSWORD}"') < render_fn.index(
+        "generate_test_secret_value"
+    )
+
+
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
     contract = installer_contract_sources()
     python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
