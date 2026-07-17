@@ -991,6 +991,7 @@ EOF
     PRODUCTION_READINESS=0
     RUN_BENCHMARKS=""
     RUN_FRONTEND_E2E=""
+    export TEST_SUMMARY_JSON="$tmpdir/artifacts/test-summary.json"
 
     run_install_ci_full_validation
 
