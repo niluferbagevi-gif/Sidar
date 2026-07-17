@@ -165,6 +165,19 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     assert safe2 == [] and blocked2 == []
 
 
+def test_has_conflict_markers_ignores_decorative_banner_lines(tmp_path):
+    banner_file = tmp_path / "banner.py"
+    banner_file.write_text(
+        '"""\nSidar Project - Ultimate Launcher\n' + "=" * 33 + "\n" + '"""\n',
+        encoding="utf-8",
+    )
+    assert not gu.has_conflict_markers(str(banner_file))
+
+    real_conflict_file = tmp_path / "conflict.py"
+    real_conflict_file.write_text("<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> branch\n", encoding="utf-8")
+    assert gu.has_conflict_markers(str(real_conflict_file))
+
+
 def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch):
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
     assert gu.get_commit_count() == 0
