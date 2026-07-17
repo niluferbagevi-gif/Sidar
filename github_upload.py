@@ -202,7 +202,13 @@ def get_file_content(path: str) -> str | None:
         return None
 
 
-CONFLICT_MARKER_RE = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
+# Git conflict markers are always exactly 7 marker characters. `<<<<<<<`/`>>>>>>>`
+# are followed by a ref name or line end; `=======` stands alone. The negative
+# lookaheads reject longer decorative banner lines (e.g. `====...====` section
+# separators in docstrings) that would otherwise false-positive as conflicts.
+CONFLICT_MARKER_RE = re.compile(
+    r"^(?:<{7}(?!<)(?: .*)?|={7}(?!=)|>{7}(?!>)(?: .*)?)$", re.MULTILINE
+)
 
 
 def get_unmerged_files() -> list[str]:

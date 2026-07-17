@@ -762,6 +762,7 @@ ENV
 
 @test "React build summary warns that frontend QA was not run" {
   run_installer_function '
+    TEST_SUMMARY_JSON="/nonexistent-test-summary.json"
     FRONTEND_QUALITY_STATUS="atlandi_bayrak"
     print_react_frontend_qa_status_block
   '
@@ -773,6 +774,7 @@ ENV
 
 @test "React build summary uses red block when frontend QA failed" {
   run_installer_function '
+    TEST_SUMMARY_JSON="/nonexistent-test-summary.json"
     FRONTEND_QUALITY_STATUS="hata"
     print_react_frontend_qa_status_block
   '
