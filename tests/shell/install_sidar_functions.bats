@@ -959,6 +959,7 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
     SCRIPT_DIR="$tmpdir"
+    export TEST_SUMMARY_JSON="$tmpdir/artifacts/test-summary.json"
     RUN_CI_FULL_VALIDATION=false
     GPU_AVAILABLE=true
     SMOKE_TEST_STATUS="tamamlandi"
