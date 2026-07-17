@@ -15,6 +15,9 @@ run_installer_function() {
     repo_root="$1"
     test_snippet="$2"
     cd "$repo_root"
+    test_summary_tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$test_summary_tmpdir\"" EXIT
+    export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
     set --
