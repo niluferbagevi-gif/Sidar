@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import textwrap
@@ -5454,6 +5455,17 @@ def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     assert "SIDAR_BOOTSTRAP_PINNED_REF=<40 karakter commit SHA>" in install_script
     assert "SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1" in install_script
     assert '[[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]' in install_script
+
+
+def test_install_sidar_embedded_remote_module_ref_is_pinned_commit() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"' not in install_script
+    assert re.search(
+        r'^SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[0-9a-f]{40}"$',
+        install_script,
+        re.MULTILINE,
+    )
 
 
 def test_install_sidar_resolve_remote_module_base_blocks_raw_github_main() -> None:
