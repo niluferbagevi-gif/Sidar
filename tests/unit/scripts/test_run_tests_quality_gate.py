@@ -2342,14 +2342,17 @@ def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None
 
     early_detector = install_script.index('sidar_detect_early_offline_mode "$@" || true')
     missing_module_guard = install_script.index('if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then')
+    skip_direct_guard = install_script.index('if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then')
     remote_resolution = install_script.index('REMOTE_MODULE_BASE="$(resolve_remote_module_base)"')
+    trust_validation = install_script.index('validate_remote_module_trust_root "$REMOTE_MODULE_BASE"')
     direct_download = install_script.index('download_install_modules_to_temp "$REMOTE_MODULE_BASE"')
     bootstrap_clone = install_script.index("bootstrap_clone_and_reexec", direct_download)
     cli_parse = install_script.index('sidar_parse_install_cli "$@"')
 
-    assert early_detector < missing_module_guard < remote_resolution < direct_download
+    assert early_detector < missing_module_guard < skip_direct_guard < remote_resolution
+    assert skip_direct_guard < remote_resolution < trust_validation < direct_download
     assert missing_module_guard < bootstrap_clone < cli_parse
-    offline_guard_block = install_script[missing_module_guard:remote_resolution]
+    offline_guard_block = install_script[missing_module_guard:skip_direct_guard]
     assert "raw fallback modül indirme veya bootstrap clone yapılmayacak" in offline_guard_block
     assert "release bundle install_sidar.sh" in offline_guard_block
 
@@ -5468,7 +5471,7 @@ def test_install_sidar_embedded_remote_module_ref_is_pinned_commit() -> None:
     )
 
 
-def test_install_sidar_resolve_remote_module_base_blocks_raw_github_main() -> None:
+def test_install_sidar_validate_remote_module_trust_root_blocks_raw_github_main() -> None:
     result = subprocess.run(
         [
             "bash",
@@ -5478,7 +5481,8 @@ def test_install_sidar_resolve_remote_module_base_blocks_raw_github_main() -> No
                 set -Eeuo pipefail
                 source ./install_sidar.sh >/dev/null 2>&1
                 SIDAR_INSTALL_MODULE_BASE_URL=https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules
-                resolve_remote_module_base
+                remote_base="$(resolve_remote_module_base)"
+                validate_remote_module_trust_root "$remote_base"
                 """
             ),
         ],

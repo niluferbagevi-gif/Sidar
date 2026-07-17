@@ -962,7 +962,6 @@ resolve_remote_module_base() {
         remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$remote_module_ref" || true)"
     fi
     [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/$(resolve_remote_module_ref)/scripts/install_modules"
-    validate_remote_module_trust_root "$remote_module_base"
     printf '%s' "$remote_module_base"
 }
 
@@ -1271,10 +1270,11 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
         fail "--offline/--air-gapped erken algılandı; yerel kurulum modül ağacı eksik olduğu için raw fallback modül indirme veya bootstrap clone yapılmayacak. Hava boşluklu kurulum için release bundle install_sidar.sh kullanın veya scripts/install_modules ağacını aynı dizine yerleştirin."
     fi
 
-    REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
     if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then
         warn "SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD=1; fallback modül indirme atlandı, bootstrap/re-exec yolu denenecek."
     elif command -v curl &>/dev/null || command -v wget &>/dev/null; then
+        REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
+        validate_remote_module_trust_root "$REMOTE_MODULE_BASE"
         info "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek: $REMOTE_MODULE_BASE"
         download_install_modules_to_temp "$REMOTE_MODULE_BASE"
     fi
