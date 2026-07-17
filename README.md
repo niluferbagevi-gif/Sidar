@@ -269,7 +269,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 |---|---|---|---|
 | Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; GitHub raw 429/5xx riskine daha açıktır |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır |
 
 ### Sistem Gereksinimleri
 
@@ -620,9 +620,16 @@ modül indirme yapabildiği için GitHub raw 429/5xx riskine Release bundle'a g�
 daha açıktır. Dış wrapper indirme adımında GitHub raw rate-limit/429 yanıtlarına
 karşı retry/backoff seçenekleriyle indirin; installer'ın kendi modül fallback
 indiricisi retryable HTTP statüleri, `Retry-After` ve cache davranışını ayrıca
-yönetir:
+yönetir. Modül indirme aşamasında mutable `main` ref'i güvenlik nedeniyle
+reddedilir; installer önce embedded commit pin'ini kullanır, pin yoksa GitHub
+REST API üzerinden `main` ref'ini 40 karakterlik commit SHA'ya çözer. Kapalı ağ,
+API erişimi olmayan veya deterministik pin istenen ortamlarda commit SHA'yı açıkça
+verin:
 
 ```bash
+# En güvenli raw fallback: modül kaynağını aynı commit SHA'ya açıkça pinleyin.
+SIDAR_BOOTSTRAP_PINNED_REF="$(git ls-remote https://github.com/niluferbagevi-gif/Sidar.git refs/heads/main | awk '{print $1}')"
+export SIDAR_BOOTSTRAP_PINNED_REF
 curl -fL --retry 5 --retry-all-errors --retry-delay 2 \
   -o install_sidar.sh \
   https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
@@ -632,6 +639,9 @@ wget --tries=5 --waitretry=2 \
   https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
 chmod +x install_sidar.sh
 ./install_sidar.sh
+
+# Geçici ve önerilmeyen bypass: mutable raw ref riskini operatör kabul eder.
+# SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ./install_sidar.sh
 ```
 
 Smoke test ve servis öncesi smoke gate opt-out değerleri için `--skip-smoke-test`,

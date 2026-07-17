@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -657,6 +658,65 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         "fail-closed olmadığını gösterir.\n"
         f"{debug_context}"
     )
+
+
+def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_api(tmp_path: Path) -> None:
+    """Single-file raw installer fallback should self-pin mutable refs via GitHub API."""
+    repo_root = Path(os.getcwd())
+    host = tmp_path / "host"
+    bin_dir = tmp_path / "bin"
+    host.mkdir()
+    bin_dir.mkdir()
+    standalone = host / "install_sidar.sh"
+    script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    script = re.sub(
+        r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+        'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"',
+        script,
+    )
+    standalone.write_text(script, encoding="utf-8")
+    standalone.chmod(0o755)
+
+    resolved_sha = "abcdef0123456789abcdef0123456789abcdef01"
+    fake_curl = bin_dir / "curl"
+    fake_curl.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -Eeuo pipefail
+            printf '{{"sha":"{resolved_sha}"}}\n'
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+
+    env = _installer_test_env(tmp_path) | {
+        "HOME": str(host),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+    }
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                f"""\
+                set -Eeuo pipefail
+                source <(sed '/^use_existing_install_module_tree_if_available /,$d' {shlex.quote(str(standalone))}) >/dev/null
+                resolve_remote_module_base
+                """
+            ),
+        ],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith(f"/{resolved_sha}/scripts/install_modules")
+    assert "Embedded installer commit pin bulunamadı" in result.stderr
 
 
 def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_path: Path) -> None:

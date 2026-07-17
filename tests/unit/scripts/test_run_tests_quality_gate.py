@@ -5458,6 +5458,18 @@ def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     assert "SIDAR_BOOTSTRAP_PINNED_REF=<40 karakter commit SHA>" in install_script
     assert "SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1" in install_script
     assert '[[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]' in install_script
+    assert "resolve_github_ref_commit_sha()" in install_script
+    assert "api.github.com/repos/${owner_repo}/commits/${ref}" in install_script
+
+
+def test_ci_publish_standalone_installer_depends_on_installer_smoke_only() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    publish_block = ci[ci.index("  publish-standalone-installer:") :]
+    publish_block = publish_block[: publish_block.index("    steps:")]
+
+    assert "needs: [installer-smoke]" in publish_block
+    assert "needs: [production-readiness, pg-stress]" not in publish_block
+    assert "Heavy runtime gates" in publish_block
 
 
 def test_install_sidar_embedded_remote_module_ref_is_pinned_commit() -> None:

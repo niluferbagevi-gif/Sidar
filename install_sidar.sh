@@ -662,13 +662,62 @@ sidar_raw_github_module_ref() {
     printf '%s' "$remote_module_base" | sed -nE 's#^https://raw\.githubusercontent\.com/[^/]+/[^/]+/([^/]+)/scripts/install_modules/?$#\1#p'
 }
 
+sidar_github_repo_slug_from_url() {
+    local repo_url="${1:-}"
+    local owner_repo=""
+
+    repo_url="${repo_url%.git}"
+    owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^https?://github\.com/([^/]+/[^/]+)$#\1#p')"
+    if [[ -z "$owner_repo" ]]; then
+        owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^git@github\.com:([^/]+/[^/]+)$#\1#p')"
+    fi
+    printf '%s' "$owner_repo"
+}
+
+resolve_github_ref_commit_sha() {
+    local repo_url="${1:-}"
+    local ref="${2:-main}"
+    local owner_repo=""
+    local api_url=""
+    local response=""
+    local resolved_sha=""
+
+    sidar_ref_is_commit_sha "$ref" && { printf '%s' "$ref"; return 0; }
+    owner_repo="$(sidar_github_repo_slug_from_url "$repo_url")"
+    [[ -n "$owner_repo" ]] || return 1
+    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
+
+    if command -v curl >/dev/null 2>&1; then
+        response="$(curl -fsSL --connect-timeout 10 --max-time 20 "$api_url" 2>/dev/null || true)"
+    elif command -v wget >/dev/null 2>&1; then
+        response="$(wget -qO- --timeout=20 "$api_url" 2>/dev/null || true)"
+    else
+        return 1
+    fi
+
+    resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/.*"sha"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n 1)"
+    if sidar_ref_is_commit_sha "$resolved_sha"; then
+        printf '%s' "$resolved_sha"
+        return 0
+    fi
+    return 1
+}
+
 resolve_remote_module_ref() {
+    local resolved_ref=""
+    local mutable_ref="${SIDAR_INSTALLER_EMBEDDED_SOURCE_REF:-${SIDAR_REPO_BRANCH:-main}}"
+
     if [[ -n "${SIDAR_BOOTSTRAP_PINNED_REF:-}" ]]; then
         printf '%s' "$SIDAR_BOOTSTRAP_PINNED_REF"
         return 0
     fi
     if sidar_ref_is_commit_sha "${SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT:-}"; then
         printf '%s' "$SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT"
+        return 0
+    fi
+    if resolved_ref="$(resolve_github_ref_commit_sha "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$mutable_ref")"; then
+        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub API üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
+        printf '%s' "$resolved_ref"
         return 0
     fi
     printf '%s' "${SIDAR_REPO_BRANCH:-main}"
