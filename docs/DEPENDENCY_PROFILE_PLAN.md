@@ -230,9 +230,13 @@ Yeni veya anlamlı şekilde değişen public API'lerde Google-style docstring ek
 yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmemek ve yeni kodda
 100 karakter satır sınırına uymak zorunludur; ignore listesi yeni borç eklemek için
 genişletilmemelidir. CI, mevcut E501 toplamını `e501_debt_baseline`, D200-D417 ve
-ASYNC240 sayımlarını ise `docstring_async_debt_baseline` üst sınırıyla karşılaştırır;
-yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
-`scripts/ci/check_ruff_debt_baseline.py` fail-closed davranır.
+ASYNC240 sayımlarını ise `docstring_async_debt_baseline` ratchet sınırıyla
+karşılaştırır. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
+`scripts/ci/check_ruff_debt_baseline.py` fail-closed davranır. Ölçülen sayı
+baseline'ın altına düştüğünde de komut fail-closed olur ve operatörden
+`uv run python scripts/ci/check_ruff_debt_baseline.py --update` ile committed
+baseline'ı `min(current, baseline)` değerine indirmesini ister; geçici raporlama
+için `--allow-stale-baseline` kullanılabilir fakat CI standardı değildir.
 
 ## Aşamalı geçiş
 

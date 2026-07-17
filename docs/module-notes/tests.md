@@ -159,7 +159,7 @@ metriği yerine yazılmamalıdır.
   zorlamak istediğiniz olgun/stabil yerel runnerlarda `COVERAGE_STRICT_LOCAL_RATCHET=1` kullanın veya
   daha açık kontrol için `COVERAGE_RATCHET_MAX_GATE=100` verin. Coverage campaign akışı
   (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
-  `%100` olarak açar.
+  `%100` olarak açar. Bu kararın operasyonel runbook'u `docs/runbooks/coverage-strict-local-ratchet.md` içindedir.
 - Ölçüm `%100.00` olsa bile refactor dönemi günlük gate'inde ratchet cap `%99` korunur; örneğin
   `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
   otomatik terfi sinyali değildir. `%100` yalnız coverage-campaign/strict-local opt-in ile denenmelidir.

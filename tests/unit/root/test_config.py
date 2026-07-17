@@ -14,8 +14,25 @@ import config_autonomy
 import config_gpu
 import config_llm
 import config_quality
-import config_rag
+import config_rag_defaults
 from core import config_env_helpers, config_postgres, config_validators
+
+
+def test_rag_defaults_module_name_disambiguates_runtime_rag_modules() -> None:
+    import config_rag  # noqa: PLC0415 - verifies legacy compatibility shim.
+
+    docs = Path("docs/module-notes/config.py.md").read_text(encoding="utf-8")
+    refactor_plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT == (
+        config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
+    assert config.Config.SEMANTIC_CACHE_THRESHOLD == (
+        config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
+    assert "config_rag_defaults.py" in docs
+    assert "legacy `config_rag.py` yalnız backward-compatible shim" in docs
+    assert "config_rag_defaults.py" in refactor_plan
 
 
 def test_config_reexports_split_env_helpers_and_validators() -> None:
@@ -25,14 +42,45 @@ def test_config_reexports_split_env_helpers_and_validators() -> None:
     assert config.is_valid_http_url is config_validators.is_valid_http_url
 
 
+def test_config_facade_scope_and_typed_settings_roadmap_are_documented() -> None:
+    docs = Path("docs/module-notes/config.py.md").read_text(encoding="utf-8")
+    refactor_plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "God object değil, compatibility facade" in docs
+    assert "yaklaşık yirmi" in docs
+    assert "domain ayar modülünü birleştiren compatibility facade" in docs
+    assert "Tekrarlayan business logic" in docs
+    assert "typed domain settings facade alias" in docs
+    assert "Config.llm_settings" in docs
+    assert "Config.security_settings" in docs
+    assert "Config.sandbox_settings" in docs
+    assert "gerçek bir god object değil" in refactor_plan
+    assert "typed domain settings objeleri doğrudan expose edildi" in refactor_plan
+
+
 def test_config_uses_split_domain_modules() -> None:
     assert config.LLMClientSettings is config_llm.LLMClientSettings
     assert config.OLLAMA_BATCH_POLICY is config_llm.OLLAMA_BATCH_POLICY
     assert config.build_postgres_dsn is config_postgres.build_postgres_dsn
     assert config.gpu_mixed_precision_default is config_gpu.gpu_mixed_precision_default
-    assert config.Config.SEMANTIC_CACHE_THRESHOLD == config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    assert (
+        config.Config.SEMANTIC_CACHE_THRESHOLD
+        == config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
     assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
     assert config.QualityGateSettings is config_quality.QualityGateSettings
+
+
+def test_config_exposes_typed_domain_settings_facades() -> None:
+    assert config.Config.llm_settings is config.LLM_SETTINGS
+    assert config.Config.quality_gate_settings is config._QUALITY_GATE_SETTINGS
+    assert config.Config.security_settings is config.SECURITY_SETTINGS
+    assert config.Config.rate_limit_settings is config._RATE_LIMIT_SETTINGS
+    assert config.Config.event_bus_settings is config._EVENT_BUS_SETTINGS
+    assert config.Config.rag_store_settings is config._RAG_STORE_SETTINGS
+    assert config.Config.sandbox_settings is config._SANDBOX_SETTINGS
+    assert config.Config.observability_settings is config._OBSERVABILITY_SETTINGS
+    assert config.Config.self_heal_settings is config._SELF_HEAL_SETTINGS
 
 
 def test_config_legacy_import_surface_survives_split() -> None:

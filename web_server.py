@@ -24,9 +24,7 @@ import logging
 import os
 import re
 import secrets
-import shutil
 import signal
-import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -80,6 +78,7 @@ from core.llm_metrics import (
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
+from web import autonomy_bridge, collaboration_service, process_lifecycle
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
@@ -355,10 +354,7 @@ def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, co
 
 
 def _iter_stream_chunks(text: str, *, size: int = 180) -> list[str]:
-    clean = str(text or "")
-    if not clean:
-        return []
-    return [clean[index : index + size] for index in range(0, len(clean), size)]
+    return collaboration_service.iter_stream_chunks(text, size=size)
 
 
 async def _hitl_broadcast(payload: dict[str, Any]) -> None:
@@ -412,105 +408,35 @@ _SAFE_PS_PATHS: tuple[str, ...] = ("/bin/ps", "/usr/bin/ps", "/sbin/ps", "/usr/s
 
 
 def _resolve_safe_ps_binary() -> str | None:
-    """Yalnızca sistem-yönetimi dizinlerindeki bilinen ps ikilisini döndürür.
-
-    SAST (Bandit B603/B607): subprocess çağrılırken `ps` ikilisinin PATH
-    üzerinden alınması, ortam değişkeni manipülasyonuyla rastgele bir ikilinin
-    çalıştırılmasına yol açabilir. Bu helper, ikiliyi yalnızca whitelist'teki
-    absolute path'lerden çözer.
-    """
-    for candidate in _SAFE_PS_PATHS:
-        try:
-            p = Path(candidate)
-            if p.is_file() and os.access(candidate, os.X_OK):
-                return candidate
-        except Exception:  # nosec B112
-            # Adayın stat/access kontrolü başarısızsa sessizce sıradakine geçilir.
-            continue
-    try:
-        which_path = shutil.which("ps")
-    except Exception:
-        which_path = None
-    if which_path and which_path in _SAFE_PS_PATHS:
-        return which_path
-    return None
+    """Yalnızca sistem-yönetimi dizinlerindeki bilinen ps ikilisini döndürür."""
+    return process_lifecycle.resolve_safe_ps_binary(safe_paths=_SAFE_PS_PATHS)
 
 
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
-    pids: list[int] = []
-    try:
-        psutil_module = _resolve_psutil_module()
-        current = psutil_module.Process(os.getpid())
-        for child in current.children(recursive=False):
-            with contextlib.suppress(Exception):
-                comm = str(child.name() or "").strip().lower()
-                args = " ".join(child.cmdline() or []).strip().lower()
-                if comm == "ollama" or "ollama serve" in args:
-                    pids.append(int(child.pid))
-        return sorted(set(pids))
-    except Exception:
-        if os.name == "nt":
-            return []
-
-    # Güvenlik (SAST B603/B607): ps ikilisi PATH manipülasyonuna karşı yalnızca
-    # sistem-yönetimi dizinlerindeki bilinen absolute path'lerden çözülür.
-    ps_binary = _resolve_safe_ps_binary()
-    if ps_binary is None:
-        return []
-
-    try:
-        raw = subprocess.check_output(  # nosec
-            [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        return []
-
-    parent_pid = int(os.getpid())
-    for line in raw.decode("utf-8", errors="ignore").splitlines():
-        parts = line.strip().split(None, 3)
-        if len(parts) < 4:
-            continue
-        pid_str, ppid_str, comm, args = parts
-        if not pid_str.isdigit() or not ppid_str.isdigit():
-            continue
-        if int(ppid_str) != parent_pid:
-            continue
-        comm = comm.strip().lower()
-        args = args.strip().lower()
-        if comm == "ollama" or "ollama serve" in args:
-            pids.append(int(pid_str))
-    return sorted(set(pids))
+    return process_lifecycle.list_child_ollama_pids(
+        resolve_psutil_module=_resolve_psutil_module,
+        current_pid=os.getpid(),
+        os_name=os.name,
+        safe_ps_binary=_resolve_safe_ps_binary(),
+    )
 
 
 def _reap_child_processes_nonblocking() -> int:
     """Zombi child process'leri waitpid(WNOHANG) ile temizle."""
-    reaped = 0
-    while True:
-        try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            break
-        except Exception:
-            break
-        if pid <= 0:
-            break
-        reaped += 1
-    return reaped
+    return process_lifecycle.reap_child_processes_nonblocking()
 
 
 def _terminate_ollama_child_pids(pids: list[int], *, grace_seconds: float = 0.15) -> None:
     """Ollama child process'lerine önce TERM sonra KILL uygular."""
-    for pid in pids:
-        with contextlib.suppress(Exception):
-            os.kill(pid, signal.SIGTERM)
-
-    if pids and grace_seconds > 0:
-        time.sleep(grace_seconds)
-        for pid in pids:
-            with contextlib.suppress(Exception):
-                os.kill(pid, signal.SIGKILL)
+    process_lifecycle.terminate_process_pids(
+        pids,
+        sigterm=signal.SIGTERM,
+        sigkill=signal.SIGKILL,
+        kill_func=os.kill,
+        sleep_func=time.sleep,
+        grace_seconds=grace_seconds,
+    )
 
 
 def _force_shutdown_local_llm_processes() -> None:
@@ -679,14 +605,7 @@ async def _collect_agent_response(agent: SidarAgent, prompt: str) -> str:
 
 def _autonomy_service_actor(trigger_source: str) -> tuple[str, str]:
     """Return the explicit service actor used by userless autonomy triggers."""
-    configured_user = str(
-        getattr(cfg, "AUTONOMY_SERVICE_USER_ID", "")
-        or getattr(cfg, "SYSTEM_USER_ID", "")
-        or "system:autonomy"
-    ).strip()
-    service_user_id = configured_user or "system:autonomy"
-    source_label = str(trigger_source or "external").strip() or "external"
-    return service_user_id, f"autonomy:{source_label}"
+    return autonomy_bridge.autonomy_service_actor(cfg, trigger_source)
 
 
 async def _prepare_autonomy_memory_context(agent: Any, trigger_source: str) -> None:
@@ -928,10 +847,7 @@ def _resolve_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dic
 
 
 def _trim_autonomy_text(value: Any, limit: int = 1200) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + " …[truncated]"
+    return autonomy_bridge.trim_autonomy_text(value, limit=limit)
 
 
 def _build_event_driven_federation_spec(

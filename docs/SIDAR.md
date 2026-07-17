@@ -28,6 +28,11 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 - **Kayıp anahtar olayı:** Eski anahtar kurtarılamıyorsa önceki Fernet ile şifrelenmiş hafıza pratik olarak kurtarılamaz kabul edilir. Yeni anahtar üretildikten sonra eski şifreli kayıtlar arşivlenmeli veya kontrollü biçimde temizlenmelidir.
 - **Dosya izinleri:** `.sidar_keys.env` ve anahtarı taşıyan yerel dotenv dosyaları `600` veya `400` izinleriyle tutulmalı; grup/diğer kullanıcı okuma izni varsa kurulum uyarısı giderilmeden üretim ortamı başlatılmamalıdır.
 
+
+## 🔐 Production Secret Rotation Runbook
+- **Ortak secret riski:** Installer local/dev/test kolaylığı için `API_KEY`, `JWT_SECRET_KEY`, `MEMORY_ENCRYPTION_KEY`, `AUTONOMY_WEBHOOK_SECRET`, `SWARM_FEDERATION_SHARED_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GRAFANA_ADMIN_PASSWORD` ve `METRICS_TOKEN` değerlerini `.env` kaynağından profil dosyalarına senkronize edebilir. `.env.production` gerçek dağıtıma kullanılmadan önce bu 8 değer dev/test/local zincirinden farklı olacak şekilde rotate edilmelidir.
+- **Runbook:** Production cutover öncesi zorunlu checklist `docs/runbooks/production-secret-rotation.md` dosyasındadır; özellikle `MEMORY_ENCRYPTION_KEY` için veri kurtarma/yeniden şifreleme kararı belgelenmeden canlıya geçilmemelidir.
+
 ## ⚡️ Otonom Komutlar
 LLM döngüsüne girmeden yakalanan sistem komutlarını bil:
 - `.status` / `.health`: Donanım ve servis sağlığı raporları.

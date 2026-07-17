@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -76,6 +77,61 @@ def _format_counts(counts: dict[str, int]) -> str:
     return ", ".join(f"{code}={counts.get(code, 0)}" for code in RUFF_DEBT_CODES)
 
 
+def _tightenable_counts(
+    current: dict[str, int], baseline: dict[str, int]
+) -> dict[str, tuple[int, int]]:
+    """Return rules whose committed baseline is looser than the measured debt."""
+    return {
+        code: (current[code], baseline[code])
+        for code in RUFF_DEBT_CODES
+        if current[code] < baseline[code]
+    }
+
+
+def _replace_inline_table_value(table_body: str, code: str, value: int) -> str:
+    """Replace a single `CODE = number` entry inside the inline TOML baseline table."""
+    pattern = rf"({re.escape(code)}\s*=\s*)\d+"
+    updated, count = re.subn(pattern, rf"\g<1>{value}", table_body, count=1)
+    if count != 1:
+        raise ValueError(f"Missing inline baseline key: {code}")
+    return updated
+
+
+def _write_tightened_baseline(
+    pyproject_path: Path, current: dict[str, int], baseline: dict[str, int]
+) -> None:
+    """Persist `min(current, baseline)` back into the Ruff debt pyproject block."""
+    content = pyproject_path.read_text(encoding="utf-8")
+    e501_target = min(current["E501"], baseline["E501"])
+    content, e501_count = re.subn(
+        r"(^e501_debt_baseline\s*=\s*)\d+",
+        rf"\g<1>{e501_target}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if e501_count != 1:
+        raise ValueError("Missing e501_debt_baseline entry")
+
+    table_match = re.search(
+        r"(^docstring_async_debt_baseline\s*=\s*\{)(.*?)(\}\s*$)",
+        content,
+        flags=re.MULTILINE,
+    )
+    if table_match is None:
+        raise ValueError("Missing docstring_async_debt_baseline inline table")
+
+    table_body = table_match.group(2)
+    for code in RUFF_DEBT_CODES:
+        if code == "E501":
+            continue
+        table_body = _replace_inline_table_value(
+            table_body, code, min(current[code], baseline[code])
+        )
+    content = content[: table_match.start(2)] + table_body + content[table_match.end(2) :]
+    pyproject_path.write_text(content, encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Check that transitional Ruff debt counts do not exceed the baseline."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -83,6 +139,16 @@ def main(argv: list[str] | None = None) -> int:
         "--pyproject",
         default=str(ROOT / "pyproject.toml"),
         help="Path to the pyproject.toml file containing the Ruff debt baseline.",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Rewrite the committed baseline to min(current, baseline) and exit.",
+    )
+    parser.add_argument(
+        "--allow-stale-baseline",
+        action="store_true",
+        help="Do not fail when current debt is lower than the committed baseline.",
     )
     args = parser.parse_args(argv)
 
@@ -93,6 +159,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     current = _count_diagnostics(_run_ruff_json(RUFF_DEBT_CODES))
+    if args.update:
+        _write_tightened_baseline(Path(args.pyproject), current, baseline)
+        updated_baseline = _load_baseline(Path(args.pyproject))
+        print(f"Ruff debt baseline ratcheted to: {_format_counts(updated_baseline)}")
+        return 0
+
     regressions = {
         code: (current[code], baseline[code])
         for code in RUFF_DEBT_CODES
@@ -106,7 +178,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Baseline counts: {_format_counts(baseline)}", file=sys.stderr)
         return 1
 
-    print(f"Ruff E501/docstring/ASYNC240 debt within baseline: {_format_counts(current)}")
+    stale_baselines = _tightenable_counts(current, baseline)
+    if stale_baselines and not args.allow_stale_baseline:
+        print("Ruff E501/docstring/ASYNC240 debt baseline can be tightened:", file=sys.stderr)
+        for code, (actual, expected) in stale_baselines.items():
+            print(f"- {code}: {actual} < {expected}", file=sys.stderr)
+        print(f"Current counts: {_format_counts(current)}", file=sys.stderr)
+        print(f"Baseline counts: {_format_counts(baseline)}", file=sys.stderr)
+        print(
+            "Run: uv run python scripts/ci/check_ruff_debt_baseline.py --update",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"Ruff E501/docstring/ASYNC240 debt matches ratchet baseline: {_format_counts(current)}")
     return 0
 
 

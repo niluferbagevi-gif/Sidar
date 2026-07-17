@@ -62,6 +62,8 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
     SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
     SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
     SIDAR_REPO_BRANCH=main|...    Repo branch/ref for bootstrap clone + sync (default: main)
+    SIDAR_BOOTSTRAP_PINNED_REF=<sha>  Pin raw fallback install modules to a 40-char commit SHA
+    SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1  Temporary bypass for mutable raw GitHub fallback refs
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
@@ -131,6 +133,8 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
     SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
     SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
     SIDAR_REPO_BRANCH=main|...    Bootstrap clone + sync için repo branch/ref (varsayılan: main)
+    SIDAR_BOOTSTRAP_PINNED_REF=<sha>  Raw fallback install modüllerini 40 karakter commit SHA'ya pinler
+    SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1  Mutable raw GitHub fallback ref için geçici bypass
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası

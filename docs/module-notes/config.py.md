@@ -11,7 +11,7 @@ modüllerden beslenir:
   varsayılanlarının canonical modülü; `config.py` bu helperları doğrudan re-export eder.
 - `config_llm.py`: LLM provider/model ayarları, `LLMClientSettings` ve Ollama batch
   policy.
-- `config_rag.py`: RAG chunk/top-k/semantic-cache varsayılanları.
+- `config_rag_defaults.py`: RAG chunk/top-k/semantic-cache varsayılanları; legacy `config_rag.py` yalnız backward-compatible shim olarak kalır.
 - `config_security.py`: API/JWT/security secret ayarları ve production validation
   yardımcıları.
 - `config_autonomy.py`, `config_gpu.py`: self-heal/otonomi ve GPU varsayılanları.
@@ -26,6 +26,35 @@ modüllerden beslenir:
 > değildir. `config.py` facade yüzeyi büyük kalabilir; refactor başarısı eski import
 > path'lerinin kırılmaması ve domain helper'larının testlerle korunması üzerinden
 > değerlendirilmelidir.
+
+## God object değil, compatibility facade
+
+`config.py` ilk bakışta geniş bir "god object" gibi görünebilir; güncel mimari
+kararı bunun runtime ayarlarının tek doğruluk kaynağı olmasından değil, eski
+`from config import Config` ve `import config` tüketicilerini kırmadan yaklaşık yirmi
+domain ayar modülünü birleştiren compatibility facade olmasından kaynaklanır.
+Tekrarlayan business logic bu dosyaya eklenmemelidir; yeni davranış önce
+`config_llm.py`, `config_security.py`, `config_rag_defaults.py` veya `core/config_*.py`
+modüllerindeki canonical helper/settings objesine konmalıdır.
+
+Düşük riskli iyileştirmenin ilk adımı olarak `Config` artık canonical loader
+sonuçlarını typed domain settings facade alias'larıyla da expose eder; tekil
+`Config.FOO` alias'ları geriye dönük uyum için korunur. Devam eden hedefler:
+
+- `Config.llm_settings` → `config_llm.LLM_SETTINGS` / `LLMClientSettings`
+  tüketimini yeni kodda yaygınlaştırmak.
+- `Config.security_settings` → `config_security.load_security_settings()`
+  sonucunu yeni güvenlik tüketicilerinde tercih etmek.
+- `Config.sandbox_settings`, `Config.observability_settings`,
+  `Config.rate_limit_settings`, `Config.event_bus_settings` ve
+  `Config.rag_store_settings` gibi domain objelerini yeni kodda canonical
+  `core/config_*.py` loader sonuçları olarak tüketmek.
+- Legacy `Config.FOO` alias'larını bir release boyunca koruyup yeni kodda domain
+  objesi kullanımını tercih etmek.
+
+Bu çalışma davranış değişikliği değil, facade yüzeyini küçültme kampanyasıdır;
+her adım `tests/unit/root/test_config.py` içindeki import contract testleriyle
+korunmalıdır.
 
 
 ## Kök/Core yerleşim kuralı

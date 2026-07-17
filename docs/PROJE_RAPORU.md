@@ -1605,3 +1605,70 @@ Son doğrulama turlarında migration akışları, swarm delegasyonları, audit t
 - **Kurumsal sonuç:** Sidar artık yalnızca “kod yazan ajan” değil; React SPA, PostgreSQL/pgvector, Redis semantic cache, DLP/HITL güvenlik duvarı, Supervisor-first swarm ve telemetry-first observability katmanlarını tek üründe birleştiren üretim adayı bir platformdur.
 
 > **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `CHANGELOG.md` ve `AUDIT_REPORT_v5.0.md` dosyalarına başvurulmalıdır.
+
+## Session: Production Secret Rotation Runbook
+
+- Installer'ın local/dev/test kolaylığı için ortak secret'ları `.env` zincirinden profil dosyalarına senkronize ettiği davranış production riski olarak belgelendi.
+- `docs/runbooks/production-secret-rotation.md` eklendi; `API_KEY`, `JWT_SECRET_KEY`, `MEMORY_ENCRYPTION_KEY`, `AUTONOMY_WEBHOOK_SECRET`, `SWARM_FEDERATION_SHARED_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GRAFANA_ADMIN_PASSWORD` ve `METRICS_TOKEN` için production öncesi rotasyon checklist'i tanımlandı.
+- `scripts/install_modules/phases/08_env.sh` production env dosyası local kaynakla aynı ortak secret'ları taşıdığında runbook'a yönlendiren uyarı üretir.
+
+## Session: Web Runtime Helper Refactor
+
+- `web_server.py` içindeki process lifecycle, autonomy text/actor helper'ları ve collaboration stream chunking mantığı `web/process_lifecycle.py`, `web/autonomy_bridge.py` ve `web/collaboration_service.py` modüllerine taşındı.
+- Geriye dönük test/route uyumluluğu için `web_server.py` üzerindeki mevcut private facade fonksiyonları korundu; uygulama davranışı değişmeden helper implementasyonları modüler hale getirildi.
+
+## Session: Agent Exception Observability
+
+- `agent/auto_handle.py` içindeki `.heal`, audit, health ve GPU otomatik komut hata yolları kullanıcı mesajı döndürmenin yanında `logger.exception` ile stack trace üretir hale getirildi.
+- `agent/sidar_agent.py` içinde docs search, autonomy trigger ve self-heal hata yolları sunucu loglarında görünür olacak şekilde güçlendirildi; mevcut kullanıcıya dönük hata mesajları korundu.
+
+## Session: Ruff Debt Baseline Ratchet
+
+- `scripts/ci/check_ruff_debt_baseline.py` artık yalnız borç artışını değil, ölçülen borç committed baseline'ın altına düştüğünde stale baseline durumunu da fail-closed raporlar.
+- `--update` akışı committed Ruff debt baseline'ını `min(current, baseline)` değerine indirir; mevcut ölçümle E501 ve D202 baseline'ları sıkılaştırıldı.
+
+## Session: Coverage Strict Local Ratchet Policy
+
+- Coverage ratchet tavanının günlük local/CI profillerinde `%99` kalması bilinçli bir operasyonel tampon olarak kayıt altına alındı; bu davranış bug değil, refactor ve platform dalgalanmalarını absorbe eden varsayılan politikadır.
+- Stabil `%100` ölçüm veren runnerlarda `%99.5` benzeri regresyonların fail-closed yakalanması için `docs/runbooks/coverage-strict-local-ratchet.md` runbook'u eklendi.
+- Strict-local kullanım yolu `COVERAGE_STRICT_LOCAL_RATCHET=1 ./run_tests.sh`, açık tavan yolu `COVERAGE_RATCHET_MAX_GATE=100 ./run_tests.sh`, campaign yolu ise `COVERAGE_CAMPAIGN=1 ./run_tests.sh` olarak belgelendi.
+
+
+## Session: Security Directory Scope Clarification
+
+- `security/` dizininin runtime güvenlik implementasyonu değil, `pip-audit` gibi kalite kapılarını destekleyen policy/veri alanı olduğu `security/README.md` ile açıklandı.
+- Runtime güvenlik mantığı için `web/security.py`, dosya/komut/erişim seviyesi enforcement için `managers/security.py`, CI/test çıktıları için `artifacts/security/` yönlendirmeleri eklendi.
+
+
+## Session: Config Facade Scope Clarification
+
+- `config.py` geniş görünse de gerçek bir god object değil; `config_llm.py`, `config_security.py`, `config_rag_defaults.py` ve `core/config_*.py` domain modüllerini geriye dönük uyumlu tek import yüzeyinde birleştiren compatibility facade olarak belgelendi.
+- İlk düşük riskli iyileştirme olarak `Config.llm_settings`, `Config.security_settings`, `Config.sandbox_settings`, `Config.observability_settings` ve benzeri typed domain settings alias'ları expose edildi; legacy class attribute yüzeyinin yeni kodda kademeli küçültülmesi hedeflendi.
+
+
+## Session: Launcher Doctor Preflight Boundary
+
+- `main.py` içindeki Doctor preflight kontrol sıralaması, database-dependent skip politikası, auto-fix tekrar limiti ve paralel RAG/GPU check orkestrasyonu `core/doctor/launcher_preflight.py` modülüne taşındı.
+- `main.py` artık bu preflight için yalnız renkli çıktı, kullanıcı onayı, env reload ve auto-fix callback'lerini sağlayan compatibility facade olarak kaldı; böylece iki ayrı health-check/preflight sisteminin ıraksama riski azaltıldı.
+
+
+## Session: RAG Config Naming Clarification
+
+- Kök `config_rag.py` adı, `core/config_rag_store.py` ve `core/rag/` runtime modülleriyle karışmaması için statik varsayılanların canonical modülü olarak `config_rag_defaults.py` adına taşındı.
+- Geriye dönük uyumluluk için `config_rag.py` shim olarak korundu; yeni kod ve `config.py`/`core/config_rag_store.py` importları `config_rag_defaults.py` üzerinden ilerler.
+
+
+## Session: Frontend Bundle Near-Budget Warning
+
+- Frontend bundle bütçesi kırmızı alarm seviyesinde olmasa da toplam JS/gzip kullanımının `%90+` bandına yaklaşması için `SIDAR_BUNDLE_BUDGET_WARN_RATIO` uyarı eşiği eklendi.
+- Mevcut hard gate (`SIDAR_TOTAL_JS_BUDGET_KB`, `SIDAR_TOTAL_GZIP_BUDGET_KB`) korunurken, yeni uyarı mekanizması dependency eklemelerinde bütçeye yaklaşmayı fail etmeden görünür kılar.
+
+## Session: Installer Offline Bootstrap Guard
+
+- `--offline` / `--air-gapped` bayrakları artık `install_cli.sh` yüklenmeden önce, yalnız Bash built-in'leriyle erken algılanır; böylece fallback modül indirme bloğu CLI parse sırasını beklemez.
+- Yerel `scripts/install_modules` ağacı eksikken offline modda raw GitHub modül indirme ve bootstrap clone/re-exec denenmez; kurulum release bundle veya yanında taşınan modül ağacı gerektiren açık hata ile durur.
+
+## Session: Installer Fallback Module Cache Hygiene
+
+- Raw fallback modül cache varsayılanı her çalıştırmada yeni `mktemp` dizini oluşturmak yerine kullanıcıya ait stabil cache yoluna taşındı; retry mesajındaki "mevcut modüller yeniden kullanılır" davranışı artık varsayılan akışla uyumlu.
+- Eski otomatik `/tmp/sidar_install_modules_cache_<uid>.*` cache kökleri güvenli sahiplik ve yaş kontrolünden sonra temizlenir; böylece önceki koşumlardan kalan geçici cache dizinleri birikmez.

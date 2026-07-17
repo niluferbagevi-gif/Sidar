@@ -5,6 +5,7 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 
 import asyncio
 import inspect
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -18,6 +19,8 @@ from managers.github_manager import GitHubManager
 from managers.package_info import PackageInfoManager
 from managers.system_health import SystemHealthManager
 from managers.web_search import WebSearchManager
+
+logger = logging.getLogger(__name__)
 
 
 class AutoHandle:
@@ -220,6 +223,7 @@ class AutoHandle:
         try:
             log_text = await asyncio.to_thread(candidate.read_text, encoding="utf-8")
         except Exception as exc:
+            logger.exception("AutoHandle .heal log file read failed: path=%s", candidate)
             return True, f"⚠ Log dosyası okunamadı: {exc}"
 
         context = build_local_failure_context(log_text, source="mypy", log_path=str(candidate))
@@ -291,6 +295,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ Denetim işlemi zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle audit command failed")
                 return True, f"⚠ Denetim sırasında hata oluştu: {exc}"
         return False, ""
 
@@ -311,6 +316,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ Sağlık raporu zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle health report command failed")
                 return True, f"⚠ Sağlık raporu alınamadı: {exc}"
         return False, ""
 
@@ -324,6 +330,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ GPU optimizasyonu zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle GPU optimization command failed")
                 return True, f"⚠ GPU optimizasyonu başarısız: {exc}"
         return False, ""
 

@@ -98,6 +98,9 @@ sync_repo() {
 
         if [[ -d "$TARGET_DIR/.git" ]]; then
             SCRIPT_DIR="$TARGET_DIR"
+            if declare -F sidar_set_install_module_dir >/dev/null 2>&1; then
+                sidar_set_install_module_dir "$SCRIPT_DIR/scripts/install_modules"
+            fi
             ok "Çevrimdışı mod: mevcut hedef repo kullanılacak (git clone/pull atlandı): $TARGET_DIR"
             return
         fi
@@ -181,6 +184,9 @@ sync_repo() {
     fi
 
     SCRIPT_DIR="$TARGET_DIR"
+    if declare -F sidar_set_install_module_dir >/dev/null 2>&1; then
+        sidar_set_install_module_dir "$SCRIPT_DIR/scripts/install_modules"
+    fi
     refresh_install_sidar_version_from_repo
     ok "Kurulum dizini güncellendi: $SCRIPT_DIR"
     info "Installer sürümü repo kaynaklarından yenilendi: v$INSTALL_SIDAR_VERSION"

@@ -20,7 +20,7 @@ import config_autonomy
 import config_gpu
 import config_llm
 import config_quality
-import config_rag
+import config_rag_defaults
 import core.config_logging_setup as config_logging_setup
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
@@ -593,6 +593,24 @@ class Config:
     kaynaklı tek merkezden alınır.
     """
 
+    # ─── Domain settings facade'ları ─────────────────────────
+    # Legacy Config.FOO class attribute yüzeyi korunurken yeni kodun domain bazlı
+    # typed settings objelerine geçebilmesi için canonical loader sonuçları doğrudan
+    # expose edilir. Bu alias'lar yeni davranış eklemez; mevcut split modüllerin
+    # geriye dönük uyumlu facade üstünden görünür olmasını sağlar.
+    app_settings = _APP_SETTINGS
+    runtime_path_settings = _RUNTIME_PATHS
+    llm_settings = LLM_SETTINGS
+    quality_gate_settings = _QUALITY_GATE_SETTINGS
+    security_settings = SECURITY_SETTINGS
+    rate_limit_settings = _RATE_LIMIT_SETTINGS
+    event_bus_settings = _EVENT_BUS_SETTINGS
+    rag_store_settings = _RAG_STORE_SETTINGS
+    sandbox_settings = _SANDBOX_SETTINGS
+    observability_settings = _OBSERVABILITY_SETTINGS
+    orchestrator_settings = _ORCHESTRATOR_SETTINGS
+    self_heal_settings = _SELF_HEAL_SETTINGS
+
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = _APP_SETTINGS.project_name
     VERSION: str = _APP_SETTINGS.version
@@ -812,7 +830,7 @@ class Config:
     # ─── Semantic Cache (v4.0) ───────────────────────────────
     ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env(
-        "SEMANTIC_CACHE_THRESHOLD", config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+        "SEMANTIC_CACHE_THRESHOLD", config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
     )
     SEMANTIC_CACHE_TTL: int = LLM_SETTINGS.SEMANTIC_CACHE_TTL
     SEMANTIC_CACHE_MAX_ITEMS: int = LLM_SETTINGS.SEMANTIC_CACHE_MAX_ITEMS

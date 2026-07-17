@@ -2330,6 +2330,31 @@ def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clon
     ) < missing_module_flow.index("bootstrap_clone_and_reexec")
 
 
+def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "sidar_detect_early_offline_mode()" in install_script
+    assert 'sidar_detect_early_offline_mode "$@" || true' in install_script
+    assert "--offline|--air-gapped" in install_script
+    assert "${OFFLINE_INSTALL:-}" in install_script
+    assert "${AIR_GAPPED_INSTALL:-}" in install_script
+
+    early_detector = install_script.index('sidar_detect_early_offline_mode "$@" || true')
+    missing_module_guard = install_script.index(
+        'if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then'
+    )
+    remote_resolution = install_script.index('REMOTE_MODULE_BASE="$(resolve_remote_module_base)"')
+    direct_download = install_script.index('download_install_modules_to_temp "$REMOTE_MODULE_BASE"')
+    bootstrap_clone = install_script.index("bootstrap_clone_and_reexec", direct_download)
+    cli_parse = install_script.index('sidar_parse_install_cli "$@"')
+
+    assert early_detector < missing_module_guard < remote_resolution < direct_download
+    assert missing_module_guard < bootstrap_clone < cli_parse
+    offline_guard_block = install_script[missing_module_guard:remote_resolution]
+    assert "raw fallback modül indirme veya bootstrap clone yapılmayacak" in offline_guard_block
+    assert "release bundle install_sidar.sh" in offline_guard_block
+
+
 def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
     tmp_path: Path,
 ) -> None:
@@ -4068,6 +4093,7 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
+    security_readme = Path("security/README.md").read_text(encoding="utf-8")
 
     assert "python scripts/pip_audit_ignore_args.py" in script
     assert "PIP_AUDIT_ARTIFACT_DIR:-artifacts/security" in script
@@ -4091,6 +4117,11 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     assert "GHSA-rrmf-rvhw-rf47" in policy
     assert "CVE-2025-3000" in policy
     assert "2026-09-15" in policy
+    assert "security policy data" in security_readme
+    assert "not the runtime" in security_readme
+    assert "web/security.py" in security_readme
+    assert "managers/security.py" in security_readme
+    assert "artifacts/security/" in security_readme
 
 
 def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() -> None:
@@ -4161,8 +4192,19 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert "COVERAGE_STRICT_LOCAL_RATCHET" in script
     tests_notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
+    optimization_plan = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
+    strict_runbook = Path("docs/runbooks/coverage-strict-local-ratchet.md").read_text(
+        encoding="utf-8"
+    )
     assert "Coverage gate ratcheted: %90 -> %99 (measured=%100.00)" in tests_notes
+    assert "coverage-strict-local-ratchet.md" in tests_notes
     assert "günlük local/CI ratchet cap `%99`" in coverage_agent_docs
+    assert "bilinçli bir operasyonel tampon" in optimization_plan
+    assert "COVERAGE_STRICT_LOCAL_RATCHET=1" in optimization_plan
+    assert "COVERAGE_RATCHET_MAX_GATE=100" in optimization_plan
+    assert "Varsayılan local/CI cap: `%99`" in strict_runbook
+    assert "Strict opt-in cap: `%100`" in strict_runbook
+    assert "COVERAGE_STRICT_LOCAL_RATCHET=1 ./run_tests.sh" in strict_runbook
     assert (
         '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]'
         in script
@@ -4587,6 +4629,9 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     )
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in bundle_budget_script
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in bundle_budget_script
+    assert "SIDAR_BUNDLE_BUDGET_WARN_RATIO" in bundle_budget_script
+    assert "buildBudgetUsage" in bundle_budget_script
+    assert "watch dependency additions" in bundle_budget_script
     assert "productionBudgetGateActive" in bundle_budget_script
     assert "requireBudgetForProductionGate" in bundle_budget_script
     assert (
@@ -4608,6 +4653,47 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"
     assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "1.0.3"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
+
+
+def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path) -> None:
+    assets_dir = Path("web_ui_react/dist/assets")
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    chunk_path = assets_dir / "react-dom-near-budget.js"
+    previous = chunk_path.read_text(encoding="utf-8") if chunk_path.exists() else None
+    chunk_path.write_text("a" * 950, encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "1",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "10",
+            "SIDAR_BUNDLE_BUDGET_WARN_RATIO": "0.9",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+        }
+    )
+
+    try:
+        result = subprocess.run(
+            ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    finally:
+        if previous is None:
+            chunk_path.unlink(missing_ok=True)
+        else:
+            chunk_path.write_text(previous, encoding="utf-8")
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert result.returncode == 0
+    assert "Total JS is at" in result.stderr
+    assert "watch dependency additions" in result.stderr
+    assert report["budgetUsage"]["totalJs"]["warning"] is True
+    assert report["budgetsKb"]["warnRatio"] == 0.9
 
 
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:
@@ -5360,3 +5446,93 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     assert "retries: 20" in redis_block
     assert "redis:\n        condition: service_started" not in compose
     assert compose.count("redis:\n        condition: service_healthy") >= 4
+
+
+def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "resolve_remote_module_ref()" in install_script
+    assert "validate_remote_module_trust_root()" in install_script
+    assert "SIDAR_BOOTSTRAP_PINNED_REF=<40 karakter commit SHA>" in install_script
+    assert "SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1" in install_script
+    assert '[[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]' in install_script
+
+
+def test_install_sidar_resolve_remote_module_base_blocks_raw_github_main() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -Eeuo pipefail
+                source ./install_sidar.sh >/dev/null 2>&1
+                SIDAR_INSTALL_MODULE_BASE_URL=https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules
+                resolve_remote_module_base
+                """
+            ),
+        ],
+        capture_output=True,
+        env={
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        },
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Fallback modül güven kökü zayıf" in result.stderr
+    assert "mutable GitHub ref (main)" in result.stderr
+
+
+def test_install_sidar_resolve_remote_module_base_accepts_commit_pinned_raw_github() -> None:
+    pinned_ref = "0123456789abcdef0123456789abcdef01234567"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                f"""\
+                set -Eeuo pipefail
+                source ./install_sidar.sh >/dev/null 2>&1
+                SIDAR_BOOTSTRAP_PINNED_REF={pinned_ref}
+                unset SIDAR_INSTALL_MODULE_BASE_URL
+                resolve_remote_module_base
+                """
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        env={
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        },
+        text=True,
+    )
+
+    assert result.stdout.strip() == (
+        "https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/"
+        f"{pinned_ref}/scripts/install_modules"
+    )
+
+
+def test_installer_warns_when_production_env_shares_local_generated_secrets() -> None:
+    env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+
+    assert "sidar_production_secret_rotation_keys()" in env_phase
+    assert "emit_production_secret_rotation_notice()" in env_phase
+    for key in (
+        "API_KEY",
+        "JWT_SECRET_KEY",
+        "MEMORY_ENCRYPTION_KEY",
+        "AUTONOMY_WEBHOOK_SECRET",
+        "SWARM_FEDERATION_SHARED_SECRET",
+        "GITHUB_WEBHOOK_SECRET",
+        "GRAFANA_ADMIN_PASSWORD",
+        "METRICS_TOKEN",
+    ):
+        assert key in env_phase
+    assert "docs/runbooks/production-secret-rotation.md" in env_phase
+    assert 'emit_production_secret_rotation_notice "$src"' in env_phase

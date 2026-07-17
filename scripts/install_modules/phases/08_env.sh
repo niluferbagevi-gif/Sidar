@@ -920,18 +920,48 @@ PY
     fi
 }
 
+sidar_production_secret_rotation_keys() {
+    printf '%s\n' \
+        API_KEY \
+        JWT_SECRET_KEY \
+        MEMORY_ENCRYPTION_KEY \
+        AUTONOMY_WEBHOOK_SECRET \
+        SWARM_FEDERATION_SHARED_SECRET \
+        GITHUB_WEBHOOK_SECRET \
+        GRAFANA_ADMIN_PASSWORD \
+        METRICS_TOKEN
+}
+
+emit_production_secret_rotation_notice() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key=""
+    local src_val=""
+    local prod_val=""
+    local -a shared_matches=()
+
+    [[ -f "$src" && -f "$production_env" ]] || return 0
+
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+        prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
+        if [[ -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ]]; then
+            shared_matches+=("$key")
+        fi
+    done < <(sidar_production_secret_rotation_keys)
+
+    if (( ${#shared_matches[@]} == 0 )); then
+        return 0
+    fi
+
+    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; runbook: docs/runbooks/production-secret-rotation.md"
+}
+
 propagate_shared_secrets_to_env_variants() {
     local src="$1"
-    local -a shared_keys=(
-        API_KEY
-        JWT_SECRET_KEY
-        MEMORY_ENCRYPTION_KEY
-        AUTONOMY_WEBHOOK_SECRET
-        SWARM_FEDERATION_SHARED_SECRET
-        GITHUB_WEBHOOK_SECRET
-        GRAFANA_ADMIN_PASSWORD
-        METRICS_TOKEN
-    )
+    local -a shared_keys=()
+    mapfile -t shared_keys < <(sidar_production_secret_rotation_keys)
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
@@ -981,6 +1011,8 @@ propagate_shared_secrets_to_env_variants() {
             ok "${name}: ${changed_count} ortak secret .env ile senkronize edildi."
         fi
     done
+
+    emit_production_secret_rotation_notice "$src"
 
     # PostgreSQL credentials are intentionally delegated to the idempotent Python
     # helper to avoid per-key/per-file bash rewrites and noisy repeated logs.

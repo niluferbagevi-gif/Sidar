@@ -228,16 +228,17 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
     assert "ASYNC240" in lint["ignore"]
     assert debt["line_length"] == 100
     assert debt["e501_global_ignore_review_by"] == "2026-09-30"
-    assert debt["e501_debt_baseline"] == 489
+    assert debt["e501_debt_baseline"] == 479
     assert debt["async240_global_ignore_review_by"] == "2026-09-30"
     assert {"web_server.py", "main.py"} <= set(debt["legacy_hotspots"])
     assert (
         "uv run python scripts/ci/check_ruff_debt_baseline.py"
         in debt["planned_validation_commands"]
     )
+    assert "--update" in Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
     assert debt["docstring_async_debt_baseline"] == {
         "D200": 6,
-        "D202": 185,
+        "D202": 147,
         "D205": 81,
         "D209": 10,
         "D212": 114,

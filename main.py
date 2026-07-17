@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import concurrent.futures
 import contextlib
 import fcntl
 import json
@@ -907,131 +906,42 @@ def _doctor_final_check_after_auto_fix(initial_check: Any, auto_fix_applied: boo
 
 
 def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> None:
-    try:
-        from core.doctor import (
-            check_database_connectivity,
-            check_database_env,
-            check_gpu_memory_config,
-            check_graphrag_entity_memory_ready,
-            check_rag_readiness,
-        )
-    except (ImportError, AttributeError) as exc:  # pragma: no cover - defensive launcher path
-        logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
-        return
+    from core.doctor.launcher_preflight import (
+        LauncherDoctorPreflightHooks,
+        LauncherDoctorPreflightStyle,
+        run_launcher_doctor_preflight,
+    )
 
-    print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
-    apply_all_mode = doctor_apply_all_yes
     global _DOCTOR_APPLY_ALL_APPROVED
     _DOCTOR_APPLY_ALL_APPROVED = None if not doctor_apply_all_yes else True
-    if sys.stdin.isatty() and not doctor_apply_all_yes:
-        apply_all_mode = confirm(
-            "Doctor için bulunan tüm auto-fix önerileri tek seferde otomatik uygulansın mı?",
-            False,
-        )
-        _DOCTOR_APPLY_ALL_APPROVED = apply_all_mode
-    skip_database_dependents = False
-    skip_summary_printed = False
-    auto_fix_attempts = 0
 
-    def _guarded_invoke_doctor_auto_fix(check: Any, check_func: Any) -> bool:
-        nonlocal auto_fix_attempts
-        details = getattr(check, "details", {}) or {}
-        status = str(getattr(check, "status", "warn") or "warn")
-        has_auto_fix = (
-            status in {"warn", "fail"}
-            and isinstance(details, dict)
-            and bool(_doctor_auto_fix_commands(details))
-        )
-        if not has_auto_fix:
-            return _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
-        if auto_fix_attempts >= MAX_AUTOFIX_RETRIES:
-            print(
-                f"{YELLOW}   • Doctor auto-fix toplam tekrar limiti aşıldı "
-                f"({MAX_AUTOFIX_RETRIES}); sonraki öneriler uygulanmadı.{RESET}"
-            )
-            return False
-        auto_fix_attempts += 1
-        return _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
+    def _confirm_apply_all(prompt: str, default: bool) -> bool:
+        approved = confirm(prompt, default)
+        global _DOCTOR_APPLY_ALL_APPROVED
+        _DOCTOR_APPLY_ALL_APPROVED = approved
+        return approved
 
-    def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
-        nonlocal skip_database_dependents, skip_summary_printed
-        if skip_database_dependents and check_name in {
-            "database_connectivity",
-            "rag_readiness",
-            "graphrag_entity_memory_ready",
-        }:
-            if not skip_summary_printed:
-                print(
-                    f"{YELLOW}   • Doctor/database_env hâlâ fail; "
-                    "database_connectivity ve rag_readiness kontrolleri atlandı. "
-                    f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
-                )
-                skip_summary_printed = True
-            return "skipped"
-
-        try:
-            check = check_func()
-            _print_doctor_check_summary(check)
-            _clear_doctor_auto_fix_revalidation_cache()
-            auto_fix_applied = _guarded_invoke_doctor_auto_fix(check, check_func)
-            final_check = _doctor_final_check_after_auto_fix(check, auto_fix_applied)
-            final_status = str(getattr(final_check, "status", "warn") or "warn")
-            if check_name == "database_env":
-                skip_database_dependents = final_status == "fail"
-            return final_status
-        except (
+    run_launcher_doctor_preflight(
+        doctor_apply_all_yes=doctor_apply_all_yes,
+        hooks=LauncherDoctorPreflightHooks(
+            confirm=_confirm_apply_all,
+            print_check_summary=_print_doctor_check_summary,
+            doctor_auto_fix_commands=_doctor_auto_fix_commands,
+            invoke_auto_fix=_invoke_doctor_auto_fix,
+            clear_revalidation_cache=_clear_doctor_auto_fix_revalidation_cache,
+            final_check_after_auto_fix=_doctor_final_check_after_auto_fix,
+        ),
+        style=LauncherDoctorPreflightStyle(cyan=CYAN, yellow=YELLOW, reset=RESET),
+        max_autofix_retries=MAX_AUTOFIX_RETRIES,
+        handled_exceptions=(
             DoctorCheckError,
             RuntimeError,
             ValueError,
             OSError,
             TypeError,
             AttributeError,
-        ) as exc:  # pragma: no cover - defensive launcher path
-            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
-            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
-            return "error"
-
-    _run_single_doctor_check("database_env", check_database_env)
-    _run_single_doctor_check("database_connectivity", check_database_connectivity)
-    if skip_database_dependents:
-        _run_single_doctor_check("rag_readiness", check_rag_readiness)
-        _run_single_doctor_check("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready)
-        _run_single_doctor_check("gpu_memory_config", check_gpu_memory_config)
-        return
-
-    parallel_checks = [
-        ("rag_readiness", check_rag_readiness),
-        ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
-        ("gpu_memory_config", check_gpu_memory_config),
-    ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(parallel_checks)) as executor:
-        futures = {
-            executor.submit(check_func): (check_name, check_func)
-            for check_name, check_func in parallel_checks
-        }
-        completed: dict[str, Any] = {}
-        for future in concurrent.futures.as_completed(futures):
-            check_name, _check_func = futures[future]
-            try:
-                completed[check_name] = future.result()
-            except (
-                DoctorCheckError,
-                RuntimeError,
-                ValueError,
-                OSError,
-                TypeError,
-                AttributeError,
-            ) as exc:  # pragma: no cover - defensive launcher path
-                completed[check_name] = exc
-
-    for check_name, check_func in parallel_checks:
-        result = completed.get(check_name)
-        if isinstance(result, Exception):
-            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", result)
-            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
-            continue
-        _print_doctor_check_summary(result)
-        _guarded_invoke_doctor_auto_fix(result, check_func)
+        ),
+    )
 
 
 def _run_provider_preflight(provider: str) -> None:

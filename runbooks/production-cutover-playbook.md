@@ -65,6 +65,15 @@ Bu rehber, SİDAR'ın üretim ortamında PostgreSQL'e güvenli geçişi için mi
 - Fresh PostgreSQL volume veya `alembic_version` tablosu eksikse `SIDAR_AUTO_MIGRATE=false`
   ile uygulamayı başlatmayın; önce yukarıdaki Alembic doğrulamasını tamamlayın.
 
+## 1.5) Production secret rotasyonu
+
+Veri taşıma veya Helm/Compose production rollout öncesinde `.env.production` içindeki
+ortak local/dev/test secret'lar production'a özel değerlerle rotate edilmelidir. Zorunlu
+8 anahtar: `API_KEY`, `JWT_SECRET_KEY`, `MEMORY_ENCRYPTION_KEY`,
+`AUTONOMY_WEBHOOK_SECRET`, `SWARM_FEDERATION_SHARED_SECRET`,
+`GITHUB_WEBHOOK_SECRET`, `GRAFANA_ADMIN_PASSWORD`, `METRICS_TOKEN`. Ayrıntılı SOP:
+`docs/runbooks/production-secret-rotation.md`.
+
 ## 2) Veri taşıma (SQLite -> PostgreSQL)
 
 1. Bakım penceresi açın (yazma trafiğini durdurun).

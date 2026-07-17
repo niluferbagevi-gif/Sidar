@@ -1,6 +1,7 @@
 import asyncio
 import builtins
 import importlib
+import logging
 import os
 import types
 from pathlib import Path
@@ -483,13 +484,17 @@ async def test_load_instruction_files_edge_paths(
     assert "hello" in text
 
 
-async def test_tool_docs_search_and_execute_tool_error_branches(sidar_agent_factory) -> None:
+async def test_tool_docs_search_and_execute_tool_error_branches(
+    sidar_agent_factory, caplog
+) -> None:
     agent = sidar_agent_factory()
     agent.docs = types.SimpleNamespace(
         search=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fail"))
     )
-    err = await agent._tool_docs_search("x")
+    with caplog.at_level(logging.ERROR, logger="agent.sidar_agent"):
+        err = await agent._tool_docs_search("x")
     assert "başarısız" in err
+    assert "SidarAgent docs search tool failed" in caplog.text
 
     with pytest.raises(ValueError):
         await agent._execute_tool("", "x")
@@ -1298,7 +1303,7 @@ async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_facto
 
 
 async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
-    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch
+    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     agent = sidar_agent_factory()
     history = []
@@ -1331,14 +1336,16 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
         raise RuntimeError("boom")
 
     agent._attempt_autonomous_self_heal = _self_heal
-    ci = await agent.handle_external_trigger(
-        {"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}
-    )
+    with caplog.at_level(logging.ERROR, logger="agent.sidar_agent"):
+        ci = await agent.handle_external_trigger(
+            {"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}
+        )
     assert ci["status"] == "success"
     assert ci["remediation"]["self_heal_execution"]["status"] == "failed"
     assert "boom" in ci["remediation"]["self_heal_execution"].get("detail", str(ci)), (
         "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
     )
+    assert "Autonomous self-heal execution failed" in caplog.text
 
 
 async def test_try_multi_agent_handles_supervisor_constructor_returning_none(

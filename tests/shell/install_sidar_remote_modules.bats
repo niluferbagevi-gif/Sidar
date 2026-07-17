@@ -112,14 +112,42 @@ FAKE_CURL
   printf '%s' "$mode" > "$bin_dir/.mode"
 }
 
-@test "fallback module cache default is mktemp uid-scoped" {
+@test "fallback module cache default is stable user cache" {
   run_remote_module_snippet '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    export HOME="$tmpdir/home"
+    export XDG_CACHE_HOME="$tmpdir/xdg-cache"
+    mkdir -p "$HOME"
+
     [[ -z "${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}" ]]
     prepare_install_module_cache_root
-    expected_prefix="${TMPDIR:-/tmp}/sidar_install_modules_cache_$(id -u 2>/dev/null || printf unknown)."
-    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "$expected_prefix"* ]]
+
+    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "$tmpdir/xdg-cache/sidar/install_modules" ]]
     [[ -d "$SIDAR_INSTALL_MODULE_CACHE_ROOT" ]]
     [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO" == "1" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "fallback module cache cleans legacy mktemp roots" {
+  run_remote_module_snippet '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    export TMPDIR="$tmpdir/tmp"
+    unset HOME XDG_CACHE_HOME
+    mkdir -p "$TMPDIR"
+    uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+    legacy_cache="$TMPDIR/sidar_install_modules_cache_${uid_suffix}.legacy"
+    mkdir -p "$legacy_cache"
+    touch -d "2 days ago" "$legacy_cache" 2>/dev/null || touch -t 202001010000 "$legacy_cache"
+    export SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS=0
+
+    prepare_install_module_cache_root
+
+    [[ "$SIDAR_INSTALL_MODULE_CACHE_ROOT" == "$TMPDIR/sidar_install_modules_cache_${uid_suffix}" ]]
+    [[ -d "$SIDAR_INSTALL_MODULE_CACHE_ROOT" ]]
+    [[ ! -e "$legacy_cache" ]]
   '
   [ "$status" -eq 0 ]
 }

@@ -69,6 +69,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/doctor/checks/gpu.py",
         "core/doctor/models.py",
         "core/doctor/reporting.py",
+        "core/doctor/launcher_preflight.py",
         "agent/roles/reviewer/judge.py",
         "core/ci_remediation/validation.py",
         "managers/browser/visual_drift.py",
@@ -94,6 +95,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "Güncel bakım hotspot snapshot" in plan
     assert "Quality gate orchestration büyüdü" in plan
     assert "ana script bootstrap facade" in plan
+    assert "Launcher Doctor preflight" in plan
+    assert "core/doctor/launcher_preflight.py" in plan
+    assert "config_rag_defaults.py" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:

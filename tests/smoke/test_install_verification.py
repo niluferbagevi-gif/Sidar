@@ -1791,3 +1791,69 @@ def test_bundled_install_sidar_manifest_matches() -> None:
         "uyumsuz. Bundle release'i durdurun ve scripts/sync_install_module_hashes.sh "
         "çalıştırdıktan sonra yeniden bundle alın."
     )
+
+
+def test_repo_sync_repoints_install_modules_to_cloned_repo(tmp_path: Path) -> None:
+    target_dir = tmp_path / "Sidar"
+    fallback_dir = tmp_path / "fallback_modules"
+    fallback_dir.mkdir()
+
+    script = textwrap.dedent(
+        f"""\
+        set -Eeuo pipefail
+        SCRIPT_DIR={shlex.quote(str(tmp_path / "raw-installer"))}
+        TARGET_DIR={shlex.quote(str(target_dir))}
+        REPO_URL=https://example.invalid/sidar.git
+        REPO_BRANCH=main
+        OFFLINE_MODE=false
+        NO_INTERACTION=true
+        INSTALL_MODULE_DIR={shlex.quote(str(fallback_dir))}
+        INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+        INSTALL_HELPERS_MODULE="$INSTALL_MODULE_DIR/install_helpers.sh"
+        info() {{ :; }}
+        warn() {{ :; }}
+        ok() {{ :; }}
+        step() {{ :; }}
+        fail() {{ printf 'FAIL:%s\\n' "$*" >&2; exit 1; }}
+        refresh_install_sidar_version_from_repo() {{ INSTALL_SIDAR_VERSION=9.9.9; }}
+        banner() {{ :; }}
+        sidar_set_install_module_dir() {{
+            INSTALL_MODULE_DIR="$1"
+            INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+            INSTALL_HELPERS_MODULE="$INSTALL_MODULE_DIR/install_helpers.sh"
+        }}
+        git() {{
+            if [[ "$1" == "clone" ]]; then
+                local clone_target="${{@: -1}}"
+                mkdir -p "$clone_target/.git" "$clone_target/scripts/install_modules"
+                printf '# cloned helper\\n' > "$clone_target/scripts/install_modules/install_helpers.sh"
+                return 0
+            fi
+            command git "$@"
+        }}
+        command() {{
+            if [[ "$1" == "-v" && "$2" == "git" ]]; then
+                printf 'git\\n'
+                return 0
+            fi
+            builtin command "$@"
+        }}
+        source scripts/install_modules/phases/02_repo.sh
+        sync_repo
+        printf '%s\\n%s\\n%s\\n' "$SCRIPT_DIR" "$INSTALL_MODULE_DIR" "$INSTALL_HELPERS_MODULE"
+        """
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        capture_output=True,
+        cwd=Path.cwd(),
+        env=_installer_test_env(tmp_path),
+        text=True,
+    )
+
+    script_dir, module_dir, helpers_module = result.stdout.strip().splitlines()
+    assert script_dir == str(target_dir)
+    assert module_dir == str(target_dir / "scripts/install_modules")
+    assert helpers_module == str(target_dir / "scripts/install_modules/install_helpers.sh")

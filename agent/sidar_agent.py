@@ -979,11 +979,20 @@ class SidarAgent:
                         remediation=remediation,
                     )
                 except Exception as exc:
+                    logger.exception(
+                        "Autonomous self-heal execution failed for trigger_id=%s",
+                        trigger.trigger_id,
+                    )
                     remediation["self_heal_execution"] = {
                         "status": "failed",
                         "summary": f"Autonomous self-heal hata verdi: {exc}",
                     }
         except Exception as exc:
+            logger.exception(
+                "External autonomy trigger processing failed: source=%s event=%s",
+                self._trigger_attr(trigger, "source", "external"),
+                event_name,
+            )
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
 
@@ -1336,6 +1345,7 @@ class SidarAgent:
         except TimeoutError:
             return "✗ Doküman araması zaman aşımına uğradı."
         except Exception as exc:
+            logger.exception("SidarAgent docs search tool failed: query=%s mode=%s", query, mode)
             return f"✗ Doküman araması başarısız: {exc}"
 
         if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
@@ -1470,9 +1480,7 @@ class SidarAgent:
                         "failed",
                         max(0.0, time.monotonic() - started_at),
                     )
-                logger.warning(
-                    "Tool execution failed in subtask loop: tool=%s error=%s", tool or "llm", exc
-                )
+                logger.exception("Tool execution failed in subtask loop: tool=%s", tool or "llm")
                 feedback = (
                     "Araç çalışmadı; sonraki adımda bunu dikkate al. "
                     f"tool={tool or 'llm_decision'} argument={getattr(locals().get('action', None), 'argument', '')!r} "

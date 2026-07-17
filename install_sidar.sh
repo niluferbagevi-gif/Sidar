@@ -148,6 +148,41 @@ load_remote_script_checksums
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
 SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
 
+sidar_truthy_early_bool() {
+    local raw="${1:-}"
+    raw="${raw,,}"
+    raw="${raw//[[:space:]]/}"
+    case "$raw" in
+        1|true|yes|y|evet|e) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidar_detect_early_offline_mode() {
+    local arg=""
+    for arg in "$@"; do
+        case "$arg" in
+            --offline|--air-gapped)
+                OFFLINE_MODE=true
+                export OFFLINE_MODE
+                return 0
+                ;;
+        esac
+    done
+
+    if sidar_truthy_early_bool "${OFFLINE_INSTALL:-}" || sidar_truthy_early_bool "${AIR_GAPPED_INSTALL:-}"; then
+        OFFLINE_MODE=true
+        export OFFLINE_MODE
+        return 0
+    fi
+
+    OFFLINE_MODE="${OFFLINE_MODE:-false}"
+    export OFFLINE_MODE
+    return 1
+}
+
+sidar_detect_early_offline_mode "$@" || true
+
 if ! declare -F compute_sha256 >/dev/null 2>&1; then
     compute_sha256() {
         local file_path="$1"
@@ -458,6 +493,7 @@ SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15
 SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
 SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
 SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=0
+SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS="${SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS:-7}"
 export SIDAR_INSTALLER_BOOTSTRAP_MODE="${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}"
 export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
 export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
@@ -528,7 +564,7 @@ read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || tru
 da28d54a68a4d2d30ff539cd8d0435265fe87000e24727505b312fee79e33603  scripts/install_modules/install_dispatcher.sh
 1b2321633b1385cee8640917c3f2bed925d8626f49dce8b3fe9c7b9d484c331b  scripts/install_modules/install_helpers.sh
 2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
-df9e4b7c29c2afea2179edaa17253aca0b6fc1599f806d6c9cdab563f6b428bb  scripts/install_modules/phases/02_repo.sh
+07a95b338f6b2a6f304811ed9442ce04a65936742cecd92560577450f8997289  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
 e7f820d4b649b87dca61f4fab70177917e65ba41c0f78d6ee7d82c185d82fafb  scripts/install_modules/phases/03_system.sh
@@ -536,7 +572,7 @@ e7f820d4b649b87dca61f4fab70177917e65ba41c0f78d6ee7d82c185d82fafb  scripts/instal
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
 19b8a887e09bad69e581c268e6f637de218e97efe170f1ffa84adde663ae49e1  scripts/install_modules/phases/06_services.sh
 f7bf1b26e11eb543f1594e1b141eb62856cff2dab07999b195605e02684cbfdf  scripts/install_modules/phases/07_finish.sh
-2ba03eb03855a47c71237a4346be07468815d639ad1139bde5dc5c54c7dcc59e  scripts/install_modules/phases/08_env.sh
+1081561f5c6254c346e9103e187fa1aaac031f842e8e4096e2c1aa20c45112f2  scripts/install_modules/phases/08_env.sh
 feae8a5f52700a2470deccf74a02c26203b402c5f0790fa97268fa2e3b2f58e7  scripts/install_modules/phases/09_ollama_models.sh
 5436ca3e4c25dc26f961bff130a43f6a2dcd56ff9938e2350a26b1f32c52b77b  scripts/install_modules/phases/10_validation.sh
 d75380e5a3cf44b35f6fc894a41c774a1e3afd2b0eb0735aa8b75a754d5d58db  scripts/install_modules/phases/11_post_install.sh
@@ -555,7 +591,7 @@ ed07067c6dc62bebf8af21fdd6c3682d1caf805b35ebaf51a0a4e9438defa6d0  scripts/instal
 a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
 ae01c4d07589332e304f189928e78555514aa5d1b85b2178e0a35fb40e60ed11  scripts/install_modules/utils/remote_script.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
-aaa86ac6721ee72a0d30b0472b1321263a3a8718149907529a7e7f60a54f7730  scripts/install_modules/utils/ux.sh
+4effdccc94e05adaf27362aef74593b64bf34acab8930baba7b147289c640587  scripts/install_modules/utils/ux.sh
 19edb98405a5255322d247fdbe2a9691b2ea21cfa33de942c529280c83639357  scripts/install_modules/utils/wsl_gpu_preflight.sh
 22898858fffb46b0bf522f91ddd9bde6e78ed70c06245f8cb966de2918446e48  scripts/install_modules/utils/wsl_host.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
@@ -616,6 +652,45 @@ verify_remote_install_module_hash() {
     fail "Fallback modül hash doğrulaması başarısız: ${module_rel} (beklenen=${expected_hash}, mevcut=${actual_hash})."
 }
 
+sidar_ref_is_commit_sha() {
+    local ref="${1:-}"
+    [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
+sidar_raw_github_module_ref() {
+    local remote_module_base="${1:-}"
+    printf '%s' "$remote_module_base" | sed -nE 's#^https://raw\.githubusercontent\.com/[^/]+/[^/]+/([^/]+)/scripts/install_modules/?$#\1#p'
+}
+
+resolve_remote_module_ref() {
+    if [[ -n "${SIDAR_BOOTSTRAP_PINNED_REF:-}" ]]; then
+        printf '%s' "$SIDAR_BOOTSTRAP_PINNED_REF"
+        return 0
+    fi
+    if sidar_ref_is_commit_sha "${SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT:-}"; then
+        printf '%s' "$SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT"
+        return 0
+    fi
+    printf '%s' "${SIDAR_REPO_BRANCH:-main}"
+}
+
+validate_remote_module_trust_root() {
+    local remote_module_base="${1:-}"
+    local raw_ref=""
+
+    raw_ref="$(sidar_raw_github_module_ref "$remote_module_base")"
+    [[ -n "$raw_ref" ]] || return 0
+    if sidar_ref_is_commit_sha "$raw_ref"; then
+        return 0
+    fi
+    if [[ "${SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF:-0}" == "1" ]]; then
+        warn "Fallback modül kaynağı mutable GitHub ref kullanıyor (${raw_ref}); SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ile TOFU riski operatör tarafından kabul edildi."
+        return 0
+    fi
+
+    fail "Fallback modül güven kökü zayıf: ${remote_module_base} mutable GitHub ref (${raw_ref}) kullanıyor. SIDAR_BOOTSTRAP_PINNED_REF=<40 karakter commit SHA> veya SIDAR_INSTALL_MODULE_BASE_URL=https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/scripts/install_modules ile commit'e pinleyin. Bilinçli geçici bypass için SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ayarlanabilir."
+}
+
 derive_remote_module_base_from_repo() {
     local repo_url="${1:-}"
     local repo_branch="${2:-main}"
@@ -643,20 +718,54 @@ remote_install_module_cache_key() {
     printf '%s' "$remote_module_base" | sed -E 's#[^A-Za-z0-9._-]+#_#g'
 }
 
+default_install_module_cache_root() {
+    local uid_suffix=""
+    local cache_home=""
+
+    uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+    if [[ -n "${HOME:-}" && -d "${HOME:-}" ]]; then
+        cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
+        printf '%s/sidar/install_modules' "$cache_home"
+        return 0
+    fi
+
+    printf '%s/sidar_install_modules_cache_%s' "${TMPDIR:-/tmp}" "$uid_suffix"
+}
+
+cleanup_legacy_auto_install_module_caches() {
+    local cleanup_days="${SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS:-7}"
+    local tmp_root="${TMPDIR:-/tmp}"
+    local uid_suffix=""
+    local cache_dir=""
+    local owner_uid=""
+    local current_uid=""
+
+    [[ "$cleanup_days" =~ ^[0-9]+$ ]] || return 0
+    uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+    current_uid="$(id -u 2>/dev/null || true)"
+    for cache_dir in "$tmp_root"/sidar_install_modules_cache_${uid_suffix}.*; do
+        [[ -d "$cache_dir" && ! -L "$cache_dir" ]] || continue
+        if [[ -n "$current_uid" ]]; then
+            owner_uid="$(stat -c '%u' "$cache_dir" 2>/dev/null || stat -f '%u' "$cache_dir" 2>/dev/null || true)"
+            [[ "$owner_uid" == "$current_uid" ]] || continue
+        fi
+        if find "$cache_dir" -maxdepth 0 -mtime +"$cleanup_days" -print -quit 2>/dev/null | read -r _; then
+            rm -rf -- "$cache_dir" || true
+        fi
+    done
+}
 
 prepare_install_module_cache_root() {
     local cache_root="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
     local owner_uid=""
     local current_uid=""
-    local uid_suffix=""
 
     if [[ -z "${cache_root:-}" ]]; then
-        uid_suffix="$(id -u 2>/dev/null || printf unknown)"
-        cache_root="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules_cache_${uid_suffix}.XXXXXX")" \
-            || fail "Fallback modül cache dizini için güvenli geçici dizin oluşturulamadı."
+        cache_root="$(default_install_module_cache_root)"
         SIDAR_INSTALL_MODULE_CACHE_ROOT="$cache_root"
         # shellcheck disable=SC2034  # Exposed for installer probes/tests to distinguish auto-created cache roots.
         SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=1
+        cleanup_legacy_auto_install_module_caches
     fi
     if [[ -L "$cache_root" ]]; then
         fail "Fallback modül cache dizini sembolik link olamaz: $cache_root"
@@ -846,11 +955,14 @@ download_remote_install_module() {
 
 resolve_remote_module_base() {
     local remote_module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    local remote_module_ref=""
 
     if [[ -z "$remote_module_base" ]]; then
-        remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+        remote_module_ref="$(resolve_remote_module_ref)"
+        remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$remote_module_ref" || true)"
     fi
-    [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+    [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/$(resolve_remote_module_ref)/scripts/install_modules"
+    validate_remote_module_trust_root "$remote_module_base"
     printf '%s' "$remote_module_base"
 }
 
@@ -1154,6 +1266,10 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     fi
     info "Yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS})"
     verify_home_reexec_candidate_if_present
+
+    if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then
+        fail "--offline/--air-gapped erken algılandı; yerel kurulum modül ağacı eksik olduğu için raw fallback modül indirme veya bootstrap clone yapılmayacak. Hava boşluklu kurulum için release bundle install_sidar.sh kullanın veya scripts/install_modules ağacını aynı dizine yerleştirin."
+    fi
 
     REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
     if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then

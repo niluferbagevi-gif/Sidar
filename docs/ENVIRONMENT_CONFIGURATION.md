@@ -77,6 +77,19 @@ default. If a test explicitly needs real keys, opt in consciously:
 SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ./install_sidar.sh --with-integration
 ```
 
+
+### Production secret rotation
+
+Installer, lokal geliştirme ve smoke test tutarlılığı için 8 ortak secret'ı `.env`
+üzerinden profil dosyalarına senkronize edebilir: `API_KEY`, `JWT_SECRET_KEY`,
+`MEMORY_ENCRYPTION_KEY`, `AUTONOMY_WEBHOOK_SECRET`,
+`SWARM_FEDERATION_SHARED_SECRET`, `GITHUB_WEBHOOK_SECRET`,
+`GRAFANA_ADMIN_PASSWORD` ve `METRICS_TOKEN`. Bu davranış local/dev/test için
+uygundur; ancak `.env.production` gerçek dağıtıma kaynak olacaksa production
+öncesinde bu değerlerin tamamı dev/test/local değerlerden farklı olacak şekilde
+rotate edilmelidir. Operasyon adımları için
+`docs/runbooks/production-secret-rotation.md` runbook'unu uygulayın.
+
 ### One-off overrides
 
 For temporary experiments, prefer `DOTENV_FILE` instead of editing multiple profile

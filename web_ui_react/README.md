@@ -81,7 +81,9 @@ src/
   Vite build sonrası React DOM chunk büyümesini, toplam JS boyutunu ve toplam gzip JS
   boyutunu izler. React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220` değeridir;
   opsiyonel toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB`
-  verilebilir. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB` varsayılan `5` KB artış eşiğiyle önceki
+  verilebilir. `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
+  budget kullanımını %90 seviyesinde uyarı olarak raporlar. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB`
+  varsayılan `5` KB artış eşiğiyle önceki
   bundle raporuna göre toplam gzip büyümesini uyarı olarak raporlar; önceki rapor yolu
   `SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH` ile verilebilir. Her koşu en büyük 5 JS chunk'ı
   terminalde listeler ve makinece okunabilir raporu `artifacts/frontend-bundle-budget.json`
