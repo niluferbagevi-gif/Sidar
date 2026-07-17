@@ -202,7 +202,9 @@ def get_file_content(path: str) -> str | None:
         return None
 
 
-CONFLICT_MARKER_RE = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
+CONFLICT_MARKER_RE = re.compile(
+    r"^<{7}(?:\s|$)|^={7}$|^>{7}(?:\s|$)", re.MULTILINE
+)
 
 
 def get_unmerged_files() -> list[str]:

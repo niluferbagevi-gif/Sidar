@@ -133,6 +133,8 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     conflict_file.write_text("<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> branch\n", encoding="utf-8")
     binary_file = tmp_path / "bad.json"
     binary_file.write_bytes(b"\xff\xfe")
+    decorative_file = tmp_path / "decorative.py"
+    decorative_file.write_text("Sidar CLI\n=================================\n", encoding="utf-8")
     generated_file = "coverage.json"
 
     calls = []
@@ -144,7 +146,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
         if cmd[:4] == ["git", "ls-files", "-co", "--exclude-standard"]:
             return (
                 True,
-                f"{text_file}\n{conflict_file}\n{binary_file}\n{generated_file}\n.env\ngone.txt\n",
+                f"{text_file}\n{conflict_file}\n{binary_file}\n{decorative_file}\n{generated_file}\n.env\ngone.txt\n",
             )
         return True, ""
 
@@ -155,6 +157,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
 
     safe, blocked = gu.collect_safe_files(deleted)
     assert str(text_file) in safe
+    assert str(decorative_file) in safe
     assert str(conflict_file) in blocked
     assert str(binary_file) in blocked
     assert generated_file in blocked
@@ -164,6 +167,43 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
     safe2, blocked2 = gu.collect_safe_files([])
     assert safe2 == [] and blocked2 == []
 
+
+def test_has_conflict_markers_ignores_decorative_separator_lines(tmp_path):
+    decorative_file = tmp_path / "decorative.py"
+    decorative_file.write_text(
+        """#!/usr/bin/env python3
+Sidar CLI
+=================================
+
+print('ok')
+""",
+        encoding="utf-8",
+    )
+
+    markdown_file = tmp_path / "PROJE_RAPORU.md"
+    markdown_file.write_text(
+        """# Rapor
+
+Bölüm ayıracı:
+==============================
+
+Alt başlık değil, Markdown süsleme çizgisi.
+""",
+        encoding="utf-8",
+    )
+
+    assert not gu.has_conflict_markers(str(decorative_file))
+    assert not gu.has_conflict_markers(str(markdown_file))
+
+
+def test_has_conflict_markers_detects_git_marker_lines(tmp_path):
+    conflict_file = tmp_path / "conflict.py"
+    conflict_file.write_text(
+        "<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> feature-branch\n",
+        encoding="utf-8",
+    )
+
+    assert gu.has_conflict_markers(str(conflict_file))
 
 def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch):
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
