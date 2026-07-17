@@ -196,6 +196,18 @@ Alt başlık değil, Markdown süsleme çizgisi.
     assert not gu.has_conflict_markers(str(markdown_file))
 
 
+def test_has_conflict_markers_allows_known_decorative_repo_files():
+    repo_root = Path(__file__).resolve().parents[3]
+
+    for relative_path in (
+        "main.py",
+        "cli.py",
+        "docs/PROJE_RAPORU.md",
+        "tests/unit/root/test_github_upload.py",
+    ):
+        assert not gu.has_conflict_markers(str(repo_root / relative_path))
+
+
 def test_has_conflict_markers_detects_git_marker_lines(tmp_path):
     conflict_file = tmp_path / "conflict.py"
     conflict_file.write_text(
@@ -204,6 +216,7 @@ def test_has_conflict_markers_detects_git_marker_lines(tmp_path):
     )
 
     assert gu.has_conflict_markers(str(conflict_file))
+
 
 def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch):
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
