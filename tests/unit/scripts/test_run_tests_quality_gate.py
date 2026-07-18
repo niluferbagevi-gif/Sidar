@@ -2342,9 +2342,13 @@ def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None
 
     early_detector = install_script.index('sidar_detect_early_offline_mode "$@" || true')
     missing_module_guard = install_script.index('if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then')
-    skip_direct_guard = install_script.index('if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then')
+    skip_direct_guard = install_script.index(
+        'if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then'
+    )
     remote_resolution = install_script.index('REMOTE_MODULE_BASE="$(resolve_remote_module_base)"')
-    trust_validation = install_script.index('validate_remote_module_trust_root "$REMOTE_MODULE_BASE"')
+    trust_validation = install_script.index(
+        'validate_remote_module_trust_root "$REMOTE_MODULE_BASE"'
+    )
     direct_download = install_script.index('download_install_modules_to_temp "$REMOTE_MODULE_BASE"')
     bootstrap_clone = install_script.index("bootstrap_clone_and_reexec", direct_download)
     cli_parse = install_script.index('sidar_parse_install_cli "$@"')

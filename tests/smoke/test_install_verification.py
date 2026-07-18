@@ -660,7 +660,9 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
     )
 
 
-def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_api(tmp_path: Path) -> None:
+def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_api(
+    tmp_path: Path,
+) -> None:
     """Single-file raw installer fallback should self-pin mutable refs via GitHub API."""
     repo_root = Path(os.getcwd())
     host = tmp_path / "host"
