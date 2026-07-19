@@ -84,6 +84,7 @@ for changes touching any of these release-critical paths:
 - `scripts/sync_install_manifest.sh`
 - `scripts/tools/update_core_install_manifest.py`
 - `scripts/tools/update_install_module_hash_manifest.py`
+- `scripts/tools/verify_install_module_pin.py`
 - `tests/smoke/test_install_verification.py`
 
 Repository administrators must also keep these `main` branch protection or ruleset
@@ -112,6 +113,7 @@ It also runs direct manifest checks:
 sha256sum -c .sidar_manifest.txt
 uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh
 ```
 
 Because `install_sidar.sh` is distributed directly through GitHub raw URLs, the
@@ -173,6 +175,7 @@ make check-install-manifests
 make installer-shellcheck
 uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh
 ```
 
 These hooks intentionally run in check mode. If a hook fails, run the sync
@@ -189,9 +192,9 @@ an installer manifest checklist covering:
 - `scripts/sync_install_manifest.sh`,
 - `make check-install-manifests`,
 - `make installer-shellcheck`,
-- direct core/module manifest `--check` commands,
+- direct core/module manifest and installer pin `--check` commands,
 - raw installer smoke verification or the required `Installer manifest and smoke gate`.
 
 `.github/CODEOWNERS` also marks the core installer files, manifest files, sync
-scripts, manifest tools, and `scripts/install_modules/**` as installer-security
+scripts, manifest/pin tools, and `scripts/install_modules/**` as installer-security
 review paths.

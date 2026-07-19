@@ -101,6 +101,7 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in workflow
+    assert "uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh" in workflow
     assert "Treat raw GitHub installer as release artifact" in workflow
     assert "bash -n install_sidar.sh" in workflow
     assert (
@@ -141,6 +142,7 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in template
+    assert "uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh" in template
     assert "Install manifest synced" in template
     assert "Installer manifest and smoke gate" in template
     assert "installer security chain" in template
@@ -150,6 +152,7 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
         "/install_sidar.sh",
         "/.sidar_manifest.txt",
         "/scripts/install_modules/",
+        "/scripts/tools/verify_install_module_pin.py",
     ):
         assert protected_path in codeowners
     assert "PR visibility for core installer files" in docs

@@ -48,6 +48,7 @@ If this PR touches `core/memory.py`, `core/multimodal.py`, `install_sidar.sh`,
 - [ ] I ran `make installer-shellcheck`.
 - [ ] I ran `uv run python scripts/tools/update_core_install_manifest.py --check`.
 - [ ] I ran `uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check`.
+- [ ] I ran `uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh`.
 - [ ] Install manifest synced.
 - [ ] I ran the installer smoke/raw-installer checks or confirmed the required `Installer manifest and smoke gate` CI job passed.
 

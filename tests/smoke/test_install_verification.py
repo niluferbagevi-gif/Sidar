@@ -661,6 +661,50 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
     )
 
 
+def test_verify_install_module_pin_accepts_current_installer_pin() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/verify_install_module_pin.py",
+            "--target",
+            "install_sidar.sh",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_verify_install_module_pin_reports_pinned_commit_hash_drift(tmp_path: Path) -> None:
+    install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
+    install_script = re.sub(
+        r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[0-9a-f]{40}"',
+        'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="b58fa89b0aa6d0d9066ecdb221e455dc05fb7597"',
+        install_script,
+    )
+    target = tmp_path / "install_sidar.sh"
+    target.write_text(install_script, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/verify_install_module_pin.py",
+            "--target",
+            str(target),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Installer pin drift tespit edildi" in result.stderr
+    assert "scripts/install_modules/utils/gpu_utils.sh" in result.stderr
+    assert "03947f771212d9b75e6cd10e320ddf4dc16a867d8ba1c1b90d6a837727904776" in result.stderr
+
+
 def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_api(
     tmp_path: Path,
 ) -> None:

@@ -8,4 +8,5 @@
 /scripts/sync_install_module_hashes.sh @niluferbagevi-gif
 /scripts/tools/update_core_install_manifest.py @niluferbagevi-gif
 /scripts/tools/update_install_module_hash_manifest.py @niluferbagevi-gif
+/scripts/tools/verify_install_module_pin.py @niluferbagevi-gif
 /scripts/install_modules/ @niluferbagevi-gif
