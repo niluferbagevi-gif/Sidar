@@ -35,7 +35,6 @@ lint-shell:
 check-install-manifests:
 	uv run python scripts/tools/update_core_install_manifest.py --check
 	uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
-	uv run python scripts/tools/verify_install_module_pin.py --target install_sidar.sh
 
 deps-full:
 	bash scripts/install_ci_system_deps.sh

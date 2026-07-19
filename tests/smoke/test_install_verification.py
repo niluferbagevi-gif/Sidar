@@ -661,13 +661,14 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
     )
 
 
-def test_verify_install_module_pin_accepts_current_installer_pin() -> None:
+def test_update_install_module_hash_manifest_check_accepts_current_installer_pin() -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/tools/verify_install_module_pin.py",
+            "scripts/tools/update_install_module_hash_manifest.py",
             "--target",
             "install_sidar.sh",
+            "--check",
         ],
         capture_output=True,
         text=True,
@@ -677,7 +678,7 @@ def test_verify_install_module_pin_accepts_current_installer_pin() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_verify_install_module_pin_reports_pinned_commit_hash_drift(tmp_path: Path) -> None:
+def test_update_install_module_hash_manifest_check_reports_pinned_commit_hash_drift(tmp_path: Path) -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
     install_script = re.sub(
         r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[0-9a-f]{40}"',
@@ -690,9 +691,10 @@ def test_verify_install_module_pin_reports_pinned_commit_hash_drift(tmp_path: Pa
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/tools/verify_install_module_pin.py",
+            "scripts/tools/update_install_module_hash_manifest.py",
             "--target",
             str(target),
+            "--check",
         ],
         capture_output=True,
         text=True,
