@@ -11714,3 +11714,218 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
     assert calls["unsubscribe"] == ["sub-room-cleanup"]
     assert calls["reset"] == ["ctx:u1"]
     assert room.active_task is None
+
+
+# Tests kept from the former test_main.py during root web-server suite consolidation.
+def test_get_rate_limit_key_prefers_authenticated_user() -> None:
+    request = _make_request("/files", "GET")
+    request.state.user = SimpleNamespace(id="u-42", tenant_id="tenant-a")
+
+    assert web_server._get_rate_limit_key(request, "9.9.9.9") == "user:tenant-a:u-42"
+
+    anonymous = _make_request("/files", "GET")
+    assert web_server._get_rate_limit_key(anonymous, "9.9.9.9") == "ip:9.9.9.9"
+
+
+async def test_federation_and_github_webhook_paths(monkeypatch):
+    monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+
+    async def _dispatch_ok(**kwargs):
+        return {
+            "summary": "done",
+            "trigger_id": "tr-1",
+            "trigger_source": kwargs["trigger_source"],
+        }
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch_ok)
+
+    fed_res = await web_server.swarm_federation_execute(
+        web_server._FederationTaskRequest(
+            task_id="task-1",
+            source_system="crewai",
+            source_agent="planner",
+            target_agent="supervisor",
+            goal="review code",
+            protocol="federation.v1",
+            intent="mixed",
+            context={"repo": "org/repo"},
+            inputs=["a=1"],
+            meta={"x": "1"},
+            correlation_id="corr-1",
+        ),
+        x_sidar_signature="sig",
+    )
+    assert fed_res.status_code == 200
+    assert b'"status":"success"' in fed_res.body
+
+    feedback_res = await web_server.swarm_federation_feedback(
+        web_server._FederationFeedbackRequest(
+            feedback_id="fb-1",
+            source_system="crewai",
+            source_agent="executor",
+            action_name="fix_tests",
+            status="completed",
+            summary="all good",
+            related_task_id="task-1",
+            related_trigger_id="tr-1",
+            details={"count": 2},
+            meta={"x": "1"},
+            correlation_id="corr-1",
+        ),
+        x_sidar_signature="sig",
+    )
+    assert feedback_res.status_code == 200
+    assert b'"feedback_id":"fb-1"' in feedback_res.body
+
+    class _Req:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+
+        async def body(self):
+            return self._payload
+
+    memory_calls = []
+
+    class _Memory:
+        async def add(self, role, content):
+            memory_calls.append((role, content))
+
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+
+    async def _resolve_agent():
+        return SimpleNamespace(memory=_Memory())
+
+    monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
+    monkeypatch.setattr(web_server, "_resolve_ci_failure_context", lambda *_: {})
+
+    async def _run_federation(**_):
+        return {"workflow_type": "github_pull_request", "correlation_id": "corr-2"}
+
+    monkeypatch.setattr(web_server, "_run_event_driven_federation_workflow", _run_federation)
+    dispatch_calls = []
+
+    async def _dispatch_capture(**kwargs):
+        dispatch_calls.append(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(web_server, "_dispatch_autonomy_trigger", _dispatch_capture)
+    monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
+
+    payload = b'{"action":"opened","pull_request":{"title":"Fix","number":5}}'
+    gh_res = await web_server.github_webhook(
+        _Req(payload), x_github_event="pull_request", x_hub_signature_256=""
+    )
+    assert gh_res.status_code == 200
+    assert memory_calls
+    assert dispatch_calls
+
+    bad_json = await web_server.github_webhook(
+        _Req(b"{"), x_github_event="push", x_hub_signature_256=""
+    )
+    assert bad_json.status_code == 400
+
+
+def test_resolve_safe_ps_binary_accepts_whitelisted_only(monkeypatch, tmp_path):
+    # /tmp altındaki rastgele bir ikili kabul edilmemeli (SAST B603 hardening).
+    bogus = tmp_path / "ps"
+    bogus.write_text("#!/bin/sh\necho hi\n")
+    bogus.chmod(0o755)
+    monkeypatch.setattr(web_server.process_lifecycle.shutil, "which", lambda _name: str(bogus))
+    monkeypatch.setattr(web_server, "_SAFE_PS_PATHS", ("/nonexistent/ps",))
+    assert web_server._resolve_safe_ps_binary() is None
+
+
+def test_resolve_safe_ps_binary_returns_existing_whitelisted_path(monkeypatch, tmp_path):
+    fake_ps = tmp_path / "ps"
+    fake_ps.write_text("#!/bin/sh\necho hi\n")
+    fake_ps.chmod(0o755)
+    monkeypatch.setattr(web_server, "_SAFE_PS_PATHS", (str(fake_ps),))
+    monkeypatch.setattr(web_server.process_lifecycle.shutil, "which", lambda _name: None)
+    assert web_server._resolve_safe_ps_binary() == str(fake_ps)
+
+
+def test_main_rejects_wildcard_host_in_production(monkeypatch):
+    class _Args:
+        host = "0.0.0.0"
+        port = 9194
+        level = None
+        provider = None
+        log = "info"
+
+    class _Parser:
+        def add_argument(self, *_, **__):
+            return None
+
+        def parse_known_args(self):
+            return _Args(), []
+
+    monkeypatch.setattr(web_cli.argparse, "ArgumentParser", lambda **_: _Parser())
+    monkeypatch.setattr(web_server, "print", lambda *_, **__: None)
+    monkeypatch.setattr(
+        web_cli,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: None),
+    )
+    monkeypatch.setattr(web_cli, "SidarAgent", lambda _cfg: SimpleNamespace(VERSION="x"))
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        web_server.main()
+    assert exc.value.code == 2
+
+    monkeypatch.setenv("SIDAR_ALLOW_PUBLIC_BIND", "true")
+    run_calls: list[tuple] = []
+    monkeypatch.setattr(
+        web_cli,
+        "uvicorn",
+        SimpleNamespace(run=lambda *args, **kwargs: run_calls.append((args, kwargs))),
+    )
+    web_server.main()
+    assert run_calls[-1][1]["host"] == "0.0.0.0"
+
+
+def test_load_plugin_agent_class_rejects_baseagent_symbol_name():
+    with pytest.raises(web_server.HTTPException):
+        web_server._load_plugin_agent_class(
+            "from agent.base_agent import BaseAgent\n",
+            "BaseAgent",
+            "plugin_baseagent_only",
+        )
+
+
+def test_web_server_uses_cached_config_singleton() -> None:
+    import config as config_module
+    import web_server
+
+    first = config_module.get_config()
+    second = config_module.get_config()
+
+    assert first is second
+    assert web_server.cfg is first
+    assert isinstance(web_server.cfg, config_module.Config)
+
+
+def test_web_server_refreshes_cached_config_after_environment_reload(monkeypatch) -> None:
+    import config as config_module
+    import web_server
+
+    original_cfg = web_server.cfg
+    monkeypatch.setattr(config_module, "_reload_dotenv_chain", lambda *, profile=None: None)
+    monkeypatch.setattr(config_module, "apply_runtime_env_overrides", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        config_module.Config, "_log_dotenv_load_status", staticmethod(lambda *args, **kwargs: None)
+    )
+    monkeypatch.setattr(
+        config_module.Config,
+        "get_missing_critical_runtime_keys",
+        staticmethod(lambda: []),
+    )
+
+    reloaded = config_module.reload_environment()
+
+    assert reloaded is config_module.get_config()
+    assert web_server.cfg is reloaded
+    assert web_server.cfg is not original_cfg
