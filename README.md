@@ -269,7 +269,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 |---|---|---|---|
 | Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır. Pin'lenen commit'in `scripts/install_modules` manifestiyle uyumsuz kalması ("pin drift") da bu yöntemi kırabilir — `scripts/tools/check_installer_source_commit_pin.py` bunu her PR'da CI'da doğrular, ama eski bir `install_sidar.sh` kopyası indirdiyseniz güncel bir kopyayı yeniden indirmeniz gerekebilir |
 
 ### Sistem Gereksinimleri
 
