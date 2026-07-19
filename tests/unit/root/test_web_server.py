@@ -9014,7 +9014,9 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
         b"501 777 ollama ollama serve\n"  # farkli parent pid -> atlanmali
         b"502 500 python python app.py\n"  # comm ve args ollama degil -> atlanmali
     )
-    monkeypatch.setattr(web_server.process_lifecycle.subprocess, "check_output", lambda *_args, **_kwargs: ps_output)
+    monkeypatch.setattr(
+        web_server.process_lifecycle.subprocess, "check_output", lambda *_args, **_kwargs: ps_output
+    )
 
     assert web_server._list_child_ollama_pids() == []
 
