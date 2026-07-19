@@ -21,7 +21,7 @@ def resolve_safe_ps_binary(*, safe_paths: tuple[str, ...] = SAFE_PS_PATHS) -> st
             path = Path(candidate)
             if path.is_file() and os.access(candidate, os.X_OK):
                 return candidate
-        except Exception:  # nosec B112 - invalid candidates are skipped deliberately.
+        except Exception:  # nosec B112  # invalid candidates are skipped deliberately.
             continue
     try:
         which_path = shutil.which("ps")
@@ -61,7 +61,7 @@ def list_child_ollama_pids(
         return []
 
     try:
-        raw = subprocess.check_output(  # nosec B603 - ps_binary is resolved from safe absolute paths.
+        raw = subprocess.check_output(  # nosec B603  # ps_binary is resolved from safe absolute paths.
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
             stderr=subprocess.DEVNULL,
         )
