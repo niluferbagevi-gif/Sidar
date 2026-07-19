@@ -240,6 +240,85 @@ def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: 
     assert "Resume kaynağı repo installer'ına geçirildi" in result.stdout
 
 
+def test_install_sidar_embedded_module_pin_drift_is_reported(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    target = tmp_path / "install_sidar.sh"
+    install_script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    target.write_text(
+        re.sub(
+            r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+            'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"',
+            install_script,
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            str(target),
+            "--check",
+        ],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Pin drift tespit edildi" in result.stderr
+    assert "SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT=unknown" in result.stderr
+    assert "Raw tek dosya kurulumunda" in result.stderr
+
+
+def test_install_sidar_embedded_module_pin_drift_cross_checks_pinned_commit(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    stale_commit = "b58fa89b0aa6d0d9066ecdb221e455dc05fb7597"
+    if subprocess.run(
+        ["git", "cat-file", "-e", f"{stale_commit}:scripts/install_modules/utils/gpu_utils.sh"],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    ).returncode != 0:
+        pytest.skip(f"fixture commit {stale_commit} is unavailable in this checkout")
+
+    target = tmp_path / "install_sidar.sh"
+    install_script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    target.write_text(
+        re.sub(
+            r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+            f'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="{stale_commit}"',
+            install_script,
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            str(target),
+            "--check-pin",
+        ],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Pin drift tespit edildi" in result.stderr
+    assert f"SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT={stale_commit}" in result.stderr
+    assert "scripts/install_modules/utils/gpu_utils.sh" in result.stderr
+    assert "03947f771212d9b75e6cd10e320ddf4dc16a867d8ba1c1b90d6a837727904776" in result.stderr
+
+
 def test_install_sidar_embedded_manifests_in_sync() -> None:
     repo_root = Path(os.getcwd())
     for tool, extra in (

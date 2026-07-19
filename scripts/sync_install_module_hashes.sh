@@ -9,6 +9,13 @@ cd "$REPO_ROOT"
 
 uv run python scripts/tools/update_install_module_hash_manifest.py --target "$TARGET"
 
+if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+    current_commit="$(git rev-parse HEAD)"
+    uv run python scripts/tools/update_install_module_hash_manifest.py \
+        --target "$TARGET" \
+        --stamp-commit "$current_commit"
+fi
+
 # Wrapper sessiz çalışmasın: hangi satırlar değişti, hangi modül(ler) drift'ti
 # bunu geliştiriciye göster ve install_sidar.sh hala syntax-clean mi doğrula.
 if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
