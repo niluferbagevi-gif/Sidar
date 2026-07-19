@@ -2229,7 +2229,7 @@ int cuInit(unsigned int flags) { return 0; }
 int cuDriverGetVersion(int *version) { *version = 12040; return 0; }
 CSRC
     cc -shared -fPIC -o "$tmpdir/libcuda.so.1" "$tmpdir/libcuda_stub.c"
-    export LD_LIBRARY_PATH="$tmpdir:${LD_LIBRARY_PATH:-}"
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS="$tmpdir/libcuda.so.1"
 
     [[ "$(detect_cuda_driver_capability "$tmpdir/nvidia-smi")" == "12.4" ]]
   '
@@ -2239,6 +2239,7 @@ CSRC
 @test "detect_cuda_driver_capability_via_libcuda returns empty when libcuda is unavailable" {
   run_installer_function '
     unset LD_LIBRARY_PATH
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS=""
     [[ -z "$(detect_cuda_driver_capability_via_libcuda)" ]]
   '
   [ "$status" -eq 0 ]
@@ -2320,6 +2321,7 @@ ENV
     FORCE_CPU=false
     WSL2=true
     RUN_GPU_STRESS=0
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS=""
 
     unset SIDAR_GPU_PREFLIGHT_NAME
     unset SIDAR_GPU_PREFLIGHT_DRIVER_VERSION

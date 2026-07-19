@@ -51,16 +51,23 @@ detect_cuda_driver_capability_via_libcuda() {
         return 0
     fi
 
+    # SIDAR_LIBCUDA_CANDIDATE_PATHS is a test/diagnostic override that makes libcuda
+    # discovery hermetic on WSL2 hosts where /usr/lib/wsl/lib/libcuda.so exists.
     "$python_cmd" - <<'PY_LIBCUDA' 2>/dev/null | head -1
 import ctypes
+import os
 
 def load_libcuda():
-    candidates = (
-        "libcuda.so.1",
-        "libcuda.so",
-        "/usr/lib/wsl/lib/libcuda.so.1",
-        "/usr/lib/wsl/lib/libcuda.so",
-    )
+    override = os.environ.get("SIDAR_LIBCUDA_CANDIDATE_PATHS")
+    if override is not None:
+        candidates = tuple(path for path in override.split(":") if path)
+    else:
+        candidates = (
+            "libcuda.so.1",
+            "libcuda.so",
+            "/usr/lib/wsl/lib/libcuda.so.1",
+            "/usr/lib/wsl/lib/libcuda.so",
+        )
     for name in candidates:
         try:
             return ctypes.CDLL(name)
