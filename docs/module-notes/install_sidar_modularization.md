@@ -103,7 +103,8 @@ chmod +x install_sidar.sh
 
 Raw `main/install_sidar.sh` URL'i yalnız hedef ref için Release bundle henüz yoksa
 son çare fallback olarak kullanılmalıdır; bu yol eksik modülleri runtime'da
-indirebildiği için GitHub raw 429/5xx kısıtlarına daha açıktır:
+indirebildiği için GitHub raw 429/5xx kısıtlarına ve installer pin-drift
+riskine daha açıktır:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh

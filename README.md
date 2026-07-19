@@ -269,7 +269,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 |---|---|---|---|
 | Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx ve installer pin-drift riskine daha açıktır |
 
 ### Sistem Gereksinimleri
 
@@ -616,11 +616,15 @@ ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
 ```
 
 raw fallback gerektiğinde kullanılan URL aşağıdadır; bu yol runtime'da dinamik
-modül indirme yapabildiği için GitHub raw 429/5xx riskine Release bundle'a göre
-daha açıktır. Dış wrapper indirme adımında GitHub raw rate-limit/429 yanıtlarına
+modül indirme yapabildiği için GitHub raw 429/5xx ve installer pin-drift
+riskine Release bundle'a göre daha açıktır. Dış wrapper indirme adımında
+GitHub raw rate-limit/429 yanıtlarına
 karşı retry/backoff seçenekleriyle indirin; installer'ın kendi modül fallback
 indiricisi retryable HTTP statüleri, `Retry-After` ve cache davranışını ayrıca
-yönetir. Modül indirme aşamasında mutable `main` ref'i güvenlik nedeniyle
+yönetir. Ayrıca embedded module hash manifesti ile `SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT`
+eşleşmezse raw fallback fail-closed durur; bu pin-drift durumunda Release bundle
+veya repo klonu tercih edilmeli, installer pin'i ve manifest aynı commit ağacına
+senkronlanmalıdır. Modül indirme aşamasında mutable `main` ref'i güvenlik nedeniyle
 reddedilir; installer önce embedded commit pin'ini kullanır, pin yoksa GitHub
 REST API üzerinden `main` ref'ini 40 karakterlik commit SHA'ya çözer. Kapalı ağ,
 API erişimi olmayan veya deterministik pin istenen ortamlarda commit SHA'yı açıkça

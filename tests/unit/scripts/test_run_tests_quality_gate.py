@@ -2288,6 +2288,7 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
         assert content.index(release_url) < content.index(dynamic_url)
         assert "raw fallback" in content
         assert "GitHub raw 429/5xx" in content
+        assert "pin-drift" in content
     assert "curl -fL --retry 5 --retry-all-errors --retry-delay 2" in readme
     assert "wget --tries=5 --waitretry=2" in readme
     assert "Retry-After" in readme
