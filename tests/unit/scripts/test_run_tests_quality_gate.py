@@ -4662,10 +4662,9 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
 
 
 def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path) -> None:
-    assets_dir = Path("web_ui_react/dist/assets")
-    assets_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-near-budget.js"
-    previous = chunk_path.read_text(encoding="utf-8") if chunk_path.exists() else None
     chunk_path.write_text("a" * 950, encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
@@ -4677,22 +4676,17 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
             "SIDAR_TOTAL_GZIP_BUDGET_KB": "10",
             "SIDAR_BUNDLE_BUDGET_WARN_RATIO": "0.9",
             "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
         }
     )
 
-    try:
-        result = subprocess.run(
-            ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-    finally:
-        if previous is None:
-            chunk_path.unlink(missing_ok=True)
-        else:
-            chunk_path.write_text(previous, encoding="utf-8")
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert result.returncode == 0
@@ -4703,10 +4697,9 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
 
 
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:
-    assets_dir = Path("web_ui_react/dist/assets")
-    assets_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-test.js"
-    previous = chunk_path.read_text(encoding="utf-8") if chunk_path.exists() else None
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
@@ -4718,22 +4711,17 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
             "TEST_PROFILE": "ci",
             "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
             "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
         }
     )
 
-    try:
-        result = subprocess.run(
-            ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
-            check=False,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-    finally:
-        if previous is None:
-            chunk_path.unlink(missing_ok=True)
-        else:
-            chunk_path.write_text(previous, encoding="utf-8")
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
 
     assert result.returncode != 0
     assert "SIDAR_TOTAL_JS_BUDGET_KB must be set" in result.stderr

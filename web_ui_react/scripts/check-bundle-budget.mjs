@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(scriptDir, "..");
 const repoRoot = join(frontendRoot, "..");
-const distAssetsDir = join(frontendRoot, "dist", "assets");
+const distAssetsDir = resolve(
+  repoRoot,
+  process.env.SIDAR_BUNDLE_ASSETS_DIR || join(frontendRoot, "dist", "assets"),
+);
 const reactDomBudgetKb = Number(process.env.SIDAR_REACT_DOM_CHUNK_BUDGET_KB || "220");
 const totalJsBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_JS_BUDGET_KB);
 const totalGzipBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_GZIP_BUDGET_KB);
