@@ -89,13 +89,20 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "Branch protection should mark this job name as required" in workflow
     assert "uv sync --frozen --extra dev" in workflow
     assert "Required installer manifest drift gate" in workflow
+    assert "Required installer pin drift regression test" in workflow
     assert "make check-install-manifests" in workflow
     assert "Required installer ShellCheck gate" in workflow
     assert "make installer-shellcheck" in workflow
     assert (
         "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync"
     ) in workflow
+    assert (
+        "tests/smoke/test_install_verification.py::"
+        "test_update_install_module_hash_manifest_check_reports_pinned_commit_hash_drift"
+    ) in workflow
     assert "sha256sum -c .sidar_manifest.txt" in workflow
+    assert "Verify installer manifests and embedded source pin directly" in workflow
+    assert "Verify install manifest and embedded source pin integrity before bundling" in workflow
     assert "uv run python scripts/tools/update_core_install_manifest.py --check" in workflow
     assert (
         "uv run python scripts/tools/update_install_module_hash_manifest.py "

@@ -116,7 +116,8 @@ uv run python scripts/tools/update_install_module_hash_manifest.py --target inst
 
 The module hash manifest check validates both manifest ↔ working-tree drift and
 the embedded `SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT` ↔ manifest hash cross-check
-for raw single-file installer module downloads.
+for raw single-file installer module downloads. CI also runs the pinned-commit
+regression tests in the required installer gate so stale pins cannot merge silently.
 
 Because `install_sidar.sh` is distributed directly through GitHub raw URLs, the
 same required gate treats the raw installer as a release artifact before merge:
