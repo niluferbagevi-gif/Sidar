@@ -262,6 +262,30 @@ def test_install_sidar_embedded_manifests_in_sync() -> None:
         )
 
 
+def test_installer_source_commit_pin_matches_embedded_manifest() -> None:
+    """Pin must have the hashes the embedded module manifest claims.
+
+    Otherwise the raw single-file installer fallback downloads stale module
+    content that fails its own hash verification.
+    """
+    repo_root = Path(os.getcwd())
+    result = subprocess.run(
+        [sys.executable, "scripts/tools/check_installer_source_commit_pin.py"],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT, install_sidar.sh içindeki gömülü modül "
+        "manifestiyle uyumsuz; scripts/install_modules altına dokunan bir commit'ten sonra "
+        "pin ileri alınmamış olabilir. Düzeltmek için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT "
+        "değerini scripts/install_modules ile bu manifestin eşleştiği bir commit'e "
+        "(genellikle HEAD) ilerletin.\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
 def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
     lines = install_sidar_path.read_text(encoding="utf-8").splitlines()
     start: int | None = None
