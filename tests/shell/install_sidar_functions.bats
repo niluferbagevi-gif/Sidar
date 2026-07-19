@@ -2207,6 +2207,43 @@ SMI
   [ "$status" -eq 0 ]
 }
 
+@test "detect_cuda_driver_capability falls back to libcuda cuDriverGetVersion when nvidia-smi lacks CUDA banner info" {
+  if ! command -v cc &>/dev/null; then
+    skip "cc derleyicisi mevcut değil"
+  fi
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+if [[ "\$*" == "--query-gpu=cuda_version --format=csv,noheader" ]]; then
+  echo "Field \"cuda_version\" is not a valid field to query" >&2
+  exit 1
+fi
+echo "NVIDIA-SMI banner without CUDA token (WSL2 N/A case)"
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+
+    cat > "$tmpdir/libcuda_stub.c" <<CSRC
+int cuInit(unsigned int flags) { return 0; }
+int cuDriverGetVersion(int *version) { *version = 12040; return 0; }
+CSRC
+    cc -shared -fPIC -o "$tmpdir/libcuda.so.1" "$tmpdir/libcuda_stub.c"
+    export LD_LIBRARY_PATH="$tmpdir:${LD_LIBRARY_PATH:-}"
+
+    [[ "$(detect_cuda_driver_capability "$tmpdir/nvidia-smi")" == "12.4" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_cuda_driver_capability_via_libcuda returns empty when libcuda is unavailable" {
+  run_installer_function '
+    unset LD_LIBRARY_PATH
+    [[ -z "$(detect_cuda_driver_capability_via_libcuda)" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "detect_gpu reports CUDA Driver Cap from query fallback on changed nvidia-smi banners" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

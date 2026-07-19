@@ -24,10 +24,65 @@ detect_cuda_driver_capability() {
         return 0
     fi
 
+    # WSL2'nin shim'lenmiş nvidia-smi'si banner'da "CUDA Version: N/A" gösterebilir
+    # (bilinen WSL2/NVIDIA kısıtı). libcuda.so zaten yüklenmişse cuDriverGetVersion()
+    # ile sürücünün desteklediği CUDA API sürümünü doğrudan sorgula; CUDA toolkit
+    # gerektirmez.
+    parsed_version=$(detect_cuda_driver_capability_via_libcuda || true)
+    if [[ -n "$parsed_version" ]]; then
+        printf '%s\n' "$parsed_version"
+        return 0
+    fi
+
     if command -v nvcc &>/dev/null; then
         parsed_version=$(nvcc --version 2>/dev/null | grep -Eo 'release[[:space:]]+[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
         [[ -n "$parsed_version" ]] && printf '%s\n' "$parsed_version"
     fi
+}
+
+detect_cuda_driver_capability_via_libcuda() {
+    local python_cmd=""
+
+    if command -v python3 &>/dev/null; then
+        python_cmd="python3"
+    elif command -v python &>/dev/null; then
+        python_cmd="python"
+    else
+        return 0
+    fi
+
+    "$python_cmd" - <<'PY_LIBCUDA' 2>/dev/null | head -1
+import ctypes
+
+def load_libcuda():
+    candidates = (
+        "libcuda.so.1",
+        "libcuda.so",
+        "/usr/lib/wsl/lib/libcuda.so.1",
+        "/usr/lib/wsl/lib/libcuda.so",
+    )
+    for name in candidates:
+        try:
+            return ctypes.CDLL(name)
+        except OSError:
+            continue
+    return None
+
+lib = load_libcuda()
+if lib is None:
+    raise SystemExit(0)
+
+try:
+    if lib.cuInit(0) != 0:
+        raise SystemExit(0)
+    version = ctypes.c_int(0)
+    if lib.cuDriverGetVersion(ctypes.byref(version)) != 0:
+        raise SystemExit(0)
+except Exception:
+    raise SystemExit(0)
+
+print(f"{version.value // 1000}.{(version.value % 1000) // 10}")
+PY_LIBCUDA
 }
 
 detect_pytorch_runtime_cuda_version() {
