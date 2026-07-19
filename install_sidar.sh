@@ -159,9 +159,9 @@ sidar_truthy_early_bool() {
 }
 
 sidar_detect_early_offline_mode() {
-    local arg=""
-    for arg in "$@"; do
-        case "$arg" in
+    local early_arg=""
+    for early_arg in "$@"; do
+        case "$early_arg" in
             --offline|--air-gapped)
                 OFFLINE_MODE=true
                 export OFFLINE_MODE
