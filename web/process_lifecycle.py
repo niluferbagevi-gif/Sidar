@@ -61,7 +61,7 @@ def list_child_ollama_pids(
         return []
 
     try:
-        raw = subprocess.check_output(  # nosec B603  # ps_binary is resolved from safe absolute paths.
+        raw = subprocess.check_output(  # nosec B603  # safe absolute ps path.
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
             stderr=subprocess.DEVNULL,
         )

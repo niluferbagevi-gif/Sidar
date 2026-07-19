@@ -615,6 +615,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         timeout=60,
     )
     combined = result.stdout + result.stderr
+    allow_home_reexec = env["SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE"]
     debug_context = textwrap.dedent(
         f"""
         --- install_sidar home re-exec hash drift debug ---
@@ -623,7 +624,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         PWD: {env["PWD"]}
         TMPDIR: {env["TMPDIR"]}
         SIDAR_INSTALL_TEST_MODE: {env["SIDAR_INSTALL_TEST_MODE"]}
-        SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE: {env["SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE"]}
+        SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE: {allow_home_reexec}
         standalone: {standalone}
         standalone_sha256: {_sha256_for_test(standalone)}
         stale_installer: {stale_installer}
@@ -697,6 +698,7 @@ def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_a
         "HOME": str(host),
         "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
     }
+    quoted_standalone = shlex.quote(str(standalone))
     result = subprocess.run(
         [
             "bash",
@@ -704,7 +706,8 @@ def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_a
             textwrap.dedent(
                 f"""\
                 set -Eeuo pipefail
-                source <(sed '/^use_existing_install_module_tree_if_available /,$d' {shlex.quote(str(standalone))}) >/dev/null
+                installer={quoted_standalone}
+                source <(sed '/^use_existing_install_module_tree/,$d' "$installer") >/dev/null
                 resolve_remote_module_base
                 """
             ),
@@ -941,7 +944,10 @@ def _run_bash_smoke(
                 f"--- timeout diagnostic stderr ---\n{diag.stderr[-4000:]}\n"
             )
         except subprocess.TimeoutExpired as diag_exc:
-            diag_text = f"--- timeout diagnostic ---\nbash/python/sed diagnostic timed out after {diag_exc.timeout}s\n"
+            diag_text = (
+                "--- timeout diagnostic ---\n"
+                f"bash/python/sed diagnostic timed out after {diag_exc.timeout}s\n"
+            )
         raise AssertionError(
             f"_run_bash_smoke {timeout_seconds}s içinde tamamlanamadı.\n"
             f"--- guarded_script ---\n{guarded_script}\n"
@@ -956,7 +962,8 @@ def _diagnose_silent_bash_smoke_failure(guarded_script: str, tmp_path: Path) -> 
         "--- silent _run_bash_smoke failure diagnostic ---\n"
         "The bash smoke subprocess exited non-zero with empty stdout/stderr.\n"
         f"--- guarded_script ---\n{guarded_script}\n"
-        f"--- sourced install/version diagnostics ---\n{_diagnose_sourced_install_version(tmp_path)}"
+        "--- sourced install/version diagnostics ---\n"
+        f"{_diagnose_sourced_install_version(tmp_path)}"
     )
 
 

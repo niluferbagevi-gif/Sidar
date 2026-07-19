@@ -5484,7 +5484,9 @@ def test_install_sidar_validate_remote_module_trust_root_blocks_raw_github_main(
                 """\
                 set -Eeuo pipefail
                 source ./install_sidar.sh >/dev/null 2>&1
-                SIDAR_INSTALL_MODULE_BASE_URL=https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules
+                SIDAR_INSTALL_MODULE_BASE_URL="https://raw.githubusercontent.com"
+                SIDAR_INSTALL_MODULE_BASE_URL+="/niluferbagevi-gif/Sidar/main"
+                SIDAR_INSTALL_MODULE_BASE_URL+="/scripts/install_modules"
                 remote_base="$(resolve_remote_module_base)"
                 validate_remote_module_trust_root "$remote_base"
                 """
