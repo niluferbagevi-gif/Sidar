@@ -25,6 +25,8 @@ import web.cli as web_cli
 import web_server
 from agent.core import contracts as agent_contracts
 from web import security as web_security
+from web.routes import project_ops
+from web.routes import rag as rag_routes
 from web.routes import webhooks as webhook_routes
 
 
@@ -2710,7 +2712,7 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
         calls.append((args, kwargs))
         return b"main\n"
 
-    monkeypatch.setattr(web_server.subprocess, "check_output", _fake_check_output)
+    monkeypatch.setattr(project_ops.subprocess, "check_output", _fake_check_output)
     assert web_server._git_run(["git"], ".") == "main"
     assert calls[0][1]["shell"] is False
     assert web_server._git_run(["git", "status"], ".") == ""
@@ -2719,7 +2721,7 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
     def _raise(*_args, **_kwargs):
         raise OSError("boom")
 
-    monkeypatch.setattr(web_server.subprocess, "check_output", _raise)
+    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise)
     assert web_server._git_run(["git"], ".") == ""
 
 
@@ -3150,7 +3152,7 @@ async def test_git_and_branch_endpoints(monkeypatch):
     invalid = await web_server.set_branch(_JsonRequest({"branch": "bad name"}))
     assert invalid.status_code == 400
 
-    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *a, **k: b"")
+    monkeypatch.setattr(project_ops.subprocess, "check_output", lambda *a, **k: b"")
     ok = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert ok.status_code == 200
 
@@ -4095,7 +4097,7 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
 
     monkeypatch.setattr("builtins.__import__", _fake_import)
     monkeypatch.setattr(
-        web_server,
+        web_server.process_lifecycle,
         "subprocess",
         SimpleNamespace(
             DEVNULL=object(),
@@ -4111,7 +4113,7 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
     assert web_server._list_child_ollama_pids() == [15]
 
     monkeypatch.setattr(
-        web_server,
+        web_server.process_lifecycle,
         "subprocess",
         SimpleNamespace(
             DEVNULL=object(),
@@ -7765,14 +7767,14 @@ async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
         return fn(*args, **kwargs)
 
     def _raise_checkout(*_args, **_kwargs):
-        raise web_server.subprocess.CalledProcessError(
+        raise project_ops.subprocess.CalledProcessError(
             returncode=1,
             cmd=["git", "checkout", "feature/x"],
             output=b"checkout failed",
         )
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
-    monkeypatch.setattr(web_server.subprocess, "check_output", _raise_checkout)
+    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise_checkout)
     failed = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert failed.status_code == 400
     assert b"checkout failed" in failed.body
@@ -9012,7 +9014,7 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
         b"501 777 ollama ollama serve\n"  # farkli parent pid -> atlanmali
         b"502 500 python python app.py\n"  # comm ve args ollama degil -> atlanmali
     )
-    monkeypatch.setattr(web_server.subprocess, "check_output", lambda *_args, **_kwargs: ps_output)
+    monkeypatch.setattr(web_server.process_lifecycle.subprocess, "check_output", lambda *_args, **_kwargs: ps_output)
 
     assert web_server._list_child_ollama_pids() == []
 
@@ -9147,7 +9149,7 @@ async def test_upload_rag_file_sanitizes_empty_filename_and_cleanup_error(monkey
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
     monkeypatch.setattr(
-        web_server.shutil,
+        rag_routes.shutil,
         "rmtree",
         lambda _path: (_ for _ in ()).throw(RuntimeError("cleanup fail")),
     )
