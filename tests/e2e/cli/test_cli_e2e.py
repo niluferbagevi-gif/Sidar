@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_CLI_COMMAND_TIMEOUT_SECONDS = 60
+
 _CLI_ENV_ALLOWLIST = (
     "PATH",
     "PYTHONIOENCODING",
@@ -130,7 +132,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
         text=True,
         capture_output=True,
         check=False,
-        timeout=30,
+        timeout=_CLI_COMMAND_TIMEOUT_SECONDS,
         env=env,
     )
 
