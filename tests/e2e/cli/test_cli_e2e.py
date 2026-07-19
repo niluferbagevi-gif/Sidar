@@ -12,7 +12,36 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CLI_COMMAND_TIMEOUT_SECONDS = 60
+_CLI_COMMAND_TIMEOUT_ENV = "SIDAR_CLI_E2E_TIMEOUT_SECONDS"
+_CLI_COMMAND_DEFAULT_TIMEOUT_SECONDS = 60
+_CLI_COMMAND_WSL_TIMEOUT_SECONDS = 180
+
+
+def _is_wsl2_environment() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        osrelease = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "microsoft" in osrelease.casefold()
+
+
+def _cli_command_timeout_seconds() -> int:
+    override = os.environ.get(_CLI_COMMAND_TIMEOUT_ENV)
+    if override:
+        try:
+            timeout = int(override)
+        except ValueError:
+            timeout = 0
+        if timeout > 0:
+            return timeout
+    if _is_wsl2_environment():
+        return _CLI_COMMAND_WSL_TIMEOUT_SECONDS
+    return _CLI_COMMAND_DEFAULT_TIMEOUT_SECONDS
+
+
+_CLI_COMMAND_TIMEOUT_SECONDS = _cli_command_timeout_seconds()
 
 _CLI_ENV_ALLOWLIST = (
     "PATH",
@@ -139,6 +168,31 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
     assert result.returncode == 0, result.stderr
     assert "Sidar >" in result.stdout
     assert result.stdout.strip(), "CLI komutu bir çıktı üretmelidir."
+
+
+def test_cli_command_timeout_uses_positive_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_CLI_COMMAND_TIMEOUT_ENV, "240")
+
+    assert _cli_command_timeout_seconds() == 240
+
+
+def test_cli_command_timeout_uses_wsl_default_when_no_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(_CLI_COMMAND_TIMEOUT_ENV, raising=False)
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+
+    assert _cli_command_timeout_seconds() == _CLI_COMMAND_WSL_TIMEOUT_SECONDS
+
+
+def test_cli_command_timeout_keeps_linux_default_for_invalid_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_CLI_COMMAND_TIMEOUT_ENV, "not-a-number")
+    monkeypatch.delenv("WSL_DISTRO_NAME", raising=False)
+    monkeypatch.setattr(Path, "read_text", lambda self, encoding=None: "linux-generic")
+
+    assert _cli_command_timeout_seconds() == _CLI_COMMAND_DEFAULT_TIMEOUT_SECONDS
 
 
 def test_ollama_response_payload_wraps_argument() -> None:
