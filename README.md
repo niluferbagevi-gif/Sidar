@@ -269,7 +269,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 |---|---|---|---|
 | Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler, GitHub raw 429/5xx riskine daha açıktır. Ayrıca `SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT` pini ile gömülü modül hash manifesti CI'da (`scripts/tools/verify_install_source_commit_pin.py`) çapraz doğrulanır ve `main`'e her push'ta otomatik senkronize edilir (`scripts/sync_install_source_commit.sh`); yine de pin senkronizasyonu geçici olarak bozulursa (ör. otomasyon başarısız olursa) bu yöntem "hash doğrulaması başarısız" hatasıyla kurulumu durdurabilir — bu durumda release bundle veya `git clone` yöntemine geçin |
 
 ### Sistem Gereksinimleri
 

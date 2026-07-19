@@ -528,6 +528,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # verify_install_source_commit_pin.py, SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT
+          # pininin gösterdiği commit'i yerel git geçmişinden okur; shallow clone'da bu
+          # commit genelde mevcut olmaz.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -559,6 +564,18 @@ jobs:
           sha256sum -c .sidar_manifest.txt
           uv run python scripts/tools/update_core_install_manifest.py --check
           uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+
+      - name: Installer source-commit pin drift check (informational)
+        # Not a required gate: a PR that legitimately changes
+        # scripts/install_modules/** cannot yet know the merge commit SHA it
+        # will land on, so it cannot satisfy this check before merging. The
+        # push-triggered publish-standalone-installer job self-heals the pin
+        # right after merge (see "Sync installer source-commit pin"); this
+        # step just surfaces drift as a visible warning on push/tag builds so
+        # it isn't silently missed if that self-heal step ever fails.
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: make check-install-source-commit-pin
 
       - name: Treat raw GitHub installer as release artifact
         run: |
@@ -917,6 +934,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -944,6 +963,32 @@ jobs:
         run: |
           uv run python scripts/tools/update_core_install_manifest.py --check
           uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+
+      - name: Sync installer source-commit pin
+        # Self-heals the SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT drift class:
+        # a commit that changes scripts/install_modules/** cannot pin itself
+        # (it doesn't know its own merge SHA yet), so the pin structurally
+        # lags by one push. Here, on main, github.sha IS the current tip and
+        # this step's own diff never touches scripts/install_modules/**, so
+        # advancing the pin to github.sha is always internally consistent.
+        if: github.ref == 'refs/heads/main'
+        run: |
+          bash scripts/sync_install_source_commit.sh "${GITHUB_SHA}"
+          if ! git diff --quiet -- install_sidar.sh; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add install_sidar.sh
+            # [skip ci] prevents this push from re-triggering this same
+            # workflow, which would otherwise re-bump the pin to its own new
+            # SHA on every run forever.
+            git commit -m "chore: sync installer source-commit pin to ${GITHUB_SHA} [skip ci]"
+            git push origin HEAD:main
+          else
+            echo "Installer source-commit pin already in sync; nothing to push."
+          fi
+
+      - name: Required installer source-commit pin gate
+        run: make check-install-source-commit-pin
 
       - name: Build standalone installer bundle
         run: |
