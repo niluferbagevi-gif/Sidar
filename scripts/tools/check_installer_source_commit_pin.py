@@ -55,13 +55,14 @@ def _extract_manifest(content: str) -> dict[str, str]:
 
 
 def _ensure_commit_available(commit: str) -> bool:
-    probe = subprocess.run(
+    # Fixed git command without user shell or user-controlled executable.
+    probe = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
         capture_output=True,
     )
     if probe.returncode == 0:
         return True
-    fetch = subprocess.run(
+    fetch = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(ROOT), "fetch", "--depth=1", "origin", commit],
         capture_output=True,
         text=True,
@@ -72,7 +73,7 @@ def _ensure_commit_available(commit: str) -> bool:
             file=sys.stderr,
         )
         return False
-    probe = subprocess.run(
+    probe = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
         capture_output=True,
     )
@@ -80,7 +81,8 @@ def _ensure_commit_available(commit: str) -> bool:
 
 
 def _hash_at_commit(commit: str, rel_path: str) -> str | None:
-    result = subprocess.run(
+    # Fixed git command without user shell or user-controlled executable.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "-C", str(ROOT), "show", f"{commit}:{rel_path}"],
         capture_output=True,
     )
