@@ -263,9 +263,11 @@ def test_install_sidar_embedded_manifests_in_sync() -> None:
 
 
 def test_installer_source_commit_pin_matches_embedded_manifest() -> None:
-    """SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT must actually have the hashes the
-    embedded module manifest claims, or the raw single-file installer fallback
-    downloads stale module content that fails its own hash verification."""
+    """Pin must have the hashes the embedded module manifest claims.
+
+    Otherwise the raw single-file installer fallback downloads stale module
+    content that fails its own hash verification.
+    """
     repo_root = Path(os.getcwd())
     result = subprocess.run(
         [sys.executable, "scripts/tools/check_installer_source_commit_pin.py"],

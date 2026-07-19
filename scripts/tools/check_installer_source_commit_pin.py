@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Verify SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT actually has the hashes the
-embedded module manifest in install_sidar.sh claims.
+"""Verify the embedded installer source-commit pin matches its module manifest.
 
 Root cause this guards against: update_install_module_hash_manifest.py keeps
 the embedded hash manifest in sync with the *working tree*, but nothing
