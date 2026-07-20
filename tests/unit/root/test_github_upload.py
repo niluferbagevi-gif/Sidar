@@ -12,6 +12,9 @@ import github_upload as gu
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
 ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
 ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT = gu.stamp_install_manifest_pin_after_commit
+ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
+    gu.ensure_full_git_history_for_manifest_checks
+)
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 
 
@@ -375,6 +378,70 @@ def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
     ]
 
 
+def test_ensure_full_git_history_skips_fetch_when_not_shallow(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "--is-shallow-repository"]:
+            return True, "false"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [["git", "rev-parse", "--is-shallow-repository"]]
+
+
+def test_ensure_full_git_history_unshallows_when_shallow(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "--is-shallow-repository"]:
+            return True, "true"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        ["git", "rev-parse", "--is-shallow-repository"],
+        ["git", "fetch", "--unshallow", "origin"],
+    ]
+
+
+def test_ensure_full_git_history_stops_on_unshallow_failure(monkeypatch):
+    def fake_run(cmd, show_output=True):
+        if cmd == ["git", "rev-parse", "--is-shallow-repository"]:
+            return True, "true"
+        if cmd == ["git", "fetch", "--unshallow", "origin"]:
+            return False, "network error"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS()
+
+    assert ok is False
+    assert err == "network error"
+
+
+def test_ensure_full_git_history_stops_when_shallow_check_fails(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=True: (False, "no git"))
+
+    ok, err = ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS()
+
+    assert ok is False
+    assert err == "no git"
+
+
 def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     calls = []
 
@@ -389,6 +456,7 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     assert ok is True
     assert err == ""
     assert calls == [
+        (["git", "rev-parse", "--is-shallow-repository"], False, None),
         (["uv", "run", "ruff", "format", "--check", "."], False, None),
         (["uv", "run", "ruff", "check", "."], False, None),
         (["make", "installer-shellcheck"], False, None),
@@ -461,7 +529,10 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     assert ok is False
     assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
-    assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
+    assert calls == [
+        ["git", "rev-parse", "--is-shallow-repository"],
+        ["uv", "run", "ruff", "format", "--check", "."],
+    ]
 
 
 def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkeypatch):

@@ -465,6 +465,29 @@ def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
     return True, ""
 
 
+def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
+    """--check-pin doğrulamasının shallow clone'larda yanlış pozitif vermesini önler.
+
+    ``update_install_module_hash_manifest.py``'nin ``--check``/``--check-pin``
+    adımları, ``SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT`` pinini ``git show
+    <pin>:<path>`` ile doğrular. Yerel klon shallow ise (ör. sınırlı derinlikte
+    bir clone) pinlenen commit hiç yerel object database'de bulunmayabilir;
+    bu durumda her dosya için "yok" (okunamadı) sonucu döner ve gerçek bir
+    drift olmamasına rağmen 36 modülün tamamı hatalı biçimde drift olarak
+    raporlanır. CI bunu ``fetch-depth: 0`` ile önlüyor (bkz. ci.yml); burada da
+    aynı garantiyi shallow ise ``git fetch --unshallow`` ile sağlıyoruz.
+    """
+    shallow_success, shallow_out = run_command(
+        ["git", "rev-parse", "--is-shallow-repository"], show_output=False
+    )
+    if not shallow_success:
+        return False, shallow_out
+    if shallow_out.strip() != "true":
+        return True, ""
+
+    return run_command(["git", "fetch", "--unshallow", "origin"], show_output=False)
+
+
 def run_pre_push_quality_gate() -> tuple[bool, str]:
     """Push öncesi Python format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
 
@@ -474,6 +497,10 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarının bir eşleniğidir,
     böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır.
     """
+    history_success, history_err = ensure_full_git_history_for_manifest_checks()
+    if not history_success:
+        return False, f"git fetch --unshallow origin\n{history_err}".strip()
+
     quality_steps: list[tuple[list[str], dict[str, str] | None]] = [
         (["uv", "run", "ruff", "format", "--check", "."], None),
         (["uv", "run", "ruff", "check", "."], None),
