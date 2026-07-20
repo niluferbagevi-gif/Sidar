@@ -221,6 +221,9 @@ print_release_readiness_next_action() {
     fi
 
     echo -e "       ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI.${NC}"
+    echo -e "       ${YELLOW}   ℹ️  Bu yalnızca BU YEREL kurulum çalıştırmasını yansıtır — GitHub Actions CI${NC}"
+    echo -e "       ${YELLOW}   bu gate'i (production-readiness job) her push/PR'da otomatik çalıştırır${NC}"
+    echo -e "       ${YELLOW}   (bkz. .github/workflows/ci.yml). Aşağıdaki komut yereldeki eşdeğer çalıştırmadır.${NC}"
     echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
     echo -e "       ${BOLD}Release/merge için tek zorunlu kapı:${NC}"
     echo "       make production-readiness"

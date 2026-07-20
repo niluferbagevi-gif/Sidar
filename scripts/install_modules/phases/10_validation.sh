@@ -545,6 +545,8 @@ print_install_production_readiness_notice() {
             ;;
         not_requested|development_only)
             echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
+            echo -e "   ${YELLOW}   ℹ️  Not: Bu yalnızca BU YEREL çalıştırmayı kapsar — GitHub Actions CI bu gate'i${NC}"
+            echo -e "   ${YELLOW}   (production-readiness job) her push/PR'da otomatik çalıştırır (bkz. .github/workflows/ci.yml).${NC}"
             if [[ "$development_passed" == true ]]; then
                 echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
                 print_install_dependency_profile_readiness_legend
