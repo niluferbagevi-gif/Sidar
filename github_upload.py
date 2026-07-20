@@ -82,16 +82,23 @@ def _build_subprocess_env() -> dict[str, str]:
     return bounded_env
 
 
-def run_command(args: Sequence[str], show_output: bool = True) -> tuple[bool, str]:
+def run_command(
+    args: Sequence[str],
+    show_output: bool = True,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[bool, str]:
     """Komutu shell=False ile güvenli ve sınırlı environment ile çalıştırır."""
     try:
+        env = _build_subprocess_env()
+        if extra_env:
+            env.update(extra_env)
         result = subprocess.run(  # nosec B603  # args listesi sistem içi oluşturulur, shell kullanılmaz.
             args,
             shell=False,
             check=True,
             capture_output=True,
             text=True,
-            env=_build_subprocess_env(),
+            env=env,
         )
         if show_output and result.stdout.strip():
             print(result.stdout.strip())
@@ -459,33 +466,64 @@ def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi hızlı Python format/lint + installer manifest kapısını fail-closed çalıştırır."""
-    quality_steps = [
-        ["uv", "run", "ruff", "format", "--check", "."],
-        ["uv", "run", "ruff", "check", "."],
-        ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
-        [
-            "uv",
-            "run",
-            "python",
-            "scripts/tools/update_install_module_hash_manifest.py",
-            "--target",
-            "install_sidar.sh",
-            "--check",
-        ],
-        [
-            "uv",
-            "run",
-            "python",
-            "scripts/tools/update_install_module_hash_manifest.py",
-            "--target",
-            "install_sidar.sh",
-            "--check-pin",
-        ],
+    """Push öncesi Python format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
+
+    github_upload.py, PR/branch-protection akışını atlayıp doğrudan main'e push
+    eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
+    hiçbir zaman devreye girmez. Buradaki adımlar o job'ın (installer-smoke,
+    .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarının bir eşleniğidir,
+    böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır.
+    """
+    quality_steps: list[tuple[list[str], dict[str, str] | None]] = [
+        (["uv", "run", "ruff", "format", "--check", "."], None),
+        (["uv", "run", "ruff", "check", "."], None),
+        (["make", "installer-shellcheck"], None),
+        (["sha256sum", "-c", ".sidar_manifest.txt"], None),
+        (["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"], None),
+        (
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/tools/update_install_module_hash_manifest.py",
+                "--target",
+                "install_sidar.sh",
+                "--check",
+            ],
+            None,
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/tools/update_install_module_hash_manifest.py",
+                "--target",
+                "install_sidar.sh",
+                "--check-pin",
+            ],
+            None,
+        ),
+        (["bash", "-n", "install_sidar.sh"], None),
+        (
+            ["bash", "install_sidar.sh"],
+            {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "--no-cov",
+                "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync",
+            ],
+            None,
+        ),
     ]
 
-    for cmd in quality_steps:
-        success, output = run_command(cmd, show_output=False)
+    for cmd, extra_env in quality_steps:
+        success, output = run_command(cmd, show_output=False, extra_env=extra_env)
         if not success:
             return False, f"{' '.join(cmd)}\n{output}".strip()
 

@@ -67,6 +67,32 @@ def test_run_command_filters_oversized_environment(monkeypatch):
     assert captured["env"]["SIDAR_SMALL_FLAG"] == "1"
 
 
+def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):
+    captured = {}
+
+    class Result:
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(*_args, **kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setenv("SIDAR_SMALL_FLAG", "1")
+    monkeypatch.setattr(gu.subprocess, "run", fake_run)
+
+    ok, out = gu.run_command(
+        ["bash", "install_sidar.sh"],
+        show_output=False,
+        extra_env={"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_SMALL_FLAG": "override"},
+    )
+
+    assert ok is True
+    assert out == "ok"
+    assert captured["env"]["SIDAR_INSTALL_TEST_MODE"] == "1"
+    assert captured["env"]["SIDAR_SMALL_FLAG"] == "override"
+
+
 def test_run_command_reports_oserror(monkeypatch, capsys):
     def fail(*_args, **_kwargs):
         raise OSError(7, "Argument list too long", "git")
@@ -352,8 +378,8 @@ def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
 def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     calls = []
 
-    def fake_run(cmd, show_output=True):
-        calls.append((cmd, show_output))
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append((cmd, show_output, extra_env))
         return True, ""
 
     monkeypatch.setattr(gu, "run_command", fake_run)
@@ -363,11 +389,14 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     assert ok is True
     assert err == ""
     assert calls == [
-        (["uv", "run", "ruff", "format", "--check", "."], False),
-        (["uv", "run", "ruff", "check", "."], False),
+        (["uv", "run", "ruff", "format", "--check", "."], False, None),
+        (["uv", "run", "ruff", "check", "."], False, None),
+        (["make", "installer-shellcheck"], False, None),
+        (["sha256sum", "-c", ".sidar_manifest.txt"], False, None),
         (
             ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
             False,
+            None,
         ),
         (
             [
@@ -380,6 +409,7 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
                 "--check",
             ],
             False,
+            None,
         ),
         (
             [
@@ -392,6 +422,25 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
                 "--check-pin",
             ],
             False,
+            None,
+        ),
+        (["bash", "-n", "install_sidar.sh"], False, None),
+        (
+            ["bash", "install_sidar.sh"],
+            False,
+            {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "--no-cov",
+                "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync",
+            ],
+            False,
+            None,
         ),
     ]
 
@@ -399,7 +448,7 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
 def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     calls = []
 
-    def fake_run(cmd, show_output=True):
+    def fake_run(cmd, show_output=True, extra_env=None):
         calls.append(cmd)
         if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
             return False, "Would reformat: bad.py"
@@ -413,6 +462,28 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
     assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
+
+
+def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append((cmd, extra_env))
+        if cmd == ["bash", "install_sidar.sh"]:
+            return False, "hash verify failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is False
+    assert "bash install_sidar.sh" in err
+    assert "hash verify failed" in err
+    assert (
+        ["bash", "install_sidar.sh"],
+        {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
+    ) in calls
 
 
 def test_stamp_install_manifest_pin_after_commit_no_drift(monkeypatch):
