@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest import mock
 
 from web import autonomy_bridge, collaboration_service, process_lifecycle
 
@@ -66,3 +67,43 @@ def test_process_lifecycle_psutil_path_detects_ollama_children() -> None:
         current_pid=1,
         safe_ps_binary=None,
     ) == [42]
+
+
+def test_resolve_safe_ps_binary_skips_candidates_that_raise() -> None:
+    with (
+        mock.patch.object(process_lifecycle.Path, "is_file", return_value=True),
+        mock.patch.object(process_lifecycle.os, "access", side_effect=OSError("boom")),
+        mock.patch.object(process_lifecycle.shutil, "which", return_value=None),
+    ):
+        assert process_lifecycle.resolve_safe_ps_binary(safe_paths=("/bin/ps",)) is None
+
+
+def test_resolve_safe_ps_binary_swallows_which_lookup_errors() -> None:
+    with mock.patch.object(process_lifecycle.shutil, "which", side_effect=OSError("boom")):
+        assert process_lifecycle.resolve_safe_ps_binary(safe_paths=()) is None
+
+
+def test_resolve_safe_ps_binary_returns_which_result_when_whitelisted() -> None:
+    with (
+        mock.patch.object(process_lifecycle.Path, "is_file", return_value=False),
+        mock.patch.object(process_lifecycle.shutil, "which", return_value="/usr/bin/ps"),
+    ):
+        assert (
+            process_lifecycle.resolve_safe_ps_binary(safe_paths=("/usr/bin/ps",)) == "/usr/bin/ps"
+        )
+
+
+def test_list_child_ollama_pids_returns_empty_without_safe_ps_binary() -> None:
+    def _raising_resolver() -> SimpleNamespace:
+        raise RuntimeError("psutil unavailable")
+
+    with mock.patch.object(process_lifecycle, "resolve_safe_ps_binary", return_value=None):
+        assert (
+            process_lifecycle.list_child_ollama_pids(
+                resolve_psutil_module=_raising_resolver,
+                current_pid=1,
+                os_name="posix",
+                safe_ps_binary=None,
+            )
+            == []
+        )

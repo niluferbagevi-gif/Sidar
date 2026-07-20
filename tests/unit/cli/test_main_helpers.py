@@ -533,6 +533,94 @@ def test_launcher_doctor_preflight_skips_database_dependents_after_failed_databa
     assert "database_connectivity ve rag_readiness kontrolleri atlandı" in output
 
 
+def test_launcher_doctor_preflight_prompts_for_apply_all_when_interactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.doctor as doctor
+    from core.doctor.launcher_preflight import (
+        LauncherDoctorPreflightHooks,
+        LauncherDoctorPreflightStyle,
+        run_launcher_doctor_preflight,
+    )
+
+    def _pass_check(name: str) -> SimpleNamespace:
+        return SimpleNamespace(name=name, status="pass", message="ok", details={})
+
+    for check_name in (
+        "check_database_env",
+        "check_database_connectivity",
+        "check_rag_readiness",
+        "check_graphrag_entity_memory_ready",
+        "check_gpu_memory_config",
+    ):
+        monkeypatch.setattr(doctor, check_name, lambda name=check_name: _pass_check(name))
+
+    confirm_calls: list[tuple[str, bool]] = []
+
+    def _confirm(prompt: str, default: bool) -> bool:
+        confirm_calls.append((prompt, default))
+        return True
+
+    run_launcher_doctor_preflight(
+        doctor_apply_all_yes=False,
+        hooks=LauncherDoctorPreflightHooks(
+            confirm=_confirm,
+            print_check_summary=lambda _check: None,
+            doctor_auto_fix_commands=lambda _details: [],
+            invoke_auto_fix=lambda *_args, **_kwargs: False,
+            clear_revalidation_cache=lambda: None,
+            final_check_after_auto_fix=lambda check, _applied: check,
+        ),
+        style=LauncherDoctorPreflightStyle(),
+        stdin_isatty=lambda: True,
+    )
+
+    assert confirm_calls == [
+        ("Doctor için bulunan tüm auto-fix önerileri tek seferde otomatik uygulansın mı?", False)
+    ]
+
+
+def test_launcher_doctor_preflight_reports_parallel_check_exception(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: SimpleNamespace(name="database_env", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_database_connectivity",
+        lambda: SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_readiness",
+        lambda: SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: SimpleNamespace(
+            name="graphrag_entity_memory_ready", status="pass", message="ok", details={}
+        ),
+    )
+
+    def _boom_gpu_check() -> SimpleNamespace:
+        raise RuntimeError("gpu telemetry unavailable")
+
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", _boom_gpu_check)
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert "Doctor ön kontrolü çalıştırılamadı: gpu telemetry unavailable" in output
+
+
 def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
