@@ -505,7 +505,8 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
                 "pytest",
                 "-q",
                 "--no-cov",
-                "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync",
+                "tests/smoke/test_install_verification.py"
+                "::test_install_sidar_embedded_manifests_in_sync",
             ],
             False,
             None,

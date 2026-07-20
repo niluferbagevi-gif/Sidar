@@ -173,7 +173,8 @@ def _format_pin_drift_report(target: Path, drift: list[tuple[str, str | None, st
         lines.append(f"  {short(embedded_hash)}  {short(pinned_hash)}  {path}")
     lines.append("")
     lines.append(
-        "Düzeltmek için: SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT değerini manifestteki dosyaları içeren bir commit SHA'sına damgalayın."
+        "Düzeltmek için: SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT değerini manifestteki "
+        "dosyaları içeren bir commit SHA'sına damgalayın."
     )
     return "\n".join(lines)
 
@@ -214,16 +215,24 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Manifest dosyayla veya pinlenen commit ile eşleşmiyorsa hedefi değiştirmeden non-zero ile çık.",
+        help=(
+            "Manifest dosyayla veya pinlenen commit ile eşleşmiyorsa hedefi "
+            "değiştirmeden non-zero ile çık."
+        ),
     )
     parser.add_argument(
         "--check-pin",
         action="store_true",
-        help="Yalnız gömülü manifest hash'lerinin SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT ile eşleştiğini doğrula.",
+        help=(
+            "Yalnız gömülü manifest hash'lerinin SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT "
+            "ile eşleştiğini doğrula."
+        ),
     )
     parser.add_argument(
         "--stamp-commit",
-        help="SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırını verilen 40 karakter SHA ile güncelle.",
+        help=(
+            "SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırını verilen 40 karakter SHA ile güncelle."
+        ),
     )
     args = parser.parse_args()
     target = (ROOT / args.target).resolve()

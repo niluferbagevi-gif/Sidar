@@ -489,7 +489,7 @@ def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi Python format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
+    """Push öncesi format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
 
     github_upload.py, PR/branch-protection akışını atlayıp doğrudan main'e push
     eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
@@ -543,7 +543,8 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
                 "pytest",
                 "-q",
                 "--no-cov",
-                "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync",
+                "tests/smoke/test_install_verification.py"
+                "::test_install_sidar_embedded_manifests_in_sync",
             ],
             None,
         ),
@@ -980,8 +981,8 @@ def main() -> None:
                 pin_success, pin_err = stamp_install_manifest_pin_after_commit()
                 if not pin_success:
                     print(
-                        f"{Colors.FAIL}❌ Install manifest pini birleştirme sonrası damgalanamadı: "
-                        f"{pin_err}{Colors.ENDC}"
+                        f"{Colors.FAIL}❌ Install manifest pini birleştirme sonrası "
+                        f"damgalanamadı: {pin_err}{Colors.ENDC}"
                     )
                     sys.exit(1)
 
