@@ -227,11 +227,13 @@ def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
 
 
 def test_dockerignore_exists_and_excludes_secrets_from_build_context():
-    """Regression: `Dockerfile`/`Dockerfile.production` both use `COPY . .`.
-    `.gitignore` only affects git, not the Docker build context, so without a
-    root `.dockerignore` any `.env`/`.env.production`/`.env.test` file left
-    at the repo root by `install_sidar.sh` (including the 8 secrets covered
-    by `runbooks/production-cutover-playbook.md` §1.5 production secret
+    """Regression: `.env`/`.env.production`/`.env.test` must never reach the Docker build context.
+
+    `Dockerfile`/`Dockerfile.production` both use `COPY . .`. `.gitignore`
+    only affects git, not the Docker build context, so without a root
+    `.dockerignore` any secret env file left at the repo root by
+    `install_sidar.sh` (including the 8 secrets covered by
+    `runbooks/production-cutover-playbook.md` §1.5 production secret
     rotation) would be sent to the daemon and baked into image layers by
     `docker build .`.
     """
@@ -256,10 +258,12 @@ def test_dockerignore_exists_and_excludes_secrets_from_build_context():
 
 
 def test_dockerignore_preserves_react_spa_build_output():
-    """Regression: `web_server.py` serves the SPA from `web_ui_react/dist`
-    (see `web_dist_path()`), which `release-quality.yml` builds via
+    """Regression: a blanket `dist/`/`build/` exclusion must not swallow `web_ui_react/dist`.
+
+    `web_server.py` serves the SPA from `web_ui_react/dist` (see
+    `web_dist_path()`), which `release-quality.yml` builds via
     `npm run build` *before* `docker build`, not inside the Dockerfile. A
-    blanket `dist/`/`build/` exclusion rule would therefore also match
+    generic `dist/`/`build/` rule would therefore also match
     `web_ui_react/dist` and silently ship an image with no frontend.
     """
     dockerignore = _read(".dockerignore")
