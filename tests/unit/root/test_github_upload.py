@@ -11,6 +11,7 @@ import github_upload as gu
 
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
 ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
+ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT = gu.stamp_install_manifest_pin_after_commit
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 
 
@@ -18,6 +19,7 @@ ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
+    monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
 
 
@@ -363,6 +365,34 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     assert calls == [
         (["uv", "run", "ruff", "format", "--check", "."], False),
         (["uv", "run", "ruff", "check", "."], False),
+        (
+            ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
+            False,
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/tools/update_install_module_hash_manifest.py",
+                "--target",
+                "install_sidar.sh",
+                "--check",
+            ],
+            False,
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "python",
+                "scripts/tools/update_install_module_hash_manifest.py",
+                "--target",
+                "install_sidar.sh",
+                "--check-pin",
+            ],
+            False,
+        ),
     ]
 
 
@@ -383,6 +413,101 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
     assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
+
+
+def test_stamp_install_manifest_pin_after_commit_no_drift(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "a" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, ""
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        ["git", "rev-parse", "HEAD"],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--stamp-commit",
+            "a" * 40,
+        ],
+        ["git", "diff", "--name-only", "--", "install_sidar.sh"],
+    ]
+
+
+def test_stamp_install_manifest_pin_after_commit_creates_fixup_commit_on_drift(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "b" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, "install_sidar.sh"
+        if cmd[:2] == ["git", "commit"]:
+            return True, "fixup ok"
+        return True, ""
+
+    stage_calls = []
+    monkeypatch.setattr(gu, "run_command", fake_run)
+    monkeypatch.setattr(gu, "stage_files", lambda paths: (stage_calls.append(paths), (True, ""))[1])
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is True
+    assert err == ""
+    assert stage_calls == [["install_sidar.sh"]]
+    commit_calls = [c for c in calls if c[:2] == ["git", "commit"]]
+    assert len(commit_calls) == 1
+    assert "b" * 40 in commit_calls[0][-1]
+
+
+def test_stamp_install_manifest_pin_after_commit_stops_on_stamp_failure(monkeypatch):
+    def fake_run(cmd, show_output=True):
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "c" * 40
+        if any("update_install_module_hash_manifest.py" in part for part in cmd):
+            return False, "stamp failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is False
+    assert err == "stamp failed"
+
+
+def test_stamp_install_manifest_pin_after_commit_stops_on_fixup_commit_failure(monkeypatch):
+    def fake_run(cmd, show_output=True):
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "d" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, "install_sidar.sh"
+        if cmd[:2] == ["git", "commit"]:
+            return False, "commit failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+    monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is False
+    assert err == "commit failed"
 
 
 def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
@@ -634,6 +759,32 @@ def test_main_commit_fail(monkeypatch):
         ],
         inputs=[""],
     )
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_aborts_when_pin_stamp_fails_after_commit(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
+    monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
+    monkeypatch.setattr(
+        gu, "stamp_install_manifest_pin_after_commit", lambda: (False, "stamp failed")
+    )
+
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, "A a.py"),
+            (True, "commit ok"),
+        ],
+        inputs=["commit msg"],
+    )
+
     assert run_main_and_exit_code() == 1
 
 

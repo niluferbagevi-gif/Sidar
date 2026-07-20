@@ -403,11 +403,85 @@ def sync_install_manifests_before_commit() -> tuple[bool, str]:
     return True, ""
 
 
+def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
+    """Az önce oluşturulan commit'i install_sidar.sh'ın embedded modül pinine damgalar.
+
+    Pin, commit oluşturulmadan ÖNCE damgalanırsa HEAD hâlâ PARENT commit'i işaret
+    eder; scripts/install_modules/* bu commit'te değiştiyse pin, gömülü modül
+    hash'leriyle asla eşleşmeyen bir commit'e sabitlenmiş olur ve raw tek dosya
+    kurulumu kırılır (bkz. docs/CI_REQUIRED_CHECKS.md "Installer manifest and
+    smoke gate"). Bu yüzden damgalama burada, commit gerçekten oluşturulduktan
+    SONRA çalışır. Pin, kendi içinde bulunduğu commit'e değil (bu, commit
+    hash'i kendi içeriğine bağlı olduğu için imkânsızdır), bu commit'i takip
+    eden ayrı ve küçük bir fixup commit'ine yazılır.
+    """
+    head_success, head_out = run_command(["git", "rev-parse", "HEAD"], show_output=False)
+    if not head_success:
+        return False, head_out
+    commit = head_out.strip()
+
+    stamp_success, stamp_err = run_command(
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--stamp-commit",
+            commit,
+        ],
+        show_output=False,
+    )
+    if not stamp_success:
+        return False, stamp_err
+
+    diff_success, diff_out = run_command(
+        ["git", "diff", "--name-only", "--", "install_sidar.sh"], show_output=False
+    )
+    if not diff_success:
+        return False, diff_out
+    if not diff_out.strip():
+        return True, ""
+
+    add_success, add_err = stage_files(["install_sidar.sh"])
+    if not add_success:
+        return False, add_err
+
+    commit_success, commit_err = run_command(
+        ["git", "commit", "-m", f"Pin install_sidar.sh embedded module commit to {commit}"],
+        show_output=False,
+    )
+    if not commit_success:
+        return False, commit_err
+
+    return True, ""
+
+
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi hızlı Python format/lint kapısını fail-closed çalıştırır."""
+    """Push öncesi hızlı Python format/lint + installer manifest kapısını fail-closed çalıştırır."""
     quality_steps = [
         ["uv", "run", "ruff", "format", "--check", "."],
         ["uv", "run", "ruff", "check", "."],
+        ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--check",
+        ],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--check-pin",
+        ],
     ]
 
     for cmd in quality_steps:
@@ -753,6 +827,14 @@ def main() -> None:
         if not commit_success:
             print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
             sys.exit(1)
+
+        pin_success, pin_err = stamp_install_manifest_pin_after_commit()
+        if not pin_success:
+            print(
+                f"{Colors.FAIL}❌ Install manifest pini commit sonrası damgalanamadı: "
+                f"{pin_err}{Colors.ENDC}"
+            )
+            sys.exit(1)
     else:
         _, status = run_command(["git", "status", "--porcelain"], show_output=False)
         if status.strip():
@@ -829,6 +911,14 @@ def main() -> None:
                 print(
                     f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}"
                 )
+
+                pin_success, pin_err = stamp_install_manifest_pin_after_commit()
+                if not pin_success:
+                    print(
+                        f"{Colors.FAIL}❌ Install manifest pini birleştirme sonrası damgalanamadı: "
+                        f"{pin_err}{Colors.ENDC}"
+                    )
+                    sys.exit(1)
 
                 gate_success, gate_err = run_pre_push_quality_gate()
                 if not gate_success:

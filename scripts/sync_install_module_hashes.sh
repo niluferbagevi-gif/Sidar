@@ -9,12 +9,14 @@ cd "$REPO_ROOT"
 
 uv run python scripts/tools/update_install_module_hash_manifest.py --target "$TARGET"
 
-if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
-    current_commit="$(git rev-parse HEAD)"
-    uv run python scripts/tools/update_install_module_hash_manifest.py \
-        --target "$TARGET" \
-        --stamp-commit "$current_commit"
-fi
+# ÖNEMLİ: SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT pini burada damgalanmaz.
+# Bu adım henüz oluşturulmamış commit'in PARENT'i olan HEAD'i döndürür; eğer
+# scripts/install_modules/* bu commit'te değiştiyse pin, gömülü hash'lerle
+# eşleşmeyen (henüz var olmayan) bir commit'e sabitlenmiş olur ve raw tek
+# dosya kurulumu kırılır (bkz. docs/CI_REQUIRED_CHECKS.md "Installer manifest
+# and smoke gate"). Pin damgalama artık github_upload.py tarafından gerçek
+# commit oluşturulduktan SONRA, stamp_install_manifest_pin_after_commit() ile
+# yapılır.
 
 # Wrapper sessiz çalışmasın: hangi satırlar değişti, hangi modül(ler) drift'ti
 # bunu geliştiriciye göster ve install_sidar.sh hala syntax-clean mi doğrula.
