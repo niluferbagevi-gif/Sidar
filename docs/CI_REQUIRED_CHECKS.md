@@ -112,6 +112,7 @@ It also runs direct manifest checks:
 sha256sum -c .sidar_manifest.txt
 uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
 ```
 
 Because `install_sidar.sh` is distributed directly through GitHub raw URLs, the
@@ -173,6 +174,7 @@ make check-install-manifests
 make installer-shellcheck
 uv run python scripts/tools/update_core_install_manifest.py --check
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
 ```
 
 These hooks intentionally run in check mode. If a hook fails, run the sync

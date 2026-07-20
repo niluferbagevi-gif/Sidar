@@ -96,10 +96,16 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
         "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync"
     ) in workflow
     assert "sha256sum -c .sidar_manifest.txt" in workflow
+    assert "Verify installer manifests and pinned module commit directly" in workflow
+    assert "Verify install manifest and pinned module commit integrity before bundling" in workflow
     assert "uv run python scripts/tools/update_core_install_manifest.py --check" in workflow
     assert (
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
+    ) in workflow
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-pin"
     ) in workflow
     assert "Treat raw GitHub installer as release artifact" in workflow
     assert "bash -n install_sidar.sh" in workflow
@@ -140,6 +146,10 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
     assert (
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
+    ) in template
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-pin"
     ) in template
     assert "Install manifest synced" in template
     assert "Installer manifest and smoke gate" in template
