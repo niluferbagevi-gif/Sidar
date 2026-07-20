@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from core.db.records import ContentAssetRecord, MarketingCampaignRecord, OperationChecklistRecord
 
@@ -67,7 +67,7 @@ async def list_marketing_campaigns(
                     """,
                     (tenant, max_items),
                 )
-            return cur.fetchall()
+            return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)
     return [
@@ -138,7 +138,7 @@ async def list_content_assets(
                     """,
                     (tenant, max_items),
                 )
-            return cur.fetchall()
+            return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)
     return [
@@ -208,7 +208,7 @@ async def list_operation_checklists(
                     """,
                     (tenant, max_items),
                 )
-            return cur.fetchall()
+            return cast(list[Any], cur.fetchall())
 
         rows = await db._run_sqlite_op(_run, write=False)
     return [
