@@ -277,13 +277,16 @@ def test_install_sidar_embedded_module_pin_drift_is_reported(tmp_path: Path) -> 
 def test_install_sidar_embedded_module_pin_drift_cross_checks_pinned_commit(tmp_path: Path) -> None:
     repo_root = Path(os.getcwd())
     stale_commit = "b58fa89b0aa6d0d9066ecdb221e455dc05fb7597"
-    if subprocess.run(
-        ["git", "cat-file", "-e", f"{stale_commit}:scripts/install_modules/utils/gpu_utils.sh"],
-        cwd=repo_root,
-        env=_installer_test_env(),
-        capture_output=True,
-        text=True,
-    ).returncode != 0:
+    if (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{stale_commit}:scripts/install_modules/utils/gpu_utils.sh"],
+            cwd=repo_root,
+            env=_installer_test_env(),
+            capture_output=True,
+            text=True,
+        ).returncode
+        != 0
+    ):
         pytest.skip(f"fixture commit {stale_commit} is unavailable in this checkout")
 
     target = tmp_path / "install_sidar.sh"

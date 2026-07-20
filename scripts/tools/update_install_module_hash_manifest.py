@@ -13,7 +13,9 @@ MODULES_DIR = ROOT / "scripts/install_modules"
 START_RE = r"read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' \|\| true"
 END_MARKER = "SIDAR_MODULE_HASHES_EOF"
 
-PIN_RE = re.compile(r'^SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="(?P<commit>[0-9a-fA-F]{40}|unknown)"$', re.MULTILINE)
+PIN_RE = re.compile(
+    r'^SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="(?P<commit>[0-9a-fA-F]{40}|unknown)"$', re.MULTILINE
+)
 
 
 def extract_embedded_source_commit(content: str) -> str | None:
@@ -114,7 +116,6 @@ def diff_target(target: Path) -> list[tuple[str, str | None, str | None]]:
     return drift
 
 
-
 def diff_pinned_commit(target: Path) -> list[tuple[str, str | None, str | None]]:
     """Return manifest entries that do not match the embedded source commit.
 
@@ -142,7 +143,9 @@ def diff_pinned_commit(target: Path) -> list[tuple[str, str | None, str | None]]
 
 def stamp_embedded_source_commit(target: Path, commit: str) -> None:
     content = target.read_text(encoding="utf-8")
-    updated, count = PIN_RE.subn(f'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="{commit}"', content, count=1)
+    updated, count = PIN_RE.subn(
+        f'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="{commit}"', content, count=1
+    )
     if count != 1:
         raise RuntimeError("SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırı bulunamadı")
     target.write_text(updated, encoding="utf-8")
@@ -169,8 +172,11 @@ def _format_pin_drift_report(target: Path, drift: list[tuple[str, str | None, st
     for path, embedded_hash, pinned_hash in drift:
         lines.append(f"  {short(embedded_hash)}  {short(pinned_hash)}  {path}")
     lines.append("")
-    lines.append("Düzeltmek için: SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT değerini manifestteki dosyaları içeren bir commit SHA'sına damgalayın.")
+    lines.append(
+        "Düzeltmek için: SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT değerini manifestteki dosyaları içeren bir commit SHA'sına damgalayın."
+    )
     return "\n".join(lines)
+
 
 def check_target(target: Path) -> bool:
     content = target.read_text(encoding="utf-8")
