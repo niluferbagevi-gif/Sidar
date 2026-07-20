@@ -1252,6 +1252,30 @@ PY
     fi
 }
 
+sidar_phase06_ensure_full_git_history_for_smoke_gate() {
+    # scripts/install_modules/phases/02_repo.sh, kurulumu hızlandırmak için repoyu
+    # --depth=1 (shallow) klonlar. tests/smoke/test_install_verification.py içindeki
+    # test_install_sidar_embedded_manifests_in_sync testi ise
+    # scripts/tools/update_install_module_hash_manifest.py --check üzerinden
+    # SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT pinini `git show <pin>:<path>` ile
+    # doğrular; pinlenen commit shallow klonun objektif veritabanında yoksa her
+    # modül için "yok" (okunamadı) döner ve gerçek bir drift olmamasına rağmen
+    # 36 modülün tamamı hatalı biçimde drift olarak raporlanır (bkz.
+    # github_upload.py:ensure_full_git_history_for_manifest_checks, aynı sınıf
+    # hatanın push-öncesi kalite kapısındaki eşleniği). Servis öncesi smoke gate
+    # için de aynı garantiyi burada sağlıyoruz.
+    local shallow=""
+    shallow="$(cd "$SCRIPT_DIR" && git rev-parse --is-shallow-repository 2>/dev/null || true)"
+    [[ "$shallow" == "true" ]] || return 0
+
+    info "Repo shallow clone (--depth=1) olarak indirilmiş; installer manifest pin doğrulaması tam git geçmişi gerektiriyor. Git geçmişi tamamlanıyor (git fetch --unshallow origin)..."
+    if (cd "$SCRIPT_DIR" && git fetch --unshallow origin >/dev/null 2>&1); then
+        ok "Git geçmişi tamamlandı; installer manifest pin doğrulaması shallow clone kaynaklı yanlış pozitif vermeyecek."
+    else
+        warn "git fetch --unshallow origin başarısız oldu; installer manifest pin doğrulaması (SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT) shallow clone nedeniyle yanlış pozitif drift raporlayabilir. Elle çalıştırın: git -C \"$SCRIPT_DIR\" fetch --unshallow origin"
+    fi
+}
+
 run_pre_service_installer_smoke_gate() {
     local gate_enabled="${SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE:-1}"
     gate_enabled="$(normalize_bool "$gate_enabled")"
@@ -1286,6 +1310,8 @@ run_pre_service_installer_smoke_gate() {
     else
         warn "pyproject.toml içinde [project].version okunamadı; INSTALL_SIDAR_VERSION sözleşmesi CI smoke testi kapsamında doğrulanacak."
     fi
+
+    sidar_phase06_ensure_full_git_history_for_smoke_gate
 
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
