@@ -226,6 +226,55 @@ def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
         assert "docker-socket-proxy" in service["depends_on"], name
 
 
+def test_dockerignore_exists_and_excludes_secrets_from_build_context():
+    """Regression: `Dockerfile`/`Dockerfile.production` both use `COPY . .`.
+    `.gitignore` only affects git, not the Docker build context, so without a
+    root `.dockerignore` any `.env`/`.env.production`/`.env.test` file left
+    at the repo root by `install_sidar.sh` (including the 8 secrets covered
+    by `runbooks/production-cutover-playbook.md` §1.5 production secret
+    rotation) would be sent to the daemon and baked into image layers by
+    `docker build .`.
+    """
+    dockerignore = _read(".dockerignore")
+
+    # Secret-bearing env files must be excluded, but documented examples
+    # (which hold no real secrets) stay available for onboarding.
+    assert ".env" in dockerignore
+    assert ".env.*" in dockerignore
+    assert "!.env.example" in dockerignore
+    assert "!.env.production.example" in dockerignore
+    assert "!.env.test.example" in dockerignore
+    assert "/secrets/" in dockerignore
+    assert "/credentials/" in dockerignore
+    assert ".sidar_keys.env" in dockerignore
+
+    # VCS metadata and local dependency/cache trees never need to reach the
+    # image and bloat the build context.
+    assert ".git" in dockerignore
+    assert "web_ui_react/node_modules/" in dockerignore
+    assert ".venv/" in dockerignore
+
+
+def test_dockerignore_preserves_react_spa_build_output():
+    """Regression: `web_server.py` serves the SPA from `web_ui_react/dist`
+    (see `web_dist_path()`), which `release-quality.yml` builds via
+    `npm run build` *before* `docker build`, not inside the Dockerfile. A
+    blanket `dist/`/`build/` exclusion rule would therefore also match
+    `web_ui_react/dist` and silently ship an image with no frontend.
+    """
+    dockerignore = _read(".dockerignore")
+    ignored_lines = {
+        line.strip()
+        for line in dockerignore.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+    assert "dist/" not in ignored_lines
+    assert "build/" not in ignored_lines
+    assert "/dist/" not in ignored_lines
+    assert "/build/" not in ignored_lines
+
+
 def test_prometheus_scrapes_sidar_and_infra_exporters():
     prometheus = yaml.safe_load((ROOT / "docker_setup/prometheus/prometheus.yml").read_text())
     scrape_targets = {

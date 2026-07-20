@@ -549,6 +549,8 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 > Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
 > Sürücü daha eskiyse konteyner GPU ile ayağa kalkmayabilir.
 
+> **Build context güvenlik notu:** `Dockerfile`/`Dockerfile.production` `COPY . .` kullanır. `.gitignore` yalnızca git'i etkiler, Docker build context'ini etkilemez — bu yüzden repo kökü `.dockerignore` ile korunur. `install_sidar.sh` sonrası kökte oluşabilecek `.env`/`.env.production`/`.env.test` gibi secret dosyaları (bkz. `runbooks/production-cutover-playbook.md` §1.5 production secret rotasyonu) bu sayede `docker build .` sırasında image katmanlarına gömülmez. Yeni bir "asla imaja dahil edilmemeli" dosya deseni eklerken hem `.gitignore` hem `.dockerignore`'ı güncelleyin — ikisi bağımsız mekanizmalardır.
+
 ```bash
 # CPU modu
 docker compose up --build sidar-web
