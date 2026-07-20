@@ -32,7 +32,7 @@ def sha256sum_git_show(commit: str, rel_path: str) -> str | None:
     ``git show $SOURCE_COMMIT:<path> | sha256sum``. ``None`` means the pinned
     commit or path cannot be read from the local git object database.
     """
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603 B607  # sabit "git" komutu; kullanıcı girdisi shell'e geçmiyor.
         ["git", "-C", str(ROOT), "show", f"{commit}:{rel_path}"],
         capture_output=True,
         check=False,
