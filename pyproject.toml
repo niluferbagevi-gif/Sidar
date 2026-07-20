@@ -600,6 +600,7 @@ py-modules = [
   "config_llm",
   "config_quality",
   "config_rag",
+  "config_rag_defaults",
   "config_security",
   "scripts.version_probe",
   "sidar_version",
