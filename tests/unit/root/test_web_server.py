@@ -2875,7 +2875,7 @@ async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_user)
 
     ws = _ChatWebSocket(
-        [web_server.json.dumps({"message": "hello"})],
+        [json.dumps({"message": "hello"})],
         headers={"sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, good-token"},
     )
     await web_server.websocket_chat(ws)
@@ -2887,7 +2887,7 @@ async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch):
-    ws = _ChatWebSocket([web_server.json.dumps({"action": "noop"})])
+    ws = _ChatWebSocket([json.dumps({"action": "noop"})])
     closed = {}
 
     async def _close(_websocket, reason):
@@ -2989,11 +2989,11 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     user = SimpleNamespace(id="u1", username="ada", role="developer")
     ws = _ChatWebSocket(
         [
-            web_server.json.dumps(
+            json.dumps(
                 {"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}
             ),
-            web_server.json.dumps({"action": "message", "message": "@sidar   "}),
-            web_server.json.dumps({"action": "message", "message": "hello"}),
+            json.dumps({"action": "message", "message": "@sidar   "}),
+            json.dumps({"action": "message", "message": "hello"}),
         ],
         headers={"sec-websocket-protocol": f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, token-1"},
     )
