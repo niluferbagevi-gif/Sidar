@@ -44,6 +44,27 @@ def pgvector_table_name(store: Any) -> str:
     return str(getattr(store, "_pg_table", "rag_embeddings") or "rag_embeddings")
 
 
+def _reject_if_invalid_pg_table(store: Any, pg_table: str) -> bool:
+    """Return True if ``pg_table`` is safe to interpolate into DDL/DML.
+
+    ``init_pgvector`` validates the table name once at startup, but nothing
+    prevents a later mutation of ``store._pg_table`` (e.g. a future config
+    hot-reload path) from bypassing that one-time check. Every call site
+    that builds SQL from the table name re-validates here instead of
+    trusting init-time state, and fails closed (disables pgvector, does not
+    silently redirect to a different table) exactly like init_pgvector does.
+    """
+    if is_valid_pgvector_identifier(pg_table):
+        return True
+    store._pgvector_available = False
+    logger.warning(
+        pgvector_failure_action_message(
+            ValueError("invalid PGVECTOR_TABLE; expected pattern " r"^[A-Za-z_][A-Za-z0-9_]*$")
+        )
+    )
+    return False
+
+
 def init_pgvector(store: Any) -> None:
     """Initialize PostgreSQL + pgvector table."""
     db_url = str(getattr(store.cfg, "DATABASE_URL", "") or "")
@@ -54,13 +75,7 @@ def init_pgvector(store: Any) -> None:
         return
 
     pg_table = pgvector_table_name(store)
-    if not is_valid_pgvector_identifier(pg_table):
-        store._pgvector_available = False
-        logger.warning(
-            pgvector_failure_action_message(
-                ValueError("invalid PGVECTOR_TABLE; expected pattern " r"^[A-Za-z_][A-Za-z0-9_]*$")
-            )
-        )
+    if not _reject_if_invalid_pg_table(store, pg_table):
         return
 
     if not store._check_import("sqlalchemy") or not store._check_import("pgvector"):
@@ -159,6 +174,8 @@ def upsert_pgvector_chunks(
         from sqlalchemy import text
 
         pg_table = pgvector_table_name(store)
+        if not _reject_if_invalid_pg_table(store, pg_table):
+            return
         vectors = store._pgvector_embed_texts(chunks)
         if not vectors:
             return
@@ -210,6 +227,8 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
         from sqlalchemy import text
 
         pg_table = pgvector_table_name(store)
+        if not _reject_if_invalid_pg_table(store, pg_table):
+            return
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(
@@ -233,6 +252,8 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
         from sqlalchemy import text
 
         pg_table = pgvector_table_name(store)
+        if not _reject_if_invalid_pg_table(store, pg_table):
+            return []
         qvec = format_vector_for_sql(vectors[0])
         engine = store._require_pg_engine()
         with engine.begin() as conn:
