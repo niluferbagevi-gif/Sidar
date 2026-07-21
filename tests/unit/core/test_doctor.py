@@ -372,6 +372,38 @@ def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypa
     assert "DATABASE_URL database name does not match POSTGRES_DB" in check.message
 
 
+def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monkeypatch):
+    # Reproduces the "stock install, every startup" false-alarm loop: DATABASE_URL is
+    # set in the process environment (e.g. an old `export`, or a Docker Compose
+    # `environment:`/`env_file` injection using the host .env's POSTGRES_DB) but is not
+    # defined in any dotenv file Sidar itself loads — most commonly because
+    # SIDAR_ENV=development overrides POSTGRES_DB via .env.development while
+    # DATABASE_URL still reflects the base .env's POSTGRES_DB. In that state,
+    # scripts.sync_database_passwords --remove-explicit-urls finds nothing to remove
+    # in any file ("changed": false) and re-running it forever leaves the same warning.
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
+    monkeypatch.setenv("POSTGRES_DB", "sidar_development")
+    monkeypatch.setenv(
+        "DATABASE_URL", f"postgresql://sidar:{_STRONG_TEST_PASSWORD}@localhost:5432/sidar"
+    )
+    monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda _keys: {"sources": {}, "definitions": {key: [] for key in _keys}},
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "warn"
+    assert "DATABASE_URL database name does not match POSTGRES_DB" in check.message
+    assert "inherited from the parent process/shell environment" in check.message
+    assert "sync_database_passwords cannot edit it" in check.message
+    assert check.details["database_url_source_unattributed"] is True
+    assert check.details["container_database_url_source_unattributed"] is False
+
+
 def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/sidar.db")
     monkeypatch.setenv("POSTGRES_USER", "sidar")

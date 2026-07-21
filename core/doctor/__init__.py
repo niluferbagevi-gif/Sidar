@@ -533,6 +533,32 @@ def check_database_env() -> DoctorCheck:
     if container_url and "sidar:sidar@" in container_url:
         failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
 
+    # An explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL that isn't defined in any
+    # dotenv file Sidar itself loads (env_sources) is inherited from the parent
+    # process/shell environment (an old `export`, a Docker Compose `environment:`/
+    # `env_file` injection, systemd, etc.). scripts.sync_database_passwords only edits
+    # dotenv files, so it reports "no explicit URL found" and cannot fix this — without
+    # this note, Doctor keeps flagging the same drift after every "successful" auto-fix.
+    database_url_unattributed = bool(explicit_database_url) and "DATABASE_URL" not in env_sources
+    container_url_unattributed = (
+        bool(explicit_container_url) and "SIDAR_CONTAINER_DATABASE_URL" not in env_sources
+    )
+    for key, unattributed in (
+        ("DATABASE_URL", database_url_unattributed),
+        ("SIDAR_CONTAINER_DATABASE_URL", container_url_unattributed),
+    ):
+        if not unattributed:
+            continue
+        if not any(msg.startswith(f"{key} ") for msg in (*failures, *warnings)):
+            continue
+        warnings.append(
+            f"{key} is set but not defined in Sidar's dotenv chain (.env, .env.advanced, "
+            ".env.<SIDAR_ENV>, DOTENV_FILE, SIDAR_KEYS_FILE); it is inherited from the parent "
+            "process/shell environment (or a Docker Compose environment:/env_file injection), "
+            "so scripts.sync_database_passwords cannot edit it. Unset it in the parent shell or "
+            "Docker Compose config, or restart the launcher, before rechecking."
+        )
+
     if (explicit_database_url or explicit_container_url) and failures:
         warnings.append(
             "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls for long-term safety"
@@ -568,6 +594,8 @@ def check_database_env() -> DoctorCheck:
             "container_database_url_source": (
                 env_sources.get("SIDAR_CONTAINER_DATABASE_URL") or {}
             ).get("path", ""),
+            "database_url_source_unattributed": database_url_unattributed,
+            "container_database_url_source_unattributed": container_url_unattributed,
             "postgres_password_source": (env_sources.get("POSTGRES_PASSWORD") or {}).get(
                 "path", ""
             ),
