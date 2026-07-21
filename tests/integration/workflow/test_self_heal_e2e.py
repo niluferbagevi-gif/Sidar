@@ -27,9 +27,7 @@ class _LocalSandboxCodeManager(CodeManager):
 class _MechanicalAutofixCodeManager(CodeManager):
     """Simulates `ruff check --fix` mutating a file, then a validation command."""
 
-    def __init__(
-        self, *args, autofix_ok: bool, validation_ok: bool, target: str, **kwargs
-    ) -> None:
+    def __init__(self, *args, autofix_ok: bool, validation_ok: bool, target: str, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.autofix_ok = autofix_ok
         self.validation_ok = validation_ok
