@@ -530,6 +530,7 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     assert ok is False
     assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
+    assert "Düzeltmek için: uv run ruff format ." in err
     assert calls == [
         ["git", "rev-parse", "--is-shallow-repository"],
         ["uv", "run", "ruff", "format", "--check", "."],
