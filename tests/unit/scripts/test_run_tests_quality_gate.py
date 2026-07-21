@@ -5453,7 +5453,7 @@ def test_docker_compose_redis_requires_password_and_is_not_published_to_host() -
     redis_block = compose[redis_start:postgres_start]
 
     assert "--requirepass" in redis_block
-    assert 'REDIS_PASSWORD:?' in redis_block
+    assert "REDIS_PASSWORD:?" in redis_block
     assert "ports:" not in redis_block
     assert 'expose:\n      - "6379"' in redis_block
 

@@ -1229,7 +1229,7 @@ run_static_analysis_gates() {
     else
       mypy_attempt_log="${AUTO_HEAL_LOG_PATH}.attempt-$((attempt + 1))"
     fi
-    if uv run mypy --strict core/ agent/ web/ managers/ 2>&1 | tee "${AUTO_HEAL_LOG_PATH}" "${mypy_attempt_log}"; then
+    if uv run mypy --strict core/ agent/ web/ managers/ launcher/ 2>&1 | tee "${AUTO_HEAL_LOG_PATH}" "${mypy_attempt_log}"; then
       return 0
     fi
     if [ "${AUTO_HEAL_ON_FAILURE}" != "1" ] || [ "${attempt}" -ge "${AUTO_HEAL_MAX_ATTEMPTS}" ]; then

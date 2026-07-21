@@ -2989,9 +2989,7 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     user = SimpleNamespace(id="u1", username="ada", role="developer")
     ws = _ChatWebSocket(
         [
-            json.dumps(
-                {"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}
-            ),
+            json.dumps({"action": "join_room", "room_id": "team:sync", "display_name": "Ada"}),
             json.dumps({"action": "message", "message": "@sidar   "}),
             json.dumps({"action": "message", "message": "hello"}),
         ],

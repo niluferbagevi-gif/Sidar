@@ -58,7 +58,7 @@ format-check:
 python-quality:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy --strict core/ agent/ web/ managers/
+	uv run mypy --strict core/ agent/ web/ managers/ launcher/
 
 dev-full:
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
