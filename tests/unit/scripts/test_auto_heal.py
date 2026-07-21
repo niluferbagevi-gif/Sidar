@@ -166,10 +166,11 @@ def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
 def test_prompt_hitl_approval_fails_closed_without_tty(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Regression test: without a TTY guard, input() raises EOFError on closed
+    """Regression test for EOFError on input() without an interactive TTY.
 
-    stdin (e.g. a cron/CI run of the autonomous loop), crashing the process
-    instead of failing closed like the rest of the HITL approval chain.
+    Without a TTY guard, input() raises EOFError on closed stdin (e.g. a
+    cron/CI run of the autonomous loop), crashing the process instead of
+    failing closed like the rest of the HITL approval chain.
     """
     monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: False)
 
