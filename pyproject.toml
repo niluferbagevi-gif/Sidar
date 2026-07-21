@@ -75,7 +75,7 @@ dependencies = [
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
-  "websockets>=15.0,<16.0",
+  "websockets>=16.1.1,<17.0",
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
   "chromadb~=0.5.5",
