@@ -75,7 +75,9 @@ def normalize_launch_selection(selection: dict[str, object], *, cfg: Any) -> dic
     )
     level = safe_choice(
         selection.get("level"),
-        safe_choice(getattr(cfg, "ACCESS_LEVEL", "full"), "full", {"restricted", "sandbox", "full"}),
+        safe_choice(
+            getattr(cfg, "ACCESS_LEVEL", "full"), "full", {"restricted", "sandbox", "full"}
+        ),
         {"restricted", "sandbox", "full"},
     )
     log_level = safe_choice(selection.get("log"), "info", {"info", "debug", "warning", "error"})
