@@ -121,6 +121,27 @@ def test_runtime_and_limits_resolution(manager):
     assert limits["timeout"] == 10
 
 
+def test_resolve_runtime_skips_allowlist_warning_when_unset(manager, caplog):
+    # Real installs write DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime (no
+    # empty-string sentinel, since get_list_env() always filters blank CSV
+    # items). An unset DOCKER_RUNTIME ("") should not trigger the allowlist
+    # warning on every sandbox call — it never changed the outcome anyway
+    # (code_manager.py only sets the Docker `runtime` kwarg when non-empty).
+    manager.docker_allowed_runtimes = ["runc", "runsc", "kata-runtime"]
+    manager.docker_runtime = ""
+    with caplog.at_level("WARNING"):
+        assert manager._resolve_runtime() == ""
+    assert "izinli listede değil" not in caplog.text
+
+    # An explicitly configured, disallowed runtime must still warn and fall
+    # back — only the "nothing configured" case is exempted.
+    caplog.clear()
+    manager.docker_runtime = "unknown"
+    with caplog.at_level("WARNING"):
+        assert manager._resolve_runtime() == ""
+    assert "izinli listede değil" in caplog.text
+
+
 def test_build_and_execute_docker_cli_command(manager, monkeypatch):
     limits = {
         "memory": "128m",

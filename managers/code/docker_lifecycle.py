@@ -34,7 +34,12 @@ class DockerLifecycleAdapter:
         elif owner.docker_microvm_mode in ("kata", "firecracker") and not runtime:
             runtime = "kata-runtime"
 
-        if runtime not in owner.docker_allowed_runtimes:
+        # Boş runtime = hiç DOCKER_RUNTIME ayarlanmamış; bu durumda zaten
+        # Docker'ın kendi varsayılan runtime'ı kullanılır (bkz. code_manager.py
+        # `if selected_runtime: run_kwargs["runtime"] = selected_runtime`), yani
+        # allowlist kontrolü fiilen bir şeyi engellemiyor/değiştirmiyor. Sadece
+        # açıkça (yanlış) bir runtime seçildiğinde uyar.
+        if runtime and runtime not in owner.docker_allowed_runtimes:
             logger.warning(
                 "Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.",
                 runtime,
