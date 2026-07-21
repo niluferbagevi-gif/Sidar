@@ -1019,6 +1019,141 @@ propagate_shared_secrets_to_env_variants() {
     sync_database_env_chain_after_setup
 }
 
+# GPU tespiti bir makine gerçeğidir; .env'e yazılan USE_GPU/REQUIRE_GPU/
+# GPU_MIXED_PRECISION/COMPOSE_PROFILES değerleri .env.development ve
+# .env.advanced şablonlarına da yayılmazsa, runtime dotenv zinciri
+# (config.py) SIDAR_ENV=development için .env.development'ı override=True
+# ile en son yüklediğinden .env'deki GPU ayarı sessizce ezilir.
+# .env.production kasıtlı olarak hariç tutulur: production GPU etkinleştirme
+# production-readiness gate'i geçmeden manuel/açık olmalıdır.
+propagate_gpu_settings_to_env_variants() {
+    local src="$1"
+    [[ -f "$src" ]] || return 0
+
+    local -a gpu_keys=(USE_GPU REQUIRE_GPU GPU_MIXED_PRECISION COMPOSE_PROFILES)
+    local -a variants=(
+        ".env.development:.env.development.example"
+        ".env.advanced:.env.advanced.example"
+    )
+
+    local pair target example name key val cur changed_count
+    for pair in "${variants[@]}"; do
+        target="$SCRIPT_DIR/${pair%%:*}"
+        example="$SCRIPT_DIR/${pair##*:}"
+        name="${pair%%:*}"
+
+        if [[ ! -f "$target" ]]; then
+            if [[ -f "$example" ]]; then
+                install -m 600 "$example" "$target"
+                ok "${name} dosyası ${pair##*:} üzerinden oluşturuldu."
+            else
+                warn "${pair##*:} bulunamadı; ${name} GPU senkronizasyonu atlandı."
+                continue
+            fi
+        fi
+
+        changed_count=0
+        for key in "${gpu_keys[@]}"; do
+            val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+            [[ -z "${val//[[:space:]]/}" ]] && continue
+
+            cur=$(read_env_value_from_file "$key" "$target" | tr -d '\n')
+            [[ "$cur" == "$val" ]] && continue
+
+            if grep -q "^${key}=" "$target" 2>/dev/null; then
+                sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+            else
+                echo "${key}=${val}" >> "$target"
+            fi
+            changed_count=$((changed_count + 1))
+        done
+        if (( changed_count > 0 )); then
+            ok "${name}: ${changed_count} GPU ayarı .env ile senkronize edildi."
+        fi
+    done
+}
+
+# GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION/COMPOSE_PROFILES
+# değerlerini $env_file içinde uyumlu hale getirir ve ardından
+# .env.development/.env.advanced şablonlarına yayar. Hem ilk kurulumda hem
+# de mevcut .env üzerinde yeniden çalıştırmada (idempotent) çağrılmalıdır.
+configure_gpu_env_defaults() {
+    local env_file="$1"
+    command -v sed &>/dev/null || return 0
+
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
+        if grep -q '^USE_GPU=' "$env_file"; then
+            sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$env_file"
+        else
+            echo 'USE_GPU=true' >> "$env_file"
+        fi
+        if grep -q '^GPU_MIXED_PRECISION=' "$env_file"; then
+            sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=true/' "$env_file"
+        else
+            echo 'GPU_MIXED_PRECISION=true' >> "$env_file"
+        fi
+        if grep -q '^REQUIRE_GPU=' "$env_file"; then
+            sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=true/' "$env_file"
+        else
+            echo 'REQUIRE_GPU=true' >> "$env_file"
+        fi
+
+        # Docker için GPU modunu ön tanımlı yap
+        if grep -q '^COMPOSE_PROFILES=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$env_file"
+        else
+            echo "COMPOSE_PROFILES=gpu" >> "$env_file"
+        fi
+
+        ok "${env_file##*/}: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
+        ok "${env_file##*/}: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
+    else
+        if grep -q '^USE_GPU=' "$env_file"; then
+            sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$env_file"
+        else
+            echo 'USE_GPU=false' >> "$env_file"
+        fi
+        if grep -q '^GPU_MIXED_PRECISION=' "$env_file"; then
+            sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=false/' "$env_file"
+        else
+            echo 'GPU_MIXED_PRECISION=false' >> "$env_file"
+        fi
+        if grep -q '^REQUIRE_GPU=' "$env_file"; then
+            sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=false/' "$env_file"
+        else
+            echo 'REQUIRE_GPU=false' >> "$env_file"
+        fi
+        if grep -q '^COMPOSE_PROFILES=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$env_file"
+        else
+            echo "COMPOSE_PROFILES=cpu" >> "$env_file"
+        fi
+        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
+    fi
+
+    # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
+    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
+        if grep -q '^DOCKER_RUNTIME=' "$env_file"; then
+            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$env_file"
+        else
+            echo 'DOCKER_RUNTIME=nvidia' >> "$env_file"
+        fi
+
+        if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$env_file"; then
+            if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$env_file"; then
+                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$env_file"
+            fi
+        else
+            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$env_file"
+        fi
+
+        ok "${env_file##*/}: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
+    fi
+
+    propagate_gpu_settings_to_env_variants "$env_file"
+}
+
 ensure_local_service_host_defaults() {
     local env_file="$1"
     # Lokal kurulumda Docker hostname yerine localhost kullan
@@ -1349,6 +1484,7 @@ setup_env_file() {
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
+        configure_gpu_env_defaults "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
         sync_database_env_chain_after_setup
@@ -1376,78 +1512,9 @@ setup_env_file() {
     propagate_shared_secrets_to_env_variants "$ENV_FILE"
     validate_required_security_profile "$ENV_FILE"
 
-    # GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
-    if command -v sed &>/dev/null; then
-        if [[ "$GPU_AVAILABLE" == true ]]; then
-            info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
-            if grep -q '^USE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$ENV_FILE"
-            else
-                echo 'USE_GPU=true' >> "$ENV_FILE"
-            fi
-            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
-                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
-            else
-                echo 'GPU_MIXED_PRECISION=true' >> "$ENV_FILE"
-            fi
-            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=true/' "$ENV_FILE"
-            else
-                echo 'REQUIRE_GPU=true' >> "$ENV_FILE"
-            fi
-
-            # Docker için GPU modunu ön tanımlı yap
-            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
-            else
-                echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
-            fi
-
-            ok ".env: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
-            ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
-        else
-            if grep -q '^USE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$ENV_FILE"
-            else
-                echo 'USE_GPU=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
-                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=false/' "$ENV_FILE"
-            else
-                echo 'GPU_MIXED_PRECISION=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=false/' "$ENV_FILE"
-            else
-                echo 'REQUIRE_GPU=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
-            else
-                echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
-            fi
-            ok ".env: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
-        fi
-    fi
-
-    # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
-    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
-        if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
-            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
-        else
-            echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
-        fi
-
-        if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
-            if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
-            fi
-        else
-            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
-        fi
-
-        ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
-    fi
+    # GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION/COMPOSE_PROFILES
+    # değerlerini .env içinde uyumlu hale getir ve .env.development/.env.advanced'e yay.
+    configure_gpu_env_defaults "$ENV_FILE"
 
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"

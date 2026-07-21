@@ -2411,6 +2411,98 @@ ENV
   [ "$status" -eq 0 ]
 }
 
+@test "propagate_gpu_settings_to_env_variants syncs GPU flags to development and advanced but not production" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+
+    cat > "$tmpdir/.env" <<ENV
+USE_GPU=true
+REQUIRE_GPU=true
+GPU_MIXED_PRECISION=true
+COMPOSE_PROFILES=gpu
+ENV
+
+    cat > "$tmpdir/.env.development" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.development" "$tmpdir/.env.development.example"
+
+    cat > "$tmpdir/.env.advanced" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.advanced" "$tmpdir/.env.advanced.example"
+
+    cat > "$tmpdir/.env.production" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=true
+ENV
+
+    SCRIPT_DIR="$tmpdir"
+    propagate_gpu_settings_to_env_variants "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.development"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env.development"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.advanced"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.advanced"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.advanced"
+
+    # .env.production kasıtlı olarak yayılım dışı: production GPU etkinleştirme
+    # production-readiness gate geçmeden manuel olmalı.
+    grep -q "^USE_GPU=false$" "$tmpdir/.env.production"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "configure_gpu_env_defaults fixes stale USE_GPU=false left over in .env.development" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+
+    # Kurulum sırasında GPU tespit edilmeden önce oluşturulmuş .env, GPU
+    # tespitinden sonra USE_GPU=true olarak güncellenecek.
+    cat > "$tmpdir/.env" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+
+    # .env.development.example şablonundan kopyalanan .env.development bu
+    # bug senaryosunu üretiyordu: USE_GPU=false hiç güncellenmiyordu ve
+    # runtime dotenv zinciri (config.py) development ortamında bunu .env
+    # üzerine override=True ile en son yüklüyordu.
+    cat > "$tmpdir/.env.development" <<ENV
+SIDAR_ENV=development
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.development" "$tmpdir/.env.development.example"
+
+    SCRIPT_DIR="$tmpdir"
+    GPU_AVAILABLE=true
+
+    configure_gpu_env_defaults "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.development"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env.development"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "verify_sidar_keys_file_permissions accepts 600 and 400 modes" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
