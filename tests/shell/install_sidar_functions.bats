@@ -1130,11 +1130,13 @@ EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar
 POSTGRES_PASSWORD=secret
 SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_URL=redis://legacy.example:6379/0
+REDIS_PASSWORD=redis-secret
 EOF
     cat > "$tmpdir/bin/bash" <<EOF
 #!/bin/bash
 printf "%s\n" "\$*" > "$tmpdir/bash.args"
-printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/bash.env"
+printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nSIDAR_REDIS_URL=%s\nREDIS_URL=%s\nREDIS_PASSWORD=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${SIDAR_REDIS_URL:-}" "\${REDIS_URL:-}" "\${REDIS_PASSWORD:-}" > "$tmpdir/bash.env"
 exit 0
 EOF
     chmod +x "$tmpdir/bin/bash"
@@ -1157,7 +1159,9 @@ EOF
     grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
     grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/bash.env"
     grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/bash.env"
+    grep -q "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
     grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
+    grep -q "REDIS_PASSWORD=redis-secret" "$tmpdir/bash.env"
   '
   [ "$status" -eq 0 ]
 }

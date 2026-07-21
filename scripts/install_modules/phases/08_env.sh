@@ -844,8 +844,8 @@ PY
     fi
 
     # ── REDIS_PASSWORD ───────────────────────────────────────────────────────
-    # docker-compose Redis'i --requirepass ile başlatır ve host ağına hiç
-    # publish etmez; bu değer boş/zayıfsa `docker compose up` REDIS_PASSWORD'ün
+    # docker-compose Redis'i --requirepass ile başlatır ve portu yalnızca host
+    # loopback arayüzüne publish eder; bu değer boş/zayıfsa `docker compose up` REDIS_PASSWORD'ün
     # zorunlu ${VAR:?...} kontrolünde başarısız olur.
     if _is_missing_or_insecure "REDIS_PASSWORD"; then
         local _v; _v=$(_gen_urlsafe 24)

@@ -249,15 +249,15 @@ run_smoke_tests() {
     local smoke_database_url=""
     local smoke_postgres_password=""
     local smoke_redis_url=""
+    local smoke_redis_password=""
     if [[ -f "$env_file" ]]; then
         if resolve_runtime_database_url >/dev/null; then
             smoke_database_url="$RUNTIME_DATABASE_URL"
         fi
         smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
-        smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
-        if [[ -z "$smoke_redis_url" ]]; then
-            smoke_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
-        fi
+        smoke_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$smoke_redis_url" ]] || smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        smoke_redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
 
         if [[ -n "$smoke_database_url" ]]; then
             pytest_smoke_env+=("DATABASE_URL=$smoke_database_url")
@@ -267,7 +267,10 @@ run_smoke_tests() {
             pytest_smoke_env+=("POSTGRES_PASSWORD=$smoke_postgres_password")
         fi
         if [[ -n "$smoke_redis_url" ]]; then
-            pytest_smoke_env+=("REDIS_URL=$smoke_redis_url")
+            pytest_smoke_env+=("SIDAR_REDIS_URL=$smoke_redis_url" "REDIS_URL=$smoke_redis_url")
+        fi
+        if [[ -n "$smoke_redis_password" ]]; then
+            pytest_smoke_env+=("REDIS_PASSWORD=$smoke_redis_password")
         fi
     fi
 
@@ -375,15 +378,15 @@ run_install_integration_api_tests() {
     local integration_database_url=""
     local integration_postgres_password=""
     local integration_redis_url=""
+    local integration_redis_password=""
     if [[ -f "$env_file" ]]; then
         if resolve_runtime_database_url >/dev/null; then
             integration_database_url="$RUNTIME_DATABASE_URL"
         fi
         integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
-        integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
-        if [[ -z "$integration_redis_url" ]]; then
-            integration_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
-        fi
+        integration_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$integration_redis_url" ]] || integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        integration_redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
 
         if [[ -n "$integration_database_url" ]]; then
             integration_env+=("DATABASE_URL=$integration_database_url")
@@ -393,7 +396,10 @@ run_install_integration_api_tests() {
             integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")
         fi
         if [[ -n "$integration_redis_url" ]]; then
-            integration_env+=("REDIS_URL=$integration_redis_url")
+            integration_env+=("SIDAR_REDIS_URL=$integration_redis_url" "REDIS_URL=$integration_redis_url")
+        fi
+        if [[ -n "$integration_redis_password" ]]; then
+            integration_env+=("REDIS_PASSWORD=$integration_redis_password")
         fi
     fi
 
