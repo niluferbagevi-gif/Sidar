@@ -36,6 +36,90 @@ async def restore_self_heal_backups(code: _CodeManagerLike, backups: dict[str, s
         await asyncio.to_thread(code.write_file, path, content, False)
 
 
+async def execute_mechanical_autofix(
+    *,
+    code: _CodeManagerLike,
+    base_dir: str,
+    remediation_loop: dict[str, Any],
+) -> dict[str, Any]:
+    """Run a deterministic Ruff autofix and validate it before any LLM plan is built.
+
+    Purely mechanical, rule-based lint/style failures (e.g. a docstring debt-ratchet
+    regression) are fixable by ``ruff check --fix`` in seconds. Routing them through
+    LLM plan generation instead wastes the plan-generation timeout budget and can
+    stall the autonomous self-heal loop for hours on a fix Ruff already knows how to
+    make. This runs first and falls back to the caller's LLM path whenever it does
+    not fully resolve the failure.
+    """
+    autofix_commands = [
+        str(item).strip()
+        for item in list(remediation_loop.get("autofix_commands") or [])
+        if str(item).strip()
+    ]
+    validation_commands = list(remediation_loop.get("validation_commands") or [])
+    result: dict[str, Any] = {
+        "status": "skipped",
+        "summary": "Mekanik autofix komutu tanımlı değil.",
+        "commands_run": [],
+        "validation_results": [],
+        "reverted": False,
+    }
+    if not autofix_commands:
+        return result
+    if not validation_commands:
+        result["status"] = "blocked"
+        result["summary"] = "Mekanik autofix güvenli doğrulama komutu olmadan engellendi."
+        return result
+
+    scope_paths = [
+        str(path).strip()
+        for path in list(remediation_loop.get("scope_paths") or [])
+        if str(path).strip()
+    ]
+    backups: dict[str, str] = {}
+    for path in scope_paths:
+        ok, content = await asyncio.to_thread(code.read_file, path, False)
+        if ok:
+            backups[path] = str(content)
+    if scope_paths and not backups:
+        result["status"] = "blocked"
+        result["summary"] = (
+            "Mekanik autofix engellendi: scope_paths dosyaları okunamadığı için "
+            "güvenli bir rollback noktası oluşturulamadı."
+        )
+        return result
+
+    for command in autofix_commands:
+        ok, output = await asyncio.to_thread(code.run_shell_in_sandbox, command, base_dir)
+        result["commands_run"].append({"command": command, "ok": ok, "output": output})
+        if not ok:
+            await restore_self_heal_backups(code, backups)
+            result["status"] = "reverted"
+            result["reverted"] = True
+            result["summary"] = f"Mekanik autofix komutu başarısız oldu ve geri alındı: {command}"
+            return result
+
+    for command in validation_commands:
+        ok, output = await asyncio.to_thread(code.run_shell_in_sandbox, command, base_dir)
+        result["validation_results"].append({"command": command, "ok": ok, "output": output})
+        if not ok:
+            await restore_self_heal_backups(code, backups)
+            result["status"] = "reverted"
+            result["reverted"] = True
+            result["summary"] = (
+                "Mekanik autofix tek başına yeterli olmadı (doğrulama başarısız); "
+                "LLM tabanlı plan üretimine devam edilecek."
+            )
+            return result
+
+    result["status"] = "applied"
+    result["summary"] = (
+        f"Mekanik autofix (ruff --fix) LLM plan üretimine gerek kalmadan uygulandı: "
+        f"{len(autofix_commands)} komut, {len(validation_commands)} doğrulama geçti."
+    )
+    return result
+
+
 async def execute_self_heal_plan(
     *,
     code: _CodeManagerLike,
@@ -129,4 +213,9 @@ async def execute_self_heal_plan(
         return result
 
 
-__all__ = ["execute_self_heal_plan", "normalize_self_heal_plan", "restore_self_heal_backups"]
+__all__ = [
+    "execute_mechanical_autofix",
+    "execute_self_heal_plan",
+    "normalize_self_heal_plan",
+    "restore_self_heal_backups",
+]

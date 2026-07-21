@@ -39,6 +39,23 @@ def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
     assert command == "uv run ruff check --fix --unsafe-fixes --select I,UP034 ."
 
 
+@pytest.mark.parametrize(
+    ("paths", "expected"),
+    [
+        ([], "uv run ruff check --fix ."),
+        (["tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+        (
+            ["tests/unit/x.py", "core/y.py", "not_python.txt"],
+            "uv run ruff check --fix tests/unit/x.py core/y.py",
+        ),
+        (["../outside.py", "/abs/path.py"], "uv run ruff check --fix ."),
+        (["tests/unit/x.py", "tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+    ],
+)
+def test_build_scoped_ruff_autofix_command(paths: list[str], expected: str) -> None:
+    assert ci.build_scoped_ruff_autofix_command(paths) == expected
+
+
 def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> None:
     assert ci._is_allowed_validation_command("uv run ruff check --fix .") is True
     assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
@@ -830,7 +847,7 @@ def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
 
     result = ci.build_remediation_loop(context, "ruff lint failure")
 
-    assert result["autofix_commands"] == ["uv run ruff check --fix ."]
+    assert result["autofix_commands"] == ["uv run ruff check --fix core/ci_remediation.py"]
     assert result["unsafe_autofix_policy"]["unsafe_fixes_default"] is False
     assert result["unsafe_autofix_policy"]["allowed_unsafe_selectors"] == ["I", "UP"]
     assert "--unsafe-fixes" in result["unsafe_autofix_policy"]["guidance"]

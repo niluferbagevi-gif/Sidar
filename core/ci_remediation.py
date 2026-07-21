@@ -127,6 +127,27 @@ def build_ruff_autofix_command(
     return " ".join(command)
 
 
+def build_scoped_ruff_autofix_command(paths: list[str]) -> str:
+    """Build a Ruff autofix command scoped to known-safe ``.py`` targets.
+
+    Falls back to the repo-wide ``.`` target (same as ``build_ruff_autofix_command``)
+    when none of ``paths`` is a safe, in-repo ``.py`` file, so callers always get a
+    runnable command.
+    """
+    safe_paths: list[str] = []
+    for path in paths:
+        normalized = str(path or "").strip()
+        if not normalized or normalized.startswith("/") or ".." in normalized:
+            continue
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+        if normalized.endswith(".py") and normalized not in safe_paths:
+            safe_paths.append(normalized)
+    command = ["uv", "run", "ruff", "check", "--fix"]
+    command.extend(safe_paths if safe_paths else [_CURRENT_DIR_TARGET])
+    return " ".join(command)
+
+
 def _ruff_unsafe_selector_allowed(selector: str, allowed_selectors: list[str]) -> bool:
     return any(selector == allowed or selector.startswith(allowed) for allowed in allowed_selectors)
 
@@ -1086,7 +1107,9 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
     )
     ruff_failure_detected = "ruff" in combined_text
     unsafe_selectors = list(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
-    autofix_commands = [build_ruff_autofix_command()] if ruff_failure_detected else []
+    autofix_commands = (
+        [build_scoped_ruff_autofix_command(suspected_targets)] if ruff_failure_detected else []
+    )
     unsafe_autofix_policy = {
         "unsafe_fixes_default": False,
         "unsafe_fixes_env": "RUFF_AUTOFIX_UNSAFE=1",

@@ -44,6 +44,9 @@ from agent.maintenance.nightly import (
     run_nightly_memory_maintenance as run_nightly_memory_maintenance_service,
 )
 from agent.self_heal.executor import (
+    execute_mechanical_autofix as execute_mechanical_autofix_service,
+)
+from agent.self_heal.executor import (
     execute_self_heal_plan as execute_self_heal_plan_service,
 )
 from agent.self_heal.executor import (
@@ -663,6 +666,15 @@ class SidarAgent:
             plan=plan,
         )
 
+    async def _attempt_mechanical_autofix(
+        self, *, remediation_loop: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await execute_mechanical_autofix_service(
+            code=self.code,
+            base_dir=str(self.cfg.BASE_DIR),
+            remediation_loop=remediation_loop,
+        )
+
     async def _attempt_autonomous_self_heal(
         self,
         *,
@@ -759,6 +771,33 @@ class SidarAgent:
             }
             remediation["self_heal_execution"] = execution
             return execution
+
+        mechanical_execution = await self._attempt_mechanical_autofix(
+            remediation_loop=remediation_loop
+        )
+        if mechanical_execution.get("status") == "applied":
+            remediation_loop["status"] = "applied"
+            self._update_remediation_step(
+                remediation_loop,
+                "patch",
+                status="completed",
+                detail=str(mechanical_execution.get("summary") or ""),
+            )
+            self._update_remediation_step(
+                remediation_loop,
+                "validate",
+                status="completed",
+                detail="Mekanik autofix sonrası sandbox doğrulamaları geçti.",
+            )
+            self._update_remediation_step(
+                remediation_loop,
+                "handoff",
+                status="completed",
+                detail="Mekanik autofix (ruff --fix) LLM plan üretimine gerek kalmadan uygulandı.",
+            )
+            remediation["remediation_loop"] = remediation_loop
+            remediation["self_heal_execution"] = mechanical_execution
+            return mechanical_execution
 
         plan = await self._build_self_heal_plan(
             ci_context=ci_context,
