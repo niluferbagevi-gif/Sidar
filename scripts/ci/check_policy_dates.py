@@ -57,6 +57,7 @@ def check_policy_date_warnings(
     effective_today = today or date.today()
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})
+    ruff_debt = sidar.get("ruff_debt", {})
     torch_reminder = sidar.get("dependency_profile_plan", {}).get("torch_upgrade_reminder", {})
     configured_window = torch_reminder.get("warning_window_days", 45)
     warning_window = (
@@ -80,6 +81,30 @@ def check_policy_date_warnings(
         today=effective_today,
         warn_within_days=warning_window,
     )
+    _add_if_due_soon(
+        warnings,
+        label="Ruff E501 global ignore review",
+        value=ruff_debt.get("e501_global_ignore_review_by", ""),
+        key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
+        today=effective_today,
+        warn_within_days=warning_window,
+    )
+    _add_if_due_soon(
+        warnings,
+        label="Ruff docstring debt campaign close",
+        value=ruff_debt.get("close_docstring_campaign_by", ""),
+        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
+        today=effective_today,
+        warn_within_days=warning_window,
+    )
+    _add_if_due_soon(
+        warnings,
+        label="Ruff ASYNC240 debt campaign close",
+        value=ruff_debt.get("close_async240_campaign_by", ""),
+        key="tool.sidar.ruff_debt.close_async240_campaign_by",
+        today=effective_today,
+        warn_within_days=warning_window,
+    )
     return warnings
 
 
@@ -97,6 +122,20 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
         label="Ruff E501 global ignore review",
         value=ruff_debt.get("e501_global_ignore_review_by", ""),
         key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
+        today=effective_today,
+    )
+    _add_if_expired(
+        failures,
+        label="Ruff docstring debt campaign close",
+        value=ruff_debt.get("close_docstring_campaign_by", ""),
+        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
+        today=effective_today,
+    )
+    _add_if_expired(
+        failures,
+        label="Ruff ASYNC240 debt campaign close",
+        value=ruff_debt.get("close_async240_campaign_by", ""),
+        key="tool.sidar.ruff_debt.close_async240_campaign_by",
         today=effective_today,
     )
 
