@@ -553,7 +553,10 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     for cmd, extra_env in quality_steps:
         success, output = run_command(cmd, show_output=False, extra_env=extra_env)
         if not success:
-            return False, f"{' '.join(cmd)}\n{output}".strip()
+            failure = f"{' '.join(cmd)}\n{output}".strip()
+            if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
+                failure += "\n\nDüzeltmek için: uv run ruff format ."
+            return False, failure
 
     return True, ""
 
