@@ -843,6 +843,20 @@ PY
         fi
     fi
 
+    # ── REDIS_PASSWORD ───────────────────────────────────────────────────────
+    # docker-compose Redis'i --requirepass ile başlatır ve host ağına hiç
+    # publish etmez; bu değer boş/zayıfsa `docker compose up` REDIS_PASSWORD'ün
+    # zorunlu ${VAR:?...} kontrolünde başarısız olur.
+    if _is_missing_or_insecure "REDIS_PASSWORD"; then
+        local _v; _v=$(_gen_urlsafe 24)
+        if [[ -n "$_v" ]]; then
+            _write_secret "REDIS_PASSWORD" "$_v"
+            ok ".env: REDIS_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "REDIS_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # ── API_KEY ──────────────────────────────────────────────────────────────
     if _is_missing_or_insecure "API_KEY"; then
         local _v; _v=$(_gen_urlsafe 32)
@@ -1377,13 +1391,14 @@ is_env_example_secret_value() {
 
 validate_required_security_profile() {
     local env_file="$1"
-    local api_key memory_key access_level db_password database_url pg_password grafana_password
+    local api_key memory_key access_level db_password database_url pg_password grafana_password redis_password
     api_key="$(get_env_value "$env_file" API_KEY)"
     memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
     access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
     database_url="$(get_env_value "$env_file" DATABASE_URL)"
     pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
     grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
+    redis_password="$(get_env_value "$env_file" REDIS_PASSWORD)"
 
     if is_weak_secret_value "$api_key"; then
         fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
@@ -1421,6 +1436,9 @@ PYDB
     fi
     if is_weak_secret_value "$grafana_password"; then
         fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
+    fi
+    if is_weak_secret_value "$redis_password"; then
+        fail ".env güvenlik doğrulaması başarısız: REDIS_PASSWORD boş veya zayıf."
     fi
 }
 

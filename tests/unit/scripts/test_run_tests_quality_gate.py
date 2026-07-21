@@ -5437,12 +5437,25 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     redis_block = compose[redis_start:postgres_start]
 
     assert "healthcheck:" in redis_block
-    assert 'test: ["CMD", "redis-cli", "ping"]' in redis_block
+    assert '"CMD-SHELL", "redis-cli -a' in redis_block
+    assert "ping | grep -q PONG" in redis_block
     assert "interval: 5s" in redis_block
     assert "timeout: 3s" in redis_block
     assert "retries: 20" in redis_block
     assert "redis:\n        condition: service_started" not in compose
     assert compose.count("redis:\n        condition: service_healthy") >= 4
+
+
+def test_docker_compose_redis_requires_password_and_is_not_published_to_host() -> None:
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    redis_start = compose.index("  redis:")
+    postgres_start = compose.index("  postgres:", redis_start)
+    redis_block = compose[redis_start:postgres_start]
+
+    assert "--requirepass" in redis_block
+    assert 'REDIS_PASSWORD:?' in redis_block
+    assert "ports:" not in redis_block
+    assert 'expose:\n      - "6379"' in redis_block
 
 
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:

@@ -170,7 +170,13 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert ":latest" not in services["jaeger"]["image"]
 
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
-    assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
+    redis_exporter_env = services["redis-exporter"]["environment"]
+    assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
+    assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
+
+    assert "ports" not in services["redis"]
+    assert services["redis"]["expose"] == ["6379"]
+    assert "--requirepass" in services["redis"]["command"]
 
     postgres_exporter = services["postgres-exporter"]
     assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
