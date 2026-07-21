@@ -78,6 +78,18 @@ def test_autonomous_loop_hybrid_mode_ignores_static_analysis_override() -> None:
     assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
 
 
+def test_autonomous_loop_bandit_invocation_loads_pyproject_config() -> None:
+    """Regression test: without -c pyproject.toml, Bandit ignores [tool.bandit]
+
+    exclude_dirs (.venv, node_modules, data, logs, artifacts) and scans the
+    entire tree including third-party packages, causing multi-minute hangs
+    and spurious auto-heal triggers during the preflight phase.
+    """
+    script = (REPO_ROOT / "autonomous_loop.sh").read_text(encoding="utf-8")
+
+    assert "uv run bandit -r . -c pyproject.toml -f json" in script
+
+
 def test_autonomous_loop_full_static_mode_allows_static_analysis_override() -> None:
     output = _run_autonomous_loop_config(
         profile="short",

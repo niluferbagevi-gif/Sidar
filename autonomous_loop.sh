@@ -673,7 +673,7 @@ run_static_analysis_heal_phases() {
   fi
 
   echo "[SECURITY] Running Bandit Security Scan..."
-  uv run bandit -r . -f json -o "${AUTONOMOUS_BANDIT_REPORT}"
+  uv run bandit -r . -c pyproject.toml -f json -o "${AUTONOMOUS_BANDIT_REPORT}"
   bandit_exit=$?
   if [ "${bandit_exit}" -ne 0 ]; then
     echo "[SECURITY] Bandit found warnings (exit=${bandit_exit}). Triggering Auto-Heal for security context..."
