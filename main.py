@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
+from launcher import doctor as launcher_doctor
 from launcher import process as launcher_process
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
@@ -608,83 +609,31 @@ def _safe_host(value: object, default: str = "127.0.0.1") -> str:
 
 
 def _doctor_status_icon(status: str) -> str:
-    if status == "pass":
-        return "✅"
-    if status == "warn":
-        return "⚠"
-    if status == "fail":
-        return "❌"
-    return "ℹ️"
+    return launcher_doctor.doctor_status_icon(status)
 
 
 def _print_doctor_check_summary(check: Any) -> None:
-    status = str(getattr(check, "status", "warn") or "warn")
-    name = str(getattr(check, "name", "doctor") or "doctor")
-    message = str(getattr(check, "message", "") or "")
-    details = getattr(check, "details", {}) or {}
-    color = GREEN if status == "pass" else (RED if status == "fail" else YELLOW)
-    print(f"{color}{_doctor_status_icon(status)} Doctor/{name}: {message}{RESET}")
-
-    hints = details.get("root_cause_hints") if isinstance(details, dict) else None
-    if isinstance(hints, list) and status in {"warn", "fail"}:
-        for hint in hints[:3]:
-            print(f"{YELLOW}   • Olası neden: {hint}{RESET}")
-
-    steps = details.get("remediation_steps") if isinstance(details, dict) else None
-    if isinstance(steps, list) and status in {"warn", "fail"}:
-        for step in steps[:2]:
-            print(f"{YELLOW}   • Çözüm: {step}{RESET}")
-
-    commands = details.get("recommended_commands") if isinstance(details, dict) else None
-    if isinstance(commands, list) and status in {"warn", "fail"}:
-        for command in commands[:3]:
-            print(f"{CYAN}   • Komut: {command}{RESET}")
+    launcher_doctor.print_doctor_check_summary(check)
 
 
 def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     """Return ordered Doctor auto-fix commands from legacy or multi-step metadata."""
-    steps = details.get("auto_fix_steps")
-    status = str(details.get("status", "warn") or "warn")
-    if isinstance(steps, list) and status in {"warn", "fail"}:
-        commands = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
-        if commands:
-            return commands
-
-    auto_fix = details.get("auto_fix")
-    if isinstance(auto_fix, list):
-        return [step.strip() for step in auto_fix if isinstance(step, str) and step.strip()]
-    if isinstance(auto_fix, str) and auto_fix.strip():
-        return [auto_fix.strip()]
-    return []
+    return launcher_doctor.doctor_auto_fix_commands(details)
 
 
 def _doctor_auto_fix_fallback_commands(details: dict[str, Any]) -> list[str]:
     """Return fallback Doctor commands when primary auto-fix fails."""
-    fallback = details.get("auto_fix_fallback") or details.get("auto_fix_fallbacks")
-    if isinstance(fallback, str) and fallback.strip():
-        return [fallback.strip()]
-    if isinstance(fallback, list):
-        return [step.strip() for step in fallback if isinstance(step, str) and step.strip()]
-
-    recommended = details.get("recommended_commands")
-    if isinstance(recommended, list):
-        primary = set(_doctor_auto_fix_commands(details))
-        return [
-            step.strip()
-            for step in recommended
-            if isinstance(step, str) and step.strip() and step.strip() not in primary
-        ]
-    return []
+    return launcher_doctor.doctor_auto_fix_fallback_commands(details)
 
 
 def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> list[str]:
     """Interactive selector for checks that publish multiple auto-fix alternatives."""
-    return commands
+    return launcher_doctor.select_doctor_auto_fix_commands(check_name, commands)
 
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Normalize Doctor auto-fix command tokens without altering caller intent."""
-    return [str(part) for part in cmd]
+    return launcher_doctor.launcher_auto_fix_command(cmd)
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
@@ -791,24 +740,7 @@ def _doctor_auto_fix_lost_env_keys(
     source_details: dict[str, Any] | None, updated_check: Any
 ) -> list[str]:
     """Return env keys that were set before auto-fix but missing after re-validation."""
-    if not isinstance(source_details, dict):
-        return []
-    updated_details = getattr(updated_check, "details", {}) or {}
-    if not isinstance(updated_details, dict):
-        return []
-
-    set_flags = {
-        "database_url_set": "DATABASE_URL",
-        "container_database_url_set": "SIDAR_CONTAINER_DATABASE_URL",
-        "postgres_user_set": "POSTGRES_USER",
-        "postgres_password_set": "POSTGRES_" + "PASSWORD",
-        "postgres_db_set": "POSTGRES_DB",
-    }
-    lost_keys: list[str] = []
-    for detail_key, env_key in set_flags.items():
-        if source_details.get(detail_key) is True and updated_details.get(detail_key) is False:
-            lost_keys.append(env_key)
-    return lost_keys
+    return launcher_doctor.doctor_auto_fix_lost_env_keys(source_details, updated_check)
 
 
 def _revalidate_doctor_check_after_auto_fix(
