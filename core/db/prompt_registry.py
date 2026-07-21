@@ -57,7 +57,7 @@ async def list_prompts(
     role = (role_name or "").strip() or None
     if db._backend == "postgresql":
         assert db._pg_pool is not None
-        query = f"SELECT {PROMPT_REGISTRY_COLUMNS} FROM prompt_registry"
+        query = f"SELECT {PROMPT_REGISTRY_COLUMNS} FROM prompt_registry"  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
         args: tuple[Any, ...] = ()
         if role:
             query += " WHERE role_name=$1"
@@ -78,7 +78,7 @@ async def list_prompts(
                 FROM prompt_registry
                 WHERE role_name=?
                 ORDER BY role_name ASC, version DESC
-                """,
+                """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
                 (role,),
             )
             return cast(list[sqlite3.Row], cur.fetchall())
@@ -87,7 +87,7 @@ async def list_prompts(
             SELECT {PROMPT_REGISTRY_COLUMNS}
             FROM prompt_registry
             ORDER BY role_name ASC, version DESC
-            """
+            """  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
         )
         return cast(list[sqlite3.Row], cur.fetchall())
 
@@ -109,7 +109,7 @@ async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[
                 WHERE role_name=$1 AND is_active=TRUE
                 ORDER BY version DESC
                 LIMIT 1
-                """,
+                """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
                 role,
             )
         if not row:
@@ -127,7 +127,7 @@ async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[
             WHERE role_name=? AND is_active=1
             ORDER BY version DESC
             LIMIT 1
-            """,
+            """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
             (role,),
         )
         return cast(sqlite3.Row | None, db._sqlite_fetchone(cur))
@@ -175,7 +175,7 @@ async def upsert_prompt(
                     INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING {PROMPT_REGISTRY_COLUMNS}
-                    """,
+                    """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
                     role,
                     text,
                     new_version,
@@ -212,7 +212,7 @@ async def upsert_prompt(
             f"""
             SELECT {PROMPT_REGISTRY_COLUMNS}
             FROM prompt_registry WHERE role_name=? AND version=?
-            """,
+            """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
             (role, new_version),
         )
         fetched = db._sqlite_fetchone(out)

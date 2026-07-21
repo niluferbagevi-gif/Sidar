@@ -446,8 +446,12 @@ exclude_dirs = [
 skips = [
   "B101", # Assertions kullanımı
   "B404", # subprocess import uyarısı; B603/B607 çağrı bazında değerlendiriliyor
-  "B608", # Dinamik SQL ifadeleri için kontrollü kullanım (whitelist + parametreli değerler)
 ]
+# B608 (dinamik SQL) global olarak skip edilmiyor: gerçek riskler satır bazlı
+# `# nosec B608  # <gerekçe>` ile bastırılır (bkz. core/router.py, core/db/monolith.py,
+# core/db/prompt_registry.py, core/rag/backends/pgvector.py, scripts/migrate_sqlite_to_pg.py).
+# Global skip, yeni yazılacak kodda gerçek bir SQL injection riskini de sessizce
+# gizleyebileceği için tercih edilmiyor.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -167,8 +167,8 @@ def upsert_pgvector_chunks(
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
-                ),  # nosec B608
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                ),
                 {"parent_id": parent_id, "session_id": session_id},
             )
             rows = [
@@ -214,8 +214,8 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"
-                ),  # nosec B608
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                ),
                 {"parent_id": parent_id, "session_id": session_id},
             )
     except Exception as exc:
