@@ -1150,6 +1150,51 @@ async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_fact
     assert remediation["remediation_loop"]["status"] == "applied"
 
 
+async def test_attempt_autonomous_self_heal_short_circuits_on_mechanical_autofix(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    agent._attempt_mechanical_autofix = AsyncMock(
+        return_value={
+            "status": "applied",
+            "summary": "ruff --fix uygulandı",
+            "commands_run": ["uv run ruff check --fix ."],
+        }
+    )
+    agent._build_self_heal_plan = AsyncMock()
+    agent._execute_self_heal_plan = AsyncMock()
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [
+                {"name": "patch", "status": "planned", "detail": ""},
+                {"name": "validate", "status": "planned", "detail": ""},
+                {"name": "handoff", "status": "planned", "detail": ""},
+            ],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == "applied"
+    assert result["summary"] == "ruff --fix uygulandı"
+    loop = remediation["remediation_loop"]
+    assert loop["status"] == "applied"
+    steps_by_name = {step["name"]: step for step in loop["steps"]}
+    assert steps_by_name["patch"]["status"] == "completed"
+    assert steps_by_name["validate"]["status"] == "completed"
+    assert steps_by_name["handoff"]["status"] == "completed"
+    assert remediation["self_heal_execution"] is result
+    assert "self_heal_plan" not in remediation
+    agent._build_self_heal_plan.assert_not_awaited()
+    agent._execute_self_heal_plan.assert_not_awaited()
+
+
 async def test_attempt_autonomous_self_heal_marks_human_intervention_after_retry_exhaustion(
     sidar_agent_factory,
 ) -> None:

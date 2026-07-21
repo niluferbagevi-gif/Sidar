@@ -50,6 +50,7 @@ def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
         ),
         (["../outside.py", "/abs/path.py"], "uv run ruff check --fix ."),
         (["tests/unit/x.py", "tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+        (["./tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
     ],
 )
 def test_build_scoped_ruff_autofix_command(paths: list[str], expected: str) -> None:
