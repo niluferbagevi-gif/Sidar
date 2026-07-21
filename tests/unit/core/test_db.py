@@ -25,7 +25,6 @@ from core.db import (
     Database,
     _expires_in,
     _hash_password,
-    _json_dumps,
     _new_entity_id,
     _parse_asyncpg_affected_rows,
     _parse_iso_datetime,
@@ -33,6 +32,7 @@ from core.db import (
     _utc_now_iso,
     _verify_password,
 )
+from core.db.helpers import json_dumps as _json_dumps
 
 
 @dataclass
