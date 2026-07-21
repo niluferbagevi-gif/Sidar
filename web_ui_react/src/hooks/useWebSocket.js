@@ -191,10 +191,19 @@ export function useWebSocket(
       callbacksRef.current.onError?.("WebSocket bağlantı hatası.");
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       wsRef.current = null;
       setStatus("disconnected");
       if (manualCloseRef.current) return;
+      // Auth-related closes (invalid/expired/missing token — see
+      // web/security.py's ws_close_policy_violation, always code 1008)
+      // won't resolve by retrying: the server will keep rejecting the same
+      // stale token every ~20s. Surface "unauthenticated" instead so the UI
+      // can prompt a re-login rather than polling forever.
+      if (event?.code === 1008) {
+        setStatus("unauthenticated");
+        return;
+      }
       scheduleReconnect();
     };
   }, [

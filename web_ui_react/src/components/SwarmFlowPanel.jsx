@@ -330,7 +330,7 @@ export function SwarmFlowPanel() {
   const respondToApproval = useCallback(async (requestId, approved) => {
     setActionBusy(true);
     try {
-      const data = await fetchJson(`/api/hitl/respond/${requestId}`, {
+      const data = await fetchJson(`/api/hitl/respond/${encodeURIComponent(requestId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

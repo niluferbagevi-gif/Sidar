@@ -9,6 +9,7 @@ const genId = () =>
 const DISPLAY_NAME_KEY = "sidar_collab_display_name";
 const ROOM_ID_KEY = "sidar_collab_room_id";
 const STREAM_THROTTLE_MS = 120;
+const MAX_MESSAGES = 500;
 const streamController = createThrottledStreamController({ throttleMs: STREAM_THROTTLE_MS });
 
 function readStoredValue(key, fallback) {
@@ -65,7 +66,9 @@ export const useChatStore = create((set, get) => ({
   },
 
   hydrateRoom(snapshot = {}) {
-    const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    const messages = Array.isArray(snapshot.messages)
+      ? snapshot.messages.slice(-MAX_MESSAGES)
+      : [];
     const telemetry = Array.isArray(snapshot.telemetry) ? snapshot.telemetry : [];
     const participants = Array.isArray(snapshot.participants) ? snapshot.participants : [];
     set({
@@ -88,7 +91,9 @@ export const useChatStore = create((set, get) => ({
     if (!message) return;
     set((state) => {
       const exists = state.messages.some((item) => item.id === message.id);
-      return exists ? state : { messages: [...state.messages, message], error: null };
+      return exists
+        ? state
+        : { messages: [...state.messages, message].slice(-MAX_MESSAGES), error: null };
     });
   },
 
@@ -140,7 +145,9 @@ export const useChatStore = create((set, get) => ({
       ts: new Date().toISOString(),
     };
     set((prev) => ({
-      messages: prev.messages.some((item) => item.id === nextMessage.id) ? prev.messages : [...prev.messages, nextMessage],
+      messages: prev.messages.some((item) => item.id === nextMessage.id)
+        ? prev.messages
+        : [...prev.messages, nextMessage].slice(-MAX_MESSAGES),
       streamingText: "",
       isStreaming: false,
       streamingRequestId: "",

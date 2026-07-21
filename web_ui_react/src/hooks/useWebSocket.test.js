@@ -467,6 +467,27 @@ describe("useWebSocket — onerror / onclose", () => {
     expect(result.current.status).toBe("reconnecting");
   });
 
+  it("sets status to unauthenticated on auth-policy close (1008) instead of reconnecting", () => {
+    vi.useFakeTimers();
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      wsMockInstance.onclose?.({ code: 1008, reason: "Invalid or expired token" });
+    });
+
+    expect(result.current.status).toBe("unauthenticated");
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("triggers reconnect timer callback and calls connectRef.current (Satır 56)", () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0);
