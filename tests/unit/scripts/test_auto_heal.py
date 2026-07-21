@@ -157,9 +157,47 @@ def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
 ) -> None:
     answers = iter(["belki", "e"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: True)
 
     assert auto_heal._prompt_hitl_approval() is True
     assert "Lütfen" in capsys.readouterr().out
+
+
+def test_prompt_hitl_approval_fails_closed_without_tty(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression test: without a TTY guard, input() raises EOFError on closed
+
+    stdin (e.g. a cron/CI run of the autonomous loop), crashing the process
+    instead of failing closed like the rest of the HITL approval chain.
+    """
+    monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: False)
+
+    def _unexpected_input(_prompt: str) -> str:
+        raise AssertionError("input() must not be called without an interactive TTY")
+
+    monkeypatch.setattr("builtins.input", _unexpected_input)
+
+    assert auto_heal._prompt_hitl_approval() is False
+    assert "Etkileşimli terminal bulunamadı" in capsys.readouterr().out
+
+
+def test_has_interactive_tty_returns_false_when_stdin_is_not_a_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
+
+    assert auto_heal._has_interactive_tty() is False
+
+
+def test_has_interactive_tty_returns_true_when_stdin_and_stdout_are_ttys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
+
+    assert auto_heal._has_interactive_tty() is True
 
 
 def test_initialize_agent_soft_dependency_continues_after_failure() -> None:

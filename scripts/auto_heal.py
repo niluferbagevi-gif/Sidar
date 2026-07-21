@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -166,7 +167,27 @@ def _wants_interactive_hitl_prompt(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"", "prompt", "ask", "interactive"}
 
 
+def _has_interactive_tty() -> bool:
+    """Return True only if both stdin and stdout are attached to a real terminal.
+
+    input() blocks on stdin; in an unattended CI/cron run stdin is typically
+    closed or redirected, which makes input() raise EOFError instead of
+    returning a value, crashing the autonomous loop mid-remediation.
+    """
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
 def _prompt_hitl_approval() -> bool:
+    if not _has_interactive_tty():
+        print(
+            "⚠ Etkileşimli terminal bulunamadı; HITL onay prompt'u gösterilemiyor. "
+            "Fail-closed davranış: risky self-heal planı reddedildi (hayır). "
+            "Unattended/otonom çalıştırmalarda --hitl-approve yes/no ile açıkça belirtin."
+        )
+        return False
     while True:
         answer = (
             input("⚠ Riskli self-heal planı bulundu. Uygulansın mı? (evet/hayır): ").strip().lower()
