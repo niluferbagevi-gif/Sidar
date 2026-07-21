@@ -574,7 +574,8 @@ wait_for_redis_ready_after_docker_start() {
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
-        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$redis_url" ]] || redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
     fi
     if [[ -z "$redis_url" ]]; then
         redis_url="redis://localhost:6379/0"
@@ -605,7 +606,9 @@ PY
     info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
     for _ in {1..30}; do
         if command -v redis-cli &>/dev/null; then
-            if redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
+            local redis_password=""
+            redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
+            if REDISCLI_AUTH="$redis_password" redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
                 ok "Redis erişilebilir hale geldi."
                 return 0
             fi

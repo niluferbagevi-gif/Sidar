@@ -5446,7 +5446,7 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     assert compose.count("redis:\n        condition: service_healthy") >= 4
 
 
-def test_docker_compose_redis_requires_password_and_is_not_published_to_host() -> None:
+def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     redis_start = compose.index("  redis:")
     postgres_start = compose.index("  postgres:", redis_start)
@@ -5454,8 +5454,8 @@ def test_docker_compose_redis_requires_password_and_is_not_published_to_host() -
 
     assert "--requirepass" in redis_block
     assert "REDIS_PASSWORD:?" in redis_block
-    assert "ports:" not in redis_block
-    assert 'expose:\n      - "6379"' in redis_block
+    assert '127.0.0.1:${REDIS_PORT:-6379}:6379' in redis_block
+    assert '0.0.0.0:' not in redis_block
 
 
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:

@@ -10,14 +10,15 @@ services:
     image: redis:7.4-alpine
     container_name: sidar_redis
     restart: unless-stopped
-    # Redis, host ağına hiç publish edilmez (yalnızca Docker network içinden
-    # "redis" servis adıyla erişilir) ve parolasız kalması engellenir; aksi
+    # Local geliştirme modundaki uygulamanın Redis'e erişebilmesi için port
+    # yalnız loopback arayüzüne bind edilir; LAN/WSL dışına publish edilmez.
+    # Redis'in parolasız kalması engellenir; aksi
     # halde host'a erişebilen herhangi bir istemci cache/session/rate-limit
     # anahtarlarını (sidar:rl:*) okuyup yazabilir ve CONFIG SET/modül yükleme
     # üzerinden bilinen RCE geçmişine sahip parolasız Redis'e ulaşabilirdi.
     command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}"
-    expose:
-      - "6379"
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:

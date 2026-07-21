@@ -174,8 +174,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
     assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
 
-    assert "ports" not in services["redis"]
-    assert services["redis"]["expose"] == ["6379"]
+    assert services["redis"]["ports"] == ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
     assert "--requirepass" in services["redis"]["command"]
 
     postgres_exporter = services["postgres-exporter"]
