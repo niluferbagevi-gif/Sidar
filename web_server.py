@@ -1639,81 +1639,16 @@ def _plugin_source_filename(module_label: str) -> str:
 # izolasyonuna geçmek bu çalışma modelini IPC tabanlı mesajlaşmaya taşımayı
 # gerektiren ayrı, büyük bir mimari değişikliktir ve ayrı bir proje olarak takip
 # edilmelidir.
-_PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
-    {
-        "exec",
-        "eval",
-        "compile",
-        "open",
-        "input",
-        "breakpoint",
-        "globals",
-        "vars",
-        "memoryview",
-    }
-)
-_PLUGIN_SAFE_IMPORT_ROOTS: frozenset[str] = frozenset(
-    {"abc", "asyncio", "collections", "dataclasses", "math", "pydantic", "typing"}
-)
-_PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS: frozenset[str] = frozenset({"BaseAgent"})
-_PLUGIN_SAFE_FASTAPI_FROM_IMPORTS: frozenset[str] = frozenset({"HTTPException"})
-
-
-def _restricted_plugin_import(
-    name: str,
-    globals: dict[str, Any] | None = None,
-    locals: dict[str, Any] | None = None,
-    fromlist: tuple[str, ...] = (),
-    level: int = 0,
-) -> Any:
-    """Plugin kodu için allowlist tabanlı import kapısı."""
-
-    del globals, locals
-    if level != 0:
-        raise ImportError("Plugin güvenlik politikası: relative import engellendi.")
-    module_name = str(name or "").strip()
-    root = module_name.split(".", 1)[0]
-    requested = tuple(str(item) for item in (fromlist or ()))
-
-    if module_name == "web_server":
-        if requested and any(
-            item not in _PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS for item in requested
-        ):
-            raise ImportError("Plugin güvenlik politikası: web_server import kapsamı engellendi.")
-        return SimpleNamespace(BaseAgent=BaseAgent)
-
-    if module_name == "fastapi":
-        if requested and any(item not in _PLUGIN_SAFE_FASTAPI_FROM_IMPORTS for item in requested):
-            raise ImportError("Plugin güvenlik politikası: fastapi import kapsamı engellendi.")
-        return SimpleNamespace(HTTPException=HTTPException)
-
-    if module_name == "agent.base_agent":
-        if requested and any(item != "BaseAgent" for item in requested):
-            raise ImportError(
-                "Plugin güvenlik politikası: agent.base_agent import kapsamı engellendi."
-            )
-        return builtins.__import__(module_name, {}, {}, requested, 0)
-
-    if root not in _PLUGIN_SAFE_IMPORT_ROOTS:
-        raise ImportError("Plugin güvenlik politikası: import allowlist dışında.")
-    return builtins.__import__(module_name, {}, {}, requested, 0)
+# Allowlists and the runtime import/builtins gate live in web.plugins.sandbox
+# so there is a single enforced copy (previously this module kept its own,
+# independently drifted set of constants — see web/plugins/sandbox.py's module
+# docstring note). These names stay importable from web_server for existing
+# monkeypatch targets and call sites.
+_restricted_plugin_import = plugin_sandbox.restricted_plugin_import
 
 
 def _build_restricted_plugin_builtins() -> dict[str, Any]:
-    """Plugin exec'i için tehlikeli built-in'leri elenmiş bir __builtins__ haritası üretir.
-
-    AST doğrulayıcı statik olarak `exec`, `eval`, `compile`, `__import__`, `open`, `input`
-    çağrılarını engeller; bu fonksiyon ise runtime'da bu sembolleri tamamen erişilmez
-    kılarak defense-in-depth sağlar. `from ... import ...` deyiminin çalışabilmesi için
-    sadece güvenli modülleri döndüren allowlist tabanlı `__import__` kullanılır.
-    """
-    safe: dict[str, Any] = {}
-    for name in dir(builtins):
-        if name in _PLUGIN_BANNED_BUILTINS:
-            continue
-        safe[name] = getattr(builtins, name)
-    safe["__import__"] = _restricted_plugin_import
-    return safe
+    return plugin_sandbox.build_restricted_plugin_builtins()
 
 
 def _validate_plugin_source(source_code: str) -> None:

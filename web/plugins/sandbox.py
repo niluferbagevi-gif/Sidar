@@ -7,12 +7,25 @@ in-process plugin source execution unless explicitly enabled by an operator.
 from __future__ import annotations
 
 import ast
+import builtins
 import os
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException
 
+from agent.base_agent import BaseAgent
+
+# The runtime __builtins__/__import__ gate below (restricted_plugin_import,
+# build_restricted_plugin_builtins) used to have a second, independently
+# maintained copy of these allowlists in web_server.py, with values that had
+# drifted apart (e.g. this module's PLUGIN_SAFE_IMPORT_ROOTS additionally
+# allowed "datetime"/"enum" but was never actually wired into the exec path).
+# These constants are now the single enforced source; web_server.py aliases
+# them instead of keeping its own copy. PLUGIN_SAFE_IMPORT_ROOTS intentionally
+# stays at the narrower, already-enforced set rather than the wider one that
+# was dead code, so consolidating here does not silently widen the sandbox.
 PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
     {
         "breakpoint",
@@ -22,21 +35,20 @@ PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
         "globals",
         "input",
         "locals",
+        "memoryview",
         "open",
         "vars",
     }
 )
 PLUGIN_SAFE_IMPORT_ROOTS: frozenset[str] = frozenset(
     {
-        "agent",
+        "abc",
+        "asyncio",
         "collections",
         "dataclasses",
-        "datetime",
-        "enum",
-        "fastapi",
         "math",
+        "pydantic",
         "typing",
-        "web_server",
     }
 )
 PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS: frozenset[str] = frozenset({"BaseAgent"})
@@ -158,6 +170,61 @@ def execute_validated_plugin_source(
     """Compile and execute already-validated plugin source in the provided namespace."""
     code = compile(source_code, plugin_source_filename(module_label), "exec")
     exec(code, namespace)  # nosec B102
+
+
+def restricted_plugin_import(
+    name: str,
+    globals: dict[str, Any] | None = None,
+    locals: dict[str, Any] | None = None,
+    fromlist: tuple[str, ...] = (),
+    level: int = 0,
+) -> Any:
+    """Allowlist-based import gate for plugin code."""
+
+    del globals, locals
+    if level != 0:
+        raise ImportError("Plugin güvenlik politikası: relative import engellendi.")
+    module_name = str(name or "").strip()
+    root = module_name.split(".", 1)[0]
+    requested = tuple(str(item) for item in (fromlist or ()))
+
+    if module_name == "web_server":
+        if requested and any(item not in PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS for item in requested):
+            raise ImportError("Plugin güvenlik politikası: web_server import kapsamı engellendi.")
+        return SimpleNamespace(BaseAgent=BaseAgent)
+
+    if module_name == "fastapi":
+        if requested and any(item not in PLUGIN_SAFE_FASTAPI_FROM_IMPORTS for item in requested):
+            raise ImportError("Plugin güvenlik politikası: fastapi import kapsamı engellendi.")
+        return SimpleNamespace(HTTPException=HTTPException)
+
+    if module_name == "agent.base_agent":
+        if requested and any(item != "BaseAgent" for item in requested):
+            raise ImportError(
+                "Plugin güvenlik politikası: agent.base_agent import kapsamı engellendi."
+            )
+        return builtins.__import__(module_name, {}, {}, requested, 0)
+
+    if root not in PLUGIN_SAFE_IMPORT_ROOTS:
+        raise ImportError("Plugin güvenlik politikası: import allowlist dışında.")
+    return builtins.__import__(module_name, {}, {}, requested, 0)
+
+
+def build_restricted_plugin_builtins() -> dict[str, Any]:
+    """Plugin exec'i için tehlikeli built-in'leri elenmiş bir __builtins__ haritası üretir.
+
+    AST doğrulayıcı statik olarak `exec`, `eval`, `compile`, `__import__`, `open`, `input`
+    çağrılarını engeller; bu fonksiyon ise runtime'da bu sembolleri tamamen erişilmez
+    kılarak defense-in-depth sağlar. `from ... import ...` deyiminin çalışabilmesi için
+    sadece güvenli modülleri döndüren allowlist tabanlı `__import__` kullanılır.
+    """
+    safe: dict[str, Any] = {}
+    for name in dir(builtins):
+        if name in PLUGIN_BANNED_BUILTINS:
+            continue
+        safe[name] = getattr(builtins, name)
+    safe["__import__"] = restricted_plugin_import
+    return safe
 
 
 def assert_in_process_plugin_execution_allowed() -> None:
