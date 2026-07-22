@@ -41,3 +41,5 @@ def test_production_secret_rotation_runbook_covers_all_shared_secrets() -> None:
     assert "docs/runbooks/production-secret-rotation.md" in sidar_doc
     assert "dev/test/local" in runbook
     assert "Fernet.generate_key" in runbook
+    assert "python -m scripts.rotate_production_secrets" in runbook
+    assert "--ack-memory-key-impact" in runbook

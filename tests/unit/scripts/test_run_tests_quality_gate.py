@@ -5571,4 +5571,5 @@ def test_installer_warns_when_production_env_shares_local_generated_secrets() ->
     ):
         assert key in env_phase
     assert "docs/runbooks/production-secret-rotation.md" in env_phase
+    assert "python -m scripts.rotate_production_secrets" in env_phase
     assert 'emit_production_secret_rotation_notice "$src"' in env_phase

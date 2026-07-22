@@ -969,7 +969,7 @@ emit_production_secret_rotation_notice() {
         return 0
     fi
 
-    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; runbook: docs/runbooks/production-secret-rotation.md"
+    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; komut: uv run python -m scripts.rotate_production_secrets --env-file .env.production --apply --ack-memory-key-impact; runbook: docs/runbooks/production-secret-rotation.md"
 }
 
 propagate_shared_secrets_to_env_variants() {

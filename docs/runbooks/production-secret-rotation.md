@@ -38,7 +38,18 @@ secret'larla değiştirilmelidir:
    değerlerini parola göstermeden envantere al; dosya izinlerinin `600` veya daha sıkı
    olduğunu doğrula.
 2. **Yeni production değerleri üret:** Her secret için prod'a özel rastgele değer üret.
-   Örnekler:
+   Repo içi dry-run/staging dotenv kullanılıyorsa önerilen fail-closed komut:
+
+   ```bash
+   uv run python -m scripts.rotate_production_secrets --env-file .env.production \
+     --apply --ack-memory-key-impact
+   ```
+
+   Komut sekiz değeri atomik olarak değiştirir, dosya modunu `600` yapar, hiçbir
+   secret değerini loglamaz ve local/dev/test profilleriyle eşitlik veya zayıf değer
+   kalırsa başarısız olur. `--ack-memory-key-impact`, 5. adımdaki veri kurtarma kararının
+   kaydedildiğine dair açık operatör onayıdır. Değerleri dış secret manager'da üretecek
+   ekipler için eşdeğer manuel örnekler:
 
    ```bash
    # URL-safe tokenlar için
@@ -67,7 +78,12 @@ secret'larla değiştirilmelidir:
    içindeki `.env.production` yalnız staging/dry-run için kullanılacaksa aynı prod
    değerleriyle güncelle; gerçek prod için dosyayı kalıcı sır deposu yapma.
 4. **Dev/test ayrışmasını doğrula:** Aşağıdaki değerler production ile byte-birebir aynı
-   kalmamalıdır: `.env`, `.env.development`, `.env.test`, `.env.advanced`.
+   kalmamalıdır: `.env`, `.env.development`, `.env.test`, `.env.advanced`. Değerleri
+   göstermeyen doğrulama komutu:
+
+   ```bash
+   uv run python -m scripts.rotate_production_secrets --env-file .env.production
+   ```
 5. **MEMORY_ENCRYPTION_KEY geçişini planla:** Var olan şifreli bellek verisi korunacaksa
    eski anahtarla decrypt/export, yeni anahtarla re-encrypt/import akışını bakım
    penceresinde yap. Veri korunmayacaksa eski şifreli kayıtları arşivle veya temizle.
