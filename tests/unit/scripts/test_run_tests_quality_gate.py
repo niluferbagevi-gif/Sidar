@@ -416,6 +416,11 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     assert "^[A-Za-z_][A-Za-z0-9_]*$" in script
     assert "Geçersiz TEST_DATABASE_NAME" in script
     assert "Geçersiz TEST_DATABASE_USER" in script
+    assert "postgres_identifiers_equal()" in script
+    assert "ana POSTGRES_DB" in script
+    assert script.index(
+        'postgres_identifiers_equal "${test_db_name}" "${primary_db_name}"'
+    ) < script.index("DROP DATABASE IF EXISTS ${test_db_name}")
     assert script.index('is_safe_postgres_identifier "${test_db_name}"') < script.index(
         "DROP DATABASE IF EXISTS ${test_db_name}"
     )
@@ -430,6 +435,35 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     assert script.index("load_test_database_password_env && ensure_test_services") < script.index(
         "&& prepare_test_database; then"
     )
+
+
+def test_prepare_test_database_rejects_case_folded_primary_database_collision(
+    tmp_path: Path,
+) -> None:
+    """The destructive reset must stop before Docker when test and primary DB collide."""
+    harness = tmp_path / "database-collision.sh"
+    harness.write_text(
+        "\n".join(
+            (
+                "#!/usr/bin/env bash",
+                "set -uo pipefail",
+                "BACKEND_EXIT_CODE=0",
+                "DOCKER_COMPOSE_CMD=()",
+                _extract_run_tests_function("is_safe_postgres_identifier"),
+                _extract_run_tests_function("postgres_identifiers_equal"),
+                _extract_run_tests_function("prepare_test_database"),
+                "resolve_docker_compose_cmd() { echo docker-must-not-run >&2; return 99; }",
+                "POSTGRES_DB=sidar TEST_DATABASE_NAME=SIDAR prepare_test_database",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(["bash", str(harness)], capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "ana POSTGRES_DB (sidar) ile aynı olamaz" in result.stdout
+    assert "docker-must-not-run" not in result.stderr
 
 
 def test_benchmark_tooling_bootstrap_prepares_system_deps_before_pytest_benchmark() -> None:

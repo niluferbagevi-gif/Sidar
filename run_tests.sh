@@ -1539,12 +1539,21 @@ is_safe_postgres_identifier() {
   [[ "${identifier}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
+postgres_identifiers_equal() {
+  local left="$1"
+  local right="$2"
+  # DROP/CREATE ifadeleri identifier'ları tırnaksız kullandığı için PostgreSQL
+  # bunları küçük harfe katlar. Koruma da aynı semantiği uygulamalıdır.
+  [ "${left,,}" = "${right,,}" ]
+}
+
 gpu_hardware_available() {
   command -v nvidia-smi >/dev/null 2>&1 || command -v nvidia-smi.exe >/dev/null 2>&1
 }
 
 prepare_test_database() {
   local test_db_name="${TEST_DATABASE_NAME:-sidar_test}"
+  local primary_db_name="${POSTGRES_DB:-sidar}"
   local test_db_user="${TEST_DATABASE_USER:-${POSTGRES_USER:-sidar}}"
   local test_db_password="${TEST_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-sidar}}"
   local test_db_host="${POSTGRES_HOST:-127.0.0.1}"
@@ -1564,6 +1573,12 @@ prepare_test_database() {
 
   if ! is_safe_postgres_identifier "${test_db_name}"; then
     echo "❌ Geçersiz TEST_DATABASE_NAME: yalnız [A-Za-z_][A-Za-z0-9_]* biçimindeki PostgreSQL identifier kabul edilir."
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if postgres_identifiers_equal "${test_db_name}" "${primary_db_name}"; then
+    echo "❌ TEST_DATABASE_NAME (${test_db_name}) ana POSTGRES_DB (${primary_db_name}) ile aynı olamaz; veri kaybını önlemek için hazırlık durduruldu."
     BACKEND_EXIT_CODE=1
     return 1
   fi
