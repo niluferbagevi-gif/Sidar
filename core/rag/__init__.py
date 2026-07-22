@@ -1232,7 +1232,8 @@ class DocumentStore:
         if mode != "graph" and not session_docs:
             return (
                 False,
-                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>",
+                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: "
+                "TOOL:docs_add:<başlık>|<url>",
             )
 
         if mode == "graph":

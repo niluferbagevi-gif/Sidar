@@ -266,7 +266,8 @@ async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> 
     root = tmp_path
     (root / "dep.py").write_text("", encoding="utf-8")
     (root / "api.py").write_text(
-        "import dep\n@app.get('/health')\ndef health():\n    return 'ok'\nrequests.get('/health')\n",
+        "import dep\n@app.get('/health')\ndef health():\n    return "
+        "'ok'\nrequests.get('/health')\n",
         encoding="utf-8",
     )
     (root / "caller.js").write_text("fetch('/health')", encoding="utf-8")
@@ -2488,7 +2489,8 @@ obj.session.post("/y")
     assert {item["path"] for item in calls} == {"/x", "/y"}
 
     calls = gi._extract_script_endpoint_calls(
-        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new WebSocket("/ws"); new WebSocket("/ws")'
+        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new '
+        'WebSocket("/ws"); new WebSocket("/ws")'
     )
     assert len(calls) == 1
 

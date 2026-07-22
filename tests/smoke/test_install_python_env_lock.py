@@ -135,7 +135,8 @@ EOS
             "sync --frozen --extra production-minimal --no-dev",
         ),
         (
-            'export DEPENDENCY_PROFILE="custom"\nexport SIDAR_DEPENDENCY_EXTRAS="dev openai postgres"',
+            'export DEPENDENCY_PROFILE="custom"\nexport SIDAR_DEPENDENCY_EXTRAS="dev openai '
+            'postgres"',
             "sync --frozen --extra dev --extra openai --extra postgres",
         ),
     ],

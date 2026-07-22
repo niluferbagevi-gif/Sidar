@@ -2192,7 +2192,8 @@ def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
 def test_load_plugin_agent_class_reraises_http_exception_and_wraps_runtime_exec_errors():
     with pytest.raises(HTTPException) as http_exc:
         web_server._load_plugin_agent_class(
-            "from fastapi import HTTPException\nraise HTTPException(status_code=418, detail='teapot')",
+            "from fastapi import HTTPException\nraise HTTPException(status_code=418, "
+            "detail='teapot')",
             None,
             "http_boom",
         )

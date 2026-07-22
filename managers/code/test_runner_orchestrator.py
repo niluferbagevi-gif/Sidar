@@ -35,7 +35,8 @@ def build_pytest_preflight_command(manager: Any, command: str) -> str:
             f"{pytest_args}",
             "  cat /tmp/sidar-uv-sync.log >&2 || true",
             "fi",
-            "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
+            "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv "
+            "bootstrap başarısız. '"
             "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
             "'ya da uv sync --frozen --all-extras ile .venv hazırlayın.' >&2",
             "exit 127",
@@ -65,13 +66,16 @@ def build_shell_preflight_command(manager: Any, command: str) -> str:
                 "fi",
                 "if ! command -v uv >/dev/null 2>&1; then",
                 "  if command -v python >/dev/null 2>&1; then",
-                "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || true",
+                "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || "
+                "true",
                 "    if [ -x /usr/local/bin/uv ]; then export PATH=/usr/local/bin:$PATH; fi",
                 "  fi",
                 "fi",
                 "if ! command -v uv >/dev/null 2>&1; then",
-                "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap başarısız oldu. '"
-                "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak ayarlayın. '"
+                "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap "
+                "başarısız oldu. '"
+                "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak "
+                "ayarlayın. '"
                 "'Bootstrap logu: /tmp/sidar-uv-bootstrap.log' >&2",
                 "  cat /tmp/sidar-uv-bootstrap.log >&2 || true",
                 "  exit 127",

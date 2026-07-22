@@ -95,7 +95,8 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     agent.llm = types.SimpleNamespace(
         chat=fake_llm_tool_sequence(
             [
-                '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}',
+                '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": '
+                '"pytest integration"}',
                 '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}',
             ]
         )
@@ -136,8 +137,10 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
     agent.llm = types.SimpleNamespace(
         chat=fake_llm_tool_sequence(
             [
-                '{"thought":"Önce depoda arama yap.", "tool":"docs_search", "argument":"vektör araması"}',
-                '{"thought":"Hata durumunu kullanıcıya açıkla.", "tool":"final_answer", "argument":"Doküman araması şu anda kullanılamıyor."}',
+                '{"thought":"Önce depoda arama yap.", "tool":"docs_search", "argument":"vektör '
+                'araması"}',
+                '{"thought":"Hata durumunu kullanıcıya açıkla.", "tool":"final_answer", '
+                '"argument":"Doküman araması şu anda kullanılamıyor."}',
             ]
         )
     )

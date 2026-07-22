@@ -42,15 +42,18 @@ class ReviewerAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "
-        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte çalıştırır ve "
+        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte "
+        "çalıştırır ve "
         "sonuçlara göre onay/red kararı verirsin. "
         "Kararını P2P geri bildirim olarak coder ajanına iletebilirsin."
     )
 
     TEST_GENERATION_PROMPT = (
-        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca ham pytest "
+        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca "
+        "ham pytest "
         "test kodu üret. Yanıtında açıklama, markdown çiti veya ek anlatım olmasın. "
-        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere odaklanmalıdır. "
+        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere "
+        "odaklanmalıdır. "
         f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Dinamik import gerekiyorsa standart kütüphane ile güvenli yaklaşım kullan."
     )
@@ -184,7 +187,8 @@ class ReviewerAgent(BaseAgent):
                 reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
                 logger.warning(
                     "ReviewerAgent semantic review failed candidate_path=%s target_path=%s "
-                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s reason=%s",
+                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s "
+                    "reason=%s",
                     visible_candidate_path,
                     target_path or "<unknown>",
                     suggested_test_path or "<unknown>",
@@ -756,7 +760,8 @@ class ReviewerAgent(BaseAgent):
                                 "path": normalized,
                                 "reason": "graph",
                                 "action": (
-                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada import/sözleşme "
+                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada "
+                                    "import/sözleşme "
                                     "uyumunu ve etkilenen çağrı zincirini doğrula."
                                 ),
                                 "lsp_messages": [],

@@ -505,7 +505,8 @@ def _apply_vram_memory_fraction(info: HardwareInfo) -> None:
         frac = float(vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"])
         if vram_budget["normalized"]:
             logger.warning(
-                "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize edilmiş bütçeyi uyguluyor "
+                "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize "
+                "edilmiş bütçeyi uyguluyor "
                 "(LLM=%.2f, RAG=%.2f).",
                 vram_budget["original_total"],
                 vram_budget["gpu"],
@@ -516,7 +517,8 @@ def _apply_vram_memory_fraction(info: HardwareInfo) -> None:
         frac = legacy_frac
     if not (0.1 <= frac < 1.0):
         logger.warning(
-            "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) — varsayılan 0.8 kullanılıyor.",
+            "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) — "
+            "varsayılan 0.8 kullanılıyor.",
             frac,
         )
         frac = 0.8
@@ -1136,7 +1138,8 @@ class Config:
                 )
         else:
             logger.warning(
-                "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri kullanılacak."
+                "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri "
+                "kullanılacak."
             )
 
         missing_notice_items = [
@@ -1165,7 +1168,8 @@ class Config:
         if missing_keys:
             logger.warning(
                 "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, .env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri korunur; SIDAR_KEYS_FILE en son yüklenir. "
-                "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan ~/.sidar_keys.env) içine ekleyin.",
+                "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan "
+                "~/.sidar_keys.env) içine ekleyin.",
                 ", ".join(missing_keys),
             )
         _FIRST_CONFIG_LOAD_LOGGED = True
@@ -1271,7 +1275,8 @@ class Config:
         cls.RAG_GPU_MEMORY_FRACTION = float(budget["rag"])
         cls.GPU_MEMORY_FRACTION = float(budget["gpu"])
         logger.warning(
-            "LLM/RAG GPU bellek fraksiyonları toplamı %.2f bulundu; OOM riskini azaltmak için %.2f toplamına normalize edildi "
+            "LLM/RAG GPU bellek fraksiyonları toplamı %.2f bulundu; OOM riskini azaltmak için %.2f "
+            "toplamına normalize edildi "
             "(LLM=%.2f, RAG=%.2f).",
             budget["original_total"],
             budget["gpu"],
@@ -1353,7 +1358,8 @@ class Config:
 
         if cls.REQUIRE_GPU and not cls.USE_GPU:
             logger.error(
-                "❌ GPU zorunlu mod aktif (REQUIRE_GPU=true) ancak CUDA/PyTorch uygun değil veya USE_GPU=false.\n"
+                "❌ GPU zorunlu mod aktif (REQUIRE_GPU=true) ancak CUDA/PyTorch uygun değil veya "
+                "USE_GPU=false.\n"
                 "   Çözüm: CUDA destekli PyTorch kurun ve .env içinde USE_GPU=true yapın."
             )
             is_valid = False
@@ -1375,7 +1381,8 @@ class Config:
 
         for drift_message in config_postgres.postgres_password_drift_messages():
             logger.error(
-                "❌ %s Önce scripts/sync_database_passwords.py veya POSTGRES_* tek kaynak akışını kullanın.",
+                "❌ %s Önce scripts/sync_database_passwords.py veya POSTGRES_* tek kaynak akışını "
+                "kullanın.",
                 drift_message,
             )
             is_valid = False
@@ -1407,7 +1414,8 @@ class Config:
                 is_valid = False
         else:
             logger.critical(
-                "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory encryption. "
+                "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory "
+                "encryption. "
                 "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet "
                 "anahtarı eklemelisiniz.\n"
                 '   Yeni anahtar üretmek için: python -c "from cryptography.fernet import '

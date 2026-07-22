@@ -46,7 +46,8 @@ async def list_sessions(db: Any, record_cls: Callable[..., T], user_id: str) -> 
         def _run() -> list[Any]:
             assert db._sqlite_conn is not None
             cur = db._sqlite_conn.execute(
-                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
+                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? "
+                "ORDER BY updated_at DESC",
                 (user_id,),
             )
             return cast(list[Any], cur.fetchall())
@@ -186,7 +187,8 @@ async def create_session(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, "
+                "$3, $4, $5)",
                 session_id,
                 user_id,
                 title,
@@ -248,7 +250,8 @@ async def add_message(
         def _run() -> int:
             assert db._sqlite_conn is not None
             cur = db._sqlite_conn.execute(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES "
+                "(?, ?, ?, ?, ?)",
                 (session_id, role, content, tokens, now),
             )
             db._sqlite_conn.commit()
@@ -384,7 +387,8 @@ async def replace_session_messages(
         db._sqlite_conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
         for item in normalized_messages:
             db._sqlite_conn.execute(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES "
+                "(?, ?, ?, ?, ?)",
                 (session_id, item["role"], item["content"], 0, now),
             )
         db._sqlite_conn.execute(

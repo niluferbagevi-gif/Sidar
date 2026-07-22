@@ -392,7 +392,8 @@ async def list_marketing_campaigns(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at "
+            "SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, "
+            "metadata_json, created_at, updated_at "
             "FROM marketing_campaigns WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]
@@ -533,7 +534,8 @@ async def list_operation_checklists(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at "
+            "SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, "
+            "created_at, updated_at "
             "FROM operation_checklists WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]

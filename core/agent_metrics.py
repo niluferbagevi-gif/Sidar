@@ -224,7 +224,8 @@ class AgentMetricsCollector:
             lines.append(f"sidar_auth_password_hash_total{{{labels}}} {count}")
 
         lines.append(
-            "# HELP sidar_auth_password_hash_slo_warnings_total Parola hash/verify süresi SLO eşiğini aşan ölçüm sayısı"
+            "# HELP sidar_auth_password_hash_slo_warnings_total Parola hash/verify süresi SLO "
+            "eşiğini aşan ölçüm sayısı"
         )
         lines.append("# TYPE sidar_auth_password_hash_slo_warnings_total counter")
         for (operation, status, slo_ms), count in auth_hash_slo_warning_items:

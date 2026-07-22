@@ -122,7 +122,8 @@ async def authenticate_user(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=$1",
+                "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE "
+                "username=$1",
                 username,
             )
         if not row or not row["password_hash"]:
@@ -144,7 +145,8 @@ async def authenticate_user(
     def _run() -> sqlite3.Row | None:
         assert db._sqlite_conn is not None
         cur = db._sqlite_conn.execute(
-            "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=?",
+            "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE "
+            "username=?",
             (username,),
         )
         return _sqlite_fetchone(cur)

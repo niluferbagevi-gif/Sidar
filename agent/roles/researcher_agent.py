@@ -24,7 +24,8 @@ class ResearcherAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen yalnızca bilgi toplama odaklı bir araştırmacı ajansın. "
-        "Kod yazma/değiştirme yapmazsın; web ve doküman kaynaklarından doğrulanabilir çıktı üretirsin."
+        "Kod yazma/değiştirme yapmazsın; web ve doküman kaynaklarından doğrulanabilir çıktı "
+        "üretirsin."
     )
 
     def __init__(

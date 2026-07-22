@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 _RELEVANCE_SYSTEM = (
     "Sen bir RAG kalite değerlendirme asistanısın. "
     "Sana bir kullanıcı sorgusu ve bir belge parçası verilecek. "
-    "Belgenin sorguyla ne kadar alakalı olduğunu 0.0 ile 1.0 arasında bir ondalıklı sayı olarak döndür. "
+    "Belgenin sorguyla ne kadar alakalı olduğunu 0.0 ile 1.0 arasında bir ondalıklı sayı olarak "
+    "döndür. "
     "Sadece sayıyı döndür, başka hiçbir şey yazma. Örnek: 0.85"
 )
 

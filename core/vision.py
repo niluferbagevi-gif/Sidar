@@ -201,7 +201,8 @@ def build_analyze_prompt(analysis_type: str = "general") -> str:
         ),
         "ux_review": (
             "Bu kullanıcı arayüzü için UX analizi yap. "
-            "Kullanılabilirlik sorunları, bilgi mimarisi, kullanıcı akışı ve iyileştirme önerileri sun."
+            "Kullanılabilirlik sorunları, bilgi mimarisi, kullanıcı akışı ve iyileştirme önerileri "
+            "sun."
         ),
     }
     return prompts.get(analysis_type, prompts["general"])

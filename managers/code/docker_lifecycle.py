@@ -241,7 +241,8 @@ class DockerLifecycleAdapter:
         )
         if bool(getattr(owner.cfg, "USE_GPU", False)) and not prefer_gpu_image:
             logger.warning(
-                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
+                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih "
+                "edilecek"
             )
 
         for candidate in PROJECT_TEST_IMAGE_CANDIDATES:
@@ -254,17 +255,21 @@ class DockerLifecycleAdapter:
             if owner._docker_image_exists(candidate):
                 owner.docker_test_image = candidate
                 logger.info(
-                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
+                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı "
+                    "kullanılacak: %s",
                     candidate,
                 )
                 owner._warn_gpu_image_runtime_mismatch(candidate)
                 return
 
         logger.warning(
-            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
+            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv "
+            "içermeyebilir. "
             "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
-            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik hazırlık için "
-            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` çalıştırın "
+            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik "
+            "hazırlık için "
+            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` "
+            "çalıştırın "
             "(4) Docker dışı fallback için `uv sync --frozen --all-extras` çalıştırın.",
             owner.docker_test_image,
         )

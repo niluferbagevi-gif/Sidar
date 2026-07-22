@@ -96,7 +96,8 @@ def test_dark_mode_assets_exist(tmp_path: Path) -> None:
     html_report = script_dir / "htmlcov" / "index.html"
     html_report.parent.mkdir(parents=True)
     html_report.write_text(
-        '<html><body class="light-mode"><a href="/light-mode/help">light-mode text</a></body></html>',
+        '<html><body class="light-mode"><a href="/light-mode/help">light-mode '
+        "text</a></body></html>",
         encoding="utf-8",
     )
 
@@ -1476,7 +1477,8 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
         in result.stdout
     )
     assert (
-        "Tekrar komutu: uv run pytest tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
+        "Tekrar komutu: uv run pytest "
+        "tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
         in result.stdout
     )
     assert "REPORT:06_services|test-gate-failure|fail-fast;no-retry;no-resume;" in result.stdout
@@ -1488,8 +1490,8 @@ def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
     assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
     assert 'local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"' in installer
     assert (
-        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason"'
-        in installer
+        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" '
+        '"$remediation_reason"' in installer
     )
 
 

@@ -223,8 +223,8 @@ def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
     assert 'AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"' in script
     assert 'AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"' in script
     assert (
-        'uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --batch-retries "${AUTO_HEAL_BATCH_RETRIES}"'
-        in script
+        'uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy '
+        '--batch-retries "${AUTO_HEAL_BATCH_RETRIES}"' in script
     )
 
 

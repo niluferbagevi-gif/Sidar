@@ -171,7 +171,8 @@ class CoderAgent(BaseAgent):
             "Yanıtını JSON olarak ver. Araç gerekiyorsa "
             '{"tool_calls":[{"name":"read_file","arg":"path"}],"final":""}; '
             'iş bittiyse {"final":"özet ve yapılanlar"}. '
-            "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra patch_file/write_file kullan."
+            "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra "
+            "patch_file/write_file kullan."
         )
 
     @staticmethod

@@ -297,7 +297,8 @@ class PoyrazAgent(BaseAgent):
             brief = raw
         output = await self._generate_marketing_output(
             "Aşağıdaki brief için landing page taslağı üret. "
-            "Çıktıda hero başlığı, alt başlık, değer önerisi, section akışı ve CTA metinleri olsun.\n\n"
+            "Çıktıda hero başlığı, alt başlık, değer önerisi, section akışı ve CTA metinleri "
+            "olsun.\n\n"
             f"{brief}",
             "landing_page",
         )

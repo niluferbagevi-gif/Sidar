@@ -72,7 +72,8 @@ def _parse_args() -> argparse.Namespace:
         "--database-url",
         help=(
             "Self-heal çalışma belleği için DB URL override değeri. "
-            "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite kullanılır."
+            "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite "
+            "kullanılır."
         ),
     )
     parser.add_argument(
@@ -298,7 +299,8 @@ def _build_attempt_diagnosis(
         ]
     guidance = (
         f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: {scope_display}. "
-        "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen satırlardan seç."
+        "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen "
+        "satırlardan seç."
     )
     diagnosis_lines.append(guidance)
     if scope_error_lines:

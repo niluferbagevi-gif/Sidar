@@ -170,7 +170,8 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
     print(f"  Belge Deposu    : {docs_status}")
     if "pgvector (pasif)" in docs_status:
         print(
-            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor "
+            "artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
         )
     if "RAG: 0 belge" in docs_status:
         print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")

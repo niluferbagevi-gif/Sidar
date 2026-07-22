@@ -66,13 +66,15 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_cache_evictions_total counter",
         "# HELP sidar_cache_redis_errors_total Legacy alias for semantic cache Redis hata sayısı",
         "# TYPE sidar_cache_redis_errors_total counter",
-        "# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass sayısı",
+        "# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass "
+        "sayısı",
         "# TYPE sidar_cache_circuit_open_total counter",
         "# HELP sidar_cache_hit_rate Legacy alias for semantic cache isabet oranı (0.0–1.0)",
         "# TYPE sidar_cache_hit_rate gauge",
         "# HELP sidar_cache_items Legacy alias for semantic cache içindeki aktif kayıt sayısı",
         "# TYPE sidar_cache_items gauge",
-        "# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim gecikmesi (ms)",
+        "# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim "
+        "gecikmesi (ms)",
         "# TYPE sidar_cache_redis_latency_ms gauge",
     ]
 

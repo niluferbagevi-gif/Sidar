@@ -139,7 +139,8 @@ def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.
         return float(raw_value)
     except (ValueError, TypeError):
         logger.warning(
-            "%s / %s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r kullanılacak.",
+            "%s / %s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r "
+            "kullanılacak.",
             prefix_key,
             legacy_key,
             raw_value,

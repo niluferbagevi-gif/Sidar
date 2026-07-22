@@ -896,7 +896,8 @@ async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
         getattr(
             cfg,
             "AUTONOMOUS_CRON_PROMPT",
-            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
+            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını "
+            "çıkar.",
         )
         or ""
     ).strip()
@@ -971,7 +972,8 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     if not settings_valid and not skip_boot_checks:
         raise RuntimeError(
             "Kritik yapılandırma doğrulaması başarısız; web sunucusu başlatılamıyor. "
-            "Detaylar için loglara bakın (SIDAR_SKIP_BOOT_CHECKS=1 ile bilinçli olarak atlanabilir)."
+            "Detaylar için loglara bakın (SIDAR_SKIP_BOOT_CHECKS=1 ile bilinçli olarak "
+            "atlanabilir)."
         )
     await asyncio.to_thread(_reload_persisted_marketplace_plugins)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())

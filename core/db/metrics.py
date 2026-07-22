@@ -86,7 +86,8 @@ async def get_user_quota_status(
             assert db._sqlite_conn is not None
             q = sqlite_fetchone(
                 db._sqlite_conn.execute(
-                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
+                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE "
+                    "user_id=?",
                     (user_id,),
                 )
             )

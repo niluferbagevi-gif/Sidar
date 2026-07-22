@@ -67,7 +67,8 @@ def build_event_driven_federation_spec(
                 "source_agent": "issue_webhook",
                 "goal": (
                     f"Jira issue {issue_key} için event-driven swarm remediation/uygulama planı çıkar: {summary or 'başlıksız issue'}. "
-                    "Coder uygulanabilir teknik yaklaşımı oluştursun, Reviewer risk/QA/handoff değerlendirsin."
+                    "Coder uygulanabilir teknik yaklaşımı oluştursun, Reviewer risk/QA/handoff "
+                    "değerlendirsin."
                 ),
                 "context": {
                     "workflow_type": "jira_issue",
@@ -111,7 +112,8 @@ def build_event_driven_federation_spec(
                 "source_agent": "pull_request_webhook",
                 "goal": (
                     f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için event-driven swarm incelemesi yap. "
-                    "Coder değişiklik/patch/test stratejisini çıkarsın, Reviewer merge riski ve QA kapısını değerlendirsin."
+                    "Coder değişiklik/patch/test stratejisini çıkarsın, Reviewer merge riski ve QA "
+                    "kapısını değerlendirsin."
                 ),
                 "context": {
                     "workflow_type": "github_pull_request",
@@ -162,7 +164,8 @@ def build_event_driven_federation_spec(
                 "source_agent": "alert_webhook",
                 "goal": (
                     f"Sistem monitör hatasını değerlendir: {alert_name}. "
-                    "Coder muhtemel kök neden ve hotfix adımlarını çıkarsın, Reviewer risk/rollback/QA planını doğrulasın."
+                    "Coder muhtemel kök neden ve hotfix adımlarını çıkarsın, Reviewer "
+                    "risk/rollback/QA planını doğrulasın."
                 ),
                 "context": {
                     "workflow_type": "system_error",
@@ -191,13 +194,15 @@ def build_swarm_goal_for_role(base_goal: str, role: str, spec: dict[str, Any]) -
         return (
             f"{base_goal}\n\n"
             "[EVENT_DRIVEN_SWARM:CODER]\n"
-            "Bu dış olay için inisiyatif al. Muhtemel kod hedeflerini, uygulanabilir adımları, test/komut planını ve gerekiyorsa açılması gereken follow-up'ları üret.\n"
+            "Bu dış olay için inisiyatif al. Muhtemel kod hedeflerini, uygulanabilir adımları, "
+            "test/komut planını ve gerekiyorsa açılması gereken follow-up'ları üret.\n"
             f"context={context_blob}\ninputs={inputs_blob}"
         )
     return (
         f"{base_goal}\n\n"
         "[EVENT_DRIVEN_SWARM:REVIEWER]\n"
-        "Coder çıktısını kalite kapısı olarak incele. Riskler, QA, rollback, insan onayı ve follow-up aksiyonlarını netleştir.\n"
+        "Coder çıktısını kalite kapısı olarak incele. Riskler, QA, rollback, insan onayı ve "
+        "follow-up aksiyonlarını netleştir.\n"
         f"context={context_blob}\ninputs={inputs_blob}"
     )
 

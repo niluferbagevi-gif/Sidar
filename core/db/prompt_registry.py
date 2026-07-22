@@ -166,7 +166,8 @@ async def upsert_prompt(
                 new_version = int(current_version or 0) + 1
                 if activate:
                     await conn.execute(
-                        "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE role_name=$1",
+                        "UPDATE prompt_registry SET is_active=FALSE, updated_at=$2 WHERE "
+                        "role_name=$1",
                         role,
                         now_dt,
                     )

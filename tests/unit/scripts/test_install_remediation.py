@@ -22,14 +22,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
         (
             "06_services",
             "run_pre_service_installer_smoke_gate",
-            "Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=<boş> beklenen pyproject.toml sürümüyle eşleşmiyor.",
+            "Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=<boş> beklenen "
+            "pyproject.toml sürümüyle eşleşmiyor.",
             "installer-smoke-gate-failure",
             1,
         ),
         (
             "02_repo",
             "fail",
-            "Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı; hash drift kaynağını temizleyin.",
+            "Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı; hash drift kaynağını "
+            "temizleyin.",
             "installer-hash-drift",
             1,
         ),

@@ -403,8 +403,8 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
     assert "_effective_postgres_password(discover_env_chain())" in script
     assert "export POSTGRES_PASSWORD" in script
     assert (
-        'sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" "${POSTGRES_PASSWORD}"'
-        in script
+        'sync_postgres_login_role "${admin_db_user}" "${POSTGRES_USER:-sidar}" '
+        '"${POSTGRES_PASSWORD}"' in script
     )
     assert (
         'sync_postgres_login_role "${admin_db_user}" "${test_db_user}" "${test_db_password}"'
@@ -486,8 +486,8 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in script
     assert (
-        "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh"
-        in script
+        "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required "
+        "./run_tests.sh" in script
     )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
@@ -498,20 +498,21 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
         script.index('if [ "${IS_CI_ENV}" -eq 1 ]; then')
         < script.index("elif production_readiness_gate_active; then")
         < script.index(
-            "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
+            "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk "
+            "benchmark koşusu karşılaştırmasız çalıştırılacak"
         )
     )
     assert (
-        "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk benchmark koşusu karşılaştırmasız çalıştırılacak"
-        in script
+        "Yerel bootstrap: BENCHMARK_COMPARE_REQUIRED=1 olsa da baseline bulunamadığı için ilk "
+        "benchmark koşusu karşılaştırmasız çalıştırılacak" in script
     )
     assert "benchmark_compare_target_found=0" in script
     assert "benchmark_compare_target_found=1" in script
     assert "Benchmark baseline kaydı hazır: ${BENCHMARK_COMPARE_FILE}" in script
     assert "Sonraki benchmark koşusunda --benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}" in script
     assert (
-        "Benchmark JSON üretildi ancak .benchmarks altında '${BENCHMARK_COMPARE_NAME}' baseline kaydı doğrulanamadı"
-        in script
+        "Benchmark JSON üretildi ancak .benchmarks altında '${BENCHMARK_COMPARE_NAME}' baseline "
+        "kaydı doğrulanamadı" in script
     )
 
 
@@ -845,8 +846,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "dev-light: hızlı lokal geliştirme" in finish_phase
     assert "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in finish_phase
     assert (
-        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir"
-        in finish_phase
+        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + "
+        "benchmark baseline gerektirebilir" in finish_phase
     )
     assert "print_install_dependency_profile_readiness_legend" in validation_phase
     assert "Profil farkı:" in validation_phase
@@ -855,8 +856,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in validation_phase
     )
     assert (
-        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir"
-        in validation_phase
+        "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + "
+        "benchmark baseline gerektirebilir" in validation_phase
     )
     assert "Development validation ≠ release/merge onayı" in validation_phase
     assert "Release/merge için tek zorunlu komut" in validation_phase
@@ -1859,8 +1860,8 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
     assert "Yedek stash korunuyor" in recovery_block
     assert "git stash apply ${INSTALL_STASH_REF}" in recovery_block
     assert (
-        "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' çalıştırın"
-        not in script
+        "Manuel çözün veya '$TARGET_DIR' içinde 'git reset --hard origin/main && git clean -fd' "
+        "çalıştırın" not in script
     )
 
 
@@ -2462,7 +2463,8 @@ def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; printf "%s\n" "$INSTALL_MODULE_DIR"',
+            'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; printf "%s\n" '
+            '"$INSTALL_MODULE_DIR"',
             "bash",
             str(runner_dir / "install_sidar.sh"),
         ],
@@ -2600,8 +2602,8 @@ def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache
     assert 'cache_sentinel="${cache_path}.ok"' in install_script
     assert "Fallback modül cache'den kullanıldı" in install_script
     assert (
-        "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden kullanılacaktır."
-        in install_script
+        "Cache korunur; aynı komut tekrar çalıştırıldığında başarılı modüller yeniden "
+        "kullanılacaktır." in install_script
     )
     assert "Fallback modül indirme başarısız (${module_rel})" in install_script
 
@@ -2718,8 +2720,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert context_phase.index("detect_environment") < context_phase.index("run_wsl2_gpu_preflight")
     assert 'sidar_source_install_utils "gpu_utils.sh"' in runtime_phase
     assert (
-        'sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" "env_utils.sh"'
-        in workspace_phase
+        'sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" '
+        '"env_utils.sh"' in workspace_phase
     )
     assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
     assert "sync_database_passwords_before_smoke_tests" in services_phase
@@ -3597,8 +3599,8 @@ def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
 
     assert "verify_reexec_installer_or_fail()" in script
     assert (
-        'verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar re-exec"'
-        in script
+        'verify_reexec_installer_or_fail "$HOME/Sidar/install_sidar.sh" "Mevcut $HOME/Sidar '
+        're-exec"' in script
     )
     assert 'verify_reexec_installer_or_fail "$next_script" "Bootstrap clone re-exec"' in script
     assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC" in script
@@ -4127,8 +4129,8 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
     assert "BATS_REPORT_DIR yalnız artifacts/ altında güvenli bir göreli yol olabilir" in script
     assert (
         "rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log "
-        'web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}"'
-        in script
+        "web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "
+        '"${BATS_REPORT_DIR}"' in script
     )
     assert 'mkdir -p "${BATS_REPORT_DIR}"' in bats_block
     assert "env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD" in bats_block
@@ -4204,12 +4206,12 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     assert "python scripts/pip_audit_ignore_args.py" in ci_workflow
     assert "mkdir -p artifacts/security" in ci_workflow
     assert (
-        "pip-audit --skip-editable --timeout 30 --format json --output artifacts/security/pip-audit-report.raw.json"
-        in ci_workflow
+        "pip-audit --skip-editable --timeout 30 --format json --output "
+        "artifacts/security/pip-audit-report.raw.json" in ci_workflow
     )
     assert (
-        "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json artifacts/security/pip-audit-failure.json --timeout 30"
-        in ci_workflow
+        "python scripts/pip_audit_failure_artifact.py artifacts/security/pip-audit-report.raw.json "
+        "artifacts/security/pip-audit-failure.json --timeout 30" in ci_workflow
     )
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
@@ -4303,8 +4305,8 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert "Strict opt-in cap: `%100`" in strict_runbook
     assert "COVERAGE_STRICT_LOCAL_RATCHET=1 ./run_tests.sh" in strict_runbook
     assert (
-        '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" ]'
-        in script
+        '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" '
+        "]" in script
     )
 
     # pyproject.toml holds the ratchet-managed baseline (currently %99 and only
@@ -4501,8 +4503,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "const executablePath = chromium.executablePath();" in script
     assert "if (!fs.existsSync(executablePath)) process.exit(1);" in script
     assert (
-        'printf \'%s\\n%s\\n\' "${executable_path}" "${lock_fingerprint}" > "${FRONTEND_PLAYWRIGHT_SENTINEL}" || true'
-        in script
+        'printf \'%s\\n%s\\n\' "${executable_path}" "${lock_fingerprint}" > '
+        '"${FRONTEND_PLAYWRIGHT_SENTINEL}" || true' in script
     )
     assert 'rm -f "${FRONTEND_PLAYWRIGHT_SENTINEL}"' in script
     assert "unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" in script
@@ -4989,7 +4991,8 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; is_playwright_ubuntu_override_recommended "$2"; run_playwright_ubuntu_override_install "$2" 120000 "$3"',
+            'set -Eeuo pipefail; source "$1"; is_playwright_ubuntu_override_recommended "$2"; '
+            'run_playwright_ubuntu_override_install "$2" 120000 "$3"',
             "bash",
             str(helper),
             str(os_release),
@@ -5081,7 +5084,8 @@ exit 0
         [
             "bash",
             "-c",
-            'source "$1"; ! playwright_node_host_platform_is_officially_supported "$2" "$3" --no-install',
+            'source "$1"; ! playwright_node_host_platform_is_officially_supported "$2" "$3" '
+            "--no-install",
             "bash",
             str(helper),
             str(os_release),
@@ -5125,7 +5129,8 @@ PYTHONPATH={tmp_path} python3 "$@"
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; run_playwright_ubuntu_override_install "$2" 120000 "$3" -m playwright install chromium',
+            'set -Eeuo pipefail; source "$1"; run_playwright_ubuntu_override_install "$2" 120000 '
+            '"$3" -m playwright install chromium',
             "bash",
             str(helper),
             str(os_release),
@@ -5544,8 +5549,8 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
     script = _script()
 
     assert (
-        "Usage: bash run_tests.sh [--stage all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]"
-        in script
+        "Usage: bash run_tests.sh [--stage "
+        "all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]" in script
     )
     assert "normalize_test_stages()" in script
     assert "stage_all_selected()" in script
@@ -5553,8 +5558,8 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
     assert "backend_infra_required_for_stage()" in script
     assert "SIDAR_RUN_BACKEND_PYTEST=0" in script
     assert (
-        "if stage_selected backend || stage_selected unit || stage_selected integration || stage_selected smoke || stage_selected e2e; then"
-        in script
+        "if stage_selected backend || stage_selected unit || stage_selected integration || "
+        "stage_selected smoke || stage_selected e2e; then" in script
     )
     assert "elif stage_selected static; then" in script
     assert "Unit-only stage: Docker/DB/Ollama önkoşulları atlandı." in script

@@ -769,7 +769,8 @@ class MultimodalPipeline:
         )
         summary_prompt = (
             "Aşağıdaki multimodal bağlamı analiz et. "
-            "Öne çıkan bulguları, riskleri ve önerilen aksiyonları kısa ama net maddeler halinde ver.\n\n"
+            "Öne çıkan bulguları, riskleri ve önerilen aksiyonları kısa ama net maddeler halinde "
+            "ver.\n\n"
             f"{context}"
         )
         analysis = await self._llm.chat(

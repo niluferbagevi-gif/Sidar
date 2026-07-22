@@ -156,7 +156,8 @@ class EntityMemory:
 
             await conn.execute(
                 sql_text(
-                    "INSERT INTO entity_memory (user_id, key, value, metadata, created_at, updated_at)"
+                    "INSERT INTO entity_memory (user_id, key, value, metadata, created_at, "
+                    "updated_at)"
                     " VALUES (:uid, :key, :val, :meta, :now, :now)"
                     " ON CONFLICT (user_id, key) DO UPDATE SET"
                     "  value = excluded.value,"

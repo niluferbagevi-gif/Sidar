@@ -794,12 +794,17 @@ def build_self_heal_patch_prompt(
         "- Patch öncesi/sonrası deterministik olmalı.\n"
         "- Test dosyası patch'lerinde ortak fixture kuralını uygula: "
         f"{SHARED_TEST_FIXTURE_GUIDANCE}\n"
-        "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash run_tests.sh dışına çıkma.\n\n"
+        "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash "
+        "run_tests.sh dışına çıkma.\n\n"
         "Mypy odaklı ek kurallar:\n"
-        "- Eğer hata türü mypy ise, öncelik sırası: parse edilebilir hata satırı -> ilgili dosya snapshotı -> diagnosis.\n"
-        "- `attr-defined` / eksik metot hatalarında yalnız rename önerisine saplanma; gerekiyorsa uyumlu, tipli API/metot eklemeyi de değerlendir.\n"
-        "- Mimari sınırları koru: üst katmanda ham SQL yerine DB/public API katmanında çözüm üretmeyi tercih et.\n"
-        "- Eksik bağlam varsayımı yapma; satır ve hata kodu verilmemişse bunu açıkça confidence düşürerek belirt.\n"
+        "- Eğer hata türü mypy ise, öncelik sırası: parse edilebilir hata satırı -> ilgili dosya "
+        "snapshotı -> diagnosis.\n"
+        "- `attr-defined` / eksik metot hatalarında yalnız rename önerisine saplanma; gerekiyorsa "
+        "uyumlu, tipli API/metot eklemeyi de değerlendir.\n"
+        "- Mimari sınırları koru: üst katmanda ham SQL yerine DB/public API katmanında çözüm "
+        "üretmeyi tercih et.\n"
+        "- Eksik bağlam varsayımı yapma; satır ve hata kodu verilmemişse bunu açıkça confidence "
+        "düşürerek belirt.\n"
         "- Tek turda maksimum 1-3 patch operasyonu üret ve aynı kök nedeni hedefle.\n\n"
         f"repo={info.get('repo', '')}\n"
         f"workflow_name={info.get('workflow_name', '')}\n"
@@ -1212,10 +1217,12 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             f"hitl_reasons={', '.join(hitl_reasons) or '-'}."
         ),
         "operator_guidance": (
-            "Bekleyen HITL kaydını reject/cancel ederek remediation'ı modül bazlı batch'lerle yeniden başlatın."
+            "Bekleyen HITL kaydını reject/cancel ederek remediation'ı modül bazlı batch'lerle "
+            "yeniden başlatın."
             if needs_human_approval and batched_scope
             else (
-                "Riskli self-heal planı için terminalde onay verin veya scripts.auto_heal --hitl-approve yes/no kullanın."
+                "Riskli self-heal planı için terminalde onay verin veya scripts.auto_heal "
+                "--hitl-approve yes/no kullanın."
                 if needs_human_approval
                 else ""
             )

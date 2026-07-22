@@ -373,7 +373,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
+                "access_policies(user_id, tenant_id, resource_type, action)"
             )
             self._sqlite_conn.commit()
 
@@ -383,7 +384,8 @@ class Database(DatabaseConnectionMixin):
         assert self._pg_pool is not None
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT "
+                "'default'"
             )
             await conn.execute(
                 """
@@ -402,7 +404,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
+                "access_policies(user_id, tenant_id, resource_type, action)"
             )
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
@@ -425,7 +428,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
+                "timestamp)"
             )
             self._sqlite_conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -452,7 +456,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
+                "timestamp)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -902,7 +907,8 @@ class Database(DatabaseConnectionMixin):
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             query = (
-                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at "
+                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, "
+                "created_at, updated_at "
                 "FROM access_policies WHERE user_id=$1"
             )
             args: list[Any] = [user_id]

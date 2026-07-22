@@ -62,13 +62,15 @@ def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> 
     assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I,UP tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I,UP "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is True
     )
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select B tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select B "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is False
     )
@@ -81,7 +83,8 @@ def test_is_allowed_validation_command_uses_default_when_ruff_unsafe_allowlist_e
 
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is True
     )
@@ -95,7 +98,8 @@ def test_is_allowed_validation_command_supports_explicit_ruff_unsafe_allowlist_d
 
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is False
     )
@@ -951,7 +955,8 @@ def test_build_local_failure_context_parses_mypy_log() -> None:
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
-            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation "
+            "[no-untyped-def]",
         ]
     )
     ctx = ci.build_local_failure_context(log_text, source="mypy", log_path="artifacts/mypy.log")
@@ -1019,8 +1024,10 @@ def test_summarize_mypy_log_returns_structured_signal() -> None:
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
-            "core/service.py:11: error: Returning Any from function declared to return int [no-any-return]",
-            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+            "core/service.py:11: error: Returning Any from function declared to return int "
+            "[no-any-return]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation "
+            "[no-untyped-def]",
         ]
     )
     summary = ci._summarize_mypy_log(log_text, max_lines=5)

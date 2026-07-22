@@ -45,7 +45,8 @@ def _detect_backend(item: dict[str, Any]) -> str | None:
 def main() -> int:
     if len(sys.argv) != 3:
         print(
-            "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> <out_dir>"
+            "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> "
+            "<out_dir>"
         )
         return 2
 
@@ -117,7 +118,8 @@ def main() -> int:
             if pg
             else "- postgresql: n/a",
             "",
-            "> Not: Bu rapor release artifact olarak saklanır ve release'ler arası trend karşılaştırması için kullanılır.",
+            "> Not: Bu rapor release artifact olarak saklanır ve release'ler arası trend "
+            "karşılaştırması için kullanılır.",
         ]
     )
 

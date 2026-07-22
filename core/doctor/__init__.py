@@ -222,8 +222,10 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         )
     ):
         return (
-            "PostgreSQL authentication failed; verify DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/POSTGRES_PASSWORD parity. "
-            "If a Docker volume already existed, sync the stored PostgreSQL user password or reset the dev volume. "
+            "PostgreSQL authentication failed; verify "
+            "DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/POSTGRES_PASSWORD parity. "
+            "If a Docker volume already existed, sync the stored PostgreSQL user password or reset "
+            "the dev volume. "
             "Sidar will enter SQLite degraded mode and pgvector will fall back to BM25.",
             {
                 "failure_category": "authentication",
@@ -234,15 +236,19 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                     "sidar user exists with a different password in PostgreSQL",
                 ],
                 "remediation_steps": [
-                    "If Doctor/database_env is already pass but auth still fails, synchronize the stored PostgreSQL role password in the existing Docker volume.",
-                    "Run uv run python -m scripts.sync_postgres_password so the password is read from POSTGRES_PASSWORD without exposing it in the shell command.",
-                    "Restart PostgreSQL and rerun `uv run python -m core.doctor artifacts/install/doctor.json`.",
+                    "If Doctor/database_env is already pass but auth still fails, synchronize the "
+                    "stored PostgreSQL role password in the existing Docker volume.",
+                    "Run uv run python -m scripts.sync_postgres_password so the password is read "
+                    "from POSTGRES_PASSWORD without exposing it in the shell command.",
+                    "Restart PostgreSQL and rerun `uv run python -m core.doctor "
+                    "artifacts/install/doctor.json`.",
                 ],
                 "auto_fix": "uv run python -m scripts.sync_postgres_password",
                 "recommended_commands": [
                     "uv run python -m scripts.sync_postgres_password",
                     *common_commands,
-                    "# development only: docker compose down && docker volume rm <sidar_postgres_data> && docker compose up -d postgres",
+                    "# development only: docker compose down && docker volume rm "
+                    "<sidar_postgres_data> && docker compose up -d postgres",
                 ],
             },
         )
@@ -276,7 +282,8 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         )
     ):
         return (
-            "PostgreSQL TLS/SSL handshake failed; verify certificate trust, SSL mode and proxy/network interception settings.",
+            "PostgreSQL TLS/SSL handshake failed; verify certificate trust, SSL mode and "
+            "proxy/network interception settings.",
             {
                 "failure_category": "tls",
                 "root_cause_hints": [
@@ -289,7 +296,8 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         )
     if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
         return (
-            "PostgreSQL connectivity smoke timed out; verify the service, host, port and container networking.",
+            "PostgreSQL connectivity smoke timed out; verify the service, host, port and container "
+            "networking.",
             {
                 "failure_category": "timeout",
                 "root_cause_hints": [
@@ -323,7 +331,8 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
             },
         )
     return (
-        "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and pgvector/BM25 fallback may be used",
+        "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and "
+        "pgvector/BM25 fallback may be used",
         {
             "failure_category": "unknown",
             "root_cause_hints": [
@@ -608,7 +617,8 @@ def check_database_env() -> DoctorCheck:
                 "docker compose ps postgres",
             ],
             "root_cause_hints": [
-                "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",
+                "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı "
+                "değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",
                 "Açık PostgreSQL URL tanımları tutulacaksa URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
             ],
             "remediation_steps": [
@@ -1054,7 +1064,8 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
         entity_memory_empty = details["entity_node_count_store"] == 0
         if entity_memory_empty:
             entity_warnings = [
-                "GraphRAG entity memory is empty after store probe; run metadata seed and verify real entity node count"
+                "GraphRAG entity memory is empty after store probe; run metadata seed and verify "
+                "real entity node count"
             ]
 
     if not graph_enabled:
@@ -1333,7 +1344,8 @@ def check_gpu_memory_config() -> DoctorCheck:
     warnings: list[str] = []
     if budget["normalized"]:
         warnings.append(
-            "LLM/RAG VRAM fractions exceed 100% or are non-positive; Sidar will normalize the effective GPU budget to 80%"
+            "LLM/RAG VRAM fractions exceed 100% or are non-positive; Sidar will normalize the "
+            "effective GPU budget to 80%"
         )
     elif total > 0.95:
         warnings.append(
@@ -1348,7 +1360,8 @@ def check_gpu_memory_config() -> DoctorCheck:
         or (docker_test_image and "gpu" in docker_test_image.lower())
     ):
         warnings.append(
-            "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container Toolkit, CUDA visibility, and USE_GPU settings"
+            "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container "
+            "Toolkit, CUDA visibility, and USE_GPU settings"
         )
     if access_level != "sandbox":
         warnings.append("CLI access level is not sandbox; verify this is intentional")
@@ -1358,7 +1371,8 @@ def check_gpu_memory_config() -> DoctorCheck:
             "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this can start containers but those tests may miss uv/pytest and project extras unless the container is created from sidar:latest"
         )
         details["docker_image_container_note"] = (
-            "Docker image is the reusable template, container is a running instance. Having a running sidar-* container does not prove sidar:latest exists locally."
+            "Docker image is the reusable template, container is a running instance. Having a "
+            "running sidar-* container does not prove sidar:latest exists locally."
         )
         details.setdefault("recommended_commands", []).extend(
             [

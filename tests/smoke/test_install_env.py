@@ -192,7 +192,8 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
     )
     if source_check.returncode != 0:
         pytest.skip(
-            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
+            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde "
+            "çalıştırılamaz.\n"
             f"{source_check.stdout}{source_check.stderr}"
         )
 
@@ -259,7 +260,8 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
     )
     if source_check.returncode != 0:
         pytest.skip(
-            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
+            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde "
+            "çalıştırılamaz.\n"
             f"{source_check.stdout}{source_check.stderr}"
         )
 
