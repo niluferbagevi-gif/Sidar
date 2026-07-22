@@ -409,7 +409,7 @@ e501_debt_baseline = 1
 async240_global_ignore_review_by = "2026-09-30"
 async240_global_ignore_reason = "Legacy async code paths still contain synchronous pathlib metadata checks that are safe for current small local files but trip Ruff ASYNC240 after flake8-async updates; new async I/O paths should prefer asyncio.to_thread, anyio.Path, or precomputed sync setup instead of expanding this debt."
 legacy_hotspots = ["web_server.py", "main.py"]
-docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 23 }
+docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"

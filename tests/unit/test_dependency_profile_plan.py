@@ -246,7 +246,7 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
         "D403": 0,
         "D415": 0,
         "D417": 0,
-        "ASYNC240": 23,
+        "ASYNC240": 0,
     }
 
 

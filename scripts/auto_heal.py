@@ -363,7 +363,7 @@ async def _run(args: argparse.Namespace) -> int:
     from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 
     log_path = Path(args.log)
-    if not log_path.exists():
+    if not await asyncio.to_thread(log_path.exists):
         _emit_result(
             {
                 "status": "failed",
@@ -376,7 +376,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    log_text = await asyncio.to_thread(log_path.read_text, encoding="utf-8", errors="replace")
     context = build_local_failure_context(log_text, source=args.source, log_path=str(log_path))
     suspected_targets = list(context.get("suspected_targets") or [])
     if not suspected_targets:

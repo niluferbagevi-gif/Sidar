@@ -95,7 +95,7 @@ async def migrate(sqlite_path: Path, postgres_dsn: str, dry_run: bool) -> None:
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("Bu script için 'asyncpg' bağımlılığı gereklidir.") from exc
 
-    if not sqlite_path.exists():
+    if not await asyncio.to_thread(sqlite_path.exists):
         raise FileNotFoundError(f"SQLite dosyası bulunamadı: {sqlite_path}")
 
     conn = await asyncpg.connect(dsn=postgres_dsn)

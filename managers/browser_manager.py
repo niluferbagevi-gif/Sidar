@@ -579,7 +579,11 @@ class BrowserManager:
         if not ok:
             return {"ok": False, "reason": current_path}
         current = Path(current_path)
-        baseline = Path(baseline_path).expanduser().resolve() if baseline_path.strip() else None
+        baseline = (
+            await asyncio.to_thread(lambda: Path(baseline_path).expanduser().resolve())
+            if baseline_path.strip()
+            else None
+        )
 
         if baseline is None:
             return {

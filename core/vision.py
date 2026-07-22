@@ -47,7 +47,7 @@ async def load_image_as_base64(
     Hatalı format veya boyut aşımında ValueError fırlatır.
     """
     p = Path(path)
-    if not p.exists():
+    if not await asyncio.to_thread(p.exists):
         raise FileNotFoundError(f"Görsel bulunamadı: {path}")
 
     mime_type = mimetypes.guess_type(str(p))[0] or "image/jpeg"
