@@ -194,8 +194,26 @@ def test_set_level_changes_and_status_report(tmp_path: Path) -> None:
 
     report = mgr.status_report()
     assert "Erişim Seviyesi: FULL" in report
-    assert "Yazma" in report
+    assert "Yazma   : ✓ (tam — proje kökü)" in report
     assert "Shell" in report
+
+
+@pytest.mark.parametrize(
+    "level,expected_write_status",
+    [
+        ("sandbox", "Yazma   : ✓ (yalnızca /temp)"),
+        ("restricted", "Yazma   : ✗"),
+    ],
+)
+def test_status_report_write_status_by_level(
+    tmp_path: Path, level: str, expected_write_status: str
+) -> None:
+    mgr = SecurityManager(access_level=level, base_dir=tmp_path)
+
+    report = mgr.status_report()
+
+    assert f"Erişim Seviyesi: {level.upper()}" in report
+    assert expected_write_status in report
 
 
 def test_repr_contains_level(tmp_path: Path) -> None:
