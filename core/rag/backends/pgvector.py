@@ -113,7 +113,8 @@ def init_pgvector(store: Any) -> None:
             )
             conn.execute(
                 text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING hnsw (embedding vector_cosine_ops)"
+                    f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING "
+                    f"hnsw (embedding vector_cosine_ops)"
                 )
             )
 

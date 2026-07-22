@@ -301,7 +301,8 @@ def _build_attempt_diagnosis(
             f"Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: {scope_display}"
         ]
     guidance = (
-        f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: {scope_display}. "
+        f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: "
+        f"{scope_display}. "
         "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen "
         "satırlardan seç."
     )

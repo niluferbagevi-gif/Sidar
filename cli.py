@@ -163,7 +163,8 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             print(f"  GPU             : ℹ CPU modu ({gpu_info or 'GPU devre dışı'})")
     print(f"  GitHub          : {'Hazır' if agent.github.is_available() else 'Hazır değil'}")
     print(
-        f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
+        f"  Web Arama       : "
+        f"{'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
     )
     print(f"  Paket Bilgi     : {agent.pkg.status()}")
     docs_status = agent.docs.status()

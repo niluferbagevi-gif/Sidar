@@ -769,7 +769,8 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at "
+                f"TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
             )
             current = await conn.fetchval(
                 f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.

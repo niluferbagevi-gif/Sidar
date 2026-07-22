@@ -440,7 +440,8 @@ class LLMJudge:
                 score=int(round(result.quality_score_10)),
                 reasoning=(
                     "judge:auto relevance="
-                    f"{result.relevance_score:.4f} hallucination_risk={result.hallucination_risk:.4f}"
+                    f"{result.relevance_score:.4f} "
+                    f"hallucination_risk={result.hallucination_risk:.4f}"
                 ),
                 user_id="",
                 session_id="judge:auto",

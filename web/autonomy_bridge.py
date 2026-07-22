@@ -66,7 +66,8 @@ def build_event_driven_federation_spec(
                 "source_system": "jira",
                 "source_agent": "issue_webhook",
                 "goal": (
-                    f"Jira issue {issue_key} için event-driven swarm remediation/uygulama planı çıkar: {summary or 'başlıksız issue'}. "
+                    f"Jira issue {issue_key} için event-driven swarm remediation/uygulama planı "
+                    f"çıkar: {summary or 'başlıksız issue'}. "
                     "Coder uygulanabilir teknik yaklaşımı oluştursun, Reviewer risk/QA/handoff "
                     "değerlendirsin."
                 ),

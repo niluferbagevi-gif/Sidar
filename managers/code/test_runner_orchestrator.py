@@ -144,7 +144,8 @@ def run_shell_in_sandbox(
     except subprocess.TimeoutExpired:
         return (
             False,
-            f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu.",
+            f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve "
+            f"durduruldu.",
         )
     except Exception as exc:
         return False, f"Sandbox komutu hatası: {exc}"
@@ -157,7 +158,8 @@ def run_shell_in_sandbox(
     combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
     if len(combined) > manager.max_output_chars:
         combined = combined[: manager.max_output_chars] + (
-            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] ..."
+            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] "
+            f"..."
         )
     if result.returncode != 0:
         return False, f"Sandbox komutu başarısız (çıkış kodu: {result.returncode}):\n{combined}"

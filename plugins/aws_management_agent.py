@@ -113,7 +113,8 @@ class AWSManagementAgent(BaseAgent):
         for reservation in reservations:
             for instance in reservation.get("Instances", []) or []:
                 instances.append(
-                    f"{instance.get('InstanceId', '?')} ({instance.get('State', {}).get('Name', 'unknown')})"
+                    f"{instance.get('InstanceId', '?')} "
+                    f"({instance.get('State', {}).get('Name', 'unknown')})"
                 )
         if instances:
             return f"EC2 instance envanteri: {', '.join(instances[:8])}"

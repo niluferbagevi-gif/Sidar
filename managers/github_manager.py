@@ -585,7 +585,8 @@ class GitHubManager:
                 )
             return (
                 True,
-                f"✓ PR #{number} merge edildi ({safe_method}): {message or getattr(pr, 'html_url', '')}",
+                f"✓ PR #{number} merge edildi ({safe_method}): "
+                f"{message or getattr(pr, 'html_url', '')}",
             )
         except Exception as exc:
             status = getattr(exc, "status", None)

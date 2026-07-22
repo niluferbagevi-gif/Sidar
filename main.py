@@ -452,7 +452,8 @@ def _maybe_bootstrap_development_env() -> bool:
         return False
 
     print(
-        f"{YELLOW}⚠ .env.development bulunamadı. Yerel profil sihirbazdan önce oluşturulabilir.{RESET}"
+        f"{YELLOW}⚠ .env.development bulunamadı. Yerel profil sihirbazdan önce "
+        f"oluşturulabilir.{RESET}"
     )
     if not confirm(
         "Şimdi uv run python -m scripts.bootstrap_env --profile development çalıştırılsın mı?",
@@ -859,7 +860,8 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         except (httpx_http_error, RuntimeError, OSError) as exc:
             logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
             print(
-                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}"
+                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin "
+                f"olun.{RESET}"
             )
 
 
@@ -1167,7 +1169,8 @@ def main() -> None:
         selection = _load_launcher_session()
         if selection is None:
             print(
-                f"{RED}❌ Son sihirbaz oturumu bulunamadı veya okunamadı: {_launcher_session_path()}{RESET}"
+                f"{RED}❌ Son sihirbaz oturumu bulunamadı veya okunamadı: "
+                f"{_launcher_session_path()}{RESET}"
             )
             sys.exit(2)
         runtime_ok, runtime_error = validate_runtime_dependencies(selection["mode"])

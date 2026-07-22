@@ -1148,7 +1148,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
                     "module_hint": module_hint,
                     "scope_paths": chunk,
                     "suggested_prompt": (
-                        f"Sadece {module_hint}/ kapsamındaki no-untyped-def ve argüman tipi hatalarını düzelt. "
+                        f"Sadece {module_hint}/ kapsamındaki no-untyped-def ve argüman tipi "
+                        f"hatalarını düzelt. "
                         f"Hedef dosyalar: {', '.join(chunk[:5])}"
                     ),
                 }
@@ -1205,7 +1206,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
                 "name": "handoff",
                 "status": "pending",
                 "detail": (
-                    f"Riskli remediation önce HITL onayına gidecek. Nedenler: {', '.join(hitl_reasons) or '-'}"
+                    f"Riskli remediation önce HITL onayına gidecek. Nedenler: "
+                    f"{', '.join(hitl_reasons) or '-'}"
                     if needs_human_approval
                     else "Doğrulama sonrası PR/proposal güncellenecek."
                 ),
@@ -1213,7 +1215,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         ],
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets)} dosya, "
-            f"doğrulama={len(effective_validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}, "
+            f"doğrulama={len(effective_validation_commands)} komut, "
+            f"failed_jobs={len(failed_jobs[:6])}, "
             f"hitl_reasons={', '.join(hitl_reasons) or '-'}."
         ),
         "operator_guidance": (

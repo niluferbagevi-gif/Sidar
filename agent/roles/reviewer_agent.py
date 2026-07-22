@@ -1248,7 +1248,8 @@ class ReviewerAgent(BaseAgent):
                     "decision": decision,
                     "risk": risk,
                     "summary": (
-                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
+                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri "
+                        f"değerlendirildi. "
                         f"{semantic_report['summary']} {graph_summary['summary']} "
                         f"{browser_summary['summary']} {combined_impact['summary']}"
                     ),

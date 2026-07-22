@@ -138,7 +138,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
             f'sidar_llm_failures_total{{provider="{p}"}} {int(row.get("failures", 0) or 0)}'
         )
         lines.append(
-            f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}'
+            f'sidar_llm_latency_ms_avg{{provider="{p}"}} '
+            f"{float(row.get('latency_ms_avg', 0.0) or 0.0)}"
         )
 
     by_user = cast(
@@ -151,7 +152,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
             f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}'
         )
         lines.append(
-            f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}'
+            f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} '
+            f"{float(row.get('cost_usd', 0.0) or 0.0)}"
         )
         lines.append(
             f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}'

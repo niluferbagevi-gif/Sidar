@@ -172,7 +172,8 @@ def execute_code_with_docker_cli(
     output = (result.stdout + result.stderr).strip()
     if len(output) > owner.max_output_chars:
         output = output[: owner.max_output_chars] + (
-            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {owner.max_output_chars} karakter sınırı aşıldı] ..."
+            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {owner.max_output_chars} karakter sınırı aşıldı] "
+            f"..."
         )
     if result.returncode != 0:
         return False, f"REPL Hatası (Docker CLI Sandbox):\n{output or '(çıktı yok)'}"

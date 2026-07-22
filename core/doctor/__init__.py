@@ -449,7 +449,8 @@ def _validate_postgres_env_sync(
         failures.append(f"{label} user does not match POSTGRES_USER")
     if postgres_password and url_password and url_password != postgres_password:
         failures.append(
-            f"{label} password does not match POSTGRES_PASSWORD; PostgreSQL may reject authentication"
+            f"{label} password does not match POSTGRES_PASSWORD; PostgreSQL may reject "
+            f"authentication"
         )
     if postgres_db and url_db and url_db != postgres_db:
         warnings.append(f"{label} database name does not match POSTGRES_DB")
@@ -1269,14 +1270,16 @@ def check_environment_profile() -> DoctorCheck:
         return DoctorCheck(
             "environment_profile",
             "warn",
-            f"SIDAR_ENV={profile} is active but .env.{profile} is missing; create it from .env.{profile}.example to isolate local settings",
+            f"SIDAR_ENV={profile} is active but .env.{profile} is missing; create it from "
+            f".env.{profile}.example to isolate local settings",
             details,
         )
 
     return DoctorCheck(
         "environment_profile",
         "warn",
-        f"SIDAR_ENV={profile} is active but no .env.{profile} or .env.{profile}.example file exists",
+        f"SIDAR_ENV={profile} is active but no .env.{profile} or .env.{profile}.example file "
+        f"exists",
         details,
     )
 

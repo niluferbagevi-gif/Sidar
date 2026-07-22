@@ -239,7 +239,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "Coverage gate unchanged: "
             f"%{_format_gate(result.current_gate)} "
-            f"(measured=%{result.measured_coverage:.2f}, reached=%{_format_gate(result.target_gate)})"
+            f"(measured=%{result.measured_coverage:.2f}, "
+            f"reached=%{_format_gate(result.target_gate)})"
         )
     return 0
 

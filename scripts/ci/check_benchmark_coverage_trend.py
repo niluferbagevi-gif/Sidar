@@ -90,7 +90,8 @@ def main() -> int:
 
         print(
             "[trend] benchmark_mean_seconds "
-            f"current={benchmark_mean_s:.6f} baseline={bench_baseline:.6f} delta={bench_delta:+.2f}%"
+            f"current={benchmark_mean_s:.6f} baseline={bench_baseline:.6f} "
+            f"delta={bench_delta:+.2f}%"
         )
         print(
             "[trend] coverage_line_rate "

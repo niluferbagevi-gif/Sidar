@@ -234,7 +234,8 @@ def run_shell_command(
 
         if len(combined) > manager.max_output_chars:
             combined = combined[: manager.max_output_chars] + (
-                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] ..."
+                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı "
+                f"aşıldı] ..."
             )
 
         if result.returncode != 0:

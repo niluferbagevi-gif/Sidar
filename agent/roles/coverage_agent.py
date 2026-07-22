@@ -832,8 +832,10 @@ class CoverageAgent(BaseAgent):
                         "finding_type": "coverage_gap",
                         "target_path": filename,
                         "summary": (
-                            f"line={round(line_rate * 100, 2)}% branch={round(branch_rate * 100, 2)}% "
-                            f"missing_lines={len(missed_lines)} missing_branches={len(missed_branches)}"
+                            f"line={round(line_rate * 100, 2)}% "
+                            f"branch={round(branch_rate * 100, 2)}% "
+                            f"missing_lines={len(missed_lines)} "
+                            f"missing_branches={len(missed_branches)}"
                         ),
                         "missing_lines": missed_lines[:200],
                         "missing_branches": missed_branches[:200],
@@ -928,7 +930,8 @@ class CoverageAgent(BaseAgent):
                     "finding_type": "terminal_coverage_gap",
                     "target_path": item.get("path", ""),
                     "summary": (
-                        f"line={item.get('line_rate')}% missing_lines={item.get('missing_lines_count')} "
+                        f"line={item.get('line_rate')}% "
+                        f"missing_lines={item.get('missing_lines_count')} "
                         f"missing_branches={item.get('missing_branches_count')}"
                     ),
                     "missing_lines_hint": item.get("missing_hint", ""),

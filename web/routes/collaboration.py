@@ -335,7 +335,8 @@ def build_collaboration_prompt(room: CollaborationRoom, *, actor_name: str, comm
     transcript: list[str] = []
     for item in room.messages[-10:]:
         transcript.append(
-            f"[{item.get('role', 'user')}] {item.get('author_name', 'Anonim')}: {str(item.get('content', '')).strip()[:240]}"
+            f"[{item.get('role', 'user')}] {item.get('author_name', 'Anonim')}: "
+            f"{str(item.get('content', '')).strip()[:240]}"
         )
     recent_context = "\n".join(transcript) if transcript else "(henüz ortak geçmiş yok)"
     participants = ", ".join(
