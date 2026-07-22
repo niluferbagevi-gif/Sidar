@@ -167,6 +167,8 @@ reviewable in the same PR:
 ```bash
 scripts/sync_install_manifest.sh
 scripts/sync_install_module_hashes.sh
+# İlk manifest/hash commit'inden sonra:
+make finalize-install-module-pin
 ```
 
 For changes limited to `scripts/install_modules/**`, the module hash sync is the
@@ -189,8 +191,11 @@ uv run python scripts/tools/update_install_module_hash_manifest.py --target inst
 uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
 ```
 
-These hooks intentionally run in check mode. If a hook fails, run the sync
-script(s), review the generated manifest changes, and commit them explicitly.
+These hooks intentionally run in check mode. Module değişikliği için standart akış iki
+fazlıdır: sync çıktısını önce commit edin, ardından `make finalize-install-module-pin`
+çalıştırın. Bu hedef gerçek HEAD SHA'sını damgalar, `--check-pin` ile yerelde doğrular ve
+küçük pin fixup commit'ini otomatik oluşturur. Yalnız diff üretmek için
+`scripts/finalize_install_module_pin.sh --no-commit` kullanılabilir.
 
 The `pytest-meta-contracts` hook also runs at `pre-push` and covers the script,
 quality-gate, and dependency-profile contracts most likely to detect configuration

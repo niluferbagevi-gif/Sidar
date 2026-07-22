@@ -5795,6 +5795,24 @@ def test_installer_warns_when_production_env_shares_local_generated_secrets() ->
     assert ".env.production bilinçli olarak oluşturulmaz veya doldurulmaz" in propagate_block
 
 
+def test_installer_pin_finalize_workflow_is_one_documented_command() -> None:
+    finalize = Path("scripts/finalize_install_module_pin.sh").read_text(encoding="utf-8")
+    sync = Path("scripts/sync_install_module_hashes.sh").read_text(encoding="utf-8")
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    checklist = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+    assert "make finalize-install-module-pin" in sync
+    assert "finalize-install-module-pin:" in makefile
+    assert "bash scripts/finalize_install_module_pin.sh" in makefile
+    assert "git diff --cached --quiet -- scripts/install_modules" in finalize
+    assert 'source_commit="$(git rev-parse HEAD)"' in finalize
+    assert '--target "$TARGET" --check-manifest-only' in finalize
+    assert '--stamp-commit "$source_commit"' in finalize
+    assert '--target "$TARGET" --check-pin' in finalize
+    assert "git commit -m" in finalize
+    assert "make finalize-install-module-pin" in checklist
+
+
 def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -> None:
     local_env = tmp_path / ".env"
     production_env = tmp_path / ".env.production"

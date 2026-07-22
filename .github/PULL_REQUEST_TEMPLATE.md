@@ -53,6 +53,7 @@ If this PR touches `core/memory.py`, `core/multimodal.py`, `install_sidar.sh`,
 
 - [ ] I ran `scripts/sync_install_manifest.sh` when core installer files changed.
 - [ ] I ran `scripts/sync_install_module_hashes.sh` after core installer or installer module changes.
+- [ ] I committed the synced hashes, then ran `make finalize-install-module-pin` to create the verified pin fixup commit.
 - [ ] I ran `make check-install-manifests`.
 - [ ] I ran `make installer-shellcheck`.
 - [ ] I ran `uv run python scripts/tools/update_core_install_manifest.py --check`.

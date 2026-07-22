@@ -229,6 +229,11 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--check-manifest-only",
+        action="store_true",
+        help="Yalnız gömülü hash manifestinin çalışma ağacındaki modüllerle eşleşmesini doğrula.",
+    )
+    parser.add_argument(
         "--stamp-commit",
         help=(
             "SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırını verilen 40 karakter SHA ile güncelle."
@@ -246,6 +251,12 @@ def main() -> int:
         if not pin_drift:
             return 0
         print(_format_pin_drift_report(target, pin_drift), file=sys.stderr)
+        return 1
+    if args.check_manifest_only:
+        drift = diff_target(target)
+        if not drift:
+            return 0
+        print(_format_drift_report(target, drift), file=sys.stderr)
         return 1
     if args.check:
         drift = diff_target(target)

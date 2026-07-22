@@ -27,9 +27,10 @@ if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; th
         printf '✏️   %s gömülü modül manifesti güncellendi. Drift satırları:\n' "$TARGET"
         git --no-pager diff --no-color -- "$TARGET" \
             | awk '/^[+-][0-9a-f]{64}  scripts\/install_modules\// { print "    " $0 }'
-        printf '\nGözden geçirip commit edin:\n'
+        printf '\nİki-fazlı standart akış:\n'
         printf '    git add %s\n' "$TARGET"
         printf '    git commit -m "Sync install_sidar.sh module hashes"\n'
+        printf '    make finalize-install-module-pin\n'
     fi
 else
     printf 'ℹ️   git deposu algılanmadı; diff özeti atlanıyor (manifest güncellendi).\n'
