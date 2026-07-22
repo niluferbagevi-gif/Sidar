@@ -1033,6 +1033,10 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     open_res = await web_server.basic_auth_middleware(open_req, _ok_next)
     assert open_res.status_code == 200
 
+    readyz_req = _make_request("/readyz", method="GET")
+    readyz_res = await web_server.basic_auth_middleware(readyz_req, _ok_next)
+    assert readyz_res.status_code == 200
+
     github_webhook_res = await web_server.basic_auth_middleware(
         _make_request("/api/webhook", method="POST"), _ok_next
     )
@@ -1114,6 +1118,53 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     assert events["metric_set"] == "u1"
     assert events["metric_reset"] == "tok"
     assert valid_req.state.user.id == "u1"
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_middleware_accepts_metrics_token_bearer(monkeypatch):
+    """METRICS_TOKEN documented in require_metrics_access() must actually reach it.
+
+    Regression for: the middleware used to hand every bearer token to
+    _resolve_user_from_token(None, ...), which can only ever validate a JWT
+    (the DB/opaque-token fallback requires a real agent). A METRICS_TOKEN bearer
+    is not a JWT, so it always 401'd before Depends(_require_metrics_access) ever
+    ran its own token check, making the documented scraper auth path dead code.
+    """
+
+    async def _ok_next(_request):
+        return web_server.JSONResponse({"ok": True}, status_code=200)
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "scrape-secret")
+
+    async def _resolve_should_not_be_called(*_):
+        raise AssertionError("METRICS_TOKEN bearer must bypass JWT/DB resolution")
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_should_not_be_called)
+
+    for path in ("/metrics", "/metrics/llm", "/metrics/llm/prometheus", "/api/budget"):
+        req = _make_request(path, method="GET", headers={"Authorization": "Bearer scrape-secret"})
+        res = await web_server.basic_auth_middleware(req, _ok_next)
+        assert res.status_code == 200, path
+        assert req.state.user.id == "metrics-token"
+        assert req.state.user.role != "admin"
+
+    wrong_token_req = _make_request(
+        "/metrics", method="GET", headers={"Authorization": "Bearer not-the-token"}
+    )
+    with pytest.raises(AssertionError):
+        await web_server.basic_auth_middleware(wrong_token_req, _ok_next)
+
+    non_metrics_req = _make_request(
+        "/secure", method="GET", headers={"Authorization": "Bearer scrape-secret"}
+    )
+    with pytest.raises(AssertionError):
+        await web_server.basic_auth_middleware(non_metrics_req, _ok_next)
+
+    post_metrics_req = _make_request(
+        "/metrics", method="POST", headers={"Authorization": "Bearer scrape-secret"}
+    )
+    with pytest.raises(AssertionError):
+        await web_server.basic_auth_middleware(post_metrics_req, _ok_next)
 
 
 def test_trim_autonomy_text_truncates_with_suffix():
