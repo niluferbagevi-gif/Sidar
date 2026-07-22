@@ -240,7 +240,7 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
     assert debt["docstring_async_debt_baseline"] == {
         "D200": 6,
         "D202": 147,
-        "D205": 81,
+        "D205": 80,
         "D209": 10,
         "D212": 114,
         "D403": 10,
