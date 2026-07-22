@@ -420,18 +420,10 @@ class CodeManager:
         self.ensure_docker_initialized()
 
         if not self.docker_available:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
-                    "yerel (unsafe) çalıştırma engellendi."
-                )
-            if Config.DOCKER_REQUIRED:
-                return False, (
-                    "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı. "
-                    "Docker daemon'ı başlatın veya DOCKER_REQUIRED=false olarak ayarlayın."
-                )
-            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
-            return self.execute_code_local(code)
+            return False, (
+                "[GÜVENLİK] Docker sandbox erişilemedi; access level'dan bağımsız olarak "
+                "host üzerinde izolasyonsuz kod çalıştırma reddedildi."
+            )
 
         try:
             import docker  # noqa: F401
@@ -531,17 +523,23 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                logger.warning(
-                    "Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc
+                logger.error(
+                    "Docker SDK ve CLI sandbox çalıştırması başarısız; host fallback reddedildi: %s",
+                    cli_exc,
                 )
-                return self.execute_code_local(code)
+                return False, (
+                    "[GÜVENLİK] Docker sandbox çalıştırılamadı; host üzerinde izolasyonsuz "
+                    f"kod çalıştırma reddedildi. Detay: {cli_exc}"
+                )
 
     def execute_code_local(self, code: str) -> tuple[bool, str]:
-        """Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+        """Python kodunu açıkça istenen, izolasyonsuz yerel subprocess ile çalıştırır.
 
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
+
+        Bu düşük seviye yardımcı ``execute_code`` tarafından fallback olarak çağrılmaz.
         """
         # Güvenlik uyarısı: Docker sandbox yok, kod izole edilmeden çalışıyor
         logger.warning(

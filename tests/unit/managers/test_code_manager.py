@@ -294,17 +294,11 @@ def test_execute_code_without_docker_branches(manager, monkeypatch):
     manager.security.exec_ok = True
     manager.security.level = SANDBOX
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "güvenlik politikası" in msg
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
     manager.security.level = FULL
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", True, raising=False)
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "DOCKER_REQUIRED=true" in msg
-
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", False, raising=False)
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local"))
-    ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local"
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
 
 def test_execute_code_with_mocked_docker_success(manager, monkeypatch):
@@ -1455,9 +1449,8 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
         "_execute_code_with_docker_cli",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")),
     )
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
     ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local-fallback"
+    assert not ok and "host üzerinde izolasyonsuz" in msg
 
 
 def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
