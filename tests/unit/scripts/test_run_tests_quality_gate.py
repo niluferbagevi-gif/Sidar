@@ -811,7 +811,9 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert (
         'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
     )
-    assert "production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı" in env_phase
+    assert (
+        "production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı" in env_phase
+    )
     assert 'production_secret_rotation_gate_passes "$env_file"' in env_phase
     assert "secret rotasyon kapısı geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
     assert (
@@ -5680,6 +5682,81 @@ def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     assert '[[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]' in install_script
     assert "resolve_github_ref_commit_sha()" in install_script
     assert "api.github.com/repos/${owner_repo}/commits/${ref}" in install_script
+    assert 'ls-remote "$repo_url"' in install_script
+    assert '[[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || return 1' in install_script
+
+
+def test_install_sidar_resolves_mutable_ref_without_anonymous_github_api(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    git_script = fake_bin / "git"
+    git_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '0123456789abcdef0123456789abcdef01234567\\trefs/heads/main\\n'\n",
+        encoding="utf-8",
+    )
+    git_script.chmod(0o755)
+    curl_script = fake_bin / "curl"
+    curl_script.write_text(
+        "#!/usr/bin/env bash\nprintf 'anonymous API fallback must not run\\n' >&2\nexit 99\n",
+        encoding="utf-8",
+    )
+    curl_script.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source ./install_sidar.sh >/dev/null 2>&1; "
+            "resolve_github_ref_commit_sha https://github.com/example/project.git main",
+        ],
+        capture_output=True,
+        env={
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "PATH": f"{fake_bin}{os.pathsep}/usr/bin:/bin",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        },
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "0123456789abcdef0123456789abcdef01234567"
+    assert "anonymous API fallback" not in result.stderr
+
+
+def test_install_sidar_does_not_use_anonymous_api_when_git_resolution_fails(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("git", "curl"):
+        script = fake_bin / command
+        script.write_text(
+            f"#!/usr/bin/env bash\nprintf '{command} invoked\\n' >> \"$CALL_LOG\"\nexit 1\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+    call_log = tmp_path / "calls.log"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source ./install_sidar.sh >/dev/null 2>&1; "
+            "resolve_github_ref_commit_sha https://github.com/example/project.git main",
+        ],
+        capture_output=True,
+        env={
+            "CALL_LOG": str(call_log),
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "PATH": f"{fake_bin}{os.pathsep}/usr/bin:/bin",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        },
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert call_log.read_text(encoding="utf-8").splitlines() == ["git invoked"]
 
 
 def test_ci_publish_standalone_installer_depends_on_installer_smoke_only() -> None:

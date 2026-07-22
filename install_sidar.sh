@@ -712,22 +712,48 @@ resolve_github_ref_commit_sha() {
     local ref="${2:-main}"
     local owner_repo=""
     local api_url=""
+    local github_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
     local response=""
     local resolved_sha=""
 
     sidar_ref_is_commit_sha "$ref" && { printf '%s' "$ref"; return 0; }
     owner_repo="$(sidar_github_repo_slug_from_url "$repo_url")"
     [[ -n "$owner_repo" ]] || return 1
-    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
 
-    if command -v curl >/dev/null 2>&1; then
-        response="$(curl -fsSL --connect-timeout 10 --max-time 20 "$api_url" 2>/dev/null || true)"
-    elif command -v wget >/dev/null 2>&1; then
-        response="$(wget -qO- --timeout=20 "$api_url" 2>/dev/null || true)"
-    else
-        return 1
+    # Public Git transport does not consume the low, shared unauthenticated GitHub
+    # REST API quota used by NAT/hosted CI runners. Prefer it whenever git exists.
+    if command -v git >/dev/null 2>&1; then
+        response="$(
+            GIT_TERMINAL_PROMPT=0 git \
+                -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 \
+                ls-remote "$repo_url" \
+                "refs/heads/${ref}" "refs/tags/${ref}^{}" "refs/tags/${ref}" \
+                2>/dev/null || true
+        )"
+        resolved_sha="$(
+            printf '%s\n' "$response" \
+                | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+refs\/tags\/.*\^\{\}$/\1/p' \
+                | head -n 1
+        )"
+        if ! sidar_ref_is_commit_sha "$resolved_sha"; then
+            resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+.*/\1/p' | head -n 1)"
+        fi
+        if sidar_ref_is_commit_sha "$resolved_sha"; then
+            printf '%s' "$resolved_sha"
+            return 0
+        fi
     fi
 
+    # Never spend the anonymous REST quota as a fallback. An authenticated API
+    # lookup remains useful during minimal bootstrap environments without git.
+    [[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    command -v curl >/dev/null 2>&1 || return 1
+    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
+    response="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$github_token" \
+            | curl -fsSL --connect-timeout 10 --max-time 20 --config - "$api_url" 2>/dev/null \
+            || true
+    )"
     resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/.*"sha"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n 1)"
     if sidar_ref_is_commit_sha "$resolved_sha"; then
         printf '%s' "$resolved_sha"
@@ -749,7 +775,7 @@ resolve_remote_module_ref() {
         return 0
     fi
     if resolved_ref="$(resolve_github_ref_commit_sha "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$mutable_ref")"; then
-        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub API üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
+        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
         printf '%s' "$resolved_ref"
         return 0
     fi
