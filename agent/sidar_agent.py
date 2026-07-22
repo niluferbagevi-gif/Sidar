@@ -1545,7 +1545,7 @@ class SidarAgent:
 
         # 1. VEKTÖR BELLEK (SONSUZ HAFIZA) KAYDI
         # Kısa özetlemeye geçmeden önce, tüm detayları RAG sistemine kaydediyoruz
-        def _format_turn(turn: dict) -> str:
+        def _format_turn(turn: dict[str, Any]) -> str:
             turn_time = time.localtime(turn.get("timestamp", time.time()))
             ts = time.strftime("%Y-%m-%d %H:%M:%S", turn_time)
             return f"[{ts}] {turn['role'].upper()}:\n{turn['content']}"
