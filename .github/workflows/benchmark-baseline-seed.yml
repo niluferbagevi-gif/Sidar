@@ -114,7 +114,7 @@ jobs:
           retention-days: 30
 
       - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}

@@ -50,7 +50,7 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -122,7 +122,7 @@ jobs:
           retention-days: 90
 
       - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -219,7 +219,7 @@ jobs:
 
       - name: Restore benchmark baseline cache
         id: benchmark-baseline-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -325,7 +325,7 @@ jobs:
           npm run audit:high
 
       - name: Restore Playwright browser cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}
@@ -623,7 +623,7 @@ jobs:
 
       - name: Restore benchmark baseline cache
         id: benchmark-baseline-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}

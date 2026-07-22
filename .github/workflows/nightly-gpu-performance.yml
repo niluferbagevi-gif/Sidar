@@ -44,7 +44,7 @@ jobs:
 
       - name: Restore GPU trend history cache
         id: gpu-trend-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Save GPU trend history cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
