@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="8530948a3d52fb614fac955a8b7dfa90f861c90d"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="859cbb2c33cac38dead79f23cc80b5321618e172"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -625,7 +625,7 @@ a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/instal
 ae01c4d07589332e304f189928e78555514aa5d1b85b2178e0a35fb40e60ed11  scripts/install_modules/utils/remote_script.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
 4effdccc94e05adaf27362aef74593b64bf34acab8930baba7b147289c640587  scripts/install_modules/utils/ux.sh
-19edb98405a5255322d247fdbe2a9691b2ea21cfa33de942c529280c83639357  scripts/install_modules/utils/wsl_gpu_preflight.sh
+7340b3b24a8d0d563f0054a6b507c8dbd262d047dfb82aa7e76f7c020524eb83  scripts/install_modules/utils/wsl_gpu_preflight.sh
 22898858fffb46b0bf522f91ddd9bde6e78ed70c06245f8cb966de2918446e48  scripts/install_modules/utils/wsl_host.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
 53ebf2c5d772a2cdbe27dbef5286dfcbdb76dea5c7c67b1584589ec9c47c7d7d  scripts/install_modules/utils/wsl_integration_autofix.sh

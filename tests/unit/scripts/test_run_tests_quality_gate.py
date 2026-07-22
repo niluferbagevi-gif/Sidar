@@ -2778,6 +2778,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "run_wsl2_gpu_preflight()" in preflight_utils
     assert "SIDAR_WSL_GPU_PREFLIGHT" in preflight_utils
     assert "nvidia-smi" in preflight_utils
+    assert "GPU adı RTX/NVIDIA LLM hızlandırma profiline benzemiyor" not in preflight_utils
+    assert '"$gpu_name" =~ (RTX|Blackwell|Ada|Ampere|NVIDIA)' not in preflight_utils
+    assert "GPU product names are informational only" in preflight_utils
     assert "/dev/dxg" in preflight_utils
     assert "libcuda" in preflight_utils
     assert "Ollama API" in preflight_utils

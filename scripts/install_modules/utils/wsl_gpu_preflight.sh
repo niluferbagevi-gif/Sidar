@@ -3,7 +3,7 @@ set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_WSL_GPU_PREFLIGHT_SH_LOADED=1
 
-# Early WSL2 + NVIDIA/RTX health gate.  This runs before package installation so
+# Early WSL2 + NVIDIA health gate.  This runs before package installation so
 # driver passthrough problems are reported before the installer spends time on
 # uv, Docker, Ollama models, or frontend assets.
 
@@ -118,9 +118,10 @@ run_wsl2_gpu_preflight() {
                 fi
             fi
 
-            if [[ -n "$gpu_name" && ! "$gpu_name" =~ (RTX|Blackwell|Ada|Ampere|NVIDIA) ]]; then
-                sidar_report_wsl_gpu_problem warn "GPU adı RTX/NVIDIA LLM hızlandırma profiline benzemiyor: $gpu_name"
-            fi
+            # GPU product names are informational only: Tesla, Quadro, OEM and
+            # virtualized devices may omit consumer architecture/brand tokens.
+            # Capability decisions use nvidia-smi success, VRAM, compute capability,
+            # driver CUDA capability and the WSL libcuda bridge instead.
         fi
     fi
 
