@@ -4945,11 +4945,19 @@ exit 42
     )
     mock_npx.chmod(0o755)
 
+    probe_and_install = (
+        'set -Eeuo pipefail; source "$1"; '
+        'if playwright_node_host_platform_is_officially_supported "$2" "$3" '
+        '--no-install; then '
+        'OS_RELEASE_PATH="$2" "$3" --no-install playwright install chromium; '
+        'else run_playwright_ubuntu_override_install "$2" 120000 "$3" '
+        '--no-install playwright install chromium; fi'
+    )
     result = subprocess.run(
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; if playwright_node_host_platform_is_officially_supported "$2" "$3" --no-install; then OS_RELEASE_PATH="$2" "$3" --no-install playwright install chromium; else run_playwright_ubuntu_override_install "$2" 120000 "$3" --no-install playwright install chromium; fi',
+            probe_and_install,
             "bash",
             str(helper),
             str(os_release),
