@@ -275,6 +275,7 @@ def list_directory(manager: Any, path: str = ".") -> tuple[bool, str]:
 
 
 __all__ = [
+    "apply_exact_block_patch",
     "glob_search",
     "grep_files",
     "list_directory",

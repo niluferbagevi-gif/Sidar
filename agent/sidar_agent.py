@@ -796,9 +796,10 @@ class SidarAgent:
         )
         if not hasattr(self, "_self_heal_attempts"):
             self._self_heal_attempts = {}
-        if getattr(self, "_self_heal_attempts_lock", None) is None:
-            self._self_heal_attempts_lock = asyncio.Lock()
         attempts_lock = self._self_heal_attempts_lock
+        if attempts_lock is None:
+            attempts_lock = asyncio.Lock()
+            self._self_heal_attempts_lock = attempts_lock
         async with attempts_lock:
             attempts_used = self._self_heal_attempts.get(attempt_key, 0)
             if attempts_used >= max_auto_attempts:
