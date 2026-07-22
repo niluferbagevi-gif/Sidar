@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OperationsQaPanel } from "./OperationsQaPanel.jsx";
 
@@ -67,6 +67,27 @@ describe("OperationsQaPanel — başlangıç render", () => {
 });
 
 describe("OperationsQaPanel — REST tetiklemeleri", () => {
+  it("çift submit'i tek isteğe indirger ve işlem sırasında aksiyonları kilitler", async () => {
+    let resolveLanding;
+    apiMocks.generateLandingPage.mockImplementation(() => new Promise((resolve) => {
+      resolveLanding = resolve;
+    }));
+    await renderOperationsQaPanel();
+
+    const landingButton = screen.getByRole("button", { name: "Landing üret" });
+    fireEvent.click(landingButton);
+    fireEvent.click(landingButton);
+
+    expect(apiMocks.generateLandingPage).toHaveBeenCalledTimes(1);
+    for (const name of ["Landing üret", "Kopya üret", "Analiz et", "Batch çalıştır"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+
+    resolveLanding({ ok: true });
+    expect(await screen.findByText("Landing page tamamlandı.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Landing üret" })).not.toBeDisabled();
+  });
+
   it("Landing page formu generateLandingPage çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true, page: "<html/>" });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeCoverage,
   generateCampaignCopy,
@@ -19,6 +19,8 @@ export function OperationsQaPanel() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [output, setOutput] = useState(null);
+  const [busyAction, setBusyAction] = useState("");
+  const actionInFlightRef = useRef(false);
   const [landingForm, setLandingForm] = useState({
     brand_name: "Sidar",
     offer: "Kurumsal ajan operasyon merkezi",
@@ -59,6 +61,9 @@ export function OperationsQaPanel() {
   }, [loadHitl]);
 
   const runAction = useCallback(async (label, fn) => {
+    if (actionInFlightRef.current) return false;
+    actionInFlightRef.current = true;
+    setBusyAction(label);
     setError("");
     setStatus(`${label} başlatıldı...`);
     try {
@@ -69,7 +74,11 @@ export function OperationsQaPanel() {
     } catch (exc) {
       setError(exc.message);
       setStatus(`${label} başarısız.`);
+    } finally {
+      actionInFlightRef.current = false;
+      setBusyAction("");
     }
+    return true;
   }, [loadHitl]);
 
   const respond = useCallback(async (requestId, approved) => {
@@ -114,7 +123,7 @@ export function OperationsQaPanel() {
           {Object.entries(landingForm).map(([key, value]) => (
             <label key={key}>{key}<input value={value} onChange={(e) => setLandingForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
           ))}
-          <button type="submit">Landing üret</button>
+          <button type="submit" disabled={Boolean(busyAction)}>Landing üret</button>
         </form>
 
         <form className="card form-card" onSubmit={(event) => {
@@ -129,7 +138,7 @@ export function OperationsQaPanel() {
           {Object.entries(campaignForm).map(([key, value]) => (
             <label key={key}>{key}<input value={value} onChange={(e) => setCampaignForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
           ))}
-          <button type="submit">Kopya üret</button>
+          <button type="submit" disabled={Boolean(busyAction)}>Kopya üret</button>
         </form>
       </div>
 
@@ -142,7 +151,7 @@ export function OperationsQaPanel() {
           <label>coverage_xml<input value={coverageForm.coverage_xml} onChange={(e) => setCoverageForm((prev) => ({ ...prev, coverage_xml: e.target.value }))} /></label>
           <label>coveragerc<input value={coverageForm.coveragerc} onChange={(e) => setCoverageForm((prev) => ({ ...prev, coveragerc: e.target.value }))} /></label>
           <label>limit<input type="number" value={coverageForm.limit} onChange={(e) => setCoverageForm((prev) => ({ ...prev, limit: Number(e.target.value) }))} /></label>
-          <button type="submit">Analiz et</button>
+          <button type="submit" disabled={Boolean(busyAction)}>Analiz et</button>
         </form>
 
         <form className="card form-card" onSubmit={(event) => {
@@ -154,7 +163,7 @@ export function OperationsQaPanel() {
           <label>limit<input type="number" value={batchForm.limit} onChange={(e) => setBatchForm((prev) => ({ ...prev, limit: Number(e.target.value) }))} /></label>
           <label>batch_size<input type="number" value={batchForm.batch_size} onChange={(e) => setBatchForm((prev) => ({ ...prev, batch_size: Number(e.target.value) }))} /></label>
           <label className="checkbox-row"><input type="checkbox" checked={batchForm.append} onChange={(e) => setBatchForm((prev) => ({ ...prev, append: e.target.checked }))} /> append</label>
-          <button type="submit">Batch çalıştır</button>
+          <button type="submit" disabled={Boolean(busyAction)}>Batch çalıştır</button>
         </form>
       </div>
 
@@ -189,8 +198,8 @@ export function OperationsQaPanel() {
                 <p>{item.description}</p>
                 <pre className="code-block">{JSON.stringify(item.payload || {}, null, 2)}</pre>
                 <div className="inline-controls inline-controls--compact">
-                  <button type="button" onClick={() => respond(item.request_id, true)}>Onayla</button>
-                  <button type="button" className="button-secondary" onClick={() => respond(item.request_id, false)}>Reddet</button>
+                  <button type="button" disabled={Boolean(busyAction)} onClick={() => respond(item.request_id, true)}>Onayla</button>
+                  <button type="button" disabled={Boolean(busyAction)} className="button-secondary" onClick={() => respond(item.request_id, false)}>Reddet</button>
                 </div>
               </div>
             ))}
