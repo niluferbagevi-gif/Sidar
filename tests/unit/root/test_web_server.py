@@ -2453,6 +2453,41 @@ async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
     assert web_server._get_client_ip(req) == "9.9.9.9"
 
 
+@pytest.mark.asyncio
+async def test_local_rate_limit_fallback_cleans_expired_keys_and_bounds_cardinality(
+    monkeypatch,
+):
+    monkeypatch.setattr(web_server.time, "time", lambda: 1_000.0)
+    monkeypatch.setattr(web_server, "_local_rate_last_cleanup", 0.0)
+    monkeypatch.setattr(web_server, "_LOCAL_RATE_MAX_KEYS", 2)
+    web_server._local_rate_limits.clear()
+    web_server._local_rate_expiries.clear()
+    web_server._local_rate_limits.update(
+        {
+            "expired": [900.0],
+            "active-oldest": [990.0],
+        }
+    )
+    web_server._local_rate_expiries.update(
+        {
+            "expired": 960.0,
+            "active-oldest": 1_050.0,
+        }
+    )
+
+    assert await web_server._local_is_rate_limited("new", limit=2, window_sec=60) is False
+    assert "expired" not in web_server._local_rate_limits
+    assert set(web_server._local_rate_limits) == {"active-oldest", "new"}
+
+    monkeypatch.setattr(web_server, "_local_rate_last_cleanup", 1_000.0)
+    assert await web_server._local_is_rate_limited("newest", limit=2, window_sec=60) is False
+    assert len(web_server._local_rate_limits) == 2
+    assert "active-oldest" not in web_server._local_rate_limits
+    assert set(web_server._local_rate_expiries) == set(web_server._local_rate_limits)
+    web_server._local_rate_limits.clear()
+    web_server._local_rate_expiries.clear()
+
+
 def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch):
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
 

@@ -1707,7 +1707,11 @@ _RATE_GET_IO_EXEMPT_PREFIXES = ("/ui/", "/static/", "/vendor/")
 _redis_client: Redis | None = None
 _redis_lock: asyncio.Lock | None = None
 _local_rate_limits: dict[str, list[float]] = {}
+_local_rate_expiries: dict[str, float] = {}
 _local_rate_lock: asyncio.Lock | None = None
+_local_rate_last_cleanup = 0.0
+_LOCAL_RATE_CLEANUP_INTERVAL_SEC = 30.0
+_LOCAL_RATE_MAX_KEYS = 10_000
 
 # Test temizliği için takma ad; _local_rate_limits ile aynı sözlük nesnesini paylaşır
 _rate_data: dict[str, list[float]] = _local_rate_limits
@@ -1743,19 +1747,44 @@ async def _get_redis() -> Redis | None:
 
 
 async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
-    global _local_rate_lock
+    global _local_rate_last_cleanup, _local_rate_lock
     if _local_rate_lock is None:
         _local_rate_lock = asyncio.Lock()
 
     now = time.time()
     async with _local_rate_lock:
+        should_cleanup = (
+            now - _local_rate_last_cleanup >= _LOCAL_RATE_CLEANUP_INTERVAL_SEC
+            or (key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS)
+        )
+        if should_cleanup:
+            expired_keys = [
+                stored_key
+                for stored_key, expires_at in _local_rate_expiries.items()
+                if expires_at <= now
+            ]
+            for expired_key in expired_keys:
+                _local_rate_limits.pop(expired_key, None)
+                _local_rate_expiries.pop(expired_key, None)
+            _local_rate_last_cleanup = now
+
+        if key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS:
+            eviction_key = min(
+                _local_rate_limits,
+                key=lambda stored_key: _local_rate_expiries.get(stored_key, float("-inf")),
+            )
+            _local_rate_limits.pop(eviction_key, None)
+            _local_rate_expiries.pop(eviction_key, None)
+
         timestamps = _local_rate_limits.get(key, [])
         valid = [t for t in timestamps if now - t < window_sec]
         if len(valid) >= limit:
             _local_rate_limits[key] = valid
+            _local_rate_expiries[key] = max(valid) + window_sec
             return True
         valid.append(now)
         _local_rate_limits[key] = valid
+        _local_rate_expiries[key] = now + window_sec
         return False
 
 
