@@ -59,6 +59,12 @@ src/
 
 ### CI tarayıcı smoke kapısı ve coverage görünürlüğü
 
+Vite build, ESLint, TypeScript typecheck, Vitest coverage ve Playwright E2E ayrı kalite
+sinyalleridir. `run_tests.sh` bu kapıları tek sonuçta fail-fast zincirlemek yerine mümkün
+olanların tamamını çalıştırır ve her birini `artifacts/test-summary.json` içinde ayrı
+raporlar. Örneğin lint hatası typecheck veya coverage sonucunu `skipped` yapmaz; browser
+hazırlığı CDN/proxy nedeniyle başarısız olsa bile browser gerektirmeyen sinyaller korunur.
+
 - `run_tests.sh`, CI profilinde `RUN_FRONTEND_E2E=1` varsayılanıyla Playwright WebSocket smoke
   senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `auto` değeridir:
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;

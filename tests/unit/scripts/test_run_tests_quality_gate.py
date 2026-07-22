@@ -4618,6 +4618,39 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
         < frontend_gate_block.index("npm run typecheck")
         < frontend_gate_block.index("npm run test:coverage")
     )
+    assert 'if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then' in frontend_gate_block
+    assert 'else\n          echo "🧹 Frontend lint' not in frontend_gate_block
+
+
+def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
+    """Lint, typecheck, coverage, build and E2E must retain separate results."""
+    frontend_gate_block = _script()[
+        _script().index("# 3) Frontend React testleri") : _script().index(
+            "# 4) Final Durum Değerlendirmesi"
+        )
+    ]
+
+    assert "Bir kapının hatası sonraki sinyalleri" in frontend_gate_block
+    assert (
+        frontend_gate_block.index("run_checked npm run lint")
+        < frontend_gate_block.index("run_checked npm run typecheck")
+        < frontend_gate_block.index("run_checked npm run test:coverage")
+        < frontend_gate_block.index("run_checked npm run build:budget")
+        < frontend_gate_block.index("run_checked run_frontend_e2e_with_retry")
+    )
+    assert 'if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then' not in frontend_gate_block
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "summary_frontend_build" in validation_phase
+    assert "read_install_test_summary_field frontend_bundle_budget" in validation_phase
+    assert 'print_install_validation_gate_line "Frontend build"' in validation_phase
+
+    frontend_readme = Path("web_ui_react/README.md").read_text(encoding="utf-8")
+    assert (
+        "Vite build, ESLint, TypeScript typecheck, Vitest coverage ve Playwright E2E"
+        in frontend_readme
+    )
 
 
 def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:

@@ -819,6 +819,7 @@ print_install_validation_coverage() {
     local summary_frontend_lint=""
     local summary_frontend_typecheck=""
     local summary_frontend_coverage=""
+    local summary_frontend_build="skipped"
     local summary_frontend_e2e=""
     local summary_benchmark=""
     local summary_production_ready=""
@@ -835,6 +836,7 @@ print_install_validation_coverage() {
         summary_production_ready="$(read_install_test_summary_field production_ready)"; then
         summary_available=true
     fi
+    summary_frontend_build="$(read_install_test_summary_field frontend_bundle_budget 2>/dev/null || printf 'skipped')"
     local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
     local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     if [[ "$gpu_available" == true ]]; then
@@ -850,6 +852,7 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Frontend lint" "$summary_frontend_lint" "npm run lint" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend type" "$summary_frontend_typecheck" "npm run typecheck" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend cov " "$summary_frontend_coverage" "npm run test:coverage" "bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Frontend build" "$summary_frontend_build" "npm run build:budget" "FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend E2E " "$summary_frontend_e2e" "Playwright smoke" "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
         if [[ "$summary_production_ready" == true ]]; then

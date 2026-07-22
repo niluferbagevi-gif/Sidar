@@ -2033,57 +2033,59 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
         FRONTEND_NPM_AUDIT_EXIT_CODE=$?
         if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then
           FRONTEND_EXIT_CODE=${FRONTEND_NPM_AUDIT_EXIT_CODE}
-        else
-          echo "🧹 Frontend lint kalite kapısı çalıştırılıyor: npm run lint"
-          FRONTEND_LINT_RAN=1
-          run_checked npm run lint
-          FRONTEND_LINT_EXIT_CODE=$?
-          if [ "${FRONTEND_LINT_EXIT_CODE}" -ne 0 ]; then
-            FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
-          else
-            echo "🧪 Frontend typecheck kalite kapısı çalıştırılıyor: npm run typecheck"
-            FRONTEND_TYPECHECK_RAN=1
-            run_checked npm run typecheck
-            FRONTEND_TYPECHECK_EXIT_CODE=$?
-            if [ "${FRONTEND_TYPECHECK_EXIT_CODE}" -ne 0 ]; then
-              FRONTEND_EXIT_CODE=${FRONTEND_TYPECHECK_EXIT_CODE}
-            else
-              echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
-              FRONTEND_COVERAGE_RAN=1
-              run_checked npm run test:coverage
-              FRONTEND_COVERAGE_EXIT_CODE=$?
-              if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -ne 0 ]; then
-                FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
-              fi
-            if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -eq 0 ] && [ ! -f "coverage/index.html" ]; then
-              echo "❌ Frontend coverage testi geçti ancak HTML artefaktı üretilemedi: web_ui_react/coverage/index.html"
-              FRONTEND_COVERAGE_EXIT_CODE=1
-              FRONTEND_EXIT_CODE=1
-            fi
-              if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-                if [ "${FRONTEND_BUNDLE_BUDGET}" = "1" ]; then
-                  echo "📦 Frontend bundle budget kalite kapısı çalıştırılıyor: npm run build:budget"
-                  FRONTEND_BUNDLE_BUDGET_RAN=1
-                  run_checked npm run build:budget
-                  FRONTEND_BUNDLE_BUDGET_EXIT_CODE=$?
-                  if [ "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" -ne 0 ]; then
-                    FRONTEND_EXIT_CODE=${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}
-                  fi
-                else
-                  echo "ℹ️ Frontend bundle budget atlandı (FRONTEND_BUNDLE_BUDGET=${FRONTEND_BUNDLE_BUDGET}). Etkinleştirmek için FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend"
-                fi
-              fi
-              if [ "${FRONTEND_EXIT_CODE}" -eq 0 ]; then
-                if [ "${RUN_FRONTEND_E2E}" = "1" ]; then
-                  FRONTEND_E2E_RAN=1
-                  run_checked run_frontend_e2e_with_retry
-                  FRONTEND_E2E_EXIT_CODE=$?
-                else
-                  echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
-                fi
-              fi
-            fi
+        fi
+
+        # Build, lint, typecheck, coverage ve browser E2E birbirinin yerine
+        # geçmeyen kalite sinyalleridir. Bir kapının hatası sonraki sinyalleri
+        # "skipped" durumuna düşürmemeli; tüm sonuçlar finalde birlikte toplanır.
+        echo "🧹 Frontend lint kalite kapısı çalıştırılıyor: npm run lint"
+        FRONTEND_LINT_RAN=1
+        run_checked npm run lint
+        FRONTEND_LINT_EXIT_CODE=$?
+        if [ "${FRONTEND_LINT_EXIT_CODE}" -ne 0 ]; then
+          FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
+        fi
+
+        echo "🧪 Frontend typecheck kalite kapısı çalıştırılıyor: npm run typecheck"
+        FRONTEND_TYPECHECK_RAN=1
+        run_checked npm run typecheck
+        FRONTEND_TYPECHECK_EXIT_CODE=$?
+        if [ "${FRONTEND_TYPECHECK_EXIT_CODE}" -ne 0 ]; then
+          FRONTEND_EXIT_CODE=${FRONTEND_TYPECHECK_EXIT_CODE}
+        fi
+
+        echo "📊 Frontend coverage kalite kapısı çalıştırılıyor: npm run test:coverage"
+        FRONTEND_COVERAGE_RAN=1
+        run_checked npm run test:coverage
+        FRONTEND_COVERAGE_EXIT_CODE=$?
+        if [ "${FRONTEND_COVERAGE_EXIT_CODE}" -ne 0 ]; then
+          FRONTEND_EXIT_CODE=${FRONTEND_COVERAGE_EXIT_CODE}
+        elif [ ! -f "coverage/index.html" ]; then
+          echo "❌ Frontend coverage testi geçti ancak HTML artefaktı üretilemedi: web_ui_react/coverage/index.html"
+          FRONTEND_COVERAGE_EXIT_CODE=1
+          FRONTEND_EXIT_CODE=1
+        fi
+
+        if [ "${FRONTEND_BUNDLE_BUDGET}" = "1" ]; then
+          echo "📦 Frontend build/bundle budget kalite kapısı çalıştırılıyor: npm run build:budget"
+          FRONTEND_BUNDLE_BUDGET_RAN=1
+          run_checked npm run build:budget
+          FRONTEND_BUNDLE_BUDGET_EXIT_CODE=$?
+          if [ "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" -ne 0 ]; then
+            FRONTEND_EXIT_CODE=${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}
           fi
+        else
+          echo "ℹ️ Frontend build/bundle budget atlandı (FRONTEND_BUNDLE_BUDGET=${FRONTEND_BUNDLE_BUDGET}). Etkinleştirmek için FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend"
+        fi
+
+        if [ "${RUN_FRONTEND_E2E}" = "1" ] && [ "${FRONTEND_E2E_MODE_EXIT_CODE}" -eq 0 ]; then
+          FRONTEND_E2E_RAN=1
+          run_checked run_frontend_e2e_with_retry
+          FRONTEND_E2E_EXIT_CODE=$?
+        elif [ "${RUN_FRONTEND_E2E}" != "1" ]; then
+          echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+        else
+          echo "❌ Frontend Playwright ortam hazırlığı başarısız; lint/typecheck/coverage/build sinyalleri yine de çalıştırıldı."
         fi
       fi
 
