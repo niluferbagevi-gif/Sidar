@@ -13,7 +13,9 @@ read_env_value_from_file() {
 sed_inplace() { sed -i "$1" "$2"; }
 is_weak_secret_value() { [[ "$1" == "sidar" || "$1" == "postgres" ]]; }
 source "$root/scripts/install_modules/utils/env_secrets.sh"
+source "$root/scripts/install_modules/utils/db_credentials.sh"
 generate_secure_token() { printf 'strong-generated-password'; }
+sync_postgres_env_variants_with_source() { :; }
 harden_database_credentials "$env_file"
 
 grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:strong-generated-password@127.0.0.1:5432/sidar$' "$env_file"

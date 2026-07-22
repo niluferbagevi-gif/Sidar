@@ -2704,6 +2704,9 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     )
     db_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(encoding="utf-8")
     db_utils = Path("scripts/install_modules/utils/db_credentials.sh").read_text(encoding="utf-8")
+    env_secret_utils = Path("scripts/install_modules/utils/env_secrets.sh").read_text(
+        encoding="utf-8"
+    )
     env_utils = Path("scripts/install_modules/utils/env_utils.sh").read_text(encoding="utf-8")
     ollama_utils = Path("scripts/install_modules/utils/ollama_models.sh").read_text(
         encoding="utf-8"
@@ -2792,6 +2795,8 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "uv pip" not in python_env_utils
     assert "uv tool install" not in python_env_utils
     assert "harden_database_credentials()" in db_utils
+    assert "harden_database_credentials()" not in env_secret_utils
+    assert "generate_secure_token()" in env_secret_utils
     assert "sync_postgres_env_with_database_url()" in db_url_utils
     assert "ensure_database_url_defaults()" in db_url_utils
     assert "setup_env_file()" in env_utils

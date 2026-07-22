@@ -4,7 +4,8 @@ set -Eeuo pipefail
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
 
-# Secret generation and DB credential hardening helpers live in scripts/install_modules/utils/env_secrets.sh.
+# Secret generation helpers live in scripts/install_modules/utils/env_secrets.sh;
+# database credential hardening has a single implementation in utils/db_credentials.sh.
 
 # DATABASE_URL defaults and PostgreSQL dotenv sync helpers live in scripts/install_modules/utils/database_url.sh.
 
