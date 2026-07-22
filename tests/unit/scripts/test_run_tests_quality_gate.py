@@ -2825,6 +2825,15 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" not in env_utils
     assert "SIDAR_DATABASE_ENV_CHAIN_SYNCED" not in install_script
     assert "migrasyon DSN'i POSTGRES_* parçalarından üretildi" in alembic_phase
+    recovery_guard = alembic_phase[
+        alembic_phase.index(
+            'if sidar_weak_password_recovery_allowed "$migration_sidar_env"'
+        ) : alembic_phase.index(
+            'if [[ "$auth_check_rc" -eq 10 ]]', alembic_phase.index("recovery_password_candidates")
+        )
+    ]
+    assert 'recovery_password_candidates+=("sidar" "postgres"' in recovery_guard
+    assert "production ortamında devre dışıdır" in recovery_guard
     assert "collect_api_keys_interactive kendi içinde .env + runtime env varyantlarına" in env_utils
     existing_env_branch = env_utils[
         env_utils.index('if [[ -f "$ENV_FILE" ]]') : env_utils.index(
@@ -2897,6 +2906,24 @@ def test_playwright_install_fallback_does_not_depend_on_cli_error_text(tmp_path:
     assert "-m playwright install chromium" in calls
     assert "Çıktı metninden bağımsız fallback" in output
     assert "fallback ile tamamlandı" in output
+
+
+def test_alembic_weak_password_recovery_is_disabled_in_production() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source scripts/install_modules/phases/12_alembic.sh; "
+            "sidar_weak_password_recovery_allowed development; "
+            "sidar_weak_password_recovery_allowed test; "
+            "! sidar_weak_password_recovery_allowed production; "
+            "! sidar_weak_password_recovery_allowed PROD",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade() -> None:

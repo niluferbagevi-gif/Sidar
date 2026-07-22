@@ -2,6 +2,13 @@
 set -Eeuo pipefail
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
+sidar_weak_password_recovery_allowed() {
+    local sidar_env="${1:-development}"
+    sidar_env="$(printf '%s' "$sidar_env" | tr '[:upper:]' '[:lower:]' | tr -d '"'\''[:space:]')"
+    [[ "$sidar_env" != "production" && "$sidar_env" != "prod" ]]
+}
+
+
 resolve_alembic_python() {
     local venv_python="$SCRIPT_DIR/.venv/bin/python"
 
@@ -200,18 +207,27 @@ PY
             warn "PostgreSQL kimlik doğrulaması doğrulanamadı (psql/asyncpg denetimi kullanılamadı). Alembic denenecek."
         elif [[ "$auth_check_rc" -eq 10 ]]; then
             warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
-            local -a recovery_password_candidates=()
-            if [[ -n "${PRE_HARDEN_DB_PASSWORD:-}" ]]; then
-                recovery_password_candidates+=("$PRE_HARDEN_DB_PASSWORD")
+            local migration_sidar_env="${SIDAR_ENV:-}"
+            if [[ -z "$migration_sidar_env" && -f "$ENV_FILE" ]]; then
+                migration_sidar_env="$(read_env_value_from_file "SIDAR_ENV" "$ENV_FILE")"
             fi
-            recovery_password_candidates+=("sidar" "postgres" "password" "admin" "changeme" "123456")
-            if try_recover_postgres_password_with_alter_user \
-                "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" "${recovery_password_candidates[@]}"; then
-                auth_check_rc=0
-                verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
-                if [[ "$auth_check_rc" -eq 0 ]]; then
-                    ok "ALTER USER kurtarma adımı sonrası PostgreSQL parola doğrulaması başarılı."
+            migration_sidar_env="${migration_sidar_env:-development}"
+            if sidar_weak_password_recovery_allowed "$migration_sidar_env"; then
+                local -a recovery_password_candidates=()
+                if [[ -n "${PRE_HARDEN_DB_PASSWORD:-}" ]]; then
+                    recovery_password_candidates+=("$PRE_HARDEN_DB_PASSWORD")
                 fi
+                recovery_password_candidates+=("sidar" "postgres" "password" "admin" "changeme" "123456")
+                if try_recover_postgres_password_with_alter_user \
+                    "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" "${recovery_password_candidates[@]}"; then
+                    auth_check_rc=0
+                    verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                    if [[ "$auth_check_rc" -eq 0 ]]; then
+                        ok "ALTER USER kurtarma adımı sonrası PostgreSQL parola doğrulaması başarılı."
+                    fi
+                fi
+            else
+                warn "SIDAR_ENV=${migration_sidar_env}: bilinen zayıf parolalarla otomatik ALTER USER kurtarması production ortamında devre dışıdır."
             fi
 
             if [[ "$auth_check_rc" -eq 10 ]]; then
