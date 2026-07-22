@@ -751,9 +751,10 @@ make production-readiness
 
 > Geliştirici makinelerinde `pre-commit` ve `pre-push` hook'larının ikisi de
 > kurulmalıdır. `.pre-commit-config.yaml` içindeki `check-core-install-manifest`
-> ve `check-install-module-hashes` kontrolleri her iki aşamada da çalışarak
-> installer manifest drift'ini commit/push öncesi yakalar. Hook kurulumu
-> yapılmadıysa aynı koruma yalnızca CI/branch protection tarafında kalır.
+> ve `check-install-module-hashes` kontrolleri her iki aşamada installer manifest drift'ini;
+> `pytest-meta-contracts` ise pre-push aşamasında hızlı script/config
+> sözleşme regresyonlarını yakalar. Hook kurulumu yapılmadıysa aynı koruma yalnızca
+> CI/branch protection tarafında kalır.
 
 Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı ortamlar için
 öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya

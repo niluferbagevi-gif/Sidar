@@ -2117,6 +2117,13 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: mypy" in config
     assert "entry: uv run mypy ." in config
     assert "pass_filenames: false" in config
+    assert "id: pytest-meta-contracts" in config
+    assert (
+        "entry: uv run pytest -q --no-cov -x tests/unit/scripts "
+        "tests/unit/test_dependency_profile_plan.py" in config
+    )
+    assert "always_run: true" in config
+    assert "stages: [pre-push]" in config
     assert "id: check-core-install-manifest" in config
     assert "entry: uv run python scripts/tools/update_core_install_manifest.py --check" in config
     assert "id: check-install-module-hashes" in config
@@ -4384,8 +4391,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     )
     assert (
         'if [ "${RUN_FRONTEND_E2E}" = "1" ] '
-        '&& [ "${FRONTEND_E2E_MODE_EXIT_CODE}" -eq 0 ]; then'
-        in script
+        '&& [ "${FRONTEND_E2E_MODE_EXIT_CODE}" -eq 0 ]; then' in script
     )
     assert "Frontend Playwright ortam hazırlığı başarısız" in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
@@ -4948,10 +4954,10 @@ exit 42
     probe_and_install = (
         'set -Eeuo pipefail; source "$1"; '
         'if playwright_node_host_platform_is_officially_supported "$2" "$3" '
-        '--no-install; then '
+        "--no-install; then "
         'OS_RELEASE_PATH="$2" "$3" --no-install playwright install chromium; '
         'else run_playwright_ubuntu_override_install "$2" 120000 "$3" '
-        '--no-install playwright install chromium; fi'
+        "--no-install playwright install chromium; fi"
     )
     result = subprocess.run(
         [

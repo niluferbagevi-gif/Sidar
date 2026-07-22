@@ -505,13 +505,14 @@ def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
+    """Push öncesi unit/static/installer kapılarını fail-closed çalıştırır.
 
     github_upload.py, PR/branch-protection akışını atlayıp doğrudan main'e push
     eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
-    hiçbir zaman devreye girmez. Buradaki adımlar o job'ın (installer-smoke,
-    .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarının bir eşleniğidir,
-    böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır.
+    hiçbir zaman devreye girmez. Buradaki adımlar unit testleri ve o job'ın
+    (installer-smoke, .github/workflows/ci.yml) pin-drift'i yakalayan
+    kısımlarını kapsar; böylece direkt push öncesinde kod/test sözleşmesi veya
+    installer drift hataları yerelde yakalanır.
     """
     history_success, history_err = ensure_full_git_history_for_manifest_checks()
     if not history_success:
@@ -520,6 +521,7 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     quality_steps: list[tuple[list[str], dict[str, str] | None]] = [
         (["uv", "run", "ruff", "format", "--check", "."], None),
         (["uv", "run", "ruff", "check", "."], None),
+        (["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"], None),
         (["make", "installer-shellcheck"], None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], None),
         (["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"], None),

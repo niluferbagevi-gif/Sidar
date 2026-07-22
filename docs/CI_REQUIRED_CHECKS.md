@@ -56,16 +56,17 @@ following an automatic pull/merge:
 ```bash
 uv run ruff format --check .
 uv run ruff check .
+uv run pytest tests/unit -q --no-cov -x
 ```
 
-If either command fails, the upload tool exits without calling `git push`. This
-keeps the fastest deterministic Python format/lint failures from being pushed by
-autonomous backup/deployment loops while the broader GitHub required checks still
-cover production-readiness, installer smoke, dependency-profile, PostgreSQL
-stress, and benchmark compare behavior. Repository administrators should still
-periodically inspect GitHub branch protection/rulesets and confirm the required
-contexts in the table above are selected for `main`; the local guard is a defense
-in depth, not a replacement for required status checks.
+If any command fails, the upload tool exits without calling `git push`. The full
+unit package catches code/test contract drift before autonomous backup/deployment
+loops can write directly to `main`; the broader GitHub required checks still cover
+production-readiness, installer smoke, dependency-profile, PostgreSQL stress, and
+benchmark compare behavior. Repository administrators should still periodically
+inspect GitHub branch protection/rulesets and confirm the required contexts in the
+table above are selected for `main`; the local guard is a defense in depth, not a
+replacement for required status checks.
 
 ## Installer manifest and smoke gate
 
@@ -179,6 +180,11 @@ uv run python scripts/tools/update_install_module_hash_manifest.py --target inst
 
 These hooks intentionally run in check mode. If a hook fails, run the sync
 script(s), review the generated manifest changes, and commit them explicitly.
+
+The `pytest-meta-contracts` hook also runs at `pre-push` and covers the script,
+quality-gate, and dependency-profile contracts most likely to detect configuration
+drift quickly. The direct-main `github_upload.py` path deliberately runs the full
+`tests/unit` package rather than relying on this faster subset.
 
 ## PR visibility for core installer files
 

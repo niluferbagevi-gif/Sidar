@@ -488,6 +488,11 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
         (["git", "rev-parse", "--is-shallow-repository"], False, None),
         (["uv", "run", "ruff", "format", "--check", "."], False, None),
         (["uv", "run", "ruff", "check", "."], False, None),
+        (
+            ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"],
+            False,
+            None,
+        ),
         (["make", "installer-shellcheck"], False, None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], False, None),
         (
@@ -564,6 +569,27 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
         ["git", "rev-parse", "--is-shallow-repository"],
         ["uv", "run", "ruff", "format", "--check", "."],
     ]
+
+
+def test_run_pre_push_quality_gate_stops_when_unit_tests_fail(monkeypatch):
+    calls = []
+    unit_command = ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"]
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        if cmd == unit_command:
+            return False, "1 failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is False
+    assert "uv run pytest tests/unit -q --no-cov -x" in err
+    assert "1 failed" in err
+    assert calls[-1] == unit_command
+    assert ["make", "installer-shellcheck"] not in calls
 
 
 def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
