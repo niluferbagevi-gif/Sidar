@@ -1016,7 +1016,9 @@ write_test_summary_json false
         "file": None,
         "selector": None,
         "json_output": "artifacts/benchmark/benchmark.json",
-        "local_seed_command": "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all",
+        "local_seed_command": (
+            "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+        ),
         "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
         "ci_fail_closed": True,
     }
@@ -2009,8 +2011,8 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "Passwordless or cached sudo is required for non-interactive installation." in installer
     assert "Run 'sudo -v' first" in installer
     assert (
-        '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"'
-        in installer
+        '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y '
+        '--no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
     )
 
 
@@ -2339,8 +2341,8 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "softprops/action-gh-release@v2" in ci_workflow
     assert "github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')" in ci_workflow
     assert (
-        "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'installer-main' }}"
-        in ci_workflow
+        "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || "
+        "'installer-main' }}" in ci_workflow
     )
     assert "`main` pushes update this prerelease snapshot" in ci_workflow
     assert "overwrite_files: true" in ci_workflow
@@ -2358,8 +2360,8 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
         in bundle_script
     )
     assert (
-        r"export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS=\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\""
-        in bundle_script
+        r"export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="
+        r"\"${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}\"" in bundle_script
     )
     assert "Preferred release/bundle install" in bundle_script
     assert "Last-resort raw fallback" in bundle_script
@@ -2556,7 +2558,8 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
         [
             "bash",
             "-c",
-            f'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; {module_checks}; '
+            f'set -Eeuo pipefail; script_path="$1"; set --; source "$script_path"; '
+            f"{module_checks}; "
             'case "$INSTALL_MODULE_DIR" in /tmp/sidar_install_modules.*/*) ;; *) exit 1 ;; esac; '
             'printf "%s\n" "$INSTALL_MODULE_DIR"',
             "bash",
@@ -2914,12 +2917,14 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
             """
             set -Eeuo pipefail
             source ./scripts/install_modules/utils/install_remediation.sh
-            sidar_retry_budget_for_failure 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
+            sidar_retry_budget_for_failure 03_runtime 'sh /tmp/ollama_install_script' \
+              'sudo: timed out'
             SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT=2 \
                 sidar_retry_budget_for_failure 03_runtime 'network fetch' 'temporary failure'
             sidar_retry_budget_for_failure 03_runtime 'pytest' 'deterministic failure'
             sidar_retry_budget_for_failure 04_workspace 'unknown' 'unknown'
-            if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' 'sudo: timed out deterministic'; then
+            if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' \
+              'sudo: timed out deterministic'; then
                 echo deterministic
             else
                 echo transient
@@ -2994,8 +2999,10 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
             SCRIPT_DIR="$1"
             PATH="$2:$PATH"
             source ./scripts/install_modules/utils/install_remediation.sh
-            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
-            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' \
+              'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f \
+              -name '*_03_runtime.log' | sort | tail -n 1)"
             cat "$report"
             """,
             "bash",
@@ -3023,8 +3030,10 @@ def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path
             source ./scripts/install_modules/utils/install_remediation.sh
             ollama() { return 1; }
             export -f ollama
-            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' 'sudo: timed out'
-            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            sidar_phase_remediation_strategy 03_runtime 'sh /tmp/ollama_install_script' \
+              'sudo: timed out'
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f \
+              -name '*_03_runtime.log' | sort | tail -n 1)"
             cat "$report"
             """,
             "bash",
@@ -3445,20 +3454,26 @@ def test_install_sidar_smoke_gate_version_failure_is_classified_deterministic(
             warn() { printf '%s\n' "$*" >&2; }
             SCRIPT_DIR="$1"
             source ./scripts/install_modules/utils/install_remediation.sh
-            reason='Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=<boş> beklenen pyproject.toml sürümüyle (5.2.0) eşleşmiyor.'
-            sidar_retry_budget_for_failure 06_services 'run_pre_service_installer_smoke_gate' "$reason"
-            if sidar_is_deterministic_failure_signal 'run_pre_service_installer_smoke_gate' "$reason"; then
+            reason='Servis öncesi installer smoke gate başarısız: INSTALL_SIDAR_VERSION=<boş>'\
+' beklenen pyproject.toml sürümüyle (5.2.0) eşleşmiyor.'
+            sidar_retry_budget_for_failure 06_services \
+              'run_pre_service_installer_smoke_gate' "$reason"
+            if sidar_is_deterministic_failure_signal 'run_pre_service_installer_smoke_gate' \
+              "$reason"; then
                 echo deterministic
             else
                 echo transient
             fi
-            if sidar_phase_remediation_strategy 06_services 'run_pre_service_installer_smoke_gate' "$reason"; then
+            if sidar_phase_remediation_strategy 06_services \
+              'run_pre_service_installer_smoke_gate' "$reason"; then
                 echo retry-scheduled
             else
                 echo no-retry
             fi
-            sidar_emit_remediation_guidance 06_services 'run_pre_service_installer_smoke_gate' "$reason"
-            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_06_services.log' | sort | tail -n 1)"
+            sidar_emit_remediation_guidance 06_services \
+              'run_pre_service_installer_smoke_gate' "$reason"
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f \
+              -name '*_06_services.log' | sort | tail -n 1)"
             cat "$report"
             """,
             "bash",
@@ -3497,7 +3512,8 @@ def test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_mis
             else
                 echo no-retry
             fi
-            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f -name '*_03_runtime.log' | sort | tail -n 1)"
+            report="$(find "$SCRIPT_DIR/artifacts/install/remediation" -type f \
+              -name '*_03_runtime.log' | sort | tail -n 1)"
             cat "$report"
             """,
             "bash",
@@ -3773,7 +3789,8 @@ def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
             source ./install_sidar.sh
             OFFLINE_MODE=false
             unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
-            if download_verified_script_soft 'https://example.invalid/install.sh' '' 'probe_install'; then
+            if download_verified_script_soft 'https://example.invalid/install.sh' '' \
+              'probe_install'; then
                 echo "unexpected-success"
             else
                 echo "soft-failure-rc=$?"
@@ -4980,7 +4997,8 @@ def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthet
     os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
     mock_install.write_text(
         """#!/usr/bin/bash
-printf '%s|%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-}"
+printf '%s|%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" \
+  "${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-}"
 grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
 """,
         encoding="utf-8",
@@ -5167,7 +5185,8 @@ if [[ "$*" == "-c import playwright" ]]; then
   exit 0
 fi
 if [[ "$*" == "-m playwright install chromium" ]]; then
-  printf 'install-platform=%s\n' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" >> "${MOCK_PYTHON_LOG}"
+  printf 'install-platform=%s\n' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" \
+    >> "${MOCK_PYTHON_LOG}"
   grep -q '^VERSION_ID="26.04"$' "${OS_RELEASE_PATH}"
   exit $?
 fi
@@ -5223,13 +5242,16 @@ install_playwright_browsers""",
         text=True,
     )
     if result.returncode != 0:
+        python_log_content = (
+            python_log.read_text(encoding="utf-8") if python_log.exists() else "<missing>"
+        )
         pytest.fail(
             "\n".join(
                 [
                     f"bash returncode={result.returncode}",
                     f"stdout:\n{result.stdout}",
                     f"stderr:\n{result.stderr}",
-                    f"python.log:\n{python_log.read_text(encoding='utf-8') if python_log.exists() else '<missing>'}",
+                    f"python.log:\n{python_log_content}",
                 ]
             )
         )
@@ -5249,7 +5271,9 @@ def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override()
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; tmp="$(mktemp)"; printf "ID=ubuntu\nVERSION_ID="32.04"\n" > "$tmp"; ! is_playwright_ubuntu_override_recommended "$tmp"',
+            'set -Eeuo pipefail; source "$1"; tmp="$(mktemp)"; '
+            'printf "ID=ubuntu\nVERSION_ID="32.04"\n" > "$tmp"; '
+            '! is_playwright_ubuntu_override_recommended "$tmp"',
             "bash",
             str(helper),
         ],
@@ -5271,7 +5295,8 @@ def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_s
     os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
     mock_python.write_text(
         """#!/usr/bin/bash
-printf '%s|%s' "${OS_RELEASE_PATH:-}" "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" > "${MOCK_PROBE_LOG}"
+printf '%s|%s' "${OS_RELEASE_PATH:-}" "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-unset}" \
+  > "${MOCK_PROBE_LOG}"
 exit "${MOCK_PROBE_EXIT:-0}"
 """,
         encoding="utf-8",
@@ -5287,7 +5312,8 @@ exit "${MOCK_PROBE_EXIT:-0}"
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; playwright_host_platform_is_officially_supported "$2" "$3"',
+            'set -Eeuo pipefail; source "$1"; '
+            'playwright_host_platform_is_officially_supported "$2" "$3"',
             "bash",
             str(helper),
             str(os_release),
@@ -5432,6 +5458,13 @@ resolve_local_frontend_e2e_mode
         text=True,
     )
     if result.returncode != 0:
+        node_log_content = (
+            node_log.read_text(encoding="utf-8") if node_log.exists() else "<missing>"
+        )
+        npx_log_content = npx_log.read_text(encoding="utf-8") if npx_log.exists() else "<missing>"
+        sentinel_content = (
+            sentinel.read_text(encoding="utf-8") if sentinel.exists() else "<missing>"
+        )
         pytest.fail(
             "\n".join(
                 [
@@ -5440,9 +5473,9 @@ resolve_local_frontend_e2e_mode
                     f"expects_ubuntu_override={expects_ubuntu_override}",
                     f"stdout:\n{result.stdout}",
                     f"stderr:\n{result.stderr}",
-                    f"node.log:\n{node_log.read_text(encoding='utf-8') if node_log.exists() else '<missing>'}",
-                    f"npx.log:\n{npx_log.read_text(encoding='utf-8') if npx_log.exists() else '<missing>'}",
-                    f"sentinel:\n{sentinel.read_text(encoding='utf-8') if sentinel.exists() else '<missing>'}",
+                    f"node.log:\n{node_log_content}",
+                    f"npx.log:\n{npx_log_content}",
+                    f"sentinel:\n{sentinel_content}",
                 ]
             )
         )
@@ -5521,14 +5554,18 @@ grep -qx -- '--no-install playwright install chromium' "${MOCK_NPX_LOG}" """,
         text=True,
     )
     if result.returncode != 0:
+        node_log_content = (
+            node_log.read_text(encoding="utf-8") if node_log.exists() else "<missing>"
+        )
+        npx_log_content = npx_log.read_text(encoding="utf-8") if npx_log.exists() else "<missing>"
         pytest.fail(
             "\n".join(
                 [
                     f"bash returncode={result.returncode}",
                     f"stdout:\n{result.stdout}",
                     f"stderr:\n{result.stderr}",
-                    f"node.log:\n{node_log.read_text(encoding='utf-8') if node_log.exists() else '<missing>'}",
-                    f"npx.log:\n{npx_log.read_text(encoding='utf-8') if npx_log.exists() else '<missing>'}",
+                    f"node.log:\n{node_log_content}",
+                    f"npx.log:\n{npx_log_content}",
                 ]
             )
         )
