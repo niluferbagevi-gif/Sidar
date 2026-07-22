@@ -15,6 +15,7 @@ import subprocess  # nosec B404
 import sys
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 
 from config import Config
 from managers.code.git_validation import is_valid_git_ref_name
@@ -116,6 +117,21 @@ def run_command(
         if show_output and err_msg:
             print(f"{Colors.WARNING}Komut baslatilamadi: {err_msg}{Colors.ENDC}")
         return False, err_msg
+
+
+def reexec_after_external_branch_merge() -> None:
+    """Reload uploader code after a branch merge updates this running script.
+
+    Python keeps the pre-merge module in memory. Re-exec without the already-merged
+    branch argument so newly merged pin-repair and quality-gate logic is used
+    immediately and the external branch is not pulled a second time.
+    """
+    if os.environ.get("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE") == "1":
+        return
+    script = Path(__file__).resolve()
+    env = _build_subprocess_env()
+    env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] = "1"
+    os.execve(sys.executable, [sys.executable, str(script)], env)
 
 
 def _is_valid_repo_url(url: str) -> bool:
@@ -798,6 +814,7 @@ def main() -> None:
             print(
                 f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve birleştirildi.{Colors.ENDC}"
             )
+            reexec_after_external_branch_merge()
         else:
             print(
                 f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}"

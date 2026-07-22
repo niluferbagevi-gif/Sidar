@@ -16,6 +16,7 @@ ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
     gu.ensure_full_git_history_for_manifest_checks
 )
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
+ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_merge
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,34 @@ def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
+    monkeypatch.setattr(gu, "reexec_after_external_branch_merge", lambda: None)
+
+
+def test_reexec_after_external_branch_merge_loads_new_code_without_repull(monkeypatch, tmp_path):
+    """The running pre-merge module is replaced before manifest validation."""
+    calls = []
+    monkeypatch.setattr(gu, "__file__", str(tmp_path / "github_upload.py"))
+    monkeypatch.setattr(gu.sys, "executable", "/venv/bin/python")
+    monkeypatch.delenv("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE", raising=False)
+    monkeypatch.setattr(gu.os, "execve", lambda *args: calls.append(args))
+
+    ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE()
+
+    assert len(calls) == 1
+    executable, argv, env = calls[0]
+    assert executable == "/venv/bin/python"
+    assert argv == ["/venv/bin/python", str((tmp_path / "github_upload.py").resolve())]
+    assert env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] == "1"
+
+
+def test_reexec_after_external_branch_merge_is_single_shot(monkeypatch):
+    calls = []
+    monkeypatch.setenv("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE", "1")
+    monkeypatch.setattr(gu.os, "execve", lambda *args: calls.append(args))
+
+    ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE()
+
+    assert calls == []
 
 
 def test_run_command_success_and_error(monkeypatch, capsys):
