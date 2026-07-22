@@ -72,7 +72,8 @@ async def create_coverage_task(
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
                 RETURNING id, tenant_id, requester_role, command, pytest_output, status,
-                          target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                          target_path, suggested_test_path, review_payload_json,
+                          created_at, updated_at
                 """,
                 tenant,
                 str(requester_role or "coverage"),
@@ -172,9 +173,12 @@ async def add_coverage_finding(
         async with db._pg_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
+                INSERT INTO coverage_findings
+                    (task_id, finding_type, target_path, summary, severity,
+                     details_json, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-                RETURNING id, task_id, finding_type, target_path, summary, severity, details_json, created_at
+                RETURNING id, task_id, finding_type, target_path, summary, severity,
+                          details_json, created_at
                 """,
                 int(task_id),
                 str(finding_type),
@@ -201,7 +205,8 @@ async def add_coverage_finding(
         assert db._sqlite_conn is not None
         cur = db._sqlite_conn.execute(
             """
-            INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
+            INSERT INTO coverage_findings
+                (task_id, finding_type, target_path, summary, severity, details_json, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -217,7 +222,8 @@ async def add_coverage_finding(
         row = sqlite_fetchone(
             db._sqlite_conn.execute(
                 """
-                SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
+                SELECT id, task_id, finding_type, target_path, summary, severity,
+                       details_json, created_at
                 FROM coverage_findings WHERE id=?
                 """,
                 (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
@@ -274,7 +280,8 @@ async def list_coverage_tasks(
                 cur = db._sqlite_conn.execute(
                     """
                     SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                           target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                           target_path, suggested_test_path, review_payload_json,
+                           created_at, updated_at
                     FROM coverage_tasks
                     WHERE tenant_id=? AND status=?
                     ORDER BY updated_at DESC
@@ -286,7 +293,8 @@ async def list_coverage_tasks(
                 cur = db._sqlite_conn.execute(
                     """
                     SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                           target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                           target_path, suggested_test_path, review_payload_json,
+                           created_at, updated_at
                     FROM coverage_tasks
                     WHERE tenant_id=?
                     ORDER BY updated_at DESC

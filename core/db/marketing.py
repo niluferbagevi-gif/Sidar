@@ -51,7 +51,8 @@ async def upsert_marketing_campaign(
                     SET tenant_id=$2, name=$3, channel=$4, objective=$5, status=$6,
                         owner_user_id=$7, budget=$8, metadata_json=$9::jsonb, updated_at=$10
                     WHERE id=$1
-                    RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    RETURNING id, tenant_id, name, channel, objective, status,
+                              owner_user_id, budget, metadata_json, created_at, updated_at
                     """,
                     int(campaign_id),
                     tenant,
@@ -67,9 +68,12 @@ async def upsert_marketing_campaign(
             else:
                 row = await conn.fetchrow(
                     """
-                    INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
+                    INSERT INTO marketing_campaigns
+                        (tenant_id, name, channel, objective, status,
+                         owner_user_id, budget, metadata_json, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
-                    RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    RETURNING id, tenant_id, name, channel, objective, status,
+                              owner_user_id, budget, metadata_json, created_at, updated_at
                     """,
                     tenant,
                     campaign_name,
@@ -105,7 +109,8 @@ async def upsert_marketing_campaign(
             db._sqlite_conn.execute(
                 """
                 UPDATE marketing_campaigns
-                SET tenant_id=?, name=?, channel=?, objective=?, status=?, owner_user_id=?, budget=?, metadata_json=?, updated_at=?
+                SET tenant_id=?, name=?, channel=?, objective=?, status=?,
+                    owner_user_id=?, budget=?, metadata_json=?, updated_at=?
                 WHERE id=?
                 """,
                 (
@@ -123,7 +128,8 @@ async def upsert_marketing_campaign(
             )
             cur = db._sqlite_conn.execute(
                 """
-                SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                SELECT id, tenant_id, name, channel, objective, status,
+                       owner_user_id, budget, metadata_json, created_at, updated_at
                 FROM marketing_campaigns WHERE id=?
                 """,
                 (int(campaign_id),),
@@ -131,7 +137,9 @@ async def upsert_marketing_campaign(
         else:
             cur = db._sqlite_conn.execute(
                 """
-                INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
+                INSERT INTO marketing_campaigns
+                    (tenant_id, name, channel, objective, status,
+                     owner_user_id, budget, metadata_json, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -149,7 +157,8 @@ async def upsert_marketing_campaign(
             )
             cur = db._sqlite_conn.execute(
                 """
-                SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                SELECT id, tenant_id, name, channel, objective, status,
+                       owner_user_id, budget, metadata_json, created_at, updated_at
                 FROM marketing_campaigns WHERE id=?
                 """,
                 (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
@@ -200,9 +209,12 @@ async def add_content_asset(
         async with db._pg_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
+                INSERT INTO content_assets
+                    (campaign_id, tenant_id, asset_type, title, content,
+                     channel, metadata_json, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
-                RETURNING id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                RETURNING id, campaign_id, tenant_id, asset_type, title, content,
+                          channel, metadata_json, created_at, updated_at
                 """,
                 int(campaign_id),
                 tenant,
@@ -232,7 +244,9 @@ async def add_content_asset(
         assert db._sqlite_conn is not None
         cur = db._sqlite_conn.execute(
             """
-            INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
+            INSERT INTO content_assets
+                (campaign_id, tenant_id, asset_type, title, content,
+                 channel, metadata_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -250,7 +264,8 @@ async def add_content_asset(
         row = sqlite_fetchone(
             db._sqlite_conn.execute(
                 """
-                SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                SELECT id, campaign_id, tenant_id, asset_type, title, content,
+                       channel, metadata_json, created_at, updated_at
                 FROM content_assets WHERE id=?
                 """,
                 (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
@@ -308,9 +323,12 @@ async def add_operation_checklist(
         async with db._pg_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
+                INSERT INTO operation_checklists
+                    (campaign_id, tenant_id, title, items_json, status, owner_user_id,
+                     created_at, updated_at)
                 VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $7)
-                RETURNING id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                RETURNING id, campaign_id, tenant_id, title, items_json, status,
+                          owner_user_id, created_at, updated_at
                 """,
                 int(campaign_id) if campaign_id is not None else None,
                 tenant,
@@ -338,7 +356,9 @@ async def add_operation_checklist(
         assert db._sqlite_conn is not None
         cur = db._sqlite_conn.execute(
             """
-            INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
+            INSERT INTO operation_checklists
+                (campaign_id, tenant_id, title, items_json, status, owner_user_id,
+                 created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -355,7 +375,8 @@ async def add_operation_checklist(
         row = sqlite_fetchone(
             db._sqlite_conn.execute(
                 """
-                SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                SELECT id, campaign_id, tenant_id, title, items_json, status,
+                       owner_user_id, created_at, updated_at
                 FROM operation_checklists WHERE id=?
                 """,
                 (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
@@ -392,7 +413,8 @@ async def list_marketing_campaigns(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at "
+            "SELECT id, tenant_id, name, channel, objective, status, owner_user_id, "
+            "budget, metadata_json, created_at, updated_at "
             "FROM marketing_campaigns WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]
@@ -411,7 +433,8 @@ async def list_marketing_campaigns(
             if normalized_status:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    SELECT id, tenant_id, name, channel, objective, status,
+                           owner_user_id, budget, metadata_json, created_at, updated_at
                     FROM marketing_campaigns
                     WHERE tenant_id=? AND status=?
                     ORDER BY updated_at DESC
@@ -422,7 +445,8 @@ async def list_marketing_campaigns(
             else:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    SELECT id, tenant_id, name, channel, objective, status,
+                           owner_user_id, budget, metadata_json, created_at, updated_at
                     FROM marketing_campaigns
                     WHERE tenant_id=?
                     ORDER BY updated_at DESC
@@ -463,7 +487,8 @@ async def list_content_assets(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at "
+            "SELECT id, campaign_id, tenant_id, asset_type, title, content, "
+            "channel, metadata_json, created_at, updated_at "
             "FROM content_assets WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]
@@ -482,7 +507,8 @@ async def list_content_assets(
             if campaign_id is not None:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                    SELECT id, campaign_id, tenant_id, asset_type, title, content,
+                           channel, metadata_json, created_at, updated_at
                     FROM content_assets
                     WHERE tenant_id=? AND campaign_id=?
                     ORDER BY created_at DESC
@@ -493,7 +519,8 @@ async def list_content_assets(
             else:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                    SELECT id, campaign_id, tenant_id, asset_type, title, content,
+                           channel, metadata_json, created_at, updated_at
                     FROM content_assets
                     WHERE tenant_id=?
                     ORDER BY created_at DESC
@@ -533,7 +560,8 @@ async def list_operation_checklists(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at "
+            "SELECT id, campaign_id, tenant_id, title, items_json, status, "
+            "owner_user_id, created_at, updated_at "
             "FROM operation_checklists WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]
@@ -552,7 +580,8 @@ async def list_operation_checklists(
             if campaign_id is not None:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                    SELECT id, campaign_id, tenant_id, title, items_json, status,
+                           owner_user_id, created_at, updated_at
                     FROM operation_checklists
                     WHERE tenant_id=? AND campaign_id=?
                     ORDER BY created_at DESC
@@ -563,7 +592,8 @@ async def list_operation_checklists(
             else:
                 cur = db._sqlite_conn.execute(
                     """
-                    SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                    SELECT id, campaign_id, tenant_id, title, items_json, status,
+                           owner_user_id, created_at, updated_at
                     FROM operation_checklists
                     WHERE tenant_id=?
                     ORDER BY created_at DESC

@@ -66,8 +66,10 @@ def build_event_driven_federation_spec(
                 "source_system": "jira",
                 "source_agent": "issue_webhook",
                 "goal": (
-                    f"Jira issue {issue_key} için event-driven swarm remediation/uygulama planı çıkar: {summary or 'başlıksız issue'}. "
-                    "Coder uygulanabilir teknik yaklaşımı oluştursun, Reviewer risk/QA/handoff değerlendirsin."
+                    f"Jira issue {issue_key} için event-driven swarm remediation/uygulama "
+                    f"planı çıkar: {summary or 'başlıksız issue'}. "
+                    "Coder uygulanabilir teknik yaklaşımı oluştursun, "
+                    "Reviewer risk/QA/handoff değerlendirsin."
                 ),
                 "context": {
                     "workflow_type": "jira_issue",
@@ -88,7 +90,13 @@ def build_event_driven_federation_spec(
                 "inputs": [
                     f"issue_key={issue_key}",
                     f"summary={summary}",
-                    f"description={trim_autonomy_text((issue.get('fields') or {}).get('description') or data.get('description') or '', 1000)}",
+                    "description="
+                    + trim_autonomy_text(
+                        (issue.get("fields") or {}).get("description")
+                        or data.get("description")
+                        or "",
+                        1000,
+                    ),
                 ],
                 "correlation_id": derive_correlation_id(
                     data.get("correlation_id", ""), issue_key, summary
@@ -110,8 +118,10 @@ def build_event_driven_federation_spec(
                 "source_system": "github",
                 "source_agent": "pull_request_webhook",
                 "goal": (
-                    f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için event-driven swarm incelemesi yap. "
-                    "Coder değişiklik/patch/test stratejisini çıkarsın, Reviewer merge riski ve QA kapısını değerlendirsin."
+                    f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için "
+                    "event-driven swarm incelemesi yap. "
+                    "Coder değişiklik/patch/test stratejisini çıkarsın, "
+                    "Reviewer merge riski ve QA kapısını değerlendirsin."
                 ),
                 "context": {
                     "workflow_type": "github_pull_request",
@@ -162,7 +172,8 @@ def build_event_driven_federation_spec(
                 "source_agent": "alert_webhook",
                 "goal": (
                     f"Sistem monitör hatasını değerlendir: {alert_name}. "
-                    "Coder muhtemel kök neden ve hotfix adımlarını çıkarsın, Reviewer risk/rollback/QA planını doğrulasın."
+                    "Coder muhtemel kök neden ve hotfix adımlarını çıkarsın, "
+                    "Reviewer risk/rollback/QA planını doğrulasın."
                 ),
                 "context": {
                     "workflow_type": "system_error",
@@ -172,8 +183,13 @@ def build_event_driven_federation_spec(
                     "environment": str(data.get("environment") or data.get("env") or "").strip(),
                 },
                 "inputs": [
-                    f"message={trim_autonomy_text(data.get('message') or data.get('summary') or data.get('error') or '', 1000)}",
-                    f"stacktrace={trim_autonomy_text(data.get('stacktrace') or data.get('details') or '', 1000)}",
+                    "message="
+                    + trim_autonomy_text(
+                        data.get("message") or data.get("summary") or data.get("error") or "",
+                        1000,
+                    ),
+                    "stacktrace="
+                    + trim_autonomy_text(data.get("stacktrace") or data.get("details") or "", 1000),
                 ],
                 "correlation_id": derive_correlation_id(
                     data.get("correlation_id", ""), data.get("alert_id", ""), alert_name
@@ -191,13 +207,15 @@ def build_swarm_goal_for_role(base_goal: str, role: str, spec: dict[str, Any]) -
         return (
             f"{base_goal}\n\n"
             "[EVENT_DRIVEN_SWARM:CODER]\n"
-            "Bu dış olay için inisiyatif al. Muhtemel kod hedeflerini, uygulanabilir adımları, test/komut planını ve gerekiyorsa açılması gereken follow-up'ları üret.\n"
+            "Bu dış olay için inisiyatif al. Muhtemel kod hedeflerini, uygulanabilir adımları, "
+            "test/komut planını ve gerekiyorsa açılması gereken follow-up'ları üret.\n"
             f"context={context_blob}\ninputs={inputs_blob}"
         )
     return (
         f"{base_goal}\n\n"
         "[EVENT_DRIVEN_SWARM:REVIEWER]\n"
-        "Coder çıktısını kalite kapısı olarak incele. Riskler, QA, rollback, insan onayı ve follow-up aksiyonlarını netleştir.\n"
+        "Coder çıktısını kalite kapısı olarak incele. Riskler, QA, rollback, insan onayı "
+        "ve follow-up aksiyonlarını netleştir.\n"
         f"context={context_blob}\ninputs={inputs_blob}"
     )
 
