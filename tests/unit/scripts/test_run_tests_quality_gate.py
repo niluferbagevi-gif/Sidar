@@ -2841,9 +2841,59 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "harden_database_credentials" in env_utils
     assert "download_ollama_models()" in ollama_utils
     assert "qwen2.5-coder:7b" in ollama_utils
+    assert "_is_playwright_os_mismatch_error" not in install_script
+    assert "Çıktı metninden bağımsız fallback" in install_script
 
     assert 'module_dir "/utils' in bundler
     assert 'module_dir "/phases' in bundler
+
+
+def test_playwright_install_fallback_does_not_depend_on_cli_error_text(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python_log = tmp_path / "python.log"
+    os_release = tmp_path / "os-release"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="24.04"\n', encoding="utf-8")
+    python = fake_bin / "python"
+    python.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$*" >> "$PYTHON_LOG"\n'
+        'case "$*" in\n'
+        '  "-c import playwright") exit 0 ;;\n'
+        '  "-m playwright install --with-deps chromium") '
+        "printf 'upstream-metni-artik-farkli\\n' >&2; exit 23 ;;\n"
+        '  "-m playwright install chromium") exit 0 ;;\n'
+        "esac\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source ./install_sidar.sh >/dev/null 2>&1; install_playwright_browsers",
+        ],
+        capture_output=True,
+        env={
+            **os.environ,
+            "OS_RELEASE_PATH": str(os_release),
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "PLAYWRIGHT_BROWSERS_MODE": "always",
+            "PYTHON_LOG": str(python_log),
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        },
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = python_log.read_text(encoding="utf-8").splitlines()
+    output = result.stdout + result.stderr
+    assert "-m playwright install --with-deps chromium" in calls
+    assert "-m playwright install chromium" in calls
+    assert "Çıktı metninden bağımsız fallback" in output
+    assert "fallback ile tamamlandı" in output
 
 
 def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade() -> None:
