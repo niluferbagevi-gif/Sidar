@@ -4382,7 +4382,12 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         )
         >= 2
     )
-    assert 'if [ "${RUN_FRONTEND_E2E}" = "1" ]; then' in script
+    assert (
+        'if [ "${RUN_FRONTEND_E2E}" = "1" ] '
+        '&& [ "${FRONTEND_E2E_MODE_EXIT_CODE}" -eq 0 ]; then'
+        in script
+    )
+    assert "Frontend Playwright ortam hazırlığı başarısız" in script
     assert 'if [ "${RUN_FRONTEND_E2E}" != "1" ]; then' in script
     assert "export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" in script
     assert (
@@ -4431,7 +4436,6 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         'run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}"'
         in script
     )
-    assert "npx burada yalnızca gerçek browser install komutu olarak geçirilir" in script
     assert "RUN_FRONTEND_E2E=1" in script
     assert "RUN_FRONTEND_E2E=0" in script
     assert "npx playwright install chromium" in script
