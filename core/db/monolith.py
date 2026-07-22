@@ -373,7 +373,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant "
+                "ON access_policies(user_id, tenant_id, resource_type, action)"
             )
             self._sqlite_conn.commit()
 
@@ -383,7 +384,8 @@ class Database(DatabaseConnectionMixin):
         assert self._pg_pool is not None
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+                "tenant_id TEXT NOT NULL DEFAULT 'default'"
             )
             await conn.execute(
                 """
@@ -402,7 +404,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant "
+                "ON access_policies(user_id, tenant_id, resource_type, action)"
             )
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
@@ -425,7 +428,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp "
+                "ON audit_logs(user_id, timestamp)"
             )
             self._sqlite_conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -452,7 +456,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp "
+                "ON audit_logs(user_id, timestamp)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -519,7 +524,8 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
-        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);
+        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id
+            ON provider_usage_daily(user_id);
         CREATE TABLE IF NOT EXISTS access_policies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -559,8 +565,10 @@ class Database(DatabaseConnectionMixin):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON prompt_registry(role_name, version);
-        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version
+            ON prompt_registry(role_name, version);
+        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active
+            ON prompt_registry(role_name, is_active);
 
         CREATE TABLE IF NOT EXISTS marketing_campaigns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -738,7 +746,8 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} "
+                "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(
                 f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -761,7 +770,9 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} "
+                "(version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, "
+                "description TEXT NOT NULL)"
             )
             current = await conn.fetchval(
                 f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -902,7 +913,8 @@ class Database(DatabaseConnectionMixin):
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             query = (
-                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at "
+                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, "
+                "effect, created_at, updated_at "
                 "FROM access_policies WHERE user_id=$1"
             )
             args: list[Any] = [user_id]
@@ -934,7 +946,8 @@ class Database(DatabaseConnectionMixin):
             if effective_tenant:
                 cur = self._sqlite_conn.execute(
                     """
-                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action,
+                           effect, created_at, updated_at
                     FROM access_policies
                     WHERE user_id=? AND tenant_id=?
                     ORDER BY resource_type, action, resource_id
@@ -944,7 +957,8 @@ class Database(DatabaseConnectionMixin):
             else:
                 cur = self._sqlite_conn.execute(
                     """
-                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action,
+                           effect, created_at, updated_at
                     FROM access_policies
                     WHERE user_id=?
                     ORDER BY resource_type, action, resource_id
@@ -995,7 +1009,9 @@ class Database(DatabaseConnectionMixin):
             async with self._pg_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                    INSERT INTO access_policies
+                        (user_id, tenant_id, resource_type, resource_id, action, effect,
+                         created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
                     ON CONFLICT (user_id, tenant_id, resource_type, resource_id, action)
                     DO UPDATE SET effect=EXCLUDED.effect, updated_at=EXCLUDED.updated_at
@@ -1016,7 +1032,9 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
                 """
-                INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                INSERT INTO access_policies
+                    (user_id, tenant_id, resource_type, resource_id, action, effect,
+                     created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, tenant_id, resource_type, resource_id, action)
                 DO UPDATE SET effect=excluded.effect, updated_at=excluded.updated_at
