@@ -600,7 +600,10 @@ class BaseLLMClient(ABC):
 
     @staticmethod
     def _inject_json_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Mesaj listesindeki system mesajına JSON şema talimatını ekler (system yoksa başa ekler)."""
+        """Mesaj listesindeki system mesajına JSON şema talimatını ekler.
+
+        System mesajı yoksa listenin başına yeni bir tane eklenir.
+        """
         result = list(messages)
         for i, msg in enumerate(result):
             if msg.get("role") == "system":

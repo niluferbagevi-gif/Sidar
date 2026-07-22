@@ -1157,7 +1157,9 @@ class CoverageAgent(BaseAgent):
             write_result = {
                 "success": False,
                 "suggested_test_path": suggested_test_path,
-                "message": f"Üretilen test kalite kapısından geçemedi: {candidate_rejection_reason}",
+                "message": (
+                    f"Üretilen test kalite kapısından geçemedi: {candidate_rejection_reason}"
+                ),
                 "validation": {"quality_rejection_reason": candidate_rejection_reason},
             }
         else:

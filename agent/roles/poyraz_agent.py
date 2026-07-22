@@ -203,7 +203,10 @@ class PoyrazAgent(BaseAgent):
         except Exception as exc:
             reason = str(exc).strip() or exc.__class__.__name__
             if "rate limit" in reason.lower():
-                return f"[SOCIAL:ERROR] platform={platform} reason=rate_limit:{reason}. Lütfen bekleyip tekrar deneyin."
+                return (
+                    f"[SOCIAL:ERROR] platform={platform} reason=rate_limit:{reason}. "
+                    "Lütfen bekleyip tekrar deneyin."
+                )
             return f"[SOCIAL:ERROR] platform={platform} reason={reason}"
 
         if ok:

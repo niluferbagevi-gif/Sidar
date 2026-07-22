@@ -111,7 +111,8 @@ def main() -> int:
             "",
             "## Visual trend (bar, mean latency)",
             "",
-            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} ({sqlite['mean_ms']:.3f} ms)"
+            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} "
+            f"({sqlite['mean_ms']:.3f} ms)"
             if sqlite
             else "- sqlite: n/a",
             f"- postgresql:  {_bar(pg['mean_ms']) if pg else 'n/a'} ({pg['mean_ms']:.3f} ms)"

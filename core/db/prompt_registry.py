@@ -173,7 +173,8 @@ async def upsert_prompt(
                     )
                 row = await conn.fetchrow(
                     f"""
-                    INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
+                    INSERT INTO prompt_registry (role_name, prompt_text, version, is_active,
+                    created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING {PROMPT_REGISTRY_COLUMNS}
                     """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.

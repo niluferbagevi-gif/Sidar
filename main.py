@@ -604,7 +604,8 @@ def _run_doctor_auto_fix(
         selected_auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
         prompt_suffix = "adımları" if len(selected_auto_fix_commands) > 1 else "komutu"
         if not confirm(
-            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} şimdi çalıştırılsın mı?",
+            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} "
+            "şimdi çalıştırılsın mı?",
             False,
         ):
             return False

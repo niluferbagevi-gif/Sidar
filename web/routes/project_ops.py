@@ -224,7 +224,9 @@ def build_project_ops_router(
         if size_bytes > max_bytes:
             return JSONResponse(
                 {
-                    "error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"
+                    "error": (
+                        f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"
+                    )
                 },
                 status_code=413,
             )

@@ -187,8 +187,8 @@ class WebSearchManager:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
                 logger.error(
-                    "Tavily kimlik doğrulama hatası (%d) — API anahtarı geçersiz veya süresi dolmuş; "
-                    "Tavily bu oturum için devre dışı bırakıldı.",
+                    "Tavily kimlik doğrulama hatası (%d) — API anahtarı geçersiz veya süresi "
+                    "dolmuş; Tavily bu oturum için devre dışı bırakıldı.",
                     exc.response.status_code,
                 )
                 self.tavily_key = ""  # 401/403 sonrası gereksiz istekleri önle

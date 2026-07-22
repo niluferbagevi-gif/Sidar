@@ -625,7 +625,8 @@ class BrowserManager:
         if should_run_multimodal:
             prompt = (
                 "Bu ekran görüntüsünü UI regresyon açısından analiz et. "
-                "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift bulgularını listele."
+                "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift "
+                "bulgularını listele."
             )
             with contextlib.suppress(Exception):
                 mm = await self._analyze_screenshot_with_multimodal(str(current), prompt)

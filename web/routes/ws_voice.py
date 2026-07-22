@@ -167,7 +167,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
     ) -> None:
         if not websocket_is_connected(websocket):
             return  # pragma: no cover - disconnect race before background turn starts
-        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
+        if not audio_bytes:  # pragma: no cover - defensive, empty buffers filtered upstream
             await send_json_if_connected(
                 websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
             )

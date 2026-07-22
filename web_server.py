@@ -962,7 +962,8 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     runtime_state.agent_lock = _agent_lock
     runtime_state.redis_lock = _redis_lock
     runtime_state.local_rate_lock = _local_rate_lock
-    # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
+    # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u
+    # bloklamaz (O-4)
     settings_valid = await asyncio.to_thread(Config.validate_critical_settings)
     skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {
         "1",

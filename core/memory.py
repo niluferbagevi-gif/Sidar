@@ -46,7 +46,8 @@ class ConversationMemory:
         encryption_key: str = "",
         keep_last: int = 4,
     ) -> None:
-        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API base_dir/database_url'dur.
+        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API
+        # base_dir/database_url'dur.
         resolved_base_dir = Path(base_dir) if base_dir is not None else None
         if resolved_base_dir is None and file_path is not None:
             resolved_base_dir = Path(file_path).parent

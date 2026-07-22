@@ -746,7 +746,8 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT"
+                " NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(
                 f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.

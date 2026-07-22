@@ -481,7 +481,8 @@ async def list_content_assets(
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         query = (
-            "SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at "
+            "SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, "
+            "metadata_json, created_at, updated_at "
             "FROM content_assets WHERE tenant_id=$1"
         )
         args: list[Any] = [tenant]

@@ -340,7 +340,8 @@ def _wait_for_pgvector_readiness() -> None:
         )
     else:
         print(
-            f"⚠️ pgvector extension not visible after {max_retries} attempts; proceeding with normal startup.",
+            f"⚠️ pgvector extension not visible after {max_retries} attempts; proceeding with "
+            "normal startup.",
             file=sys.stderr,
         )
 

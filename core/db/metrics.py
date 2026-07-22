@@ -96,7 +96,8 @@ async def get_user_quota_status(
             )
             u = sqlite_fetchone(
                 db._sqlite_conn.execute(
-                    "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
+                    "SELECT requests_used, tokens_used FROM provider_usage_daily"
+                    " WHERE user_id=? AND provider=? AND usage_date=?",
                     (user_id, provider_name, today),
                 )
             )

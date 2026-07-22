@@ -108,7 +108,9 @@ def build_webhooks_router(
     @router.post(
         "/api/webhook",
         summary="GitHub Webhook Alıcısı",
-        description="GitHub repository'sinden gelen Push, PR ve Issue olaylarını dinler ve doğrular.",
+        description=(
+            "GitHub repository'sinden gelen Push, PR ve Issue olaylarını dinler ve doğrular."
+        ),
         responses={
             200: {"description": "Webhook başarıyla işlendi"},
             401: {"description": "Geçersiz imza"},

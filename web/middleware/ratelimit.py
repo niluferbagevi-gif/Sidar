@@ -58,7 +58,10 @@ async def ddos_rate_limit_middleware_impl(
         return JSONResponse(
             status_code=429,
             content={
-                "error": "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. Lütfen 1 dakika bekleyip tekrar deneyin."
+                "error": (
+                    "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. "
+                    "Lütfen 1 dakika bekleyip tekrar deneyin."
+                )
             },
         )
 

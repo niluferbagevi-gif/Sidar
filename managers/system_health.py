@@ -54,7 +54,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_semantic_cache_hit_rate gauge",
         "# HELP sidar_semantic_cache_items Semantic cache içindeki aktif kayıt sayısı",
         "# TYPE sidar_semantic_cache_items gauge",
-        "# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim gecikmesi (ms)",
+        "# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim"
+        " gecikmesi (ms)",
         "# TYPE sidar_semantic_cache_redis_latency_ms gauge",
         "# HELP sidar_cache_hits_total Legacy alias for semantic cache isabet sayısı",
         "# TYPE sidar_cache_hits_total counter",

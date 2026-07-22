@@ -265,7 +265,8 @@ class DockerLifecycleAdapter:
         logger.warning(
             "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv "
             "içermeyebilir. "
-            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
+            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya "
+            "`.env.development` içine "
             "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik "
             "hazırlık için "
             "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` "
