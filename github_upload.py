@@ -593,7 +593,8 @@ def main() -> None:
             rollback_steps = int(arg[1:])
             if rollback_steps < 1 or rollback_steps > 10:
                 print(
-                    f"{Colors.FAIL}❌ Hata: Sadece 1 ile 10 işlem arasına kadar geri alabilirsiniz (Örn: -3).{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Hata: Sadece 1 ile 10 işlem arasına kadar geri alabilirsiniz "
+                    f"(Örn: -3).{Colors.ENDC}"
                 )
                 sys.exit(1)
         else:
@@ -625,14 +626,16 @@ def main() -> None:
     success, _ = run_command(["git", "--version"], show_output=False)
     if not success:
         print(
-            f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}"
+            f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' "
+            f"yazarak kurun.{Colors.ENDC}"
         )
         sys.exit(1)
 
     _, name_out = run_command(["git", "config", "user.name"], show_output=False)
     if not name_out:
         print(
-            f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}"
+            f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi "
+            f"girin:{Colors.ENDC}"
         )
         git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
         git_email = input("GitHub E-Posta Adresiniz: ").strip()
@@ -672,7 +675,8 @@ def main() -> None:
     if current_branch != "main":
         print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
         print(
-            f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş hazırlanıyor...{Colors.ENDC}"
+            f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş "
+            f"hazırlanıyor...{Colors.ENDC}"
         )
 
         _, stash_status = run_command(["git", "status", "--porcelain"], show_output=False)
@@ -684,7 +688,8 @@ def main() -> None:
             )
             if not stash_success:
                 print(
-                    f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e alınamadı:\n{stash_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e "
+                    f"alınamadı:\n{stash_err}{Colors.ENDC}"
                 )
                 sys.exit(1)
             stash_created = True
@@ -697,7 +702,8 @@ def main() -> None:
             if stash_created:
                 run_command(["git", "stash", "pop"], show_output=False)
             print(
-                f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları kontrol edin.{Colors.ENDC}"
+                f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları "
+                f"kontrol edin.{Colors.ENDC}"
             )
             sys.exit(1)
 
@@ -707,10 +713,12 @@ def main() -> None:
             pop_success, pop_err = run_command(["git", "stash", "pop"], show_output=False)
             if not pop_success:
                 print(
-                    f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma oluştu:\n{pop_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma "
+                    f"oluştu:\n{pop_err}{Colors.ENDC}"
                 )
                 print(
-                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar çalıştırabilirsiniz.{Colors.ENDC}"
+                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar "
+                    f"çalıştırabilirsiniz.{Colors.ENDC}"
                 )
                 sys.exit(1)
 
@@ -721,13 +729,16 @@ def main() -> None:
     # ═══════════════════════════════════════════════════════════════
     if rollback_steps > 0:
         print(
-            f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI 🚨{Colors.ENDC}"
+            f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI "
+            f"🚨{Colors.ENDC}"
         )
         print(
-            f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}"
+            f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz "
+            f"kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}"
         )
         print(
-            f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
+            f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de "
+            f"GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
         )
 
         confirm = (
@@ -749,7 +760,8 @@ def main() -> None:
             available_commits = get_commit_count()
             if available_commits <= rollback_steps:
                 print(
-                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} commit var, "
+                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} "
+                    f"commit var, "
                     f"{rollback_steps} adım geriye gidilemez.{Colors.ENDC}"
                 )
                 sys.exit(1)
@@ -772,21 +784,25 @@ def main() -> None:
             if push_success:
                 print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 print(
-                    f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} adım önceki haline döndürüldü.{Colors.ENDC}"
+                    f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} "
+                    f"adım önceki haline döndürüldü.{Colors.ENDC}"
                 )
                 print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
             else:
                 print(
-                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız oldu:\n{push_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız "
+                    f"oldu:\n{push_err}{Colors.ENDC}"
                 )
                 print(
-                    f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force push'u engelliyor olabilir.{Colors.ENDC}"
+                    f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force "
+                    f"push'u engelliyor olabilir.{Colors.ENDC}"
                 )
 
             sys.exit(0 if push_success else 1)  # Geri alma bitti, başarı durumuna göre çık
         else:
             print(
-                f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız güvende.{Colors.ENDC}"
+                f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız "
+                f"güvende.{Colors.ENDC}"
             )
             sys.exit(0)
 
@@ -813,12 +829,14 @@ def main() -> None:
 
         if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
             print(
-                f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve birleştirildi.{Colors.ENDC}"
+                f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve "
+                f"birleştirildi.{Colors.ENDC}"
             )
             reexec_after_external_branch_merge()
         else:
             print(
-                f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}"
+                f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) "
+                f"oluştu:\n{pull_err}{Colors.ENDC}"
             )
             print_unmerged_files()
             abort_in_progress_merge()
@@ -842,14 +860,16 @@ def main() -> None:
     deleted_files = get_deleted_files()
     if deleted_files:
         print(
-            f"\n{Colors.WARNING}🗑️ Aşağıdaki dosyaların yerel sistemden silindiği tespit edildi:{Colors.ENDC}"
+            f"\n{Colors.WARNING}🗑️ Aşağıdaki dosyaların yerel sistemden silindiği tespit "
+            f"edildi:{Colors.ENDC}"
         )
         for deleted_file in deleted_files:
             print(f"  - {deleted_file}")
 
         confirm_del = (
             input(
-                f"{Colors.OKBLUE}Bu dosyaları kalıcı olarak silip GitHub'dan da kaldırmak istiyor musunuz? "
+                f"{Colors.OKBLUE}Bu dosyaları kalıcı olarak silip GitHub'dan da kaldırmak istiyor "
+                f"musunuz? "
                 f"(evet / hayır): {Colors.ENDC}"
             )
             .strip()
@@ -934,12 +954,14 @@ def main() -> None:
         )
         if not unpushed:
             print(
-                f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}"
+                f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten "
+                f"güncel!{Colors.ENDC}"
             )
             sys.exit(0)
         else:
             print(
-                f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
+                f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen "
+                f"commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
             )
 
     # Dış branch merge'i veya yalnız unpushed commit bulunan akışta yeni bir
@@ -956,13 +978,15 @@ def main() -> None:
     gate_success, gate_err = run_pre_push_quality_gate()
     if not gate_success:
         print(
-            f"{Colors.FAIL}❌ Push öncesi kalite kapısı başarısız oldu; GitHub'a yükleme durduruldu:\n"
+            f"{Colors.FAIL}❌ Push öncesi kalite kapısı başarısız oldu; GitHub'a yükleme "
+            f"durduruldu:\n"
             f"{gate_err}{Colors.ENDC}"
         )
         sys.exit(1)
 
     print(
-        f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}"
+        f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen "
+        f"bekleyin...{Colors.ENDC}"
     )
 
     push_success, err_msg = run_command(
@@ -972,14 +996,16 @@ def main() -> None:
     if push_success:
         print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
         print(
-            f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
+            f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a "
+            f"yüklendi!{Colors.ENDC}"
         )
         print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
         confirm = (
             input(
-                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): "
+                f"{Colors.ENDC}"
             )
             .strip()
             .lower()
@@ -1007,7 +1033,8 @@ def main() -> None:
                 report_ours_strategy_changes()
                 assert_no_unmerged_files()
                 print(
-                    f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}"
+                    f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden "
+                    f"yükleniyor...{Colors.ENDC}"
                 )
 
                 pin_success, pin_err = stamp_install_manifest_pin_after_commit()
@@ -1033,21 +1060,25 @@ def main() -> None:
                 if retry_success:
                     print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                     print(
-                        f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
+                        f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve "
+                        f"proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
                     )
                     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 else:
                     if "rule violations" in retry_err:
                         print(
-                            f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}"
+                            f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye "
+                            f"Girdi!{Colors.ENDC}"
                         )
                     else:
                         print(
-                            f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}"
+                            f"{Colors.FAIL}❌ Yeniden yükleme başarısız "
+                            f"oldu:\n{retry_err}{Colors.ENDC}"
                         )
             else:
                 print(
-                    f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale "
+                    f"manuel yazıp hatayı okuyun:{Colors.ENDC}"
                 )
                 print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
                 print(f"Hata Çıktısı:\n{pull_err}")
