@@ -850,7 +850,7 @@ def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(manager, tmp
 
 
 def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(manager, tmp_path, monkeypatch):
-    """uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
+    """Uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
     py_file = tmp_path / "sample.py"
     py_file.write_text("value = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -2456,7 +2456,8 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
 
 def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, monkeypatch):
     """Satır 334: except ImportError bloğunda docker_module None değil ve
-    _try_wsl_socket_fallback True döndürünce erken return yapılır."""
+    _try_wsl_socket_fallback True döndürünce erken return yapılır.
+    """
 
     class _ImportErrDocker(ModuleType):
         @staticmethod
@@ -2488,7 +2489,8 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
 
 def test_init_docker_exception_fallback_module_none_import_error(manager, monkeypatch):
     """Satırlar 343-346: except Exception bloğunda docker_module None (ilk import non-ImportError
-    fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı."""
+    fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı.
+    """
     import builtins as _builtins
 
     # Fixture _init_docker'ı lambda self: None olarak patchiyor; gerçek implementasyonu

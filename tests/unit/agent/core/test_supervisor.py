@@ -1328,7 +1328,7 @@ def test_run_task_circuit_breaker_before_initial_reviewer() -> None:
 
 
 def test_run_task_circuit_breaker_while_loop_start() -> None:
-    """while başlangıcındaki turn_count >= max_turns dalını kapsar."""
+    """While başlangıcındaki turn_count >= max_turns dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 2
 
@@ -1363,7 +1363,7 @@ class MockMaxTurnsForDeadCode:
 
 
 def test_run_task_circuit_breaker_before_revise_coder() -> None:
-    """while içindeki revise-coder öncesi _consume_turn dalını kapsar."""
+    """While içindeki revise-coder öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: MockMaxTurnsForDeadCode()
 
@@ -1384,7 +1384,7 @@ def test_run_task_circuit_breaker_before_revise_coder() -> None:
 
 
 def test_run_task_circuit_breaker_before_second_reviewer() -> None:
-    """while içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
+    """While içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 3
 

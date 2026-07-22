@@ -553,7 +553,7 @@ class AutoHandle:
         return False, ""
 
     async def _try_npm(self, t: str, raw: str) -> tuple[bool, str]:
-        """npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
+        """Npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
         m = re.search(
             r"(?:npm|node\s+paketi?|js\s+paketi?)\s*[:\-]?\s*([@\w\-_./]+)",
             t,

@@ -102,9 +102,7 @@ class WebSearchManager:
     # ─────────────────────────────────────────────
 
     async def search(self, query: str, max_results: int | None = None) -> tuple[bool, str]:
-        """
-        Belirlenen motora veya fallback (yedek) mantığına göre arama yapar.
-        """
+        """Belirlenen motora veya fallback (yedek) mantığına göre arama yapar."""
         n = max_results or self.MAX_RESULTS
         try:
             n = int(n)

@@ -1,6 +1,4 @@
-"""
-Yerel statik analiz log'larını Sidar self-healing döngüsüne bağlayan CLI köprüsü.
-"""
+"""Yerel statik analiz log'larını Sidar self-healing döngüsüne bağlayan CLI köprüsü."""
 
 from __future__ import annotations
 

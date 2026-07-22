@@ -261,7 +261,7 @@ def _trim_text(value: Any, limit: int = 1200) -> str:
 
 
 def _summarize_mypy_log(log_excerpt: str, *, max_lines: int = 40) -> dict[str, Any]:
-    """mypy logundan düşük gürültülü, modele beslenebilir özet üretir."""
+    """Mypy logundan düşük gürültülü, modele beslenebilir özet üretir."""
     grouped: dict[str, list[str]] = {}
     total_errors = 0
     unique_codes: set[str] = set()

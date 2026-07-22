@@ -238,14 +238,14 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
     )
     assert "--update" in Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
     assert debt["docstring_async_debt_baseline"] == {
-        "D200": 5,
+        "D200": 0,
         "D202": 0,
         "D205": 62,
-        "D209": 10,
-        "D212": 90,
-        "D403": 10,
+        "D209": 0,
+        "D212": 85,
+        "D403": 0,
         "D415": 47,
-        "D417": 1,
+        "D417": 0,
         "ASYNC240": 23,
     }
 

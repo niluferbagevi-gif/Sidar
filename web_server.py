@@ -550,7 +550,8 @@ async def _prewarm_rag_embeddings() -> None:
 
 async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
-    _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
+    _agent_lock lifespan başlangıcında başlatılmış olmalıdır.
+    """
     global _agent, _agent_lock
     runtime_state = _runtime_state()
     if runtime_state is not None and getattr(runtime_state, "agent", None) is not None:

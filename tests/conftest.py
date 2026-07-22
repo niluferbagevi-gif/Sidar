@@ -619,7 +619,7 @@ def mock_sentence_transformer_class(monkeypatch: pytest.MonkeyPatch) -> Callable
 
 @pytest.fixture
 def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """requests bağımlılığını gerçek modül üstünden patch eder."""
+    """Requests bağımlılığını gerçek modül üstünden patch eder."""
 
     def _install(*, get_impl: Callable[..., Any]) -> None:
         requests = pytest.importorskip("requests")

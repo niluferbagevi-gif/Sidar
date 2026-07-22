@@ -580,7 +580,8 @@ def test_metrics_router_prometheus_reports_no_gpu_without_health_attribute(
 ) -> None:
     """A CPU-only agent (or a test double without a `health` attribute at all)
     must still render valid Prometheus output, with gpu_available/ollama_online
-    at 0 and no device-specific gauges emitted."""
+    at 0 and no device-specific gauges emitted.
+    """
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
 
     prometheus_mod = ModuleType("prometheus_client")

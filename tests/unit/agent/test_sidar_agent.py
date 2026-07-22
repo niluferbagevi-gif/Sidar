@@ -1641,7 +1641,7 @@ async def test_get_autonomy_activity_handles_limit_edge_cases(
     sidar_agent_factory,
     frozen_time,
 ) -> None:
-    """limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
+    """Limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
     agent = sidar_agent_factory()
     agent._ensure_autonomy_runtime_state = lambda: None
     current_time = sidar_agent.time.time()
@@ -2630,7 +2630,8 @@ async def test_nightly_maintenance_records_audit_trail_when_consolidation_fails(
     frozen_time,
 ) -> None:
     """A run_nightly_consolidation failure must still degrade gracefully and be
-    recorded via _append_autonomy_history, not silently abort the whole job."""
+    recorded via _append_autonomy_history, not silently abort the whole job.
+    """
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._append_autonomy_history = AsyncMock()

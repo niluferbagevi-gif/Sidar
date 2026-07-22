@@ -272,6 +272,7 @@ class TodoManager:
 
         Args:
             filter_status: Belirli duruma filtrele (None = hepsi)
+            limit: Döndürülecek maksimum görev sayısı
 
         Returns:
             Biçimlendirilmiş görev listesi

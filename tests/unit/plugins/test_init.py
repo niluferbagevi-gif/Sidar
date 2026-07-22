@@ -20,7 +20,7 @@ _stub_base_agent()
 
 
 def test_plugins_package_importable():
-    """plugins paketi sorunsuz import edilebilmelidir."""
+    """Plugins paketi sorunsuz import edilebilmelidir."""
     import plugins  # noqa: F401 - sadece import testi
 
     assert plugins is not None

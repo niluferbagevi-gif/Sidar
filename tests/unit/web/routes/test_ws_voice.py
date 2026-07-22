@@ -66,7 +66,8 @@ class _NeverSendsWs(_Ws):
 class _RepeatedGarbageWs(_Ws):
     """A websocket that keeps sending unparseable junk fast enough to reset
 
-    a naive per-message timeout, without ever authenticating."""
+    a naive per-message timeout, without ever authenticating.
+    """
 
     async def receive(self) -> dict[str, object]:
         await asyncio.sleep(0.001)
