@@ -714,13 +714,13 @@ jobs:
     name: Production readiness aggregate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
-    needs: [test, benchmark-compare]
+    needs: [test, benchmark-compare, gpu-inference-policy-gate]
 
     steps:
       - name: Confirm production readiness gates
         run: |
-          echo "Base quality gates and benchmark compare gate passed."
-          echo "Production readiness is the combined result of jobs: test + benchmark-compare."
+          echo "Base quality, benchmark compare, and GPU inference policy gates passed."
+          echo "Production readiness is the combined result of jobs: test + benchmark-compare + gpu-inference-policy-gate."
 
   production-profile-dry-run:
     name: Production-minimal runtime validation
@@ -913,6 +913,29 @@ jobs:
           path: gpu-inference-quality-gate.junit.xml
           if-no-files-found: warn
           retention-days: 14
+
+  gpu-inference-policy-gate:
+    name: GPU Inference Required Evidence Gate
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline) }}
+    runs-on: ubuntu-latest
+    needs: [test, gpu-inference-quality-gate]
+
+    steps:
+      - name: Require GPU latency evidence
+        env:
+          GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
+          GPU_GATE_RESULT: ${{ needs.gpu-inference-quality-gate.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${GPU_GATE_ENABLED}" != "true" ]]; then
+            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Configure a [self-hosted, linux, gpu] runner; production readiness must not pass without TTFT/latency evidence."
+            exit 1
+          fi
+          if [[ "${GPU_GATE_RESULT}" != "success" ]]; then
+            echo "::error title=GPU inference gate failed::gpu-inference-quality-gate result=${GPU_GATE_RESULT}; expected success."
+            exit 1
+          fi
+          echo "GPU inference TTFT/latency evidence is present and passing."
 
   publish-standalone-installer:
     name: Publish Standalone Installer Bundle

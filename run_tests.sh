@@ -2159,9 +2159,9 @@ print_release_scope_warning_once() {
   RELEASE_SCOPE_WARNING_PRINTED=1
 
   echo "ℹ️ GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms) bu koşuya dahil değildir."
-  echo "   CI'da yalnızca 'ENABLE_GPU_BENCH_GATE=true' repo/org değişkeni ayarlıysa ve self-hosted"
-  echo "   GPU runner mevcutsa ayrı bir job olarak çalışır; production_ready=true bu gate'in de"
-  echo "   geçtiği anlamına gelmez."
+  echo "   Lokal production_ready=true bu donanım gate'inin geçtiği anlamına gelmez. CI'daki"
+  echo "   GPU Inference Required Evidence Gate, ENABLE_GPU_BENCH_GATE=true ve başarılı self-hosted"
+  echo "   GPU sonucu olmadan fail-closed çalışır; production-readiness aggregate buna bağlıdır."
 
   if production_readiness_gate_active; then
     echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"

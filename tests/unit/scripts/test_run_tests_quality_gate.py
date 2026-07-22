@@ -548,12 +548,30 @@ def test_release_scope_warning_flags_gpu_quality_gate_as_out_of_scope() -> None:
     assert "GPU Inference Quality Gate" in warning_fn
     assert "ENABLE_GPU_BENCH_GATE=true" in warning_fn
     assert "self-hosted" in warning_fn
-    assert "production_ready=true bu gate'in de" in warning_fn
+    assert "Lokal production_ready=true" in warning_fn
+    assert "GPU Inference Required Evidence Gate" in warning_fn
+    assert "production-readiness aggregate buna bağlıdır" in warning_fn
     # The GPU-gate note must be unconditional (printed regardless of which
     # release-scope branch is taken), so it has to precede the branching.
     assert warning_fn.index("GPU Inference Quality Gate") < warning_fn.index(
         "production_readiness_gate_active"
     )
+
+
+def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    production_job = ci[
+        ci.index("  production-readiness:") : ci.index("  production-profile-dry-run:")
+    ]
+    policy_job = ci[
+        ci.index("  gpu-inference-policy-gate:") : ci.index("  publish-standalone-installer:")
+    ]
+
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in production_job
+    assert "needs: [test, gpu-inference-quality-gate]" in policy_job
+    assert 'if [[ "${GPU_GATE_ENABLED}" != "true" ]]' in policy_job
+    assert 'if [[ "${GPU_GATE_RESULT}" != "success" ]]' in policy_job
+    assert "production readiness must not pass without TTFT/latency evidence" in policy_job
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:

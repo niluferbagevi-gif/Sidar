@@ -19,6 +19,10 @@ def _workflow(path: Path) -> Path:
         "    name: Installer manifest and smoke gate\n"
         "  production-profile-dry-run:\n"
         "    name: Production-minimal runtime validation\n"
+        "  gpu-inference-policy-gate:\n"
+        "    name: GPU Inference Required Evidence Gate\n"
+        "  production-readiness:\n"
+        "    name: Production readiness aggregate\n"
         "  pg-stress:\n"
         "    name: PostgreSQL Connection Pool Stress Test\n",
         encoding="utf-8",
@@ -32,6 +36,8 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
         "CI / Base quality gates",
         "CI / Installer manifest and smoke gate",
         "CI / Production-minimal runtime validation",
+        "CI / GPU Inference Required Evidence Gate",
+        "CI / Production readiness aggregate",
         "CI / PostgreSQL Connection Pool Stress Test",
         "CI / Extra non-release check",
     }
@@ -46,6 +52,8 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
         "CI / Base quality gates",
         "CI / Installer manifest and smoke gate",
         "CI / Production-minimal runtime validation",
+        "CI / GPU Inference Required Evidence Gate",
+        "CI / Production readiness aggregate",
         "CI / PostgreSQL Connection Pool Stress Test",
     ]
     assert missing == []
@@ -61,6 +69,8 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
             "CI / Base quality gates",
             "CI / Installer manifest and smoke gate",
             "CI / Production-minimal runtime validation",
+            "CI / GPU Inference Required Evidence Gate",
+            "CI / Production readiness aggregate",
         },
     )
 

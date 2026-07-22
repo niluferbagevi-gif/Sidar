@@ -12,6 +12,8 @@ the expected required contexts should mirror the release-critical jobs in
 | `test` | `CI / Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
 | `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
 | `production-profile-dry-run` | `CI / Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
+| `gpu-inference-policy-gate` | `CI / GPU Inference Required Evidence Gate` | Fails closed unless the self-hosted GPU TTFT/latency benchmark is enabled and succeeds. |
+| `production-readiness` | `CI / Production readiness aggregate` | Aggregates base quality, benchmark comparison, and the required GPU inference evidence policy. |
 | `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
 
 The `seed-benchmark-baseline` / `Seed benchmark baseline cache` workflow path is
@@ -20,16 +22,15 @@ intentionally **not** a required PR check: it only runs via manual
 remain fail-closed when no reviewed `.benchmarks/*_baseline.json` cache/artifact
 is restored.
 
-The `gpu-inference-quality-gate` / `GPU Inference Quality Gate (TTFT<=200ms,
-latency<=250ms)` job is also intentionally **not** a required PR check: it only
-runs when the `ENABLE_GPU_BENCH_GATE` repo/org variable is `true` and a
-`[self-hosted, linux, gpu]` runner is available, and it is not part of
-`run_tests.sh`'s `production_ready` computation. A PR showing
-`production_ready=true` says nothing about GPU inference latency. PRs that touch
-the GPU inference/LLM latency path must be reviewed against this job's result
-(when it ran) or against the scheduled `Nightly GPU Performance` /
-`GPU Benchmark Suite` workflow instead — this is the reviewer-facing checklist
-item in `.github/PULL_REQUEST_TEMPLATE.md`'s production readiness section.
+The hardware benchmark remains in `gpu-inference-quality-gate` / `GPU Inference
+Quality Gate (TTFT<=200ms, latency<=250ms)` and requires a
+`[self-hosted, linux, gpu]` runner. The always-running
+`gpu-inference-policy-gate` converts an unset `ENABLE_GPU_BENCH_GATE`, a skipped
+hardware job, unavailable evidence, or a failed benchmark into a blocking
+failure. `production-readiness` depends on that policy job, so its aggregate can
+no longer become green without TTFT/latency evidence. Forks without an eligible
+runner must provision one before claiming merge/release readiness; there is no
+silent checklist-only bypass.
 
 Repository administrators should periodically verify that the required check
 names above are selected for protected `main`/`master` branches. This repository

@@ -18,6 +18,8 @@ DEFAULT_RELEASE_JOB_IDS = (
     "test",
     "installer-smoke",
     "production-profile-dry-run",
+    "gpu-inference-policy-gate",
+    "production-readiness",
     "pg-stress",
 )
 
