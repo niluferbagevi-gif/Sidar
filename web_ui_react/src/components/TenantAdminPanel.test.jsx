@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TenantAdminPanel } from "./TenantAdminPanel.jsx";
@@ -66,7 +66,10 @@ describe("TenantAdminPanel", () => {
     expect(screen.getByText("admin:*")).toBeInTheDocument();
     expect(screen.getByText("İzinli audit").previousSibling).toHaveTextContent("1");
     expect(screen.getByText("Reddedilen audit").previousSibling).toHaveTextContent("1");
-    expect(fetchJson).toHaveBeenCalledWith("/admin/audit-logs?tenant_id=default&limit=50");
+    expect(fetchJson).toHaveBeenCalledWith(
+      "/admin/audit-logs?tenant_id=default&limit=50",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("lists policies for the selected user and tenant", async () => {
@@ -78,7 +81,10 @@ describe("TenantAdminPanel", () => {
     await user.type(screen.getByLabelText("Kullanıcı ID"), "user-1");
 
     await waitFor(() => {
-      expect(fetchJson).toHaveBeenCalledWith("/admin/policies/user-1?tenant_id=acme");
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/admin/policies/user-1?tenant_id=acme",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
     const policyCard = await screen.findByText("ALLOW · rag:*");
     expect(policyCard).toBeInTheDocument();
@@ -192,7 +198,10 @@ describe("TenantAdminPanel", () => {
     await user.type(screen.getByLabelText("Tenant ID"), "acme");
 
     await waitFor(() => {
-      expect(fetchJson).toHaveBeenCalledWith("/admin/audit-logs?tenant_id=acme&limit=50");
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/admin/audit-logs?tenant_id=acme&limit=50",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
   });
 
@@ -237,7 +246,7 @@ describe("TenantAdminPanel", () => {
 
     render(<TenantAdminPanel />);
 
-    const refreshButton = screen.getByRole("button", { name: "Yükleniyor..." });
+    const refreshButton = await screen.findByRole("button", { name: "Yükleniyor..." });
     expect(refreshButton).toBeDisabled();
 
     resolveAudit({ items: [] });
@@ -274,9 +283,12 @@ describe("TenantAdminPanel", () => {
   it("does not fetch policies until a current user id is present", async () => {
     render(<TenantAdminPanel />);
 
-    await screen.findByText("Audit Trail");
+    await waitFor(() => expect(fetchJson).toHaveBeenCalled());
 
-    expect(fetchJson).toHaveBeenCalledWith("/admin/audit-logs?tenant_id=default&limit=50");
+    expect(fetchJson).toHaveBeenCalledWith(
+      "/admin/audit-logs?tenant_id=default&limit=50",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(fetchJson.mock.calls.some(([url]) => url.startsWith("/admin/policies/"))).toBe(false);
     expect(screen.getByText("Politika listelemek için kullanıcı ID girin.")).toBeInTheDocument();
   });
@@ -357,6 +369,104 @@ describe("TenantAdminPanel", () => {
       action: "read",
       effect: "allow",
     });
+  });
+
+  it("debounces identity edits and aborts an obsolete tenant request", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<TenantAdminPanel />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      fetchJson.mockClear();
+      fetchJson.mockImplementation((_url, options = {}) => new Promise((_resolve, reject) => {
+        options.signal?.addEventListener(
+          "abort",
+          () => {
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            reject(abortError);
+          },
+          { once: true },
+        );
+      }));
+
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "u" } });
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "us" } });
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "user-old" } });
+      expect(fetchJson).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+      const obsoleteSignal = fetchJson.mock.calls[0][1].signal;
+      expect(obsoleteSignal.aborted).toBe(false);
+
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "user-new" } });
+      expect(obsoleteSignal.aborted).toBe(true);
+      expect(fetchJson).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(fetchJson).toHaveBeenCalledTimes(4);
+      expect(fetchJson.mock.calls.slice(2).some(([url]) => url.includes("/admin/policies/user-new?"))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores an obsolete response that resolves after the current user response", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<TenantAdminPanel />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      let resolveOldAudit;
+      let resolveOldPolicies;
+      fetchJson.mockImplementation((url) => {
+        if (url.includes("user-old") && url.startsWith("/admin/audit-logs")) {
+          return new Promise((resolve) => { resolveOldAudit = resolve; });
+        }
+        if (url.includes("/admin/policies/user-old")) {
+          return new Promise((resolve) => { resolveOldPolicies = resolve; });
+        }
+        if (url.includes("/admin/policies/user-new")) {
+          return Promise.resolve({
+            items: [{ ...policiesPayload.items[0], user_id: "user-new", resource_type: "github", resource_id: "new" }],
+          });
+        }
+        return Promise.resolve({ items: [] });
+      });
+
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "user-old" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "user-new" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+        await Promise.resolve();
+      });
+      expect(screen.getByText("ALLOW · github:new")).toBeInTheDocument();
+
+      await act(async () => {
+        resolveOldPolicies({
+          items: [{ ...policiesPayload.items[0], user_id: "user-old", resource_id: "old" }],
+        });
+        resolveOldAudit({ items: [] });
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("ALLOW · github:new")).toBeInTheDocument();
+      expect(screen.queryByText("ALLOW · rag:old")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
 });

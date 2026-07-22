@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "../lib/api.js";
 
 const DEFAULT_POLICY_FORM = {
@@ -12,6 +12,7 @@ const DEFAULT_POLICY_FORM = {
 
 const RESOURCE_OPTIONS = ["rag", "github", "agents", "swarm", "operations", "coverage", "admin"];
 const ACTION_OPTIONS = ["read", "write", "execute", "register", "manage"];
+const TENANT_DATA_DEBOUNCE_MS = 300;
 
 function normalizePolicyForm(form) {
   return {
@@ -39,36 +40,54 @@ export function TenantAdminPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const activeRequestRef = useRef(null);
+  const requestSequenceRef = useRef(0);
 
   const currentTenantId = policyForm.tenant_id.trim() || "default";
   const currentUserId = policyForm.user_id.trim();
 
   const loadTenantData = useCallback(async () => {
+    activeRequestRef.current?.abort();
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    const requestSequence = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestSequence;
     setLoading(true);
     setError("");
     try {
       const auditQuery = new URLSearchParams({ tenant_id: currentTenantId, limit: "50" });
       if (currentUserId) auditQuery.set("user_id", currentUserId);
 
-      const requests = [fetchJson(`/admin/audit-logs?${auditQuery.toString()}`)];
+      const requestOptions = { signal: controller.signal };
+      const requests = [fetchJson(`/admin/audit-logs?${auditQuery.toString()}`, requestOptions)];
       if (currentUserId) {
         const policyQuery = new URLSearchParams({ tenant_id: currentTenantId });
-        requests.unshift(fetchJson(`/admin/policies/${encodeURIComponent(currentUserId)}?${policyQuery.toString()}`));
+        requests.unshift(fetchJson(`/admin/policies/${encodeURIComponent(currentUserId)}?${policyQuery.toString()}`, requestOptions));
       }
 
       const results = await Promise.all(requests);
+      if (requestSequence !== requestSequenceRef.current) return;
       const auditResult = results[results.length - 1];
       setAuditLogs(auditResult.items || []);
       setPolicies(currentUserId ? (results[0].items || []) : []);
     } catch (err) {
+      if (controller.signal.aborted || requestSequence !== requestSequenceRef.current) return;
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (requestSequence === requestSequenceRef.current) {
+        activeRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, [currentTenantId, currentUserId]);
 
   useEffect(() => {
-    loadTenantData();
+    const timeoutId = setTimeout(loadTenantData, TENANT_DATA_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timeoutId);
+      activeRequestRef.current?.abort();
+      requestSequenceRef.current += 1;
+    };
   }, [loadTenantData]);
 
   const updateForm = useCallback((field, value) => {
