@@ -11,6 +11,16 @@ import { useWebSocket } from "../hooks/useWebSocket.js";
 
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
+const FORM_FIELD_LABELS = {
+  brand_name: "Marka adı",
+  campaign_name: "Kampanya adı",
+  objective: "Amaç",
+  offer: "Teklif",
+  audience: "Hedef kitle",
+  channels: "Kanallar",
+  call_to_action: "Eylem çağrısı",
+  tone: "Ton",
+};
 
 export function OperationsQaPanel() {
   const [activeRoom, setActiveRoom] = useState(OPS_ROOM_ID);
@@ -122,7 +132,7 @@ export function OperationsQaPanel() {
         }}>
           <h3>Poyraz Landing Page</h3>
           {Object.entries(landingForm).map(([key, value]) => (
-            <label key={key}>{key}<input value={value} onChange={(e) => setLandingForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
+            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setLandingForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Landing üret</button>
         </form>
@@ -137,7 +147,7 @@ export function OperationsQaPanel() {
         }}>
           <h3>Poyraz Kampanya</h3>
           {Object.entries(campaignForm).map(([key, value]) => (
-            <label key={key}>{key}<input value={value} onChange={(e) => setCampaignForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
+            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setCampaignForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Kopya üret</button>
         </form>

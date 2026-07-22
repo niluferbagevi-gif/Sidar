@@ -55,6 +55,16 @@ describe("OperationsQaPanel — başlangıç render", () => {
     expect(screen.getByText("WS: disconnected")).toBeInTheDocument();
   });
 
+  it("Poyraz formlarında okunabilir Türkçe alan etiketleri gösterir", async () => {
+    await renderOperationsQaPanel();
+
+    for (const label of ["Marka adı", "Kampanya adı", "Amaç", "Hedef kitle", "Kanallar", "Eylem çağrısı", "Ton"]) {
+      expect(screen.getAllByRole("textbox", { name: label }).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByRole("textbox", { name: "brand_name" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "call_to_action" })).not.toBeInTheDocument();
+  });
+
   it("oda değiştirme butonu aktif odayı değiştirir", async () => {
     const user = userEvent.setup();
     await renderOperationsQaPanel();
@@ -160,7 +170,7 @@ describe("OperationsQaPanel — form girdileri", () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true });
     await renderOperationsQaPanel();
-    const offerInputs = screen.getAllByRole("textbox", { name: "offer" });
+    const offerInputs = screen.getAllByRole("textbox", { name: "Teklif" });
     const landingOffer = offerInputs[0];
     await user.clear(landingOffer);
     await user.type(landingOffer, "Yeni teklif");
@@ -174,8 +184,8 @@ describe("OperationsQaPanel — form girdileri", () => {
     const user = userEvent.setup();
     apiMocks.generateCampaignCopy.mockResolvedValue({ ok: true });
     await renderOperationsQaPanel();
-    const campaignName = screen.getByRole("textbox", { name: "campaign_name" });
-    const campaignOffer = screen.getAllByRole("textbox", { name: "offer" })[1];
+    const campaignName = screen.getByRole("textbox", { name: "Kampanya adı" });
+    const campaignOffer = screen.getAllByRole("textbox", { name: "Teklif" })[1];
 
     await user.clear(campaignName);
     await user.type(campaignName, "Yeni kampanya");
