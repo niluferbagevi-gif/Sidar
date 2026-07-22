@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from managers.code.patcher import apply_exact_block_patch
+from managers.code.patcher import apply_exact_block_patch as apply_exact_block_patch
 
 logger = logging.getLogger(__name__)
 
