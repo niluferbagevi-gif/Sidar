@@ -1056,6 +1056,7 @@ async def basic_auth_middleware(
         "/",
         "/health",
         "/healthz",
+        "/readyz",
         "/docs",
         "/redoc",
         "/openapi.json",

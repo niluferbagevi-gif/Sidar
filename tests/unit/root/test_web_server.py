@@ -1033,6 +1033,11 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     open_res = await web_server.basic_auth_middleware(open_req, _ok_next)
     assert open_res.status_code == 200
 
+    ready_res = await web_server.basic_auth_middleware(
+        _make_request("/readyz", method="GET"), _ok_next
+    )
+    assert ready_res.status_code == 200
+
     github_webhook_res = await web_server.basic_auth_middleware(
         _make_request("/api/webhook", method="POST"), _ok_next
     )
