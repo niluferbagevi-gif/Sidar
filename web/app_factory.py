@@ -42,7 +42,6 @@ def register_exception_handlers(
     application: FastAPI, *, expose_exception_details: bool | None = None
 ) -> None:
     """Register Sidar's JSON exception handlers on a FastAPI application."""
-
     if not hasattr(application, "exception_handler"):
         return
     include_detail = (
@@ -81,7 +80,6 @@ def register_routers(application: FastAPI, routers: list[APIRouter]) -> dict[str
     direct imports/tests while app construction keeps router registration in one
     orchestration point.
     """
-
     legacy_exports: dict[str, Any] = {}
     for router in routers:
         application.include_router(router)
@@ -98,7 +96,6 @@ def initialize_runtime_state(application: FastAPI, **overrides: Any) -> SimpleNa
     new route factories and dependencies should prefer this app-bound state object so
     isolated FastAPI instances do not accidentally share singleton state.
     """
-
     state = getattr(application.state, "sidar_runtime", None)
     if state is None:
         state = SimpleNamespace()
@@ -113,7 +110,6 @@ def initialize_runtime_state(application: FastAPI, **overrides: Any) -> SimpleNa
 
 def get_runtime_state(application: FastAPI) -> SimpleNamespace:
     """Return the app-bound Sidar runtime state, creating it if needed."""
-
     return initialize_runtime_state(application)
 
 
@@ -130,7 +126,6 @@ def create_app(
     router registration is centralized through ``register_routers`` in this
     factory module.
     """
-
     application = FastAPI(
         title="Sidar Web UI & REST API",
         description=(

@@ -34,7 +34,6 @@ DEFAULT_PRUNED_DIRS = frozenset(
 
 def find_zone_identifier_files(root: Path, *, pruned_dirs: set[str] | None = None) -> list[Path]:
     """Return ordinary files whose names end with ``:Zone.Identifier``."""
-
     root = root.resolve()
     ignored_dirs = DEFAULT_PRUNED_DIRS if pruned_dirs is None else frozenset(pruned_dirs)
     matches: list[Path] = []
@@ -50,7 +49,6 @@ def find_zone_identifier_files(root: Path, *, pruned_dirs: set[str] | None = Non
 
 def remove_zone_identifier_files(root: Path, *, dry_run: bool = False) -> list[Path]:
     """Delete Zone.Identifier sidecar files under ``root`` and return matches."""
-
     matches = find_zone_identifier_files(root)
     if dry_run:
         return matches

@@ -92,7 +92,6 @@ async def test_asgi_middleware_chain_enforces_acl_without_dependency_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise auth, user rate-limit, and ACL middleware through real ASGI dispatch."""
-
     calls = {"policies": [], "rate_keys": [], "active_users": []}
     user = SimpleNamespace(id="u-asgi", username="ada", role="user", tenant_id="tenant-asgi")
     original_overrides = app.dependency_overrides.copy()

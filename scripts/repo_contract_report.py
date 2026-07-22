@@ -226,7 +226,6 @@ def check_dependency_profile_plan_sync(
     plan_path: Path = REPO_ROOT / "docs/DEPENDENCY_PROFILE_PLAN.md",
 ) -> DependencyProfilePlanStatus:
     """Verify dependency profile plan docs stay synchronized with pyproject metadata."""
-
     pyproject_text = _read_text(pyproject_path)
     plan_text = _read_text(plan_path)
     pyproject_data = tomllib.loads(pyproject_text)

@@ -23,7 +23,6 @@ def _is_external_infra_checks_disabled() -> bool:
 
 def _masked_secret_hash(value: str) -> str:
     """Return a non-reversible, length-aware secret fingerprint for diagnostics."""
-
     if not value:
         return "<missing>"
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
@@ -32,7 +31,6 @@ def _masked_secret_hash(value: str) -> str:
 
 def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
     """Summarize a PostgreSQL DSN without exposing the password."""
-
     parsed = urlsplit(database_url.strip())
     try:
         port = parsed.port
@@ -52,7 +50,6 @@ def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
 
 def _database_url_dotenv_diagnostics(database_url: str) -> str:
     """Build failure diagnostics for smoke DB checks without logging secrets."""
-
     key_sources = app_config.get_dotenv_key_source_report()
     load_events = app_config.get_dotenv_load_report()
     database_url_source = key_sources.get("DATABASE_URL") or {}
@@ -144,7 +141,6 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
 
 def test_boot_smoke_scope_has_required_deeper_quality_gates() -> None:
     """Smoke boot success must not be treated as integration/e2e production readiness."""
-
     required_deeper_tests = {
         "agent orchestration": Path(
             "tests/integration/workflow/test_agent_workflow_integration.py"

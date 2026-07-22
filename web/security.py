@@ -23,7 +23,6 @@ _WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
 
 def parse_ws_subprotocol_values(raw_header: str) -> list[str]:
     """Return comma-separated WebSocket subprotocol values without empty items."""
-
     return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
 
 
@@ -31,7 +30,6 @@ def extract_ws_header_token(
     raw_header: str, accepted_protocol: str = SIDAR_WS_CHAT_PROTOCOL
 ) -> tuple[str, str | None]:
     """Extract a websocket auth token without echoing raw tokens as subprotocols."""
-
     protocols = parse_ws_subprotocol_values(raw_header)
     if not protocols:
         return "", None
@@ -46,7 +44,6 @@ def extract_ws_header_token(
 
 def build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
     """Build the lightweight request user object from validated JWT claims."""
-
     user_id = str(payload.get("sub", "") or "").strip()
     username = str(payload.get("username", "") or "").strip()
     role = str(payload.get("role", "user") or "user").strip() or "user"
@@ -58,7 +55,6 @@ def build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
 
 def get_jwt_secret(config: Any, logger_obj: Any) -> str:
     """Read the JWT secret from config; fail closed instead of using a known constant."""
-
     key = str(getattr(config, "JWT_SECRET_KEY", "") or "")
     if not key:
         logger_obj.critical(
@@ -74,7 +70,6 @@ def get_jwt_secret(config: Any, logger_obj: Any) -> str:
 
 async def resolve_user_from_token(agent: Any, token: str, *, config: Any, logger_obj: Any) -> Any:
     """Resolve a stateless JWT user, falling back to the legacy DB token lookup."""
-
     secret_key = get_jwt_secret(config, logger_obj)
     algorithm = str(getattr(config, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
@@ -92,7 +87,6 @@ async def resolve_user_from_token(agent: Any, token: str, *, config: Any, logger
 
 async def issue_auth_token(_agent: Any, user: Any, *, config: Any, logger_obj: Any) -> str:
     """Issue a stateless JWT for an authenticated Sidar user."""
-
     secret_key = get_jwt_secret(config, logger_obj)
     algorithm = str(getattr(config, "JWT_ALGORITHM", "HS256") or "HS256")
     ttl_days = max(1, int(getattr(config, "JWT_TTL_DAYS", 7) or 7))
@@ -110,7 +104,6 @@ async def issue_auth_token(_agent: Any, user: Any, *, config: Any, logger_obj: A
 
 def get_request_user(request: Request) -> Any:
     """Return the authenticated request user or raise a 401 response."""
-
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Yetkisiz erişim")
@@ -122,26 +115,22 @@ RESERVED_USERNAMES = frozenset({"default_admin"})
 
 def normalize_username(value: Any) -> str:
     """Return a canonical username for security-sensitive comparisons."""
-
     return str(value or "").strip().lower()
 
 
 def is_reserved_username(username: Any) -> bool:
     """Return whether a username is reserved for Sidar internals/bootstrap flows."""
-
     return normalize_username(username) in RESERVED_USERNAMES
 
 
 def is_admin_user(user: Any) -> bool:
     """Return whether the request user has Sidar admin privileges."""
-
     role = str(getattr(user, "role", "") or "").strip().lower()
     return role == "admin"
 
 
 def require_admin_user(user: Any = Depends(get_request_user)) -> Any:
     """FastAPI dependency enforcing admin access."""
-
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
     return user
@@ -149,7 +138,6 @@ def require_admin_user(user: Any = Depends(get_request_user)) -> Any:
 
 def require_metrics_access(request: Request, user: Any, *, config: Any) -> Any:
     """Allow metrics access for admin users or requests carrying METRICS_TOKEN."""
-
     metrics_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
     if metrics_token:
         auth_header = request.headers.get("Authorization", "")

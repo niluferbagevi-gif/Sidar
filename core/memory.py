@@ -107,7 +107,6 @@ class ConversationMemory:
     @staticmethod
     def _build_fernet(encryption_key: str) -> Any | None:
         """Build a Fernet instance from the configured memory encryption key."""
-
         key = str(encryption_key or "").strip()
         if not key:
             return None
@@ -123,12 +122,10 @@ class ConversationMemory:
     @property
     def encryption_enabled(self) -> bool:
         """Return whether conversation message content is encrypted at rest."""
-
         return self._fernet is not None
 
     def _encrypt_content(self, content: str | None) -> str:
         """Encrypt message content for storage when Fernet encryption is enabled."""
-
         plaintext = content if content is not None else ""
         if self._fernet is None or plaintext.startswith(_ENCRYPTED_CONTENT_PREFIX):
             return plaintext
@@ -137,7 +134,6 @@ class ConversationMemory:
 
     def _decrypt_content(self, content: str | None) -> str:
         """Decrypt stored message content, leaving legacy plaintext untouched."""
-
         value = content if content is not None else ""
         if not value.startswith(_ENCRYPTED_CONTENT_PREFIX):
             return value
@@ -149,14 +145,12 @@ class ConversationMemory:
 
     def _message_plain_content(self, message: MessageRecord) -> str:
         """Return decrypted message content for DB-backed memory rows."""
-
         return self._decrypt_content(str(getattr(message, "content", "") or ""))
 
     def _encrypt_turns_for_storage(
         self, turns: Sequence[dict[str, object]]
     ) -> list[dict[str, object]]:
         """Return DB-writeable turn dictionaries with encrypted content fields."""
-
         encrypted_turns: list[dict[str, object]] = []
         for turn in turns:
             item = dict(turn)

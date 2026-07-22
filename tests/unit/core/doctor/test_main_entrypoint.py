@@ -9,7 +9,6 @@ import core.doctor as doctor
 
 def test_python_m_core_doctor_entrypoint_delegates_to_main(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cover the ``python -m core.doctor`` entry point without running real checks."""
-
     calls = []
 
     def fake_main() -> int:

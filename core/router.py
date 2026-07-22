@@ -267,7 +267,8 @@ class _SqliteDailyBudgetTracker:
             if row is None or int(row[0]) != day_epoch:
                 conn.execute(
                     f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"  # nosec B608  # _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
-                    " ON CONFLICT(id) DO UPDATE SET day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
+                    " ON CONFLICT(id) DO UPDATE SET"
+                    " day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
                     (day_epoch, increment),
                 )
             elif increment > 0.0:

@@ -14,7 +14,6 @@ _ENTITY_NODE_PREFIXES = ("campaign:", "brand:", "audience:", "tone:", "channel:"
 
 def load_entity_graph(graph_file: Path) -> dict[str, Any]:
     """Load persisted entity graph data with normalized nodes/edges containers."""
-
     if graph_file.exists():
         try:
             loaded = json.loads(graph_file.read_text(encoding="utf-8"))
@@ -30,7 +29,6 @@ def load_entity_graph(graph_file: Path) -> dict[str, Any]:
 
 def ensure_entity_graph(owner: Any) -> dict[str, Any]:
     """Return owner graph state with dict/list containers guaranteed."""
-
     graph = getattr(owner, "_entity_graph", None)
     if not isinstance(graph, dict):
         graph = {"nodes": {}, "edges": []}
@@ -44,7 +42,6 @@ def ensure_entity_graph(owner: Any) -> dict[str, Any]:
 
 def save_entity_graph(owner: Any, graph_file: Path) -> None:
     """Persist the owner's normalized entity graph to disk."""
-
     graph_file.write_text(
         json.dumps(ensure_entity_graph(owner), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -62,7 +59,6 @@ def upsert_document_entities(
     session_id: str = "global",
 ) -> None:
     """Insert/update document, entity and relation nodes for a RAG document."""
-
     if not getattr(owner, "_entity_extraction_enabled", True):
         return
     graph = owner._ensure_entity_graph()
@@ -120,7 +116,6 @@ def upsert_document_entities(
 
 def delete_document_entities(owner: Any, doc_id: str) -> None:
     """Delete document-scoped entity graph edges and orphaned marketing nodes."""
-
     graph = owner._ensure_entity_graph()
     nodes: dict[str, dict[str, Any]] = graph["nodes"]
     doc_node_id = f"doc:{doc_id}"
@@ -145,7 +140,6 @@ def search_entity_graph(
     graph: dict[str, Any], query: str, *, session_id: str = "global", top_k: int = 5
 ) -> list[dict[str, Any]]:
     """Search entity graph nodes and include nearby relations for matching nodes."""
-
     tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
     if not tokens:
         return []

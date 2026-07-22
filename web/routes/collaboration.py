@@ -233,7 +233,6 @@ async def emit_control_room_event(
     now_iso: Callable[[], str],
 ) -> None:
     """Mirror REST-triggered operation/QA events into collaboration rooms."""
-
     normalized = normalize_room_id(room_id or "ops:control")
     room = rooms.setdefault(normalized, CollaborationRoom(room_id=normalized))
     event = {

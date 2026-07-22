@@ -1040,7 +1040,6 @@ app = _app_factory.create_app(
 
 def _runtime_state(application: FastAPI | None = None) -> Any:
     """Return app-scoped runtime state while keeping legacy globals as aliases."""
-
     return _app_factory.get_runtime_state(application or app)
 
 
@@ -1403,7 +1402,6 @@ def _execute_validated_plugin_source(
     source_code: str, module_label: str, namespace: dict[str, Any]
 ) -> None:
     """Derlenmiş plugin kaynağını daraltılmış namespace içinde çalıştırır."""
-
     plugin_sandbox.execute_validated_plugin_source(source_code, module_label, namespace)
 
 
@@ -1415,7 +1413,6 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
     and why the admin-only gate on the callers of this function is the real
     security boundary.
     """
-
     try:
         _validate_plugin_source(source_code)
         plugin_sandbox.assert_in_process_plugin_execution_allowed()
@@ -1516,7 +1513,6 @@ def _load_plugin_agent_class(
 
 def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
     """Validate uploaded plugin source in the shared sandbox before persisting it."""
-
     _run_plugin_source_in_sandbox(source_code, module_label)
 
     safe_name = Path(filename or "plugin.py").name
@@ -1532,7 +1528,6 @@ def _validate_and_persist_plugin_file(filename: str, source_code: str, module_la
 
 def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: str) -> Path:
     """Backward-compatible secure wrapper for router-level uploaded plugin persistence."""
-
     try:
         source_code = data.decode("utf-8")
     except UnicodeDecodeError as exc:

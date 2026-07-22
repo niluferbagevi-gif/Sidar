@@ -47,7 +47,6 @@ def _parse_percentage(value: Any, *, field_name: str) -> float:
 
 def read_fail_under(coverage_config_path: Path) -> float:
     """Read ``[tool.coverage.report] fail_under`` from pyproject coverage config."""
-
     data = tomllib.loads(coverage_config_path.read_text(encoding="utf-8"))
     raw_value = data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under", 0)
     return _parse_percentage(raw_value, field_name="fail_under")
@@ -55,7 +54,6 @@ def read_fail_under(coverage_config_path: Path) -> float:
 
 def read_total_coverage(coverage_json_path: Path) -> float:
     """Read total coverage percentage from coverage.py JSON output."""
-
     data = json.loads(coverage_json_path.read_text(encoding="utf-8"))
     totals = data.get("totals")
     if not isinstance(totals, dict):
@@ -79,7 +77,6 @@ def compute_next_gate(
     max_gate: float = 100.0,
 ) -> float:
     """Return the next non-decreasing coverage gate for a measured percentage."""
-
     step = _parse_percentage(step, field_name="step")
     min_gate = _parse_percentage(min_gate, field_name="min_gate")
     max_gate = _parse_percentage(max_gate, field_name="max_gate")
@@ -104,7 +101,6 @@ def _format_gate(value: float) -> str:
 
 def _upsert_toml_key(lines: list[str], section: str, key: str, value: str) -> list[str]:
     """Return TOML lines with a scalar key updated in the requested section."""
-
     section_header = f"[{section}]"
     key_pattern = re.compile(rf"^(?P<prefix>\s*){re.escape(key)}\s*=")
     output: list[str] = []
@@ -141,7 +137,6 @@ def _upsert_toml_key(lines: list[str], section: str, key: str, value: str) -> li
 
 def write_fail_under(coverage_config_path: Path, new_gate: float) -> None:
     """Update only ``tool.coverage.report.fail_under`` while preserving TOML comments."""
-
     lines = coverage_config_path.read_text(encoding="utf-8").splitlines(keepends=True)
     output = _upsert_toml_key(
         lines,
@@ -156,7 +151,6 @@ def ensure_html_dark_mode_css(
     coverage_config_path: Path, *, css_path: str = DEFAULT_DARK_MODE_CSS
 ) -> bool:
     """Ensure ``tool.coverage.html.extra_css`` points to Sidar dark mode stylesheet."""
-
     data = tomllib.loads(coverage_config_path.read_text(encoding="utf-8"))
     current = data.get("tool", {}).get("coverage", {}).get("html", {}).get("extra_css", "")
     if str(current).strip() == css_path:
@@ -183,7 +177,6 @@ def ratchet_coverage_gate(
     coveragerc_path: Path | None = None,
 ) -> RatchetResult:
     """Raise ``fail_under`` to the reached step if coverage improved enough."""
-
     coverage_config_path = coverage_config_path or coveragerc_path or Path("pyproject.toml")
     ensure_html_dark_mode_css(coverage_config_path)
     current_gate = read_fail_under(coverage_config_path)

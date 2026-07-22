@@ -89,7 +89,6 @@ def _parse_args() -> argparse.Namespace:
 
 def _emit_result(payload: dict[str, Any], args: argparse.Namespace) -> None:
     """Print the final self-heal result and optionally persist it for truncated logs."""
-
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     print(rendered)
     output_path_text = str(getattr(args, "output", "") or "").strip()
@@ -116,7 +115,6 @@ def _resolve_auto_heal_database_url(log_path: Path, requested_database_url: str 
 
 def _configure_auto_heal_memory_backend(cfg: Any, database_url: str) -> str:
     """Prefer lightweight BM25 memory when self-heal runs on its isolated SQLite DB."""
-
     vector_backend = str(getattr(cfg, "RAG_VECTOR_BACKEND", "") or "").strip().lower()
     if vector_backend == "pgvector" and not str(database_url or "").startswith("postgresql"):
         cfg.RAG_VECTOR_BACKEND = "bm25"
@@ -225,7 +223,6 @@ def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> 
 
 def _extract_mypy_targets_from_log(log_text: str, *, limit: int = 200) -> list[str]:
     """Fallback parser: derive candidate files from mypy's `path:line: error:` format."""
-
     if not log_text.strip():
         return []
 

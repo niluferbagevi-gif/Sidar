@@ -98,5 +98,4 @@ EXTERNAL_SERVICE_PLUGIN_IDS = frozenset(
 
 def get_plugin_manifest(plugin_id: str) -> PluginManifest:
     """Return manifest metadata for a plugin id."""
-
     return PLUGIN_MANIFESTS[plugin_id]

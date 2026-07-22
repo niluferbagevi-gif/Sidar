@@ -457,28 +457,24 @@ def test_is_contracts_module_healthy_accepts_valid_module_and_rejects_object_del
 
 def test_is_contracts_module_healthy_rejects_non_callable_task_envelope():
     """Branch L67-70: TaskEnvelope çağrılabilir değilse False dönmeli."""
-
     not_callable_envelope = _valid_contract_module(TaskEnvelope="not-callable")
     assert swarm._is_contracts_module_healthy(not_callable_envelope) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_task_result():
     """Branch L67-70: TaskResult çağrılabilir değilse False dönmeli."""
-
     not_callable_result = _valid_contract_module(TaskResult=42)
     assert swarm._is_contracts_module_healthy(not_callable_result) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_delegation_request():
     """Branch L67-70: DelegationRequest çağrılabilir değilse False dönmeli."""
-
     not_callable_delegation = _valid_contract_module(DelegationRequest=SimpleNamespace())
     assert swarm._is_contracts_module_healthy(not_callable_delegation) is False
 
 
 def test_contracts_module_returns_imported_module_without_runtime_repair(monkeypatch):
     """Runtime kodu test-pollution kaynaklı kontrat modülünü onarmaya çalışmamalı."""
-
     imported = SimpleNamespace(marker="imported-stub")
     calls = {"import": 0}
 

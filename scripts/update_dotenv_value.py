@@ -65,7 +65,6 @@ def _replace_or_append(lines: list[str], key: str, value: str) -> list[str]:
 
 def update_dotenv_value(path: Path, key: str, value: str) -> None:
     """Update ``key`` in ``path`` using a same-directory atomic replace."""
-
     if not KEY_RE.fullmatch(key):
         raise ValueError(f"invalid dotenv key: {key!r}")
     path.parent.mkdir(parents=True, exist_ok=True)

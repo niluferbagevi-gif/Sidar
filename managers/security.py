@@ -188,11 +188,13 @@ class SecurityManager:
         SecurityManager._guardrails_import_log_keys.add(log_key)
         if reason == "missing-dependency":
             logger.info(
-                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da çalışıyor."
+                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da"
+                " çalışıyor."
             )
         else:
             logger.warning(
-                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded mode'da çalışıyor: %s",
+                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded"
+                " mode'da çalışıyor: %s",
                 exc,
             )
 
@@ -465,9 +467,13 @@ class SecurityManager:
         """Erişim seviyesi ve izin özetini döndürür."""
         perms = []
         perms.append("Okuma   : ✓ (tehlikeli yol koruması aktif)")
-        perms.append(
-            f"Yazma   : {'✓ (tam — proje kökü)' if self.level == FULL else ('✓ (yalnızca /temp)' if self.level == SANDBOX else '✗')}"
-        )
+        if self.level == FULL:
+            write_status = "✓ (tam — proje kökü)"
+        elif self.level == SANDBOX:
+            write_status = "✓ (yalnızca /temp)"
+        else:
+            write_status = "✗"
+        perms.append(f"Yazma   : {write_status}")
         perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
         perms.append(f"Shell   : {'✓ (git, npm, pip vb.)' if self.level == FULL else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")

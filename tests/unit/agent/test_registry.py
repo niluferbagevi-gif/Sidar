@@ -689,7 +689,6 @@ def test_builtin_role_canonical_identity_survives_temp_module_import(
     normalize back to the canonical class so router/supervisor/health
     checks keep agreeing on class identity.
     """
-
     import agent.roles as role_exports
 
     original_spec = AgentCatalog.get(contract.role_name)
@@ -743,7 +742,6 @@ def test_builtin_contract_sync_normalizes_each_role_to_canonical_class(
     one role's import path cannot poison another role's canonical
     resolution.
     """
-
     snapshot = dict(AgentCatalog._registry)
     original_spec = AgentCatalog.get(contract.role_name)
     assert original_spec is not None

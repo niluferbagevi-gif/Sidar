@@ -176,7 +176,6 @@ def _isolate_contracts_module() -> Generator[None, None, None]:
 @pytest.fixture(autouse=True)
 def _isolate_supervisor_module() -> Generator[None, None, None]:
     """Restore supervisor imports so production code does not need reload guards."""
-
     module_name = "agent.core.supervisor"
     package_name = "agent.core"
     package = sys.modules.get(package_name)
@@ -334,7 +333,6 @@ def _critical_sys_module_pollution_errors(
     the test exits; otherwise later tests in the same xdist worker can import a
     fake ``core.db``/``core.llm_client`` and fail nondeterministically.
     """
-
     errors: list[str] = []
     for name, required_attrs in _CRITICAL_SYS_MODULE_CONTRACTS.items():
         original = snapshot.get(name, _MISSING_SYS_MODULE)
@@ -364,7 +362,6 @@ def _critical_sys_module_pollution_errors(
 @pytest.fixture(autouse=True)
 def _restore_polluted_sys_modules(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Restore process-global modules and reload-sensitive class identities."""
-
     snapshot = {name: sys.modules.get(name, _MISSING_SYS_MODULE) for name in _SENSITIVE_SYS_MODULES}
     attribute_snapshot = {
         name: {
@@ -410,7 +407,6 @@ async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
     sonraki testlerde `Task was destroyed but it is pending` ve un-awaited Redis
     connection uyarıları `filterwarnings = error` nedeniyle suite'i düşürebilir.
     """
-
     yield
 
     bus_module = sys.modules.get("agent.core.event_stream")

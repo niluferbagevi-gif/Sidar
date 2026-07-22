@@ -23,7 +23,6 @@ import core.rag as rag
 @pytest.fixture(autouse=True)
 def _clear_embedding_function_cache() -> Iterator[None]:
     """Keep monkeypatched embedding factories isolated between RAG tests."""
-
     rag._build_embedding_function_cached.cache_clear()
     rag._DOCUMENT_STORE_SINGLETONS.clear()
     yield

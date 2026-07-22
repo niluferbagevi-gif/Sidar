@@ -180,7 +180,6 @@ def restricted_plugin_import(
     level: int = 0,
 ) -> Any:
     """Allowlist-based import gate for plugin code."""
-
     del globals, locals
     if level != 0:
         raise ImportError("Plugin güvenlik politikası: relative import engellendi.")

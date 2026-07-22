@@ -59,7 +59,6 @@ def _failed_backend_tests(report_dir: str) -> list[str]:
 
 def build_summary(args: list[str]) -> dict[str, object]:
     """Build the test-summary payload from run_tests.sh positional values."""
-
     (
         _output_path,
         smoke,
@@ -154,7 +153,6 @@ def build_summary(args: list[str]) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
-
     args = list(sys.argv[1:] if argv is None else argv)
     expected_arg_count = 37
     if len(args) != expected_arg_count:

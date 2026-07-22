@@ -117,7 +117,6 @@ def _read_gpu_memory_total_mib() -> int | None:
 
 def _torch_cuda_major(torch_module: Any) -> str | None:
     """Torch wheel'ının derlendiği CUDA major sürümünü döndürür."""
-
     cuda_version = getattr(getattr(torch_module, "version", SimpleNamespace()), "cuda", None)
     if not cuda_version:
         return None
@@ -166,7 +165,6 @@ async def test_real_gpu_inference_smoke() -> None:
 @pytest.mark.gpu
 def test_torch_cuda_major_is_supported_for_installed_driver() -> None:
     """CUDA 13 sürücülerde torch cu12/cu13 wheel uyumluluğunu fail-closed doğrular."""
-
     if "torch" in sys.modules:
         pytest.skip("torch zaten yüklü; çift kayıt önleniyor")
 

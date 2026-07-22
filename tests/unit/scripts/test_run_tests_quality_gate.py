@@ -4228,7 +4228,6 @@ def test_pip_audit_distinguishes_network_failures_from_real_vulnerabilities() ->
     ``PIP_AUDIT_ALLOW_NETWORK_FAILURE=1`` — must not red-line the local quality
     gate. CI keeps the strict default.
     """
-
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
@@ -4258,7 +4257,6 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     three knobs so a developer can run a fast local pass without colliding
     with the campaign target, while the campaign opt-in still aims at %100.
     """
-
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
@@ -4321,7 +4319,6 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
 
 def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     """Large wheels (pyarrow, etc.) must come from the uv cache on retries."""
-
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     # Find the first setup-uv block in the workflow (the main test job).
@@ -4673,7 +4670,6 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
 
 def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None:
     """Frontend audit must not cascade-skip lint/coverage on local registry outages."""
-
     script = _script()
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
     npm_audit_safe = Path("scripts/npm_audit_safe.js").read_text(encoding="utf-8")

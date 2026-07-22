@@ -36,7 +36,6 @@ class AWSManagementAgent(BaseAgent):
 
     def _security_manager(self) -> SecurityManager:
         """Return the runtime security manager used to gate host shell access."""
-
         cfg = getattr(self, "cfg", None) or Config()
         return SecurityManager(cfg=cfg)
 

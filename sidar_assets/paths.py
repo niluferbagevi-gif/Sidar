@@ -42,7 +42,6 @@ def asset_path(relative_path: str, *, require_exists: bool = False) -> Path:
     not bundled in the current environment, a repository-layout fallback is used
     when known.
     """
-
     normalized = relative_path.strip().strip("/")
     packaged = _resource_path(normalized)
     if packaged is not None and packaged.exists():

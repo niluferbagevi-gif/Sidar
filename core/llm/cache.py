@@ -16,7 +16,6 @@ class SemanticChatCache:
 
     async def get(self, user_prompt: str) -> str | None:
         """Return a cached response for a non-empty user prompt, if present."""
-
         if not user_prompt:
             return None
         cached_response = await self._cache.get(user_prompt)
@@ -24,12 +23,10 @@ class SemanticChatCache:
 
     async def set(self, user_prompt: str, response: str) -> None:
         """Persist a non-streaming chat response in semantic cache."""
-
         if user_prompt:
             await self._cache.set(user_prompt, response)
 
     @staticmethod
     def record_stream_skip() -> None:
         """Record that semantic cache was skipped for a streaming response."""
-
         record_cache_skip()

@@ -183,7 +183,6 @@ def build_embedding_function(
     cfg: Any | None = None,
 ) -> Any:
     """Compatibility wrapper that delegates through the patchable module global."""
-
     return _build_embedding_function(
         use_gpu=use_gpu,
         gpu_device=gpu_device,
@@ -807,7 +806,6 @@ class DocumentStore:
     @staticmethod
     def _is_public_ip_address(address: str) -> bool:
         """Return whether an IP address is globally routable for URL ingestion."""
-
         try:
             return ipaddress.ip_address(address).is_global
         except ValueError:
@@ -816,7 +814,6 @@ class DocumentStore:
     @classmethod
     def _validate_url_safe(cls, url: str, *, resolve_dns: bool = False) -> None:
         """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
-
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(

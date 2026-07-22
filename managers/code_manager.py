@@ -253,7 +253,8 @@ class CodeManager:
                 return
             if self._docker_init_attempts >= self._docker_init_max_attempts:
                 logger.warning(
-                    "Docker initialization retry limit reached (%s attempts); leaving backend degraded.",
+                    "Docker initialization retry limit reached (%s attempts);"
+                    " leaving backend degraded.",
                     self._docker_init_attempts,
                 )
                 self._docker_state = DockerState.FAILED
@@ -469,7 +470,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(logs) > self.max_output_chars:
                 logs = logs[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if logs:
@@ -543,7 +545,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(output) > self.max_output_chars:
                 output = output[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if result.returncode != 0:
@@ -808,7 +811,10 @@ class CodeManager:
 
     @staticmethod
     def _lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
-        """uv/uvx benzeri sarmalayıcıların 'binary bulunamadı' hatasını sezgisel olarak tespit et."""
+        """Sezgisel olarak 'binary bulunamadı' hatasını tespit et.
+
+        uv/uvx benzeri sarmalayıcıların stderr çıktısını kontrol eder.
+        """
         if not stderr_text:
             return False
         lowered = stderr_text.lower()
@@ -988,9 +994,9 @@ class CodeManager:
             rng = entry.get("range", {})
             start = rng.get("start", {})
             path = _file_uri_to_path(uri)
-            lines.append(
-                f"- {path}: satır {int(start.get('line', 0)) + 1}, sütun {int(start.get('character', 0)) + 1}"
-            )
+            line_no = int(start.get("line", 0)) + 1
+            column_no = int(start.get("character", 0)) + 1
+            lines.append(f"- {path}: satır {line_no}, sütun {column_no}")
         if len(normalized) > limit:
             lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
         return "\n".join(lines)
@@ -1177,7 +1183,10 @@ class CodeManager:
         summary = (
             "LSP diagnostics temiz."
             if total == 0
-            else f"LSP semantik denetimi {total} bulgu üretti (error={errors}, warning={warnings}, info={infos})."
+            else (
+                f"LSP semantik denetimi {total} bulgu üretti"
+                f" (error={errors}, warning={warnings}, info={infos})."
+            )
         )
         return {
             "status": status,
@@ -1376,7 +1385,10 @@ class CodeManager:
         lsp_status = "LSP on" if self.enable_lsp else "LSP off"
         if self.docker_available:
             return f"CodeManager: Docker Sandbox Aktif (imaj: {self.docker_image}) | {lsp_status}"
-        return f"CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır) | {lsp_status}"
+        return (
+            "CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır)"
+            f" | {lsp_status}"
+        )
 
     def __repr__(self) -> str:
         m = self.get_metrics()

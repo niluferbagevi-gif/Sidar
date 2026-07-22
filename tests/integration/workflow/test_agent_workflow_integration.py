@@ -167,7 +167,6 @@ async def test_swarm_pipeline_coordinates_roles_and_passes_success_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Coder -> reviewer -> QA pipeline'ında başarılı özetler sonraki role aktarılır."""
-
     cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=0, SWARM_TASK_TIMEOUT_SECONDS=1)
     orchestrator = SwarmOrchestrator(cfg=cfg)
 
@@ -222,7 +221,6 @@ async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GraphRAG/reviewer P2P döngüsü hop limitini aşınca fail-closed sonlanmalıdır."""
-
     cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1, SWARM_TASK_MAX_RETRIES=0)
     orchestrator = SwarmOrchestrator(cfg=cfg)
     researcher = AgentSpec(role_name="researcher", capabilities=["rag_search"])

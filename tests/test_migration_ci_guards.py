@@ -33,7 +33,6 @@ def _migration_manifest(root: Path) -> list[Path]:
 
 def test_packaged_migrations_match_source_tree() -> None:
     """Keep PyPI/sdist Alembic assets byte-for-byte aligned with migrations/."""
-
     source_root = PROJECT_ROOT / "migrations"
     source_manifest = _migration_manifest(source_root)
     packaged_manifest = _migration_manifest(PACKAGED_MIGRATIONS_DIR)

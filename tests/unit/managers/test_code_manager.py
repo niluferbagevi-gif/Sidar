@@ -2489,7 +2489,6 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
 def test_init_docker_exception_fallback_module_none_import_error(manager, monkeypatch):
     """Satırlar 343-346: except Exception bloğunda docker_module None (ilk import non-ImportError
     fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı."""
-
     import builtins as _builtins
 
     # Fixture _init_docker'ı lambda self: None olarak patchiyor; gerçek implementasyonu

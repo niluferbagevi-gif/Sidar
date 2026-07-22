@@ -32,7 +32,6 @@ EXPECTED_PLUGIN_MODULES = {
 
 def test_every_plugin_manifest_declares_required_metadata() -> None:
     """Every plugin exposes capability, side-effect, auth, dry-run, and fixture metadata."""
-
     assert set(PLUGIN_MANIFESTS) == {
         "aws_management",
         "crypto_price",
@@ -58,7 +57,6 @@ def test_every_plugin_manifest_declares_required_metadata() -> None:
 
 def test_plugin_manifests_match_importable_role_classes() -> None:
     """Manifest module/class entries stay aligned with concrete plugin classes."""
-
     for manifest in PLUGIN_MANIFESTS.values():
         module = importlib.import_module(manifest.module)
         plugin_class = getattr(module, manifest.class_name)
@@ -68,7 +66,6 @@ def test_plugin_manifests_match_importable_role_classes() -> None:
 
 def test_get_plugin_manifest_returns_metadata_and_raises_for_unknown_id() -> None:
     """Public manifest lookup returns registered plugins and preserves dict-style errors."""
-
     assert get_plugin_manifest("upload").plugin_id == "upload"
     with pytest.raises(KeyError):
         get_plugin_manifest("yok_boyle_plugin")
@@ -76,7 +73,6 @@ def test_get_plugin_manifest_returns_metadata_and_raises_for_unknown_id() -> Non
 
 def test_all_plugin_agent_modules_are_listed_in_manifest() -> None:
     """New plugin agent modules must add a manifest entry before landing."""
-
     manifest_modules = {
         manifest.module.rsplit(".", 1)[-1]: manifest.class_name
         for manifest in PLUGIN_MANIFESTS.values()
@@ -86,7 +82,6 @@ def test_all_plugin_agent_modules_are_listed_in_manifest() -> None:
 
 def test_external_service_plugins_require_mocked_contract_tests() -> None:
     """AWS/Slack/crypto plugins must never depend on real service calls in unit tests."""
-
     assert EXTERNAL_SERVICE_PLUGIN_IDS == {"aws_management", "crypto_price", "slack_notifications"}
     for plugin_id in EXTERNAL_SERVICE_PLUGIN_IDS:
         manifest = PLUGIN_MANIFESTS[plugin_id]
@@ -99,7 +94,6 @@ def test_external_service_plugins_require_mocked_contract_tests() -> None:
 
 def test_auth_and_secret_contracts_match_side_effect_risk() -> None:
     """Side-effectful plugins document whether credentials are needed."""
-
     for manifest in PLUGIN_MANIFESTS.values():
         if manifest.requires_auth:
             assert manifest.secret_names

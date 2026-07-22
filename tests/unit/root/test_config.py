@@ -2606,7 +2606,6 @@ def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
 
 def test_config_domain_loaders_back_extracted_backend_settings() -> None:
     """Config god-object should delegate extracted backend domains to typed loaders."""
-
     assert (
         config.Config.SIDAR_RATE_LIMIT_WINDOW == config._RATE_LIMIT_SETTINGS.sidar_rate_limit_window
     )

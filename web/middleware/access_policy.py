@@ -22,7 +22,6 @@ async def access_policy_middleware_impl(
     logger_obj: Any,
 ) -> Response:
     """Apply fine-grained ACL checks with injectable web-server dependencies."""
-
     if request.method == "OPTIONS":
         return await call_next(request)
     user = getattr(request.state, "user", None)

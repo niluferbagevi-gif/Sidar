@@ -26,7 +26,6 @@ def test_production_explicit_dotenv_satisfies_critical_keys_when_sidar_keys_file
     provider_value: str,
 ) -> None:
     """Production config must not rely on SIDAR_KEYS_FILE when explicit dotenv has secrets."""
-
     explicit_env = tmp_path / "production.env"
     missing_keys_file = tmp_path / "missing-sidar-keys.env"
     explicit_env.write_text(
@@ -89,7 +88,6 @@ def test_reload_dotenv_chain_applies_full_five_layer_precedence(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Exercise base -> advanced -> environment -> explicit -> secret dotenv precedence."""
-
     import config
 
     (tmp_path / ".env").write_text(

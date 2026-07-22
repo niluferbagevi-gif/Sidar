@@ -107,7 +107,6 @@ def classify_failure(
     vulnerability finding always wins — even if the stderr also mentions a
     network blip — because the report was actually produced.
     """
-
     if findings:
         return "vulnerability"
     if stderr_text:

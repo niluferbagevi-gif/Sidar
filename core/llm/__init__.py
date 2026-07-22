@@ -16,7 +16,6 @@ _PROVIDER_EXPORTS: dict[str, tuple[str, str]] = {
 
 def __getattr__(name: str) -> Any:  # pragma: no cover - provider lazy-import cache path
     """Lazy-load provider classes to avoid eager provider/facade cycles."""
-
     if name not in _PROVIDER_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     module_name, attr_name = _PROVIDER_EXPORTS[name]

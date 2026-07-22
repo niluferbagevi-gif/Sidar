@@ -32,7 +32,6 @@ def _normalize(host: str | None) -> str:
 
 def is_unspecified_bind(host: str | None) -> bool:
     """`0.0.0.0`, `::` veya eşdeğeri "tüm arayüze bağlan" değeri için True."""
-
     normalized = _normalize(host)
     if not normalized:
         return True
@@ -45,7 +44,6 @@ def is_unspecified_bind(host: str | None) -> bool:
 
 def is_loopback_host(host: str | None) -> bool:
     """Loopback IP veya bilinen yerel hostname için True döner."""
-
     normalized = _normalize(host)
     if not normalized:
         return False
@@ -60,13 +58,11 @@ def is_loopback_host(host: str | None) -> bool:
 
 def is_local_only_host(host: str | None) -> bool:
     """Loopback veya unspecified (yerel ağ tarafına açılmamış) host için True."""
-
     return is_loopback_host(host) or is_unspecified_bind(host)
 
 
 def is_valid_hostname(host: str | None) -> bool:
     """RFC 1123 hostname sözdizimine uyuyor mu (DNS lookup yapmadan)."""
-
     normalized = _normalize(host)
     if not normalized:
         return False
@@ -75,14 +71,12 @@ def is_valid_hostname(host: str | None) -> bool:
 
 def is_production_env(env: str | None = None) -> bool:
     """SIDAR_ENV=production kontrolü; explicit `env` öncelikli."""
-
     value = env if env is not None else os.getenv("SIDAR_ENV", "")
     return value.strip().lower() == "production"
 
 
 def is_public_bind_allowed(flag: str | None = None) -> bool:
     """SIDAR_ALLOW_PUBLIC_BIND bayrağı için truthy kontrolü."""
-
     value = flag if flag is not None else os.getenv("SIDAR_ALLOW_PUBLIC_BIND", "")
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -105,7 +99,6 @@ def validate_bind_host(
     Raises:
         ValueError: Geçersiz veya politika tarafından reddedilen host için.
     """
-
     if host is None:
         raise ValueError("Bind host belirtilmedi (None).")
     raw = host.strip()

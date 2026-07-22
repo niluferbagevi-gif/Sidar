@@ -1518,9 +1518,10 @@ class SidarAgent:
                         max(0.0, time.monotonic() - started_at),
                     )
                 logger.exception("Tool execution failed in subtask loop: tool=%s", tool or "llm")
+                action_argument = getattr(locals().get("action", None), "argument", "")
                 feedback = (
                     "Araç çalışmadı; sonraki adımda bunu dikkate al. "
-                    f"tool={tool or 'llm_decision'} argument={getattr(locals().get('action', None), 'argument', '')!r} "
+                    f"tool={tool or 'llm_decision'} argument={action_argument!r} "
                     f"error={exc}"
                 )
 
@@ -1544,10 +1545,12 @@ class SidarAgent:
 
         # 1. VEKTÖR BELLEK (SONSUZ HAFIZA) KAYDI
         # Kısa özetlemeye geçmeden önce, tüm detayları RAG sistemine kaydediyoruz
-        full_turns_text = "\n\n".join(
-            f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t.get('timestamp', time.time())))}] {t['role'].upper()}:\n{t['content']}"
-            for t in history
-        )
+        def _format_turn(turn: dict) -> str:
+            turn_time = time.localtime(turn.get("timestamp", time.time()))
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", turn_time)
+            return f"[{ts}] {turn['role'].upper()}:\n{turn['content']}"
+
+        full_turns_text = "\n\n".join(_format_turn(t) for t in history)
 
         try:
             await self.docs.add_document(
