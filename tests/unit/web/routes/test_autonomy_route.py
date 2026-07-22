@@ -70,17 +70,30 @@ def test_autonomy_webhook_signature_required_forces_production(
     )
 
 
-def test_validate_autonomy_webhook_signature_bypasses_when_secret_missing() -> None:
+def test_validate_autonomy_webhook_signature_bypasses_when_nonproduction_secret_missing() -> None:
     calls: list[tuple[Any, ...]] = []
 
     _validate_autonomy_webhook_signature(
         payload_body=b"{}",
-        cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET=""),
+        cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="", SIDAR_ENV="testing"),
         signature_header="",
         verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
     )
 
     assert calls == []
+
+
+def test_validate_autonomy_webhook_signature_fails_closed_in_production_without_secret() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_autonomy_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="", SIDAR_ENV="production"),
+            signature_header="",
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "Autonomy webhook secret" in str(exc_info.value.detail)
 
 
 def test_validate_autonomy_webhook_signature_can_bypass_for_local_compatibility(

@@ -72,6 +72,18 @@ def _validate_autonomy_webhook_signature(
     """Apply the autonomy webhook signature contract in one testable place."""
     secret_value = _autonomy_webhook_secret(cfg)
     if not secret_value:
+        env_name = (
+            str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "")
+            .strip()
+            .lower()
+        )
+        if env_name == "production":
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Autonomy webhook secret yapılandırılmadığı için imza doğrulanamadı."
+                ),
+            )
         return
     if not _autonomy_webhook_signature_required(cfg):
         return
