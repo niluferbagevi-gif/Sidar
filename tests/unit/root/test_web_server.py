@@ -203,9 +203,7 @@ def test_require_admin_and_metrics_access_paths(monkeypatch):
     assert web_server._require_admin_user(admin) is admin
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-123")
-    req = _make_request(
-        "/metrics", method="GET", headers={"Authorization": "Bearer metrics-123"}
-    )
+    req = _make_request("/metrics", method="GET", headers={"Authorization": "Bearer metrics-123"})
     assert web_server._require_metrics_access(req, user) is user
 
     req_bad = _make_request("/metrics", method="GET", headers={"Authorization": "Bearer nope"})
@@ -1457,9 +1455,10 @@ def test_verify_hmac_signature_happy_path_and_failures():
 def test_verify_hmac_signature_rejects_replayed_delivery() -> None:
     payload = b'{"delivery":true}'
     secret = "top-secret"
-    signature = "sha256=" + web_server.hmac.new(
-        secret.encode(), payload, web_server.hashlib.sha256
-    ).hexdigest()
+    signature = (
+        "sha256="
+        + web_server.hmac.new(secret.encode(), payload, web_server.hashlib.sha256).hexdigest()
+    )
     web_server._webhook_replay_seen.clear()
 
     web_server._verify_hmac_signature(
@@ -3140,7 +3139,9 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     rate_calls = {"n": 0}
 
-    async def _rate_limited(*_args, **_kwargs):
+    async def _rate_limited(namespace, *_args, **_kwargs):
+        if namespace == "ws_connect":
+            return False
         rate_calls["n"] += 1
         return rate_calls["n"] >= 2
 
@@ -9371,9 +9372,7 @@ def test_auth_helpers_and_metrics_access_paths(monkeypatch):
         web_server._require_admin_user(user)
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "token-123")
-    request = _make_request(
-        "/metrics", method="GET", headers={"Authorization": "Bearer token-123"}
-    )
+    request = _make_request("/metrics", method="GET", headers={"Authorization": "Bearer token-123"})
     assert web_server._require_metrics_access(request, user) is user
 
 

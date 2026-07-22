@@ -779,13 +779,16 @@ class SidarAgent:
             or ci_context.get("branch")
             or "unknown"
         ).strip()
-        attempt_key = "|".join(
-            (
-                str(ci_context.get("repo", "") or "").strip(),
-                str(ci_context.get("workflow_name", "") or "").strip(),
-                revision_identity,
+        attempt_key = (
+            "|".join(
+                (
+                    str(ci_context.get("repo", "") or "").strip(),
+                    str(ci_context.get("workflow_name", "") or "").strip(),
+                    revision_identity,
+                )
             )
-        ) or "default"
+            or "default"
+        )
         default_max_attempts = 1 if remediation_loop.get("needs_human_approval") else 2
         max_auto_attempts = max(
             1,
@@ -1064,9 +1067,7 @@ class SidarAgent:
                 )
             )
             preflight_limit = 1 if (ci_context or {}).get("human_approval_required") else 2
-            attempts_used = getattr(self, "_self_heal_attempts", {}).get(
-                preflight_attempt_key, 0
-            )
+            attempts_used = getattr(self, "_self_heal_attempts", {}).get(preflight_attempt_key, 0)
             if (
                 ci_context
                 and bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False))

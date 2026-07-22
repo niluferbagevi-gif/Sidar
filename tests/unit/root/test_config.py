@@ -2096,12 +2096,8 @@ def test_production_accepts_strong_database_url_password_without_postgres_env(mo
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr(
-        config.Config, "API_KEY", "ApiKey-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
-    )
-    monkeypatch.setattr(
-        config.Config, "JWT_SECRET_KEY", "JwtKey-P8tYv3wXc5aHj6sDf4GhN7b_Uz9mKq2pR"
-    )
+    monkeypatch.setattr(config.Config, "API_KEY", "ApiKey-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "JwtKey-P8tYv3wXc5aHj6sDf4GhN7b_Uz9mKq2pR")
     monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
     monkeypatch.setattr(
         config.Config,
@@ -2203,9 +2199,7 @@ def test_dotenv_reload_plan_rejects_repo_local_secret_overlay():
         config._build_dotenv_reload_plan(effective_env, profile=None)
 
 
-def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(
-    monkeypatch, tmp_path
-):
+def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch, tmp_path):
     values_by_name = {
         ".env": {"OPENAI_API_KEY": "from-base", "JWT_SECRET_KEY": "jwt-base"},
         ".env.advanced": {"OPENAI_API_KEY": "from-advanced", "SIDAR_ENV": "development"},

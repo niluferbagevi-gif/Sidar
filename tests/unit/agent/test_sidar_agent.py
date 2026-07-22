@@ -1914,7 +1914,7 @@ async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
     git = Mock()
     git.default_branch = "main"
     git.is_available.return_value = True
-    git.create_pull_request.return_value = (True, "url")
+    git.create_pull_request_hitl = AsyncMock(return_value=(True, "url"))
 
     agent.code = code
     agent.github = git
@@ -2387,7 +2387,7 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     agent.github = types.SimpleNamespace(
         is_available=lambda: True,
         default_branch="main",
-        create_pull_request=lambda *_a: (False, "err"),
+        create_pull_request_hitl=AsyncMock(return_value=(False, "err")),
     )
 
     code = Mock()
@@ -2453,7 +2453,7 @@ async def test_tool_github_smart_pr_handles_create_pr_exceptions(
     github = Mock()
     github.is_available.return_value = True
     github.default_branch = "main"
-    github.create_pull_request.side_effect = create_pr_side_effect
+    github.create_pull_request_hitl = AsyncMock(side_effect=create_pr_side_effect)
     agent.code = code
     agent.github = github
 
@@ -2856,6 +2856,7 @@ async def test_poyraz_rate_limit_returns_graceful_message_in_sidar_suite(fake_so
     poyraz.social = fake_social_api
     poyraz.social.set_rate_limit_error()
     poyraz.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))
+    poyraz._authorize_external_publication = AsyncMock(return_value=None)
 
     output = await PoyrazAgent._tool_publish_social(poyraz, "instagram|||hata testi|||sidar")
     assert output.startswith("[SOCIAL:ERROR]")
@@ -2969,7 +2970,7 @@ async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory)
 
     github = Mock()
     github.is_available.return_value = True
-    github.create_pull_request.return_value = (True, "ok")
+    github.create_pull_request_hitl = AsyncMock(return_value=(True, "ok"))
     github.default_branch = "main"
 
     code = Mock()
@@ -3616,7 +3617,7 @@ async def test_tool_github_smart_pr_base_defaults_to_main_on_error(sidar_agent_f
     type(github).default_branch = property(
         lambda _self: (_ for _ in ()).throw(RuntimeError("no-default"))
     )
-    github.create_pull_request.return_value = (True, "url")
+    github.create_pull_request_hitl = AsyncMock(return_value=(True, "url"))
 
     agent.code = code
     agent.github = github

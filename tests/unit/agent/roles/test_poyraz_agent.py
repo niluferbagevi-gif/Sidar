@@ -415,9 +415,7 @@ def test_external_publication_is_blocked_by_output_validation(poyraz_module, fak
     assert agent.social.calls == []
 
 
-def test_external_publication_is_blocked_when_hitl_rejects(
-    poyraz_module, fake_cfg, monkeypatch
-):
+def test_external_publication_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
     agent = _agent(poyraz_module, fake_cfg)
     gate = DummyHITLGate(approved=False)
     monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)

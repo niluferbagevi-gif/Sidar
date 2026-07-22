@@ -630,6 +630,8 @@ def test_repo_mock_error_branches_for_coverage():
 
     with pytest.raises(RuntimeError, match="missing"):
         repo.get_contents("does-not-exist")
+
+
 @pytest.mark.asyncio
 async def test_create_pull_request_hitl_rejects_without_approval(manager, monkeypatch):
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))

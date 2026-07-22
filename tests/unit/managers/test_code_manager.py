@@ -3049,6 +3049,8 @@ def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch)
     assert manager.docker_client is client
     assert manager.docker_available is True
     assert client.ping_called is True
+
+
 @pytest.mark.asyncio
 async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path, monkeypatch):
     target = tmp_path / "protected.txt"
