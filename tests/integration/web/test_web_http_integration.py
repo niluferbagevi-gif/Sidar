@@ -18,6 +18,23 @@ def test_healthz_endpoint_returns_http_response() -> None:
     assert "uptime_seconds" in payload
 
 
+def test_metrics_token_authenticates_through_full_middleware_chain(monkeypatch) -> None:
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "integration-metrics-token")
+    client = TestClient(app)
+
+    response = client.get(
+        "/metrics/llm", headers={"Authorization": "Bearer integration-metrics-token"}
+    )
+
+    assert response.status_code == 200
+    assert "totals" in response.json()
+
+    denied = client.get(
+        "/admin/stats", headers={"Authorization": "Bearer integration-metrics-token"}
+    )
+    assert denied.status_code == 401
+
+
 def test_root_endpoint_serves_html(monkeypatch, tmp_path: Path) -> None:
     index_file = tmp_path / "index.html"
     index_file.write_text("<html><head></head><body>ok</body></html>", encoding="utf-8")

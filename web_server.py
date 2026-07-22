@@ -110,6 +110,7 @@ from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
 from web.security import (
+    authenticate_metrics_service,
     build_user_from_jwt_payload,
     get_jwt_secret,
     get_request_user,
@@ -1088,6 +1089,15 @@ async def basic_auth_middleware(
     access_token = auth_header[7:].strip()
     if not access_token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
+
+    metrics_user = authenticate_metrics_service(request, config=cfg)
+    if metrics_user is not None:
+        request.state.user = metrics_user
+        metrics_context = set_current_metrics_user_id(metrics_user.id)
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_metrics_user_id(metrics_context)
 
     user = await _resolve_user_from_token(None, access_token)
     if not user:

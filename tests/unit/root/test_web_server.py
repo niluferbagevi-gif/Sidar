@@ -203,10 +203,12 @@ def test_require_admin_and_metrics_access_paths(monkeypatch):
     assert web_server._require_admin_user(admin) is admin
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-123")
-    req = SimpleNamespace(headers={"Authorization": "Bearer metrics-123"})
+    req = _make_request(
+        "/metrics", method="GET", headers={"Authorization": "Bearer metrics-123"}
+    )
     assert web_server._require_metrics_access(req, user) is user
 
-    req_bad = SimpleNamespace(headers={"Authorization": "Bearer nope"})
+    req_bad = _make_request("/metrics", method="GET", headers={"Authorization": "Bearer nope"})
     with pytest.raises(HTTPException):
         web_server._require_metrics_access(req_bad, user)
     assert web_server._require_metrics_access(req_bad, admin) is admin
@@ -1076,6 +1078,20 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     empty_token_res = await web_server.basic_auth_middleware(empty_token_req, _ok_next)
     assert empty_token_res.status_code == 401
     assert b"Ge" in empty_token_res.body  # Geçersiz token
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-secret")
+
+    async def _unexpected_resolve(*_):
+        raise AssertionError("METRICS_TOKEN JWT/DB çözümlemesine gönderilmemeli")
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _unexpected_resolve)
+    metrics_req = _make_request(
+        "/metrics/llm", method="GET", headers={"Authorization": "Bearer metrics-secret"}
+    )
+    metrics_res = await web_server.basic_auth_middleware(metrics_req, _ok_next)
+    assert metrics_res.status_code == 200
+    assert metrics_req.state.user.id == "metrics-service"
+    assert metrics_req.state.user.role == "metrics"
 
     async def _resolve_none(*_):
         return None
@@ -9262,7 +9278,9 @@ def test_auth_helpers_and_metrics_access_paths(monkeypatch):
         web_server._require_admin_user(user)
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "token-123")
-    request = SimpleNamespace(headers={"Authorization": "Bearer token-123"})
+    request = _make_request(
+        "/metrics", method="GET", headers={"Authorization": "Bearer token-123"}
+    )
     assert web_server._require_metrics_access(request, user) is user
 
 
@@ -9569,7 +9587,7 @@ async def test_periodic_loops_exit_when_stop_event_pre_set(monkeypatch):
 def test_require_metrics_access_without_metrics_token(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "")
     user = SimpleNamespace(id="u1", username="alice", role="user")
-    req = SimpleNamespace(headers={})
+    req = _make_request("/metrics", method="GET")
     with pytest.raises(HTTPException):
         web_server._require_metrics_access(req, user)
 

@@ -138,10 +138,27 @@ def test_request_admin_and_metrics_access_guards() -> None:
         security.require_admin_user(regular)
     assert forbidden_admin.value.status_code == 403
 
-    metrics_request = SimpleNamespace(headers=Headers({"Authorization": "Bearer metrics-token"}))
+    metrics_request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/metrics"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
     assert security.require_metrics_access(metrics_request, regular, config=_Config) is regular
 
-    denied_request = SimpleNamespace(headers=Headers({}))
+    service_user = security.authenticate_metrics_service(metrics_request, config=_Config)
+    assert service_user.id == "metrics-service"
+    assert service_user.role == "metrics"
+
+    wrong_path = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/admin/stats"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
+    assert security.authenticate_metrics_service(wrong_path, config=_Config) is None
+
+    denied_request = SimpleNamespace(
+        method="GET", url=SimpleNamespace(path="/metrics"), headers=Headers({})
+    )
     with pytest.raises(HTTPException) as forbidden_metrics:
         security.require_metrics_access(denied_request, regular, config=_Config)
     assert forbidden_metrics.value.status_code == 403
