@@ -40,6 +40,7 @@ from core.embeddings import (
 )
 
 from . import backends as _rag_backends
+from . import facade as _rag_facade
 from .backends import bm25 as bm25_backend
 from .backends import chroma as chroma_backend
 from .backends import keyword as keyword_backend
@@ -83,9 +84,6 @@ from .facade import (
 )
 from .facade import (
     _build_embedding_function_cached as _build_embedding_function_cached,
-)
-from .facade import (
-    _resolve_sentence_transformer_embedding_function as _resolve_sentence_transformer_embedding_function,
 )
 from .facade import (
     embed_texts_for_semantic_cache as embed_texts_for_semantic_cache,
@@ -166,6 +164,12 @@ from .session_documents import (
     select_removable_session_documents as _select_removable_session_documents_impl,
 )
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
+
+# Re-exported via assignment (not `import ... as`) because the combined
+# `name as name` idiom for explicit mypy reexport would exceed line-length=100.
+_resolve_sentence_transformer_embedding_function = (
+    _rag_facade._resolve_sentence_transformer_embedding_function
+)
 
 _BLEACH_AVAILABLE = True
 
