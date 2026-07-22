@@ -1454,6 +1454,26 @@ def test_verify_hmac_signature_happy_path_and_failures():
     assert "Geçersiz imza" in str(exc_info.value.detail)
 
 
+def test_verify_hmac_signature_rejects_replayed_delivery() -> None:
+    payload = b'{"delivery":true}'
+    secret = "top-secret"
+    signature = "sha256=" + web_server.hmac.new(
+        secret.encode(), payload, web_server.hashlib.sha256
+    ).hexdigest()
+    web_server._webhook_replay_seen.clear()
+
+    web_server._verify_hmac_signature(
+        payload, secret, signature, label="Webhook", replay_key="delivery-1"
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(
+            payload, secret, signature, label="Webhook", replay_key="delivery-1"
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "replay" in str(exc_info.value.detail)
+
+
 def test_build_event_driven_federation_spec_for_jira_issue_created():
     payload = {
         "action": "created",
@@ -4077,6 +4097,7 @@ def test_github_webhook_signature_validation_contract():
             SIDAR_ENV="production",
         ),
         signature_header="sha256=bad",
+        delivery_id="production-delivery",
         verify_hmac_signature=_verify,
         logger=logger,
     )
@@ -4088,6 +4109,7 @@ def test_github_webhook_signature_validation_contract():
             payload_body=b"{}",
             cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="sekret", SIDAR_ENV="test"),
             signature_header="sha256=bad",
+            delivery_id="bad-delivery",
             verify_hmac_signature=web_server._verify_hmac_signature,
             logger=logger,
         )
@@ -4529,7 +4551,10 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
         + __import__("hmac").new(b"sekret", b"{}", __import__("hashlib").sha256).hexdigest()
     )
     push_res = await web_server.github_webhook(
-        _Req(b"{}"), x_github_event="push", x_hub_signature_256=good_sig
+        _Req(b"{}"),
+        x_github_event="push",
+        x_hub_signature_256=good_sig,
+        x_github_delivery="push-delivery",
     )
     assert push_res.status_code == 200
 
@@ -4539,7 +4564,10 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
         + __import__("hmac").new(b"sekret", payload, __import__("hashlib").sha256).hexdigest()
     )
     issues_res = await web_server.github_webhook(
-        _Req(payload), x_github_event="issues", x_hub_signature_256=issue_sig
+        _Req(payload),
+        x_github_event="issues",
+        x_hub_signature_256=issue_sig,
+        x_github_delivery="issue-delivery",
     )
     assert issues_res.status_code == 200
     assert any("Issue #3" in content for role, content in agent.memory.messages if role == "user")

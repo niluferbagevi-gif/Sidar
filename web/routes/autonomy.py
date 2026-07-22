@@ -67,6 +67,7 @@ def _validate_autonomy_webhook_signature(
     payload_body: bytes,
     cfg: Any,
     signature_header: str,
+    delivery_id: str = "",
     verify_hmac_signature: Callable[..., None],
 ) -> None:
     """Apply the autonomy webhook signature contract in one testable place."""
@@ -79,11 +80,15 @@ def _validate_autonomy_webhook_signature(
             status_code=401,
             detail="Autonomy webhook secret yapılandırılmadığı için imza doğrulanamadı.",
         )
+    normalized_delivery_id = delivery_id.strip() if isinstance(delivery_id, str) else ""
+    if not normalized_delivery_id:
+        raise HTTPException(status_code=401, detail="Autonomy webhook delivery kimliği eksik.")
     verify_hmac_signature(
         payload_body,
         secret_value,
         signature_header,
         label="Autonomy webhook",
+        replay_key=normalized_delivery_id,
     )
 
 
@@ -118,6 +123,7 @@ async def autonomy_webhook(
     source: str,
     request: Request,
     x_sidar_signature: str = Header(default=""),
+    x_sidar_delivery: str = Header(default=""),
 ) -> JSONResponse:
     """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
     deps = _deps()
@@ -129,6 +135,7 @@ async def autonomy_webhook(
         payload_body=payload_body,
         cfg=deps.cfg,
         signature_header=x_sidar_signature,
+        delivery_id=x_sidar_delivery,
         verify_hmac_signature=deps.verify_hmac_signature,
     )
 

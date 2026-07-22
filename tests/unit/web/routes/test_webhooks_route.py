@@ -95,11 +95,19 @@ def test_validate_github_webhook_signature_delegates_to_shared_hmac_verifier() -
         payload_body=b"{}",
         cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="secret"),
         signature_header="sha256=ok",
+        delivery_id="delivery-1",
         verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
         logger=_Logger(),
     )
 
-    assert calls == [(b"{}", "secret", "sha256=ok", {"label": "GitHub webhook"})]
+    assert calls == [
+        (
+            b"{}",
+            "secret",
+            "sha256=ok",
+            {"label": "GitHub webhook", "replay_key": "delivery-1"},
+        )
+    ]
 
 
 def test_validate_github_webhook_signature_preserves_verifier_http_errors() -> None:
@@ -111,6 +119,7 @@ def test_validate_github_webhook_signature_preserves_verifier_http_errors() -> N
             payload_body=b"{}",
             cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="secret"),
             signature_header="sha256=bad",
+            delivery_id="delivery-bad",
             verify_hmac_signature=_raise,
             logger=_Logger(),
         )

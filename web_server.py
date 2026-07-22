@@ -25,6 +25,7 @@ import re
 import secrets
 import signal
 import sys
+import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -2648,9 +2649,19 @@ _FederationTaskRequest = federation_routes.FederationTaskRequest
 _FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
 _AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
+_WEBHOOK_REPLAY_TTL_SECONDS = 600.0
+_WEBHOOK_REPLAY_MAX_ENTRIES = 10_000
+_webhook_replay_seen: dict[str, float] = {}
+_webhook_replay_lock = threading.Lock()
+
 
 def _verify_hmac_signature(
-    payload_body: bytes, secret_value: str, signature_header: str, *, label: str
+    payload_body: bytes,
+    secret_value: str,
+    signature_header: str,
+    *,
+    label: str,
+    replay_key: str = "",
 ) -> None:
     secret = str(secret_value or "").encode("utf-8")
     if not secret:
@@ -2663,6 +2674,24 @@ def _verify_hmac_signature(
     expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_signature, signature_header):
         raise HTTPException(status_code=401, detail="Geçersiz imza.")
+    normalized_replay_key = str(replay_key or "").strip()
+    if normalized_replay_key:
+        cache_key = f"{label}:{normalized_replay_key}"
+        now = time.monotonic()
+        with _webhook_replay_lock:
+            expired = [
+                key
+                for key, seen_at in _webhook_replay_seen.items()
+                if now - seen_at >= _WEBHOOK_REPLAY_TTL_SECONDS
+            ]
+            for key in expired:
+                _webhook_replay_seen.pop(key, None)
+            if cache_key in _webhook_replay_seen:
+                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
+            if len(_webhook_replay_seen) >= _WEBHOOK_REPLAY_MAX_ENTRIES:
+                oldest_key = min(_webhook_replay_seen.items(), key=lambda item: item[1])[0]
+                _webhook_replay_seen.pop(oldest_key, None)
+            _webhook_replay_seen[cache_key] = now
 
 
 def _build_autonomy_dependencies() -> SimpleNamespace:
