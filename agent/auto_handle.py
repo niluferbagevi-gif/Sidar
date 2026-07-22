@@ -217,7 +217,7 @@ class AutoHandle:
             return True, "⚠ Kullanım: .heal <log_dosyası>"
         log_path = m.group(1).strip().strip("'\"")
         candidate = Path(log_path)
-        if not candidate.exists():
+        if not await asyncio.to_thread(candidate.exists):
             return True, f"⚠ Log dosyası bulunamadı: {log_path}"
         try:
             log_text = await asyncio.to_thread(candidate.read_text, encoding="utf-8")

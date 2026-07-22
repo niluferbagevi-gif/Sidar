@@ -224,13 +224,17 @@ async def download_remote_media(
         raise ValueError("Yalnızca http/https medya kaynakları destekleniyor.")
 
     target_dir = Path(output_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(target_dir.mkdir, parents=True, exist_ok=True)
     platform = detect_video_platform(source_url)
     if platform == "youtube" and _command_exists("yt-dlp"):
         template = target_dir / "%(id)s.%(ext)s"
         command = ["yt-dlp", "--no-playlist", "-o", str(template), source_url]
         await asyncio.to_thread(_run_subprocess, command)
-        files = sorted(path for path in target_dir.iterdir() if path.is_file())
+
+        def _list_downloaded_files() -> list[Path]:
+            return sorted(path for path in target_dir.iterdir() if path.is_file())
+
+        files = await asyncio.to_thread(_list_downloaded_files)
         if not files:
             raise RuntimeError("yt-dlp çıktı dosyası üretmedi.")
         media_path = files[0]
@@ -320,7 +324,7 @@ async def materialize_remote_media_for_ffmpeg(
 
     stream = await resolve_remote_media_stream(source_url, prefer_video=True)
     target_dir = Path(output_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(target_dir.mkdir, parents=True, exist_ok=True)
     suffix = _guess_suffix(mime_type or str(stream.get("mime_type") or ""), ".mp4")
     safe_title = re.sub(r"[^A-Za-z0-9._-]+", "_", str(stream.get("title") or "").strip()).strip("_")
     file_name = safe_title or f"{stream.get('platform', 'remote')}_stream"
@@ -370,7 +374,7 @@ async def extract_video_frames(
         raise RuntimeError("Video frame çıkarımı için ffmpeg gerekli.")
 
     source = Path(path)
-    if not source.exists():
+    if not await asyncio.to_thread(source.exists):
         raise FileNotFoundError(f"Medya dosyası bulunamadı: {source}")
 
     target_dir = Path(output_dir) if output_dir else source.parent / f"{source.stem}_frames"
@@ -410,7 +414,7 @@ async def extract_audio_track(
         raise RuntimeError("Ses kanalı ayırmak için ffmpeg gerekli.")
 
     source = Path(path)
-    if not source.exists():
+    if not await asyncio.to_thread(source.exists):
         raise FileNotFoundError(f"Medya dosyası bulunamadı: {source}")
 
     target = Path(output_path) if output_path else source.with_suffix(".wav")
@@ -442,7 +446,7 @@ async def transcribe_audio(
 ) -> dict[str, Any]:
     """Whisper CLI üzerinden sesi metne döker."""
     source = Path(path)
-    if not source.exists():
+    if not await asyncio.to_thread(source.exists):
         raise FileNotFoundError(f"Ses dosyası bulunamadı: {source}")
 
     provider_name = (provider or "whisper").strip().lower()
@@ -699,9 +703,16 @@ class MultimodalPipeline:
         transcript_override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         source = Path(media_path)
-        if not source.exists():
+
+        def _probe_source() -> tuple[bool, int]:
+            if not source.exists():
+                return False, 0
+            return True, source.stat().st_size
+
+        source_exists, source_size = await asyncio.to_thread(_probe_source)
+        if not source_exists:
             return {"success": False, "reason": f"Medya dosyası bulunamadı: {source}"}
-        if source.stat().st_size > self.max_media_bytes:
+        if source_size > self.max_media_bytes:
             return {"success": False, "reason": "Medya dosyası boyut limitini aşıyor"}
 
         media_kind = detect_media_kind(mime_type=mime_type, path=source)

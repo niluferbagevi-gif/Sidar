@@ -341,17 +341,18 @@ class DatasetExporter:
 
         content = "".join(lines)
 
-        def _write_file() -> None:
+        def _write_file() -> str:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(content, encoding="utf-8")
+            return str(out.resolve())
 
-        await asyncio.to_thread(_write_file)
+        resolved_path = await asyncio.to_thread(_write_file)
 
         if mark_done and ids:
             await self.store.mark_exported(ids)
 
         logger.info("DatasetExporter: %d kayıt → %s (%s)", len(ids), output_path, fmt)
-        return {"path": str(out.resolve()), "count": len(ids), "format": fmt}
+        return {"path": resolved_path, "count": len(ids), "format": fmt}
 
 
 class ContinuousLearningPipeline:

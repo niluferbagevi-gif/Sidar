@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
 import logging
@@ -27,14 +28,18 @@ def _prompt_record(prompt_record_cls: type[Any], row: Any, *, sqlite_bool: bool 
     )
 
 
-async def ensure_default_prompt_registry(db: Any, *, prompt_record_cls: type[Any]) -> None:
+def _load_default_prompt() -> str:
     definitions_path = Path(__file__).resolve().parents[2] / "agent" / "definitions.py"
     spec = importlib.util.spec_from_file_location("sidar_agent_definitions", definitions_path)
-    default_prompt = ""
     if spec and spec.loader:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        default_prompt = str(getattr(module, "SIDAR_SYSTEM_PROMPT", "") or "")
+        return str(getattr(module, "SIDAR_SYSTEM_PROMPT", "") or "")
+    return ""
+
+
+async def ensure_default_prompt_registry(db: Any, *, prompt_record_cls: type[Any]) -> None:
+    default_prompt = await asyncio.to_thread(_load_default_prompt)
 
     existing = await get_active_prompt(db, "system", prompt_record_cls=prompt_record_cls)
     if existing or not default_prompt:
