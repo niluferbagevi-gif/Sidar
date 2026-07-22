@@ -2196,7 +2196,16 @@ def test_config_helper_edge_cases_cover_centralized_env_helpers(monkeypatch):
     assert config.get_bool_prefixed_env("SIDAR_BOOL_FALSE", "LEGACY_BOOL_FALSE", True) is False
 
 
-def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch):
+def test_dotenv_reload_plan_rejects_repo_local_secret_overlay():
+    effective_env = {"SIDAR_ENV": "development", "SIDAR_KEYS_FILE": ".env"}
+
+    with pytest.raises(ValueError, match="repository dışında"):
+        config._build_dotenv_reload_plan(effective_env, profile=None)
+
+
+def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(
+    monkeypatch, tmp_path
+):
     values_by_name = {
         ".env": {"OPENAI_API_KEY": "from-base", "JWT_SECRET_KEY": "jwt-base"},
         ".env.advanced": {"OPENAI_API_KEY": "from-advanced", "SIDAR_ENV": "development"},
@@ -2219,7 +2228,7 @@ def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monke
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     monkeypatch.setenv("DOTENV_FILE", "runtime.env")
-    monkeypatch.setenv("SIDAR_KEYS_FILE", "keys.env")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(tmp_path / "keys.env"))
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr("dotenv.load_dotenv", fake_load_dotenv)
 
@@ -2250,7 +2259,9 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     explicit_env.write_text(
         "OPENAI_API_KEY=from-explicit\nJWT_SECRET_KEY=jwt-explicit\n", encoding="utf-8"
     )
-    keys_env = tmp_path / "keys.env"
+    secret_dir = tmp_path.parent / f"{tmp_path.name}-secrets"
+    secret_dir.mkdir()
+    keys_env = secret_dir / "keys.env"
     keys_env.write_text("OPENAI_API_KEY=from-secret\n", encoding="utf-8")
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)

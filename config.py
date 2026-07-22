@@ -188,6 +188,11 @@ def _resolve_dotenv_path(raw_path: str) -> Path:
     return config_dotenv.resolve_dotenv_path(raw_path, base_dir=BASE_DIR)
 
 
+def _validate_sidar_keys_file_path(raw_path: str) -> Path | None:
+    """Reject SIDAR_KEYS_FILE paths that resolve inside the repository."""
+    return config_dotenv.validate_secret_overlay_outside_repo(raw_path, base_dir=BASE_DIR)
+
+
 def _load_dotenv_if_exists(
     raw_path: str,
     *,
@@ -283,6 +288,7 @@ _load_dotenv_if_exists(_explicit_dotenv, override=True, label="explicit:DOTENV_F
 # 6. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
 #    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
 _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+_validate_sidar_keys_file_path(_sidar_keys_file)
 _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
 
 ENV_PATH = base_env_path
@@ -327,7 +333,7 @@ def _build_dotenv_reload_plan(
 ) -> DotenvReloadPlan:
     """Build and validate the dotenv reload chain plan from the effective environment."""
     selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-    return DotenvReloadPlan(
+    plan = DotenvReloadPlan(
         profile=selected_profile,
         base_path=BASE_DIR / ".env",
         advanced_path=BASE_DIR / ".env.advanced",
@@ -335,6 +341,8 @@ def _build_dotenv_reload_plan(
         sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
         skip_default_layers=_skip_default_dotenv_layers(effective_env),
     )
+    _validate_sidar_keys_file_path(plan.sidar_keys_file)
+    return plan
 
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
