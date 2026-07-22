@@ -694,6 +694,36 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "mask_install_log_stream masks every user API key/secret collected by sidar_user_api_key_names" {
+  run_installer_function '
+    mapfile -t collected_keys < <(sidar_user_api_key_names)
+    [ "${#collected_keys[@]}" -gt 0 ]
+
+    lines=()
+    for key in "${collected_keys[@]}"; do
+      lines+=("${key}=super-secret-value-${key}")
+    done
+    lines+=("random_line=not_a_secret")
+
+    masked_output="$(printf "%s\n" "${lines[@]}" | mask_install_log_stream)"
+
+    for key in "${collected_keys[@]}"; do
+      if ! printf "%s\n" "$masked_output" | grep -qF "${key}=****"; then
+        echo "FAIL: ${key} was not masked" >&2
+        printf "%s\n" "$masked_output" >&2
+        exit 1
+      fi
+      if printf "%s\n" "$masked_output" | grep -qF "super-secret-value-${key}"; then
+        echo "FAIL: ${key} value leaked unmasked" >&2
+        exit 1
+      fi
+    done
+
+    printf "%s\n" "$masked_output" | grep -qF "random_line=not_a_secret"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "harden_database_credentials rewrites weak DATABASE_URL and syncs postgres env values" {
   local tmpdir env_file
   tmpdir="$(mktemp -d)"

@@ -1564,9 +1564,22 @@ def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> N
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
     install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
+    installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
 
+    # sidar_user_api_key_names() must delegate to the single-source-of-truth array
+    # in install_sidar.sh (shared with mask_install_log_stream()'s masking pattern)
+    # instead of keeping its own separately-maintained hardcoded key list; see
+    # test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys.
     api_keys_start = install_script.index("sidar_user_api_key_names()")
-    api_keys_block = install_script[api_keys_start : install_script.index("}", api_keys_start)]
+    api_keys_block = install_script[
+        api_keys_start : install_script.index("\n}\n", api_keys_start)
+    ]
+    assert 'printf \'%s\\n\' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"' in api_keys_block
+
+    keys_array_start = installer_root.index("SIDAR_USER_SECRET_ENV_KEYS=(")
+    keys_array_block = installer_root[
+        keys_array_start : installer_root.index(")", keys_array_start)
+    ]
     for key in (
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
@@ -1575,7 +1588,7 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
         "JIRA_TOKEN",
         "TEAMS_WEBHOOK_URL",
     ):
-        assert key in api_keys_block
+        assert key in keys_array_block
 
     collect_start = install_script.index("collect_api_keys_interactive()")
     collect_block = install_script[
@@ -1623,6 +1636,33 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
         report_start : install_script.index("validate_runtime_env_loading()", report_start)
     ]
     assert "mapfile -t key_order < <(sidar_user_api_key_names)" in report_block
+
+
+def test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys() -> None:
+    """Regression test for a real leak: mask_install_log_stream() and
+    sidar_user_api_key_names() used to keep two independently-maintained
+    allowlists, so GITHUB_TOKEN/SLACK_TOKEN/TAVILY_API_KEY/HF_TOKEN/JIRA_TOKEN
+    were collected as user API keys but never masked in install logs. Both
+    must now read from the same SIDAR_USER_SECRET_ENV_KEYS array.
+    """
+    installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert "SIDAR_INTERNAL_SECRET_ENV_KEYS=(" in installer_root
+    assert "SIDAR_USER_SECRET_ENV_KEYS=(" in installer_root
+    assert installer_root.index("SIDAR_USER_SECRET_ENV_KEYS=(") < installer_root.index(
+        "mask_install_log_stream() {"
+    )
+
+    mask_fn_start = installer_root.index("mask_install_log_stream() {")
+    mask_fn = installer_root[mask_fn_start : installer_root.index("\n}\n", mask_fn_start)]
+    assert "SIDAR_INTERNAL_SECRET_ENV_KEYS[*]" in mask_fn
+    assert "SIDAR_USER_SECRET_ENV_KEYS[*]" in mask_fn
+    assert 'masked_keys_pattern="$(' in mask_fn
+    assert '"s#((${masked_keys_pattern})=)[^[:space:]\\";]+#\\1****#g"' in mask_fn
+    assert (
+        '"s#(\\"(${masked_keys_pattern})\\"[[:space:]]*:[[:space:]]*\\")[^\\"]*\\"#\\1****\\"#g"'
+        in mask_fn
+    )
 
 
 def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:

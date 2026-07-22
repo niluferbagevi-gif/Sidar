@@ -117,17 +117,50 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+# Sidar'ın kendi ürettiği/yönettiği dahili secret'lar (kullanıcının interaktif
+# API key toplama akışının parçası değildir, bu yüzden aşağıdaki kullanıcı
+# secret listesinden ayrı tutulur).
+SIDAR_INTERNAL_SECRET_ENV_KEYS=(
+    DATABASE_URL SIDAR_CONTAINER_DATABASE_URL SELF_HEAL_DATABASE_URL
+    TEST_DATABASE_URL LOCAL_DEV_FALLBACK_DATABASE_URL POSTGRES_PASSWORD
+    API_KEY JWT_SECRET_KEY MEMORY_ENCRYPTION_KEY AUTONOMY_WEBHOOK_SECRET
+    SWARM_FEDERATION_SHARED_SECRET GITHUB_WEBHOOK_SECRET GRAFANA_ADMIN_PASSWORD
+    METRICS_TOKEN SIDAR_REDIS_URL REDIS_URL RABBITMQ_URL SIDAR_RABBITMQ_URL
+)
+
+# Kullanıcının interaktif olarak sağladığı API key/secret adlarının TEK
+# doğruluk kaynağı. scripts/install_modules/phases/08_env.sh içindeki
+# sidar_user_api_key_names() bu diziyi olduğu gibi döndürür; aşağıdaki log
+# maskeleme deseni de aynı diziyi kullanır. Yeni bir kullanıcı API
+# key'i/secret'ı eklerken SADECE bu diziyi güncelleyin — iki ayrı allowlist'i
+# elle senkron tutmaya çalışmayın (bu, önceden GITHUB_TOKEN, SLACK_TOKEN,
+# TAVILY_API_KEY, HF_TOKEN, JIRA_TOKEN gibi değerlerin log maskelemesinden
+# sessizce dışarıda kalmasına yol açan tam da bu sınıf bir bug'dı).
+SIDAR_USER_SECRET_ENV_KEYS=(
+    OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
+    GITHUB_TOKEN
+    TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
+    SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
+    JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT
+    TEAMS_WEBHOOK_URL
+)
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz.
 # Filtre önce terminal/log fan-out'una girer; böylece set -x, sed hata çıktısı
 # veya beklenmeyen tool çıktıları DATABASE_URL/parola/token değerlerini hem
 # terminalden hem de kalıcı log dosyasından maskeler.
 mask_install_log_stream() {
+    local masked_keys_pattern
+    masked_keys_pattern="$(
+        IFS='|'
+        printf '%s' "${SIDAR_INTERNAL_SECRET_ENV_KEYS[*]}|${SIDAR_USER_SECRET_ENV_KEYS[*]}"
+    )"
     sed -u -E \
         -e 's#((postgresql|postgres|mysql|mariadb)(\+[^:/@[:space:]]+)?://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
         -e 's#((redis|rediss|amqp|amqps|mongodb|mongodb\+srv)://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
-        -e 's#((DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)=)[^[:space:]";]+#\1****#g' \
+        -e "s#((${masked_keys_pattern})=)[^[:space:]\";]+#\1****#g" \
         -e 's#((generated_password|safe_db_url|container_db_url|db_password|db_url|api_key|memory_key|grafana_password|pg_password)=)[^[:space:]";]+#\1****#gi' \
-        -e 's#("(DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)"[[:space:]]*:[[:space:]]*")[^"]*"#\1****"#g' \
+        -e "s#(\"(${masked_keys_pattern})\"[[:space:]]*:[[:space:]]*\")[^\"]*\"#\1****\"#g" \
         -e 's#((Authorization|X-API-Key|X-Auth-Token):[[:space:]]*)(Bearer[[:space:]]+)?[^[:space:]]+#\1\3****#gi'
 }
 
@@ -572,7 +605,7 @@ e7f820d4b649b87dca61f4fab70177917e65ba41c0f78d6ee7d82c185d82fafb  scripts/instal
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
 2e0fc43c0f177da51d1252e3da257025df9f5ce476f0f16324af3fbb0fb38d87  scripts/install_modules/phases/06_services.sh
 1d15811d323818d868d273f719178a04e37ad953c76e4ab62b08dd7bac59645c  scripts/install_modules/phases/07_finish.sh
-5741340667d03fb94383b7162091ae6cdeff4cc19931e2e5731146621b2e1e36  scripts/install_modules/phases/08_env.sh
+fc2f1fc492a888b8431a4051c3d716ef4a5938101059b811079701eacbf03eef  scripts/install_modules/phases/08_env.sh
 3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
 03d9297bf0326f953e2b036a496d181be3868c7cd1afdebfb1f8a8bac104581a  scripts/install_modules/phases/10_validation.sh
 d75380e5a3cf44b35f6fc894a41c774a1e3afd2b0eb0735aa8b75a754d5d58db  scripts/install_modules/phases/11_post_install.sh

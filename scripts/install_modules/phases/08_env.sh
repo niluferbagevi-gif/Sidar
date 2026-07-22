@@ -33,14 +33,14 @@ ensure_rag_vector_backend_pgvector() {
 # anahtarları tek merkezden yönetilir. Bu liste .env, raporlama ve .env.*
 # varyant senkronizasyonunda ortak kullanılarak .env.advanced gibi şablondan
 # üretilen dosyalarda boş placeholder kalması engellenir.
+#
+# SIDAR_USER_SECRET_ENV_KEYS dizisi (tek doğruluk kaynağı) install_sidar.sh
+# içinde, mask_install_log_stream()'in de kullandığı log maskeleme deseninin
+# hemen yanında tanımlıdır. Burada ayrı bir liste tutmayın: iki allowlist'in
+# elle senkron kalması gerektiği bir tasarım, yeni bir key eklendiğinde
+# birinin unutulup secret'ın loglara sızmasına yol açar.
 sidar_user_api_key_names() {
-    printf '%s\n' \
-        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN \
-        GITHUB_TOKEN \
-        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX \
-        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL \
-        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT \
-        TEAMS_WEBHOOK_URL
+    printf '%s\n' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"
 }
 
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
