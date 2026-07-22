@@ -514,6 +514,46 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     )
 
 
+def test_benchmark_compare_warns_when_baseline_is_stale() -> None:
+    script = _script()
+
+    assert 'BENCHMARK_BASELINE_MAX_AGE_DAYS="${BENCHMARK_BASELINE_MAX_AGE_DAYS:-14}"' in script
+    assert "benchmark_baseline_age_days()" in script
+    assert 'stat -c %Y "${baseline_file}"' in script
+    assert 'stat -f %m "${baseline_file}"' in script
+
+    compare_block = script[
+        script.index('if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then') : script.index(
+            "BENCHMARK_COMPARE_STATUS=\"missing_baseline\""
+        )
+    ]
+    assert "benchmark_baseline_age_days_value=" in compare_block
+    assert "benchmark_baseline_age_days \"${BENCHMARK_COMPARE_FILE}\"" in compare_block
+    assert (
+        '[ "${benchmark_baseline_age_days_value}" -ge "${BENCHMARK_BASELINE_MAX_AGE_DAYS}" ]'
+        in compare_block
+    )
+    assert "gündür yenilenmedi" in compare_block
+    assert "make benchmark-seed" in compare_block
+    # Freshness check must run before the enforce/report-only branch, not after.
+    assert compare_block.index("gündür yenilenmedi") < compare_block.index(
+        'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then'
+    )
+
+
+def test_release_scope_warning_flags_gpu_quality_gate_as_out_of_scope() -> None:
+    warning_fn = _extract_run_tests_function("print_release_scope_warning_once")
+    assert "GPU Inference Quality Gate" in warning_fn
+    assert "ENABLE_GPU_BENCH_GATE=true" in warning_fn
+    assert "self-hosted" in warning_fn
+    assert "production_ready=true bu gate'in de" in warning_fn
+    # The GPU-gate note must be unconditional (printed regardless of which
+    # release-scope branch is taken), so it has to precede the branching.
+    assert warning_fn.index("GPU Inference Quality Gate") < warning_fn.index(
+        "production_readiness_gate_active"
+    )
+
+
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")

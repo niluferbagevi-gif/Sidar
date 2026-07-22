@@ -32,3 +32,23 @@ resolve_benchmark_compare_target() {
   BENCHMARK_COMPARE_SELECTOR="${latest_file}"
   return 0
 }
+
+# Bir benchmark baseline JSON dosyasının değişiklik zamanından bu yana geçen
+# gün sayısını stdout'a yazar. GNU (`stat -c`) ve BSD (`stat -f`) stat
+# varyantlarını dener. Dosya yoksa veya mtime okunamazsa 1 döner.
+benchmark_baseline_age_days() {
+  local baseline_file="${1:-}"
+  local mtime now
+
+  if [ -z "${baseline_file}" ] || [ ! -f "${baseline_file}" ]; then
+    return 1
+  fi
+
+  mtime="$(stat -c %Y "${baseline_file}" 2>/dev/null)" \
+    || mtime="$(stat -f %m "${baseline_file}" 2>/dev/null)" \
+    || return 1
+  now="$(date +%s)"
+
+  echo $(( (now - mtime) / 86400 ))
+  return 0
+}

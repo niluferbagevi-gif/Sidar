@@ -634,6 +634,9 @@ BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
 BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.json}"
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
+# Bir benchmark baseline'ı bu eşikten daha eskiyse (gün), karşılaştırma yine de
+# çalışır ama bayat bir baseline'a karşı ölçüldüğü konusunda uyarı basılır.
+BENCHMARK_BASELINE_MAX_AGE_DAYS="${BENCHMARK_BASELINE_MAX_AGE_DAYS:-14}"
 AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"
 AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"
@@ -1908,6 +1911,12 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
       benchmark_compare_target_found=1
       benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
+      benchmark_baseline_age_days_value="$(benchmark_baseline_age_days "${BENCHMARK_COMPARE_FILE}" 2>/dev/null || true)"
+      if [ -n "${benchmark_baseline_age_days_value}" ] \
+        && [ "${benchmark_baseline_age_days_value}" -ge "${BENCHMARK_BASELINE_MAX_AGE_DAYS}" ]; then
+        echo "⚠️ Benchmark baseline ${benchmark_baseline_age_days_value} gündür yenilenmedi (eşik: ${BENCHMARK_BASELINE_MAX_AGE_DAYS} gün): ${BENCHMARK_COMPARE_FILE}"
+        echo "ℹ️ Bayat bir baseline'a karşı karşılaştırma yanıltıcı olabilir; 'make benchmark-seed' ile yenileyin."
+      fi
       if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
         BENCHMARK_COMPARE_STATUS="compared_enforced"
         echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
@@ -2148,6 +2157,11 @@ print_release_scope_warning_once() {
     return 0
   fi
   RELEASE_SCOPE_WARNING_PRINTED=1
+
+  echo "ℹ️ GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms) bu koşuya dahil değildir."
+  echo "   CI'da yalnızca 'ENABLE_GPU_BENCH_GATE=true' repo/org değişkeni ayarlıysa ve self-hosted"
+  echo "   GPU runner mevcutsa ayrı bir job olarak çalışır; production_ready=true bu gate'in de"
+  echo "   geçtiği anlamına gelmez."
 
   if production_readiness_gate_active; then
     echo "✅ Production readiness kapsamı aktif: ${PRODUCTION_READINESS_COMMAND}"
