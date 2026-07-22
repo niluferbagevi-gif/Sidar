@@ -2488,6 +2488,23 @@ async def test_local_rate_limit_fallback_cleans_expired_keys_and_bounds_cardinal
     web_server._local_rate_expiries.clear()
 
 
+@pytest.mark.asyncio
+async def test_websocket_connection_guard_uses_shared_ip_bucket(monkeypatch):
+    calls = []
+
+    async def _check(namespace, key, limit, window):
+        calls.append((namespace, key, limit, window))
+        return True
+
+    monkeypatch.setattr(web_server, "_get_client_ip", lambda _websocket: "203.0.113.8")
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _check)
+    monkeypatch.setattr(web_server, "_RATE_LIMIT_WS_CONNECTIONS", 7)
+    monkeypatch.setattr(web_server, "_RATE_WINDOW", 45)
+
+    assert await web_server._ws_connection_is_rate_limited(SimpleNamespace()) is True
+    assert calls == [("ws_connect", "203.0.113.8", 7, 45)]
+
+
 def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch):
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
 

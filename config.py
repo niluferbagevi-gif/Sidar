@@ -775,10 +775,14 @@ class Config:
     SIDAR_RATE_LIMIT_CHAT: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_chat
     SIDAR_RATE_LIMIT_MUTATIONS: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_mutations
     SIDAR_RATE_LIMIT_GET_IO: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_get_io
+    SIDAR_RATE_LIMIT_WS_CONNECTIONS: int = (
+        _RATE_LIMIT_SETTINGS.sidar_rate_limit_ws_connections
+    )
     RATE_LIMIT_WINDOW: int = SIDAR_RATE_LIMIT_WINDOW
     RATE_LIMIT_CHAT: int = SIDAR_RATE_LIMIT_CHAT
     RATE_LIMIT_MUTATIONS: int = SIDAR_RATE_LIMIT_MUTATIONS
     RATE_LIMIT_GET_IO: int = SIDAR_RATE_LIMIT_GET_IO
+    RATE_LIMIT_WS_CONNECTIONS: int = SIDAR_RATE_LIMIT_WS_CONNECTIONS
     SIDAR_REDIS_URL: str = _RATE_LIMIT_SETTINGS.sidar_redis_url
     REDIS_URL: str = SIDAR_REDIS_URL
     SIDAR_REDIS_MAX_CONNECTIONS: int = _RATE_LIMIT_SETTINGS.sidar_redis_max_connections
@@ -1486,6 +1490,7 @@ class Config:
             "rate_limit_chat": cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
             "rate_limit_get_io": cls.RATE_LIMIT_GET_IO,
+            "rate_limit_ws_connections": cls.RATE_LIMIT_WS_CONNECTIONS,
             # REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
             "enable_tracing": cls.ENABLE_TRACING,
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,

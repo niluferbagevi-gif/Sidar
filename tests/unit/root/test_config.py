@@ -647,6 +647,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     monkeypatch.setattr(config.Config, "RATE_LIMIT_CHAT", 20)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_MUTATIONS", 60)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_GET_IO", 30)
+    monkeypatch.setattr(config.Config, "RATE_LIMIT_WS_CONNECTIONS", 12)
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", False)
     monkeypatch.setattr(config.Config, "OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
     monkeypatch.setattr(config.Config, "ENABLE_SEMANTIC_CACHE", False)
@@ -659,6 +660,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     assert info["provider"] == "ollama"
     assert info["gpu_enabled"] is False
     assert info["hf_use_local_cache_only"] is True
+    assert info["rate_limit_ws_connections"] == 12
     assert "REDIS_URL" not in info
 
 

@@ -1690,6 +1690,7 @@ RATE_LIMIT_WINDOW_SEC = 60
 _RATE_LIMIT = cfg.RATE_LIMIT_CHAT
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS
 _RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO
+_RATE_LIMIT_WS_CONNECTIONS = cfg.RATE_LIMIT_WS_CONNECTIONS
 _RATE_WINDOW = cfg.RATE_LIMIT_WINDOW
 # GET requests are rate-limited by default; only cheap/frequently-polled paths
 # below are exempt. This mirrors the mutation-limit branch just above, which
@@ -1875,6 +1876,14 @@ def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
     return f"ip:{fallback_ip}"
 
 
+async def _ws_connection_is_rate_limited(websocket: WebSocket) -> bool:
+    """Apply the shared pre-accept connection bucket to chat and voice sockets."""
+    client_ip = _get_client_ip(cast(Request, websocket))
+    return await _redis_is_rate_limited(
+        "ws_connect", client_ip, _RATE_LIMIT_WS_CONNECTIONS, _RATE_WINDOW
+    )
+
+
 async def ddos_rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -2004,6 +2013,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         socket_key=_socket_key,
         strip_sidar_mention=_strip_sidar_mention,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
     )
 
 
@@ -2028,6 +2038,7 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
         resolve_agent_instance=_resolve_agent_instance,
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
         ws_stream_agent_text_response=_ws_stream_agent_text_response,
         ws_voice_protocol=web_security.SIDAR_WS_VOICE_PROTOCOL,
     )

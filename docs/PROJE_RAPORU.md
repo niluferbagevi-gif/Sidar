@@ -1259,7 +1259,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `SEMANTIC_CACHE_TTL` / `SEMANTIC_CACHE_MAX_ITEMS` | `3600` / `500` | Cache ömrü ve LRU kapasitesi |
 | `SIDAR_REDIS_URL` (`REDIS_URL` legacy) | `.env.example`: `redis://redis:6379/0`, `config.py` fallback: `redis://localhost:6379/0` | Semantic cache, rate limiting ve event-stream katmanının Redis bağlantısı |
 | `SIDAR_EVENT_BUS_CHANNEL` / `SIDAR_EVENT_BUS_GROUP` | `sidar:agent_events` / `sidar:agent_events:cg` | Swarm/event bus için Redis Streams kanal ve consumer group adları |
-| `SIDAR_RATE_LIMIT_WINDOW` / `SIDAR_RATE_LIMIT_CHAT` / `SIDAR_RATE_LIMIT_MUTATIONS` / `SIDAR_RATE_LIMIT_GET_IO` | `60` / `20` / `60` / `30` | API rate-limiting penceresi ve endpoint bazlı limitler |
+| `SIDAR_RATE_LIMIT_WINDOW` / `SIDAR_RATE_LIMIT_CHAT` / `SIDAR_RATE_LIMIT_MUTATIONS` / `SIDAR_RATE_LIMIT_GET_IO` / `SIDAR_RATE_LIMIT_WS_CONNECTIONS` | `60` / `20` / `60` / `30` / `30` | API istekleri ile chat/voice WebSocket bağlantı açma denemelerinin pencere ve endpoint bazlı limitleri |
 | `TRUSTED_PROXIES` | `""` | Güvenilir ters proxy IP listesi; boşsa proxy başlıkları güvenilmez sayılır |
 | `MAX_RAG_UPLOAD_BYTES` | `52428800` | RAG dosya yükleme üst limiti (50 MB) |
 

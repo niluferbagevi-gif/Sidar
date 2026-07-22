@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from web.routes.ws_chat import send_json_if_connected, websocket_is_connected
-from web.routes.ws_lifecycle import WebSocketLifecycle
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import (
     SIDAR_WS_VOICE_PROTOCOL,
 )
@@ -39,6 +39,9 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
     - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
     - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
     extract_ws_header_token = getattr(
         deps, "extract_ws_header_token", default_extract_ws_header_token
