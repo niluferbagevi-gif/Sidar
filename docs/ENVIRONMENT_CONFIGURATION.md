@@ -51,7 +51,7 @@ repo-local `.env`, `.env.advanced`, and `.env.${SIDAR_ENV}`. `DOTENV_FILE` and
 | `.env.advanced` | Optional advanced runtime knobs generated from `.env.advanced.example`. | No | Use for uncommon tuning, not duplicate baseline secrets or real provider API keys manually. |
 | `.env.development` | Development-profile overrides generated from `.env.development.example`. | No | Keep only values that should differ from `.env`. |
 | `.env.test` | Smoke/unit-test profile overrides generated from `.env.test.example`. | No | Real service API keys are not copied here unless explicitly opted in. |
-| `.env.production` | Production-profile overrides generated from `.env.production.example`. | No | Review manually before production use. |
+| `.env.production` | Explicit production-only overrides created by the rotation workflow or secret manager integration; the installer never copies local/dev secrets into it. | No | Required secrets must be populated and isolated before `SIDAR_ENV=production` can be persisted. |
 | `.env.*.example` | Versioned templates. | Yes | Add new keys here when a new setting is introduced. |
 | `~/.sidar_keys.env` or `SIDAR_KEYS_FILE` | User-private secret overlay. | No | Preferred and default installer target for personal provider API keys. Keep mode `600` or stricter. |
 

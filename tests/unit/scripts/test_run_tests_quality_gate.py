@@ -5788,6 +5788,11 @@ def test_installer_warns_when_production_env_shares_local_generated_secrets() ->
     assert "sidar_shared_production_secret_keys()" in env_phase
     assert "production_secret_rotation_gate_passes()" in env_phase
     assert "SIDAR_ENV=production kalıcılaştırması engellendi" in env_phase
+    propagate_start = env_phase.index("propagate_shared_secrets_to_env_variants()")
+    propagate_end = env_phase.index("# GPU tespiti", propagate_start)
+    propagate_block = env_phase[propagate_start:propagate_end]
+    assert '".env.production:.env.production.example"' not in propagate_block
+    assert ".env.production bilinçli olarak oluşturulmaz veya doldurulmaz" in propagate_block
 
 
 def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -> None:
@@ -5796,6 +5801,32 @@ def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -
     shared = "shared-secret-value-abcdefghijklmnopqrstuvwxyz"
     local_env.write_text(f"API_KEY={shared}\n", encoding="utf-8")
     production_env.write_text(f"API_KEY={shared}\n", encoding="utf-8")
+
+    probe = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source scripts/install_modules/utils/env_utils.sh; "
+            "source scripts/install_modules/phases/08_env.sh; "
+            'SCRIPT_DIR="$1"; warn() { :; }; '
+            'if production_secret_rotation_gate_passes "$1/.env"; then echo allowed; '
+            "else echo blocked; fi",
+            "gate-probe",
+            str(tmp_path),
+        ],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert probe.stdout.strip() == "blocked"
+
+
+def test_production_secret_rotation_gate_rejects_missing_production_profile(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text("API_KEY=local-only-secret\n", encoding="utf-8")
 
     probe = subprocess.run(
         [

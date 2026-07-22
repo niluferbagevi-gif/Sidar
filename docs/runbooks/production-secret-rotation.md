@@ -34,6 +34,10 @@ secret'larla değiştirilmelidir:
 
 ## Production cutover checklist
 
+Installer `.env.production` dosyasını local/development secret değerleriyle otomatik
+oluşturmaz veya doldurmaz. Dosya yoksa ya da aşağıdaki sekiz production secret'ından
+biri boş/local değerle aynıysa `SIDAR_ENV=production` kalıcılaştırması engellenir.
+
 1. **Snapshot al:** `.env`, `.env.test`, `.env.production` ve hedef secret manager
    değerlerini parola göstermeden envantere al; dosya izinlerinin `600` veya daha sıkı
    olduğunu doğrula.

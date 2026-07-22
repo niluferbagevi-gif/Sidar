@@ -977,12 +977,21 @@ sidar_shared_production_secret_keys() {
 
 production_secret_rotation_gate_passes() {
     local src="$1"
-    local -a shared_matches=()
-    mapfile -t shared_matches < <(sidar_shared_production_secret_keys "$src")
-    if (( ${#shared_matches[@]} == 0 )); then
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
+    local -a unsafe_matches=()
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+        prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
+        if [[ -z "${prod_val//[[:space:]]/}" || ( -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ) ]]; then
+            unsafe_matches+=("$key")
+        fi
+    done < <(sidar_production_secret_rotation_keys)
+    if (( ${#unsafe_matches[@]} == 0 )); then
         return 0
     fi
-    warn "SIDAR_ENV=production kalıcılaştırması engellendi: .env.production içinde local/dev/test ile ortak secret bulundu: ${shared_matches[*]}. Önce production secret rotasyonunu tamamlayın."
+    warn "SIDAR_ENV=production kalıcılaştırması engellendi: .env.production içinde eksik veya local/dev/test ile ortak secret bulundu: ${unsafe_matches[*]}. Önce production secret rotasyonunu tamamlayın."
     return 1
 }
 
@@ -993,9 +1002,11 @@ propagate_shared_secrets_to_env_variants() {
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
-        ".env.production:.env.production.example"
         ".env.advanced:.env.advanced.example"  # Sürüm kontrollü şablondan üretilen advanced runtime env.
     )
+
+    # .env.production bilinçli olarak oluşturulmaz veya doldurulmaz. Production
+    # secret'ları yalnız rotasyon aracı/secret manager üzerinden sağlanmalıdır.
 
     [[ -f "$src" ]] || return 0
 
