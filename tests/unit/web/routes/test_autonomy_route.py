@@ -49,7 +49,9 @@ def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
 def test_autonomy_wake_declares_admin_dependency() -> None:
     route = next(route for route in router.routes if route.path == "/api/autonomy/wake")
 
-    assert any(dependency.call is _require_autonomy_admin for dependency in route.dependant.dependencies)
+    assert any(
+        dependency.call is _require_autonomy_admin for dependency in route.dependant.dependencies
+    )
 
 
 def test_require_autonomy_admin_delegates_authenticated_request_user() -> None:
@@ -93,7 +95,9 @@ def test_autonomy_webhook_signature_required_forces_production(
     )
 
 
-def test_validate_autonomy_webhook_signature_fails_closed_when_nonproduction_secret_missing() -> None:
+def test_validate_autonomy_webhook_signature_fails_closed_when_nonproduction_secret_missing() -> (
+    None
+):
     calls: list[tuple[Any, ...]] = []
 
     with pytest.raises(HTTPException) as exc_info:

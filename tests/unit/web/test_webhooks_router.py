@@ -45,8 +45,10 @@ async def test_webhooks_router_legacy_export_reads_dynamic_cfg_getter() -> None:
     async def _await_if_needed(value):
         return value
 
-    stale_cfg = SimpleNamespace(GITHUB_WEBHOOK_SECRET="stale-secret", ENABLE_EVENT_WEBHOOKS=True)
-    active_cfg = SimpleNamespace(GITHUB_WEBHOOK_SECRET="", ENABLE_EVENT_WEBHOOKS=False)
+    stale_cfg = SimpleNamespace(
+        GITHUB_WEBHOOK_SECRET="stale-secret", GITHUB_WEBHOOK_REQUIRE_SIGNATURE=True
+    )
+    active_cfg = SimpleNamespace(GITHUB_WEBHOOK_SECRET="", GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False)
     verifier_calls = []
 
     router = build_webhooks_router(
@@ -63,7 +65,7 @@ async def test_webhooks_router_legacy_export_reads_dynamic_cfg_getter() -> None:
     )
 
     response = await router.legacy_exports["github_webhook"](
-        _Req(), x_github_event="repository", x_hub_signature_256=""
+        _Req(), x_github_event="repository", x_hub_signature_256="", x_github_delivery=""
     )
 
     assert response.status_code == 200

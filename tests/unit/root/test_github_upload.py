@@ -946,9 +946,7 @@ def test_main_add_failure(monkeypatch):
 
 def test_main_aborts_when_deleted_files_cannot_be_staged(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: ["-danger.txt"])
-    monkeypatch.setattr(
-        gu, "stage_deleted_files", lambda _paths: (False, "git rm rejected path")
-    )
+    monkeypatch.setattr(gu, "stage_deleted_files", lambda _paths: (False, "git rm rejected path"))
     MainHarness(
         monkeypatch,
         [],

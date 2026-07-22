@@ -784,9 +784,7 @@ class Config:
     SIDAR_RATE_LIMIT_CHAT: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_chat
     SIDAR_RATE_LIMIT_MUTATIONS: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_mutations
     SIDAR_RATE_LIMIT_GET_IO: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_get_io
-    SIDAR_RATE_LIMIT_WS_CONNECTIONS: int = (
-        _RATE_LIMIT_SETTINGS.sidar_rate_limit_ws_connections
-    )
+    SIDAR_RATE_LIMIT_WS_CONNECTIONS: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_ws_connections
     RATE_LIMIT_WINDOW: int = SIDAR_RATE_LIMIT_WINDOW
     RATE_LIMIT_CHAT: int = SIDAR_RATE_LIMIT_CHAT
     RATE_LIMIT_MUTATIONS: int = SIDAR_RATE_LIMIT_MUTATIONS

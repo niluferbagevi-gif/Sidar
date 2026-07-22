@@ -1755,9 +1755,8 @@ async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
 
     now = time.time()
     async with _local_rate_lock:
-        should_cleanup = (
-            now - _local_rate_last_cleanup >= _LOCAL_RATE_CLEANUP_INTERVAL_SEC
-            or (key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS)
+        should_cleanup = now - _local_rate_last_cleanup >= _LOCAL_RATE_CLEANUP_INTERVAL_SEC or (
+            key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS
         )
         if should_cleanup:
             expired_keys = [
@@ -1854,7 +1853,8 @@ def _get_client_ip(request: Request) -> str:
     Header değeri IP parser ile doğrulanır; boş, çok satırlı, port ekli veya
     IP olmayan değerler header injection/rate-limit bypass riskine karşı yok sayılır.
     """
-    direct_ip = request.client.host if request.client else "unknown"
+    client = getattr(request, "client", None)
+    direct_ip = getattr(client, "host", "unknown")
     if _trusted_proxy_matches(direct_ip):
         xff = request.headers.get("X-Forwarded-For", "")
         first_forwarded = xff.split(",", 1)[0] if xff else ""
