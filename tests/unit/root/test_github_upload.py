@@ -1286,6 +1286,17 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
 def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    guard_order = []
+    monkeypatch.setattr(
+        gu,
+        "stamp_install_manifest_pin_after_commit",
+        lambda: (guard_order.append("stamp"), (True, ""))[1],
+    )
+    monkeypatch.setattr(
+        gu,
+        "run_pre_push_quality_gate",
+        lambda: (guard_order.append("gate"), (True, ""))[1],
+    )
     MainHarness(
         monkeypatch,
         [],
@@ -1302,6 +1313,36 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
         ],
     )
     gu.main()
+    assert guard_order == ["stamp", "gate"]
+
+
+def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    monkeypatch.setattr(
+        gu, "stamp_install_manifest_pin_after_commit", lambda: (False, "unreachable pin")
+    )
+    gate_calls = []
+    monkeypatch.setattr(
+        gu, "run_pre_push_quality_gate", lambda: (gate_calls.append(True), (True, ""))[1]
+    )
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, ""),
+            (True, ""),
+            (True, "commit1"),
+        ],
+    )
+
+    assert run_main_and_exit_code() == 1
+    assert gate_calls == []
 
 
 def test_main_rollback_push_success(monkeypatch):

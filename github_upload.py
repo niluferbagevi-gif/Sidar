@@ -924,6 +924,17 @@ def main() -> None:
                 f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
             )
 
+    # Dış branch merge'i veya yalnız unpushed commit bulunan akışta yeni bir
+    # çalışma ağacı değişikliği olmayabilir. Bu durumda da pin eski/orphan bir
+    # commit'i gösterebilir; kalite kapısından önce mevcut, erişilebilir HEAD'e
+    # damgala ve gerekiyorsa ayrı fixup commit'i oluştur.
+    pin_success, pin_err = stamp_install_manifest_pin_after_commit()
+    if not pin_success:
+        print(
+            f"{Colors.FAIL}❌ Install manifest pini push öncesi onarılamadı: {pin_err}{Colors.ENDC}"
+        )
+        sys.exit(1)
+
     gate_success, gate_err = run_pre_push_quality_gate()
     if not gate_success:
         print(
