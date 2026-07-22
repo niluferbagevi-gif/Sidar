@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+from core.db_components.dialect import is_safe_sql_identifier
 
 TABLES_IN_ORDER = [
     "users",
@@ -29,20 +30,20 @@ TABLES_ALLOWLIST = frozenset(TABLES_IN_ORDER)
 # Migrasyon yalnızca TABLES_ALLOWLIST'teki bilinen tablolardan okur, ama sütun adları
 # canlı `PRAGMA table_info`/`SELECT *` introspection'ından gelir (bkz. _load_rows).
 # Kaynak sqlite dosyası güvenilmeyen/bozulmuş olabileceğinden, introspection'dan dönen
-# her sütun adını hedef INSERT sorgusuna gömmeden önce güvenli bir kimlik deseniyle
-# doğrularız; aksi halde kötü niyetli bir sütun adı SQL injection'a yol açabilir.
-_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# her sütun adını hedef INSERT sorgusuna gömmeden önce is_safe_sql_identifier ile
+# doğrularız (core.db_components.dialect'teki tek merkezi kimlik denetimi); aksi
+# halde kötü niyetli bir sütun adı SQL injection'a yol açabilir.
 
 
 def _safe_table_name(table: str) -> str:
-    if table not in TABLES_ALLOWLIST:
+    if not is_safe_sql_identifier(table, allowed=TABLES_ALLOWLIST):
         raise ValueError(f"Geçersiz tablo adı: {table}")
     return table
 
 
 def _safe_column_names(table: str, columns: list[str]) -> list[str]:
     for column in columns:
-        if not _SAFE_IDENTIFIER_RE.match(column):
+        if not is_safe_sql_identifier(column):
             raise ValueError(f"Geçersiz sütun adı ({table}): {column!r}")
     return columns
 

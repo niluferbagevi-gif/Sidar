@@ -8,6 +8,12 @@ from core.db_components.dialect import (
     ASYNCPG_COMMAND_TAG_COUNT_RE as ASYNCPG_COMMAND_TAG_COUNT_RE,
 )
 from core.db_components.dialect import (
+    assert_safe_sql_identifier as assert_safe_sql_identifier,
+)
+from core.db_components.dialect import (
+    is_safe_sql_identifier as is_safe_sql_identifier,
+)
+from core.db_components.dialect import (
     parse_asyncpg_affected_rows as _parse_asyncpg_affected_rows,
 )
 from core.db_components.dialect import quote_sql_identifier as quote_sql_identifier

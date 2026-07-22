@@ -4,19 +4,18 @@ from __future__ import annotations
 
 import builtins
 import logging
-import re
 from typing import Any, cast
 
 from core.db import postgres_failure_diagnosis
+from core.db.dialect import is_safe_sql_identifier
 from core.embeddings import get_sentence_transformer_model
 
 logger = logging.getLogger(__name__)
-_PGVECTOR_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def is_valid_pgvector_identifier(identifier: str) -> bool:
     """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
-    return bool(_PGVECTOR_IDENTIFIER_RE.fullmatch(identifier))
+    return is_safe_sql_identifier(identifier)
 
 
 def pgvector_failure_action_message(exc: BaseException) -> str:

@@ -32,6 +32,7 @@ from core.db import (
     _utc_now_iso,
     _verify_password,
 )
+from core.db.dialect import assert_safe_sql_identifier, is_safe_sql_identifier
 from core.db.helpers import json_dumps as _json_dumps
 
 
@@ -424,6 +425,37 @@ def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(
 def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
     with pytest.raises(ValueError, match="SQL identifier cannot be empty|Invalid SQL identifier"):
         _quote_sql_identifier(identifier)
+
+
+@pytest.mark.parametrize(
+    "identifier,allowed,expected",
+    [
+        ("events", None, True),
+        ("_private_1", None, True),
+        ("", None, False),
+        ("1abc", None, False),
+        ("bad-name", None, False),
+        ("bad space", None, False),
+        ("events", {"events", "messages"}, True),
+        ("events", {"messages"}, False),
+    ],
+)
+def test_is_safe_sql_identifier(
+    identifier: str, allowed: set[str] | None, expected: bool
+) -> None:
+    assert is_safe_sql_identifier(identifier, allowed=allowed) is expected
+
+
+def test_assert_safe_sql_identifier_returns_identifier_when_valid() -> None:
+    assert assert_safe_sql_identifier("events") == "events"
+    assert assert_safe_sql_identifier("events", allowed={"events"}) == "events"
+
+
+def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
+    with pytest.raises(ValueError, match="Invalid SQL identifier: 'bad-name'"):
+        assert_safe_sql_identifier("bad-name")
+    with pytest.raises(ValueError, match="Invalid SQL identifier: 'events'"):
+        assert_safe_sql_identifier("events", allowed={"messages"})
 
 
 @pytest.mark.asyncio
