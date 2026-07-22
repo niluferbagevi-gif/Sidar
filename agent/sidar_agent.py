@@ -253,6 +253,8 @@ class SidarAgent:
         self.system_prompt: str = SIDAR_SYSTEM_PROMPT
         self._autonomy_history: list[dict[str, Any]] = []
         self._autonomy_lock: asyncio.Lock | None = None
+        self._self_heal_attempts: dict[str, int] = {}
+        self._self_heal_attempts_lock: asyncio.Lock | None = None
         self._last_activity_ts: float = time.time()
         self._nightly_maintenance_lock: asyncio.Lock | None = None
         self._nightly_distributed_lock: RedisDistributedLock | None = None
@@ -771,10 +773,53 @@ class SidarAgent:
             remediation["self_heal_execution"] = execution
             return execution
 
+        revision_identity = str(
+            ci_context.get("sha")
+            or ci_context.get("run_id")
+            or ci_context.get("branch")
+            or "unknown"
+        ).strip()
+        attempt_key = "|".join(
+            (
+                str(ci_context.get("repo", "") or "").strip(),
+                str(ci_context.get("workflow_name", "") or "").strip(),
+                revision_identity,
+            )
+        ) or "default"
+        default_max_attempts = 1 if remediation_loop.get("needs_human_approval") else 2
+        max_auto_attempts = max(
+            1,
+            int(remediation_loop.get("max_auto_attempts") or default_max_attempts),
+        )
+        if not hasattr(self, "_self_heal_attempts"):
+            self._self_heal_attempts = {}
+        if getattr(self, "_self_heal_attempts_lock", None) is None:
+            self._self_heal_attempts_lock = asyncio.Lock()
+        attempts_lock = self._self_heal_attempts_lock
+        async with attempts_lock:
+            attempts_used = self._self_heal_attempts.get(attempt_key, 0)
+            if attempts_used >= max_auto_attempts:
+                remediation_loop["status"] = "circuit_open"
+                execution = {
+                    "status": "circuit_open",
+                    "summary": (
+                        "Self-heal deneme limiti aşıldı; yeni otomatik LLM/patch çağrıları "
+                        "insan müdahalesine kadar engellendi."
+                    ),
+                    "attempt_key": attempt_key,
+                    "attempts_used": attempts_used,
+                    "max_auto_attempts": max_auto_attempts,
+                }
+                remediation["remediation_loop"] = remediation_loop
+                remediation["self_heal_execution"] = execution
+                return execution
+            self._self_heal_attempts[attempt_key] = attempts_used + 1
+
         mechanical_execution = await self._attempt_mechanical_autofix(
             remediation_loop=remediation_loop
         )
         if mechanical_execution.get("status") == "applied":
+            self._self_heal_attempts.pop(attempt_key, None)
             remediation_loop["status"] = "applied"
             self._update_remediation_step(
                 remediation_loop,
@@ -836,6 +881,7 @@ class SidarAgent:
         remediation["self_heal_execution"] = execution
 
         if execution["status"] == "applied":
+            self._self_heal_attempts.pop(attempt_key, None)
             remediation_loop["status"] = "applied"
             self._update_remediation_step(
                 remediation_loop,
@@ -1004,11 +1050,48 @@ class SidarAgent:
         summary = ""
         remediation: dict[str, Any] | None = None
         try:
-            summary = await self._try_multi_agent(prompt)
+            revision_identity = str(
+                (ci_context or {}).get("sha")
+                or (ci_context or {}).get("run_id")
+                or (ci_context or {}).get("branch")
+                or "unknown"
+            ).strip()
+            preflight_attempt_key = "|".join(
+                (
+                    str((ci_context or {}).get("repo", "") or "").strip(),
+                    str((ci_context or {}).get("workflow_name", "") or "").strip(),
+                    revision_identity,
+                )
+            )
+            preflight_limit = 1 if (ci_context or {}).get("human_approval_required") else 2
+            attempts_used = getattr(self, "_self_heal_attempts", {}).get(
+                preflight_attempt_key, 0
+            )
+            if (
+                ci_context
+                and bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False))
+                and attempts_used >= preflight_limit
+            ):
+                status = "circuit_open"
+                summary = (
+                    "Self-heal circuit breaker açık; aynı CI revision için yeni teşhis/patch "
+                    "LLM çağrısı yapılmadı."
+                )
+                remediation = build_ci_remediation_payload(ci_context, summary)
+                remediation["remediation_loop"]["status"] = "circuit_open"
+                remediation["self_heal_execution"] = {
+                    "status": "circuit_open",
+                    "summary": summary,
+                    "attempt_key": preflight_attempt_key,
+                    "attempts_used": attempts_used,
+                    "max_auto_attempts": preflight_limit,
+                }
+            else:
+                summary = await self._try_multi_agent(prompt)
             if not isinstance(summary, str) or not summary.strip():
                 status = "empty"
                 summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
-            elif ci_context:
+            elif ci_context and remediation is None:
                 remediation = build_ci_remediation_payload(ci_context, summary)
                 try:
                     await self._attempt_autonomous_self_heal(
