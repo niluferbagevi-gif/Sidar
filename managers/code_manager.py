@@ -18,6 +18,7 @@ from enum import Enum
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.hitl import get_hitl_gate
 from managers.code import docker as docker_helpers
 from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
@@ -345,6 +346,22 @@ class CodeManager:
         """Dosyaya güvenli biçimde içerik yazar."""
         return file_io_security.write_file(self, path, content, validate=validate)
 
+    async def write_file_hitl(
+        self, path: str, content: str, validate: bool = True
+    ) -> tuple[bool, str]:
+        """Require human approval before overwriting an existing file."""
+        target = Path(path)
+        if target.exists():
+            approved = await get_hitl_gate().request_approval(
+                action="file_overwrite",
+                description=f"Dosyanın üzerine yazılacak: {target}",
+                payload={"path": str(target)},
+                requested_by="CodeManager",
+            )
+            if not approved:
+                return False, "Dosya üzerine yazma işlemi insan onayı olmadan reddedildi."
+        return file_io_security.write_file(self, path, content, validate=validate)
+
     @staticmethod
     def _strip_markdown_code_fences(content: str) -> str:
         return file_io_security.strip_markdown_code_fences(content)
@@ -368,6 +385,20 @@ class CodeManager:
     def patch_file(self, path: str, target_block: str, replacement_block: str) -> tuple[bool, str]:
         """Dosyada hedef bloğu güvenli biçimde değiştirir."""
         return file_io_security.patch_file(self, path, target_block, replacement_block)
+
+    async def patch_file_hitl(
+        self, path: str, target_block: str, replacement_block: str
+    ) -> tuple[bool, str]:
+        """Require human approval before patching an existing file."""
+        ok, content = self.read_file(path, line_numbers=False)
+        if not ok:
+            return False, content
+        ok, patched_or_error = file_io_security.apply_exact_block_patch(
+            content, target_block, replacement_block
+        )
+        if not ok:
+            return False, patched_or_error
+        return await self.write_file_hitl(path, patched_or_error, validate=True)
 
     def execute_code(self, code: str) -> tuple[bool, str]:
         """Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.

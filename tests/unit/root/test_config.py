@@ -348,7 +348,7 @@ def test_quality_gate_settings_defaults_match_original_hardcoded_values(monkeypa
     settings = config_quality.QualityGateSettings()
 
     assert settings.DLP_ENABLED is True
-    assert settings.HITL_ENABLED is False
+    assert settings.HITL_ENABLED is True
     assert settings.HITL_TIMEOUT_SECONDS == 120
     assert settings.JUDGE_ENABLED is False
     assert settings.JUDGE_MODEL == ""

@@ -14,7 +14,7 @@ class QualityGateSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, env_file_encoding="utf-8", extra="ignore")
 
     DLP_ENABLED: bool = True
-    HITL_ENABLED: bool = False
+    HITL_ENABLED: bool = True
     HITL_TIMEOUT_SECONDS: int = 120
 
     JUDGE_ENABLED: bool = Field(

@@ -165,7 +165,8 @@ def test_hitl_gate_init_and_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
     assert singleton_a is singleton_b
 
 
-def test_request_approval_returns_true_when_disabled() -> None:
+def test_request_approval_returns_true_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HITL_ENABLED", "false")
     gate = hitl.HITLGate()
 
     approved = run(gate.request_approval(action="x", description="y"))

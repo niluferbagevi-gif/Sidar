@@ -11,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -3055,3 +3056,16 @@ def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch)
     assert manager.docker_client is client
     assert manager.docker_available is True
     assert client.ping_called is True
+@pytest.mark.asyncio
+async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "old"
+    gate.request_approval.assert_awaited_once()
