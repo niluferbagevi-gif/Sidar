@@ -173,3 +173,24 @@ def test_autonomous_loop_print_config_runs_config_preflight() -> None:
 
     assert "[PREFLIGHT 0/3] Config: uv run python ile dotenv zinciri" in output
     assert "[CONFIG][OK] Config importu ve kritik runtime anahtar kontrolü başarılı." in output
+
+
+def test_autonomous_loop_intentionally_omits_set_dash_e() -> None:
+    """`-e` must stay out of the shebang's `set` line, mirroring run_tests.sh's
+    documented run_checked()/exit-code-capture contract (see
+    test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked
+    in test_run_tests_quality_gate.py). The loop's core job is to detect
+    ./run_tests.sh / mutation-test / coverage-gate failures and drive
+    auto-heal; with `-e` present, the very first expected test failure would
+    kill the script instead of reaching the remediation loop.
+    """
+    script = (REPO_ROOT / "autonomous_loop.sh").read_text(encoding="utf-8")
+    lines = script.splitlines()
+
+    assert lines[0] == "#!/usr/bin/env bash"
+    set_line_index = next(i for i, line in enumerate(lines) if line.startswith("set -"))
+    assert lines[set_line_index] == "set -uo pipefail"
+    assert "-e" not in lines[set_line_index]
+    # A comment explaining the omission must precede the `set` line so a
+    # future edit doesn't "fix" this into a regression.
+    assert "kasıtlı olarak KULLANILMIYOR" in "\n".join(lines[1:set_line_index])

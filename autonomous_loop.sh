@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# `-e` kasıtlı olarak KULLANILMIYOR (run_tests.sh'deki aynı kararla tutarlı,
+# bkz. o dosyadaki "set -uo pipefail" yorumu ve run_checked() deseni): bu
+# betiğin ana amacı ./run_tests.sh / mutasyon testi / coverage kontrolü gibi
+# adımların BAŞARISIZ OLMASINI algılayıp auto-heal/remediation akışını
+# tetiklemektir. Her çağrı sonrası `$?` elle yakalanıp if/case ile ele
+# alınıyor; `-e` eklenirse örn. `run_full_quality_tests` testler kırıldığında
+# (asıl beklenen ve ele alınması gereken durum) betiği anında sonlandırır ve
+# otonom onarım döngüsü hiç çalışmaz. Yeni bir komut eklerken exit kodunu
+# `$?` ile yakalayıp açıkça kontrol edin; `-e`'ye güvenmeyin.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
