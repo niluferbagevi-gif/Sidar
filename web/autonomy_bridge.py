@@ -90,7 +90,13 @@ def build_event_driven_federation_spec(
                 "inputs": [
                     f"issue_key={issue_key}",
                     f"summary={summary}",
-                    f"description={trim_autonomy_text((issue.get('fields') or {}).get('description') or data.get('description') or '', 1000)}",
+                    "description="
+                    + trim_autonomy_text(
+                        (issue.get("fields") or {}).get("description")
+                        or data.get("description")
+                        or "",
+                        1000,
+                    ),
                 ],
                 "correlation_id": derive_correlation_id(
                     data.get("correlation_id", ""), issue_key, summary
@@ -112,7 +118,8 @@ def build_event_driven_federation_spec(
                 "source_system": "github",
                 "source_agent": "pull_request_webhook",
                 "goal": (
-                    f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için event-driven swarm incelemesi yap. "
+                    f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için event-driven "
+                    "swarm incelemesi yap. "
                     "Coder değişiklik/patch/test stratejisini çıkarsın, Reviewer merge riski ve QA "
                     "kapısını değerlendirsin."
                 ),
@@ -176,8 +183,13 @@ def build_event_driven_federation_spec(
                     "environment": str(data.get("environment") or data.get("env") or "").strip(),
                 },
                 "inputs": [
-                    f"message={trim_autonomy_text(data.get('message') or data.get('summary') or data.get('error') or '', 1000)}",
-                    f"stacktrace={trim_autonomy_text(data.get('stacktrace') or data.get('details') or '', 1000)}",
+                    "message="
+                    + trim_autonomy_text(
+                        data.get("message") or data.get("summary") or data.get("error") or "",
+                        1000,
+                    ),
+                    "stacktrace="
+                    + trim_autonomy_text(data.get("stacktrace") or data.get("details") or "", 1000),
                 ],
                 "correlation_id": derive_correlation_id(
                     data.get("correlation_id", ""), data.get("alert_id", ""), alert_name

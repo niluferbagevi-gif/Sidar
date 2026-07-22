@@ -1167,7 +1167,9 @@ class Config:
 
         if missing_keys:
             logger.warning(
-                "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, .env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri korunur; SIDAR_KEYS_FILE en son yüklenir. "
+                "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, "
+                ".env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri "
+                "korunur; SIDAR_KEYS_FILE en son yüklenir. "
                 "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan "
                 "~/.sidar_keys.env) içine ekleyin.",
                 ", ".join(missing_keys),
@@ -1186,7 +1188,8 @@ class Config:
             self.__class__._log_dotenv_load_status(missing_keys=missing_keys)
             missing_label = ", ".join(blocking_missing)
             raise ValueError(
-                f"{missing_label} boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme sırasını kontrol edin."
+                f"{missing_label} boş bırakılamaz. .env/DOTENV_FILE/SIDAR_KEYS_FILE yükleme "
+                "sırasını kontrol edin."
             )
         self.__class__._warn_on_silent_security_fallbacks()
 
@@ -1416,14 +1419,15 @@ class Config:
             logger.critical(
                 "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory "
                 "encryption. "
-                "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet "
-                "anahtarı eklemelisiniz.\n"
+                "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü "
+                "bir Fernet anahtarı eklemelisiniz.\n"
                 '   Yeni anahtar üretmek için: python -c "from cryptography.fernet import '
                 'Fernet; print(Fernet.generate_key().decode())"'
             )
             if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
                 logger.critical(
-                    "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik nedeniyle uygulama durduruluyor."
+                    "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik "
+                    "nedeniyle uygulama durduruluyor."
                 )
                 raise SystemExit(1)
 

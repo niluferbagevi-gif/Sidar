@@ -368,7 +368,9 @@ class DocumentStore:
 
         self._log_backend_init_status_once(
             "vector_preference_bm25_hint",
-            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
+            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör "
+            "backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya "
+            "pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
             ",".join(available_vector),
         )
 
@@ -900,7 +902,8 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
-        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal riski taşır
+        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal
+        # riski taşır
         _TEXT_EXTS = {
             ".py",
             ".txt",
@@ -931,8 +934,8 @@ class DocumentStore:
                 return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file():
                 return False, f"✗ Belirtilen yol bir dosya değil: {path}"
-            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara izin ver
-            # (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
+            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara
+            # izin ver (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
             _allowed_roots = (Config.BASE_DIR, Path(tempfile.gettempdir()).resolve())
             if not any(file.is_relative_to(root) for root in _allowed_roots):
                 return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
@@ -1204,7 +1207,9 @@ class DocumentStore:
         graph_edges = list(projection["edges"])
 
         def _broker_topic(receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
-            return f"{namespace}.{str(receiver or 'unknown').strip().lower() or 'unknown'}.{str(intent or 'mixed').strip().lower() or 'mixed'}"
+            receiver_part = str(receiver or "unknown").strip().lower() or "unknown"
+            intent_part = str(intent or "mixed").strip().lower() or "mixed"
+            return f"{namespace}.{receiver_part}.{intent_part}"
 
         broker_topics = [
             _broker_topic(receiver="researcher", intent="rag_search"),

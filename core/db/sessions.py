@@ -86,7 +86,8 @@ async def load_session(
         async with db._pg_pool.acquire() as conn:
             if user_id:
                 row = await conn.fetchrow(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1 AND user_id=$2",
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions"
+                    " WHERE id=$1 AND user_id=$2",
                     session_id,
                     user_id,
                 )
@@ -102,7 +103,8 @@ async def load_session(
             assert db._sqlite_conn is not None
             if user_id:
                 cur = db._sqlite_conn.execute(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=? AND user_id=?",
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions"
+                    " WHERE id=? AND user_id=?",
                     (session_id, user_id),
                 )
             else:
@@ -201,7 +203,8 @@ async def create_session(
         def _run() -> None:
             assert db._sqlite_conn is not None
             db._sqlite_conn.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
                 (session_id, user_id, title, now, now),
             )
             db._sqlite_conn.commit()
@@ -309,7 +312,8 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
     def _run() -> int:
         assert db._sqlite_conn is not None
         db._sqlite_conn.executemany(
-            "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO messages (session_id, role, content, tokens_used, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
             [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
         )
         db._sqlite_conn.commit()

@@ -256,7 +256,8 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         marker in text for marker in ("role", "does not exist", "3d000", "invalid catalog name")
     ):
         return (
-            "PostgreSQL is reachable but the expected user/database is missing; verify POSTGRES_USER and POSTGRES_DB initialization.",
+            "PostgreSQL is reachable but the expected user/database is missing; verify "
+            "POSTGRES_USER and POSTGRES_DB initialization.",
             {
                 "failure_category": "missing_role_or_database",
                 "root_cause_hints": [
@@ -319,7 +320,8 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
         )
     ):
         return (
-            "PostgreSQL connectivity smoke failed; verify that the container/service is running and DATABASE_URL host/port are correct.",
+            "PostgreSQL connectivity smoke failed; verify that the container/service is running "
+            "and DATABASE_URL host/port are correct.",
             {
                 "failure_category": "connection",
                 "root_cause_hints": [
@@ -571,7 +573,9 @@ def check_database_env() -> DoctorCheck:
 
     if (explicit_database_url or explicit_container_url) and failures:
         warnings.append(
-            "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls for long-term safety"
+            "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived "
+            "POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls "
+            "for long-term safety"
         )
 
     if failures:
@@ -620,12 +624,20 @@ def check_database_env() -> DoctorCheck:
             "root_cause_hints": [
                 "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı "
                 "değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",
-                "Açık PostgreSQL URL tanımları tutulacaksa URL içindeki parola POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
+                "Açık PostgreSQL URL tanımları tutulacaksa URL içindeki parola "
+                "POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
             ],
             "remediation_steps": [
-                "Kalıcı çözüm için uv run python -m scripts.sync_database_passwords --remove-explicit-urls ile dotenv zincirindeki açık DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL tanımlarını kaldırıp Sidar'ın POSTGRES_* parçalarından üretmesine izin verin.",
-                "Açık URL tutmanız gerekiyorsa uv run python -m scripts.sync_database_passwords ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile eşitleyin.",
-                "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız geliştirme ortamında volume resetleyin.",
+                "Kalıcı çözüm için uv run python -m scripts.sync_database_passwords "
+                "--remove-explicit-urls ile dotenv zincirindeki açık DATABASE_URL ve "
+                "SIDAR_CONTAINER_DATABASE_URL tanımlarını kaldırıp Sidar'ın POSTGRES_* "
+                "parçalarından üretmesine izin verin.",
+                "Açık URL tutmanız gerekiyorsa uv run python -m scripts.sync_database_passwords "
+                "ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile "
+                "eşitleyin.",
+                "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL "
+                "kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız "
+                "geliştirme ortamında volume resetleyin.",
             ],
         },
     )
@@ -882,7 +894,8 @@ def _rag_readiness_state() -> dict[str, Any]:
         details["database_env_status"] = "pass" if database_env_ok else "fail"
         if not database_env_ok:
             blockers.append(
-                "pgvector backend is configured but database environment parity failed; semantic RAG is blocked until database_env is fixed"
+                "pgvector backend is configured but database environment parity failed; "
+                "semantic RAG is blocked until database_env is fixed"
             )
             details["blocked_by"] = "database_env"
             details["database_env_message"] = (
@@ -918,7 +931,8 @@ def _rag_readiness_state() -> dict[str, Any]:
     entity_memory_empty = entity_node_count == 0 and graph_enabled
     if entity_memory_empty:
         warnings.append(
-            "GraphRAG entity memory is empty; documents are indexed but entity extraction/projection has not populated relational memory yet"
+            "GraphRAG entity memory is empty; documents are indexed but entity "
+            "extraction/projection has not populated relational memory yet"
         )
 
     return {
@@ -1060,7 +1074,8 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
         if details["entity_node_count_store"] != int(details.get("entity_node_count", 0)):
             details["entity_count_mismatch"] = True
             details["entity_count_mismatch_note"] = (
-                "entity_node_count (doctor state) and store probe node count differ; verify GraphRAG projection persistence"
+                "entity_node_count (doctor state) and store probe node count differ; verify "
+                "GraphRAG projection persistence"
             )
         entity_memory_empty = details["entity_node_count_store"] == 0
         if entity_memory_empty:
@@ -1171,7 +1186,10 @@ def check_rag_readiness() -> DoctorCheck:
                 "RAG has no indexed documents; no indexed documents yet; entity memory is empty"
             )
     else:
-        message = f"rag_index_ready={index_check.status}; graphrag_entity_memory_ready={graph_check.status}"
+        message = (
+            f"rag_index_ready={index_check.status}; "
+            f"graphrag_entity_memory_ready={graph_check.status}"
+        )
     return DoctorCheck("rag_readiness", status, message, details)
 
 
@@ -1352,7 +1370,8 @@ def check_gpu_memory_config() -> DoctorCheck:
         )
     elif total > 0.95:
         warnings.append(
-            "LLM/RAG VRAM fractions are very high; consider lowering .env.development limits before bulk RAG ingestion"
+            "LLM/RAG VRAM fractions are very high; consider lowering .env.development limits "
+            "before bulk RAG ingestion"
         )
     if provider == "ollama" and coding_model != "qwen2.5-coder:7b":
         warnings.append(
@@ -1371,7 +1390,9 @@ def check_gpu_memory_config() -> DoctorCheck:
     sidar_image_exists = _docker_image_exists_local("sidar:latest")
     if docker_test_image == "python:3.11-slim":
         warnings.append(
-            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this can start containers but those tests may miss uv/pytest and project extras unless the container is created from sidar:latest"
+            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this can start containers "
+            "but those tests may miss uv/pytest and project extras unless the container is "
+            "created from sidar:latest"
         )
         details["docker_image_container_note"] = (
             "Docker image is the reusable template, container is a running instance. Having a "

@@ -102,13 +102,13 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
         m_thought = thought_sentinel.match(chunk)
         if m_tool:
             if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
-                break  # pragma: no cover - send failure race is covered by route-level disconnect tests
+                break  # pragma: no cover - send failure race covered by disconnect tests
         elif m_thought:
             if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
-                break  # pragma: no cover - send failure race is covered by route-level disconnect tests
+                break  # pragma: no cover - send failure race covered by disconnect tests
         else:
             if not await send_json_if_connected(websocket, {"chunk": chunk}):
-                break  # pragma: no cover - send failure race is covered by route-level disconnect tests
+                break  # pragma: no cover - send failure race covered by disconnect tests
             if voice_pipeline and getattr(voice_pipeline, "enabled", False):
                 pending_voice_text += chunk
                 await _emit_voice_segments()
@@ -229,7 +229,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 await send_json_if_connected(
                     websocket,
                     {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
+                        "chunk": (
+                            f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}"
+                        ),
                         "done": True,
                     },
                 )
@@ -542,7 +544,10 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                             {
                                 "type": "room_error",
                                 "room_id": room.room_id,
-                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
+                                "error": (
+                                    "Bu kullanıcı ortak çalışma alanında yazma yetkisine "
+                                    "sahip değil."
+                                ),
                             },
                         )
                         continue

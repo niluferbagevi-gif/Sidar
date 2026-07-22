@@ -125,7 +125,10 @@ class ReviewerAgent(BaseAgent):
 
     @classmethod
     def _normalize_test_candidate_verdict(cls, verdict: object) -> dict[str, object]:
-        """Reviewer LLM çıktısını doğrudan veya tool/argument sarmalından karar JSON'una indirger."""
+        """Reviewer LLM çıktısını karar JSON'una indirger.
+
+        Doğrudan veya tool/argument sarmalından gelen çıktıyı kabul eder.
+        """
         return normalize_test_candidate_verdict(verdict)
 
     @staticmethod
@@ -269,7 +272,7 @@ class ReviewerAgent(BaseAgent):
                 "weaknesses_missing": weaknesses_missing,
             }
 
-        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar.
+        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar
             "approved": False,
             "reason": "Geçersiz reviewer çıktısı: reason doğrulanamadı.",
             "weaknesses": last_weaknesses,
@@ -885,8 +888,8 @@ class ReviewerAgent(BaseAgent):
                 "path": str(browser_summary.get("current_url", "") or "browser:session"),
                 "reason": "browser-signal",
                 "action": (
-                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden üret; "
-                    "selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
+                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden "
+                    "üret; selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
                 ),
                 "failed_actions": failed_actions[:4],
                 "pending_actions": pending_actions[:4],
@@ -974,7 +977,8 @@ class ReviewerAgent(BaseAgent):
                     "name": "handoff",
                     "status": "pending" if is_blocked else "ready",
                     "detail": (
-                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir plan devredilecek."
+                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir "
+                        "plan devredilecek."
                         if needs_human_approval
                         else "Plan coder ajanına doğrudan uygulanabilir şekilde devredilecek."
                     ),
