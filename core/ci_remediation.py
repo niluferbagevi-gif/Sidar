@@ -74,6 +74,15 @@ _CROSS_FILE_CONTEXT_ROOTS = (
     "web",
     "main",
 )
+_EXTERNAL_CI_APPROVAL_REASON = "external_ci_event"
+
+
+def _external_ci_approval_metadata() -> dict[str, Any]:
+    """Return non-payload-derived approval metadata for external CI events."""
+    return {
+        "trigger_origin": "external_ci_event",
+        "human_approval_required": True,
+    }
 
 
 def _normalize_ruff_rule_selectors(value: Any) -> list[str]:
@@ -415,6 +424,7 @@ def _generic_ci_context(event_name: str, payload: dict[str, Any]) -> dict[str, A
     suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
     failed_jobs = _extract_failed_job_names(data)
     return {
+        **_external_ci_approval_metadata(),
         "kind": "generic_ci_failure",
         "repo": str(data.get("repo") or data.get("repository") or "").strip(),
         "workflow_name": str(
@@ -514,6 +524,7 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
         log_excerpt = _trim_text(workflow.get("display_title") or workflow.get("name") or "", 400)
         suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
         return {
+            **_external_ci_approval_metadata(),
             "kind": "workflow_run",
             "repo": repo_name,
             "workflow_name": str(workflow.get("name", "") or "workflow_run"),
@@ -548,6 +559,7 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
         )
         suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
         return {
+            **_external_ci_approval_metadata(),
             "kind": "check_run",
             "repo": repo_name,
             "workflow_name": str(check.get("name", "") or "check_run"),
@@ -578,6 +590,7 @@ def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[s
     log_excerpt = _trim_text(suite.get("app", {}).get("name") or "check_suite_failure", 400)
     suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
     return {
+        **_external_ci_approval_metadata(),
         "kind": "check_suite",
         "repo": repo_name,
         "workflow_name": str(suite.get("head_branch", "") or "check_suite"),
@@ -1072,6 +1085,8 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         int(getattr(Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5),
     )
     hitl_reasons: list[str] = []
+    if info.get("human_approval_required") is True:
+        hitl_reasons.append(_EXTERNAL_CI_APPROVAL_REASON)
     if "syntaxerror" in combined_text:
         hitl_reasons.append("syntax_error")
     if any(keyword in combined_text for keyword in ("modulenotfounderror", "importerror")):
