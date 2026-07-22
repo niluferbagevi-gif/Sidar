@@ -22,6 +22,7 @@
     "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js",
+    "test:e2e:critical": "playwright test e2e/chat-websocket.spec.js e2e/agent-manager.spec.js e2e/swarm-flow.spec.js",
     "test:e2e:headed": "playwright test --headed",
     "build:budget": "npm run build && node scripts/check-bundle-budget.mjs",
     "bundle:budget": "node scripts/check-bundle-budget.mjs"

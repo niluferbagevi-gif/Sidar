@@ -57,6 +57,29 @@ frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulam
 `RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend` veya tam doğrulama komutu
 `RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` olmalıdır.
 
+### Frontend Playwright kapsamı: smoke / critical / full
+
+`web_ui_react/e2e/` altında 8 spec dosyası var, ama günlük local `./run_tests.sh`
+akışı yalnız `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) çalıştırır — diğer 7
+panel spec'i (`admin-panels`, `agent-manager`, `p2p-dialogue`, `prompt-admin`,
+`swarm-flow`, `tools-panel`, `voice-panel`) yalnız `RUN_FRONTEND_E2E=1` ile tam
+gate'te (`make production-readiness` / `--stage frontend`) tetiklenir. Sık
+değişen panellerde (örn. Agent Manager, Swarm Flow) erken local sinyal için
+opsiyonel bir ara kademe var: `test:e2e:critical`, smoke kapsamına ek olarak bu
+iki paneli de çalıştırır.
+
+```bash
+cd web_ui_react && npm run test:e2e:critical
+# veya run_tests.sh üzerinden:
+FRONTEND_E2E_NPM_SCRIPT=test:e2e:critical RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+```
+
+Bu üçüncü kademe `test:e2e:smoke`'un "hızlı sinyal, full QA değil" sözleşmesini
+değiştirmez — varsayılan hâlâ `test:e2e:smoke`'tur; `test:e2e:critical` yalnız
+isteğe bağlı, daha geniş ama hâlâ hızlı bir local kontrol seçeneğidir. Tüm 8
+spec'in çalıştığı tam kapsam için hâlâ `test:e2e` (`RUN_FRONTEND_E2E=1` gate'i)
+gerekir.
+
 Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde kalite kapısı olarak
 geçerli kabul edilir. `run_tests.sh`, pytest/BATS/security gibi backend fazlarından
 biri başarısızsa final `coverage report --fail-under=...` adımını ve ratchet
