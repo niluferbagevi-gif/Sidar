@@ -203,10 +203,12 @@ def test_require_admin_and_metrics_access_paths(monkeypatch):
     assert web_server._require_admin_user(admin) is admin
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-123")
-    req = SimpleNamespace(headers={"Authorization": "Bearer metrics-123"})
+    req = _make_request(
+        "/metrics", method="GET", headers={"Authorization": "Bearer metrics-123"}
+    )
     assert web_server._require_metrics_access(req, user) is user
 
-    req_bad = SimpleNamespace(headers={"Authorization": "Bearer nope"})
+    req_bad = _make_request("/metrics", method="GET", headers={"Authorization": "Bearer nope"})
     with pytest.raises(HTTPException):
         web_server._require_metrics_access(req_bad, user)
     assert web_server._require_metrics_access(req_bad, admin) is admin
@@ -1033,6 +1035,11 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     open_res = await web_server.basic_auth_middleware(open_req, _ok_next)
     assert open_res.status_code == 200
 
+    ready_res = await web_server.basic_auth_middleware(
+        _make_request("/readyz", method="GET"), _ok_next
+    )
+    assert ready_res.status_code == 200
+
     github_webhook_res = await web_server.basic_auth_middleware(
         _make_request("/api/webhook", method="POST"), _ok_next
     )
@@ -1071,6 +1078,20 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
     empty_token_res = await web_server.basic_auth_middleware(empty_token_req, _ok_next)
     assert empty_token_res.status_code == 401
     assert b"Ge" in empty_token_res.body  # Geçersiz token
+
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "metrics-secret")
+
+    async def _unexpected_resolve(*_):
+        raise AssertionError("METRICS_TOKEN JWT/DB çözümlemesine gönderilmemeli")
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _unexpected_resolve)
+    metrics_req = _make_request(
+        "/metrics/llm", method="GET", headers={"Authorization": "Bearer metrics-secret"}
+    )
+    metrics_res = await web_server.basic_auth_middleware(metrics_req, _ok_next)
+    assert metrics_res.status_code == 200
+    assert metrics_req.state.user.id == "metrics-service"
+    assert metrics_req.state.user.role == "metrics"
 
     async def _resolve_none(*_):
         return None
@@ -1415,8 +1436,11 @@ def test_verify_hmac_signature_happy_path_and_failures():
         ).hexdigest()
     )
 
-    # no secret => signature checks are bypassed
-    web_server._verify_hmac_signature(payload, "", "", label="Webhook")
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(payload, "", "", label="Webhook")
+    assert exc_info.value.status_code == 401
+    assert "secret yapılandırılmadığı" in str(exc_info.value.detail)
+
     web_server._verify_hmac_signature(payload, secret, expected, label="Webhook")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -1428,6 +1452,26 @@ def test_verify_hmac_signature_happy_path_and_failures():
         web_server._verify_hmac_signature(payload, secret, "sha256=deadbeef", label="Webhook")
     assert exc_info.value.status_code == 401
     assert "Geçersiz imza" in str(exc_info.value.detail)
+
+
+def test_verify_hmac_signature_rejects_replayed_delivery() -> None:
+    payload = b'{"delivery":true}'
+    secret = "top-secret"
+    signature = "sha256=" + web_server.hmac.new(
+        secret.encode(), payload, web_server.hashlib.sha256
+    ).hexdigest()
+    web_server._webhook_replay_seen.clear()
+
+    web_server._verify_hmac_signature(
+        payload, secret, signature, label="Webhook", replay_key="delivery-1"
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(
+            payload, secret, signature, label="Webhook", replay_key="delivery-1"
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "replay" in str(exc_info.value.detail)
 
 
 def test_build_event_driven_federation_spec_for_jira_issue_created():
@@ -2432,6 +2476,58 @@ async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
     assert web_server._get_client_ip(req) == "9.9.9.9"
 
 
+@pytest.mark.asyncio
+async def test_local_rate_limit_fallback_cleans_expired_keys_and_bounds_cardinality(
+    monkeypatch,
+):
+    monkeypatch.setattr(web_server.time, "time", lambda: 1_000.0)
+    monkeypatch.setattr(web_server, "_local_rate_last_cleanup", 0.0)
+    monkeypatch.setattr(web_server, "_LOCAL_RATE_MAX_KEYS", 2)
+    web_server._local_rate_limits.clear()
+    web_server._local_rate_expiries.clear()
+    web_server._local_rate_limits.update(
+        {
+            "expired": [900.0],
+            "active-oldest": [990.0],
+        }
+    )
+    web_server._local_rate_expiries.update(
+        {
+            "expired": 960.0,
+            "active-oldest": 1_050.0,
+        }
+    )
+
+    assert await web_server._local_is_rate_limited("new", limit=2, window_sec=60) is False
+    assert "expired" not in web_server._local_rate_limits
+    assert set(web_server._local_rate_limits) == {"active-oldest", "new"}
+
+    monkeypatch.setattr(web_server, "_local_rate_last_cleanup", 1_000.0)
+    assert await web_server._local_is_rate_limited("newest", limit=2, window_sec=60) is False
+    assert len(web_server._local_rate_limits) == 2
+    assert "active-oldest" not in web_server._local_rate_limits
+    assert set(web_server._local_rate_expiries) == set(web_server._local_rate_limits)
+    web_server._local_rate_limits.clear()
+    web_server._local_rate_expiries.clear()
+
+
+@pytest.mark.asyncio
+async def test_websocket_connection_guard_uses_shared_ip_bucket(monkeypatch):
+    calls = []
+
+    async def _check(namespace, key, limit, window):
+        calls.append((namespace, key, limit, window))
+        return True
+
+    monkeypatch.setattr(web_server, "_get_client_ip", lambda _websocket: "203.0.113.8")
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _check)
+    monkeypatch.setattr(web_server, "_RATE_LIMIT_WS_CONNECTIONS", 7)
+    monkeypatch.setattr(web_server, "_RATE_WINDOW", 45)
+
+    assert await web_server._ws_connection_is_rate_limited(SimpleNamespace()) is True
+    assert calls == [("ws_connect", "203.0.113.8", 7, 45)]
+
+
 def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch):
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
 
@@ -2699,7 +2795,8 @@ def test_serialize_record_helpers_cover_defaults_and_values():
 
 
 def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
-    web_server._verify_hmac_signature(b"{}", "", "", label="sig")
+    with pytest.raises(HTTPException):
+        web_server._verify_hmac_signature(b"{}", "", "", label="sig")
 
     with pytest.raises(HTTPException):
         web_server._verify_hmac_signature(b"{}", "secret", "", label="sig")
@@ -2746,6 +2843,8 @@ async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
         await web_server.autonomy_webhook("github", _Req(b"{}"), x_sidar_signature="")
 
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+    monkeypatch.setattr(web_server.cfg, "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *a, **k: None)
     bad_json_res = await web_server.autonomy_webhook("github", _Req(b"{"), x_sidar_signature="")
     assert bad_json_res.status_code == 400
@@ -3953,14 +4052,15 @@ def test_github_webhook_signature_validation_contract():
     def _verify(*args, **kwargs):
         calls.append(("verify", args, kwargs))
 
-    result = webhook_routes._validate_github_webhook_signature(
-        payload_body=b"{}",
-        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", SIDAR_ENV="test"),
-        signature_header="",
-        verify_hmac_signature=_verify,
-        logger=logger,
-    )
-    assert result == "secret_missing"
+    with pytest.raises(HTTPException) as local_missing_secret_exc:
+        webhook_routes._validate_github_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", SIDAR_ENV="test"),
+            signature_header="",
+            verify_hmac_signature=_verify,
+            logger=logger,
+        )
+    assert local_missing_secret_exc.value.status_code == 401
     assert not any(call[0] == "verify" for call in calls)
 
     with pytest.raises(HTTPException) as missing_secret_exc:
@@ -3997,6 +4097,7 @@ def test_github_webhook_signature_validation_contract():
             SIDAR_ENV="production",
         ),
         signature_header="sha256=bad",
+        delivery_id="production-delivery",
         verify_hmac_signature=_verify,
         logger=logger,
     )
@@ -4008,6 +4109,7 @@ def test_github_webhook_signature_validation_contract():
             payload_body=b"{}",
             cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="sekret", SIDAR_ENV="test"),
             signature_header="sha256=bad",
+            delivery_id="bad-delivery",
             verify_hmac_signature=web_server._verify_hmac_signature,
             logger=logger,
         )
@@ -4449,7 +4551,10 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
         + __import__("hmac").new(b"sekret", b"{}", __import__("hashlib").sha256).hexdigest()
     )
     push_res = await web_server.github_webhook(
-        _Req(b"{}"), x_github_event="push", x_hub_signature_256=good_sig
+        _Req(b"{}"),
+        x_github_event="push",
+        x_hub_signature_256=good_sig,
+        x_github_delivery="push-delivery",
     )
     assert push_res.status_code == 200
 
@@ -4459,7 +4564,10 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
         + __import__("hmac").new(b"sekret", payload, __import__("hashlib").sha256).hexdigest()
     )
     issues_res = await web_server.github_webhook(
-        _Req(payload), x_github_event="issues", x_hub_signature_256=issue_sig
+        _Req(payload),
+        x_github_event="issues",
+        x_hub_signature_256=issue_sig,
+        x_github_delivery="issue-delivery",
     )
     assert issues_res.status_code == 200
     assert any("Issue #3" in content for role, content in agent.memory.messages if role == "user")
@@ -4549,6 +4657,8 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
         ),
     )
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
     response = await web_server.github_webhook(
@@ -4589,6 +4699,8 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
 
     dispatched = {"count": 0}
 
@@ -4624,6 +4736,8 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
 
     async def _dispatch_sync_helper(**_kwargs):
         return {"ok": True}
@@ -9257,7 +9371,9 @@ def test_auth_helpers_and_metrics_access_paths(monkeypatch):
         web_server._require_admin_user(user)
 
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "token-123")
-    request = SimpleNamespace(headers={"Authorization": "Bearer token-123"})
+    request = _make_request(
+        "/metrics", method="GET", headers={"Authorization": "Bearer token-123"}
+    )
     assert web_server._require_metrics_access(request, user) is user
 
 
@@ -9564,7 +9680,7 @@ async def test_periodic_loops_exit_when_stop_event_pre_set(monkeypatch):
 def test_require_metrics_access_without_metrics_token(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "")
     user = SimpleNamespace(id="u1", username="alice", role="user")
-    req = SimpleNamespace(headers={})
+    req = _make_request("/metrics", method="GET")
     with pytest.raises(HTTPException):
         web_server._require_metrics_access(req, user)
 
@@ -11802,6 +11918,8 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
             memory_calls.append((role, content))
 
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
     async def _resolve_agent():

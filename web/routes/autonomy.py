@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -67,19 +67,28 @@ def _validate_autonomy_webhook_signature(
     payload_body: bytes,
     cfg: Any,
     signature_header: str,
+    delivery_id: str = "",
     verify_hmac_signature: Callable[..., None],
 ) -> None:
     """Apply the autonomy webhook signature contract in one testable place."""
-    secret_value = _autonomy_webhook_secret(cfg)
-    if not secret_value:
-        return
     if not _autonomy_webhook_signature_required(cfg):
         return
+
+    secret_value = _autonomy_webhook_secret(cfg)
+    if not secret_value:
+        raise HTTPException(
+            status_code=401,
+            detail="Autonomy webhook secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
+    normalized_delivery_id = delivery_id.strip() if isinstance(delivery_id, str) else ""
+    if not normalized_delivery_id:
+        raise HTTPException(status_code=401, detail="Autonomy webhook delivery kimliği eksik.")
     verify_hmac_signature(
         payload_body,
         secret_value,
         signature_header,
         label="Autonomy webhook",
+        replay_key=normalized_delivery_id,
     )
 
 
@@ -92,6 +101,12 @@ def _deps() -> Any:
     if _deps_factory is None:  # pragma: no cover - configuration guard
         raise RuntimeError("Autonomy route dependencies are not configured.")
     return _deps_factory()
+
+
+def _require_autonomy_admin(request: Request) -> Any:
+    """Authorize privileged autonomy controls using the authenticated request user."""
+    deps = _deps()
+    return deps.require_admin_user(getattr(request.state, "user", None))
 
 
 def build_autonomy_router(deps_factory: Callable[[], Any]) -> APIRouter:
@@ -108,6 +123,7 @@ async def autonomy_webhook(
     source: str,
     request: Request,
     x_sidar_signature: str = Header(default=""),
+    x_sidar_delivery: str = Header(default=""),
 ) -> JSONResponse:
     """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
     deps = _deps()
@@ -119,6 +135,7 @@ async def autonomy_webhook(
         payload_body=payload_body,
         cfg=deps.cfg,
         signature_header=x_sidar_signature,
+        delivery_id=x_sidar_delivery,
         verify_hmac_signature=deps.verify_hmac_signature,
     )
 
@@ -176,7 +193,10 @@ async def autonomy_webhook(
     summary="Manuel Otonomi Uyanışı",
     description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
 )
-async def autonomy_wake(req: AutonomyWakeRequest) -> Any:
+async def autonomy_wake(
+    req: AutonomyWakeRequest,
+    _user: Any = Depends(_require_autonomy_admin),
+) -> Any:
     """Webhook dışı manuel/proaktif tetik giriş noktası."""
     deps = _deps()
     payload = dict(req.payload or {})

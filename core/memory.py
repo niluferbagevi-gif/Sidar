@@ -44,6 +44,7 @@ class ConversationMemory:
         file_path: Path | None = None,
         max_turns: int = 20,
         encryption_key: str = "",
+        previous_encryption_keys: Sequence[str] | str = (),
         keep_last: int = 4,
     ) -> None:
         # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API
@@ -61,6 +62,17 @@ class ConversationMemory:
         self.keep_last = keep_last
         self._lock = threading.RLock()
         self._fernet: Any | None = self._build_fernet(encryption_key)
+        raw_previous_keys = (
+            previous_encryption_keys.split(",")
+            if isinstance(previous_encryption_keys, str)
+            else previous_encryption_keys
+        )
+        current_key = str(encryption_key or "").strip()
+        self._previous_fernets = [
+            self._build_fernet(key)
+            for key in dict.fromkeys(str(item or "").strip() for item in raw_previous_keys)
+            if key and key != current_key
+        ]
 
         # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; varsa singleton kullanılıyor.
         self.cfg = get_config()
@@ -141,8 +153,20 @@ class ConversationMemory:
         if self._fernet is None:
             raise MemoryAuthError("Encrypted memory content requires MEMORY_ENCRYPTION_KEY.")
         token = value.removeprefix(_ENCRYPTED_CONTENT_PREFIX).encode("utf-8")
-        decrypted: bytes = self._fernet.decrypt(token)
-        return decrypted.decode("utf-8")
+        from cryptography.fernet import InvalidToken
+
+        for decryptor in (self._fernet, *self._previous_fernets):
+            try:
+                decrypted: bytes = decryptor.decrypt(token)
+                return decrypted.decode("utf-8")
+            except InvalidToken:
+                continue
+            except UnicodeDecodeError as exc:
+                raise MemoryAuthError("Encrypted memory content is not valid UTF-8.") from exc
+        raise MemoryAuthError(
+            "Encrypted memory content cannot be decrypted with the configured current or "
+            "previous MEMORY_ENCRYPTION_KEY values."
+        )
 
     def _message_plain_content(self, message: MessageRecord) -> str:
         """Return decrypted message content for DB-backed memory rows."""

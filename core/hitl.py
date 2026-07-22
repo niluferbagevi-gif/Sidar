@@ -15,7 +15,7 @@ Entegrasyon noktaları:
   - managers/github_manager.py → PR oluşturma, dal silme
 
 Yapılandırma (.env):
-  HITL_ENABLED=true
+  HITL_ENABLED=true  # güvenli varsayılan; yalnız bilinçli local/test akışında false
   HITL_TIMEOUT_SECONDS=120
 """
 
@@ -195,7 +195,7 @@ class HITLGate:
     """
 
     def __init__(self) -> None:
-        self.enabled = os.getenv("HITL_ENABLED", "false").lower() in ("1", "true", "yes")
+        self.enabled = os.getenv("HITL_ENABLED", "true").lower() in ("1", "true", "yes")
         self.timeout = max(
             10, int(os.getenv("HITL_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT)) or _DEFAULT_TIMEOUT)
         )

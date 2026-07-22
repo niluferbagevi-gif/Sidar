@@ -25,6 +25,7 @@ import re
 import secrets
 import signal
 import sys
+import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -110,6 +111,7 @@ from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
 from web.security import (
+    authenticate_metrics_service,
     build_user_from_jwt_payload,
     get_jwt_secret,
     get_request_user,
@@ -1056,6 +1058,7 @@ async def basic_auth_middleware(
         "/",
         "/health",
         "/healthz",
+        "/readyz",
         "/docs",
         "/redoc",
         "/openapi.json",
@@ -1087,6 +1090,15 @@ async def basic_auth_middleware(
     access_token = auth_header[7:].strip()
     if not access_token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
+
+    metrics_user = authenticate_metrics_service(request, config=cfg)
+    if metrics_user is not None:
+        request.state.user = metrics_user
+        metrics_context = set_current_metrics_user_id(metrics_user.id)
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_metrics_user_id(metrics_context)
 
     user = await _resolve_user_from_token(None, access_token)
     if not user:
@@ -1679,6 +1691,7 @@ RATE_LIMIT_WINDOW_SEC = 60
 _RATE_LIMIT = cfg.RATE_LIMIT_CHAT
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS
 _RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO
+_RATE_LIMIT_WS_CONNECTIONS = cfg.RATE_LIMIT_WS_CONNECTIONS
 _RATE_WINDOW = cfg.RATE_LIMIT_WINDOW
 # GET requests are rate-limited by default; only cheap/frequently-polled paths
 # below are exempt. This mirrors the mutation-limit branch just above, which
@@ -1696,7 +1709,11 @@ _RATE_GET_IO_EXEMPT_PREFIXES = ("/ui/", "/static/", "/vendor/")
 _redis_client: Redis | None = None
 _redis_lock: asyncio.Lock | None = None
 _local_rate_limits: dict[str, list[float]] = {}
+_local_rate_expiries: dict[str, float] = {}
 _local_rate_lock: asyncio.Lock | None = None
+_local_rate_last_cleanup = 0.0
+_LOCAL_RATE_CLEANUP_INTERVAL_SEC = 30.0
+_LOCAL_RATE_MAX_KEYS = 10_000
 
 # Test temizliği için takma ad; _local_rate_limits ile aynı sözlük nesnesini paylaşır
 _rate_data: dict[str, list[float]] = _local_rate_limits
@@ -1732,19 +1749,44 @@ async def _get_redis() -> Redis | None:
 
 
 async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
-    global _local_rate_lock
+    global _local_rate_last_cleanup, _local_rate_lock
     if _local_rate_lock is None:
         _local_rate_lock = asyncio.Lock()
 
     now = time.time()
     async with _local_rate_lock:
+        should_cleanup = (
+            now - _local_rate_last_cleanup >= _LOCAL_RATE_CLEANUP_INTERVAL_SEC
+            or (key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS)
+        )
+        if should_cleanup:
+            expired_keys = [
+                stored_key
+                for stored_key, expires_at in _local_rate_expiries.items()
+                if expires_at <= now
+            ]
+            for expired_key in expired_keys:
+                _local_rate_limits.pop(expired_key, None)
+                _local_rate_expiries.pop(expired_key, None)
+            _local_rate_last_cleanup = now
+
+        if key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS:
+            eviction_key = min(
+                _local_rate_limits,
+                key=lambda stored_key: _local_rate_expiries.get(stored_key, float("-inf")),
+            )
+            _local_rate_limits.pop(eviction_key, None)
+            _local_rate_expiries.pop(eviction_key, None)
+
         timestamps = _local_rate_limits.get(key, [])
         valid = [t for t in timestamps if now - t < window_sec]
         if len(valid) >= limit:
             _local_rate_limits[key] = valid
+            _local_rate_expiries[key] = max(valid) + window_sec
             return True
         valid.append(now)
         _local_rate_limits[key] = valid
+        _local_rate_expiries[key] = now + window_sec
         return False
 
 
@@ -1833,6 +1875,14 @@ def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
         tenant_id = _get_user_tenant(user)
         return f"user:{tenant_id}:{user_id}"
     return f"ip:{fallback_ip}"
+
+
+async def _ws_connection_is_rate_limited(websocket: WebSocket) -> bool:
+    """Apply the shared pre-accept connection bucket to chat and voice sockets."""
+    client_ip = _get_client_ip(cast(Request, websocket))
+    return await _redis_is_rate_limited(
+        "ws_connect", client_ip, _RATE_LIMIT_WS_CONNECTIONS, _RATE_WINDOW
+    )
 
 
 async def ddos_rate_limit_middleware(
@@ -1964,6 +2014,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         socket_key=_socket_key,
         strip_sidar_mention=_strip_sidar_mention,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
     )
 
 
@@ -1988,6 +2039,7 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
         resolve_agent_instance=_resolve_agent_instance,
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
         ws_stream_agent_text_response=_ws_stream_agent_text_response,
         ws_voice_protocol=web_security.SIDAR_WS_VOICE_PROTOCOL,
     )
@@ -2597,18 +2649,49 @@ _FederationTaskRequest = federation_routes.FederationTaskRequest
 _FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
 _AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
+_WEBHOOK_REPLAY_TTL_SECONDS = 600.0
+_WEBHOOK_REPLAY_MAX_ENTRIES = 10_000
+_webhook_replay_seen: dict[str, float] = {}
+_webhook_replay_lock = threading.Lock()
+
 
 def _verify_hmac_signature(
-    payload_body: bytes, secret_value: str, signature_header: str, *, label: str
+    payload_body: bytes,
+    secret_value: str,
+    signature_header: str,
+    *,
+    label: str,
+    replay_key: str = "",
 ) -> None:
     secret = str(secret_value or "").encode("utf-8")
     if not secret:
-        return
+        raise HTTPException(
+            status_code=401,
+            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
     if not signature_header:
         raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
     expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_signature, signature_header):
         raise HTTPException(status_code=401, detail="Geçersiz imza.")
+    normalized_replay_key = str(replay_key or "").strip()
+    if normalized_replay_key:
+        cache_key = f"{label}:{normalized_replay_key}"
+        now = time.monotonic()
+        with _webhook_replay_lock:
+            expired = [
+                key
+                for key, seen_at in _webhook_replay_seen.items()
+                if now - seen_at >= _WEBHOOK_REPLAY_TTL_SECONDS
+            ]
+            for key in expired:
+                _webhook_replay_seen.pop(key, None)
+            if cache_key in _webhook_replay_seen:
+                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
+            if len(_webhook_replay_seen) >= _WEBHOOK_REPLAY_MAX_ENTRIES:
+                oldest_key = min(_webhook_replay_seen.items(), key=lambda item: item[1])[0]
+                _webhook_replay_seen.pop(oldest_key, None)
+            _webhook_replay_seen[cache_key] = now
 
 
 def _build_autonomy_dependencies() -> SimpleNamespace:
@@ -2621,6 +2704,7 @@ def _build_autonomy_dependencies() -> SimpleNamespace:
         ),
         resolve_agent_instance=_resolve_agent_instance,
         resolve_ci_failure_context=_resolve_ci_failure_context,
+        require_admin_user=_require_admin_user,
         run_event_driven_federation_workflow=(
             lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
         ),

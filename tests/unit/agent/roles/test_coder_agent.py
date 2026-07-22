@@ -71,7 +71,15 @@ def _build_code_manager_mock(code_manager_cls):
     code_manager = create_autospec(code_manager_cls, instance=True, spec_set=True)
     code_manager.read_file.side_effect = lambda path: (True, f"read:{path}")
     code_manager.write_file.side_effect = lambda path, content: (True, f"write:{path}:{content}")
+    code_manager.write_file_hitl.side_effect = lambda path, content: (
+        True,
+        f"write:{path}:{content}",
+    )
     code_manager.patch_file.side_effect = lambda path, target, replacement: (
+        True,
+        f"patch:{path}:{target}->{replacement}",
+    )
+    code_manager.patch_file_hitl.side_effect = lambda path, target, replacement: (
         True,
         f"patch:{path}:{target}->{replacement}",
     )

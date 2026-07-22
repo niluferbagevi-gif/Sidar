@@ -10,7 +10,10 @@ from web.routes.autonomy import (
     _autonomy_webhook_secret,
     _autonomy_webhook_signature_required,
     _coerce_bool,
+    _require_autonomy_admin,
     _validate_autonomy_webhook_signature,
+    configure_autonomy_dependencies,
+    router,
 )
 
 
@@ -43,6 +46,26 @@ def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
     )
 
 
+def test_autonomy_wake_declares_admin_dependency() -> None:
+    route = next(route for route in router.routes if route.path == "/api/autonomy/wake")
+
+    assert any(dependency.call is _require_autonomy_admin for dependency in route.dependant.dependencies)
+
+
+def test_require_autonomy_admin_delegates_authenticated_request_user() -> None:
+    admin = SimpleNamespace(id="admin-1", role="admin")
+    calls: list[Any] = []
+    configure_autonomy_dependencies(
+        lambda: SimpleNamespace(
+            require_admin_user=lambda user: calls.append(user) or admin,
+        )
+    )
+    request = SimpleNamespace(state=SimpleNamespace(user=admin))
+
+    assert _require_autonomy_admin(request) is admin
+    assert calls == [admin]
+
+
 def test_autonomy_webhook_signature_required_defaults_to_secure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -70,17 +93,33 @@ def test_autonomy_webhook_signature_required_forces_production(
     )
 
 
-def test_validate_autonomy_webhook_signature_bypasses_when_secret_missing() -> None:
+def test_validate_autonomy_webhook_signature_fails_closed_when_nonproduction_secret_missing() -> None:
     calls: list[tuple[Any, ...]] = []
 
-    _validate_autonomy_webhook_signature(
-        payload_body=b"{}",
-        cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET=""),
-        signature_header="",
-        verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_autonomy_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="", SIDAR_ENV="testing"),
+            signature_header="",
+            verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
+        )
 
+    assert exc_info.value.status_code == 401
+    assert "Autonomy webhook secret" in str(exc_info.value.detail)
     assert calls == []
+
+
+def test_validate_autonomy_webhook_signature_fails_closed_in_production_without_secret() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_autonomy_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="", SIDAR_ENV="production"),
+            signature_header="",
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "Autonomy webhook secret" in str(exc_info.value.detail)
 
 
 def test_validate_autonomy_webhook_signature_can_bypass_for_local_compatibility(
@@ -109,10 +148,18 @@ def test_validate_autonomy_webhook_signature_delegates_to_shared_hmac_verifier()
         payload_body=b"{}",
         cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="secret"),
         signature_header="sha256=ok",
+        delivery_id="delivery-1",
         verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
     )
 
-    assert calls == [(b"{}", "secret", "sha256=ok", {"label": "Autonomy webhook"})]
+    assert calls == [
+        (
+            b"{}",
+            "secret",
+            "sha256=ok",
+            {"label": "Autonomy webhook", "replay_key": "delivery-1"},
+        )
+    ]
 
 
 def test_validate_autonomy_webhook_signature_preserves_verifier_http_errors() -> None:
@@ -124,6 +171,7 @@ def test_validate_autonomy_webhook_signature_preserves_verifier_http_errors() ->
             payload_body=b"{}",
             cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="secret"),
             signature_header="",
+            delivery_id="delivery-bad",
             verify_hmac_signature=_raise,
         )
 

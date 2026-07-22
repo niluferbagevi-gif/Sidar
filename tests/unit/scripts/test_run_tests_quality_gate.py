@@ -811,7 +811,9 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert (
         'production_ready="$(sidar_install_summary_field_or_empty production_ready)"' in env_phase
     )
-    assert "production-readiness gate ve migration doğrulaması tamamlandı" in env_phase
+    assert "production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı" in env_phase
+    assert 'production_secret_rotation_gate_passes "$env_file"' in env_phase
+    assert "secret rotasyon kapısı geçmeden SIDAR_ENV=production kalıcılaştırılmayacak" in env_phase
     assert (
         'local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"' in validation_phase
     )
@@ -5783,3 +5785,34 @@ def test_installer_warns_when_production_env_shares_local_generated_secrets() ->
     assert "docs/runbooks/production-secret-rotation.md" in env_phase
     assert "python -m scripts.rotate_production_secrets" in env_phase
     assert 'emit_production_secret_rotation_notice "$src"' in env_phase
+    assert "sidar_shared_production_secret_keys()" in env_phase
+    assert "production_secret_rotation_gate_passes()" in env_phase
+    assert "SIDAR_ENV=production kalıcılaştırması engellendi" in env_phase
+
+
+def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -> None:
+    local_env = tmp_path / ".env"
+    production_env = tmp_path / ".env.production"
+    shared = "shared-secret-value-abcdefghijklmnopqrstuvwxyz"
+    local_env.write_text(f"API_KEY={shared}\n", encoding="utf-8")
+    production_env.write_text(f"API_KEY={shared}\n", encoding="utf-8")
+
+    probe = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source scripts/install_modules/utils/env_utils.sh; "
+            "source scripts/install_modules/phases/08_env.sh; "
+            'SCRIPT_DIR="$1"; warn() { :; }; '
+            'if production_secret_rotation_gate_passes "$1/.env"; then echo allowed; '
+            "else echo blocked; fi",
+            "gate-probe",
+            str(tmp_path),
+        ],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert probe.stdout.strip() == "blocked"

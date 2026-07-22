@@ -120,6 +120,23 @@ def resolve_dotenv_path(raw_path: str, *, base_dir: Path) -> Path:
     return dotenv_path
 
 
+def validate_secret_overlay_outside_repo(raw_path: str, *, base_dir: Path) -> Path | None:
+    """Resolve a secret overlay and reject paths located inside the repository tree."""
+    cleaned_path = str(raw_path or "").strip()
+    if not cleaned_path:
+        return None
+    resolved_path = resolve_dotenv_path(cleaned_path, base_dir=base_dir).resolve()
+    resolved_base = base_dir.resolve()
+    try:
+        resolved_path.relative_to(resolved_base)
+    except ValueError:
+        return resolved_path
+    raise ValueError(
+        "SIDAR_KEYS_FILE repository dışında bulunmalıdır; repo içi dotenv dosyaları secret "
+        "overlay olarak kullanılamaz."
+    )
+
+
 def load_dotenv_if_exists(
     raw_path: str,
     *,

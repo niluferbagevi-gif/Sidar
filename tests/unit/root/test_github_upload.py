@@ -303,6 +303,32 @@ def test_stage_files(monkeypatch):
     assert calls[-1] == ["git", "add", "--", ":(literal)a.txt", ":(literal)b.py"]
 
 
+def test_stage_deleted_files_uses_option_separator_and_literal_pathspecs(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append((cmd, show_output))
+        return True, "ok"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    assert gu.stage_deleted_files([]) == (True, "")
+    assert gu.stage_deleted_files(["-danger.txt", "folder/[draft].md"]) == (True, "ok")
+    assert calls == [
+        (
+            [
+                "git",
+                "rm",
+                "--ignore-unmatch",
+                "--",
+                ":(literal)-danger.txt",
+                ":(literal)folder/[draft].md",
+            ],
+            False,
+        )
+    ]
+
+
 def test_stage_files_rejects_unmerged_paths(monkeypatch):
     monkeypatch.setattr(
         gu,
@@ -915,6 +941,27 @@ def test_main_add_failure(monkeypatch):
             (True, ""),
         ],
     )
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_aborts_when_deleted_files_cannot_be_staged(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: ["-danger.txt"])
+    monkeypatch.setattr(
+        gu, "stage_deleted_files", lambda _paths: (False, "git rm rejected path")
+    )
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+        ],
+        inputs=["yes"],
+    )
+
     assert run_main_and_exit_code() == 1
 
 

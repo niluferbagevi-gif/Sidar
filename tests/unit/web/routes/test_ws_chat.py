@@ -549,6 +549,26 @@ class _Deps:
 
 
 @pytest.mark.asyncio
+async def test_websocket_chat_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    ws = _Ws()
+    deps = _Deps()
+
+    async def _limited(_websocket) -> bool:
+        return True
+
+    async def _unexpected_agent():
+        raise AssertionError("rate-limited socket must not initialize the agent")
+
+    deps.ws_connection_is_rate_limited = _limited
+    deps.resolve_agent_instance = _unexpected_agent
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert ws.accepted == []
+    assert ws.closed == [(1013, "WebSocket connection rate limit exceeded")]
+
+
+@pytest.mark.asyncio
 async def test_websocket_chat_rejects_invalid_auth_token() -> None:
     ws = _Ws([json.dumps({"action": "auth", "token": "bad-token"})])
     deps = _Deps()

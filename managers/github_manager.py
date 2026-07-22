@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from core.hitl import get_hitl_gate
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -489,6 +491,25 @@ class GitHubManager:
             )
         except Exception as exc:
             return False, f"Pull Request oluşturma hatası: {exc}"
+
+    async def create_pull_request_hitl(
+        self,
+        title: str,
+        body: str,
+        head: str,
+        base: str | None = None,
+    ) -> tuple[bool, str]:
+        """Require human approval before creating a pull request."""
+        base_branch = base or (self._repo.default_branch if self._repo else "")
+        approved = await get_hitl_gate().request_approval(
+            action="github_pr_create",
+            description=f"Pull Request oluşturulacak: {head} → {base_branch}",
+            payload={"title": title, "head": head, "base": base_branch},
+            requested_by="GitHubManager",
+        )
+        if not approved:
+            return False, "Pull Request oluşturma işlemi insan onayı olmadan reddedildi."
+        return self.create_pull_request(title, body, head, base)
 
     def list_pull_requests(
         self,

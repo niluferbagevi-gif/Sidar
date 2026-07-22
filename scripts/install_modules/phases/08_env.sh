@@ -948,11 +948,20 @@ sidar_production_secret_rotation_keys() {
 
 emit_production_secret_rotation_notice() {
     local src="$1"
-    local production_env="$SCRIPT_DIR/.env.production"
-    local key=""
-    local src_val=""
-    local prod_val=""
     local -a shared_matches=()
+    mapfile -t shared_matches < <(sidar_shared_production_secret_keys "$src")
+
+    if (( ${#shared_matches[@]} == 0 )); then
+        return 0
+    fi
+
+    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; komut: uv run python -m scripts.rotate_production_secrets --env-file .env.production --apply --ack-memory-key-impact; runbook: docs/runbooks/production-secret-rotation.md"
+}
+
+sidar_shared_production_secret_keys() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
 
     [[ -f "$src" && -f "$production_env" ]] || return 0
 
@@ -961,15 +970,20 @@ emit_production_secret_rotation_notice() {
         src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
         prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
         if [[ -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ]]; then
-            shared_matches+=("$key")
+            printf '%s\n' "$key"
         fi
     done < <(sidar_production_secret_rotation_keys)
+}
 
+production_secret_rotation_gate_passes() {
+    local src="$1"
+    local -a shared_matches=()
+    mapfile -t shared_matches < <(sidar_shared_production_secret_keys "$src")
     if (( ${#shared_matches[@]} == 0 )); then
         return 0
     fi
-
-    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; komut: uv run python -m scripts.rotate_production_secrets --env-file .env.production --apply --ack-memory-key-impact; runbook: docs/runbooks/production-secret-rotation.md"
+    warn "SIDAR_ENV=production kalıcılaştırması engellendi: .env.production içinde local/dev/test ile ortak secret bulundu: ${shared_matches[*]}. Önce production secret rotasyonunu tamamlayın."
+    return 1
 }
 
 propagate_shared_secrets_to_env_variants() {
@@ -1264,6 +1278,11 @@ prompt_post_install_sidar_env_mode() {
             return 0
         fi
 
+        if ! production_secret_rotation_gate_passes "$env_file"; then
+            info "Production seçimi kaydedildi; secret rotasyon kapısı geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."
+            return 0
+        fi
+
         if is_alembic_at_head; then
             info "Production seçimi için Alembic current=head doğrulandı."
         else
@@ -1279,7 +1298,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if [[ "$selected_env" == "production" ]]; then
-        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness gate ve migration doğrulaması tamamlandı."
+        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
         if is_alembic_at_head; then

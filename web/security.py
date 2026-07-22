@@ -7,6 +7,7 @@ wrapper names during the router modularization effort.
 
 from __future__ import annotations
 
+import hmac
 import re
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
 SIDAR_WS_VOICE_PROTOCOL = "sidar.voice.v1"
 SIDAR_WS_HITL_PROTOCOL = "sidar.hitl.v1"
 _WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
+METRICS_SERVICE_PATHS = frozenset({"/metrics", "/metrics/llm", "/metrics/llm/prometheus"})
 
 
 def parse_ws_subprotocol_values(raw_header: str) -> list[str]:
@@ -136,13 +138,29 @@ def require_admin_user(user: Any = Depends(get_request_user)) -> Any:
     return user
 
 
+def authenticate_metrics_service(request: Request, *, config: Any) -> Any | None:
+    """Return a scoped service principal for a valid metrics bearer token."""
+    if request.method != "GET" or request.url.path not in METRICS_SERVICE_PATHS:
+        return None
+    configured_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
+    auth_header = request.headers.get("Authorization", "")
+    if not configured_token or not auth_header.startswith("Bearer "):
+        return None
+    supplied_token = auth_header[7:].strip()
+    if not supplied_token or not hmac.compare_digest(supplied_token, configured_token):
+        return None
+    return SimpleNamespace(
+        id="metrics-service",
+        username="metrics-service",
+        role="metrics",
+        tenant_id="system",
+    )
+
+
 def require_metrics_access(request: Request, user: Any, *, config: Any) -> Any:
     """Allow metrics access for admin users or requests carrying METRICS_TOKEN."""
-    metrics_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
-    if metrics_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
-            return user
+    if authenticate_metrics_service(request, config=config) is not None:
+        return user
     if is_admin_user(user):
         return user
     raise HTTPException(

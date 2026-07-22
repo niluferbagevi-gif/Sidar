@@ -243,6 +243,8 @@ def test_build_ci_failure_context_prefers_generic() -> None:
     ctx = ci.build_ci_failure_context("ci_pipeline_failed", {"ci_failure": True, "repo": "x/y"})
     assert ctx is not None
     assert ctx["kind"] == "generic_ci_failure"
+    assert ctx["trigger_origin"] == "external_ci_event"
+    assert ctx["human_approval_required"] is True
 
 
 def test_build_ci_failure_context_workflow_run() -> None:
@@ -269,6 +271,7 @@ def test_build_ci_failure_context_workflow_run() -> None:
     assert ctx["kind"] == "workflow_run"
     assert ctx["base_branch"] == "develop"
     assert "tests/unit/core/test_ci_remediation.py" in ctx["suspected_targets"]
+    assert ctx["human_approval_required"] is True
 
 
 def test_build_ci_failure_context_check_run() -> None:
@@ -644,6 +647,30 @@ def test_build_remediation_loop_high_risk_and_normal_modes() -> None:
     assert safe["mode"] == "self_heal"
     assert safe["status"] == "needs_diagnosis"
     assert safe["steps"][1]["status"] == "blocked"
+
+
+def test_external_ci_payload_cannot_avoid_hitl_by_choosing_benign_text() -> None:
+    context = ci.build_ci_failure_context(
+        "workflow_run",
+        {
+            "repository": {"full_name": "org/repo", "default_branch": "main"},
+            "workflow_run": {
+                "status": "completed",
+                "conclusion": "failure",
+                "name": "routine-check",
+                "display_title": "routine maintenance",
+                "id": 42,
+                "head_sha": "abc123",
+            },
+        },
+    )
+
+    assert context is not None
+    remediation = ci.build_remediation_loop(context, "ordinary failure")
+
+    assert remediation["needs_human_approval"] is True
+    assert "external_ci_event" in remediation["hitl_reasons"]
+    assert remediation["mode"] == "self_heal_with_hitl"
 
 
 def test_build_ci_remediation_payload_assembles_all_parts() -> None:

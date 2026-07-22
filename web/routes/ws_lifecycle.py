@@ -10,6 +10,15 @@ from typing import Any
 from fastapi import WebSocket
 
 
+async def reject_rate_limited_connection(websocket: WebSocket, deps: Any) -> bool:
+    """Reject a connection before accept when the shared WebSocket guard is saturated."""
+    checker = getattr(deps, "ws_connection_is_rate_limited", None)
+    if not callable(checker) or not await checker(websocket):
+        return False
+    await websocket.close(code=1013, reason="WebSocket connection rate limit exceeded")
+    return True
+
+
 class WebSocketLifecycle:
     """Owns deterministic task cancellation and disconnect cleanup for a websocket."""
 

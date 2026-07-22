@@ -107,7 +107,8 @@ Yeni split modül eklendiğinde iki güvence birlikte sağlanmalıdır:
 - **Observability:** `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, Prometheus/Grafana
   bağlantıları.
 - **Rate Limiting:** `SIDAR_RATE_LIMIT_CHAT`, `SIDAR_RATE_LIMIT_MUTATIONS`,
-  `SIDAR_RATE_LIMIT_GET_IO`, `SIDAR_REDIS_URL` ve legacy alias'lar.
+  `SIDAR_RATE_LIMIT_GET_IO`, `SIDAR_RATE_LIMIT_WS_CONNECTIONS`, `SIDAR_REDIS_URL`
+  ve legacy alias'lar.
 - **RAG:** `RAG_DIR`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`,
   `RAG_FILE_THRESHOLD`.
 - **Mimari:** `ENABLE_MULTI_AGENT`, `REVIEWER_TEST_COMMAND`, swarm/supervisor ve

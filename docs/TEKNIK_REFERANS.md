@@ -231,7 +231,7 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/api/qa/coverage/generate` | Coverage bulgusu için kalite kapılı test adayı üretir |
 | POST | `/api/qa/coverage/batch` | CoverageAgent otonom batch iyileştirme akışını çalıştırır |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
-| POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature`) |
+| POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature` + tekil `X-Sidar-Delivery`) |
 
 `/api/autonomy/webhook/{source}` örnek payload:
 
@@ -576,7 +576,10 @@ WEB_SEARCH_MAX_RESULTS
 - Kod yürütme sandbox’ında Docker kaynak limitleri (`mem_limit`, `nano_cpus`) uygulanır.
 - İsteğe bağlı ağ kapatma (`network_mode="none"`) desteği vardır.
 - Mikro-VM runtime uyumu için runtime çözümleme (`runsc`, `kata-runtime`) `CodeManager` içinde ele alınır.
-- GitHub webhook doğrulaması `X-Hub-Signature-256` + `HMAC-SHA256` ile yapılır.
+- GitHub webhook doğrulaması `X-Hub-Signature-256` + `HMAC-SHA256` ile yapılır; tekil
+  `X-GitHub-Delivery` kimliği kısa süreli replay önbelleğinde tekrar kabul edilmez.
+- Autonomy webhook istemcileri her imzalı istekte yeni bir `X-Sidar-Delivery` değeri
+  göndermelidir; aynı delivery kimliğinin yeniden kullanımı replay olarak reddedilir.
 - `/file-content` endpoint’i uzantı allowlist + `1MB` boyut limiti ile korunur.
 
 ---

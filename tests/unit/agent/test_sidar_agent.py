@@ -1339,6 +1339,86 @@ async def test_attempt_autonomous_self_heal_continues_after_human_approval(
     assert remediation["remediation_loop"]["needs_human_approval"] is False
 
 
+async def test_attempt_autonomous_self_heal_enforces_cross_trigger_attempt_limit(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent._attempt_mechanical_autofix = AsyncMock(return_value={"status": "skipped"})
+    agent._build_self_heal_plan = AsyncMock(
+        return_value={"operations": [], "summary": "no safe patch"}
+    )
+    context = {
+        "repo": "org/repo",
+        "workflow_name": "ci",
+        "sha": "deadbeef",
+        "run_id": "42",
+    }
+
+    def remediation() -> dict[str, Any]:
+        return {
+            "remediation_loop": {
+                "status": "planned",
+                "max_auto_attempts": 2,
+                "scope_paths": ["core/a.py"],
+                "validation_commands": ["python -m pytest"],
+                "steps": [{"name": "patch"}, {"name": "handoff"}],
+            }
+        }
+
+    first = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=remediation()
+    )
+    second = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=remediation()
+    )
+    third_payload = remediation()
+    third = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=third_payload
+    )
+
+    assert first["status"] == "blocked"
+    assert second["status"] == "blocked"
+    assert third["status"] == "circuit_open"
+    assert third["attempts_used"] == 2
+    assert third["max_auto_attempts"] == 2
+    assert third_payload["remediation_loop"]["status"] == "circuit_open"
+    assert agent._build_self_heal_plan.await_count == 2
+
+
+async def test_external_ci_circuit_breaker_skips_diagnosis_llm_call(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_args: None
+    agent._try_multi_agent = AsyncMock(return_value="must not run")
+    agent._append_autonomy_history = AsyncMock()
+    agent._self_heal_attempts = {"org/repo|ci|deadbeef": 1}
+    trigger = ExternalTrigger(
+        trigger_id="retry-2",
+        source="webhook:github:ci_failure",
+        event_name="ci_failure_remediation",
+        payload={
+            "kind": "workflow_run",
+            "repo": "org/repo",
+            "workflow_name": "ci",
+            "sha": "deadbeef",
+            "run_id": "43",
+            "human_approval_required": True,
+            "failure_summary": "still red",
+        },
+        meta={},
+    )
+
+    result = await agent.handle_external_trigger(trigger)
+
+    assert result["status"] == "circuit_open"
+    assert result["remediation"]["self_heal_execution"]["status"] == "circuit_open"
+    agent._try_multi_agent.assert_not_awaited()
+
+
 async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(
         trigger_id="tid", source="cron", event_name="run", payload={}, meta={}

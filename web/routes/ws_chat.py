@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from web.routes.ws_lifecycle import WebSocketLifecycle
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import extract_ws_header_token as default_extract_ws_header_token
 
 
@@ -126,6 +126,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
     1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
     2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
     # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
     # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.

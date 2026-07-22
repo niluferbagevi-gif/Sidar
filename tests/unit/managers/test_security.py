@@ -90,6 +90,33 @@ def test_is_safe_path_valid_and_invalid_cases(tmp_path: Path) -> None:
     assert not mgr.is_safe_path(str(tmp_path / ".env"))
 
 
+def test_is_safe_path_resolves_relative_paths_from_base_dir_not_process_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_dir = tmp_path / "project"
+    base_dir.mkdir()
+    safe_file = base_dir / "notes" / "safe.txt"
+    safe_file.parent.mkdir()
+    safe_file.touch()
+    process_cwd = tmp_path / "unrelated-cwd"
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+    mgr = SecurityManager(access_level="full", base_dir=base_dir)
+
+    assert mgr._resolve_safe("notes/safe.txt") == safe_file.resolve()
+    assert mgr.is_safe_path("notes/safe.txt") is True
+    assert mgr.can_read("notes/safe.txt") is True
+
+
+def test_is_safe_path_rejects_when_shared_resolver_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="full", base_dir=tmp_path)
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+
+    assert mgr.is_safe_path("safe.txt") is False
+
+
 def test_can_read_default_and_rejections(tmp_path: Path) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
 

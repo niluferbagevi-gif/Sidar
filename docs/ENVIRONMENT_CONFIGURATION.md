@@ -117,6 +117,11 @@ secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository wit
 `600` or stricter, and do not copy personal provider keys into `.env` unless the
 explicit materialization opt-in below is intentional.
 
+Sidar validates this boundary before initial dotenv loading and runtime reloads.
+Relative paths resolve from the repository root, so `SIDAR_KEYS_FILE=.env` and
+`SIDAR_KEYS_FILE=config/keys.env` fail closed. Symlinks that ultimately resolve into
+the repository are rejected as well.
+
 ```bash
 SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ./install_sidar.sh
 ```
