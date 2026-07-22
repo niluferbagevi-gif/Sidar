@@ -162,3 +162,23 @@ def test_request_admin_and_metrics_access_guards() -> None:
     with pytest.raises(HTTPException) as forbidden_metrics:
         security.require_metrics_access(denied_request, regular, config=_Config)
     assert forbidden_metrics.value.status_code == 403
+
+
+def test_metrics_service_token_uses_constant_time_comparison(monkeypatch) -> None:
+    comparisons: list[tuple[str, str]] = []
+
+    def _compare_digest(supplied: str, configured: str) -> bool:
+        comparisons.append((supplied, configured))
+        return supplied == configured
+
+    monkeypatch.setattr(security.hmac, "compare_digest", _compare_digest)
+    request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/metrics"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
+
+    principal = security.authenticate_metrics_service(request, config=_Config)
+
+    assert principal is not None
+    assert comparisons == [("metrics-token", "metrics-token")]
