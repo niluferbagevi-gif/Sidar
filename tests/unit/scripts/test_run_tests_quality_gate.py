@@ -177,7 +177,7 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     # omit/exclude patterns, HTML config, and the local ratchet baseline live together.
     assert pyproject["tool"]["coverage"]["run"]["branch"] is True
     coverage_fail_under = pyproject["tool"]["coverage"]["report"]["fail_under"]
-    assert coverage_fail_under >= 99
+    assert coverage_fail_under == 100
 
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
@@ -4385,9 +4385,9 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     """Coverage thresholds must be selectable per operational profile.
 
     AGENTS.md §2.5.4 separates the daily local gate (`pyproject.toml`
-    ratchet-managed %99 baseline), the CI pre-merge gate — which
+    ratchet-managed %100 baseline), the CI pre-merge gate — which
     inherits that same ratcheted baseline unless explicitly overridden — and
-    the aspirational %100 coverage campaign. The script must surface all
+    the %100 coverage campaign. The script must surface all
     three knobs so a developer can run a fast local pass without colliding
     with the campaign target, while the campaign opt-in still aims at %100.
     """
@@ -4412,34 +4412,22 @@ def test_coverage_gate_routes_local_ci_and_campaign_profiles() -> None:
     assert "COVERAGE_FAIL_UNDER_SOURCE" in script
     assert "explicit-override" in script
 
-    # Local/CI ratchet cap leaves a 1-point slack by default; campaign and
-    # explicit strict-local opt-in open to 100.
-    assert 'COVERAGE_RATCHET_MAX_GATE="99"' in script
+    # Every standard profile uses the measured 100% result as its default
+    # ratchet ceiling, so a later 99.x result cannot pass behind a slack gate.
     assert 'COVERAGE_RATCHET_MAX_GATE="100"' in script
-    assert "COVERAGE_STRICT_LOCAL_RATCHET" in script
     tests_notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     optimization_plan = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
     strict_runbook = Path("docs/runbooks/coverage-strict-local-ratchet.md").read_text(
         encoding="utf-8"
     )
-    assert "Coverage gate ratcheted: %90 -> %99 (measured=%100.00)" in tests_notes
-    assert "coverage-strict-local-ratchet.md" in tests_notes
-    assert "günlük local/CI ratchet cap `%99`" in coverage_agent_docs
-    assert "bilinçli bir operasyonel tampon" in optimization_plan
-    assert "COVERAGE_STRICT_LOCAL_RATCHET=1" in optimization_plan
-    assert "COVERAGE_RATCHET_MAX_GATE=100" in optimization_plan
-    assert "Varsayılan local/CI cap: `%99`" in strict_runbook
-    assert "Strict opt-in cap: `%100`" in strict_runbook
-    assert "COVERAGE_STRICT_LOCAL_RATCHET=1 ./run_tests.sh" in strict_runbook
-    assert (
-        '[ "${COVERAGE_CAMPAIGN_PROFILE}" -eq 1 ] || [ "${COVERAGE_STRICT_LOCAL_RATCHET:-0}" = "1" '
-        "]" in script
-    )
+    assert "Coverage gate ratcheted: %99 -> %100 (measured=%100.00)" in tests_notes
+    assert "local/CI ratchet cap `%100`" in coverage_agent_docs
+    assert "regresyonu fail-closed yakalar" in optimization_plan
+    assert "Varsayılan local/CI cap: `%100`" in strict_runbook
 
-    # pyproject.toml holds the ratchet-managed baseline (currently %99 and only
-    # ever raised by coverage_ratchet.py), not the campaign target.
-    assert pyproject["tool"]["coverage"]["report"]["fail_under"] >= 99
+    # pyproject.toml commits the measured 100% result as the merge floor.
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 100
 
     # CI no longer hardcodes a stricter override for the main test job; it
     # inherits the same ratcheted pyproject.toml baseline as the local profile.

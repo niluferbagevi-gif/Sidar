@@ -620,7 +620,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (local/CI ratchet-managed baseline `fail_under=99` → yukarı doğru ratchet, campaign `%100`) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
+| Coverage Quality Gate (local/CI ratchet-managed baseline `fail_under=100`, tüm standart profiller fail-closed) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
@@ -632,14 +632,14 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 ### 6.2 Coverage Profile-Aware Quality Gates
 
-Coverage Quality Gate tek bir sabit eşik değil, üç operasyonel profile dağıtılmış
-gate ailesidir; release öncesi güncel baseline local/CI için `%99`, campaign için
-opt-in `%100` hedefidir (detay için bkz. `AGENTS.md §2.5.4`):
+Coverage Quality Gate üç operasyonel profil tarafından ortak kullanılan fail-closed
+bir tabandır; release öncesi güncel baseline local/CI ve campaign için `%100`'dür
+(detay için bkz. `AGENTS.md §2.5.4`):
 
-- **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 99`
+- **Local profile (`TEST_PROFILE=local`)** — `pyproject.toml [tool.coverage.report].fail_under = 100`
   ratchet tabanıdır; `coverage_ratchet.py` step `%1` ile bu değeri
-  yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=99` ile bir puanlık
-  tampon bırakır. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
+  yalnızca yukarı taşır ve `COVERAGE_RATCHET_MAX_GATE=100` ile ölçülen tam kapsamı
+  regresyonlara karşı korur. `COVERAGE_FAIL_UNDER_LOCAL` envi tabanı override eder.
 - **CI profile (`TEST_PROFILE=ci`)** — `.github/workflows/ci.yml` ana test
   job'unda artık ayrı bir sabit override bindirmiyor; local ile aynı
   ratchet edilmiş `pyproject.toml` tabanını kullanır. `COVERAGE_FAIL_UNDER_CI`
@@ -1488,7 +1488,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `pyproject.toml` üzerinde `%99` ratchet tabanını kullanır ve ölçülen coverage arttıkça yalnızca yukarı taşınır; CI artık ayrı bir sabit override bindirmeden aynı ratchet edilmiş tabanı kullanır; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
+> **Not:** “%100 test kapsaması” ifadesi kültürel/aspirasyonel hedef olarak korunur ve coverage campaign profilinde (`COVERAGE_CAMPAIGN=1` veya `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) `COVERAGE_FAIL_UNDER_CAMPAIGN=100` ile uygulanır. Günlük local kalite kapısı `pyproject.toml` üzerinde `%100` ratchet tabanını kullanır ve ölçülen coverage arttıkça yalnızca yukarı taşınır; CI artık ayrı bir sabit override bindirmeden aynı ratchet edilmiş tabanı kullanır; üç profil tek bir koddan değil farklı operasyonel hedeflerden beslenir (bkz. `AGENTS.md §2.5.4`).
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi
@@ -1629,9 +1629,8 @@ Son doğrulama turlarında migration akışları, swarm delegasyonları, audit t
 
 ## Session: Coverage Strict Local Ratchet Policy
 
-- Coverage ratchet tavanının günlük local/CI profillerinde `%99` kalması bilinçli bir operasyonel tampon olarak kayıt altına alındı; bu davranış bug değil, refactor ve platform dalgalanmalarını absorbe eden varsayılan politikadır.
-- Stabil `%100` ölçüm veren runnerlarda `%99.5` benzeri regresyonların fail-closed yakalanması için `docs/runbooks/coverage-strict-local-ratchet.md` runbook'u eklendi.
-- Strict-local kullanım yolu `COVERAGE_STRICT_LOCAL_RATCHET=1 ./run_tests.sh`, açık tavan yolu `COVERAGE_RATCHET_MAX_GATE=100 ./run_tests.sh`, campaign yolu ise `COVERAGE_CAMPAIGN=1 ./run_tests.sh` olarak belgelendi.
+- Coverage ratchet tavanı günlük local/CI profillerinde `%100` olarak sabitlendi; ölçülen tam kapsam artık `%99.x` regresyonlarını fail-closed yakalar.
+- `docs/runbooks/coverage-strict-local-ratchet.md`, `%100` varsayılanını doğrulama ve yalnız kontrollü teşhis için override kullanma politikasını belgeler.
 
 
 ## Session: Security Directory Scope Clarification

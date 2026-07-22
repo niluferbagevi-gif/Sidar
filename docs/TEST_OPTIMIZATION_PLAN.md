@@ -18,9 +18,9 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 
 ### Mevcut kalite geçidi ile hizalama (zorunlu not)
 
-- Repo’daki günlük baseline kalite geçidinin doğruluk kaynağı `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeridir; bu revizyonda güncel ratchet baseline `%99`'dur ve `coverage_ratchet.py` ölçülen coverage arttıkça bu değeri yalnızca yukarı taşır. CI bu ratchet edilmiş tabanı olduğu gibi kullanır; gerekirse açık ortam değişkeniyle (`COVERAGE_FAIL_UNDER_CI`) ad-hoc override verilebilir.
+- Repo’daki günlük baseline kalite geçidinin doğruluk kaynağı `pyproject.toml` içindeki `[tool.coverage.report].fail_under` değeridir; bu revizyonda güncel ratchet baseline `%100`'dür ve `coverage_ratchet.py` ölçülen coverage arttıkça bu değeri yalnızca yukarı taşır. CI bu ratchet edilmiş tabanı olduğu gibi kullanır; gerekirse açık ortam değişkeniyle (`COVERAGE_FAIL_UNDER_CI`) ad-hoc override verilebilir.
 - `run_tests.sh`, açık `COVERAGE_FAIL_UNDER` verilmemişse `pyproject.toml` değerini okur ve başarılı test koşusundan sonra `COVERAGE_RATCHET_STEP` varsayılanı `%1` puan olacak şekilde gate’i yalnızca yukarı ratchet eder.
-- Günlük local/CI ratchet cap değerinin `%99` kalması bilinçli bir operasyonel tampondur; stabil `%100` runnerlarda `%99.5` benzeri regresyonların fail-closed yakalanması istenirse `docs/runbooks/coverage-strict-local-ratchet.md` runbook'u izlenerek `COVERAGE_STRICT_LOCAL_RATCHET=1` veya `COVERAGE_RATCHET_MAX_GATE=100` kullanılmalıdır.
+- Günlük local/CI ratchet cap değeri `%100`'dür; ölçülen tam kapsam commit edildiği için `%99.5` gibi bir regresyonu fail-closed yakalar. Daha düşük açık override yalnız kontrollü teşhis çalıştırmalarında kullanılmalıdır.
 - Otonom CoverageAgent koşularında tek denemelik kapsam ayrıca mikro limitlerle korunur: varsayılan `AUTONOMOUS_LOOP_COVERAGE_AGENT_LIMIT=3`, `AUTONOMOUS_LOOP_COVERAGE_AGENT_BATCH_SIZE=1`, `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_LINES=25` ve `AUTONOMOUS_LOOP_COVERAGE_MAX_MISSING_BRANCHES=10`.
 - Coverage gate eşiği için tek teknik doğruluk kaynağı `pyproject.toml` dosyasındaki `[tool.coverage.report].fail_under` değeridir; ayrı `.coveragerc` tutulmaz. `run_tests.sh` bu değeri okur ve yalnız final birleşik raporda uygular; açık `COVERAGE_FAIL_UNDER` sadece bilinçli geçici override olarak kullanılmalıdır.
 - Branch coverage ölçümü `[tool.coverage.run] branch = true` ayarıyla yapılır; hızlı doğrulama için
@@ -250,7 +250,7 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
   - coverage trend karşılaştırması
   - flaky test raporu
 
-`pyproject.toml` içindeki günlük repo baseline'ı bu revizyonda güncel ratchet tabanı `%99` olarak korunup ölçülen coverage arttıkça yalnızca yukarı taşınacak şekilde yönetilirken, yeni veya düşük kapsamlı modüllerde planlama için modül bazlı **kademeli iyileştirme hedefi** uygulanmalı. `%100` yalnızca coverage-campaign/aspirasyonel profil hedefidir; günlük/CI gate metninde sabit `%100` zorunluluğu gibi kullanılmamalıdır:
+`pyproject.toml` içindeki günlük repo baseline'ı ölçülen `%100` değerinde korunup ratchet tarafından asla düşürülmezken, yeni veya düşük kapsamlı modüllerde planlama için modül bazlı **kademeli iyileştirme hedefi** uygulanmalı. `%100` günlük/CI merge tabanıdır; coverage campaign ise eksik branch ve davranış senaryolarını geliştirmek için ayrı bir çalışma profilidir:
 - Faz 1: `%70`
 - Faz 2: `%80`
 - Faz 3: `%90+`
@@ -258,7 +258,7 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
 
 Önemli:
 - Bu fazlar global `pyproject.toml` gate’ini düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
-- Teknik kaynaklar (`pyproject.toml` + `run_tests.sh` + CI override'ları) tek kaynak olarak `pyproject.toml` baseline'ını ve açık ortam değişkenlerini kullanır: günlük ratchet baseline `%99`'dur ve yalnızca yukarı taşınır, CI artık ayrı bir sabit override bindirmeden aynı tabanı kullanır (`COVERAGE_FAIL_UNDER_CI` ad-hoc override için hâlâ desteklenir), coverage campaign hedefi ise ayrı `%100` profilidir. Bu fazlar yeni modül ekleme veya risk-temelli test kampanyalarında kapasite planlama hedefi olarak kullanılmalıdır.
+- Teknik kaynaklar (`pyproject.toml` + `run_tests.sh` + CI override'ları) tek kaynak olarak `pyproject.toml` baseline'ını ve açık ortam değişkenlerini kullanır: günlük ratchet baseline `%100`'dür ve düşürülmez, CI artık ayrı bir sabit override bindirmeden aynı tabanı kullanır (`COVERAGE_FAIL_UNDER_CI` ad-hoc override için hâlâ desteklenir), coverage campaign de `%100` tabanını koruyan ayrı bir çalışma profilidir. Bu fazlar yeni modül ekleme veya risk-temelli test kampanyalarında kapasite planlama hedefi olarak kullanılmalıdır.
 
 ---
 
@@ -285,8 +285,8 @@ Her sprintte aşağıdaki tablo güncellenmelidir:
 
 Bu plan, mevcut repo durumu ile çapraz kontrol edilerek güncellenmiştir:
 
-- Global günlük baseline bugün için `pyproject.toml` içindeki ratchet tabanı `%99` değeridir (coverage arttıkça yalnızca yukarı taşınır); `run_tests.sh` açık `COVERAGE_FAIL_UNDER` / profil override'ı verilmediği sürece bu değeri okur ve final birleşik `coverage report --fail-under` adımında uygular.
-- `%100 enforced` ifadesi günlük/CI global gate için kullanılmamalıdır; `%100` yalnızca coverage-campaign profilinde aspirasyonel hedef olarak ele alınır. Buna rağmen yüksek line coverage tek başına kalite garantisi değildir, kritik akış/hata patikası/regresyon riski önceliği korunmalıdır.
+- Global günlük baseline `pyproject.toml` içindeki ratchet tabanı `%100` değeridir (coverage arttıkça yalnızca yukarı taşınır); `run_tests.sh` açık `COVERAGE_FAIL_UNDER` / profil override'ı verilmediği sürece bu değeri okur ve final birleşik `coverage report --fail-under` adımında uygular.
+- `%100 enforced` günlük/CI global coverage gate politikasını doğru ifade eder; coverage campaign aynı eşiğin davranışsal kalitesini geliştiren ayrı profildir. Buna rağmen yüksek line coverage tek başına kalite garantisi değildir, kritik akış/hata patikası/regresyon riski önceliği korunmalıdır.
 - `omit` kapsamı plan içine açık operasyon kuralı olarak eklenmiştir.
 - v5.x ile gelen kritik `core/*` modülleri test öncelik matrisine dahil edilmiştir.
 

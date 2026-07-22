@@ -151,18 +151,11 @@ metriği yerine yazılmamalıdır.
   repo'ya commitli kalmalıdır; `run_tests.sh` dosya yoksa veya gate beklenen minimumun altındaysa
   baseline kaybını önlemek için kalite akışını fail-closed durdurur. Ratchet yalnız başarılı
   birleşik coverage koşusundan sonra ve ölçüm bir sonraki basamağa gerçekten ulaştığında yükselir.
-- Örneğin gate `%99` ise bir sonraki koşu doğrudan `%100` olmak zorunda değildir: `%99.x` ölçüm
-  gate'i geçer ancak ratchet `%99` seviyesinde kalır. Gate yalnız ölçüm `%100` seviyesine ulaştığında
-  `%100` olur.
-- Varsayılan local/CI ratchet üst sınırı `%99` olarak kalır; bu, günlük geliştirme akışında tek satırlık
-  coverage dalgalanmalarının tüm kalite kapısını kırmaması için bilinçli tampondur. `%100` gate'i
-  zorlamak istediğiniz olgun/stabil yerel runnerlarda `COVERAGE_STRICT_LOCAL_RATCHET=1` kullanın veya
-  daha açık kontrol için `COVERAGE_RATCHET_MAX_GATE=100` verin. Coverage campaign akışı
-  (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
-  `%100` olarak açar. Bu kararın operasyonel runbook'u `docs/runbooks/coverage-strict-local-ratchet.md` içindedir.
-- Ölçüm `%100.00` olsa bile refactor dönemi günlük gate'inde ratchet cap `%99` korunur; örneğin
-  `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
-  otomatik terfi sinyali değildir. `%100` yalnız coverage-campaign/strict-local opt-in ile denenmelidir.
+- Ölçüm `%100.00` olduğunda ratchet bunu kalıcı merge tabanına taşır; örneğin
+  `Coverage gate ratcheted: %99 -> %100 (measured=%100.00)` çıktısı beklenen davranıştır.
+- Varsayılan local/CI ve campaign ratchet üst sınırı `%100`'dür. Gate bir kez `%100` olduktan sonra
+  ratchet değeri düşürmez; sonraki `%99.x` ölçümü final `coverage report --fail-under=100` adımında
+  fail-closed sonuçlanır. Açık override'lar yalnız teşhis ve kontrollü operasyonlar içindir.
 
 ## Performance benchmark baseline yönetimi
 

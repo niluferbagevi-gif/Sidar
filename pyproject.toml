@@ -533,14 +533,12 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Ratchet-managed quality gate baseline: current local/CI baseline is %99.
-# scripts/coverage_ratchet.py only ever raises this committed value as measured
-# coverage improves; daily local/CI profiles keep the default ratchet cap at %99
-# unless an explicit strict profile is selected. run_tests.sh reads this
-# pyproject-owned value for local/CI profiles and applies overrides only at the
-# final combined report. The %100 coverage campaign remains opt-in via the
-# campaign/strict profile, not this default gate.
-fail_under = 99
+# Ratchet-managed quality gate baseline: the measured %100 coverage is committed
+# as the local/CI floor. scripts/coverage_ratchet.py never lowers this value, and
+# run_tests.sh uses the same %100 default cap for every profile. Explicit profile
+# overrides remain available for diagnostics, but the standard merge gate has no
+# one-point slack that could hide a coverage regression.
+fail_under = 100
 show_missing = true
 skip_covered = true
 precision = 2

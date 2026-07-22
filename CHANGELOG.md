@@ -21,7 +21,7 @@
 - **`agent/self_heal/executor.py` coverage'ı %89.58'de kalmıştı (proje geneli %99.95):** En son eklenen mekanik autofix short-circuit'ının (`execute_mechanical_autofix()`) 4 hata/erken-çıkış dalı test kapsamı dışındaydı: `validation_commands` boşken `blocked` dönüşü (70-72), backup okuma döngüsünde tek dosyanın okunamayıp döngünün devam etmesi (82→80), `scope_paths` verilip hiçbir dosya okunamadığında `blocked` dönüşü (85-90), ve autofix komutunun (doğrulama değil, komutun kendisinin) döngü ortasında başarısız olup `reverted` dönüşü (96-100). Yeni `tests/unit/agent/self_heal/test_executor.py` hafif bir stub `_CodeManagerLike` ile bu 4 dalı hedefliyor (mevcut `tests/integration/workflow/test_self_heal_e2e.py` sandbox stack'i gerektirmeden); `agent/self_heal/executor.py` artık `test_executor.py` + `test_self_heal_e2e.py` + `test_sidar_agent.py` birlikte çalıştırıldığında %100 dal kapsamına ulaşıyor.
 
 ### Dokümantasyon
-- **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; günlük local/CI coverage baseline `pyproject.toml [tool.coverage.report].fail_under = 99` olarak izlenir, ratchet yalnız yukarı taşır ve `%100` hedef yalnız coverage campaign / strict opt-in profilinde uygulanır.
+- **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; ölçülen `%100` günlük local/CI coverage baseline olarak commitlenir, ratchet bu değeri düşürmez ve sonraki `%99.x` regresyonları fail-closed engellenir.
 
 ---
 
