@@ -9,7 +9,7 @@ export function P2PDialoguePanel() {
   );
 
   return (
-    <section className="panel" role="region" aria-label="Canlı P2P ajan diyaloğu paneli">
+    <section className="panel" aria-label="Canlı P2P ajan diyaloğu paneli">
       <h2>Canlı P2P Ajan Diyaloğu</h2>
       <p className="panel__hint">Supervisor, reviewer ve coder gibi ajanlar arası konuşma akışını izleyin.</p>
       <div className="event-list" role="log" aria-live="polite" aria-label="P2P diyalog olayları">

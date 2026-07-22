@@ -350,7 +350,7 @@ export function SwarmFlowPanel() {
   }, [loadPendingApprovals, pushOperationLog]);
 
   return (
-    <section className="panel panel--stacked" role="region" aria-label="Swarm görev akışı paneli">
+    <section className="panel panel--stacked" aria-label="Swarm görev akışı paneli">
       <div className="panel-toolbar">
         <div>
           <h2>Swarm Görev Akışı</h2>

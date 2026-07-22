@@ -112,7 +112,7 @@ export function TenantAdminPanel() {
   }, [auditLogs, policies]);
 
   return (
-    <section className="panel panel--stacked" role="region" aria-label="Tenant RBAC ve audit paneli">
+    <section className="panel panel--stacked" aria-label="Tenant RBAC ve audit paneli">
       <div className="panel-toolbar">
         <div>
           <h2>Tenant Yönetim Paneli</h2>

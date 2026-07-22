@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 const browserGlobals = {
   window: "readonly",
@@ -28,6 +29,8 @@ const browserGlobals = {
   Storage: "readonly",
   setTimeout: "readonly",
   clearTimeout: "readonly",
+  AbortController: "readonly",
+  AbortSignal: "readonly",
 };
 
 const vitestGlobals = {
@@ -59,6 +62,7 @@ export default [
     plugins: {
       react,
       "react-hooks": reactHooks,
+      "jsx-a11y": jsxA11y,
     },
     settings: {
       react: {
@@ -68,6 +72,12 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...react.configs.recommended.rules,
+      // Bu proje daha önce hiç a11y lint kapısına sahip değildi (%100 unit
+      // coverage bunu yakalamaz). jsx-a11y'nin recommended seti eklendi;
+      // repo genelinde tarandığında yalnızca 5 küçük bulgu çıktı, hepsi bu
+      // PR'da düzeltildi/gerekçelendirildi (bkz. GraphView.jsx'teki
+      // eslint-disable yorumu).
+      ...jsxA11y.configs.recommended.rules,
       // Automatic JSX runtime (Vite's @vitejs/plugin-react default): React
       // does not need to be in scope for JSX to compile, so these two
       // classic-runtime rules would fight the no-unused-vars cleanup below.

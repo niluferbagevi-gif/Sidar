@@ -89,33 +89,76 @@ export function buildAuthHeaders(extraHeaders = {}) {
   return token ? { ...extraHeaders, Authorization: `Bearer ${token}` } : { ...extraHeaders };
 }
 
+// Backend yanıt vermezse (ör. asılı bağlantı, kesilen tünel) çağıran hiçbir
+// zaman fetchJson'dan geri dönüş almazdı — Promise sonsuza kadar askıda
+// kalırdı. Her istek artık varsayılan olarak zaman aşımına uğrar.
+export const DEFAULT_FETCH_TIMEOUT_MS = 30000;
+
 export async function fetchJson(url, options = {}) {
-  // Bearer token (Authorization header) is the only auth model this backend
-  // uses — it never sets or reads cookies (no Set-Cookie anywhere in the
-  // API). Requesting `credentials: "include"` anyway would needlessly widen
-  // the CSRF surface by asking the browser to also send whatever cookies
-  // exist for this origin (including any future/unrelated ones) on every
-  // request, mixing two authentication models for no benefit.
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      ...buildAuthHeaders(options.headers || {}),
-    },
-  });
+  const { signal: externalSignal, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, ...fetchOptions } = options;
 
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const payload = isJson ? await response.json() : await response.text();
+  // Dahili AbortController hem varsayılan zaman aşımını hem de çağıranın
+  // kendi signal'ını (ör. component unmount'ta iptal) tek bir kontrolcüde
+  // birleştirir; `AbortSignal.any` henüz her hedef tarayıcıda garanti
+  // olmadığından elle kompoze ediyoruz.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
 
-  const detail = response.ok
-    ? null
-    : (typeof payload === "string"
-      ? payload
-      : payload?.detail || payload?.error || "İstek başarısız oldu");
-  if (detail !== null) {
-    throw new Error(detail);
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+    }
   }
-  return payload;
+
+  try {
+    // Bearer token (Authorization header) is the only auth model this backend
+    // uses — it never sets or reads cookies (no Set-Cookie anywhere in the
+    // API). Requesting `credentials: "include"` anyway would needlessly widen
+    // the CSRF surface by asking the browser to also send whatever cookies
+    // exist for this origin (including any future/unrelated ones) on every
+    // request, mixing two authentication models for no benefit.
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        ...(fetchOptions.headers || {}),
+        ...buildAuthHeaders(fetchOptions.headers || {}),
+      },
+    });
+
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const payload = isJson ? await response.json() : await response.text();
+
+    const detail = response.ok
+      ? null
+      : (typeof payload === "string"
+        ? payload
+        : payload?.detail || payload?.error || "İstek başarısız oldu");
+    if (detail !== null) {
+      throw new Error(detail);
+    }
+    return payload;
+  } catch (err) {
+    if (err?.name === "AbortError" && timedOut) {
+      throw new Error(`İstek zaman aşımına uğradı (${timeoutMs}ms): ${url}`);
+    }
+    // AbortError'ın diğer nedeni (çağıranın kendi signal'ı, ör. unmount)
+    // olduğu gibi yeniden fırlatılır; çağıran bunu kendi iptal mantığıyla ele alır.
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
+  }
 }
 
 export function getCurrentUser() {

@@ -32,6 +32,13 @@ const GraphNode = React.memo(function GraphNode({
       className={`swarm-graph__node swarm-graph__node--${node.type} ${isSelected ? "swarm-graph__node--selected" : ""}`}
       style={{ left: `${node.x}px`, top: `${node.y}px`, width: `${nodeWidth}px`, minHeight: `${nodeHeight}px` }}
       onClick={handleSelect}
+      // Selectable card containing nested real <button> actions (Run node /
+      // Task'e ekle); re-modeling this without role="button" on the card
+      // itself requires reworking the click/keyboard selection contract that
+      // SwarmFlowPanel's tests assert on via getAllByRole("button"). Tracked
+      // as part of the larger SwarmFlowPanel/GraphView decomposition (god
+      // component) that's out of scope for this pass.
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-element-to-interactive-role -- see comment above
       role="button"
       tabIndex={0}
       onKeyDown={handleKeyDown}

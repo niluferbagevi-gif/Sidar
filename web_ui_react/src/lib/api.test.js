@@ -10,6 +10,7 @@ import {
   getCurrentUser,
   buildAuthHeaders,
   fetchJson,
+  DEFAULT_FETCH_TIMEOUT_MS,
   runPoyrazOperation,
   generateLandingPage,
   generateCampaignCopy,
@@ -371,6 +372,103 @@ describe("fetchJson — hata yanıtları", () => {
 
     mockFetch(response);
     await expect(fetchJson("/api/broken-response")).rejects.toThrow("ok değeri okunamadı");
+  });
+
+  it("passes an AbortSignal to fetch so requests can be cancelled", async () => {
+    const fetchMock = mockFetch({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({}),
+    });
+
+    await fetchJson("/api/test");
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("fetchJson — timeout & cancellation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Gerçek fetch, signal abort edildiğinde AbortError ile reddeder; testte
+  // backend'in hiç yanıt vermediği (isteğin sonsuza kadar askıda kaldığı)
+  // durumu simüle etmek için bu davranışı taklit ediyoruz.
+  function abortError() {
+    const err = new Error("The operation was aborted.");
+    err.name = "AbortError";
+    return err;
+  }
+
+  function mockAbortAwareFetch() {
+    const fetchMock = vi.fn((_url, opts) => {
+      // Real fetch rejects synchronously (checking signal.aborted) when given
+      // an already-aborted signal, instead of waiting for a future event.
+      if (opts?.signal?.aborted) {
+        return Promise.reject(abortError());
+      }
+      return new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener("abort", () => reject(abortError()));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("rejects with a clear timeout error instead of hanging forever", async () => {
+    mockAbortAwareFetch();
+
+    const pending = fetchJson("/api/hangs-forever");
+    const assertion = expect(pending).rejects.toThrow(/zaman aşımına uğradı/);
+    await vi.advanceTimersByTimeAsync(DEFAULT_FETCH_TIMEOUT_MS);
+    await assertion;
+  });
+
+  it("honors a custom timeoutMs option", async () => {
+    mockAbortAwareFetch();
+
+    const pending = fetchJson("/api/slow", { timeoutMs: 5000 });
+    const assertion = expect(pending).rejects.toThrow(/zaman aşımına uğradı \(5000ms\)/);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  it("does not time out when timeoutMs is disabled", async () => {
+    mockFetch({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({ ok: true }),
+    });
+
+    const data = await fetchJson("/api/no-timeout", { timeoutMs: 0 });
+    expect(data).toEqual({ ok: true });
+  });
+
+  it("propagates an externally supplied AbortSignal's cancellation (e.g. component unmount)", async () => {
+    mockAbortAwareFetch();
+    const externalController = new AbortController();
+
+    const pending = fetchJson("/api/cancel-me", { signal: externalController.signal });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    externalController.abort();
+    await assertion;
+    // External cancellation must not be reworded as a timeout error.
+    await expect(pending).rejects.not.toThrow(/zaman aşımına uğradı/);
+  });
+
+  it("aborts immediately when an already-aborted signal is passed in", async () => {
+    mockAbortAwareFetch();
+    const externalController = new AbortController();
+    externalController.abort();
+
+    await expect(
+      fetchJson("/api/already-cancelled", { signal: externalController.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 
