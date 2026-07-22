@@ -247,8 +247,10 @@ def test_validate_user_input_detects_combined_turkish_prompt_injection(tmp_path:
 def test_validate_user_input_flags_single_turkish_prompt_injection_signal(
     tmp_path: Path, text: str
 ) -> None:
-    """A single Turkish injection category is detected but, like the English patterns,
-    doesn't alone cross the block threshold (risk_score < 40 requires 2+ categories).
+    """A single Turkish injection category must not alone cross the block threshold.
+
+    It is detected but, like the English patterns, doesn't alone cross the
+    block threshold (risk_score < 40 requires 2+ categories).
     """
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     result = mgr.validate_user_input(text)

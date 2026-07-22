@@ -579,9 +579,11 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
 
 
 def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -> None:
-    """Drift case: clone origin carries a tampered module but standalone
-    install_sidar.sh's embedded manifest still pins the original hash. The
-    installer must refuse to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
+    """Drift case: a tampered module hash must block the install.
+
+    Clone origin carries a tampered module but standalone install_sidar.sh's
+    embedded manifest still pins the original hash. The installer must refuse
+    to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
     """
     repo_root = Path(os.getcwd())
     origin = tmp_path / "origin"

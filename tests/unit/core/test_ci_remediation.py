@@ -404,9 +404,9 @@ def test_normalize_self_heal_plan_with_invalid_input_uses_defaults() -> None:
 
 
 def test_normalize_self_heal_plan_drops_patches_when_scope_paths_is_empty() -> None:
-    """Fail-closed regression test: an empty scope must reject every patch operation,
+    """Fail-closed regression test: an empty scope must reject every patch operation.
 
-    not silently accept unrestricted file paths. Mirrors the fail-open bug fixed in
+    Not silently accept unrestricted file paths. Mirrors the fail-open bug fixed in
     ``agent/self_heal/executor.py`` where ``allowed_paths and path not in allowed_paths``
     short-circuited to False (and thus skipped the check) whenever scope_paths was empty.
     """

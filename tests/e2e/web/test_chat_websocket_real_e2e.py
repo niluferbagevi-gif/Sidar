@@ -201,7 +201,9 @@ def test_chat_flow_authenticates_via_websocket_subprotocol(
     monkeypatch: pytest.MonkeyPatch,
     mock_ollama_server: _ThreadedTCPServer,
 ) -> None:
-    """The real frontend (web_ui_react's useWebSocket.js) authenticates by
+    """Exercise the real subprotocol auth transport against the real agent/DB stack.
+
+    The real frontend (web_ui_react's useWebSocket.js) authenticates by
     passing the bearer token as the WebSocket subprotocol — never as a query
     string, which would leak into proxy access logs and browser history (see
     web/security.py's extract_ws_header_token, which never reads a query

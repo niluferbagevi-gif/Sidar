@@ -35,10 +35,10 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
     ],
 )
 def test_is_valid_git_ref_name_rejects_leading_dash_argument_injection(branch_name: str) -> None:
-    """Regression test: a branch name starting with "-" must be rejected — git
+    """Regression test: a branch name starting with "-" must be rejected.
 
-    subprocess calls use argv (shell=False) so shell metacharacters are already
-    safe, but a leading "-" lets git itself misinterpret the value as a flag
+    Git subprocess calls use argv (shell=False) so shell metacharacters are
+    already safe, but a leading "-" lets git itself misinterpret the value as a flag
     (e.g. `git checkout -upload-pack=evil`). This is the same validator
     github_upload.py already used (managers.code.git_validation), now shared
     with web/routes/project_ops.py's /set-branch endpoint.

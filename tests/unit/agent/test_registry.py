@@ -682,7 +682,9 @@ def test_import_builtin_roles_logs_non_module_not_found_failures(
 def test_builtin_role_canonical_identity_survives_temp_module_import(
     contract,
 ) -> None:
-    """Loading a built-in role file under a temp module name must not detach
+    """A temp-module reload must not detach agent_class from the canonical export.
+
+    Loading a built-in role file under a temp module name must not detach
     the registered ``agent_class`` from the canonical ``agent.roles.*``
     export. Python creates a brand-new class object when the same source
     file is executed under a different module name; AgentCatalog must
@@ -736,7 +738,9 @@ def test_builtin_role_canonical_identity_survives_temp_module_import(
 def test_builtin_contract_sync_normalizes_each_role_to_canonical_class(
     contract,
 ) -> None:
-    """``_sync_builtin_contract_registry`` is the lower-level mechanism the
+    """Each contract must round-trip cleanly through _sync_builtin_contract_registry.
+
+    ``_sync_builtin_contract_registry`` is the lower-level mechanism the
     bootstrap relies on. Each contract must round-trip cleanly through it,
     even when an unrelated module cache is provided, so a stub injected by
     one role's import path cannot poison another role's canonical
@@ -850,7 +854,9 @@ def test_register_type_annotations_pin_strict_typing_contract() -> None:
 
 
 def test_agent_spec_dataclass_field_types_remain_strict() -> None:
-    """``AgentSpec.agent_class`` is the lone slot the dynamic-import scenario
+    """AgentSpec's field types must stay strict enough for mypy to catch misrouting.
+
+    ``AgentSpec.agent_class`` is the lone slot the dynamic-import scenario
     writes into; keeping it ``type[Any] | None`` (not ``Any``) is what lets
     mypy catch a misrouted resolver. Pin the rest of the dataclass too so
     the contract surface stays explicit.
@@ -877,7 +883,9 @@ def test_get_returns_none_for_unknown_role_with_typed_contract() -> None:
 
 
 def test_register_type_rejects_non_class_agent_class_via_create() -> None:
-    """The annotation says ``agent_class: type``; Python doesn't enforce it
+    """A non-type agent_class must fail clearly through create, not mis-route silently.
+
+    The annotation says ``agent_class: type``; Python doesn't enforce it
     at runtime, but the failure must surface clearly through ``create``
     rather than silently mis-route. This catches a regression where a
     fallback path lets a non-type slip through unnoticed.

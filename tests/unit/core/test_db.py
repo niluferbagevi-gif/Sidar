@@ -2911,12 +2911,11 @@ def test_verify_password_records_error_latency_when_digest_fails(
 
 
 def test_database_delegates_user_crud_to_core_db_users_module() -> None:
-    """Regression test: user account CRUD (ensure_user/create_user/
+    """Regression test: user account CRUD must stay delegated to core.db.users.
 
-    authenticate_user/_get_user_by_id/ensure_user_id/register_user) must stay
-    delegated to core.db.users instead of being reinlined into Database's
-    ~2400-line body, mirroring the existing sessions.py/prompt_registry.py
-    extraction pattern.
+    ensure_user/create_user/authenticate_user/_get_user_by_id/ensure_user_id/
+    register_user must not be reinlined into Database's ~2400-line body,
+    mirroring the existing sessions.py/prompt_registry.py extraction pattern.
     """
     import core.db.users as db_users
 

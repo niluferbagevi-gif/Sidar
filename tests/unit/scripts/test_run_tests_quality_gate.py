@@ -63,12 +63,13 @@ def _extract_run_tests_function(name: str) -> str:
 
 
 def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
-    """Regression test: run_tests.sh intentionally runs without `set -e` (it must
+    """Regression test: exit codes feeding the aggregate must use run_checked().
 
-    keep running later test phases/quality gates even after an earlier one
-    fails, then aggregate a combined exit code), but every command whose exit
-    code feeds into that aggregate must go through the shared run_checked()
-    helper instead of ad hoc, inconsistent `cmd; x=$?` / `cmd || true` patterns.
+    run_tests.sh intentionally runs without `set -e` (it must keep running
+    later test phases/quality gates even after an earlier one fails, then
+    aggregate a combined exit code), but every command whose exit code feeds
+    into that aggregate must go through the shared run_checked() helper
+    instead of ad hoc, inconsistent `cmd; x=$?` / `cmd || true` patterns.
     """
     script = _script()
 
@@ -3049,9 +3050,9 @@ def _extract_services_phase_function(name: str, next_marker: str) -> str:
 def test_postgres_volume_reset_env_gate_rejects_missing_or_unrecognized_sidar_env(
     tmp_path: Path,
 ) -> None:
-    """Regression test: SIDAR_ENV unset/empty/unrecognized must fail closed
+    """Regression test: SIDAR_ENV unset/empty/unrecognized must fail closed.
 
-    (reject the volume reset) instead of silently defaulting to "development"
+    Reject the volume reset instead of silently defaulting to "development"
     and allowing a destructive `docker volume rm -f` to proceed.
     """
     gate_fn = _extract_services_phase_function(
@@ -3126,10 +3127,11 @@ def test_postgres_volume_reset_env_gate_rejects_missing_or_unrecognized_sidar_en
 
 
 def test_both_postgres_volume_reset_callers_share_the_same_env_gate() -> None:
-    """Regression test: both the password-hardening reset path and the
+    """Regression test: both volume-reset callers must share the same env gate.
 
-    smoke-test-forced reset path must go through the same SIDAR_ENV safety
-    gate, so the smoke-test path can't bypass a brake the other one enforced.
+    Both the password-hardening reset path and the smoke-test-forced reset
+    path must go through the same SIDAR_ENV safety gate, so the smoke-test
+    path can't bypass a brake the other one enforced.
     """
     services_phase = Path("scripts/install_modules/phases/06_services.sh").read_text(
         encoding="utf-8"
@@ -3142,9 +3144,10 @@ def test_both_postgres_volume_reset_callers_share_the_same_env_gate() -> None:
 
 
 def test_create_directories_permission_steps_no_longer_swallow_errors_silently() -> None:
-    """Regression test: chmod/chown/setfacl failures in create_directories()
+    """Regression test: create_directories() failures must surface a warning.
 
-    must surface a diagnostic warning instead of being fully swallowed via
+    chmod/chown/setfacl failures in create_directories() must surface a
+    diagnostic warning instead of being fully swallowed via
     `2>/dev/null || true`, so permission issues can actually be diagnosed.
     """
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
@@ -3223,8 +3226,9 @@ def _extract_ini_set_key_once() -> str:
 
 
 def test_wslconfig_ini_helpers_consolidated_into_one_function() -> None:
-    """Regression test: the three near-duplicate awk-based .wslconfig helpers
+    """Regression test: the .wslconfig awk helpers must be consolidated into one.
 
+    The three near-duplicate awk-based .wslconfig helpers
     (_ensure_wsl2_key_once, _ensure_ini_key_once, _set_wsl2_key_value) must be
     consolidated into a single parameterized ini_set_key_once, with every call
     site migrated to it.
@@ -3709,7 +3713,7 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
 
 
 def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell() -> None:
-    """Regression test: Volta/NVM installs must not use an unverified
+    """Regression test: Volta/NVM installs must not use an unverified curl|bash pipe.
 
     `curl ... | bash` pipe (supply-chain risk); they must go through the
     checksum-verified download flow, same as Ollama/uv, but via the

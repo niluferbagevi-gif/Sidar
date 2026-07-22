@@ -2022,8 +2022,10 @@ def test_load_plugin_agent_class_skips_missing_base_agent_module(
 def test_load_plugin_agent_class_recognizes_base_via_module_only_match(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Line 1924: BaseAgent isim eşleşmesi olmadan, base sınıfın
-    __module__='agent.base_agent' olduğu durumda da türev tanınmalı.
+    """Line 1924: modül eşleşmesiyle de türev tanınmalıdır.
+
+    BaseAgent isim eşleşmesi olmadan, base sınıfın __module__='agent.base_agent'
+    olduğu durumda da türev tanınmalı.
     """
 
     # issubclass kontrolü plugin sınıfını yakalayamasın diye BaseAgent'ı
@@ -2134,7 +2136,9 @@ def test_plugin_source_execution_production_override_requires_explicit_opt_in(mo
 
 
 def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
-    """AST doğrulayıcı statik olarak yakalayamayan dinamik bypass denemeleri,
+    """Dinamik bypass denemeleri runtime kısıtlaması ile de engellenmelidir.
+
+    AST doğrulayıcı statik olarak yakalayamayan dinamik bypass denemeleri,
     runtime'da `__builtins__` kısıtlaması sayesinde NameError ile düşmeli.
     """
     # `eval` ismi attribute olarak gizlenmiş — AST seviyesinde direkt Call(Name='eval')

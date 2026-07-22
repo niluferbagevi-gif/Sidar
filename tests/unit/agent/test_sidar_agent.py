@@ -2629,8 +2629,10 @@ async def test_nightly_maintenance_records_audit_trail_when_consolidation_fails(
     monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
-    """A run_nightly_consolidation failure must still degrade gracefully and be
-    recorded via _append_autonomy_history, not silently abort the whole job.
+    """A run_nightly_consolidation failure must degrade gracefully, not abort the job.
+
+    It must still be recorded via _append_autonomy_history, not silently
+    abort the whole job.
     """
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()

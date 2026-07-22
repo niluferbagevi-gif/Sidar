@@ -393,10 +393,10 @@ def test_quality_gate_settings_legacy_env_var_works_without_prefix(monkeypatch):
     ],
 )
 def test_quality_gate_settings_rejects_out_of_range_values(monkeypatch, env_key, env_value):
-    """Regression test: out-of-range values now fail fast via pydantic Field
+    """Regression test: out-of-range values must fail fast via pydantic Field constraints.
 
-    constraints instead of being silently clamped into range, replacing the
-    manual `max(0.0, min(1.0, ...))`-style validation the fields used before.
+    Instead of being silently clamped into range, replacing the manual
+    `max(0.0, min(1.0, ...))`-style validation the fields used before.
     """
     _clear_quality_gate_env(monkeypatch)
     monkeypatch.setenv(env_key, env_value)

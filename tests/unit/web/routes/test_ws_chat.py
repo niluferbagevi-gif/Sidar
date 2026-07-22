@@ -269,9 +269,10 @@ class _NeverSendsWs(_Ws):
 
 
 class _RepeatedGarbageWs(_Ws):
-    """A websocket that keeps sending unparseable junk fast enough to reset
+    """A websocket that keeps sending unparseable junk to defeat a naive timeout.
 
-    a naive per-message timeout, without ever authenticating.
+    Sends fast enough to reset a naive per-message timeout, without ever
+    authenticating.
     """
 
     async def receive_text(self) -> str:
@@ -281,9 +282,10 @@ class _RepeatedGarbageWs(_Ws):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeout() -> None:
-    """Regression test: an unauthenticated client that never sends an auth message
+    """Regression test: an idle unauthenticated client must not stay connected forever.
 
-    must not keep the connection open forever (slow DoS / resource exhaustion).
+    An unauthenticated client that never sends an auth message must not keep
+    the connection open forever (slow DoS / resource exhaustion).
     """
     ws = _NeverSendsWs()
 
@@ -308,9 +310,10 @@ async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_timeout_is_absolute_not_reset_by_junk_messages() -> None:
-    """Regression test: repeatedly sending unparseable junk must not let an
+    """Regression test: junk messages must not reset the auth timeout.
 
-    unauthenticated client reset the auth timeout and stay connected forever.
+    Repeatedly sending unparseable junk must not let an unauthenticated
+    client reset the auth timeout and stay connected forever.
     """
     ws = _RepeatedGarbageWs()
 

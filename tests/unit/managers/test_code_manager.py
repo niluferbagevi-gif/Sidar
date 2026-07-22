@@ -682,11 +682,12 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
     ],
 )
 def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):
-    """Regression test: the destructive-pattern check must not be defeated by
+    """Regression test: the destructive-pattern check must resist bypass attempts.
 
-    whitespace/flag-order variations or by hiding the target behind shell
-    variable/command substitution (see managers/code/runner.py's
-    find_destructive_shell_pattern for the documented limits of this check).
+    It must not be defeated by whitespace/flag-order variations or by hiding
+    the target behind shell variable/command substitution (see
+    managers/code/runner.py's find_destructive_shell_pattern for the
+    documented limits of this check).
     """
     ok, msg = manager.run_shell(command, allow_shell_features=True)
     assert not ok and "Engellendi" in msg, (command, msg)
@@ -2455,8 +2456,10 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
 
 
 def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, monkeypatch):
-    """Satır 334: except ImportError bloğunda docker_module None değil ve
-    _try_wsl_socket_fallback True döndürünce erken return yapılır.
+    """Satır 334: except ImportError bloğunda erken dönüş kapsamını test eder.
+
+    docker_module None değil ve _try_wsl_socket_fallback True döndürünce erken
+    return yapılır.
     """
 
     class _ImportErrDocker(ModuleType):
@@ -2488,8 +2491,10 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
 
 
 def test_init_docker_exception_fallback_module_none_import_error(manager, monkeypatch):
-    """Satırlar 343-346: except Exception bloğunda docker_module None (ilk import non-ImportError
-    fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı.
+    """Satırlar 343-346: except Exception bloğunda fallback_module = None dalını test eder.
+
+    docker_module None (ilk import non-ImportError fırlattı), ikinci import
+    ImportError fırlatır → fallback_module = None dalı kapsamı.
     """
     import builtins as _builtins
 

@@ -85,10 +85,10 @@ async def test_ensure_default_prompt_registry_logs_upsert_failure(monkeypatch, c
 
 @pytest.mark.asyncio
 async def test_upsert_prompt_postgresql_wraps_deactivate_and_insert_in_one_transaction() -> None:
-    """Regression test: activation must be atomic, not two separately-committed
+    """Regression test: activation must be atomic.
 
-    statements, so a crash between them can't leave the role with zero (or two)
-    active prompts.
+    Not two separately-committed statements, so a crash between them can't
+    leave the role with zero (or two) active prompts.
     """
     events: list[str] = []
     conn = AsyncMock()
@@ -149,10 +149,11 @@ async def test_upsert_prompt_postgresql_rolls_back_on_crash_between_statements()
 
 @pytest.mark.asyncio
 async def test_activate_prompt_postgresql_wraps_both_updates_in_one_transaction() -> None:
-    """Regression test: deactivating the old row and activating the new one
+    """Regression test: activating a prompt must be transactionally atomic.
 
-    must happen inside a single transaction so a crash in between can't leave
-    two (or zero) active rows for the same role.
+    Deactivating the old row and activating the new one must happen inside a
+    single transaction so a crash in between can't leave two (or zero) active
+    rows for the same role.
     """
     events: list[str] = []
     conn = AsyncMock()
