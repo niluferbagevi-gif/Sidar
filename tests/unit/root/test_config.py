@@ -831,6 +831,46 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
     assert config.Config.validate_critical_settings() is False
 
 
+def test_validate_critical_settings_rejects_unsafe_production_secret(monkeypatch, caplog):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(
+        config.Config,
+        "get_missing_critical_runtime_keys",
+        classmethod(lambda cls: ["METRICS_TOKEN"]),
+    )
+    monkeypatch.setattr(
+        config.Config, "_validate_ai_provider_settings", classmethod(lambda cls: True)
+    )
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "valid-fernet-key")
+    monkeypatch.setattr(config.config_postgres, "postgres_password_drift_messages", lambda: [])
+
+    class _Fernet:
+        def __init__(self, _key):
+            pass
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "cryptography.fernet",
+        types.SimpleNamespace(Fernet=_Fernet),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        config.Config.validate_critical_settings()
+
+    assert exc_info.value.code == 1
+    assert "Production secret doğrulaması başarısız: METRICS_TOKEN" in caplog.text
+
+
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
     assert safe == {
@@ -2056,8 +2096,12 @@ def test_production_accepts_strong_database_url_password_without_postgres_env(mo
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr(config.Config, "API_KEY", "api-key-configured")
-    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "explicit-strong-jwt-secret")
+    monkeypatch.setattr(
+        config.Config, "API_KEY", "ApiKey-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    )
+    monkeypatch.setattr(
+        config.Config, "JWT_SECRET_KEY", "JwtKey-P8tYv3wXc5aHj6sDf4GhN7b_Uz9mKq2pR"
+    )
     monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
     monkeypatch.setattr(
         config.Config,

@@ -50,6 +50,7 @@ from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for
 from core.config_runtime_paths import apply_reload_runtime_paths, load_runtime_path_settings
 from core.config_sandbox import load_sandbox_settings
 from core.config_secret_hardening import (
+    PRODUCTION_SECRET_KEYS,
     collect_missing_critical_runtime_keys,
     warn_on_silent_security_fallbacks,
 )
@@ -1361,7 +1362,21 @@ class Config:
         cls._ensure_hardware_info_loaded()
         cls._apply_gpu_memory_safety_check()
         cls.initialize_directories()
-        cls._log_dotenv_load_status(missing_keys=cls.get_missing_critical_runtime_keys())
+        missing_runtime_keys = cls.get_missing_critical_runtime_keys()
+        cls._log_dotenv_load_status(missing_keys=missing_runtime_keys)
+
+        if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
+            unsafe_production_secrets = [
+                key for key in PRODUCTION_SECRET_KEYS if key in missing_runtime_keys
+            ]
+            if unsafe_production_secrets:
+                logger.critical(
+                    "Production secret doğrulaması başarısız: %s. Eksik, zayıf veya "
+                    "non-production ortamlarla paylaşılan secret değerlerini rotate edin; "
+                    "değerler güvenlik nedeniyle loglanmadı.",
+                    ", ".join(unsafe_production_secrets),
+                )
+                raise SystemExit(1)
 
         if cls.REQUIRE_GPU and not cls.USE_GPU:
             logger.error(
