@@ -1610,7 +1610,9 @@ async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -
 async def test_pgvector_call_sites_reject_table_name_mutated_after_init(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """init_pgvector validates _pg_table once; every SQL-building call site must
+    """Every SQL-building call site must re-validate _pg_table, not just init.
+
+    init_pgvector validates _pg_table once; every SQL-building call site must
     re-validate too, in case something mutates the attribute afterwards (e.g. a
     future config hot-reload path) — regression test for that defense-in-depth
     gap: no SQL should ever reach the fake connection below.

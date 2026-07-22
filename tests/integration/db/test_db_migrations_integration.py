@@ -484,7 +484,9 @@ def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypatch):
-    """core/db/monolith.py'deki elle yazılmış SQLite bootstrap DDL'i (`_init_schema_sqlite`
+    """SQLite bootstrap DDL şemasının Alembic head şemasıyla eşleştiğini doğrular.
+
+    core/db/monolith.py'deki elle yazılmış SQLite bootstrap DDL'i (`_init_schema_sqlite`
     ve ilgili `_ensure_*_schema_sqlite` yardımcıları) ile Alembic migration'larının ürettiği
     head şeması, iki bağımsız ve elle bakım gören kaynak olduğu için birbirinden sapabilir.
     Bu test tablo/sütun kümelerini karşılaştırarak drift'i CI'da erken yakalar.

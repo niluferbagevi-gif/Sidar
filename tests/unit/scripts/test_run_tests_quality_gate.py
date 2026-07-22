@@ -1637,11 +1637,12 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
 
 
 def test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys() -> None:
-    """Regression test for a real leak: mask_install_log_stream() and
-    sidar_user_api_key_names() used to keep two independently-maintained
-    allowlists, so GITHUB_TOKEN/SLACK_TOKEN/TAVILY_API_KEY/HF_TOKEN/JIRA_TOKEN
-    were collected as user API keys but never masked in install logs. Both
-    must now read from the same SIDAR_USER_SECRET_ENV_KEYS array.
+    """Regression test: masking and API-key allowlists must share one source.
+
+    mask_install_log_stream() and sidar_user_api_key_names() used to keep two
+    independently-maintained allowlists, so GITHUB_TOKEN/SLACK_TOKEN/TAVILY_API_KEY/
+    HF_TOKEN/JIRA_TOKEN were collected as user API keys but never masked in
+    install logs. Both must now read from the same SIDAR_USER_SECRET_ENV_KEYS array.
     """
     installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
 

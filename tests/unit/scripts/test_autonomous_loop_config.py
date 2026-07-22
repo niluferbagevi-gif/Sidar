@@ -176,8 +176,10 @@ def test_autonomous_loop_print_config_runs_config_preflight() -> None:
 
 
 def test_autonomous_loop_intentionally_omits_set_dash_e() -> None:
-    """`-e` must stay out of the shebang's `set` line, mirroring run_tests.sh's
-    documented run_checked()/exit-code-capture contract (see
+    """`-e` must stay out of autonomous_loop.sh's shebang `set` line.
+
+    This mirrors run_tests.sh's documented run_checked()/exit-code-capture
+    contract (see
     test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked
     in test_run_tests_quality_gate.py). The loop's core job is to detect
     ./run_tests.sh / mutation-test / coverage-gate failures and drive
