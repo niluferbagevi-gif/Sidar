@@ -17,6 +17,15 @@
   `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 - [ ] `production_ready=false`, `summary-code=10` veya `summary-code=20` görüldüyse bu PR merge/release için bloke edildi.
 
+> ⚠️ **`production_ready=true`, GPU Inference Quality Gate'in (TTFT≤200ms, latency≤250ms) de
+> geçtiği anlamına gelmez.** Bu gate CI'da yalnızca `ENABLE_GPU_BENCH_GATE=true` repo/org
+> değişkeni ayarlıysa ve self-hosted GPU runner mevcutsa ayrı bir job olarak çalışır; aksi
+> halde skip edilir ve `production_ready` bayrağına dahil edilmez.
+
+- [ ] Bu PR GPU inference/LLM latency yolunu etkiliyorsa: `GPU Inference Quality Gate` CI job'ı
+  çalıştı ve geçti, veya nightly `GPU Benchmark Suite` sonucu ayrıca kontrol edildi/onaylandı.
+- [ ] Bu PR GPU inference/LLM latency yolunu etkilemiyorsa: yukarıdaki madde kasıtlı olarak N/A.
+
 
 ## Benchmark baseline bootstrap
 

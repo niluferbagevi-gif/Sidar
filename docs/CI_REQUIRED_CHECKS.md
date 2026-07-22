@@ -20,6 +20,17 @@ intentionally **not** a required PR check: it only runs via manual
 remain fail-closed when no reviewed `.benchmarks/*_baseline.json` cache/artifact
 is restored.
 
+The `gpu-inference-quality-gate` / `GPU Inference Quality Gate (TTFT<=200ms,
+latency<=250ms)` job is also intentionally **not** a required PR check: it only
+runs when the `ENABLE_GPU_BENCH_GATE` repo/org variable is `true` and a
+`[self-hosted, linux, gpu]` runner is available, and it is not part of
+`run_tests.sh`'s `production_ready` computation. A PR showing
+`production_ready=true` says nothing about GPU inference latency. PRs that touch
+the GPU inference/LLM latency path must be reviewed against this job's result
+(when it ran) or against the scheduled `Nightly GPU Performance` /
+`GPU Benchmark Suite` workflow instead — this is the reviewer-facing checklist
+item in `.github/PULL_REQUEST_TEMPLATE.md`'s production readiness section.
+
 Repository administrators should periodically verify that the required check
 names above are selected for protected `main`/`master` branches. This repository
 now includes a scheduled/manual audit workflow (`Branch protection audit`) that
