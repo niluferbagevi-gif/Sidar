@@ -921,6 +921,7 @@ class Config:
     # Fernet anahtarı üretmek için:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
+    MEMORY_ENCRYPTION_KEY_PREVIOUS: str = os.getenv("MEMORY_ENCRYPTION_KEY_PREVIOUS", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
     WEB_HOST: str = os.getenv("WEB_HOST", "127.0.0.1")
@@ -1410,6 +1411,11 @@ class Config:
             is_valid = False
 
         memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
+        previous_memory_encryption_keys = [
+            key.strip()
+            for key in str(cls.MEMORY_ENCRYPTION_KEY_PREVIOUS or "").split(",")
+            if key.strip()
+        ]
 
         if memory_encryption_key:
             try:
@@ -1418,6 +1424,8 @@ class Config:
                 # Anahtarı ön doğrulama — geçersiz formatta erken hata ver
                 try:
                     Fernet(memory_encryption_key.encode())
+                    for previous_key in previous_memory_encryption_keys:
+                        Fernet(previous_key.encode())
                 except Exception as key_exc:
                     logger.error(
                         "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"

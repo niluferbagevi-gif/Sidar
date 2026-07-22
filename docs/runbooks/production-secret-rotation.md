@@ -85,8 +85,12 @@ secret'larla değiştirilmelidir:
    uv run python -m scripts.rotate_production_secrets --env-file .env.production
    ```
 5. **MEMORY_ENCRYPTION_KEY geçişini planla:** Var olan şifreli bellek verisi korunacaksa
-   eski anahtarla decrypt/export, yeni anahtarla re-encrypt/import akışını bakım
-   penceresinde yap. Veri korunmayacaksa eski şifreli kayıtları arşivle veya temizle.
+   eski anahtarı geçici olarak `MEMORY_ENCRYPTION_KEY_PREVIOUS` içine yaz. Birden fazla
+   eski anahtar en yeniden en eskiye virgülle ayrılabilir. Yeni kayıtlar yalnız güncel
+   `MEMORY_ENCRYPTION_KEY` ile şifrelenirken okumalar güncel anahtardan sonra fallback
+   listesini dener. Bakım penceresinde eski kayıtları yeni anahtarla re-encrypt ettikten
+   sonra fallback listesini temizle. Veri korunmayacaksa eski şifreli kayıtları arşivle
+   veya kontrollü biçimde temizle.
 6. **Webhook sağlayıcılarını güncelle:** GitHub/autonomy/swarm federation endpoint'lerini
    yeni webhook secret'larıyla aynı bakım penceresinde güncelle.
 7. **Servisleri yeniden başlat:** Tüm web/worker pod veya container'larının aynı secret

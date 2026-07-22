@@ -160,6 +160,7 @@ class AgentDependencies:
             file_path=cfg.MEMORY_FILE,
             max_turns=cfg.MAX_MEMORY_TURNS,
             encryption_key=getattr(cfg, "MEMORY_ENCRYPTION_KEY", ""),
+            previous_encryption_keys=getattr(cfg, "MEMORY_ENCRYPTION_KEY_PREVIOUS", ""),
             keep_last=getattr(cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
         )
         llm = LLMClient(cfg.AI_PROVIDER, cfg)
