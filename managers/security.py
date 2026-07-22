@@ -330,17 +330,16 @@ class SecurityManager:
         return self.validate_prompt_text(text, source="agent_output")
 
     def is_safe_path(self, path_str: str) -> bool:
-        """Path traversal + base_dir + hassas yol desenleri doğrulaması."""
+        """Resolve from ``base_dir`` and apply the shared traversal/path safety policy."""
+        if self._has_dangerous_pattern(path_str):
+            return False
+        resolved = self._resolve_safe(path_str)
+        if resolved is None or self._is_blocked_path(str(resolved)):
+            return False
         try:
-            if self._has_dangerous_pattern(path_str):
-                return False
-            resolved = Path(path_str).resolve()
-            resolved_str = str(resolved)
-            if self._is_blocked_path(resolved_str):
-                return False
             resolved.relative_to(self.base_dir)
             return True
-        except Exception:
+        except ValueError:
             return False
 
     # ─────────────────────────────────────────────
