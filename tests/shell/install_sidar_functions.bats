@@ -37,6 +37,149 @@ run_installer_function() {
   [ "$status" -eq 0 ]
 }
 
+@test "Redis smoke readiness prefers SIDAR_REDIS_URL and honors its custom port" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://sidar-primary.example:6387/0
+REDIS_URL=redis://legacy-fallback.example:6399/0
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "sidar-primary.example\\n6387\\n"
+  exit 0
+fi
+[[ "\$2" == sidar-primary.example && "\$3" == 6387 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://sidar-primary.example:6387/0" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sidar-primary.example:6387"* ]]
+}
+
+@test "Redis smoke readiness falls back to legacy REDIS_URL" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "REDIS_URL=redis://legacy-only.example:6388/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "legacy-only.example\\n6388\\n"
+  exit 0
+fi
+[[ "\$2" == legacy-only.example && "\$3" == 6388 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://legacy-only.example:6388/0" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "post-Compose Redis readiness authenticates PONG with REDISCLI_AUTH" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6391/0
+REDIS_PORT=6392
+REDIS_PASSWORD=correct-horse-battery-staple
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\${REDISCLI_AUTH:-}" "\$*" > "$tmpdir/redis-cli.log"
+[[ "\${REDISCLI_AUTH:-}" == correct-horse-battery-staple ]]
+[[ "\$*" == "-h 127.0.0.1 -p 6392 ping" ]]
+printf "PONG\\n"
+EOF
+    chmod +x "$tmpdir/bin/redis-cli"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+
+    wait_for_redis_ready_after_docker_start
+    grep -q "correct-horse-battery-staple|-h 127.0.0.1 -p 6392 ping" "$tmpdir/redis-cli.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"correct-horse-battery-staple"* ]]
+}
+
+@test "healthy Redis container does not mask a closed host port" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then printf "127.0.0.1\\n6379\\n"; exit 0; fi
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "compose version" ]] && exit 0
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/python3" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    sleep() { :; }
+    ensure_docker_daemon_running() { return 0; }
+    start_docker_services_or_fail() { printf "%s\\n" "$*" > "$tmpdir/docker-start.log"; }
+
+    ! wait_for_redis_before_smoke_tests
+    [[ "$(wc -l < "$tmpdir/docker-start.log")" -eq 1 ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"60 saniye içinde hazır olmadı"* ]]
+}
+
+@test "remote Redis URL is checked as-is and never triggers local Compose remediation" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=rediss://user:explicit@cache.example.com:7443/5\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "cache.example.com\\n7443\\n"
+  exit 0
+fi
+[[ "\$2" == cache.example.com && "\$3" == 7443 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    start_docker_services_or_fail() { touch "$tmpdir/unexpected-compose"; return 1; }
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "rediss://user:explicit@cache.example.com:7443/5" ]]
+    [[ ! -e "$tmpdir/unexpected-compose" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "Playwright Ubuntu override helpers detect Ubuntu 25+ and normalize the synthetic os-release" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

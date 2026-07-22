@@ -50,7 +50,9 @@ def resolve_redis_url() -> str:
         return redis_url
 
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-    port = f":{parsed.port}" if parsed.port is not None else ""
+    configured_port = os.getenv("REDIS_PORT", "").strip()
+    effective_port = int(configured_port) if configured_port.isdigit() else parsed.port
+    port = f":{effective_port}" if effective_port is not None else ""
     username = quote(parsed.username or "", safe="")
     credentials = f"{username}:{quote(redis_password, safe='')}@"
     return urlunsplit(

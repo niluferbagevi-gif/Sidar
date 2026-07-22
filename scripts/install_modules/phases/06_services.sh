@@ -571,6 +571,7 @@ wait_for_redis_ready_after_docker_start() {
     local redis_url=""
     local redis_host="localhost"
     local redis_port="6379"
+    local configured_redis_port=""
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
@@ -601,6 +602,11 @@ PY
             redis_host="${redis_conn[0]:-localhost}"
             redis_port="${redis_conn[1]:-6379}"
         fi
+    fi
+
+    configured_redis_port=$(read_env_value_from_file "REDIS_PORT" "$env_file")
+    if [[ "$redis_host" =~ ^(localhost|127\.0\.0\.1|::1)$ && "$configured_redis_port" =~ ^[0-9]+$ ]]; then
+        redis_port="$configured_redis_port"
     fi
 
     info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."

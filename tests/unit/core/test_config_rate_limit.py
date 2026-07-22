@@ -19,3 +19,14 @@ def test_resolve_redis_url_preserves_explicit_or_remote_credentials(monkeypatch)
 
     monkeypatch.setenv("SIDAR_REDIS_URL", "rediss://cache.example.com:6380/0")
     assert resolve_redis_url() == "rediss://cache.example.com:6380/0"
+
+
+def test_resolve_redis_url_uses_compose_host_port_only_for_local_url(monkeypatch):
+    """REDIS_PORT keeps local runtime aligned with the Compose host mapping."""
+    monkeypatch.setenv("REDIS_PASSWORD", "local-secret")
+    monkeypatch.setenv("REDIS_PORT", "6391")
+    monkeypatch.setenv("SIDAR_REDIS_URL", "redis://localhost:6379/0")
+    assert resolve_redis_url() == "redis://:local-secret@localhost:6391/0"
+
+    monkeypatch.setenv("SIDAR_REDIS_URL", "rediss://cache.example.com:7443/0")
+    assert resolve_redis_url() == "rediss://cache.example.com:7443/0"

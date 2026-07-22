@@ -85,6 +85,7 @@ wait_for_redis_before_smoke_tests() {
     local redis_url=""
     local redis_host=""
     local redis_port=""
+    local configured_redis_port=""
     local redis_host_lc=""
     local redis_is_local=false
     local docker_start_attempted=false
@@ -131,6 +132,10 @@ PY
 
     redis_host="${redis_conn[0]:-localhost}"
     redis_port="${redis_conn[1]:-6379}"
+    configured_redis_port=$(read_env_value_from_file "REDIS_PORT" "$env_file")
+    if [[ "$redis_host" =~ ^(localhost|127\.0\.0\.1|::1)$ && "$configured_redis_port" =~ ^[0-9]+$ ]]; then
+        redis_port="$configured_redis_port"
+    fi
     redis_host_lc="${redis_host,,}"
     if [[ "$redis_host_lc" == "localhost" || "$redis_host_lc" == "127.0.0.1" || "$redis_host_lc" == "redis" ]]; then
         redis_is_local=true
