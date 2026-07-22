@@ -226,8 +226,13 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
                 transport=ASGITransport(app=web_server.app), base_url="http://test"
             ) as client:
                 healthz = await client.get("/healthz")
+                # Kubernetes readinessProbe does not send an Authorization header,
+                # so /readyz must stay reachable through the auth middleware too
+                # (not just the DDoS/rate-limit middleware).
+                readyz = await client.get("/readyz")
 
         assert healthz.status_code == 200
+        assert readyz.status_code != 401
         assert redis_rate_limiter.await_count == 0
         ddos_source = inspect.getsource(web_server.ddos_rate_limit_middleware)
         assert "/readyz" in ddos_source
