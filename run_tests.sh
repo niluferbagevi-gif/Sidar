@@ -505,7 +505,13 @@ else
   RUN_STATIC_ANALYSIS="${RUN_STATIC_ANALYSIS:-1}"
   RUN_BATS_TESTS="${RUN_BATS_TESTS:-auto}"
   RUN_FRONTEND_E2E="${RUN_FRONTEND_E2E:-auto}"
-  FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-${FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-0}}"
+  if stage_all_selected; then
+    # Kanonik local tam doğrulama, Makefile aracılığı olmadan çalıştırıldığında
+    # da bundle boyutu regresyonlarını yakalamalıdır.
+    FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-${FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-1}}"
+  else
+    FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"
+  fi
 fi
 RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"
 # RETRY_ON_FAIL genel kullanıcı kısayoludur; namespaced değer verilirse öncelik ondadır.

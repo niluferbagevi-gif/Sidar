@@ -99,7 +99,7 @@ Tüm test dokümantasyonu, installer özetleri ve CI mesajları aşağıdaki isi
   coverage veya merge/release kanıtı değildir.
 - **dev-full = local tam doğrulama.** `make dev-full` ya da geliştirme profilli
   `RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` komutudur;
-  local ortam sağlığını doğrular, production-ready kabulü değildir.
+  frontend bundle budget dahil local ortam sağlığını doğrular, production-ready kabulü değildir.
 - **production-readiness = merge/release kapısı.** `make production-readiness` ya da
   kanonik `TEST_PROFILE=ci ... SIDAR_PRODUCTION_READINESS=1` komutudur; release/merge için
   zorunlu kalite kapısıdır.
@@ -222,10 +222,10 @@ Bu çıktıyı şu şekilde yorumlayın:
   satırları ilgili local/dev kalite kapılarının geçtiğini gösterir.
 - `⚠️ RELEASE KAPSAMI EKSİK [summary-code=10]` satırı **beklenen bir uyarıdır**:
   local `--stage all` koşusu başarılı olsa bile release/merge kapısı sayılmaz.
-- `Frontend bundle budget atlandı` uyarısı doğrudan `bash run_tests.sh --stage all`
-  local profilinde normaldir; Makefile üzerinden `make dev-full` veya `make ci-parity`
-  çalıştırıldığında bundle budget kapısı varsayılan olarak açıktır. Geçici olarak
-  kapatmak için `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=0 make dev-full` kullanın.
+- Frontend bundle budget hem doğrudan `bash run_tests.sh --stage all` hem de
+  `make dev-full` / `make ci-parity` akışında varsayılan olarak açıktır. Yalnız
+  kontrollü teşhis için `FRONTEND_BUNDLE_BUDGET=0 bash run_tests.sh --stage all`
+  veya `FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=0 make dev-full` ile kapatılabilir.
 - İlk lokal benchmark koşusunda `seeded_not_compared` veya “baseline sonradan
   oluşturuldu” mesajı görmek normaldir. Bu koşuda oluşan
   `.benchmarks/.../*_baseline.json` dosyası yalnız bulunduğu makinede kullanılır;

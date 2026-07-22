@@ -2287,6 +2287,23 @@ def test_make_lint_requires_installer_shellcheck_gate() -> None:
     assert "make test-shell" in ci_workflow
 
 
+def test_direct_local_stage_all_enables_frontend_bundle_budget_by_default() -> None:
+    """The canonical shell command must enforce the same bundle gate as make dev-full."""
+    script = _script()
+    local_profile = script[
+        script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index(
+            'RUN_FRONTEND_E2E_AUTO_INSTALL="${RUN_FRONTEND_E2E_AUTO_INSTALL:-1}"'
+        )
+    ]
+    testing_docs = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "if stage_all_selected; then" in local_profile
+    assert "FRONTEND_BUNDLE_BUDGET_LOCAL_FULL:-1" in local_profile
+    assert 'FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"' in local_profile
+    assert "bundle budget dahil local ortam sağlığını doğrular" in testing_docs
+    assert "bash run_tests.sh --stage all` hem" in testing_docs
+
+
 def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
