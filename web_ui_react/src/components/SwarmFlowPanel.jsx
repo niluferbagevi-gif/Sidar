@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 import { fetchJson } from "../lib/api.js";
 import {
@@ -64,6 +64,16 @@ export function SwarmFlowPanel() {
   const [hitlLoading, setHitlLoading] = useState(false);
   const [operationLog, setOperationLog] = useState([]);
   const [actionBusy, setActionBusy] = useState(false);
+  const loaderErrorsRef = useRef({ activity: "", hitl: "" });
+
+  const updateLoaderError = useCallback((source, message = "") => {
+    const previousLoaderErrors = Object.values(loaderErrorsRef.current).filter(Boolean);
+    loaderErrorsRef.current = { ...loaderErrorsRef.current, [source]: message };
+    setError((current) => {
+      if (current && !previousLoaderErrors.includes(current)) return current;
+      return loaderErrorsRef.current.activity || loaderErrorsRef.current.hitl || "";
+    });
+  }, []);
 
   const pushOperationLog = useCallback((message, tone = "info") => {
     const entry = {
@@ -80,28 +90,30 @@ export function SwarmFlowPanel() {
     try {
       const data = await fetchJson("/api/hitl/pending");
       setPendingApprovals(data.pending || []);
+      updateLoaderError("hitl");
     } catch (err) {
       setPendingApprovals([]);
-      setError((prev) => prev || err.message);
+      updateLoaderError("hitl", err.message);
       pushOperationLog(`HITL bekleyen kayıtları alınamadı: ${err.message}`, "error");
     } finally {
       setHitlLoading(false);
     }
-  }, [pushOperationLog]);
+  }, [pushOperationLog, updateLoaderError]);
 
   const loadAutonomyActivity = useCallback(async () => {
     setActivityLoading(true);
     try {
       const data = await fetchJson("/api/autonomy/activity?limit=8");
       setAutonomyActivity(data.activity || { items: [], counts_by_status: {}, counts_by_source: {} });
+      updateLoaderError("activity");
     } catch (err) {
       setAutonomyActivity({ items: [], counts_by_status: {}, counts_by_source: {} });
-      setError((prev) => prev || err.message);
+      updateLoaderError("activity", err.message);
       pushOperationLog(`Autonomy aktivitesi alınamadı: ${err.message}`, "error");
     } finally {
       setActivityLoading(false);
     }
-  }, [pushOperationLog]);
+  }, [pushOperationLog, updateLoaderError]);
 
   useEffect(() => {
     loadAutonomyActivity();

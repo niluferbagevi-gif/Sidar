@@ -51,6 +51,7 @@ export function OperationsQaPanel() {
     try {
       const data = await listHitlPending();
       setHitlPending(data.pending || []);
+      setError("");
     } catch (exc) {
       setError(exc.message);
     }

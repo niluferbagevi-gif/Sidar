@@ -267,6 +267,19 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
     expect(await screen.findByText("HITL alınamadı")).toBeInTheDocument();
   });
 
+  it("başarılı HITL yenilemesinde önceki hata banner'ını temizler", async () => {
+    const user = userEvent.setup();
+    apiMocks.listHitlPending
+      .mockRejectedValueOnce(new Error("Geçici HITL hatası"))
+      .mockResolvedValueOnce({ pending: [] });
+    await renderOperationsQaPanel();
+    expect(await screen.findByText("Geçici HITL hatası")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yenile" }));
+
+    await waitFor(() => expect(screen.queryByText("Geçici HITL hatası")).not.toBeInTheDocument());
+  });
+
   it("pending alanı eksik HITL yanıtını boş liste olarak işler", async () => {
     apiMocks.listHitlPending.mockResolvedValueOnce({});
     await renderOperationsQaPanel();

@@ -1103,6 +1103,27 @@ describe("SwarmFlowPanel error and pending approval fallbacks", () => {
     expect(await screen.findByText(/Autonomy aktivitesi alınamadı/)).toBeInTheDocument();
   });
 
+  it("clears the activity error banner after a successful activity refresh", async () => {
+    const user = userEvent.setup();
+    let activityAttempt = 0;
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        activityAttempt += 1;
+        if (activityAttempt === 1) throw new Error("temporary activity error");
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("temporary activity error")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
+
+    await waitFor(() => expect(screen.queryByText("temporary activity error")).not.toBeInTheDocument());
+  });
+
   it("logs approval response errors when HITL decision endpoint fails", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation(async (url, options) => {
