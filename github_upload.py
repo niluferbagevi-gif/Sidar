@@ -511,7 +511,10 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
     hiçbir zaman devreye girmez. Buradaki adımlar o job'ın (installer-smoke,
     .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarının bir eşleniğidir,
-    böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır.
+    böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır. Ruff
+    debt ratchet kontrolü ve tests/unit/scripts + test_dependency_profile_plan.py
+    alt kümesi de burada çalışır; bunlar main'e doğrudan push edilen kodun
+    test/config senkronizasyonunu CI'ya varmadan önce doğrular.
     """
     history_success, history_err = ensure_full_git_history_for_manifest_checks()
     if not history_success:
@@ -520,6 +523,7 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     quality_steps: list[tuple[list[str], dict[str, str] | None]] = [
         (["uv", "run", "ruff", "format", "--check", "."], None),
         (["uv", "run", "ruff", "check", "."], None),
+        (["uv", "run", "python", "scripts/ci/check_ruff_debt_baseline.py"], None),
         (["make", "installer-shellcheck"], None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], None),
         (["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"], None),
@@ -561,6 +565,19 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
                 "--no-cov",
                 "tests/smoke/test_install_verification.py"
                 "::test_install_sidar_embedded_manifests_in_sync",
+            ],
+            None,
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "--no-cov",
+                "-x",
+                "tests/unit/scripts",
+                "tests/unit/test_dependency_profile_plan.py",
             ],
             None,
         ),

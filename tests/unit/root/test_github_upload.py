@@ -488,6 +488,7 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
         (["git", "rev-parse", "--is-shallow-repository"], False, None),
         (["uv", "run", "ruff", "format", "--check", "."], False, None),
         (["uv", "run", "ruff", "check", "."], False, None),
+        (["uv", "run", "python", "scripts/ci/check_ruff_debt_baseline.py"], False, None),
         (["make", "installer-shellcheck"], False, None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], False, None),
         (
@@ -536,6 +537,20 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
                 "--no-cov",
                 "tests/smoke/test_install_verification.py"
                 "::test_install_sidar_embedded_manifests_in_sync",
+            ],
+            False,
+            None,
+        ),
+        (
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "--no-cov",
+                "-x",
+                "tests/unit/scripts",
+                "tests/unit/test_dependency_profile_plan.py",
             ],
             False,
             None,
