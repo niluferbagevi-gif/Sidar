@@ -483,6 +483,71 @@ def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
 
 
 @pytest.mark.integration
+def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypatch):
+    """core/db/monolith.py'deki elle yazılmış SQLite bootstrap DDL'i (`_init_schema_sqlite`
+    ve ilgili `_ensure_*_schema_sqlite` yardımcıları) ile Alembic migration'larının ürettiği
+    head şeması, iki bağımsız ve elle bakım gören kaynak olduğu için birbirinden sapabilir.
+    Bu test tablo/sütun kümelerini karşılaştırarak drift'i CI'da erken yakalar.
+
+    Not: Alembic'in `env.py`'si kendi içinde `asyncio.run(...)` çağırdığından, bu test
+    zaten çalışan bir event loop içinde olmamalı (bkz. diğer `command.upgrade` kullanan
+    senkron testler); bu yüzden Database tarafı da `asyncio.run` ile senkron sürülür.
+    """
+    bootstrap_db_path = (tmp_path / "bootstrap.db").resolve()
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{bootstrap_db_path}",
+        BASE_DIR=str(tmp_path),
+        DB_POOL_SIZE=2,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=4,
+        JWT_SECRET_KEY="test-secret-key-for-ci-testing-only!",
+        JWT_ALGORITHM="HS256",
+        JWT_TTL_DAYS=3,
+    )
+
+    async def _bootstrap_sqlite_schema() -> None:
+        db = Database(cfg)
+        await db.connect()
+        await db.init_schema()
+        await db.close()
+
+    asyncio.run(_bootstrap_sqlite_schema())
+
+    alembic_db_path = (tmp_path / "alembic_head.db").resolve()
+    alembic_url = f"sqlite:///{alembic_db_path.as_posix()}"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    command.upgrade(_packaged_alembic_config(alembic_url), "head")
+
+    bootstrap_engine = create_engine(f"sqlite:///{bootstrap_db_path.as_posix()}")
+    alembic_engine = create_engine(alembic_url)
+    try:
+        bootstrap_inspector = inspect(bootstrap_engine)
+        alembic_inspector = inspect(alembic_engine)
+
+        bootstrap_tables = set(bootstrap_inspector.get_table_names())
+        alembic_tables = set(alembic_inspector.get_table_names()) - {"alembic_version"}
+
+        assert bootstrap_tables == alembic_tables, (
+            "SQLite bootstrap (_init_schema_sqlite) ile Alembic head arasında tablo seti "
+            f"sapması var: sadece bootstrap'ta={bootstrap_tables - alembic_tables}, "
+            f"sadece Alembic'te={alembic_tables - bootstrap_tables}"
+        )
+
+        for table in sorted(bootstrap_tables):
+            bootstrap_cols = {c["name"] for c in bootstrap_inspector.get_columns(table)}
+            alembic_cols = {c["name"] for c in alembic_inspector.get_columns(table)}
+            assert bootstrap_cols == alembic_cols, (
+                f"'{table}' tablosunda bootstrap/Alembic sütun sapması: "
+                f"sadece bootstrap'ta={bootstrap_cols - alembic_cols}, "
+                f"sadece Alembic'te={alembic_cols - bootstrap_cols}"
+            )
+    finally:
+        bootstrap_engine.dispose()
+        alembic_engine.dispose()
+
+
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_sqlite_audit_logs_remain_integral_under_concurrency(tmp_path):
     """Audit inserts share one SQLite worker lane under async concurrency."""

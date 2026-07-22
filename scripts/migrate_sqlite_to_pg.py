@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -25,11 +26,25 @@ TABLES_IN_ORDER = [
 ]
 TABLES_ALLOWLIST = frozenset(TABLES_IN_ORDER)
 
+# Migrasyon yalnızca TABLES_ALLOWLIST'teki bilinen tablolardan okur, ama sütun adları
+# canlı `PRAGMA table_info`/`SELECT *` introspection'ından gelir (bkz. _load_rows).
+# Kaynak sqlite dosyası güvenilmeyen/bozulmuş olabileceğinden, introspection'dan dönen
+# her sütun adını hedef INSERT sorgusuna gömmeden önce güvenli bir kimlik deseniyle
+# doğrularız; aksi halde kötü niyetli bir sütun adı SQL injection'a yol açabilir.
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 def _safe_table_name(table: str) -> str:
     if table not in TABLES_ALLOWLIST:
         raise ValueError(f"Geçersiz tablo adı: {table}")
     return table
+
+
+def _safe_column_names(table: str, columns: list[str]) -> list[str]:
+    for column in columns:
+        if not _SAFE_IDENTIFIER_RE.match(column):
+            raise ValueError(f"Geçersiz sütun adı ({table}): {column!r}")
+    return columns
 
 
 def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any, ...]]]:
@@ -47,9 +62,9 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
                     f"PRAGMA table_info({table})"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
                 ).fetchall()
             ]
-            return cols, []
+            return _safe_column_names(table, cols), []
         cols = list(rows[0].keys())
-        return cols, [tuple(row[col] for col in cols) for row in rows]
+        return _safe_column_names(table, cols), [tuple(row[col] for col in cols) for row in rows]
     finally:
         conn.close()
 
