@@ -43,6 +43,21 @@ repos:
         pass_filenames: false
         files: ^(install_sidar\.sh|scripts/install_modules/.*\.(sh|ps1)|scripts/sync_install_module_hashes\.sh|scripts/tools/update_install_module_hash_manifest\.py)$
         stages: [pre-commit, pre-push]
+
+      - id: check-ruff-debt-baseline
+        name: check ruff E501/docstring/ASYNC240 debt baseline
+        entry: uv run python scripts/ci/check_ruff_debt_baseline.py
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+        stages: [pre-commit, pre-push]
+
+      - id: pytest-meta-config-subset
+        name: pytest meta/config consistency subset (pre-push)
+        entry: uv run pytest -q --no-cov -x tests/unit/scripts tests/unit/test_dependency_profile_plan.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
       - id: shellcheck
         name: shellcheck shell scripts
         entry: uv run shellcheck --severity=warning -x

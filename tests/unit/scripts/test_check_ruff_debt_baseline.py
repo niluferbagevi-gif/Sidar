@@ -82,13 +82,32 @@ def test_write_tightened_baseline_uses_minimum_current_values(tmp_path) -> None:
     assert updated["D200"] == 0
 
 
+def _pinned_test_file(tmp_path, *, e501: int):
+    dependency_profile_test = tmp_path / "test_dependency_profile_plan.py"
+    dependency_profile_test.write_text(
+        f'assert debt["e501_debt_baseline"] == {e501}\n', encoding="utf-8"
+    )
+    return dependency_profile_test
+
+
 def test_main_fails_when_baseline_can_be_tightened(tmp_path, monkeypatch, capsys) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(_pyproject_with_baselines(e501=6, d202=3), encoding="utf-8")
+    dependency_profile_test = _pinned_test_file(tmp_path, e501=6)
     diagnostics = [{"code": "E501"} for _ in range(4)] + [{"code": "D202"} for _ in range(2)]
     monkeypatch.setattr(checker, "_run_ruff_json", lambda _codes: diagnostics)
 
-    assert checker.main(["--pyproject", str(pyproject)]) == 1
+    assert (
+        checker.main(
+            [
+                "--pyproject",
+                str(pyproject),
+                "--dependency-profile-test",
+                str(dependency_profile_test),
+            ]
+        )
+        == 1
+    )
 
     captured = capsys.readouterr()
     assert "baseline can be tightened" in captured.err
@@ -98,12 +117,55 @@ def test_main_fails_when_baseline_can_be_tightened(tmp_path, monkeypatch, capsys
 def test_main_update_ratchets_pyproject_to_current_counts(tmp_path, monkeypatch, capsys) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(_pyproject_with_baselines(e501=6, d202=3), encoding="utf-8")
+    dependency_profile_test = _pinned_test_file(tmp_path, e501=6)
     diagnostics = [{"code": "E501"} for _ in range(4)] + [{"code": "D202"} for _ in range(2)]
     monkeypatch.setattr(checker, "_run_ruff_json", lambda _codes: diagnostics)
 
-    assert checker.main(["--pyproject", str(pyproject), "--update"]) == 0
+    assert (
+        checker.main(
+            [
+                "--pyproject",
+                str(pyproject),
+                "--dependency-profile-test",
+                str(dependency_profile_test),
+                "--update",
+            ]
+        )
+        == 0
+    )
 
     updated = checker._load_baseline(pyproject)
     assert updated["E501"] == 4
     assert updated["D202"] == 2
     assert "ratcheted" in capsys.readouterr().out
+    assert checker._read_pinned_e501_baseline(dependency_profile_test) == 4
+
+
+def test_main_fails_when_pinned_test_baseline_is_stale(tmp_path, monkeypatch, capsys) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(_pyproject_with_baselines(e501=6, d202=3), encoding="utf-8")
+    dependency_profile_test = _pinned_test_file(tmp_path, e501=8)
+    monkeypatch.setattr(
+        checker,
+        "_run_ruff_json",
+        lambda _codes: (_ for _ in ()).throw(
+            AssertionError("ruff should not run before the pinned-baseline check")
+        ),
+    )
+
+    assert (
+        checker.main(
+            [
+                "--pyproject",
+                str(pyproject),
+                "--dependency-profile-test",
+                str(dependency_profile_test),
+            ]
+        )
+        == 1
+    )
+
+    captured = capsys.readouterr()
+    assert "pins e501_debt_baseline=8" in captured.err
+    assert "e501_debt_baseline=6" in captured.err
+    assert "--update" in captured.err

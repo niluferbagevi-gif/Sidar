@@ -97,6 +97,32 @@ def _replace_inline_table_value(table_body: str, code: str, value: int) -> str:
     return updated
 
 
+_PINNED_E501_ASSERT_RE = re.compile(r'(assert debt\["e501_debt_baseline"\] == )(\d+)')
+
+
+def _read_pinned_e501_baseline(test_path: Path) -> int:
+    """Read the E501 baseline literal pinned in the dependency-profile-plan test.
+
+    That test loads pyproject.toml itself and asserts a hardcoded number so any
+    baseline change shows up as a deliberate diff; this literal must stay in
+    lockstep with --pyproject's e501_debt_baseline or the pin goes stale.
+    """
+    content = test_path.read_text(encoding="utf-8")
+    match = _PINNED_E501_ASSERT_RE.search(content)
+    if match is None:
+        raise ValueError(f"Missing pinned e501_debt_baseline assertion in {test_path}")
+    return int(match.group(2))
+
+
+def _write_pinned_e501_baseline(test_path: Path, value: int) -> None:
+    """Rewrite the E501 baseline literal pinned in the dependency-profile-plan test."""
+    content = test_path.read_text(encoding="utf-8")
+    updated, count = _PINNED_E501_ASSERT_RE.subn(rf"\g<1>{value}", content, count=1)
+    if count != 1:
+        raise ValueError(f"Missing pinned e501_debt_baseline assertion in {test_path}")
+    test_path.write_text(updated, encoding="utf-8")
+
+
 def _write_tightened_baseline(
     pyproject_path: Path, current: dict[str, int], baseline: dict[str, int]
 ) -> None:
@@ -150,6 +176,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not fail when current debt is lower than the committed baseline.",
     )
+    parser.add_argument(
+        "--dependency-profile-test",
+        default=str(ROOT / "tests/unit/test_dependency_profile_plan.py"),
+        help=(
+            "Path to the test pinning e501_debt_baseline as a literal, kept in "
+            "sync with --pyproject."
+        ),
+    )
     args = parser.parse_args(argv)
 
     baseline = _load_baseline(Path(args.pyproject))
@@ -158,10 +192,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Missing Ruff debt baseline entries: {', '.join(missing)}", file=sys.stderr)
         return 2
 
+    dependency_profile_test = Path(args.dependency_profile_test)
+    pinned_e501_baseline = _read_pinned_e501_baseline(dependency_profile_test)
+    if not args.update and pinned_e501_baseline != baseline["E501"]:
+        print(
+            f"{dependency_profile_test} pins e501_debt_baseline={pinned_e501_baseline}, "
+            f"which no longer matches {args.pyproject} (e501_debt_baseline="
+            f"{baseline['E501']}).",
+            file=sys.stderr,
+        )
+        print(
+            "Run: uv run python scripts/ci/check_ruff_debt_baseline.py --update",
+            file=sys.stderr,
+        )
+        return 1
+
     current = _count_diagnostics(_run_ruff_json(RUFF_DEBT_CODES))
     if args.update:
         _write_tightened_baseline(Path(args.pyproject), current, baseline)
         updated_baseline = _load_baseline(Path(args.pyproject))
+        _write_pinned_e501_baseline(dependency_profile_test, updated_baseline["E501"])
         print(f"Ruff debt baseline ratcheted to: {_format_counts(updated_baseline)}")
         return 0
 
