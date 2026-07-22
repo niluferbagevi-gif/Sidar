@@ -4987,7 +4987,8 @@ exit 0
         [
             "bash",
             "-c",
-            'source "$1"; ! playwright_node_host_platform_is_officially_supported "$2" "$3" --no-install',
+            'source "$1"; ! playwright_node_host_platform_is_officially_supported "$2" "$3" '
+            "--no-install",
             "bash",
             str(helper),
             str(os_release),

@@ -228,7 +228,7 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
     assert "ASYNC240" in lint["ignore"]
     assert debt["line_length"] == 100
     assert debt["e501_global_ignore_review_by"] == "2026-09-30"
-    assert debt["e501_debt_baseline"] == 475
+    assert debt["e501_debt_baseline"] == 473
     assert debt["async240_global_ignore_review_by"] == "2026-09-30"
     assert {"web_server.py", "main.py"} <= set(debt["legacy_hotspots"])
     assert (
