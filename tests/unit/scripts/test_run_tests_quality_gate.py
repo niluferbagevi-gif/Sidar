@@ -4914,7 +4914,7 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
     assert result.stdout == "ubuntu24.04-x64|120000|"
 
 
-def test_shared_playwright_ubuntu_override_helper_does_not_probe_node_install_command(
+def test_node_playwright_official_ubuntu26_support_disables_override(
     tmp_path: Path,
 ) -> None:
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
@@ -4925,9 +4925,13 @@ def test_shared_playwright_ubuntu_override_helper_does_not_probe_node_install_co
     mock_npx.write_text(
         """#!/usr/bin/bash
 printf '%s\n' "$*" >> "${MOCK_NPX_LOG}"
+if [[ "$*" == "--no-install playwright install --dry-run chromium" ]]; then
+  printf 'browser: chromium\nplatform: ubuntu26.04-x64\n'
+  exit 0
+fi
 if [[ "$*" == "--no-install playwright install chromium" ]]; then
   printf '%s|' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}"
-  grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
+  grep -q '^VERSION_ID="26.04"$' "${OS_RELEASE_PATH}"
   exit $?
 fi
 printf 'unexpected probe invocation: %s\n' "$*" >&2
@@ -4941,7 +4945,7 @@ exit 42
         [
             "bash",
             "-c",
-            'set -Eeuo pipefail; source "$1"; run_playwright_ubuntu_override_install "$2" 120000 "$3" --no-install playwright install chromium',
+            'set -Eeuo pipefail; source "$1"; if playwright_node_host_platform_is_officially_supported "$2" "$3" --no-install; then OS_RELEASE_PATH="$2" "$3" --no-install playwright install chromium; else run_playwright_ubuntu_override_install "$2" 120000 "$3" --no-install playwright install chromium; fi',
             "bash",
             str(helper),
             str(os_release),
@@ -4953,10 +4957,42 @@ exit 42
         text=True,
     )
 
-    assert result.stdout == "ubuntu24.04-x64|"
+    assert result.stdout.endswith("|")
+    assert "ubuntu24.04-x64" not in result.stdout
     assert npx_log.read_text(encoding="utf-8").splitlines() == [
-        "--no-install playwright install chromium"
+        "--no-install playwright install --dry-run chromium",
+        "--no-install playwright install chromium",
     ]
+
+
+def test_node_playwright_unsupported_ubuntu26_keeps_temporary_override(tmp_path: Path) -> None:
+    """Older Playwright packages must retain the compatibility fallback."""
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_npx = tmp_path / "npx"
+    os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
+    mock_npx.write_text(
+        """#!/usr/bin/env bash
+echo 'BEWARE: your OS is not officially supported by Playwright' >&2
+exit 0
+""",
+        encoding="utf-8",
+    )
+    mock_npx.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; ! playwright_node_host_platform_is_officially_supported "$2" "$3" --no-install',
+            "bash",
+            str(helper),
+            str(os_release),
+            str(mock_npx),
+        ],
+        check=False,
+    )
+    assert result.returncode == 0
 
 
 def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_bundle(
@@ -5260,7 +5296,7 @@ RUN_FRONTEND_E2E=auto
 resolve_local_frontend_e2e_mode
 [[ "${RUN_FRONTEND_E2E}" == 1 ]]
 [[ "$(wc -l < "${MOCK_NODE_LOG}")" -eq 2 ]]
-[[ "$(wc -l < "${MOCK_NPX_LOG}")" -eq 1 ]]
+[[ "$(wc -l < "${MOCK_NPX_LOG}")" -eq "${EXPECTED_NPX_CALLS}" ]]
 printf 'lock-v2\\n' > "${FRONTEND_PLAYWRIGHT_PACKAGE_LOCK}"
 RUN_FRONTEND_E2E=auto
 RUN_FRONTEND_E2E_AUTO_INSTALL=0
@@ -5280,6 +5316,7 @@ resolve_local_frontend_e2e_mode
         capture_output=True,
         env={
             "EXPECTS_UBUNTU_OVERRIDE": "1" if expects_ubuntu_override else "0",
+            "EXPECTED_NPX_CALLS": "2" if expects_ubuntu_override else "1",
             "FRONTEND_PLAYWRIGHT_SENTINEL": str(sentinel),
             "FRONTEND_PLAYWRIGHT_PACKAGE_LOCK": str(package_lock),
             "MOCK_BROWSER": str(browser),
@@ -5311,9 +5348,10 @@ resolve_local_frontend_e2e_mode
     assert "Chromium cache'i otomatik kuruldu" in result.stdout
     assert "Chromium sentinel cache'i hazır" in result.stdout
     assert "Chromium cache'i hazırlanamadı" in result.stdout
-    assert npx_log.read_text(encoding="utf-8").splitlines() == [
-        "--no-install playwright install chromium"
-    ]
+    expected_npx_log = ["--no-install playwright install chromium"]
+    if expects_ubuntu_override:
+        expected_npx_log.insert(0, "--no-install playwright install --dry-run chromium")
+    assert npx_log.read_text(encoding="utf-8").splitlines() == expected_npx_log
 
 
 def test_forced_frontend_playwright_mode_attempts_cache_install_before_failing(

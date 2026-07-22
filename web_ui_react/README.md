@@ -70,8 +70,11 @@ hazırlığı CDN/proxy nedeniyle başarısız olsa bile browser gerektirmeyen s
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
   hazır değilse `run_tests.sh`, frontend bağımlılıkları kurulduktan sonra
   `npx --no-install playwright install chromium` ile cache'i bir kez hazırlamayı dener. Ubuntu 25+
-  hostlarda bu çağrı sentetik `OS_RELEASE_PATH` ve `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`
-  fallback'iyle çalışır; diğer dağıtımlar koşulsuz override edilmez. Kurulum başarılıysa doğrulanan executable yolunu ve `package-lock.json` parmak izini git dışında tutulan
+  hostlarda önce `playwright install --dry-run chromium` ile kurulu Playwright sürümünün resmi host
+  desteği sorgulanır. Yalnız unsupported uyarısı sürüyorsa sentetik `OS_RELEASE_PATH` ve
+  `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` fallback'i kullanılır; Playwright Ubuntu 26.04 desteği
+  sunduğunda override otomatik devreden çıkar. Diğer dağıtımlar koşulsuz override edilmez.
+  Kurulum başarılıysa doğrulanan executable yolunu ve `package-lock.json` parmak izini git dışında tutulan
   `.playwright-installed` sentinel dosyasına yazar. Sonraki çalıştırmalar sentinel içindeki executable hâlâ
   mevcutsa ve bağımlılık kilidi değişmemişse Node cache çözümlemesini atlar ve smoke kapısını doğrudan
   etkinleştirir; stale sentinel otomatik silinir. Bu yerel otomatik indirmeyi kapatmak için

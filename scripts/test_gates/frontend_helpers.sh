@@ -206,13 +206,15 @@ install_local_frontend_playwright_chromium_cache() {
     unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
     local os_release_path="${OS_RELEASE_PATH:-/etc/os-release}"
     local playwright_timeout_ms="${PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:-120000}"
-    if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
+    if is_playwright_ubuntu_override_recommended "${os_release_path}" &&
+      ! playwright_node_host_platform_is_officially_supported "${os_release_path}" npx --no-install; then
       echo "ℹ️ Ubuntu 25+ algılandı; Node Playwright Chromium cache'i en yakın desteklenen Ubuntu OS override ile hazırlanıyor."
-      # npx burada yalnızca gerçek browser install komutu olarak geçirilir;
-      # Ubuntu bundle probe'u helper içinde sadece Python interpreter komutlarıyla yapılır.
       run_playwright_ubuntu_override_install "${os_release_path}" "${playwright_timeout_ms}" \
         npx --no-install playwright install chromium
     else
+      if is_playwright_ubuntu_override_recommended "${os_release_path}"; then
+        echo "ℹ️ Bu Ubuntu sürümü Playwright tarafından resmi destekleniyor; geçici OS override uygulanmayacak."
+      fi
       npx --no-install playwright install chromium
     fi
   ) 2>&1 | tee "${playwright_install_log}"
