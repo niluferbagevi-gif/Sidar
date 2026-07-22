@@ -8,6 +8,7 @@ wrapper names during the router modularization effort.
 from __future__ import annotations
 
 import re
+import secrets
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -141,7 +142,9 @@ def require_metrics_access(request: Request, user: Any, *, config: Any) -> Any:
     metrics_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
     if metrics_token:
         auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
+        if auth_header.startswith("Bearer ") and secrets.compare_digest(
+            auth_header[7:].strip(), metrics_token
+        ):
             return user
     if is_admin_user(user):
         return user

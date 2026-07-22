@@ -1048,6 +1048,20 @@ def _runtime_state(application: FastAPI | None = None) -> Any:
     return _app_factory.get_runtime_state(application or app)
 
 
+# require_metrics_access() (web/security.py) documents Bearer <METRICS_TOKEN> as an
+# admin-JWT alternative for scraper access, but that check only runs inside the route's
+# Depends(_require_metrics_access) — which itself depends on an already-authenticated
+# request.state.user. basic_auth_middleware must recognize a matching METRICS_TOKEN
+# before it falls through to JWT-only validation, or the documented mechanism can never
+# be reached (see require_metrics_access for the corresponding scope check).
+_METRICS_TOKEN_BEARER_PATHS = frozenset(
+    {"/metrics", "/metrics/llm", "/metrics/llm/prometheus", "/api/budget"}
+)
+_METRICS_TOKEN_USER = SimpleNamespace(
+    id="metrics-token", username="metrics-token", role="metrics", tenant_id="default"
+)
+
+
 async def basic_auth_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -1089,7 +1103,17 @@ async def basic_auth_middleware(
     if not access_token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
 
-    user = await _resolve_user_from_token(None, access_token)
+    configured_metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
+    is_metrics_token_request = (
+        request.method == "GET"
+        and request.url.path in _METRICS_TOKEN_BEARER_PATHS
+        and configured_metrics_token
+        and secrets.compare_digest(access_token, configured_metrics_token)
+    )
+    if is_metrics_token_request:
+        user = _METRICS_TOKEN_USER
+    else:
+        user = await _resolve_user_from_token(None, access_token)
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
