@@ -440,9 +440,7 @@ def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
         ("events", {"messages"}, False),
     ],
 )
-def test_is_safe_sql_identifier(
-    identifier: str, allowed: set[str] | None, expected: bool
-) -> None:
+def test_is_safe_sql_identifier(identifier: str, allowed: set[str] | None, expected: bool) -> None:
     assert is_safe_sql_identifier(identifier, allowed=allowed) is expected
 
 
