@@ -203,7 +203,8 @@ async def upsert_prompt(
             )
         db._sqlite_conn.execute(
             """
-            INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at, updated_at)
+            INSERT INTO prompt_registry (role_name, prompt_text, version, is_active, created_at,
+            updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (role, text, new_version, 1 if activate else 0, now, now),

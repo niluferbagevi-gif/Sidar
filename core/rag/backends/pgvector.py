@@ -203,9 +203,11 @@ def upsert_pgvector_chunks(
             ]
             upsert_sql = """
                     INSERT INTO __TABLE__
-                    (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
+                    (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content,
+                    embedding)
                     VALUES
-                    (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source, :chunk_content, CAST(:embedding AS vector))
+                    (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source,
+                    :chunk_content, CAST(:embedding AS vector))
                     ON CONFLICT (doc_id, chunk_index)
                     DO UPDATE SET
                         parent_id = EXCLUDED.parent_id,

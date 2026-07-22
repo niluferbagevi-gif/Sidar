@@ -326,7 +326,8 @@ def test_packaged_alembic_head_preserves_seed_data_and_downgrades_to_base(tmp_pa
             conn.exec_driver_sql(
                 """
                 INSERT INTO access_policies (
-                    id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at,
+                    updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (

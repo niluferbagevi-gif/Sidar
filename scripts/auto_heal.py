@@ -13,11 +13,14 @@ from typing import Any, cast
 
 MYPY_SELF_HEAL_REFERENCE = """\
 Mypy quick-fix referansı:
-- [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici olarak dar kapsamlı
+- [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici
+olarak dar kapsamlı
   `# type: ignore[import-untyped]` kullan ve mümkünse satıra kısa gerekçe ekle.
-- [misc]: Genel kural; gerçek kök nedeni logdan teyit et. Sadece deterministic false-positive durumlarında
+- [misc]: Genel kural; gerçek kök nedeni logdan teyit et. Sadece deterministic false-positive
+durumlarında
   dar kapsamlı `# type: ignore[misc]` uygula.
-- [valid-type]: Geçersiz type ifadesi; import edilen sembolün gerçekten type olduğundan emin ol. Gerekirse
+- [valid-type]: Geçersiz type ifadesi; import edilen sembolün gerçekten type olduğundan emin ol.
+Gerekirse
   `typing.TypeAlias`, `from __future__ import annotations` veya doğru jenerik formu kullan.
 Kurallar:
 1) `type: ignore` her zaman spesifik kodla kullanılmalı (`ignore[...]`), çıplak ignore yasak.

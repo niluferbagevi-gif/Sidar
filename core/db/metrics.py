@@ -19,10 +19,12 @@ async def record_provider_usage_daily(
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used,
+                tokens_used)
                 VALUES ($1, $2, $3::date, $4, $5)
                 ON CONFLICT (user_id, provider, usage_date)
-                DO UPDATE SET requests_used=provider_usage_daily.requests_used + EXCLUDED.requests_used,
+                DO UPDATE SET requests_used=provider_usage_daily.requests_used +
+                EXCLUDED.requests_used,
                               tokens_used=provider_usage_daily.tokens_used + EXCLUDED.tokens_used
                 """,
                 user_id,
@@ -39,7 +41,8 @@ async def record_provider_usage_daily(
         assert db._sqlite_conn is not None
         db._sqlite_conn.execute(
             """
-            INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+            INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used,
+            tokens_used)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id, provider, usage_date)
             DO UPDATE SET requests_used=requests_used + excluded.requests_used,
