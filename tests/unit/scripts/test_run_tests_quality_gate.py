@@ -523,12 +523,12 @@ def test_benchmark_compare_warns_when_baseline_is_stale() -> None:
     assert 'stat -f %m "${baseline_file}"' in script
 
     compare_block = script[
-        script.index('if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then') : script.index(
-            "BENCHMARK_COMPARE_STATUS=\"missing_baseline\""
-        )
+        script.index(
+            'if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then'
+        ) : script.index('BENCHMARK_COMPARE_STATUS="missing_baseline"')
     ]
     assert "benchmark_baseline_age_days_value=" in compare_block
-    assert "benchmark_baseline_age_days \"${BENCHMARK_COMPARE_FILE}\"" in compare_block
+    assert 'benchmark_baseline_age_days "${BENCHMARK_COMPARE_FILE}"' in compare_block
     assert (
         '[ "${benchmark_baseline_age_days_value}" -ge "${BENCHMARK_BASELINE_MAX_AGE_DAYS}" ]'
         in compare_block
@@ -1571,10 +1571,8 @@ def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() ->
     # instead of keeping its own separately-maintained hardcoded key list; see
     # test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys.
     api_keys_start = install_script.index("sidar_user_api_key_names()")
-    api_keys_block = install_script[
-        api_keys_start : install_script.index("\n}\n", api_keys_start)
-    ]
-    assert 'printf \'%s\\n\' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"' in api_keys_block
+    api_keys_block = install_script[api_keys_start : install_script.index("\n}\n", api_keys_start)]
+    assert "printf '%s\\n' \"${SIDAR_USER_SECRET_ENV_KEYS[@]}\"" in api_keys_block
 
     keys_array_start = installer_root.index("SIDAR_USER_SECRET_ENV_KEYS=(")
     keys_array_block = installer_root[
