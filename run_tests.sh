@@ -1462,10 +1462,9 @@ ensure_test_services() {
   fi
 
   if ! resolve_docker_compose_cmd; then
-    echo "⚠️ Docker Compose bulunamadı; Redis/PostgreSQL otomatik başlatılamadı."
-    export SMOKE_SKIP_EXTERNAL_INFRA=1
-    echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
-    return 0
+    echo "❌ Docker Compose bulunamadı; zorunlu Redis/PostgreSQL test altyapısı başlatılamadı."
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
   local running_services
@@ -1488,18 +1487,21 @@ ensure_test_services() {
 
   echo "🐳 Test öncesi bağımlı servisler başlatılıyor: redis, postgres"
   if ! "${DOCKER_COMPOSE_CMD[@]}" up -d redis postgres; then
-    echo "⚠️ Redis/PostgreSQL docker servisleri başlatılamadı (daemon çalışmıyor olabilir)."
-    export SMOKE_SKIP_EXTERNAL_INFRA=1
-    echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
-    return 0
+    echo "❌ Redis/PostgreSQL docker servisleri başlatılamadı (daemon çalışmıyor olabilir)."
+    BACKEND_EXIT_CODE=1
+    return 1
   fi
 
-  wait_for_test_services_ready
+  if ! wait_for_test_services_ready; then
+    return 1
+  fi
   DOCKER_TEST_SERVICES_STARTED=1
 }
 
 wait_for_test_services_ready() {
-  local max_attempts="${TEST_SERVICES_READY_MAX_ATTEMPTS:-30}"
+  # İlk image pull sonrasında PostgreSQL healthcheck'i 60 saniyeyi aşabilir.
+  # Varsayılan pencere 180 saniyedir ve açık env değerleriyle ayarlanabilir.
+  local max_attempts="${TEST_SERVICES_READY_MAX_ATTEMPTS:-90}"
   local sleep_seconds="${TEST_SERVICES_READY_SLEEP_SECONDS:-2}"
   local attempt=1
 
@@ -1527,8 +1529,9 @@ wait_for_test_services_ready() {
   done
 
   echo "❌ Redis/PostgreSQL beklenen sürede hazır olamadı."
-  export SMOKE_SKIP_EXTERNAL_INFRA=1
-  echo "ℹ️ SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı; harici altyapı smoke testleri atlanacak."
+  echo "ℹ️ Zorunlu altyapı hazır olmadığı için smoke testleri skip'e çevrilmeyecek; backend kapısı başarısız olacak."
+  "${DOCKER_COMPOSE_CMD[@]}" ps postgres redis || true
+  "${DOCKER_COMPOSE_CMD[@]}" logs --tail 80 postgres redis || true
   BACKEND_EXIT_CODE=1
   return 1
 }

@@ -466,6 +466,46 @@ def test_prepare_test_database_rejects_case_folded_primary_database_collision(
     assert "docker-must-not-run" not in result.stderr
 
 
+def test_service_readiness_timeout_fails_without_enabling_smoke_skip(tmp_path: Path) -> None:
+    """An automatic-infra timeout must remain a blocking backend failure."""
+    harness = tmp_path / "service-timeout.sh"
+    harness.write_text(
+        "\n".join(
+            (
+                "#!/usr/bin/env bash",
+                "set -uo pipefail",
+                "BACKEND_EXIT_CODE=0",
+                "DOCKER_COMPOSE_CMD=(fake-compose)",
+                "fake-compose() { return 1; }",
+                "sleep() { :; }",
+                _extract_run_tests_function("wait_for_test_services_ready"),
+                "TEST_SERVICES_READY_MAX_ATTEMPTS=1",
+                "TEST_SERVICES_READY_SLEEP_SECONDS=0",
+                "if wait_for_test_services_ready; then exit 90; fi",
+                '[ "${BACKEND_EXIT_CODE}" -eq 1 ]',
+                '[ -z "${SMOKE_SKIP_EXTERNAL_INFRA:-}" ]',
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(["bash", str(harness)], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert "smoke testleri skip'e çevrilmeyecek" in result.stdout
+
+
+def test_automatic_test_infrastructure_failures_are_blocking() -> None:
+    """Missing Compose and failed service startup must not become successful skips."""
+    body = _extract_run_tests_function("ensure_test_services")
+
+    assert "zorunlu Redis/PostgreSQL test altyapısı başlatılamadı" in body
+    assert "BACKEND_EXIT_CODE=1" in body
+    assert body.count("return 1") >= 2
+    assert "SMOKE_SKIP_EXTERNAL_INFRA=1 ayarlandı" not in body
+    assert "if ! wait_for_test_services_ready; then\n    return 1\n  fi" in body
+
+
 def test_benchmark_tooling_bootstrap_prepares_system_deps_before_pytest_benchmark() -> None:
     """Missing pytest/pytest-benchmark should not surface as python -m pytest import errors."""
     script = _script()
