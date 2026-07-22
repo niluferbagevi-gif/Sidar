@@ -2675,6 +2675,7 @@ def _build_autonomy_dependencies() -> SimpleNamespace:
         ),
         resolve_agent_instance=_resolve_agent_instance,
         resolve_ci_failure_context=_resolve_ci_failure_context,
+        require_admin_user=_require_admin_user,
         run_event_driven_federation_workflow=(
             lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
         ),

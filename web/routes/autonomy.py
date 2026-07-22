@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -98,6 +98,12 @@ def _deps() -> Any:
     return _deps_factory()
 
 
+def _require_autonomy_admin(request: Request) -> Any:
+    """Authorize privileged autonomy controls using the authenticated request user."""
+    deps = _deps()
+    return deps.require_admin_user(getattr(request.state, "user", None))
+
+
 def build_autonomy_router(deps_factory: Callable[[], Any]) -> APIRouter:
     configure_autonomy_dependencies(deps_factory)
     return router
@@ -180,7 +186,10 @@ async def autonomy_webhook(
     summary="Manuel Otonomi Uyanışı",
     description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
 )
-async def autonomy_wake(req: AutonomyWakeRequest) -> Any:
+async def autonomy_wake(
+    req: AutonomyWakeRequest,
+    _user: Any = Depends(_require_autonomy_admin),
+) -> Any:
     """Webhook dışı manuel/proaktif tetik giriş noktası."""
     deps = _deps()
     payload = dict(req.payload or {})

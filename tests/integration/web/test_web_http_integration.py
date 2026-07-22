@@ -1,11 +1,39 @@
 from pathlib import Path
+from time import time
 
+import jwt
 import pytest
 
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
 import web_server
 from web_server import app
+
+
+def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
+    secret = "integration-jwt-secret-at-least-32-bytes"
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", secret)
+    token = jwt.encode(
+        {
+            "sub": "regular-user",
+            "username": "regular",
+            "role": "user",
+            "tenant_id": "default",
+            "exp": int(time()) + 300,
+        },
+        secret,
+        algorithm="HS256",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/autonomy/wake",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"prompt": "trigger the swarm", "source": "integration-test"},
+    )
+
+    assert response.status_code == 403
+    assert "admin yetkisi" in response.text
 
 
 def test_healthz_endpoint_returns_http_response() -> None:

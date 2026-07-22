@@ -10,7 +10,10 @@ from web.routes.autonomy import (
     _autonomy_webhook_secret,
     _autonomy_webhook_signature_required,
     _coerce_bool,
+    _require_autonomy_admin,
     _validate_autonomy_webhook_signature,
+    configure_autonomy_dependencies,
+    router,
 )
 
 
@@ -41,6 +44,26 @@ def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
         _autonomy_webhook_secret(SimpleNamespace(SIDAR_AUTONOMY_WEBHOOK_SECRET="legacy"))
         == "legacy"
     )
+
+
+def test_autonomy_wake_declares_admin_dependency() -> None:
+    route = next(route for route in router.routes if route.path == "/api/autonomy/wake")
+
+    assert any(dependency.call is _require_autonomy_admin for dependency in route.dependant.dependencies)
+
+
+def test_require_autonomy_admin_delegates_authenticated_request_user() -> None:
+    admin = SimpleNamespace(id="admin-1", role="admin")
+    calls: list[Any] = []
+    configure_autonomy_dependencies(
+        lambda: SimpleNamespace(
+            require_admin_user=lambda user: calls.append(user) or admin,
+        )
+    )
+    request = SimpleNamespace(state=SimpleNamespace(user=admin))
+
+    assert _require_autonomy_admin(request) is admin
+    assert calls == [admin]
 
 
 def test_autonomy_webhook_signature_required_defaults_to_secure(
