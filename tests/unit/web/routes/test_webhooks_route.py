@@ -48,20 +48,22 @@ def test_github_webhook_signature_required_forces_production(
     )
 
 
-def test_validate_github_webhook_signature_bypasses_when_secret_missing() -> None:
+def test_validate_github_webhook_signature_fails_closed_when_secret_missing() -> None:
     calls: list[tuple[Any, ...]] = []
     logger = _Logger()
 
-    _validate_github_webhook_signature(
-        payload_body=b"{}",
-        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET=""),
-        signature_header="",
-        verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
-        logger=logger,
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_github_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET=""),
+            signature_header="",
+            verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
+            logger=logger,
+        )
 
+    assert exc_info.value.status_code == 401
+    assert "GitHub webhook secret" in str(exc_info.value.detail)
     assert calls == []
-    assert any("GITHUB_WEBHOOK_SECRET" in warning for warning in logger.warnings)
 
 
 def test_validate_github_webhook_signature_can_bypass_for_local_compatibility(
@@ -148,7 +150,11 @@ async def test_github_webhook_wraps_non_dict_json_payload() -> None:
         return value
 
     router = build_webhooks_router(
-        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", ENABLE_EVENT_WEBHOOKS=False),
+        cfg=SimpleNamespace(
+            GITHUB_WEBHOOK_SECRET="",
+            GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False,
+            ENABLE_EVENT_WEBHOOKS=False,
+        ),
         logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None, info=lambda *_args: None),
         resolve_agent_instance=_resolve_agent,
         await_if_needed=_await_if_needed,

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
 
-GithubSignatureValidationResult = Literal["secret_missing", "disabled_by_flag", "verified"]
+GithubSignatureValidationResult = Literal["disabled_by_flag", "verified"]
 
 
 def _coerce_bool(value: Any, *, default: bool) -> bool:
@@ -53,28 +53,19 @@ def _validate_github_webhook_signature(
 ) -> GithubSignatureValidationResult:
     """Apply the GitHub webhook signature contract in one testable place."""
     signature_required = _github_webhook_signature_required(cfg)
-    env_name = (
-        str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
-    )
-    secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
-    if not secret_value:
-        if env_name == "production":
-            raise HTTPException(
-                status_code=401,
-                detail="GitHub webhook secret yapılandırılmadığı için imza doğrulanamadı.",
-            )
-        logger.warning(
-            "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
-            "Üretim ortamında mutlaka ayarlayın."
-        )
-        return "secret_missing"
-
     if not signature_required:
         logger.warning(
             "GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False — GitHub webhook imza doğrulaması "
             "yalnızca local/test uyumluluğu için atlanıyor."
         )
         return "disabled_by_flag"
+
+    secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
+    if not secret_value:
+        raise HTTPException(
+            status_code=401,
+            detail="GitHub webhook secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
 
     verify_hmac_signature(
         payload_body,

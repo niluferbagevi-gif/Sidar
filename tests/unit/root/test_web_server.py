@@ -1436,8 +1436,11 @@ def test_verify_hmac_signature_happy_path_and_failures():
         ).hexdigest()
     )
 
-    # no secret => signature checks are bypassed
-    web_server._verify_hmac_signature(payload, "", "", label="Webhook")
+    with pytest.raises(HTTPException) as exc_info:
+        web_server._verify_hmac_signature(payload, "", "", label="Webhook")
+    assert exc_info.value.status_code == 401
+    assert "secret yapılandırılmadığı" in str(exc_info.value.detail)
+
     web_server._verify_hmac_signature(payload, secret, expected, label="Webhook")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -2772,7 +2775,8 @@ def test_serialize_record_helpers_cover_defaults_and_values():
 
 
 def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
-    web_server._verify_hmac_signature(b"{}", "", "", label="sig")
+    with pytest.raises(HTTPException):
+        web_server._verify_hmac_signature(b"{}", "", "", label="sig")
 
     with pytest.raises(HTTPException):
         web_server._verify_hmac_signature(b"{}", "secret", "", label="sig")
@@ -2819,6 +2823,8 @@ async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
         await web_server.autonomy_webhook("github", _Req(b"{}"), x_sidar_signature="")
 
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
+    monkeypatch.setattr(web_server.cfg, "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *a, **k: None)
     bad_json_res = await web_server.autonomy_webhook("github", _Req(b"{"), x_sidar_signature="")
     assert bad_json_res.status_code == 400
@@ -4026,14 +4032,15 @@ def test_github_webhook_signature_validation_contract():
     def _verify(*args, **kwargs):
         calls.append(("verify", args, kwargs))
 
-    result = webhook_routes._validate_github_webhook_signature(
-        payload_body=b"{}",
-        cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", SIDAR_ENV="test"),
-        signature_header="",
-        verify_hmac_signature=_verify,
-        logger=logger,
-    )
-    assert result == "secret_missing"
+    with pytest.raises(HTTPException) as local_missing_secret_exc:
+        webhook_routes._validate_github_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(GITHUB_WEBHOOK_SECRET="", SIDAR_ENV="test"),
+            signature_header="",
+            verify_hmac_signature=_verify,
+            logger=logger,
+        )
+    assert local_missing_secret_exc.value.status_code == 401
     assert not any(call[0] == "verify" for call in calls)
 
     with pytest.raises(HTTPException) as missing_secret_exc:
@@ -4622,6 +4629,8 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
         ),
     )
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
     response = await web_server.github_webhook(
@@ -4662,6 +4671,8 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
 
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
 
     dispatched = {"count": 0}
 
@@ -4697,6 +4708,8 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
     monkeypatch.setattr(web_server, "_resolve_agent_instance", _resolve_agent)
     monkeypatch.setattr(web_server, "_await_if_needed", lambda value: value)
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
 
     async def _dispatch_sync_helper(**_kwargs):
         return {"ok": True}
@@ -11877,6 +11890,8 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
             memory_calls.append((role, content))
 
     monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(web_server.cfg, "GITHUB_WEBHOOK_REQUIRE_SIGNATURE", False)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(web_server.cfg, "ENABLE_EVENT_WEBHOOKS", True)
 
     async def _resolve_agent():

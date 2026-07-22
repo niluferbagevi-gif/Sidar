@@ -2654,7 +2654,10 @@ def _verify_hmac_signature(
 ) -> None:
     secret = str(secret_value or "").encode("utf-8")
     if not secret:
-        return
+        raise HTTPException(
+            status_code=401,
+            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
     if not signature_header:
         raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
     expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()

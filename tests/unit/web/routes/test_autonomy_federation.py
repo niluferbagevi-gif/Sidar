@@ -34,7 +34,11 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
 
     autonomy.configure_autonomy_dependencies(
         lambda: SimpleNamespace(
-            cfg=SimpleNamespace(ENABLE_EVENT_WEBHOOKS=True, AUTONOMY_WEBHOOK_SECRET=""),
+            cfg=SimpleNamespace(
+                ENABLE_EVENT_WEBHOOKS=True,
+                AUTONOMY_WEBHOOK_SECRET="",
+                AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE=False,
+            ),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
             resolve_ci_failure_context=lambda *_args, **_kwargs: None,
             run_event_driven_federation_workflow=lambda **_kwargs: None,
