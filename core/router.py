@@ -1,4 +1,4 @@
-"""Cost-Aware Model Routing (v5.0)
+"""Cost-Aware Model Routing (v5.0).
 
 Sorgu karmaşıklığını analiz ederek lokal (Ollama) veya bulut (cloud) modele
 otomatik olarak yönlendirir. Günlük bütçe aşımında otomatik lokal-fallback uygular.
@@ -364,8 +364,7 @@ def record_routing_cost(cost_usd: float) -> None:
 
 
 class CostAwareRouter:
-    """
-    Sorgu karmaşıklığı + günlük bütçeye göre lokal / bulut model seçer.
+    """Sorgu karmaşıklığı + günlük bütçeye göre lokal / bulut model seçer.
 
     Seçim mantığı:
     1. ENABLE_COST_ROUTING=false ise karar vermez, varsayılana bırakır.
@@ -400,8 +399,8 @@ class CostAwareRouter:
         default_provider: str,
         default_model: str | None = None,
     ) -> tuple[str, str | None]:
-        """
-        (provider, model) çifti döner.
+        """(provider, model) çifti döner.
+
         Router devre dışıysa veya karar verilemiyorsa (default_provider, default_model) döner.
         """
         if not self.enabled:
@@ -456,8 +455,8 @@ class CostAwareRouter:
 
     @staticmethod
     def _estimate_tokens(messages: list[dict[str, str]]) -> int:
-        """
-        Provider bağımsız yaklaşık token hesabı.
+        """Provider bağımsız yaklaşık token hesabı.
+
         Öncelik: tiktoken `cl100k_base` encoder.
         Fallback: Türkçe içerik için daha korumacı ~3 karakter ≈ 1 token yaklaşımı.
         """

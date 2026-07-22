@@ -1,5 +1,5 @@
-"""
-Sidar Project - Güvenlik Yöneticisi
+"""Sidar Project - Güvenlik Yöneticisi.
+
 OpenClaw erişim kontrol sistemi.
 Sürüm: 2.7.0
 """
@@ -106,8 +106,8 @@ class ValidationResult:
 
 
 class SecurityManager:
-    """
-    OpenClaw erişim kontrol sistemi.
+    """OpenClaw erişim kontrol sistemi.
+
     Sidar'ın dosya/sistem işlemlerine yetki verir veya reddeder.
 
     Güvenlik katmanları:
@@ -214,8 +214,7 @@ class SecurityManager:
 
     @staticmethod
     def _has_dangerous_pattern(path_str: str) -> bool:
-        """
-        Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
+        """Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
 
         Returns:
             True → tehlikeli kalıp bulundu (yol reddedilmeli)
@@ -223,8 +222,7 @@ class SecurityManager:
         return bool(_DANGEROUS_PATH_RE.search(path_str))
 
     def _resolve_safe(self, path_str: str) -> Path | None:
-        """
-        Yolu güvenle çözümler. Hata durumunda None döndürür.
+        """Yolu güvenle çözümler. Hata durumunda None döndürür.
 
         Sembolik bağlantılar resolve() ile takip edilir; gerçek hedef döner.
         Bu sayede symlink traversal saldırıları da yakalanır.
@@ -241,8 +239,8 @@ class SecurityManager:
             return None
 
     def is_path_under(self, path_str: str, base: Path) -> bool:
-        """
-        Verilen yolun base dizini altında olup olmadığını doğrular.
+        """Verilen yolun base dizini altında olup olmadığını doğrular.
+
         Sembolik bağlantılar takip edilerek gerçek hedef kontrol edilir.
 
         Args:
@@ -375,8 +373,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_write(self, path: str) -> bool:
-        """
-        Yazma iznini kontrol et.
+        """Yazma iznini kontrol et.
+
         - RESTRICTED: hiçbir zaman
         - SANDBOX: yalnızca temp/ dizini (symlink korumalı)
         - FULL: base_dir altındaki her yere (symlink + traversal korumalı)
@@ -426,8 +424,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_execute(self) -> bool:
-        """
-        Kod/REPL çalıştırma izni.
+        """Kod/REPL çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : izinli (yalnızca /temp üzerinde çalışır)
         - FULL       : izinli (tam erişim)
@@ -435,8 +433,8 @@ class SecurityManager:
         return self.level >= SANDBOX
 
     def can_run_shell(self) -> bool:
-        """
-        Terminal/Shell komut çalıştırma izni.
+        """Terminal/Shell komut çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : yasak (yalnızca Docker izole Python REPL izinli)
         - FULL       : izinli (git, npm, pip vb. tüm kabuk komutları)

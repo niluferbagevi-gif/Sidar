@@ -1,5 +1,5 @@
-"""
-Sidar Project - Kod Yöneticisi
+"""Sidar Project - Kod Yöneticisi.
+
 Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL).
 Sürüm: 2.7.0
 """
@@ -126,8 +126,8 @@ def _is_gpu_project_image(image: str) -> bool:
 
 
 class CodeManager:
-    """
-    PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+    """PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+
     Thread-safe RLock ile korunur.
     Kod çalıştırma (execute_code) işlemleri Docker ile izole edilir.
     """
@@ -369,8 +369,8 @@ class CodeManager:
         return file_io_security.patch_file(self, path, target_block, replacement_block)
 
     def execute_code(self, code: str) -> tuple[bool, str]:
-        """
-        Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+        """Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+
         - Ağ erişimi kapalı (network_disabled=True)
         - Dosya sistemi okunaksız/geçici
         - Bellek/CPU/PID kotaları (cgroups)
@@ -504,8 +504,8 @@ class CodeManager:
                 return self.execute_code_local(code)
 
     def execute_code_local(self, code: str) -> tuple[bool, str]:
-        """
-        Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+        """Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
@@ -632,8 +632,7 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def glob_search(self, pattern: str, base_path: str = ".") -> tuple[bool, str]:
-        """
-        Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
+        """Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
 
         Örnek desenler:
           **/*.py          → tüm .py dosyaları
@@ -663,8 +662,7 @@ class CodeManager:
         context_lines: int = 0,
         max_results: int = 100,
     ) -> tuple[bool, str]:
-        """
-        Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
+        """Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
 
         Args:
             pattern: Aranacak regex kalıbı

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Ana Ajan
+"""Sidar Project - Ana Ajan.
+
 Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI asistanı (Asenkron).
 """
 
@@ -186,8 +186,8 @@ class AgentDependencies:
 
 
 class SidarAgent:
-    """
-    Sidar — Yazılım Mimarı ve Baş Mühendis AI Asistanı.
+    """Sidar — Yazılım Mimarı ve Baş Mühendis AI Asistanı.
+
     Tamamen asenkron ağ istekleri, stream, yapısal veri ve sonsuz vektör hafıza uyumlu yapı.
     """
 
@@ -337,9 +337,7 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def respond(self, user_input: str) -> AsyncIterator[str]:
-        """
-        Kullanıcı girdisini asenkron işle ve yanıtı STREAM olarak döndür.
-        """
+        """Kullanıcı girdisini asenkron işle ve yanıtı STREAM olarak döndür."""
         user_input = user_input.strip()
         if not user_input:
             yield "⚠ Boş girdi."
@@ -1190,8 +1188,8 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def _build_context(self) -> str:
-        """
-        Tüm alt sistem durumlarını özetleyen bağlam dizesi.
+        """Tüm alt sistem durumlarını özetleyen bağlam dizesi.
+
         Her LLM turunda system_prompt'a eklenir; model bu değerleri
         ASLA tahmin etmemelidir — gerçek runtime değerler burada verilir.
 
@@ -1297,8 +1295,8 @@ class SidarAgent:
         return context_text
 
     def _load_instruction_files(self) -> str:
-        """
-        Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
+        """Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
+
         - Daha üst dizin dosyaları önce gelir.
         - Alt dizin dosyaları daha sonra gelerek öncelik alır.
         - Dosya değişikliği (mtime) algılandığında otomatik olarak yeniden yükler.
@@ -1536,8 +1534,8 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def _summarize_memory(self) -> None:
-        """
-        Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
+        """Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
+
         AYRICA: Eski konuşmaları 'Sonsuz Hafıza' için Vektör DB'ye (ChromaDB) gömer.
         """
         history = await self.memory.get_history()
@@ -1591,9 +1589,9 @@ class SidarAgent:
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     async def set_access_level(self, new_level: str) -> str:
-        """
-        Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
-        sohbet belleğine kalıcı olarak yazar.
+        """Ajanın güvenlik seviyesini dinamik olarak değiştirir.
+
+        Değişikliği sohbet belleğine kalıcı olarak yazar.
         """
         old_level = self.security.level_name
         changed = self.security.set_level(new_level)
