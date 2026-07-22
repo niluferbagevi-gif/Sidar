@@ -763,7 +763,10 @@ def test_build_self_heal_patch_prompt_skips_empty_snapshot_entries() -> None:
 
 
 def test_normalize_self_heal_plan_strips_wrapping_and_handles_non_dict_operations() -> None:
-    raw = '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x","replacement":"y"}]}'
+    raw = (
+        '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x",'
+        '"replacement":"y"}]}'
+    )
     normalized = ci.normalize_self_heal_plan(
         raw, scope_paths=["tests/a.py"], fallback_validation_commands=[]
     )

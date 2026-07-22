@@ -252,7 +252,9 @@ def test_router_routes_to_cloud_for_complex_queries() -> None:
         [
             {
                 "role": "user",
-                "content": "Please analyze and compare design pattern tradeoff with algorithm complexity?",
+                "content": (
+                    "Please analyze and compare design pattern tradeoff with algorithm complexity?"
+                ),
             }
         ],
         "default-provider",

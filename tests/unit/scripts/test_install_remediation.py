@@ -15,7 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
         (
             "03_runtime",
             "sh /tmp/ollama_install_script",
-            "OLLAMA_INSTALL_SHA256 checksum değeri tanımlı değil; supply-chain doğrulamasını korumak için duruldu.",
+            "OLLAMA_INSTALL_SHA256 checksum değeri tanımlı değil; supply-chain doğrulamasını "
+            "korumak için duruldu.",
             "remote-script-checksum-missing",
             1,
         ),

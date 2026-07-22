@@ -3543,7 +3543,10 @@ async def test_analyze_graph_impact_returns_format_error_when_analysis_not_dict(
 
 
 async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None:
-    """Branch 1873->1875: bm25 sonucu zaten docs_map'te varsa skoru güncellenmeli ama tekrar eklenmemeli."""
+    """Branch 1873->1875: docs_map'te olan bm25 sonucu tekrar eklenmemeli.
+
+    Skoru güncellenmeli ama tekrar eklenmemeli.
+    """
     store = _make_store_stub(tmp_path)
     store._index = {"d-shared": {"session_id": "s1", "title": "Shared", "source": "src://shared"}}
     store._pgvector_available = True

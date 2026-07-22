@@ -41,7 +41,8 @@ def test_ratchet_coverage_gate_updates_coverage_config_preserving_comments(tmp_p
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text(
-        "[tool.coverage.run]\nbranch = true\n\n[tool.coverage.report]\nfail_under = 5\nshow_missing = true\n",
+        "[tool.coverage.run]\nbranch = true\n\n[tool.coverage.report]\nfail_under = 5\n"
+        "show_missing = true\n",
         encoding="utf-8",
     )
     _write_coverage_json(coverage_json, 23.7)

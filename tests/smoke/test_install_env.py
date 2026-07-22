@@ -290,7 +290,8 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
         SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1
         SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1
         SIDAR_KEYS_FILE="$SCRIPT_DIR/.sidar_keys.env"
-        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV SIDAR_KEYS_FILE
+        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV \
+          SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV SIDAR_KEYS_FILE
         collect_api_keys_interactive "$ENV_FILE"
         for profile in .env.advanced .env.development .env.test; do
           for key in $(sidar_user_api_key_names); do

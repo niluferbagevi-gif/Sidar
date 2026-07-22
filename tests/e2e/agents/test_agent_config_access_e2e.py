@@ -141,7 +141,9 @@ def test_agents_and_integrations_read_authorized_keys_from_config_dotenv_chain(
         assert jira.default_project == "SID"
         assert jira.is_available() is True
 
-        loaded_labels = [event["label"] for event in config.get_dotenv_load_report() if event["loaded"]]
+        loaded_labels = [
+            event["label"] for event in config.get_dotenv_load_report() if event["loaded"]
+        ]
         assert "explicit:DOTENV_FILE" in loaded_labels
         assert "secret:SIDAR_KEYS_FILE" in loaded_labels
 

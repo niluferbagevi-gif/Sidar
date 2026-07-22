@@ -187,9 +187,7 @@ async def test_repair_json_text_async_skips_first_invalid_brace_then_parses_late
 
 
 @pytest.mark.asyncio
-async def test_repair_json_text_async_continues_after_malformed_brace_prefix_then_parses_valid_json() -> (
-    None
-):
+async def test_repair_json_text_async_continues_after_bad_brace_prefix_then_parses_json() -> None:
     payload = (
         'Metin baslangici { bu bozuk kisim \n {"thought": "test", "tool": "x", "argument": "y"}'
     )
