@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
+from agent.base_agent import BaseAgent
 from web.plugins.sandbox import (
     assert_in_process_plugin_execution_allowed,
     execute_validated_plugin_source,
     in_process_plugin_execution_allowed,
     plugin_source_filename,
+    restricted_plugin_import,
     validate_plugin_source,
 )
 
@@ -77,6 +79,40 @@ def test_validate_plugin_source_allows_safe_imports_and_non_name_call_shapes() -
     validate_plugin_source("def make():\n    return lambda: 1\n\nvalue = make()()\n")
     validate_plugin_source("handler = (lambda: None)\nhandler.__call__()\n")
     validate_plugin_source("('literal').safe()\n")
+
+
+def test_restricted_plugin_import_rejects_relative_import() -> None:
+    with pytest.raises(ImportError, match="relative import engellendi"):
+        restricted_plugin_import("sibling", fromlist=("thing",), level=1)
+
+
+def test_restricted_plugin_import_rejects_out_of_scope_from_imports() -> None:
+    with pytest.raises(ImportError, match="web_server import kapsamı engellendi"):
+        restricted_plugin_import("web_server", fromlist=("run_plugin",))
+
+    with pytest.raises(ImportError, match="fastapi import kapsamı engellendi"):
+        restricted_plugin_import("fastapi", fromlist=("Depends",))
+
+    with pytest.raises(ImportError, match="agent.base_agent import kapsamı engellendi"):
+        restricted_plugin_import("agent.base_agent", fromlist=("OtherClass",))
+
+
+def test_restricted_plugin_import_rejects_modules_outside_allowlist() -> None:
+    with pytest.raises(ImportError, match="import allowlist dışında"):
+        restricted_plugin_import("json")
+
+
+def test_restricted_plugin_import_allows_scoped_and_allowlisted_modules() -> None:
+    web_server_ns = restricted_plugin_import("web_server", fromlist=("BaseAgent",))
+    assert web_server_ns.BaseAgent is BaseAgent
+
+    fastapi_ns = restricted_plugin_import("fastapi", fromlist=("HTTPException",))
+    assert fastapi_ns.HTTPException is HTTPException
+
+    base_agent_module = restricted_plugin_import("agent.base_agent", fromlist=("BaseAgent",))
+    assert base_agent_module.BaseAgent is BaseAgent
+
+    assert restricted_plugin_import("math") is not None
 
 
 def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:

@@ -106,6 +106,35 @@ async def test_blocked_when_all_scope_path_backups_fail_to_read() -> None:
     assert manager.commands_run == []
 
 
+async def test_reverted_when_validation_fails_after_successful_autofix() -> None:
+    manager = _StubCodeManager(
+        read_results={"a.py": (True, "original-a")},
+        command_results={
+            "autofix": (True, "fixed"),
+            "validate-1": (True, "passed"),
+            "validate-2": (False, "still red"),
+        },
+    )
+    remediation_loop = {
+        "scope_paths": ["a.py"],
+        "autofix_commands": ["autofix"],
+        "validation_commands": ["validate-1", "validate-2", "validate-3"],
+    }
+
+    result = await execute_mechanical_autofix(
+        code=manager, base_dir="/repo", remediation_loop=remediation_loop
+    )
+
+    assert result["status"] == "reverted"
+    assert result["reverted"] is True
+    assert "doğrulama başarısız" in result["summary"]
+    # The autofix ran once; validation stopped at the failing command, so the
+    # third validation command must never run.
+    assert manager.commands_run == ["autofix", "validate-1", "validate-2"]
+    # Rollback restored the backed-up file even though the autofix itself succeeded.
+    assert manager.written == {"a.py": "original-a"}
+
+
 async def test_reverted_when_autofix_command_itself_fails_mid_loop() -> None:
     manager = _StubCodeManager(
         read_results={"a.py": (True, "original-a")},
