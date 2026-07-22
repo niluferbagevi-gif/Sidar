@@ -201,7 +201,9 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
 
 
 def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
-    """Fail-closed regression: sidar-ai/sidar-gpu must never mount the raw host
+    """Ensure sandbox services never mount the raw host Docker socket.
+
+    Fail-closed regression: sidar-ai/sidar-gpu must never mount the raw host
     Docker socket directly. Doing so grants host-root-equivalent access
     (container escape via `docker run --privileged -v /:/host`), contradicting
     their `ACCESS_LEVEL=sandbox` label. They must instead reach the daemon

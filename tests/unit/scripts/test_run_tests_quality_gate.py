@@ -5454,8 +5454,8 @@ def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> No
 
     assert "--requirepass" in redis_block
     assert "REDIS_PASSWORD:?" in redis_block
-    assert '127.0.0.1:${REDIS_PORT:-6379}:6379' in redis_block
-    assert '0.0.0.0:' not in redis_block
+    assert "127.0.0.1:${REDIS_PORT:-6379}:6379" in redis_block
+    assert "0.0.0.0:" not in redis_block
 
 
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
