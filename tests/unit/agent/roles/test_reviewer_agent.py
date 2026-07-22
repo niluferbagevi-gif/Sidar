@@ -541,7 +541,8 @@ def test_run_task_conflicting_signals_prioritizes_fail_closed_decision(reviewer)
         return ""
 
     async def fake_dynamic(_ctx):
-        # Çelişen yönlendirme senaryosu: semantik analiz onaylasa da dinamik test fail sinyali taşıyor.
+        # Çelişen yönlendirme senaryosu: semantik analiz onaylasa da dinamik test fail
+        # sinyali taşıyor.
         return "[TEST:FAIL] assertion failed"
 
     reviewer.call_tool = fake_call_tool
@@ -1192,7 +1193,10 @@ def test_normalize_test_candidate_verdict_extracts_dict_argument_directly():
 
 
 def test_normalize_test_candidate_verdict_skips_when_no_tool_or_argument():
-    """Branch 140->151: tool_name boş ve argument None ise tool sarmalı atlanır, verdict aynen döner."""
+    """Branch 140->151: boş tool_name ve None argument ile verdict aynen dönmelidir.
+
+    tool_name boş ve argument None ise tool sarmalı atlanır.
+    """
     verdict = {"some_other_key": "value"}
     result = ReviewerAgent._normalize_test_candidate_verdict(verdict)
     assert result == verdict

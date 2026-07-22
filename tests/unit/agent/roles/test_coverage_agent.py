@@ -315,7 +315,10 @@ async def test_tool_methods(tmp_path, fake_coverage_code_manager):
         json.dumps(
             {
                 "suggested_test_path": "tests/a.py",
-                "generated_test": "```python\ndef test_generated():\n    value = 'x'.upper()\n    assert value == 'X'\n```",
+                "generated_test": (
+                    "```python\ndef test_generated():\n    value = 'x'.upper()\n"
+                    "    assert value == 'X'\n```"
+                ),
                 "append": False,
             }
         )
@@ -405,7 +408,9 @@ async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager,
         json.dumps(
             {
                 "suggested_test_path": "tests/fail.py",
-                "generated_test": "def test_fail():\n    value = 'x'.upper()\n    assert value == 'X'",
+                "generated_test": (
+                    "def test_fail():\n    value = 'x'.upper()\n    assert value == 'X'"
+                ),
                 "append": False,
             }
         )
@@ -428,7 +433,9 @@ async def test_write_missing_tests_rejects_duplicate_test_function(
         json.dumps(
             {
                 "suggested_test_path": "tests/test_dup.py",
-                "generated_test": "def test_same():\n    value = 'x'.upper()\n    assert value == 'X'\n",
+                "generated_test": (
+                    "def test_same():\n    value = 'x'.upper()\n    assert value == 'X'\n"
+                ),
                 "append": True,
             }
         )
@@ -1294,7 +1301,8 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
     )
     assert (
         CoverageAgent._candidate_rejection_reason(
-            "import pytest\n\ndef test_raises():\n    with pytest.raises(ValueError):\n        raise ValueError"
+            "import pytest\n\ndef test_raises():\n    with pytest.raises(ValueError):\n"
+            "        raise ValueError"
         )
         == ""
     )
@@ -1747,7 +1755,10 @@ async def test_validate_candidate_with_isolated_pytest_invalid_result_type(
 async def test_tool_autonomous_batch_heal_invokes_run_autonomous_coverage_batch(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
-    """Lines 1012-1020: _tool_autonomous_batch_heal payload'ı çözüp run_autonomous_coverage_batch çağırır."""
+    """Lines 1012-1020: _tool_autonomous_batch_heal payload'ı çözer.
+
+    run_autonomous_coverage_batch fonksiyonunu çağırır.
+    """
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     captured: dict = {}
 

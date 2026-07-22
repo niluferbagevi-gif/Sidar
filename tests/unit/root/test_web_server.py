@@ -3538,7 +3538,10 @@ async def test_operations_and_qa_agent_api_bridges(monkeypatch):
         async def _tool_generate_missing_tests(self, raw):
             payload = json.loads(raw)
             assert payload["coverage_finding"]["target_path"] == "src/a.py"
-            return "from src.a import compute\n\ndef test_a():\n    result = compute()\n    assert result == 'a'"
+            return (
+                "from src.a import compute\n\ndef test_a():\n    result = compute()\n"
+                "    assert result == 'a'"
+            )
 
         def _candidate_rejection_reason(self, _candidate, finding=None):
             return "" if finding and finding.get("target_path") == "src/a.py" else "bad"
@@ -11533,7 +11536,7 @@ async def test_ready_check_delegates_to_health_response(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_websocket_chat_message_cleanup_runs_unsubscribe_and_metrics_reset_when_status_task_creation_fails(
+async def test_websocket_chat_cleanup_unsubscribes_and_resets_metrics_on_status_task_failure(
     monkeypatch,
 ):
     calls = {"unsubscribe": [], "reset": []}

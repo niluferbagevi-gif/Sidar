@@ -27,8 +27,10 @@ async def fake_redis() -> AsyncGenerator[Any, None]:
         pytest.skip("fakeredis paketi kurulu değil; fake_redis fixture atlanıyor.")
 
     server = fakeredis.FakeServer()
-    # Üretim tarafında event_stream / semantic cache / web_server Redis istemcileri decode_responses=True kullanır.
-    # Varsayılanı aynı tutuyoruz; bytes davranışı test etmek için TEST_REDIS_DECODE_RESPONSES=false verilebilir.
+    # Üretim tarafında event_stream / semantic cache / web_server Redis istemcileri
+    # decode_responses=True kullanır.
+    # Varsayılanı aynı tutuyoruz; bytes davranışı test etmek için
+    # TEST_REDIS_DECODE_RESPONSES=false verilebilir.
     redis = fakeredis.FakeAsyncRedis(server=server, decode_responses=TEST_REDIS_DECODE_RESPONSES)
     try:
         yield redis

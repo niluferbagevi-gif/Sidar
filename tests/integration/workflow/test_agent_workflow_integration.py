@@ -20,7 +20,10 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """Gerçek supervisor + researcher akışını, yalnızca dış web bağımlılığını izole ederek doğrular."""
+    """Gerçek supervisor + researcher akışını doğrular.
+
+    Yalnızca dış web bağımlılığını izole eder.
+    """
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
@@ -97,7 +100,8 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
             [
                 '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": '
                 '"pytest integration"}',
-                '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}',
+                '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", '
+                '"argument": "Araştırma tamamlandı."}',
             ]
         )
     )

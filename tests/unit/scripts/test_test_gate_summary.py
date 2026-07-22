@@ -60,7 +60,8 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
                 <testcase classname="tests.unit.root.test_config" name="test_failure">
                   <failure message="failed">details</failure>
                 </testcase>
-                <testcase classname="tests.unit.root.test_config" name="test_error" file="tests/unit/root/test_config.py">
+                <testcase classname="tests.unit.root.test_config" name="test_error"
+                          file="tests/unit/root/test_config.py">
                   <error message="errored">details</error>
                 </testcase>
                 <testcase classname="tests.unit.root.test_config" name="test_passed" />
@@ -79,7 +80,10 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
         "status": "partial_stage",
         "reason": "selected stage set does not cover the full production readiness gate",
         "required_command": "make production-readiness",
-        "equivalent_direct_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+        "equivalent_direct_command": (
+            "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+            "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+        ),
         "validation_class": "partial",
         "release_blocking": True,
         "release_gate_exit_code": 20,
