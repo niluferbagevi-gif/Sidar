@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING, Any, cast
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 from config import Config
+from core.hitl import get_hitl_gate
 from core.rag import DocumentStore
+from managers.security import SecurityManager
 from managers.social_media_manager import SocialMediaManager
 from managers.web_search import WebSearchManager
 
@@ -98,6 +100,7 @@ class PoyrazAgent(BaseAgent):
     ) -> None:
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="poyraz")
+        self.security = SecurityManager(cfg=self.cfg)
         self.web = WebSearchManager(self.cfg)
         self.social = SocialMediaManager(
             graph_api_token=getattr(self.cfg, "META_GRAPH_API_TOKEN", ""),
@@ -133,6 +136,28 @@ class PoyrazAgent(BaseAgent):
         self.register_tool("store_content_asset", self._tool_store_content_asset)
         self.register_tool("create_operation_checklist", self._tool_create_operation_checklist)
         self.register_tool("plan_service_operations", self._tool_plan_service_operations)
+
+    async def _authorize_external_publication(
+        self,
+        *,
+        action: str,
+        content: str,
+        payload: dict[str, Any],
+    ) -> str | None:
+        """Validate generated output and require HITL before an external side effect."""
+        validation = self.security.validate_agent_output(content)
+        if not validation.allowed:
+            reasons = ", ".join(validation.reasons) or "output_validation_failed"
+            return f"[PUBLICATION:BLOCKED] action={action} reason={reasons}"
+        approved = await get_hitl_gate().request_approval(
+            action=action,
+            description=f"Harici yayın/mesaj işlemi onay bekliyor: {action}",
+            payload=payload,
+            requested_by="PoyrazAgent",
+        )
+        if not approved:
+            return f"[PUBLICATION:BLOCKED] action={action} reason=hitl_rejected_or_timeout"
+        return None
 
     async def _ensure_db(self) -> Database:
         if self._db is not None:
@@ -192,6 +217,13 @@ class PoyrazAgent(BaseAgent):
             else:
                 parts = (raw_parts[:5] + ["", "", "", "", ""])[:5]
                 platform, text, destination, media_url, link_url = (part.strip() for part in parts)
+        blocked = await self._authorize_external_publication(
+            action="social_publish",
+            content="\n".join((platform, text, destination, media_url, link_url)),
+            payload={"platform": platform, "destination": destination},
+        )
+        if blocked:
+            return blocked
         try:
             ok, result = await self.social.publish_content(
                 platform=platform,
@@ -215,6 +247,13 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_publish_instagram_post(self, arg: str) -> str:
         payload = parse_tool_argument("publish_instagram_post", arg)
+        blocked = await self._authorize_external_publication(
+            action="instagram_publish",
+            content="\n".join((payload.caption.strip(), payload.image_url.strip())),
+            payload={"image_url": payload.image_url.strip()},
+        )
+        if blocked:
+            return blocked
         ok, result = await self.social.publish_instagram_post(
             caption=payload.caption.strip(),
             image_url=payload.image_url.strip(),
@@ -225,6 +264,13 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_publish_facebook_post(self, arg: str) -> str:
         payload = parse_tool_argument("publish_facebook_post", arg)
+        blocked = await self._authorize_external_publication(
+            action="facebook_publish",
+            content="\n".join((payload.message.strip(), payload.link_url.strip())),
+            payload={"link_url": payload.link_url.strip()},
+        )
+        if blocked:
+            return blocked
         ok, result = await self.social.publish_facebook_post(
             message=payload.message.strip(),
             link_url=payload.link_url.strip(),
@@ -235,6 +281,13 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_send_whatsapp_message(self, arg: str) -> str:
         payload = parse_tool_argument("send_whatsapp_message", arg)
+        blocked = await self._authorize_external_publication(
+            action="whatsapp_send",
+            content="\n".join((payload.to.strip(), payload.text.strip())),
+            payload={"to": payload.to.strip()},
+        )
+        if blocked:
+            return blocked
         ok, result = await self.social.send_whatsapp_message(
             to=payload.to.strip(),
             text=payload.text.strip(),

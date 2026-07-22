@@ -93,6 +93,24 @@ class DummySocialMediaManager:
         return True, "wa_ok"
 
 
+class DummySecurityManager:
+    def __init__(self, **_kwargs):
+        self.allowed = True
+
+    def validate_agent_output(self, _content):
+        return SimpleNamespace(allowed=self.allowed, reasons=[] if self.allowed else ["unsafe"])
+
+
+class DummyHITLGate:
+    def __init__(self, approved=True):
+        self.approved = approved
+        self.calls = []
+
+    async def request_approval(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.approved
+
+
 class SyncDocStore:
     def __init__(self, *args, **kwargs):
         self.calls = []
@@ -244,6 +262,9 @@ def poyraz_module(monkeypatch: pytest.MonkeyPatch):
         return _Payload(**payload)
 
     monkeypatch.setattr(module, "parse_tool_argument", parse_arg)
+    monkeypatch.setattr(module, "SecurityManager", DummySecurityManager)
+    gate = DummyHITLGate()
+    monkeypatch.setattr(module, "get_hitl_gate", lambda: gate)
     return module
 
 
@@ -377,6 +398,41 @@ def test_publish_tools_variants(poyraz_module, fake_cfg):
     assert "[INSTAGRAM:PUBLISHED]" in ig_ok and "[INSTAGRAM:ERROR]" in ig_err
     assert "[FACEBOOK:PUBLISHED]" in fb_ok and "[FACEBOOK:ERROR]" in fb_err
     assert "[WHATSAPP:SENT]" in wa_ok and "[WHATSAPP:ERROR]" in wa_err
+
+
+def test_external_publication_is_blocked_by_output_validation(poyraz_module, fake_cfg):
+    agent = _agent(poyraz_module, fake_cfg)
+    agent.security.allowed = False
+
+    result = asyncio.run(
+        agent._tool_publish_facebook_post(
+            json.dumps({"message": "unsafe output", "link_url": "https://example.test"})
+        )
+    )
+
+    assert "[PUBLICATION:BLOCKED]" in result
+    assert "reason=unsafe" in result
+    assert agent.social.calls == []
+
+
+def test_external_publication_is_blocked_when_hitl_rejects(
+    poyraz_module, fake_cfg, monkeypatch
+):
+    agent = _agent(poyraz_module, fake_cfg)
+    gate = DummyHITLGate(approved=False)
+    monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
+
+    result = asyncio.run(
+        agent._tool_send_whatsapp_message(
+            json.dumps({"to": "905551112233", "text": "hello", "preview_url": False})
+        )
+    )
+
+    assert "[PUBLICATION:BLOCKED]" in result
+    assert "hitl_rejected_or_timeout" in result
+    assert agent.social.calls == []
+    assert gate.calls[0]["action"] == "whatsapp_send"
+    assert gate.calls[0]["payload"] == {"to": "905551112233"}
 
 
 def test_publish_social_invalid_json(poyraz_module, fake_cfg):
@@ -889,6 +945,7 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
 ) -> None:
     from agent.roles.poyraz_agent import PoyrazAgent
 
+    monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
     agent = agent_factory(PoyrazAgent)
     agent.social = fake_social_api
     agent.docs = SimpleNamespace()
@@ -928,6 +985,7 @@ async def test_poyraz_agent_error_flows(
 ) -> None:
     from agent.roles.poyraz_agent import PoyrazAgent
 
+    monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
     agent = agent_factory(PoyrazAgent)
     agent.social = fake_social_api
     agent.docs = SimpleNamespace()
