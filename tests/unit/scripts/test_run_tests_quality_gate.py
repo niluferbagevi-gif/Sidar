@@ -516,7 +516,7 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     )
 
 
-def test_benchmark_compare_warns_when_baseline_is_stale() -> None:
+def test_benchmark_compare_fails_when_enforced_baseline_is_stale() -> None:
     script = _script()
 
     assert 'BENCHMARK_BASELINE_MAX_AGE_DAYS="${BENCHMARK_BASELINE_MAX_AGE_DAYS:-14}"' in script
@@ -537,8 +537,12 @@ def test_benchmark_compare_warns_when_baseline_is_stale() -> None:
     )
     assert "gündür yenilenmedi" in compare_block
     assert "make benchmark-seed" in compare_block
+    assert 'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then' in compare_block
+    assert 'BENCHMARK_COMPARE_STATUS="stale_required"' in compare_block
+    assert "BENCHMARK_EXIT_CODE=1" in compare_block
+    assert 'if [ "${BENCHMARK_COMPARE_STATUS}" != "stale_required" ]; then' in compare_block
     # Freshness check must run before the enforce/report-only branch, not after.
-    assert compare_block.index("gündür yenilenmedi") < compare_block.index(
+    assert compare_block.index("gündür yenilenmedi") < compare_block.rindex(
         'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then'
     )
 
@@ -4484,9 +4488,10 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}"
+        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}"
         in ci
     )
+    assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-" not in ci
     assert "Report benchmark baseline availability" in ci
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
@@ -4498,7 +4503,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
     assert "Production readiness aggregate" in ci
-    assert "needs: [test, benchmark-compare]" in ci
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
     assert "Run canonical production-readiness gate" in ci
     assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
     assert (
@@ -4536,7 +4541,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}"
+        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}"
         in seed_workflow
     )
     assert "Benchmark baseline seed" in readme

@@ -106,7 +106,7 @@ jobs:
       - name: Upload reviewed baseline artifact
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ inputs.compare_name || 'baseline' }}
+          name: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ inputs.compare_name || 'baseline' }}
           path: |
             .benchmarks/
             artifacts/benchmark/benchmark.json
@@ -117,4 +117,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}

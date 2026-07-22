@@ -53,12 +53,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-main-
-            benchmark-baseline-${{ runner.os }}-py311-master-
-            benchmark-baseline-${{ runner.os }}-py311-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Seed benchmark baseline
         env:
@@ -104,7 +104,7 @@ jobs:
             echo "- Baseline name: \`${benchmark_compare_name}\`"
             echo "- Baseline files: \`${#baseline_files[@]}\`"
             echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
-            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-\`"
+            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
             echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
             echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
             echo "- Operator path: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
@@ -125,7 +125,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
 
   test:
     name: Base quality gates (lint, smoke, unit, coverage, frontend)
@@ -222,12 +222,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-main-
-            benchmark-baseline-${{ runner.os }}-py311-master-
-            benchmark-baseline-${{ runner.os }}-py311-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Report benchmark baseline availability
         shell: bash
@@ -626,12 +626,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-main-
-            benchmark-baseline-${{ runner.os }}-py311-master-
-            benchmark-baseline-${{ runner.os }}-py311-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Resolve benchmark baseline gate mode
         id: benchmark-baseline

@@ -196,13 +196,16 @@ metriği yerine yazılmamalıdır.
   sonlanır. GitHub Actions bootstrap yolu manuel **Benchmark baseline seed** workflow'udur:
   `workflow_dispatch` ile çalıştırılan job `BENCHMARK_COMPARE_REQUIRED=0` ve
   `BENCHMARK_ENFORCE_COMPARE=0` kullanarak `.benchmarks/*_baseline.json` üretir, sonucu
-  `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'i ve 30 günlük artifact
+  `benchmark-baseline-${runner.os}-py311-${uv.lock hash}-${branch}-${run_id}` cache key'i ve 30 günlük artifact
   olarak saklar; ayrıca `baseline-seed-manifest.json` içinde üretilen baseline dosyalarını ve
   sonraki sıkı kapı komutunu (`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1`) kaydeder.
   Ana `CI` workflow'u branch, `main/master` ve genel restore-key zincirinden bu
   cache'i bulamazsa yine fail-closed kalır; seed artifact'i `mean`, `stddev`, örnek sayısı,
   donanım/runner profili ve `commit_info.dirty` açısından review edilmeden güvenilir baseline
-  kabul edilmemelidir. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
+  kabul edilmemelidir. Cache restore prefix'lerinin tamamı aynı `uv.lock` hash'ini taşır;
+  bağımlılık kilidi değiştiğinde eski dependency setine ait baseline restore edilemez. Ayrıca
+  `BENCHMARK_ENFORCE_COMPARE=1` altında 14 günlük yaş sınırını aşan baseline fail-closed olur.
+  Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
   `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh`. Sonraki sıkı doğrulama
   komutu: `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,

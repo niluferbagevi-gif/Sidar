@@ -287,7 +287,7 @@ Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
    kapısını çalıştırmaz; yalnız `tests/performance` benchmarklarını
    `--benchmark-save=baseline` ile koşar.
 3. Job sonunda iki kaynak oluşur:
-   - Actions cache: `benchmark-baseline-<OS>-py311-<branch>-<run_id>` anahtarıyla
+   - Actions cache: `benchmark-baseline-<OS>-py311-<uv.lock SHA256>-<branch>-<run_id>` anahtarıyla
      `.benchmarks/` dizini kaydedilir. Normal CI restore adımı branch, `main`,
      `master` ve genel prefix sırasıyla bu cache'i arar.
    - Artifact: `benchmark-baseline-seed`, `.benchmarks/` dizinini ve

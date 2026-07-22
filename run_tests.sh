@@ -635,7 +635,7 @@ BENCHMARK_TREND_HISTORY="${BENCHMARK_TREND_HISTORY:-artifacts/benchmark/history.
 BENCHMARK_TREND_WINDOW="${BENCHMARK_TREND_WINDOW:-10}"
 BENCHMARK_TREND_MAX_REGRESSION_PCT="${BENCHMARK_TREND_MAX_REGRESSION_PCT:-15}"
 # Bir benchmark baseline'ı bu eşikten daha eskiyse (gün), karşılaştırma yine de
-# çalışır ama bayat bir baseline'a karşı ölçüldüğü konusunda uyarı basılır.
+# rapor modunda uyarı verir; sıkı karşılaştırmada bayat baseline fail-closed olur.
 BENCHMARK_BASELINE_MAX_AGE_DAYS="${BENCHMARK_BASELINE_MAX_AGE_DAYS:-14}"
 AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"
 AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"
@@ -1914,13 +1914,22 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       benchmark_baseline_age_days_value="$(benchmark_baseline_age_days "${BENCHMARK_COMPARE_FILE}" 2>/dev/null || true)"
       if [ -n "${benchmark_baseline_age_days_value}" ] \
         && [ "${benchmark_baseline_age_days_value}" -ge "${BENCHMARK_BASELINE_MAX_AGE_DAYS}" ]; then
-        echo "⚠️ Benchmark baseline ${benchmark_baseline_age_days_value} gündür yenilenmedi (eşik: ${BENCHMARK_BASELINE_MAX_AGE_DAYS} gün): ${BENCHMARK_COMPARE_FILE}"
-        echo "ℹ️ Bayat bir baseline'a karşı karşılaştırma yanıltıcı olabilir; 'make benchmark-seed' ile yenileyin."
+        if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
+          BENCHMARK_COMPARE_STATUS="stale_required"
+          BENCHMARK_EXIT_CODE=1
+          echo "❌ Benchmark baseline ${benchmark_baseline_age_days_value} gündür yenilenmedi (eşik: ${BENCHMARK_BASELINE_MAX_AGE_DAYS} gün): ${BENCHMARK_COMPARE_FILE}"
+          echo "ℹ️ Sıkı karşılaştırma bayat baseline ile devam edemez; 'make benchmark-seed' ile yenileyin."
+        else
+          echo "⚠️ Benchmark baseline ${benchmark_baseline_age_days_value} gündür yenilenmedi (eşik: ${BENCHMARK_BASELINE_MAX_AGE_DAYS} gün): ${BENCHMARK_COMPARE_FILE}"
+          echo "ℹ️ Bayat bir baseline'a karşı rapor karşılaştırması yanıltıcı olabilir; 'make benchmark-seed' ile yenileyin."
+        fi
       fi
       if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then
-        BENCHMARK_COMPARE_STATUS="compared_enforced"
-        echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
-        benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+        if [ "${BENCHMARK_COMPARE_STATUS}" != "stale_required" ]; then
+          BENCHMARK_COMPARE_STATUS="compared_enforced"
+          echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
+          benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+        fi
       else
         BENCHMARK_COMPARE_STATUS="compared_report_only"
         echo "⚠️ Benchmark karşılaştırması rapor modunda (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE})."
