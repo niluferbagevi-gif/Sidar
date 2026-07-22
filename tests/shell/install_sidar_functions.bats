@@ -121,7 +121,7 @@ EOF
   [[ "$output" != *"correct-horse-battery-staple"* ]]
 }
 
-@test "healthy Redis container does not mask a closed host port" {
+@test "healthy Redis container with closed host port fails fast with mapping diagnosis" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
@@ -134,22 +134,64 @@ exit 1
 EOF
     cat > "$tmpdir/bin/docker" <<EOF
 #!/usr/bin/env bash
-[[ "\$*" == "compose version" ]] && exit 0
-exit 0
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") exit 0 ;;
+  *) exit 0 ;;
+esac
 EOF
     chmod +x "$tmpdir/bin/python3" "$tmpdir/bin/docker"
     PATH="$tmpdir/bin:$PATH"
     SCRIPT_DIR="$tmpdir"
     DOCKER_DB_SERVICES_STARTED=false
-    sleep() { :; }
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
     ensure_docker_daemon_running() { return 0; }
     start_docker_services_or_fail() { printf "%s\\n" "$*" > "$tmpdir/docker-start.log"; }
 
     ! wait_for_redis_before_smoke_tests
-    [[ "$(wc -l < "$tmpdir/docker-start.log")" -eq 1 ]]
+    [[ ! -e "$tmpdir/docker-start.log" ]]
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"60 saniye içinde hazır olmadı"* ]]
+  [[ "$output" == *"Redis container healthy ancak beklenen host port mapping bulunamadı"* ]]
+  [[ "$output" == *"--force-recreate redis"* ]]
+}
+
+@test "post-Compose Redis PONG wait also fails fast for healthy stale mapping" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_PASSWORD=local-password
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") printf "127.0.0.1:6399\\n" ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/redis-cli" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
+
+    ! wait_for_redis_ready_after_docker_start
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"beklenen=127.0.0.1:6379, görülen=127.0.0.1:6399"* ]]
 }
 
 @test "remote Redis URL is checked as-is and never triggers local Compose remediation" {

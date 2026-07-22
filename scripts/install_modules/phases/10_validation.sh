@@ -169,6 +169,14 @@ PY
             return 0
         fi
 
+        if [[ "$redis_is_local" == true ]]; then
+            if diagnose_healthy_redis_host_mapping "$redis_host" "$redis_port"; then
+                :
+            elif [[ $? -eq 2 ]]; then
+                return 1
+            fi
+        fi
+
         if [[ "$redis_is_local" == true && "$docker_start_attempted" == false && "$DOCKER_DB_SERVICES_STARTED" != true ]]; then
             docker_start_attempted=true
             if [[ ${#docker_compose_cmd[@]} -eq 0 ]]; then

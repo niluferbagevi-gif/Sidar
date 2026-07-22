@@ -566,6 +566,39 @@ wait_for_postgres_ready_after_docker_start() {
     return 1
 }
 
+diagnose_healthy_redis_host_mapping() {
+    local expected_host="$1"
+    local expected_port="$2"
+    local mapping_host="$expected_host"
+    local -a compose_cmd=()
+    local container_id=""
+    local health_status=""
+    local published_mapping=""
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        compose_cmd=(docker-compose)
+    else
+        return 1
+    fi
+
+    container_id=$("${compose_cmd[@]}" ps -q redis 2>/dev/null | head -n1 || true)
+    [[ -n "$container_id" ]] || return 1
+    health_status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)
+    [[ "$health_status" == "healthy" ]] || return 1
+
+    published_mapping=$("${compose_cmd[@]}" port redis 6379 2>/dev/null | head -n1 || true)
+    [[ "$mapping_host" == "localhost" || "$mapping_host" == "::1" ]] && mapping_host="127.0.0.1"
+    if [[ "$published_mapping" != "${mapping_host}:${expected_port}" ]]; then
+        warn "Redis container healthy ancak beklenen host port mapping bulunamadı (beklenen=${mapping_host}:${expected_port}, görülen=${published_mapping:-yok}). 60 saniye beklemek yerine kurulum erken durduruldu. Düzeltme: docker compose up -d --force-recreate redis"
+    else
+        warn "Redis container healthy ve ${published_mapping} yayınlanmış görünüyor; buna rağmen host bağlantısı başarısız. Port çakışması/firewall/proxy veya stale container mapping kontrol edilmeli. 60 saniye beklemek yerine kurulum erken durduruldu."
+    fi
+    return 2
+}
+
+
 wait_for_redis_ready_after_docker_start() {
     local env_file="$SCRIPT_DIR/.env"
     local redis_url=""
@@ -641,6 +674,11 @@ PY
         else
             warn "redis-cli veya python bulunamadı; Redis hazır kontrolü atlanıyor."
             return 0
+        fi
+        if diagnose_healthy_redis_host_mapping "$redis_host" "$redis_port"; then
+            :
+        elif [[ $? -eq 2 ]]; then
+            return 1
         fi
         sleep 2
     done
