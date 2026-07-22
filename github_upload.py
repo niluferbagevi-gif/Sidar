@@ -131,7 +131,7 @@ def reexec_after_external_branch_merge() -> None:
     script = Path(__file__).resolve()
     env = _build_subprocess_env()
     env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] = "1"
-    os.execve(sys.executable, [sys.executable, str(script)], env)
+    os.execve(sys.executable, [sys.executable, str(script)], env)  # nosec B606  # sabit argümanlar, shell yok; B603 ile aynı güvenli desen.
 
 
 def _is_valid_repo_url(url: str) -> bool:
