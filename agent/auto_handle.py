@@ -1,5 +1,5 @@
-"""
-Sidar Project - Otomatik Komut İşleyici
+"""Sidar Project - Otomatik Komut İşleyici.
+
 Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Asenkron Uyumlu).
 """
 
@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class AutoHandle:
-    """
-    Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder
-    ve uygun manager metodunu çağırır.
+    """Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder.
+
+    Uygun manager metodunu çağırır.
 
     Dönen değer: (işlendi_mi: bool, yanıt: str)
     """
@@ -68,8 +68,7 @@ class AutoHandle:
     _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu|heal)\b", re.IGNORECASE)
 
     async def handle(self, text: str) -> tuple[bool, str]:
-        """
-        text: kullanıcı mesajı
+        """text: kullanıcı mesajı.
 
         Returns:
             (True, yanıt)  — otomatik işlendiyse
@@ -654,6 +653,7 @@ class AutoHandle:
 
     def _extract_dir_path(self, text: str) -> str | None:
         """Metinden dizin yolu çıkar (dosya adı içermeyen yollar için).
+
         Uzantılı dosya adlarını dizin olarak döndürmez; yalnızca açık dizin yolları alınır.
         """
         # Tırnak içindeki yol varsa ve uzantı içermiyorsa dizin say

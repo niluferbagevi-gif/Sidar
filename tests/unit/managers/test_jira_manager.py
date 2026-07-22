@@ -523,8 +523,7 @@ def test_get_project_statuses_deduplicates_and_skips_empty(monkeypatch):
 
 
 def test_request_retries_on_timeout(monkeypatch):
-    """
-    httpx.TimeoutException fırlatıldığında AsyncRetrying mekanizmasının
+    """httpx.TimeoutException fırlatıldığında AsyncRetrying mekanizmasının
     devreye girdiğini ve doğru hata mesajını döndüğünü test eder.
     (Satır 105-106 kapsamı)
     """
@@ -555,8 +554,7 @@ def test_request_retries_on_timeout(monkeypatch):
 
 
 def test_request_retries_on_service_unavailable(monkeypatch):
-    """
-    HTTP 503 (veya 429/502/504) durum kodlarında AsyncRetrying mekanizmasının
+    """HTTP 503 (veya 429/502/504) durum kodlarında AsyncRetrying mekanizmasının
     _JiraRetryableError fırlattığını test eder.
     (Satır 107-108 kapsamı)
     """

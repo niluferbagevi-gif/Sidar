@@ -1,5 +1,5 @@
-"""
-Sidar Project - LLM İstemcisi
+"""Sidar Project - LLM İstemcisi.
+
 Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP tabanlı).
 """
 

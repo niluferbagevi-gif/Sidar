@@ -1,4 +1,4 @@
-"""Jira Entegrasyon Yöneticisi (v6.0)
+"""Jira Entegrasyon Yöneticisi (v6.0).
 
 Jira Cloud REST API v3 üzerinden issue yönetimi sağlar.
 jira paketi kurulu değilse httpx ile doğrudan REST API kullanılır.
@@ -27,8 +27,7 @@ class _JiraRetryableError(RuntimeError):
 
 
 class JiraManager:
-    """
-    Jira Cloud REST API v3 istemcisi.
+    """Jira Cloud REST API v3 istemcisi.
 
     Kimlik doğrulama: Basic Auth (e-posta + API token) veya Bearer token.
     """
@@ -126,7 +125,7 @@ class JiraManager:
         labels: list[str] | None = None,
         assignee_account_id: str | None = None,
     ) -> tuple[bool, dict[str, Any], str]:
-        """Yeni Jira issue oluşturur. Döner: (success, issue_dict, error)"""
+        """Yeni Jira issue oluşturur. Döner: (success, issue_dict, error)."""
         proj = project or self.default_project
         if not proj:
             return False, {}, "Proje anahtarı belirtilmedi"
@@ -166,7 +165,7 @@ class JiraManager:
         issue_key: str,
         fields: dict[str, Any],
     ) -> tuple[bool, str]:
-        """Issue alanlarını günceller. Döner: (success, error)"""
+        """Issue alanlarını günceller. Döner: (success, error)."""
         ok, _, err = await self._request("PUT", f"issue/{issue_key}", json={"fields": fields})
         return ok, err
 

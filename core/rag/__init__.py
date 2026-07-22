@@ -1,5 +1,5 @@
-"""
-Sidar Project - Belge Deposu ve Arama (RAG)
+"""Sidar Project - Belge Deposu ve Arama (RAG).
+
 ChromaDB tabanlı Vektör Arama + BM25 Hibrit Sistemi.
 Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
@@ -202,8 +202,7 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
 
 
 class DocumentStore:
-    """
-    Yerel belge deposu — ChromaDB ile semantik arama.
+    """Yerel belge deposu — ChromaDB ile semantik arama.
 
     Güncellemeler (v2.6.0):
     - Recursive Character Chunking ile büyük belgeleri mantıksal parçalara ayırır.

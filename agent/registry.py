@@ -1,5 +1,4 @@
-"""
-Sidar Agent Catalog — Çalışma Zamanı Ajan Keşfi ve Eklenti Pazaryeri.
+"""Sidar Agent Catalog — Çalışma Zamanı Ajan Keşfi ve Eklenti Pazaryeri.
 
 Kayıtlı ajan türlerini, yeteneklerini ve meta verilerini yönetir.
 Yeni uzman ajanlar `@AgentCatalog.register(...)` dekoratörü ile

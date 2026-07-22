@@ -1,5 +1,5 @@
-"""
-Sidar Project - Ultimate Launcher
+"""Sidar Project - Ultimate Launcher.
+
 =================================
 Görsel olarak zenginleştirilmiş etkileşimli menüler ile
 argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.

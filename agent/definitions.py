@@ -1,5 +1,5 @@
-"""
-Sidar Project - Ajan Tanımları
+"""Sidar Project - Ajan Tanımları.
+
 Sidar'ın karakter profili ve sistem talimatı.
 """
 

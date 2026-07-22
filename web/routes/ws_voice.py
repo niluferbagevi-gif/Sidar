@@ -32,8 +32,7 @@ def build_ws_voice_router(deps_factory: Callable[[], Any]) -> APIRouter:
 
 
 async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Gerçek zamanlı ses oturumu için websocket.
+    """Gerçek zamanlı ses oturumu için websocket.
 
     MVP davranışı:
     - İstemci binary ses chunk'larını gönderir.

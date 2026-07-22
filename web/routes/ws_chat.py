@@ -117,8 +117,8 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
 
 
 async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Çift yönlü WebSocket chat arayüzü.
+    """Çift yönlü WebSocket chat arayüzü.
+
     Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
     ve anlık iptal (cancel) isteklerini yönetir.
 

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Web Arayüzü Sunucusu
+"""Sidar Project - Web Arayüzü Sunucusu.
+
 FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat arayüzü.
 
 Başlatmak için:
@@ -550,6 +550,7 @@ async def _prewarm_rag_embeddings() -> None:
 
 async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
+
     _agent_lock lifespan başlangıcında başlatılmış olmalıdır.
     """
     global _agent, _agent_lock

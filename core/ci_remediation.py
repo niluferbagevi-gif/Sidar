@@ -1,5 +1,5 @@
-"""
-Sidar Project — Proaktif CI Remediation Yardımcıları
+"""Sidar Project — Proaktif CI Remediation Yardımcıları.
+
 CI pipeline başarısızlıklarını webhook tetiklerinden çıkarır, ajanlar için
 teşhis/remediation prompt'u üretir ve PR taslağı oluşturur.
 """

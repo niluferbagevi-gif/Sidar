@@ -1,5 +1,5 @@
-"""
-Sidar Project — LLM-as-a-Judge Kalite Değerlendirme Modülü
+"""Sidar Project — LLM-as-a-Judge Kalite Değerlendirme Modülü.
+
 RAG sonuçları ve ajan yanıtlarını asenkron olarak LLM tabanlı değerlendirir.
 
 Özellikler:
@@ -99,7 +99,7 @@ class JudgeResult:
 
     @property
     def passed(self) -> bool:
-        """Kalite eşiğini geçti mi? (relevance ≥ 0.5 ve risk ≤ 0.5)"""
+        """Kalite eşiğini geçti mi? (relevance ≥ 0.5 ve risk ≤ 0.5)."""
         return self.relevance_score >= 0.5 and self.hallucination_risk <= 0.5
 
     @property
@@ -134,8 +134,7 @@ class ResponseEvaluation:
 
 
 class LLMJudge:
-    """
-    LLM tabanlı kalite değerlendirici.
+    """LLM tabanlı kalite değerlendirici.
 
     Async arka plan görevi olarak çalışır; ana ReAct döngüsünü bloklamaz.
     Değerlendirme sonuçları LLMMetricsCollector'a ve Prometheus'a yazılır.
@@ -352,8 +351,7 @@ class LLMJudge:
         documents: list[str],
         answer: str | None = None,
     ) -> JudgeResult | None:
-        """
-        RAG sorgusunu ve belgelerini değerlendir.
+        """RAG sorgusunu ve belgelerini değerlendir.
 
         Args:
             query:     Kullanıcı sorgusu
@@ -479,8 +477,8 @@ class LLMJudge:
         documents: list[str],
         answer: str | None = None,
     ) -> None:
-        """
-        Değerlendirmeyi asyncio arka plan görevi olarak zamanla.
+        """Değerlendirmeyi asyncio arka plan görevi olarak zamanla.
+
         Ana akışı bloklamaz; fire-and-forget yaklaşımı.
         """
         if not self._should_evaluate():

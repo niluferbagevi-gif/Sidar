@@ -1,4 +1,4 @@
-"""Microsoft Teams Entegrasyon Yöneticisi (v6.0)
+"""Microsoft Teams Entegrasyon Yöneticisi (v6.0).
 
 Incoming Webhook veya Azure Bot Service üzerinden Microsoft Teams
 kanallarına mesaj ve Adaptive Card gönderir.
@@ -23,8 +23,7 @@ _TIMEOUT = 15.0
 
 
 class TeamsManager:
-    """
-    Microsoft Teams Incoming Webhook istemcisi.
+    """Microsoft Teams Incoming Webhook istemcisi.
 
     Teams Incoming Webhook URL'si Power Automate veya Teams kanalı
     ayarlarından oluşturulur.
@@ -63,9 +62,9 @@ class TeamsManager:
         actions: list[dict[str, Any]] | None = None,
         theme_color: str = "0078D4",
     ) -> tuple[bool, str]:
-        """
-        MessageCard formatında mesaj gönderir.
-        Döner: (success, error_message)
+        """MessageCard formatında mesaj gönderir.
+
+        Döner: (success, error_message).
         """
         if not self._available:
             return False, "TEAMS_WEBHOOK_URL ayarlanmamış"
@@ -89,9 +88,9 @@ class TeamsManager:
         return await self._post(card)
 
     async def send_adaptive_card(self, card_body: dict[str, Any]) -> tuple[bool, str]:
-        """
-        Adaptive Card v1.4 gönderir.
-        card_body: Adaptive Card JSON (type, body, actions vb. içerir)
+        """Adaptive Card v1.4 gönderir.
+
+        card_body: Adaptive Card JSON (type, body, actions vb. içerir).
         """
         if not self._available:
             return False, "TEAMS_WEBHOOK_URL ayarlanmamış"

@@ -1,5 +1,5 @@
-"""
-Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
+"""Sidar github_upload.py - Otomatik GitHub Yükleme Aracı.
+
 Sürüm: Sidar ürün sürümüyle senkronize edilir.
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
@@ -168,8 +168,7 @@ def _normalize_path(path: str) -> str:
 
 
 def resolve_github_token() -> str:
-    """
-    GITHUB_TOKEN değerini farklı kaynaklardan güvenli biçimde çözer.
+    """GITHUB_TOKEN değerini farklı kaynaklardan güvenli biçimde çözer.
 
     Not:
     - Bazı ortamlarda `GITHUB_TOKEN` değişkeni process içinde boş string olarak

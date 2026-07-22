@@ -1,5 +1,5 @@
-"""
-Sidar Project - GitHub Yöneticisi
+"""Sidar Project - GitHub Yöneticisi.
+
 Depo analizi, commit geçmişi ve uzak dosya okuma (Binary Korumalı).
 Sürüm: 2.7.0
 """
@@ -45,8 +45,8 @@ def _is_retryable_github_error(exc: BaseException) -> bool:
 
 
 class GitHubManager:
-    """
-    GitHub API üzerinden depo analizi yapar.
+    """GitHub API üzerinden depo analizi yapar.
+
     PyGithub kütüphanesi kullanır.
     """
 
@@ -201,8 +201,8 @@ class GitHubManager:
         return False, f"Depo bulunamadı veya erişim reddedildi: {repo_name}"
 
     def list_repos(self, owner: str = "", limit: int = 100) -> tuple[bool, list[dict[str, str]]]:
-        """
-        Erişilebilen depoları listeler.
+        """Erişilebilen depoları listeler.
+
         owner verilirse ilgili kullanıcı/organizasyon hesabının depolarını döner.
         """
         if not self._ensure_client():
@@ -435,8 +435,7 @@ class GitHubManager:
             return False, f"GitHub dosya yazma hatası: {exc}"
 
     def create_branch(self, branch_name: str, from_branch: str | None = None) -> tuple[bool, str]:
-        """
-        Yeni git dalı oluştur.
+        """Yeni git dalı oluştur.
 
         Args:
             branch_name: Oluşturulacak dal adı (yalnızca harf/rakam//_/./- izinli).
@@ -496,7 +495,7 @@ class GitHubManager:
         state: str = "open",
         limit: int = 30,
     ) -> tuple[bool, str]:
-        """Pull Request listesi döndür. state: open / closed / all"""
+        """Pull Request listesi döndür. state: open / closed / all."""
         if not self._repo:
             return False, "Aktif depo yok."
         try:
@@ -757,8 +756,7 @@ class GitHubManager:
         state: str = "open",
         limit: int = 50,
     ) -> tuple[bool, list[dict[str, Any]], str]:
-        """
-        PR listesini yapısal dict listesi olarak döndürür.
+        """PR listesini yapısal dict listesi olarak döndürür.
 
         web_server.py gibi dış modüllerin _repo'ya doğrudan erişmesini önler.
         """

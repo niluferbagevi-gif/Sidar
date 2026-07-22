@@ -1,5 +1,5 @@
-"""
-Sidar Project — Merkezi Yapılandırma Modülü
+"""Sidar Project — Merkezi Yapılandırma Modülü.
+
 Sürüm: `sidar_version.PRODUCT_VERSION` üzerinden merkezi olarak çözülür.
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
@@ -586,8 +586,7 @@ _SELF_HEAL_SETTINGS = config_autonomy.load_self_heal_settings()
 
 
 class Config:
-    """
-    Sidar Merkezi Yapılandırma Sınıfı.
+    """Sidar Merkezi Yapılandırma Sınıfı.
 
     Sürüm değeri `sidar_version.PRODUCT_VERSION` üzerinden paket metadata'sı / pyproject
     kaynaklı tek merkezden alınır.

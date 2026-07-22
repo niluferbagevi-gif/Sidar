@@ -1,5 +1,5 @@
-"""
-Sidar Project - Tarayıcı Otomasyon Yöneticisi
+"""Sidar Project - Tarayıcı Otomasyon Yöneticisi.
+
 Playwright öncelikli, Selenium fallback'li dinamik web etkileşim katmanı.
 """
 

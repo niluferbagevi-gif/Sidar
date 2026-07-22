@@ -1,5 +1,5 @@
-"""
-Sidar Project — Human-in-the-Loop (HITL) Onay Geçidi
+"""Sidar Project — Human-in-the-Loop (HITL) Onay Geçidi.
+
 Yıkıcı/kritik işlemlerin gerçekleşmeden önce insan onayına sunulmasını sağlar.
 
 Mimari:
@@ -146,8 +146,8 @@ _broadcast_hook: Callable[[dict[str, Any]], Awaitable[None]] | None = None
 
 
 def set_hitl_broadcast_hook(hook: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
-    """
-    WebSocket yayın fonksiyonunu kaydet.
+    """WebSocket yayın fonksiyonunu kaydet.
+
     web_server.py başlangıcında çağrılır:
         from core.hitl import set_hitl_broadcast_hook
         set_hitl_broadcast_hook(broadcast_fn)
@@ -180,8 +180,7 @@ async def notify(req: HITLRequest) -> None:
 
 
 class HITLGate:
-    """
-    Kritik işlemler için onay geçidi.
+    """Kritik işlemler için onay geçidi.
 
     Kullanım (managers'da):
         gate = get_hitl_gate()
@@ -209,8 +208,7 @@ class HITLGate:
         payload: dict[str, Any] | None = None,
         requested_by: str = "system",
     ) -> bool:
-        """
-        Onay ister; HITL devre dışıysa doğrudan True döner.
+        """Onay ister; HITL devre dışıysa doğrudan True döner.
 
         Returns:
             True  → onaylandı (veya HITL kapalı)
@@ -275,8 +273,7 @@ class HITLGate:
         decided_by: str = "operator",
         rejection_reason: str = "",
     ) -> HITLRequest | None:
-        """
-        Onay veya red kararını kaydet.
+        """Onay veya red kararını kaydet.
 
         Returns:
             Güncellenen HITLRequest veya None (bulunamadıysa).

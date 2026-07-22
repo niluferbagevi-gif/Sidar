@@ -1,5 +1,5 @@
-"""
-Sidar Project — Sistem Sağlığı Yöneticisi
+"""Sidar Project — Sistem Sağlığı Yöneticisi.
+
 Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)
 
 Özellikler:
@@ -159,8 +159,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
 
 
 class SystemHealthManager:
-    """
-    Donanım sağlığını izler, raporlar ve GPU belleğini optimize eder.
+    """Donanım sağlığını izler, raporlar ve GPU belleğini optimize eder.
+
     nvidia-ml-py (pynvml) kuruluysa GPU sıcaklık/kullanım verisi de sağlar.
     """
 
@@ -249,8 +249,7 @@ class SystemHealthManager:
     # ─────────────────────────────────────────────
 
     def get_cpu_usage(self, interval: float | None = None) -> float | None:
-        """
-        CPU kullanım yüzdesini döndür.
+        """CPU kullanım yüzdesini döndür.
 
         interval None ise `self.cpu_sample_interval` kullanılır (varsayılan 0.0, bloklamaz).
         """
@@ -286,8 +285,7 @@ class SystemHealthManager:
     # ─────────────────────────────────────────────
 
     def get_gpu_info(self) -> dict[str, Any]:
-        """
-        Detaylı GPU bilgisini döndür.
+        """Detaylı GPU bilgisini döndür.
 
         Alanlar:
           available, device_count, cuda_version, driver_version,
@@ -380,8 +378,7 @@ class SystemHealthManager:
         return "N/A"
 
     def optimize_gpu_memory(self) -> str:
-        """
-        GPU VRAM'ını boşalt ve Python GC'yi çalıştır.
+        """GPU VRAM'ını boşalt ve Python GC'yi çalıştır.
 
         try-finally garantisi: torch.cuda.empty_cache() hata verse bile
         gc.collect() her koşulda çalıştırılır (bellek sızıntısı önlenir).

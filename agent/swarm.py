@@ -1,5 +1,4 @@
-"""
-Sidar Swarm Orchestrator — Dinamik Çoklu Ajan Koordinasyonu.
+"""Sidar Swarm Orchestrator — Dinamik Çoklu Ajan Koordinasyonu.
 
 Karmaşık görevleri alt görevlere böler, uygun uzman ajanlara yönlendirir
 ve sonuçları birleştirir. Agent Registry ile entegre çalışır.
@@ -258,8 +257,8 @@ class InMemoryDelegationBackend:
 
 
 class TaskRouter:
-    """
-    Görev intent'ine göre uygun ajan rolünü seçer.
+    """Görev intent'ine göre uygun ajan rolünü seçer.
+
     AgentRegistry üzerinden çalışır — yeni kayıtlı ajanlar otomatik görünür.
     """
 
@@ -284,8 +283,8 @@ class TaskRouter:
         return live_catalog
 
     def route(self, intent: str) -> AgentSpec | None:
-        """
-        Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
+        """Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
+
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
         """
         catalog = self._catalog()
@@ -331,8 +330,7 @@ def _looks_like_delegation_request(value: object) -> bool:
 
 
 class SwarmOrchestrator:
-    """
-    Dinamik çoklu ajan orkestrasyon motoru.
+    """Dinamik çoklu ajan orkestrasyon motoru.
 
     Görevleri ajanlar arasında dağıtır, paralel yürütmeyi yönetir
     ve sonuçları birleştirir.
@@ -811,8 +809,8 @@ class SwarmOrchestrator:
         session_id: str = "",
         max_concurrency: int = 4,
     ) -> list[SwarmResult]:
-        """
-        Görev listesini eş zamanlı olarak çalıştır.
+        """Görev listesini eş zamanlı olarak çalıştır.
+
         max_concurrency limiti aşıldığında semafore ile kısıtlanır.
         """
         sem = asyncio.Semaphore(max_concurrency)
@@ -831,8 +829,8 @@ class SwarmOrchestrator:
         *,
         session_id: str = "",
     ) -> list[SwarmResult]:
-        """
-        Görevleri sırayla yürüt; her görevin özeti bir sonrakinin context'ine eklenir.
+        """Görevleri sırayla yürüt; her görevin özeti bir sonrakinin context'ine eklenir.
+
         Kod üretimi → inceleme → güvenlik denetimi gibi akışlar için kullanışlıdır.
         """
         results: list[SwarmResult] = []

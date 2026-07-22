@@ -1,5 +1,5 @@
-"""
-Sidar Project - CLI Arayüzü
+"""Sidar Project - CLI Arayüzü.
+
 ==================================
 
 Bu modül, proje için terminal tabanlı etkileşimli arayüzün giriş noktasıdır.
@@ -40,8 +40,8 @@ from config import Config
 
 
 def _setup_logging(level: str) -> None:
-    """
-    config.py zaten logging.basicConfig'i RotatingFileHandler ile kurmuştur.
+    """config.py zaten logging.basicConfig'i RotatingFileHandler ile kurmuştur.
+
     Burada yalnızca CLI --log argümanına göre kök logger seviyesini güncelliyoruz.
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
@@ -114,8 +114,7 @@ Doğrudan Komutlar (serbest metin):
 
 
 async def _interactive_loop_async(agent: SidarAgent) -> None:
-    """
-    Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
+    """Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
 
     Sorun (eski kod): while döngüsü içinde her mesajda asyncio.run() çağrılıyordu.
     Her çağrı yeni bir Event Loop açıp kapattığından, ikinci mesajda

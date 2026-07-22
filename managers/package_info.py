@@ -1,5 +1,5 @@
-"""
-Sidar Project - Paket Bilgi Yöneticisi
+"""Sidar Project - Paket Bilgi Yöneticisi.
+
 PyPI, npm Registry ve GitHub Releases entegrasyonu (Asenkron).
 
 Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları.
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class PackageInfoManager:
-    """
-    Python (PyPI), JavaScript (npm) ve GitHub projeleri için
-    paket bilgisi sorgular. (Tamamen asenkron mimari).
+    """Python (PyPI), JavaScript (npm) ve GitHub projeleri için paket bilgisi sorgular.
+
+    Tamamen asenkron mimari.
     """
 
     # Varsayılan değerler (Config verilmezse kullanılır)
@@ -125,8 +125,7 @@ class PackageInfoManager:
         return False, {}, f"[HATA] PyPI: {err}"
 
     async def pypi_info(self, package: str) -> tuple[bool, str]:
-        """
-        PyPI JSON API'den paket bilgisi çek (Asenkron).
+        """PyPI JSON API'den paket bilgisi çek (Asenkron).
 
         Args:
             package: Paket adı (örn: "fastapi", "httpx")
@@ -331,8 +330,8 @@ class PackageInfoManager:
 
     @staticmethod
     def _version_sort_key(version: object) -> Version:
-        """
-        Sürüm dizisini PEP 440 uyumlu şekilde sırala.
+        """Sürüm dizisini PEP 440 uyumlu şekilde sırala.
+
         packaging.version.Version kullanımı: 1.0.0 > 1.0.0rc1 > 1.0.0b2 > 1.0.0a1
         Geçersiz sürüm formatlarında 0.0.0 döndürülür (sona düşer).
         """

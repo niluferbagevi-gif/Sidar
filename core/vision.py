@@ -1,4 +1,4 @@
-"""Multimodal Vision — UI Mockup → Frontend Kodu (v6.0)
+"""Multimodal Vision — UI Mockup → Frontend Kodu (v6.0).
 
 Görsel (PNG/JPEG/WebP/GIF) veya screenshot'tan LLM tabanlı frontend
 kodu üretir. Gemini, OpenAI GPT-4o-vision, Anthropic Claude-3 vision
@@ -42,8 +42,8 @@ _DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 async def load_image_as_base64(
     path: str | Path, *, max_bytes: int = _DEFAULT_MAX_BYTES
 ) -> tuple[str, str]:
-    """
-    Görseli okuyup (base64_data, mime_type) döner.
+    """Görseli okuyup (base64_data, mime_type) döner.
+
     Hatalı format veya boyut aşımında ValueError fırlatır.
     """
     p = Path(path)
@@ -88,8 +88,7 @@ def build_vision_messages(
     base64_image: str,
     mime_type: str,
 ) -> list[dict[str, Any]]:
-    """
-    Sağlayıcıya özgü çok-parçalı (vision) mesaj listesi üretir.
+    """Sağlayıcıya özgü çok-parçalı (vision) mesaj listesi üretir.
 
     Desteklenen sağlayıcılar: openai, anthropic, gemini, ollama (llava)
     """
@@ -214,8 +213,7 @@ def build_analyze_prompt(analysis_type: str = "general") -> str:
 
 
 class VisionPipeline:
-    """
-    Görsel → LLM pipeline'ı.
+    """Görsel → LLM pipeline'ı.
 
     llm_client: LLMClient örneği (core/llm_client.py)
     config: Config nesnesi
@@ -239,8 +237,8 @@ class VisionPipeline:
         language: str = "TypeScript",
         extra_instructions: str = "",
     ) -> dict[str, Any]:
-        """
-        UI mockup → frontend kodu üretir.
+        """UI mockup → frontend kodu üretir.
+
         image_path veya image_bytes parametrelerinden biri zorunludur.
         """
         if not self.enabled:

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Web Arama Yöneticisi
+"""Sidar Project - Web Arama Yöneticisi.
+
 Tavily, Google Custom Search ve DuckDuckGo motorları ile asenkron web araması.
 Sürüm: 2.7.0
 
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 
 class WebSearchManager:
-    """
-    Gelişmiş, çoklu motor destekli ve asenkron web arama yöneticisi.
+    """Gelişmiş, çoklu motor destekli ve asenkron web arama yöneticisi.
+
     DuckDuckGo, Tavily ve Google Custom Search API'lerini destekler.
     """
 

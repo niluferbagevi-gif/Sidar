@@ -1,4 +1,4 @@
-"""Entity/Persona Memory (v5.0)
+"""Entity/Persona Memory (v5.0).
 
 Kullanıcının uzun vadeli kodlama stilini, dil tercihlerini ve etkileşim
 örüntülerini Mem0/Zep benzeri bir yapıda SQLite veritabanında saklar.
@@ -70,8 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_entity_memory_user ON entity_memory(user_id);
 
 
 class EntityMemory:
-    """
-    Kullanıcı başına anahtar/değer persona deposu.
+    """Kullanıcı başına anahtar/değer persona deposu.
 
     Parametreler:
         database_url: SQLAlchemy async URL (sqlite+aiosqlite:/// veya postgresql+asyncpg://)
