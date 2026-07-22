@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
 
-GithubSignatureValidationResult = Literal["secret_missing", "disabled_by_flag", "verified"]
+GithubSignatureValidationResult = Literal["disabled_by_flag", "verified"]
 
 
 def _coerce_bool(value: Any, *, default: bool) -> bool:
@@ -48,27 +48,12 @@ def _validate_github_webhook_signature(
     payload_body: bytes,
     cfg: Any,
     signature_header: str,
+    delivery_id: str = "",
     verify_hmac_signature: Callable[..., None],
     logger: Any,
 ) -> GithubSignatureValidationResult:
     """Apply the GitHub webhook signature contract in one testable place."""
     signature_required = _github_webhook_signature_required(cfg)
-    env_name = (
-        str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "") or "").strip().lower()
-    )
-    secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
-    if not secret_value:
-        if env_name == "production":
-            raise HTTPException(
-                status_code=401,
-                detail="GitHub webhook secret yapılandırılmadığı için imza doğrulanamadı.",
-            )
-        logger.warning(
-            "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
-            "Üretim ortamında mutlaka ayarlayın."
-        )
-        return "secret_missing"
-
     if not signature_required:
         logger.warning(
             "GITHUB_WEBHOOK_REQUIRE_SIGNATURE=False — GitHub webhook imza doğrulaması "
@@ -76,11 +61,22 @@ def _validate_github_webhook_signature(
         )
         return "disabled_by_flag"
 
+    secret_value = str(getattr(cfg, "GITHUB_WEBHOOK_SECRET", "") or "")
+    if not secret_value:
+        raise HTTPException(
+            status_code=401,
+            detail="GitHub webhook secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
+    normalized_delivery_id = delivery_id.strip() if isinstance(delivery_id, str) else ""
+    if not normalized_delivery_id:
+        raise HTTPException(status_code=401, detail="GitHub webhook delivery kimliği eksik.")
+
     verify_hmac_signature(
         payload_body,
         secret_value,
         signature_header,
         label="GitHub webhook",
+        replay_key=normalized_delivery_id,
     )
     return "verified"
 
@@ -120,6 +116,7 @@ def build_webhooks_router(
         request: Request,
         x_github_event: str = Header(default=""),
         x_hub_signature_256: str = Header(default=""),
+        x_github_delivery: str = Header(default=""),
     ) -> Any:
         """GitHub'dan gelen webhook tetiklemelerini karşılar."""
         payload_body = await request.body()
@@ -128,6 +125,7 @@ def build_webhooks_router(
             payload_body=payload_body,
             cfg=active_cfg,
             signature_header=x_hub_signature_256,
+            delivery_id=x_github_delivery,
             verify_hmac_signature=verify_hmac_signature,
             logger=logger,
         )

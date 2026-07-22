@@ -206,6 +206,42 @@ def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Pat
         plaintext._decrypt_content(token)
 
 
+def test_memory_rotation_decrypts_with_previous_key_and_encrypts_with_current(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    previous_key = Fernet.generate_key().decode("utf-8")
+    unrelated_key = Fernet.generate_key().decode("utf-8")
+    current_key = Fernet.generate_key().decode("utf-8")
+    previous_memory = ConversationMemory(base_dir=tmp_path, encryption_key=previous_key)
+    rotated_memory = ConversationMemory(
+        base_dir=tmp_path,
+        encryption_key=current_key,
+        previous_encryption_keys=f"{unrelated_key},{previous_key}",
+    )
+
+    old_token = previous_memory._encrypt_content("eski kayıt")
+    new_token = rotated_memory._encrypt_content("yeni kayıt")
+
+    assert rotated_memory._decrypt_content(old_token) == "eski kayıt"
+    assert rotated_memory._decrypt_content(new_token) == "yeni kayıt"
+    with pytest.raises(MemoryAuthError, match="current or previous"):
+        previous_memory._decrypt_content(new_token)
+    with pytest.raises(MemoryAuthError, match="current or previous"):
+        rotated_memory._decrypt_content("fernet:v1:not-a-valid-token")
+
+
+def test_memory_rotation_rejects_invalid_previous_key(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+
+    with pytest.raises(ValueError, match="Fernet"):
+        ConversationMemory(
+            base_dir=tmp_path,
+            encryption_key=Fernet.generate_key().decode("utf-8"),
+            previous_encryption_keys="not-a-fernet-key",
+        )
+
+
 def test_user_required_and_repr_len(mem):
     assert "session=None" in repr(mem)
     assert len(mem) == 0

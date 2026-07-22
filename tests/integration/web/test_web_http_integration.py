@@ -1,11 +1,39 @@
 from pathlib import Path
+from time import time
 
+import jwt
 import pytest
 
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
 import web_server
 from web_server import app
+
+
+def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
+    secret = "integration-jwt-secret-at-least-32-bytes"
+    monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", secret)
+    token = jwt.encode(
+        {
+            "sub": "regular-user",
+            "username": "regular",
+            "role": "user",
+            "tenant_id": "default",
+            "exp": int(time()) + 300,
+        },
+        secret,
+        algorithm="HS256",
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/autonomy/wake",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"prompt": "trigger the swarm", "source": "integration-test"},
+    )
+
+    assert response.status_code == 403
+    assert "admin yetkisi" in response.text
 
 
 def test_healthz_endpoint_returns_http_response() -> None:
@@ -16,6 +44,23 @@ def test_healthz_endpoint_returns_http_response() -> None:
     payload = response.json()
     assert isinstance(payload, dict)
     assert "uptime_seconds" in payload
+
+
+def test_metrics_token_authenticates_through_full_middleware_chain(monkeypatch) -> None:
+    monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "integration-metrics-token")
+    client = TestClient(app)
+
+    response = client.get(
+        "/metrics/llm", headers={"Authorization": "Bearer integration-metrics-token"}
+    )
+
+    assert response.status_code == 200
+    assert "totals" in response.json()
+
+    denied = client.get(
+        "/admin/stats", headers={"Authorization": "Bearer integration-metrics-token"}
+    )
+    assert denied.status_code == 401
 
 
 def test_root_endpoint_serves_html(monkeypatch, tmp_path: Path) -> None:

@@ -34,7 +34,11 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
 
     autonomy.configure_autonomy_dependencies(
         lambda: SimpleNamespace(
-            cfg=SimpleNamespace(ENABLE_EVENT_WEBHOOKS=True, AUTONOMY_WEBHOOK_SECRET=""),
+            cfg=SimpleNamespace(
+                ENABLE_EVENT_WEBHOOKS=True,
+                AUTONOMY_WEBHOOK_SECRET="",
+                AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE=False,
+            ),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
             resolve_ci_failure_context=lambda *_args, **_kwargs: None,
             run_event_driven_federation_workflow=lambda **_kwargs: None,
@@ -50,6 +54,32 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
     assert response.status_code == 200
     assert calls[0]["trigger_source"] == "webhook:jira"
     assert calls[0]["event_name"] == "issue_created"
+
+
+@pytest.mark.asyncio
+async def test_autonomy_webhook_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production autonomy request must not dispatch")
+
+    autonomy.configure_autonomy_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_EVENT_WEBHOOKS=True,
+                SIDAR_ENV="production",
+                AUTONOMY_WEBHOOK_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            dispatch_autonomy_trigger=_dispatch,
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await autonomy.autonomy_webhook(
+            "jira", _Request({"event_name": "unsigned_production_event"})
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "Autonomy webhook secret" in str(exc_info.value.detail)
 
 
 @dataclass

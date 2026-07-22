@@ -1259,7 +1259,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `SEMANTIC_CACHE_TTL` / `SEMANTIC_CACHE_MAX_ITEMS` | `3600` / `500` | Cache ömrü ve LRU kapasitesi |
 | `SIDAR_REDIS_URL` (`REDIS_URL` legacy) | `.env.example`: `redis://redis:6379/0`, `config.py` fallback: `redis://localhost:6379/0` | Semantic cache, rate limiting ve event-stream katmanının Redis bağlantısı |
 | `SIDAR_EVENT_BUS_CHANNEL` / `SIDAR_EVENT_BUS_GROUP` | `sidar:agent_events` / `sidar:agent_events:cg` | Swarm/event bus için Redis Streams kanal ve consumer group adları |
-| `SIDAR_RATE_LIMIT_WINDOW` / `SIDAR_RATE_LIMIT_CHAT` / `SIDAR_RATE_LIMIT_MUTATIONS` / `SIDAR_RATE_LIMIT_GET_IO` | `60` / `20` / `60` / `30` | API rate-limiting penceresi ve endpoint bazlı limitler |
+| `SIDAR_RATE_LIMIT_WINDOW` / `SIDAR_RATE_LIMIT_CHAT` / `SIDAR_RATE_LIMIT_MUTATIONS` / `SIDAR_RATE_LIMIT_GET_IO` / `SIDAR_RATE_LIMIT_WS_CONNECTIONS` | `60` / `20` / `60` / `30` / `30` | API istekleri ile chat/voice WebSocket bağlantı açma denemelerinin pencere ve endpoint bazlı limitleri |
 | `TRUSTED_PROXIES` | `""` | Güvenilir ters proxy IP listesi; boşsa proxy başlıkları güvenilmez sayılır |
 | `MAX_RAG_UPLOAD_BYTES` | `52428800` | RAG dosya yükleme üst limiti (50 MB) |
 
@@ -1305,7 +1305,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `USE_GPU` / `GPU_DEVICE` / `MULTI_GPU` | `false` (`.env.example`) / `0` / `false` | GPU kullanımı, cihaz seçimi ve çoklu GPU modu |
 | `GPU_MEMORY_FRACTION` / `LLM_GPU_MEMORY_FRACTION` / `RAG_GPU_MEMORY_FRACTION` | `0.8` / `0.8` / `0.3` | Yerel LLM ve RAG için VRAM bütçe ayarları |
 | `GPU_MIXED_PRECISION` | `true` (production) / `false` (development) | FP16/mixed precision ile VRAM optimizasyonu |
-| `DOCKER_PYTHON_IMAGE` / `DOCKER_EXEC_TIMEOUT` / `DOCKER_REQUIRED` | `python:3.11-alpine` / `10` / `false` | Kod çalıştırma sandbox'ının temel Docker davranışı |
+| `DOCKER_PYTHON_IMAGE` / `DOCKER_EXEC_TIMEOUT` / `DOCKER_REQUIRED` | `python:3.11-alpine` / `10` / `true` | Kod çalıştırma sandbox'ının temel Docker davranışı; Docker yoksa host fallback yapılmaz |
 | `DOCKER_RUNTIME` / `DOCKER_ALLOWED_RUNTIMES` / `DOCKER_MICROVM_MODE` | `""` / `,runc,runsc,kata-runtime` / `off` | Zero-trust sandbox runtime ve mikro-VM hazırlık seçenekleri |
 | `DOCKER_MEM_LIMIT` / `SIDAR_DOCKER_NETWORK_DISABLED` / `SIDAR_DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` / `SANDBOX_NETWORK` / `SANDBOX_PIDS_LIMIT` / `SANDBOX_TIMEOUT` | `256m` / `0.5` / `none` / `64` / `10` | `config.py::SANDBOX_LIMITS` sözlüğüne beslenen detaylı çalışma kotaları |

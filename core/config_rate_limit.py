@@ -24,6 +24,7 @@ class RateLimitSettings:
     sidar_rate_limit_chat: int
     sidar_rate_limit_mutations: int
     sidar_rate_limit_get_io: int
+    sidar_rate_limit_ws_connections: int
     sidar_redis_url: str
     sidar_redis_max_connections: int
     sidar_redis_connect_timeout: float
@@ -73,6 +74,9 @@ def load_rate_limit_settings(*, redis_max_connections_default: int) -> RateLimit
         ),
         sidar_rate_limit_get_io=get_int_prefixed_env(
             "SIDAR_RATE_LIMIT_GET_IO", "RATE_LIMIT_GET_IO", 30
+        ),
+        sidar_rate_limit_ws_connections=get_int_prefixed_env(
+            "SIDAR_RATE_LIMIT_WS_CONNECTIONS", "RATE_LIMIT_WS_CONNECTIONS", 30
         ),
         sidar_redis_url=resolve_redis_url(),
         sidar_redis_max_connections=get_int_prefixed_env(

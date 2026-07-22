@@ -164,6 +164,28 @@ def _deps(**overrides) -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    ws = _Ws()
+
+    async def _limited(_websocket) -> bool:
+        return True
+
+    async def _unexpected_agent():
+        raise AssertionError("rate-limited socket must not initialize the agent")
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(
+            ws_connection_is_rate_limited=_limited,
+            resolve_agent_instance=_unexpected_agent,
+        ),
+    )
+
+    assert ws.accepted == []
+    assert ws.closed == [(1013, "WebSocket connection rate limit exceeded")]
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_import_error_closes_connection(monkeypatch) -> None:
     original_import = builtins.__import__
 

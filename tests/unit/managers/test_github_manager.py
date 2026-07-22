@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from tenacity import Future, RetryError
@@ -629,3 +630,15 @@ def test_repo_mock_error_branches_for_coverage():
 
     with pytest.raises(RuntimeError, match="missing"):
         repo.get_contents("does-not-exist")
+@pytest.mark.asyncio
+async def test_create_pull_request_hitl_rejects_without_approval(manager, monkeypatch):
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.github_manager.get_hitl_gate", lambda: gate)
+    manager._repo.create_pull = Mock()
+
+    ok, message = await manager.create_pull_request_hitl("Title", "Body", "feat/x", "main")
+
+    assert ok is False
+    assert "insan onayı" in message
+    manager._repo.create_pull.assert_not_called()
+    gate.request_approval.assert_awaited_once()

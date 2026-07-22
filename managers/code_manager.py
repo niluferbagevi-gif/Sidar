@@ -18,6 +18,7 @@ from enum import Enum
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.hitl import get_hitl_gate
 from managers.code import docker as docker_helpers
 from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
@@ -345,6 +346,22 @@ class CodeManager:
         """Dosyaya güvenli biçimde içerik yazar."""
         return file_io_security.write_file(self, path, content, validate=validate)
 
+    async def write_file_hitl(
+        self, path: str, content: str, validate: bool = True
+    ) -> tuple[bool, str]:
+        """Require human approval before overwriting an existing file."""
+        target = Path(path)
+        if target.exists():
+            approved = await get_hitl_gate().request_approval(
+                action="file_overwrite",
+                description=f"Dosyanın üzerine yazılacak: {target}",
+                payload={"path": str(target)},
+                requested_by="CodeManager",
+            )
+            if not approved:
+                return False, "Dosya üzerine yazma işlemi insan onayı olmadan reddedildi."
+        return file_io_security.write_file(self, path, content, validate=validate)
+
     @staticmethod
     def _strip_markdown_code_fences(content: str) -> str:
         return file_io_security.strip_markdown_code_fences(content)
@@ -369,6 +386,20 @@ class CodeManager:
         """Dosyada hedef bloğu güvenli biçimde değiştirir."""
         return file_io_security.patch_file(self, path, target_block, replacement_block)
 
+    async def patch_file_hitl(
+        self, path: str, target_block: str, replacement_block: str
+    ) -> tuple[bool, str]:
+        """Require human approval before patching an existing file."""
+        ok, content = self.read_file(path, line_numbers=False)
+        if not ok:
+            return False, content
+        ok, patched_or_error = file_io_security.apply_exact_block_patch(
+            content, target_block, replacement_block
+        )
+        if not ok:
+            return False, patched_or_error
+        return await self.write_file_hitl(path, patched_or_error, validate=True)
+
     def execute_code(self, code: str) -> tuple[bool, str]:
         """Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
 
@@ -389,18 +420,10 @@ class CodeManager:
         self.ensure_docker_initialized()
 
         if not self.docker_available:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
-                    "yerel (unsafe) çalıştırma engellendi."
-                )
-            if Config.DOCKER_REQUIRED:
-                return False, (
-                    "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı. "
-                    "Docker daemon'ı başlatın veya DOCKER_REQUIRED=false olarak ayarlayın."
-                )
-            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
-            return self.execute_code_local(code)
+            return False, (
+                "[GÜVENLİK] Docker sandbox erişilemedi; access level'dan bağımsız olarak "
+                "host üzerinde izolasyonsuz kod çalıştırma reddedildi."
+            )
 
         try:
             import docker  # noqa: F401
@@ -500,17 +523,23 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                logger.warning(
-                    "Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc
+                logger.error(
+                    "Docker SDK ve CLI sandbox çalıştırması başarısız; host fallback reddedildi: %s",
+                    cli_exc,
                 )
-                return self.execute_code_local(code)
+                return False, (
+                    "[GÜVENLİK] Docker sandbox çalıştırılamadı; host üzerinde izolasyonsuz "
+                    f"kod çalıştırma reddedildi. Detay: {cli_exc}"
+                )
 
     def execute_code_local(self, code: str) -> tuple[bool, str]:
-        """Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+        """Python kodunu açıkça istenen, izolasyonsuz yerel subprocess ile çalıştırır.
 
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
+
+        Bu düşük seviye yardımcı ``execute_code`` tarafından fallback olarak çağrılmaz.
         """
         # Güvenlik uyarısı: Docker sandbox yok, kod izole edilmeden çalışıyor
         logger.warning(

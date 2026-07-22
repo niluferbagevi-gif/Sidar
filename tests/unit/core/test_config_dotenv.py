@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from core import config_dotenv
 
 
@@ -26,6 +28,34 @@ def test_config_dotenv_parse_and_resolve_paths(tmp_path, monkeypatch):
         config_dotenv.resolve_dotenv_path("~/secret.env", base_dir=tmp_path)
         == tmp_path / "secret.env"
     )
+
+
+def test_secret_overlay_path_must_resolve_outside_repository(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "secrets" / "sidar.env"
+
+    assert (
+        config_dotenv.validate_secret_overlay_outside_repo(str(outside), base_dir=repo)
+        == outside.resolve()
+    )
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo(".env", base_dir=repo)
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo("config/keys.env", base_dir=repo)
+    assert config_dotenv.validate_secret_overlay_outside_repo("", base_dir=repo) is None
+
+
+def test_secret_overlay_rejects_symlink_that_resolves_into_repository(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    repo_secret = repo / ".env"
+    repo_secret.touch()
+    outside_link = tmp_path / "keys.env"
+    outside_link.symlink_to(repo_secret)
+
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo(str(outside_link), base_dir=repo)
 
 
 def test_config_dotenv_tracking_and_reset_helpers(tmp_path):

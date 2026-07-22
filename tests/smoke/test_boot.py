@@ -1,7 +1,6 @@
 """Smoke tests for application boot sanity."""
 
 import hashlib
-import inspect
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -207,7 +206,10 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
 
     fake_agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="ollama"),
-        health=SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": True}),
+        health=SimpleNamespace(
+            get_health_summary=lambda: {"status": "ok", "ollama_online": True},
+            get_dependency_health=lambda: {},
+        ),
     )
 
     async def _fake_get_agent():
@@ -226,11 +228,11 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
                 transport=ASGITransport(app=web_server.app), base_url="http://test"
             ) as client:
                 healthz = await client.get("/healthz")
+                readyz = await client.get("/readyz")
 
         assert healthz.status_code == 200
+        assert readyz.status_code == 200
         assert redis_rate_limiter.await_count == 0
-        ddos_source = inspect.getsource(web_server.ddos_rate_limit_middleware)
-        assert "/readyz" in ddos_source
     finally:
         web_server.app.dependency_overrides.clear()
 

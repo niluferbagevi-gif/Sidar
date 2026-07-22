@@ -348,7 +348,7 @@ def test_quality_gate_settings_defaults_match_original_hardcoded_values(monkeypa
     settings = config_quality.QualityGateSettings()
 
     assert settings.DLP_ENABLED is True
-    assert settings.HITL_ENABLED is False
+    assert settings.HITL_ENABLED is True
     assert settings.HITL_TIMEOUT_SECONDS == 120
     assert settings.JUDGE_ENABLED is False
     assert settings.JUDGE_MODEL == ""
@@ -647,6 +647,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     monkeypatch.setattr(config.Config, "RATE_LIMIT_CHAT", 20)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_MUTATIONS", 60)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_GET_IO", 30)
+    monkeypatch.setattr(config.Config, "RATE_LIMIT_WS_CONNECTIONS", 12)
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", False)
     monkeypatch.setattr(config.Config, "OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
     monkeypatch.setattr(config.Config, "ENABLE_SEMANTIC_CACHE", False)
@@ -659,6 +660,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     assert info["provider"] == "ollama"
     assert info["gpu_enabled"] is False
     assert info["hf_use_local_cache_only"] is True
+    assert info["rate_limit_ws_connections"] == 12
     assert "REDIS_URL" not in info
 
 
@@ -827,6 +829,46 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
 
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
     assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_rejects_unsafe_production_secret(monkeypatch, caplog):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(
+        config.Config,
+        "get_missing_critical_runtime_keys",
+        classmethod(lambda cls: ["METRICS_TOKEN"]),
+    )
+    monkeypatch.setattr(
+        config.Config, "_validate_ai_provider_settings", classmethod(lambda cls: True)
+    )
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "valid-fernet-key")
+    monkeypatch.setattr(config.config_postgres, "postgres_password_drift_messages", lambda: [])
+
+    class _Fernet:
+        def __init__(self, _key):
+            pass
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "cryptography.fernet",
+        types.SimpleNamespace(Fernet=_Fernet),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        config.Config.validate_critical_settings()
+
+    assert exc_info.value.code == 1
+    assert "Production secret doğrulaması başarısız: METRICS_TOKEN" in caplog.text
 
 
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
@@ -2054,8 +2096,12 @@ def test_production_accepts_strong_database_url_password_without_postgres_env(mo
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr(config.Config, "API_KEY", "api-key-configured")
-    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "explicit-strong-jwt-secret")
+    monkeypatch.setattr(
+        config.Config, "API_KEY", "ApiKey-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    )
+    monkeypatch.setattr(
+        config.Config, "JWT_SECRET_KEY", "JwtKey-P8tYv3wXc5aHj6sDf4GhN7b_Uz9mKq2pR"
+    )
     monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
     monkeypatch.setattr(
         config.Config,
@@ -2150,7 +2196,16 @@ def test_config_helper_edge_cases_cover_centralized_env_helpers(monkeypatch):
     assert config.get_bool_prefixed_env("SIDAR_BOOL_FALSE", "LEGACY_BOOL_FALSE", True) is False
 
 
-def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch):
+def test_dotenv_reload_plan_rejects_repo_local_secret_overlay():
+    effective_env = {"SIDAR_ENV": "development", "SIDAR_KEYS_FILE": ".env"}
+
+    with pytest.raises(ValueError, match="repository dışında"):
+        config._build_dotenv_reload_plan(effective_env, profile=None)
+
+
+def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(
+    monkeypatch, tmp_path
+):
     values_by_name = {
         ".env": {"OPENAI_API_KEY": "from-base", "JWT_SECRET_KEY": "jwt-base"},
         ".env.advanced": {"OPENAI_API_KEY": "from-advanced", "SIDAR_ENV": "development"},
@@ -2173,7 +2228,7 @@ def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monke
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     monkeypatch.setenv("DOTENV_FILE", "runtime.env")
-    monkeypatch.setenv("SIDAR_KEYS_FILE", "keys.env")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(tmp_path / "keys.env"))
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr("dotenv.load_dotenv", fake_load_dotenv)
 
@@ -2204,7 +2259,9 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     explicit_env.write_text(
         "OPENAI_API_KEY=from-explicit\nJWT_SECRET_KEY=jwt-explicit\n", encoding="utf-8"
     )
-    keys_env = tmp_path / "keys.env"
+    secret_dir = tmp_path.parent / f"{tmp_path.name}-secrets"
+    secret_dir.mkdir()
+    keys_env = secret_dir / "keys.env"
     keys_env.write_text("OPENAI_API_KEY=from-secret\n", encoding="utf-8")
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)

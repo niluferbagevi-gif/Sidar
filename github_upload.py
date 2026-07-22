@@ -409,6 +409,17 @@ def stage_files(file_paths: list[str]) -> tuple[bool, str]:
     return run_command(["git", "add", "--"] + literal_paths, show_output=False)
 
 
+def stage_deleted_files(file_paths: list[str]) -> tuple[bool, str]:
+    """Silinen dosyaları option injection ve pathspec globbing olmadan stage eder."""
+    if not file_paths:
+        return True, ""
+    literal_paths = [f":(literal){path}" for path in file_paths]
+    return run_command(
+        ["git", "rm", "--ignore-unmatch", "--"] + literal_paths,
+        show_output=False,
+    )
+
+
 def sync_install_manifests_before_commit() -> tuple[bool, str]:
     """Commit öncesi install manifestlerini tazeler ve drift düzeltmelerini stage eder."""
     sync_steps = [
@@ -876,7 +887,13 @@ def main() -> None:
             .lower()
         )
         if confirm_del in ["e", "evet", "y", "yes"]:
-            run_command(["git", "rm", "--ignore-unmatch"] + deleted_files, show_output=False)
+            delete_success, delete_err = stage_deleted_files(deleted_files)
+            if not delete_success:
+                print(
+                    f"{Colors.FAIL}❌ Silinen dosyalar Git'e bildirilirken hata oluştu: "
+                    f"{delete_err}{Colors.ENDC}"
+                )
+                sys.exit(1)
             print(
                 f"{Colors.OKGREEN}✅ Silinen dosyalar onaylandı ve Git'e bildirildi.{Colors.ENDC}"
             )

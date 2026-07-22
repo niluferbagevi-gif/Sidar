@@ -50,6 +50,7 @@ from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for
 from core.config_runtime_paths import apply_reload_runtime_paths, load_runtime_path_settings
 from core.config_sandbox import load_sandbox_settings
 from core.config_secret_hardening import (
+    PRODUCTION_SECRET_KEYS,
     collect_missing_critical_runtime_keys,
     warn_on_silent_security_fallbacks,
 )
@@ -187,6 +188,11 @@ def _resolve_dotenv_path(raw_path: str) -> Path:
     return config_dotenv.resolve_dotenv_path(raw_path, base_dir=BASE_DIR)
 
 
+def _validate_sidar_keys_file_path(raw_path: str) -> Path | None:
+    """Reject SIDAR_KEYS_FILE paths that resolve inside the repository."""
+    return config_dotenv.validate_secret_overlay_outside_repo(raw_path, base_dir=BASE_DIR)
+
+
 def _load_dotenv_if_exists(
     raw_path: str,
     *,
@@ -282,6 +288,7 @@ _load_dotenv_if_exists(_explicit_dotenv, override=True, label="explicit:DOTENV_F
 # 6. Kullanıcıya özel gizli anahtar dosyasını en son yükle. Bu dosya repoya
 #    konmamalıdır; varsayılan ~/.sidar_keys.env sadece mevcutsa yüklenir.
 _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
+_validate_sidar_keys_file_path(_sidar_keys_file)
 _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
 
 ENV_PATH = base_env_path
@@ -326,7 +333,7 @@ def _build_dotenv_reload_plan(
 ) -> DotenvReloadPlan:
     """Build and validate the dotenv reload chain plan from the effective environment."""
     selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-    return DotenvReloadPlan(
+    plan = DotenvReloadPlan(
         profile=selected_profile,
         base_path=BASE_DIR / ".env",
         advanced_path=BASE_DIR / ".env.advanced",
@@ -334,6 +341,8 @@ def _build_dotenv_reload_plan(
         sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
         skip_default_layers=_skip_default_dotenv_layers(effective_env),
     )
+    _validate_sidar_keys_file_path(plan.sidar_keys_file)
+    return plan
 
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
@@ -775,10 +784,14 @@ class Config:
     SIDAR_RATE_LIMIT_CHAT: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_chat
     SIDAR_RATE_LIMIT_MUTATIONS: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_mutations
     SIDAR_RATE_LIMIT_GET_IO: int = _RATE_LIMIT_SETTINGS.sidar_rate_limit_get_io
+    SIDAR_RATE_LIMIT_WS_CONNECTIONS: int = (
+        _RATE_LIMIT_SETTINGS.sidar_rate_limit_ws_connections
+    )
     RATE_LIMIT_WINDOW: int = SIDAR_RATE_LIMIT_WINDOW
     RATE_LIMIT_CHAT: int = SIDAR_RATE_LIMIT_CHAT
     RATE_LIMIT_MUTATIONS: int = SIDAR_RATE_LIMIT_MUTATIONS
     RATE_LIMIT_GET_IO: int = SIDAR_RATE_LIMIT_GET_IO
+    RATE_LIMIT_WS_CONNECTIONS: int = SIDAR_RATE_LIMIT_WS_CONNECTIONS
     SIDAR_REDIS_URL: str = _RATE_LIMIT_SETTINGS.sidar_redis_url
     REDIS_URL: str = SIDAR_REDIS_URL
     SIDAR_REDIS_MAX_CONNECTIONS: int = _RATE_LIMIT_SETTINGS.sidar_redis_max_connections
@@ -916,6 +929,7 @@ class Config:
     # Fernet anahtarı üretmek için:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
+    MEMORY_ENCRYPTION_KEY_PREVIOUS: str = os.getenv("MEMORY_ENCRYPTION_KEY_PREVIOUS", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
     WEB_HOST: str = os.getenv("WEB_HOST", "127.0.0.1")
@@ -1357,7 +1371,21 @@ class Config:
         cls._ensure_hardware_info_loaded()
         cls._apply_gpu_memory_safety_check()
         cls.initialize_directories()
-        cls._log_dotenv_load_status(missing_keys=cls.get_missing_critical_runtime_keys())
+        missing_runtime_keys = cls.get_missing_critical_runtime_keys()
+        cls._log_dotenv_load_status(missing_keys=missing_runtime_keys)
+
+        if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
+            unsafe_production_secrets = [
+                key for key in PRODUCTION_SECRET_KEYS if key in missing_runtime_keys
+            ]
+            if unsafe_production_secrets:
+                logger.critical(
+                    "Production secret doğrulaması başarısız: %s. Eksik, zayıf veya "
+                    "non-production ortamlarla paylaşılan secret değerlerini rotate edin; "
+                    "değerler güvenlik nedeniyle loglanmadı.",
+                    ", ".join(unsafe_production_secrets),
+                )
+                raise SystemExit(1)
 
         if cls.REQUIRE_GPU and not cls.USE_GPU:
             logger.error(
@@ -1391,6 +1419,11 @@ class Config:
             is_valid = False
 
         memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
+        previous_memory_encryption_keys = [
+            key.strip()
+            for key in str(cls.MEMORY_ENCRYPTION_KEY_PREVIOUS or "").split(",")
+            if key.strip()
+        ]
 
         if memory_encryption_key:
             try:
@@ -1399,6 +1432,8 @@ class Config:
                 # Anahtarı ön doğrulama — geçersiz formatta erken hata ver
                 try:
                     Fernet(memory_encryption_key.encode())
+                    for previous_key in previous_memory_encryption_keys:
+                        Fernet(previous_key.encode())
                 except Exception as key_exc:
                     logger.error(
                         "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
@@ -1486,6 +1521,7 @@ class Config:
             "rate_limit_chat": cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
             "rate_limit_get_io": cls.RATE_LIMIT_GET_IO,
+            "rate_limit_ws_connections": cls.RATE_LIMIT_WS_CONNECTIONS,
             # REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
             "enable_tracing": cls.ENABLE_TRACING,
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
