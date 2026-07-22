@@ -54,7 +54,10 @@ def _resolve_federation_secret(cfg: Any) -> str:
     if not secret and _federation_env_name(cfg) == "production":
         raise HTTPException(
             status_code=401,
-            detail="SWARM_FEDERATION_SHARED_SECRET yapılandırılmadığı için federation imzası doğrulanamadı.",
+            detail=(
+                "SWARM_FEDERATION_SHARED_SECRET yapılandırılmadığı için federation imzası "
+                "doğrulanamadı."
+            ),
         )
     return secret
 
@@ -156,7 +159,10 @@ async def swarm_federation_execute(
 @router.post(
     "/api/swarm/federation/feedback",
     summary="Dış Swarm Action Feedback",
-    description="Dış swarm sistemlerinden gelen action feedback sinyallerini autonomy korelasyon akışına bağlar.",
+    description=(
+        "Dış swarm sistemlerinden gelen action feedback sinyallerini autonomy korelasyon "
+        "akışına bağlar."
+    ),
 )
 async def swarm_federation_feedback(
     req: FederationFeedbackRequest,

@@ -27,7 +27,9 @@ _TARGET_PATTERN = re.compile(
     r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)"""
 )
 _ROOT_CAUSE_PATTERN = re.compile(
-    r"""(?P<line>.*?(?:AssertionError|AttributeError|ModuleNotFoundError|ImportError|TypeError|ValueError|RuntimeError|SyntaxError|NameError|timeout|timed out|failed|FAILED|Traceback|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
+    r"""(?P<line>.*?(?:AssertionError|AttributeError|ModuleNotFoundError|ImportError|TypeError"""
+    r"""|ValueError|RuntimeError|SyntaxError|NameError|timeout|timed out|failed|FAILED"""
+    r"""|Traceback|Incompatible types|Missing type parameters|no-untyped-def|mypy).*)""",
     re.IGNORECASE,
 )
 _MYPY_ERROR_LINE_PATTERN = re.compile(
@@ -38,7 +40,8 @@ _MISSING_MODULE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _MYPY_IMPORT_UNTYPED_MODULE_PATTERN = re.compile(
-    r"(?:Library stubs not installed for|Cannot find implementation or library stub for module named)\s+['\"](?P<module>[\w.:-]+)['\"]",
+    r"(?:Library stubs not installed for|Cannot find implementation or library stub for module"
+    r" named)\s+['\"](?P<module>[\w.:-]+)['\"]",
     re.IGNORECASE,
 )
 _MYPY_STUB_INSTALL_HINT_PATTERN = re.compile(
@@ -786,7 +789,9 @@ def build_self_heal_patch_prompt(
         "Sadece düşük riskli, minimal ve geri alınabilir patch planı üret.\n"
         "Yanıtın yalnızca geçerli JSON olsun. Markdown kullanma.\n"
         "Sadece şu şemayı kullan:\n"
-        '{"summary":"...","confidence":"low|medium|high","operations":[{"action":"patch","path":"...","target":"...","replacement":"..."}],"validation_commands":["pytest -q ..."]}\n'
+        '{"summary":"...","confidence":"low|medium|high","operations":[{"action":"patch",'
+        '"path":"...","target":"...","replacement":"..."}],'
+        '"validation_commands":["pytest -q ..."]}\n'
         "Kurallar:\n"
         f"- Yalnızca şu kapsam içindeki dosyaları değiştir: {', '.join(scope_paths) or '-'}\n"
         "- Sadece `patch` aksiyonu üret; dosyayı tamamen yeniden yazma.\n"

@@ -24,9 +24,9 @@ def pgvector_failure_action_message(exc: BaseException) -> str:
     diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
     if "yetki/parola" in diagnosis:
         return (
-            "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL "
-            "ve POSTGRES_PASSWORD değerleriyle parola/yetki ayarlarını "
-            f"kontrol edin. Teşhis: {diagnosis}."
+            "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, "
+            "SIDAR_CONTAINER_DATABASE_URL ve POSTGRES_PASSWORD değerleriyle parola/yetki "
+            f"ayarlarını kontrol edin. Teşhis: {diagnosis}."
         )
     return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
 
@@ -185,7 +185,8 @@ def upsert_pgvector_chunks(
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                    " AND session_id = :session_id"
                 ),
                 {"parent_id": parent_id, "session_id": session_id},
             )
@@ -236,7 +237,8 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
+                    " AND session_id = :session_id"
                 ),
                 {"parent_id": parent_id, "session_id": session_id},
             )

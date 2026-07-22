@@ -37,7 +37,8 @@ def build_pytest_preflight_command(manager: Any, command: str) -> str:
             "fi",
             "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv "
             "bootstrap başarısız. '"
-            "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
+            "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına "
+            "ayarlayın '"
             "'ya da uv sync --frozen --all-extras ile .venv hazırlayın.' >&2",
             "exit 127",
         ]
@@ -50,7 +51,8 @@ def build_shell_preflight_command(manager: Any, command: str) -> str:
         return cast(str, manager._build_pytest_preflight_command(command))
 
     preflight = [
-        "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
+        "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:"
+        "/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
     ]
     if manager._command_requires_uv_tooling(command):
         preflight.extend(

@@ -122,7 +122,9 @@ def build_summary(args: list[str]) -> dict[str, object]:
             "file": benchmark_baseline_file or None,
             "selector": benchmark_compare_selector or None,
             "json_output": benchmark_json_output,
-            "local_seed_command": "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all",
+            "local_seed_command": (
+                "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+            ),
             "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
             "ci_fail_closed": True,
         },
@@ -131,7 +133,10 @@ def build_summary(args: list[str]) -> dict[str, object]:
             "status": production_readiness_status,
             "reason": production_readiness_reason,
             "required_command": "make production-readiness",
-            "equivalent_direct_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+            "equivalent_direct_command": (
+                "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+                "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+            ),
             "validation_class": validation_class,
             "release_blocking": release_blocking == "true",
             "release_gate_exit_code": _safe_int(release_gate_exit_code),

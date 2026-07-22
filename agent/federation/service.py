@@ -55,14 +55,20 @@ def trigger_to_prompt(trigger: Any) -> str:
         event_name = str(trigger.get("event_name", "event"))
         payload = dict(trigger.get("payload", {}) or {})
         source = str(trigger.get("source", "external"))
-        return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+        return (
+            f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\n"
+            f"payload={json.dumps(payload, ensure_ascii=False)}"
+        )
     to_prompt = getattr(trigger, "to_prompt", None)
     if callable(to_prompt):
         return str(to_prompt())
     event_name = str(getattr(trigger, "event_name", "event"))
     source = str(getattr(trigger, "source", "external"))
     payload = trigger_payload(trigger)
-    return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+    return (
+        f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\n"
+        f"payload={json.dumps(payload, ensure_ascii=False)}"
+    )
 
 
 def build_federation_task_prompt(trigger: Any, payload_dict: dict[str, Any]) -> str:

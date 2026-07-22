@@ -294,7 +294,8 @@ class TodoManager:
 
         lines = ["📋 Görev Listesi"]
         lines.append(
-            f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} | ✅ Tamamlanan: {len(completed)}"
+            f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} "
+            f"| ✅ Tamamlanan: {len(completed)}"
         )
         lines.append("")
 
@@ -384,7 +385,10 @@ class TodoManager:
     def scan_project_todos(
         self, directory: str | None = None, extensions: list[str] | None = None
     ) -> str:
-        """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarayarak TODO ve FIXME etiketlerini bulur."""
+        """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarar.
+
+        TODO ve FIXME etiketlerini bulur.
+        """
         import os
 
         try:
