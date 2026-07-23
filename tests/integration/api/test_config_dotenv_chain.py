@@ -36,6 +36,11 @@ def test_production_explicit_dotenv_satisfies_critical_keys_when_sidar_keys_file
                 "API_KEY=api-from-explicit-dotenv",
                 "MEMORY_ENCRYPTION_KEY=memory-key-from-explicit-dotenv",
                 "DATABASE_URL=postgresql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!@db.example.test:5432/sidar",
+                "AUTONOMY_WEBHOOK_SECRET=Wh9kL2pQ7xR4tN8vB3fH6mC1yD5sJ0aZ-prod",
+                "SWARM_FEDERATION_SHARED_SECRET=Fz3xK8pL1mN6vQ9rT4hB7cY2dS5jW0aE-prod",
+                "GITHUB_WEBHOOK_SECRET=Gh4tR9nM2xL7vP5kQ8hC1yB6dW3sJ0aF-prod",
+                "GRAFANA_ADMIN_PASSWORD=Gr7nQ2xL9mP4vK6tH8cY1bD3sW5jF0aZ-prod",
+                "METRICS_TOKEN=Mt5xK8nQ2mL7vP4tR9hC1yB6dW3sJ0aF-prod",
                 f"AI_PROVIDER={provider}",
                 f"{provider_key}={provider_value}",
                 "",
@@ -85,7 +90,7 @@ print(json.dumps({
 
 @pytest.mark.integration
 def test_reload_dotenv_chain_applies_full_five_layer_precedence(
-    monkeypatch, tmp_path: Path
+    monkeypatch, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     """Exercise base -> advanced -> environment -> explicit -> secret dotenv precedence."""
     import config
@@ -101,7 +106,9 @@ def test_reload_dotenv_chain_applies_full_five_layer_precedence(
     )
     explicit_env = tmp_path / "explicit.env"
     explicit_env.write_text("CHAIN_VALUE=explicit\nEXPLICIT_ONLY=explicit-only\n", encoding="utf-8")
-    secret_env = tmp_path / "secret.env"
+    # SIDAR_KEYS_FILE must resolve outside BASE_DIR (repo-local secret overlays
+    # are rejected), so the secret dotenv lives in a separate temp directory.
+    secret_env = tmp_path_factory.mktemp("secret-overlay") / "secret.env"
     secret_env.write_text("CHAIN_VALUE=secret\nSECRET_ONLY=secret-only\n", encoding="utf-8")
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)

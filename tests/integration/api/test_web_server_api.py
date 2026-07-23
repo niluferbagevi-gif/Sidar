@@ -463,7 +463,12 @@ def test_chat_websocket_rate_limit_and_cancel_paths(monkeypatch: pytest.MonkeyPa
 
     limiter = {"calls": 0}
 
-    async def _rate_limit_once(*_args, **_kwargs):
+    async def _rate_limit_once(namespace, *_args, **_kwargs):
+        # Only the per-message ("chat_ws") bucket should be rate-limited here;
+        # the pre-accept connection bucket ("ws_connect") must stay open so
+        # the websocket handshake below succeeds.
+        if namespace != "chat_ws":
+            return False
         limiter["calls"] += 1
         return limiter["calls"] == 1
 

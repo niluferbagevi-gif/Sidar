@@ -1,3 +1,4 @@
+import uuid
 from pathlib import Path
 from time import time
 
@@ -13,9 +14,13 @@ from web_server import app
 def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
     secret = "integration-jwt-secret-at-least-32-bytes"
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", secret)
+    # The real auth flow always mints UUID user ids (core/db/helpers.new_entity_id);
+    # basic_auth_middleware persists this id via set_active_user against the real
+    # Postgres-backed users table, whose id column is UUID-typed, so a non-UUID
+    # subject would fail with an unrelated asyncpg DataError before the admin check.
     token = jwt.encode(
         {
-            "sub": "regular-user",
+            "sub": str(uuid.uuid4()),
             "username": "regular",
             "role": "user",
             "tenant_id": "default",
