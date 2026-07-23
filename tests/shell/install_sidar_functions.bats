@@ -1918,6 +1918,18 @@ EOF
     cat > "$tmpdir/.env" <<EOF
 SIDAR_ENV=development
 EOF
+    # production_secret_rotation_gate_passes requires every rotation key to have
+    # a non-empty .env.production value that differs from the (unset) .env value.
+    cat > "$tmpdir/.env.production" <<EOF
+API_KEY=prod-only-api-key-value-1
+JWT_SECRET_KEY=prod-only-jwt-key-value-1
+MEMORY_ENCRYPTION_KEY=prod-only-mem-key-value-1
+AUTONOMY_WEBHOOK_SECRET=prod-only-autonomy-value-1
+SWARM_FEDERATION_SHARED_SECRET=prod-only-swarm-value-1
+GITHUB_WEBHOOK_SECRET=prod-only-github-value-1
+GRAFANA_ADMIN_PASSWORD=prod-only-grafana-value-1
+METRICS_TOKEN=prod-only-metrics-value-1
+EOF
     AUTO_ENV_TYPE=production
     NO_INTERACTION=true
     summary_production_ready=false
@@ -1947,7 +1959,7 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
-  [[ "$output" == *"production-readiness gate ve migration doğrulaması tamamlandı"* ]]
+  [[ "$output" == *"production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı"* ]]
 }
 
 @test "production gate failure does not leave .env in production mode" {
