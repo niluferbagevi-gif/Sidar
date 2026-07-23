@@ -464,8 +464,10 @@ def test_chat_websocket_rate_limit_and_cancel_paths(monkeypatch: pytest.MonkeyPa
     limiter = {"calls": 0}
 
     async def _rate_limit_once(*_args, **_kwargs):
+        # Call #1 is the pre-accept connection guard (must allow the connect);
+        # call #2 is the "rate-limited" chat message this test exercises.
         limiter["calls"] += 1
-        return limiter["calls"] == 1
+        return limiter["calls"] == 2
 
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve)
