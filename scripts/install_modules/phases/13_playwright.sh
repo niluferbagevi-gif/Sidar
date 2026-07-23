@@ -82,7 +82,7 @@ install_playwright_browsers() {
                 warn "Playwright apt ön tarama fallback bağımlılıkları tamamlayamadı; Playwright install-deps doğrulaması denenecek."
             fi
             if _try_playwright_install_deps; then
-                grep -vE "$_pw_apt_noise_regex" \
+                grep -vE "$_pw_browser_noise_regex" \
                     "$_pw_install_log" || true
                 if playwright_linux_dependencies_ready; then
                     ok "Playwright Chromium sistem bağımlılıkları install-deps ile doğrulandı."
@@ -188,11 +188,9 @@ PY_PLAYWRIGHT_VERSION
                         else
                             warn "Playwright upgrade fallback (uv add --dev \"${_pw_python_spec}\") başarısız oldu. Sonra manuel kurulum deneyin: uv run python -m playwright install chromium"
                         fi
-                    elif is_playwright_ubuntu_override_recommended "$_pw_os_release_path"; then
-                        info "Kurulu Playwright paketi ${_pw_python_spec} şartını sağlıyor; Ubuntu override fallback deneniyor..."
-                        _try_playwright_last_resort_override
                     else
-                        warn "Playwright binary fallback kurulumu başarısız oldu. Manuel deneyin: uv run python -m playwright install chromium"
+                        info "Kurulu Playwright paketi ${_pw_python_spec} şartını zaten sağlıyor; gereksiz uv add upgrade fallback atlanıyor. Son çare OS override fallback deneniyor..."
+                        _try_playwright_last_resort_override
                     fi
                 fi
             fi

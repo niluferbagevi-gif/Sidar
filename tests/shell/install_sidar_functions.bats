@@ -1918,6 +1918,16 @@ EOF
     cat > "$tmpdir/.env" <<EOF
 SIDAR_ENV=development
 EOF
+    cat > "$tmpdir/.env.production" <<EOF
+API_KEY=Kx7pQ2mR9vL4hT8nC1yB6dW3sJ0aFz-prod
+JWT_SECRET_KEY=Jt5nK8pL2mQ7vR4hC1yB6dW3sJ0aFzX9-prod
+MEMORY_ENCRYPTION_KEY=My3xQ8nL2pR7vK4hT1yB6dW9sJ0aFzC5-prod
+AUTONOMY_WEBHOOK_SECRET=Wh9kL2pQ7xR4tN8vB3fH6mC1yD5sJ0aZ-prod
+SWARM_FEDERATION_SHARED_SECRET=Fz3xK8pL1mN6vQ9rT4hB7cY2dS5jW0aE-prod
+GITHUB_WEBHOOK_SECRET=Gh4tR9nM2xL7vP5kQ8hC1yB6dW3sJ0aF-prod
+GRAFANA_ADMIN_PASSWORD=Gr7nQ2xL9mP4vK6tH8cY1bD3sW5jF0aZ-prod
+METRICS_TOKEN=Mt5xK8nQ2mL7vP4tR9hC1yB6dW3sJ0aF-prod
+EOF
     AUTO_ENV_TYPE=production
     NO_INTERACTION=true
     summary_production_ready=false
@@ -1947,7 +1957,7 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
-  [[ "$output" == *"production-readiness gate ve migration doğrulaması tamamlandı"* ]]
+  [[ "$output" == *"production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı"* ]]
 }
 
 @test "production gate failure does not leave .env in production mode" {
