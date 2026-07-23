@@ -1195,6 +1195,46 @@ async def test_attempt_autonomous_self_heal_short_circuits_on_mechanical_autofix
     agent._execute_self_heal_plan.assert_not_awaited()
 
 
+async def test_attempt_autonomous_self_heal_lazy_inits_attempts_registry_when_missing(
+    sidar_agent_factory,
+) -> None:
+    """`_self_heal_attempts` __init__ içinde her zaman set edilir; bu test o özniteliği
+    hiç görmemiş "temiz" bir örnekle circuit-breaker akışının hâlâ lazy-init
+    fallback'ini (agent/sidar_agent.py:797-798) tetiklediğini doğrular."""
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    del agent._self_heal_attempts
+    assert not hasattr(agent, "_self_heal_attempts")
+    agent._attempt_mechanical_autofix = AsyncMock(
+        return_value={
+            "status": "applied",
+            "summary": "ruff --fix uygulandı",
+            "commands_run": ["uv run ruff check --fix ."],
+        }
+    )
+    agent._build_self_heal_plan = AsyncMock()
+    agent._execute_self_heal_plan = AsyncMock()
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [
+                {"name": "patch", "status": "planned", "detail": ""},
+                {"name": "validate", "status": "planned", "detail": ""},
+                {"name": "handoff", "status": "planned", "detail": ""},
+            ],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == "applied"
+    assert agent._self_heal_attempts == {}
+
+
 async def test_attempt_autonomous_self_heal_marks_human_intervention_after_retry_exhaustion(
     sidar_agent_factory,
 ) -> None:
