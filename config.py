@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 import config_autonomy
 import config_gpu
@@ -306,17 +306,6 @@ class DotenvReloadPlan(BaseModel):
     explicit_path: str = ""
     sidar_keys_file: str = "~/.sidar_keys.env"
     skip_default_layers: bool = False
-    labels: tuple[str, ...] = Field(
-        default=(
-            "base",
-            "advanced",
-            "environment",
-            "explicit:DOTENV_FILE",
-            "secret:SIDAR_KEYS_FILE",
-        ),
-        min_length=5,
-        max_length=5,
-    )
 
     @field_validator("profile")
     @classmethod
