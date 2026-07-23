@@ -1,4 +1,3 @@
-import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { visualizer } from "rollup-plugin-visualizer";
@@ -79,11 +78,6 @@ export function createSidarProxyConfig(
 export default defineConfig(() => {
   return {
     plugins: [react(), ...createBundleAnalysisPlugins()],
-    resolve: {
-      alias: {
-        "react-router-dom": path.resolve(__dirname, "src/lib/routerShim.jsx"),
-      },
-    },
     optimizeDeps: {
       entries: [
         "index.html",
