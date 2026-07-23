@@ -433,6 +433,48 @@ def test_external_publication_is_blocked_when_hitl_rejects(poyraz_module, fake_c
     assert gate.calls[0]["payload"] == {"to": "905551112233"}
 
 
+def test_publish_social_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
+    agent = _agent(poyraz_module, fake_cfg)
+    gate = DummyHITLGate(approved=False)
+    monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
+
+    result = asyncio.run(
+        agent._tool_publish_social(
+            json.dumps(
+                {
+                    "platform": "instagram",
+                    "text": "hello",
+                    "destination": "sidar",
+                    "media_url": "",
+                    "link_url": "",
+                }
+            )
+        )
+    )
+
+    assert "[PUBLICATION:BLOCKED]" in result
+    assert "hitl_rejected_or_timeout" in result
+    assert agent.social.calls == []
+    assert gate.calls[0]["action"] == "social_publish"
+    assert gate.calls[0]["payload"] == {"platform": "instagram", "destination": "sidar"}
+
+
+def test_publish_instagram_post_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
+    agent = _agent(poyraz_module, fake_cfg)
+    gate = DummyHITLGate(approved=False)
+    monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
+
+    result = asyncio.run(
+        agent._tool_publish_instagram_post(json.dumps({"caption": "cap", "image_url": "img"}))
+    )
+
+    assert "[PUBLICATION:BLOCKED]" in result
+    assert "hitl_rejected_or_timeout" in result
+    assert agent.social.calls == []
+    assert gate.calls[0]["action"] == "instagram_publish"
+    assert gate.calls[0]["payload"] == {"image_url": "img"}
+
+
 def test_publish_social_invalid_json(poyraz_module, fake_cfg):
     agent = _agent(poyraz_module, fake_cfg)
 
