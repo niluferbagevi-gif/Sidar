@@ -780,9 +780,29 @@ def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_a
     )
     fake_curl.chmod(0o755)
 
+    # resolve_github_ref_commit_sha() prefers `git ls-remote` over the GitHub
+    # REST API to avoid burning the shared anonymous API quota. This test
+    # targets the API fallback specifically, so `git` must be made to fail
+    # here (a real git binary would otherwise reach the real GitHub repo over
+    # the network and resolve the ref itself, short-circuiting the fake curl
+    # mock below). The fallback also requires a token-shaped GITHUB_TOKEN
+    # before it will shell out to curl at all.
+    fake_git = bin_dir / "git"
+    fake_git.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            exit 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+
     env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "GITHUB_TOKEN": "testtoken0123456789",
     }
     quoted_standalone = shlex.quote(str(standalone))
     result = subprocess.run(
