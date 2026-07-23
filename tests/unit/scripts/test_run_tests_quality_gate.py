@@ -4567,8 +4567,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}"
-        in ci
+        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "${{ github.ref_name }}-${{ github.run_id }}" in ci
     )
     assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-" not in ci
     assert "Report benchmark baseline availability" in ci
@@ -4620,8 +4620,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}"
-        in seed_workflow
+        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
     )
     assert "Benchmark baseline seed" in readme
     assert ".github/workflows/benchmark-baseline-seed.yml" in readme

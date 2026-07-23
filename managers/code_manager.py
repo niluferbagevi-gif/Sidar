@@ -4,6 +4,7 @@ Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL)
 Sürüm: 2.7.0
 """
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -351,7 +352,7 @@ class CodeManager:
     ) -> tuple[bool, str]:
         """Require human approval before overwriting an existing file."""
         target = Path(path)
-        if target.exists():
+        if await asyncio.to_thread(target.exists):
             approved = await get_hitl_gate().request_approval(
                 action="file_overwrite",
                 description=f"Dosyanın üzerine yazılacak: {target}",
@@ -524,7 +525,8 @@ class CodeManager:
                 )
             except Exception as cli_exc:
                 logger.error(
-                    "Docker SDK ve CLI sandbox çalıştırması başarısız; host fallback reddedildi: %s",
+                    "Docker SDK ve CLI sandbox çalıştırması başarısız; "
+                    "host fallback reddedildi: %s",
                     cli_exc,
                 )
                 return False, (
