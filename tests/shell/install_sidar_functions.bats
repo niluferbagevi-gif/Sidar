@@ -266,7 +266,7 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "install_playwright_browsers skips uv add when installed Playwright satisfies the repo spec" {
+@test "install_playwright_browsers skips uv add and reports manual fallback when installed Playwright already satisfies the spec on a non-Ubuntu host" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
@@ -281,14 +281,7 @@ printf "%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" >> "$tmpdir/py
 case "\$*" in
   "-c import playwright") exit 0 ;;
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
-  "-m playwright install chromium")
-    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then
-      echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
-      exit 0
-    fi
-    echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
-    exit 1
-    ;;
+  "-m playwright install chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install-deps chromium") exit 0 ;;
   "- playwright>=1.60,<1.62") exit 1 ;;
 esac
@@ -307,13 +300,19 @@ EOF
 
     install_playwright_browsers
 
+    # Debian is not an is_playwright_ubuntu_override_recommended host, so the
+    # already-satisfies-spec case has no override fallback to fall through to
+    # (unlike Ubuntu 25+) -- it must skip the needless uv add and surface
+    # manual instructions instead, without ever depending on the exact CLI
+    # error text (see test_playwright_install_fallback_does_not_depend_on_cli_error_text).
     [[ ! -e "$tmpdir/uv-called" ]]
     grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
-  [[ "$output" == *"OS override fallback ile tamamlandı"* ]]
-  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
+  [[ "$output" == *"Çıktı metninden bağımsız fallback: yalnızca Chromium binary kurulumu deneniyor"* ]]
+  [[ "$output" == *"Playwright binary fallback kurulumu başarısız oldu. Manuel deneyin"* ]]
+  [[ "$output" != *"gereksiz uv add upgrade fallback atlanıyor"* ]]
+  [[ "$output" != *"OS override fallback ile tamamlandı"* ]]
 }
 
 @test "install_playwright_browsers upgrades outdated Playwright with the repo spec" {
