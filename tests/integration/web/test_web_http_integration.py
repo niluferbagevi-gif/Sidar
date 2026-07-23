@@ -15,7 +15,7 @@ def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", secret)
     token = jwt.encode(
         {
-            "sub": "regular-user",
+            "sub": "11111111-1111-4111-8111-111111111111",
             "username": "regular",
             "role": "user",
             "tenant_id": "default",

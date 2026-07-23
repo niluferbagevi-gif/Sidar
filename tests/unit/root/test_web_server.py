@@ -920,12 +920,14 @@ def test_socket_key_and_participant_serialization():
 
 
 def test_build_user_from_jwt_payload_defaults_and_missing_values():
+    valid_sub = "33333333-3333-4333-8333-333333333333"
     assert (
-        web_server._build_user_from_jwt_payload({"sub": "1", "username": "ada"}).tenant_id
+        web_server._build_user_from_jwt_payload({"sub": valid_sub, "username": "ada"}).tenant_id
         == "default"
     )
     assert web_server._build_user_from_jwt_payload({"sub": "", "username": "ada"}) is None
-    assert web_server._build_user_from_jwt_payload({"sub": "1", "username": ""}) is None
+    assert web_server._build_user_from_jwt_payload({"sub": valid_sub, "username": ""}) is None
+    assert web_server._build_user_from_jwt_payload({"sub": "1", "username": "ada"}) is None
 
 
 def test_get_jwt_secret_fails_closed_instead_of_dev_fallback(monkeypatch):
@@ -944,12 +946,17 @@ async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
     encoded = jwt.encode(
-        {"sub": "42", "username": "lin", "role": "admin", "tenant_id": "t1"},
+        {
+            "sub": "44444444-4444-4444-8444-444444444444",
+            "username": "lin",
+            "role": "admin",
+            "tenant_id": "t1",
+        },
         "s3cr3t-key-32-bytes-minimum-value",
         algorithm="HS256",
     )
     user = await web_server._resolve_user_from_token(None, encoded)
-    assert user.id == "42"
+    assert user.id == "44444444-4444-4444-8444-444444444444"
     assert user.username == "lin"
 
     class _DB:

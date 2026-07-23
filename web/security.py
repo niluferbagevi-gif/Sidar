@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hmac
 import re
+import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -44,13 +45,28 @@ def extract_ws_header_token(
     return "", accept_subprotocol
 
 
+def is_valid_user_id(value: str) -> bool:
+    """Return whether a claimed user id is a syntactically valid UUID.
+
+    ``users.id`` is a UUID column in PostgreSQL, so an unvalidated JWT ``sub``
+    claim (e.g. from a hand-crafted or externally-issued token) can reach
+    asyncpg as a non-UUID string and raise ``DataError`` deep inside a DB
+    call instead of failing auth cleanly. Reject it here, before any DB call.
+    """
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
     """Build the lightweight request user object from validated JWT claims."""
     user_id = str(payload.get("sub", "") or "").strip()
     username = str(payload.get("username", "") or "").strip()
     role = str(payload.get("role", "user") or "user").strip() or "user"
     tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
-    if not user_id or not username:
+    if not user_id or not username or not is_valid_user_id(user_id):
         return None
     return SimpleNamespace(id=user_id, username=username, role=role, tenant_id=tenant_id)
 

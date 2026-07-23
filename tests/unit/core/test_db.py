@@ -1010,6 +1010,18 @@ async def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database) -
 
 
 @pytest.mark.asyncio
+async def test_verify_auth_token_rejects_non_uuid_sub_without_reaching_db(
+    sqlite_db: Database,
+) -> None:
+    """users.id is a UUID column in PostgreSQL; a non-UUID sub must fail auth here."""
+    payload = {"sub": "regular-user", "role": "user", "username": "x", "tenant_id": "default"}
+    token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
+
+    assert sqlite_db.verify_auth_token(token) is None
+    assert await sqlite_db.get_user_by_token(token) is None
+
+
+@pytest.mark.asyncio
 async def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path) -> None:
     cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'ac.db'}", BASE_DIR=str(tmp_path))
     db = Database(cfg)
@@ -2575,8 +2587,9 @@ def test_expires_in_uses_default_days_when_no_argument() -> None:
 async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
     sqlite_db: Database,
 ) -> None:
+    missing_user_id = "55555555-5555-4555-8555-555555555555"
     token = await sqlite_db.create_auth_token(
-        user_id="missing-user",
+        user_id=missing_user_id,
         role="analyst",
         username="jwt-only",
         tenant_id="tenant-z",
@@ -2585,7 +2598,7 @@ async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
 
     resolved = await sqlite_db.get_user_by_token(token.token)
     assert resolved is not None
-    assert resolved.id == "missing-user"
+    assert resolved.id == missing_user_id
     assert resolved.username == "jwt-only"
     assert resolved.role == "analyst"
     assert resolved.tenant_id == "tenant-z"

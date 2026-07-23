@@ -80,14 +80,19 @@ def test_get_jwt_secret_fails_closed_instead_of_dev_fallback() -> None:
 async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> None:
     logger = _Logger()
     token = jwt.encode(
-        {"sub": "42", "username": "ada", "role": "admin", "tenant_id": "team"},
+        {
+            "sub": "22222222-2222-4222-8222-222222222222",
+            "username": "ada",
+            "role": "admin",
+            "tenant_id": "team",
+        },
         _Config.JWT_SECRET_KEY,
         algorithm=_Config.JWT_ALGORITHM,
     )
 
     user = await security.resolve_user_from_token(None, token, config=_Config, logger_obj=logger)
 
-    assert user.id == "42"
+    assert user.id == "22222222-2222-4222-8222-222222222222"
     assert user.username == "ada"
     assert user.role == "admin"
     assert user.tenant_id == "team"
@@ -106,6 +111,28 @@ async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> Non
         await security.resolve_user_from_token(agent, "missing", config=_Config, logger_obj=logger)
         is None
     )
+
+
+def test_is_valid_user_id_accepts_uuids_and_rejects_everything_else() -> None:
+    assert security.is_valid_user_id("22222222-2222-4222-8222-222222222222") is True
+    assert security.is_valid_user_id("regular-user") is False
+    assert security.is_valid_user_id("42") is False
+    assert security.is_valid_user_id("") is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_from_token_rejects_non_uuid_sub_without_reaching_db() -> None:
+    """A JWT with a non-UUID sub must fail auth instead of reaching a DB lookup."""
+    logger = _Logger()
+    token = jwt.encode(
+        {"sub": "regular-user", "username": "regular", "role": "user", "tenant_id": "default"},
+        _Config.JWT_SECRET_KEY,
+        algorithm=_Config.JWT_ALGORITHM,
+    )
+
+    user = await security.resolve_user_from_token(None, token, config=_Config, logger_obj=logger)
+
+    assert user is None
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -886,6 +887,13 @@ class Database(DatabaseConnectionMixin):
         username = str(payload.get("username", "") or "").strip()
         tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
         if not user_id or not role:
+            return None
+        try:
+            uuid.UUID(user_id)
+        except (ValueError, AttributeError, TypeError):
+            # users.id is a UUID column in PostgreSQL; an unvalidated sub claim
+            # here would otherwise reach asyncpg as a non-UUID string and raise
+            # DataError deep inside _get_user_by_id instead of failing auth.
             return None
 
         return UserRecord(
