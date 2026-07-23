@@ -6,7 +6,6 @@ SIDAR_INSTALL_UTIL_ENV_UTILS_SH_LOADED=1
 # Functional install helpers for the phase-based Sidar installer.
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
-umask 077
 
 read_env_value_from_file() {
     local key="$1"
@@ -56,6 +55,16 @@ sync_database_env_chain_after_setup() {
 
 setup_env_file() {
     step ".env Yapılandırması"
+    # umask sadece bu fonksiyonun ürettiği/dokunduğu secret içerikli dosyalarla
+    # sınırlı tutulur; process genelinde kalıcı olarak değiştirilmez (önceki
+    # davranışta modülün source edilmesi tüm sonraki dosya oluşturma
+    # işlemlerini de etkiliyordu). Hassas dosyalar zaten explicit
+    # install -m 600 / chmod 600 ile korunuyor; bu yalnız ek bir güvenlik ağı.
+    local _sidar_prev_umask
+    _sidar_prev_umask="$(umask)"
+    umask 077
+    trap 'umask "$_sidar_prev_umask"' RETURN
+
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 

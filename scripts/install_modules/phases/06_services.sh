@@ -1055,6 +1055,7 @@ ensure_env_test_postgres_password_matches_base_before_smoke() {
 
     if [[ ! -f "$test_env_file" && -f "$test_example_file" ]]; then
         cp "$test_example_file" "$test_env_file"
+        chmod 600 "$test_env_file" 2>/dev/null || true
         ok ".env.test dosyası smoke guard için .env.test.example üzerinden oluşturuldu."
     fi
 
@@ -1076,6 +1077,7 @@ ensure_env_test_postgres_password_matches_base_before_smoke() {
     if [[ "$test_password" != "$base_password" ]]; then
         if [[ ! -f "$test_env_file" ]]; then
             : > "$test_env_file"
+            chmod 600 "$test_env_file" 2>/dev/null || true
         fi
         sed_inplace '/^POSTGRES_PASSWORD=/d' "$test_env_file"
         echo "POSTGRES_PASSWORD=${base_password}" >> "$test_env_file"

@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="1bd246e661c0f4f0e87fe7aeaee8815075c86b16"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="faa3f6999dc17ab2ac184823bb99e72c5ba0dc1a"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -216,20 +216,23 @@ sidar_detect_early_offline_mode() {
 
 sidar_detect_early_offline_mode "$@" || true
 
-if ! declare -F compute_sha256 >/dev/null 2>&1; then
-    compute_sha256() {
-        local file_path="$1"
-        if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "$file_path" | awk '{print $1}'
-            return 0
-        fi
-        if command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "$file_path" | awk '{print $1}'
-            return 0
-        fi
-        return 1
-    }
-fi
+# Tek doğruluk kaynağı: script genelindeki tüm hash-guard çağrıları bu
+# tanımı kullanır (bkz. verify_remote_install_module_hash, check_installer_hash,
+# verify_install_module_hashes_if_present). Sözleşme kasıtlı olarak non-fatal'dır
+# (return 1) — çağıranlar başarısızlığı kendi bağlamına uygun bir hata mesajıyla
+# ele alır; bu fonksiyon içeride "fail" ile script'i sonlandırmaz.
+compute_sha256() {
+    local file_path="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file_path" | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file_path" | awk '{print $1}'
+        return 0
+    fi
+    return 1
+}
 
 verify_core_install_manifest() {
     local manifest_path="${SCRIPT_DIR}/.sidar_manifest.txt"
@@ -600,22 +603,22 @@ da28d54a68a4d2d30ff539cd8d0435265fe87000e24727505b312fee79e33603  scripts/instal
 07a95b338f6b2a6f304811ed9442ce04a65936742cecd92560577450f8997289  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
-e7f820d4b649b87dca61f4fab70177917e65ba41c0f78d6ee7d82c185d82fafb  scripts/install_modules/phases/03_system.sh
+64744f2cb21c4b452b4d49a357c8b00c4fd58240727a0fc16b57176017440373  scripts/install_modules/phases/03_system.sh
 4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
-2e0fc43c0f177da51d1252e3da257025df9f5ce476f0f16324af3fbb0fb38d87  scripts/install_modules/phases/06_services.sh
+f961964e72c919aa543f23526569892bc1607936b0b3a7143838415d0b1ab60b  scripts/install_modules/phases/06_services.sh
 1d15811d323818d868d273f719178a04e37ad953c76e4ab62b08dd7bac59645c  scripts/install_modules/phases/07_finish.sh
-4b2490f384a4e84486472be175b7860cee95a7faa63c4ad9b71d9b4301bb9827  scripts/install_modules/phases/08_env.sh
+e48ce8ff6ae122ecbef944ab4af1eaa4e26dd095632a26bce76a25a2276635da  scripts/install_modules/phases/08_env.sh
 3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
 03d9297bf0326f953e2b036a496d181be3868c7cd1afdebfb1f8a8bac104581a  scripts/install_modules/phases/10_validation.sh
 d75380e5a3cf44b35f6fc894a41c774a1e3afd2b0eb0735aa8b75a754d5d58db  scripts/install_modules/phases/11_post_install.sh
 bdebacb1fac3f4d6c3f6caee6042ecf8a71d092de7012c6e13853bae0789b03e  scripts/install_modules/phases/12_alembic.sh
 a9df72849a86015dfbf90a3f6d096d14b8f2071e054b9a1600689ffc272312c9  scripts/install_modules/phases/13_playwright.sh
 d154b3e6b9f3ec882f9563538f6c5283708c2ed3c5dfa3cebfbf3c308b685431  scripts/install_modules/phases/14_react.sh
-7069d4012443aa6986d2ef6d56fa5c7e13cd2b1edb0bd226792cba8f2085aa14  scripts/install_modules/utils/database_url.sh
+ce4982febe7f9d7ab21776e8c584721cfdd7ed46bc299061d670d3790f663795  scripts/install_modules/utils/database_url.sh
 642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
-785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
-831b5aa53053588259b7825f7f6391e37281d04f76baf5be842d5d255b1538c5  scripts/install_modules/utils/env_utils.sh
+72f5f81bbca80315af43d3ae9989667c6e12419cf84b3dd88ebbfd9e0e8d949e  scripts/install_modules/utils/env_secrets.sh
+ce927191a137d6acbfa351976aa08f9c5184acbe9baa84e84ebe327909a98639  scripts/install_modules/utils/env_utils.sh
 2e0cb7e3618a2312b26042f59fd035852436caef0c60ea56b82c14969e86426f  scripts/install_modules/utils/gpu_utils.sh
 9e1534740edec9c8abfca8bff06ca0e7d48ec6cfa16ba4ac2165f8d12ba72872  scripts/install_modules/utils/install_remediation.sh
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
@@ -672,7 +675,7 @@ verify_remote_install_module_hash() {
         fail "Fallback modül hash manifestinde kayıt yok: ${module_rel}. Defense-in-depth gereği doğrulamasız modül yüklenemez."
     fi
 
-    actual_hash="$(compute_sha256 "$downloaded_file")"
+    actual_hash="$(compute_sha256 "$downloaded_file" 2>/dev/null || echo "<sha256-hesaplanamadı>")"
     if [[ "$actual_hash" == "$expected_hash" ]]; then
         return 0
     fi
@@ -1591,7 +1594,7 @@ verify_install_module_hashes_if_present() {
             mismatched_files+=("${rel_path} (eksik dosya)")
             continue
         fi
-        actual="$(compute_sha256 "$target")"
+        actual="$(compute_sha256 "$target" 2>/dev/null || echo "<sha256-hesaplanamadı>")"
         if [[ "$actual" != "$expected" ]]; then
             warn "Hash uyuşmazlığı: ${rel_path} (beklenen=${expected}, mevcut=${actual})"
             failures=$((failures + 1))
@@ -1823,16 +1826,10 @@ relocate_log_file_if_needed() {
 # shellcheck disable=SC2154
 trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; if declare -F sidar_phase06_cleanup_pre_service_smoke_log >/dev/null 2>&1; then sidar_phase06_cleanup_pre_service_smoke_log || true; fi; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
 
-compute_sha256() {
-    local file_path="$1"
-    if command -v sha256sum &>/dev/null; then
-        sha256sum "$file_path" | awk '{print $1}'
-    elif command -v shasum &>/dev/null; then
-        shasum -a 256 "$file_path" | awk '{print $1}'
-    else
-        fail "SHA256 doğrulaması için sha256sum/shasum bulunamadı."
-    fi
-}
+# NOT: compute_sha256 tek tanım noktası satır ~219'dadır (bu script henüz erken
+# bootstrap aşamasındayken de kullanılabilmesi için orada tanımlanır). Burada
+# ikinci bir tanım eklenmemelidir — aksi halde hash-guard davranışı sessizce
+# değişebilir (bkz. install güvenlik incelemesi).
 
 # ── İndirme / Docker CLI / WSL path yardımcıları ─────────────────────────────
 # Remote script, Docker CLI ve Windows path yardımcıları scripts/install_modules/phases/03_system.sh içinden yüklenir.

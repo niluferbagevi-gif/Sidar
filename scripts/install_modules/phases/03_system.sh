@@ -293,10 +293,12 @@ persist_run_gpu_stress_dotenv() {
     if [[ ! -f "$target_env_file" ]]; then
         if [[ -f "$example_env_file" ]]; then
             cp "$example_env_file" "$target_env_file"
+            chmod 600 "$target_env_file" 2>/dev/null || true
             ok "${target_label} dosyası $(basename "$example_env_file") üzerinden RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
         else
             mkdir -p "$(dirname "$target_env_file")"
             : > "$target_env_file"
+            chmod 600 "$target_env_file" 2>/dev/null || true
             ok "${target_label} dosyası RUN_GPU_STRESS senkronizasyonu için oluşturuldu."
         fi
     fi

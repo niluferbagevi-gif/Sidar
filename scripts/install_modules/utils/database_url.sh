@@ -136,6 +136,7 @@ sync_postgres_env_variants_with_source() {
         if [[ ! -f "$target" ]]; then
             if [[ -n "$example" && -f "$example" ]]; then
                 cp "$example" "$target"
+                chmod 600 "$target" 2>/dev/null || true
                 ok "$(basename "$target") dosyası $(basename "$example") üzerinden oluşturuldu."
             else
                 warn "$(basename "$target") bulunamadı; PostgreSQL credential senkronizasyonu atlandı."

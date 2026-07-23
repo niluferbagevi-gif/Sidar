@@ -717,13 +717,16 @@ ensure_env_file_secrets_after_uv_sync() {
     if [[ ! -f "$env_file" ]]; then
         if [[ -f "$example_file" ]]; then
             cp "$example_file" "$env_file"
+            chmod 600 "$env_file" 2>/dev/null || true
             ok ".env dosyası uv sync sonrası .env.example üzerinden oluşturuldu."
         else
             : > "$env_file"
+            chmod 600 "$env_file" 2>/dev/null || true
             warn ".env.example bulunamadı; boş .env oluşturuldu ve secret alanları eklenecek."
         fi
     elif [[ ! -s "$env_file" && -f "$example_file" ]]; then
         cp "$example_file" "$env_file"
+        chmod 600 "$env_file" 2>/dev/null || true
         ok "Boş .env dosyası uv sync sonrası .env.example ile dolduruldu."
     fi
 
@@ -1239,6 +1242,7 @@ prompt_post_install_sidar_env_mode() {
     if [[ ! -f "$env_file" ]]; then
         if [[ -f "$example_file" ]]; then
             cp "$example_file" "$env_file"
+            chmod 600 "$env_file" 2>/dev/null || true
             ok ".env dosyası .env.example üzerinden oluşturuldu."
         else
             warn ".env.example bulunamadı; SIDAR_ENV güncellemesi atlanıyor."
@@ -1499,6 +1503,15 @@ sync_database_env_chain_after_setup() {
 
 setup_env_file() {
     step ".env Yapılandırması"
+    # umask sadece bu fonksiyonun ürettiği/dokunduğu secret içerikli dosyalarla
+    # sınırlı tutulur; process genelinde kalıcı olarak değiştirilmez. Bu fonksiyon
+    # bazı dosyaları (ör. .env.advanced, .env) explicit mod vermeden `cp` ile
+    # oluşturduğu için izinler doğrudan bu umask'a bağlıdır.
+    local _sidar_prev_umask
+    _sidar_prev_umask="$(umask)"
+    umask 077
+    trap 'umask "$_sidar_prev_umask"' RETURN
+
     ENV_FILE="$SCRIPT_DIR/.env"
     EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
 
@@ -1546,7 +1559,7 @@ setup_env_file() {
         return
     fi
 
-    cp "$EXAMPLE_FILE" "$ENV_FILE"
+    install -m 600 "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_sidar_env_default "$ENV_FILE"
     ensure_database_url_defaults "$ENV_FILE"
