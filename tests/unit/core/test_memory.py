@@ -206,6 +206,20 @@ def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Pat
         plaintext._decrypt_content(token)
 
 
+def test_decrypt_content_raises_memory_auth_error_on_invalid_utf8(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    key = Fernet.generate_key().decode("utf-8")
+    encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+    token = encrypted._encrypt_content("saklı")
+
+    monkeypatch.setattr(encrypted._fernet, "decrypt", lambda _token: b"\xff\xfe")
+
+    with pytest.raises(MemoryAuthError, match="not valid UTF-8"):
+        encrypted._decrypt_content(token)
+
+
 def test_memory_rotation_decrypts_with_previous_key_and_encrypts_with_current(
     monkeypatch, tmp_path: Path
 ) -> None:
