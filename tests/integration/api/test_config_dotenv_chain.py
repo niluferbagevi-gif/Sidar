@@ -90,7 +90,7 @@ print(json.dumps({
 
 @pytest.mark.integration
 def test_reload_dotenv_chain_applies_full_five_layer_precedence(
-    monkeypatch, tmp_path: Path
+    monkeypatch, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     """Exercise base -> advanced -> environment -> explicit -> secret dotenv precedence."""
     import config
@@ -106,7 +106,9 @@ def test_reload_dotenv_chain_applies_full_five_layer_precedence(
     )
     explicit_env = tmp_path / "explicit.env"
     explicit_env.write_text("CHAIN_VALUE=explicit\nEXPLICIT_ONLY=explicit-only\n", encoding="utf-8")
-    secret_env = tmp_path / "secret.env"
+    # SIDAR_KEYS_FILE must resolve outside BASE_DIR (validate_secret_overlay_outside_repo),
+    # so the secret overlay lives in a sibling temp dir rather than under tmp_path/BASE_DIR.
+    secret_env = tmp_path_factory.mktemp("secret-overlay") / "secret.env"
     secret_env.write_text("CHAIN_VALUE=secret\nSECRET_ONLY=secret-only\n", encoding="utf-8")
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)
