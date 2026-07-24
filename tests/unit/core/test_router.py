@@ -330,6 +330,14 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
         assert (provider, model) == ("ollama", "llama3")
 
 
+def test_sqlite_tracker_table_name_is_validated_via_shared_identifier_helper() -> None:
+    from core.db.dialect import assert_safe_sql_identifier
+
+    assert router._SqliteDailyBudgetTracker._TABLE_NAME == assert_safe_sql_identifier(
+        "cost_routing_daily_budget"
+    )
+
+
 def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> None:
     db_path = str(tmp_path / "shared_budget.db")
     cfg = _make_config(
