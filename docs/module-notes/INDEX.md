@@ -6,8 +6,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > elle düzenlenmemelidir. Güncellemek için betiği yeniden çalıştırın.
 
 - **Proje sürümü:** 5.2.0
-- **Toplam takipli dosya:** 984
-- **Üretim Python dosyası (tests hariç):** 306
+- **Toplam takipli dosya:** 986
+- **Üretim Python dosyası (tests hariç):** 307
 - **Test dosyası (`test_*.py`):** 248
 - **Frontend dosyası (`web_ui_react/`):** 84
 - **Ayrı not üretilen kaynak sayısı:** 70

@@ -359,6 +359,9 @@ jobs:
           # a real CVE without reading the raw stderr.
           exit 1
 
+      - name: Check nosec suppression inventory ratchet
+        run: uv run python scripts/ci/check_nosec_inventory.py
+
       - name: Upload security audit artifacts
         if: always()
         uses: actions/upload-artifact@v4

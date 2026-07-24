@@ -65,7 +65,7 @@ SOURCE_OVERRIDES: dict[str, str | None] = {
 def _git_ls_files(*patterns: str) -> list[str]:
     return [
         line
-        for line in subprocess.check_output(
+        for line in subprocess.check_output(  # nosec B603 B607  # fixed git subcommand, no shell.
             ["git", "-C", str(REPO_ROOT), "ls-files", *patterns],
             text=True,
         ).splitlines()
