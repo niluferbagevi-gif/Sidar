@@ -7,15 +7,15 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-21
-> **Son Güncelleme:** 2026-03-26 (v5.1.0 belge senkronizasyonu: Faz C, D ve E kapsamındaki kod tabanı güncellemeleri rapor metniyle hizalandı.)
-> **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
-> **Proje Sürümü:** v5.1.0
-> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) ve çalışma zamanı (`config.py`) sürümü `5.1.0` olarak hizalanmıştır.
-> **İleri Yol Haritası / Faz Durumu:** Faz A, Faz B, Faz D ve Faz E ajan teslimatları belge-bazında senkronize edildi; aktif geliştirme odağı Faz E'nin YouTube/dış video ingest genişlemesi ve v5.x derinleştirme eksenidir.
+> **Son Güncelleme:** 2026-07-24 (v5.2.0 belge senkronizasyonu: sürüm/dosya envanteri güncel `pyproject.toml` ve repo durumuyla hizalandı; eski tek dosyalık `core/rag.py` ve `core/db.py` referansları güncel `core/rag/` ve `core/db/` package yapısına düzeltildi.)
+> **Önceki Güncelleme:** 2026-03-26 (v5.1.0 belge senkronizasyonu: Faz C, D ve E kapsamındaki kod tabanı güncellemeleri rapor metniyle hizalandı.)
+> **Proje Sürümü:** v5.2.0
+> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) ve çalışma zamanı (`sidar_version.py`) sürümü `5.2.0` olarak hizalanmıştır; `scripts/check_release_version_consistency.py` bu alanın (`**Proje Sürümü:**` başlığı) CI'da güncel kalmasını zorunlu kılar.
+> **İleri Yol Haritası / Faz Durumu:** Faz A, Faz B, Faz D ve Faz E ajan teslimatları belge-bazında senkronize edildi; aktif teknik borç takibi `docs/REFACTOR_PLAN.md` üzerinden yürütülür.
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile yeniden ölçülmüştür. Güncel ölçümde üretim Python hacmi **32.936** satır (**70** takipli `.py` dosyası; `tests/` hariç), test havuzu **65.729** satır (**213** `test_*.py` modülü; `tests/*.py` toplamı **215** dosya), tüm takipli Python toplamı **98.665** satır (**285** dosya) olarak doğrulanmıştır. Takipli Markdown havuzu **10.148** satır (**102** dosya), toplam ölçüm yüzeyi ise **116.053** satır (**408** dosya; `.py/.js/.css/.html/.md` kapsamı) seviyesindedir. Modern frontend tarafında `web_ui_react/` **38** takipli dosya / **10.792** satır, legacy `web_ui/` ise **7** takipli dosya / **4.769** satır üretmektedir. Bu revizyonda özellikle `main.py` launcher sertleştirmeleri, `tests/test_missing_edge_case_coverage_final.py` ile son edge-case coverage kapanışı, Faz D enterprise ölçekleme yüzeyleri (`web_ui_react/src/components/PluginMarketplacePanel.jsx`, `web_ui_react/src/components/AgentManagerPanel.jsx`, `web_ui_react/src/hooks/useWebSocket.js`, `tests/test_plugin_marketplace_hot_reload.py`, `tests/test_collaboration_workspace.py`, `tests/test_nightly_memory_maintenance.py`, `tests/test_system_health_dependency_checks.py`, `runbooks/chaos_live_rehearsal.md`) ve Faz E devreye alınan ajan yüzeyleri (`agent/roles/coverage_agent.py`, `agent/roles/poyraz_agent.py`, `agent/tooling.py`, `core/multimodal.py`, `managers/code_manager.py`, `core/db.py`) yeniden doğrulanmıştır.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları 2026-07-24 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile yeniden ölçülmüştür. Güncel ölçümde üretim Python hacmi **70.043** satır (**305** takipli `.py` dosyası; `tests/` hariç), test havuzu **111.813** satır (**247** `test_*.py` modülü; `tests/*` toplamı **300** dosya), tüm takipli Python toplamı **178.055** satır (**578** dosya) olarak doğrulanmıştır. Takipli Markdown havuzu **15.155** satır (**117** dosya), toplam ölçüm yüzeyi ise **203.213** satır (**734** dosya; `.py/.js/.css/.html/.md` kapsamı) seviyesindedir. Modern frontend tarafında `web_ui_react/` **84** takipli dosya / **24.737** satır üretmektedir; legacy `web_ui/` dizini kaldırılmıştır ve artık React SPA tek Web UI yüzeyidir. `core/db.py` ve `core/rag.py`, sırasıyla `core/db/` (20 modül) ve `core/rag/` (19 modül + `backends/` alt paketi) package facade'larına bölünmüş durumdadır; geriye dönük `from core.db import Database` ve `from core.rag import DocumentStore` importları korunur. `docs/module-notes/INDEX.md` artık `scripts/generate_module_notes_index.py` tarafından üretilir ve CI'da `--check` modunda doğrulanır, bu nedenle dosya/test envanteri elle güncellenip eskiyemez.
 
 ---
 
@@ -126,18 +126,18 @@
 - **Multi-Agent + P2P Delegasyon:** Supervisor orkestrasyonu ile görevleri uzman rollere (Coder, Researcher, Reviewer) dağıtır; `agent/core/contracts.py` ile ajanlar arası P2P görev sözleşmesi desteklenir.
 - **Dinamik Ajan Pazaryeri (Plugin Marketplace) ve Swarm API:** Çalışma zamanında yeni plugin ajanlar kayıt defterine eklenebilir; `AgentRegistry` + `SwarmOrchestrator` ile paralel veya pipeline görev akışları işletilir (`agent/registry.py`, `agent/swarm.py`).
 - **Dinamik Prompt Yönetimi (Prompt Registry):** Sistem prompt'ları statik kod yerine veritabanı destekli registry üzerinden sürümlenebilir, etkinleştirilebilir ve Admin UI üzerinden yönetilebilir.
-- **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
+- **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db/`).
 - **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`). Semantic cache hit/miss Grafana dashboard'u (`grafana/dashboards/sidar_overview.json`).
 - **Anlamsal Önbellekleme (Semantic Cache):** Redis tabanlı, cosine similarity ile benzer istemleri eşleştiren ve LRU eviction uygulayan önbellek katmanı; token maliyetini ve yanıt gecikmesini düşürür (`core/llm_client.py`).
 - **Canlı Ajan Durum Akışı (Observability):** WebSocket tabanlı event stream ile düşünce adımları, araç çağrıları ve ajan durumları Web UI'da canlı izlenir (`agent/core/event_stream.py`).
-- **Dağıtık İzlenebilirlik (Distributed Tracing):** OpenTelemetry span enstrümantasyonu ile tüm 5 LLM sağlayıcısı ve RAG akışları Jaeger/OTel Collector uyumlu biçimde uçtan uca waterfall görünümünde izlenebilir (`web_server.py`, `core/llm_client.py`, `core/rag.py`).
+- **Dağıtık İzlenebilirlik (Distributed Tracing):** OpenTelemetry span enstrümantasyonu ile tüm 5 LLM sağlayıcısı ve RAG akışları Jaeger/OTel Collector uyumlu biçimde uçtan uca waterfall görünümünde izlenebilir (`web_server.py`, `core/llm_client.py`, `core/rag/`).
 - **Admin paneli ve operasyon yüzeyi:** Legacy Web UI admin paneli toplam kullanıcı, toplam API isteği, toplam token ve kullanıcı bazlı günlük kotaları gösterir; React tarafındaki Prompt Admin/Agent Manager ekranları backend ile entegredir, `TenantAdminPanel` ise şu an örnek/demo senaryo panelidir.
-- **Tenant Bazlı RBAC ve Audit Trail:** Çok kiracılı erişim politikaları (`tenant_id`) uygulanır; tüm izin kararları audit log olarak kalıcı biçimde kaydedilir (`web_server.py`, `core/db.py`).
+- **Tenant Bazlı RBAC ve Audit Trail:** Çok kiracılı erişim politikaları (`tenant_id`) uygulanır; tüm izin kararları audit log olarak kalıcı biçimde kaydedilir (`web_server.py`, `core/db/`).
 - **QA ve Regresyon Sinyali:** Coder ajanı ile ortak çalışan, üretilen kodu test edip onaylayan/reddeden gelişmiş `ReviewerAgent` döngüsü.
 - **GitHub Entegrasyonu:** Repo analizi, branch/PR ve issue akışları `managers/github_manager.py`; GitHub release bilgileri ise `managers/package_info.py` üzerinden ajan araç setine entegredir.
 - **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
 - **Görev Takibi ve Proje Denetimi:** `managers/todo_manager.py` ile TODO yazma/okuma/güncelleme ve proje genelinde `scan_project_todos()` üzerinden TODO/FIXME taraması yapılır.
-- **RAG + Reviewer Etki Analizi (Faz B Tamamlandı):** ChromaDB veya pgvector + BM25 + keyword hibrit arama (RRF destekli) akışına ek olarak GraphRAG, modül bağımlılık grafiği taraması, bağımlılık yolu açıklaması ve reviewer kalite kapısında kullanılan etki analizi raporlarını üretir (`core/rag.py`, `agent/roles/reviewer_agent.py`).
+- **RAG + Reviewer Etki Analizi (Faz B Tamamlandı):** ChromaDB veya pgvector + BM25 + keyword hibrit arama (RRF destekli) akışına ek olarak GraphRAG, modül bağımlılık grafiği taraması, bağımlılık yolu açıklaması ve reviewer kalite kapısında kullanılan etki analizi raporlarını üretir (`core/rag/`, `agent/roles/reviewer_agent.py`).
 - **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
 - **Zero-Trust Sandbox:** Docker izolasyonuna ek olarak ağ kapatma, CPU/RAM sınırlandırma ve gVisor/Kata uyumluluğuna hazır çalışma modeliyle güvenli kod yürütme.
 - **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
@@ -193,11 +193,8 @@ Sidar/
 ├── <a href="docs/module-notes/gui_launcher.py.md">gui_launcher.py</a>            # Eel tabanlı masaüstü başlatıcı giriş noktası
 ├── <a href="docs/module-notes/Dockerfile.md">Dockerfile</a>                 # CPU + GPU çift mod Dockerfile
 ├── <a href="docs/module-notes/docker-compose.yml.md">docker-compose.yml</a>         # 7 servis (redis, sidar-ai, sidar-gpu, sidar-web, sidar-web-gpu, prometheus, grafana)
-├── <a href="docs/module-notes/environment.yml.md">environment.yml</a>            # Conda bağımlılıkları
-├── <a href="docs/module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları (-e .[rag,postgres,telemetry,dev])
 ├── uv.lock                    # uv paket yöneticisi kilit dosyası
-├── <a href="docs/module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları
-├── <a href="docs/module-notes/pytest.ini.md">pytest.ini</a>                 # Pytest konfigürasyonu
+├── <a href="docs/module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları, `[tool.pytest.ini_options]` (pytest.ini artık ayrı dosya değil)
 ├── <a href="docs/module-notes/alembic.ini.md">alembic.ini</a>                # Veritabanı geçiş (migration) ayarları
 ├── <a href="docs/module-notes/run_tests.sh.md">run_tests.sh</a>               # Kapsam ve test çalıştırıcı betik
 ├── <a href="docs/module-notes/install_sidar.sh.md">install_sidar.sh</a>           # Otomatik kurulum betiği
@@ -228,11 +225,11 @@ Sidar/
 │
 ├── core/
 │   ├── <a href="docs/module-notes/core/__init__.py.md">__init__.py</a>
-│   ├── <a href="docs/module-notes/core/db.py.md">db.py</a>                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
+│   ├── <a href="docs/module-notes/core/db.py.md">db/</a>                    # Veritabanı package facade (20 modül: monolith, auth, session, audit, marketing, ...)
 │   ├── <a href="docs/module-notes/core/llm_client.py.md">llm_client.py</a>          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
 │   ├── <a href="docs/module-notes/core/llm_metrics.py.md">llm_metrics.py</a>         # Token, maliyet ve Prometheus metrik toplayıcısı
 │   ├── <a href="docs/module-notes/core/memory.py.md">memory.py</a>              # Kalıcı çok oturumlu bellek (DB destekli)
-│   ├── <a href="docs/module-notes/core/rag.py.md">rag.py</a>                 # ChromaDB + BM25 hibrit RAG motoru
+│   ├── <a href="docs/module-notes/core/rag.py.md">rag/</a>                   # ChromaDB + BM25 + GraphRAG hibrit RAG motoru package facade (facade, store, query, graph, indexer, backends/)
 │   ├── agent_metrics.py       # Ajan bazlı metrik toplayıcı (YENİ — v3.0.x+)
 │   ├── dlp.py                 # DLP & PII maskeleme: token, key, TC kimlik no, JWT vb. (YENİ — v3.0.21+)
 │   ├── hitl.py                # Human-in-the-Loop onay geçidi: async polling, web API (YENİ — v3.0.21+)
@@ -303,13 +300,7 @@ Sidar/
 │   ├── package.json             # npm bağımlılıkları ve script'ler
 │   └── vite.config.js           # Vite build konfigürasyonu
 │
-├── web_ui/                      # Legacy / fallback Web UI
-│   ├── <a href="docs/module-notes/web_ui/index.html.md">index.html</a>
-│   ├── <a href="docs/module-notes/web_ui/style.css.md">style.css</a>
-│   ├── <a href="docs/module-notes/web_ui/chat.js.md">chat.js</a>                # WebSocket streaming, canlı durum akışı
-│   ├── <a href="docs/module-notes/web_ui/sidebar.js.md">sidebar.js</a>          # Oturum yönetimi
-│   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                  # RAG belge UI
-│   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                  # Uygulama başlatma, auth, bütçe yönetimi
+│   (legacy `web_ui/` dizini kaldırılmıştır; `web_ui_react/` artık tek Web UI yüzeyidir)
 │
 ├── grafana/                   # Grafana dashboard + provisioning (YENİ — v3.0.22+)
 │   ├── dashboards/sidar_overview.json      # Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost panelleri
@@ -319,10 +310,10 @@ Sidar/
 │   ├── check_env_parity.sh    # config.py ↔ .env.example parite doğrulama (YENİ — v3.0.21+)
 │   └── (diğer betikler — audit_metrics.sh, collect_repo_metrics.sh vb.)
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (142 test_*.py modülü / 142 tests/*.py dosyası)
+├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (247 test_*.py modülü / 300 tests/* dosyası)
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
-├── docs/                      # Proje belgeleri ve modül notları
-│   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
+├── docs/                      # Proje belgeleri, denetim raporları (AUDIT_REPORT_v*.md) ve modül notları
+│   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları; INDEX.md `scripts/generate_module_notes_index.py` ile üretilir
 ├── helm/                      # Kubernetes Helm chart (v4.3.0 gözlemlenebilirlik genişletmeleri)
 │   └── sidar/
 │       ├── Chart.yaml          # Helm chart meta verisi
@@ -341,13 +332,14 @@ Sidar/
 │           └── secret-postgresql.yaml
 ├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%90 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
-├── AUDIT_REPORT_v5.0.md       # v5.0 kurumsal geçiş + coverage kapanışı denetim raporu
+├── docs/AUDIT_REPORT_v5.0.md, v5.1.md, v5.1_COMPREHENSIVE.md, v4.0.md   # Geçmiş kurumsal denetim raporları (arşiv)
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
-├── <a href="docs/module-notes/CLAUDE.md.md">CLAUDE.md</a>                  # Geliştirici rehberi
-├── <a href="docs/module-notes/PROJE_RAPORU.md.md">PROJE_RAPORU.md</a>            # Ana mimari ve denetim raporu
+├── <a href="docs/module-notes/CLAUDE.md.md">docs/CLAUDE.md</a>             # Geliştirici rehberi
+├── <a href="docs/module-notes/PROJE_RAPORU.md.md">docs/PROJE_RAPORU.md</a>       # Ana mimari ve denetim raporu (bu dosya)
 ├── <a href="docs/module-notes/README.md.md">README.md</a>                  # Proje tanıtım ve kurulum belgesi
-├── <a href="docs/module-notes/RFC-MultiAgent.md.md">RFC-MultiAgent.md</a>          # Multi-agent mimari tasarım dokümanı
-└── <a href="docs/module-notes/SIDAR.md.md">SIDAR.md</a>                   # Sistem promptları ve proje kuralları
+├── <a href="docs/module-notes/RFC-MultiAgent.md.md">docs/RFC-MultiAgent.md</a>     # Multi-agent mimari tasarım dokümanı
+├── <a href="docs/module-notes/SIDAR.md.md">docs/SIDAR.md</a>              # Sistem promptları ve proje kuralları
+└── docs/REFACTOR_PLAN.md       # Yaşayan teknik borç / refactor takip planı
 </pre>
 
 ---
@@ -390,8 +382,8 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | 3.16 | `core/hitl.py` | Ayrı modül notu henüz yok; Human-in-the-Loop onay akışı |
 | 3.17 | `core/judge.py`, `core/active_learning.py` | Ayrı modül notu henüz yok; LLM-as-a-Judge + aktif öğrenme geri besleme döngüsü |
 | 3.18 | `core/entity_memory.py`, `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
-| 3.19 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
-| 3.20 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
+| 3.19 | `core/rag/` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
+| 3.20 | `core/db/` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
 | 3.21 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
 | 3.22 | `core/vision.py` | Ayrı modül notu henüz yok; multimodal mockup/görsel işleme hattı |
 | 3.23 | `core/voice.py` | Ayrı modül notu henüz yok; TTS (Text-to-Speech) adaptörleri ve WebSocket ses segmentasyonu (v5.0-alpha) |
@@ -513,7 +505,7 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | Symlink koruması | ✓ Aktif | `managers/security.py` |
 | Hassas yol engelleme | ✓ Aktif | `managers/security.py` |
 | Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
-| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `provider_usage_daily`, `user_quotas` |
+| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db/` — `users`, `auth_tokens`, `sessions`, `messages`, `provider_usage_daily`, `user_quotas` |
 | WebSocket zorunlu Auth Handshake | ✓ Aktif (policy violation `1008`) | `web_server.py` — `/ws/chat`, `_ws_close_policy_violation()` |
 | Fail-Closed Bellek Erişimi | ✓ Aktif (`MemoryAuthError`) | `core/memory.py` — `_require_active_user()` |
 | Zero-Trust Docker Sandbox | ✓ Aktif (`network_mode="none"`, `mem_limit`, `nano_cpus`) | `managers/code_manager.py` — `execute_code()` |
@@ -523,8 +515,8 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | Rate limiting | ✓ Aktif (HTTP + WS + Redis fallback) | `web_server.py` |
 | DLP / PII Maskeleme | ✓ Aktif (`[MASKED]` temelli) | `core/dlp.py`, `core/llm_client.py` |
 | HITL Onay Geçidi | ✓ Aktif (yüksek riskli eylemler için duraklatma/onay) | `core/hitl.py`, `web_server.py` |
-| Tenant RBAC | ✓ Aktif (tenant + resource/action policy) | `web_server.py`, `core/db.py` |
-| Audit Trail | ✓ Aktif (DB kalıcılığı) | `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py` |
+| Tenant RBAC | ✓ Aktif (tenant + resource/action policy) | `web_server.py`, `core/db/` |
+| Audit Trail | ✓ Aktif (DB kalıcılığı) | `migrations/versions/0003_audit_trail.py`, `core/db/`, `web_server.py` |
 | LLM QA Devre Kesici | ✓ Aktif (`MAX_QA_RETRIES=3`) | `agent/sidar_agent.py` |
 | GitHub binary engelleme | ✓ Aktif | `managers/github_manager.py` |
 | Git upload blacklist | ✓ Aktif | `github_upload.py` |
@@ -597,10 +589,10 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **213**
-- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
-- **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **`test_*.py` modül sayısı:** **247**
+- **`tests/*` toplamı (`conftest.py` + `__init__.py` dahil):** **300**
+- **Toplam test satırı (`tests/*`):** **111.813**
+- **Kapsama politikası:** `.coveragerc`, `pyproject.toml` (`[tool.pytest.ini_options]`), `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -651,7 +643,7 @@ bir tabandır; release öncesi güncel baseline local/CI ve campaign için `%100
 
 Doğrudan `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer
 (geri uyumluluk). Rapor görünürlüğü `pyproject.toml` coverage ayarlarıyla
-`show_missing = true` olarak korunur, `pytest.ini` `python_files = test_*.py`
+`show_missing = true` olarak korunur, `pyproject.toml` (`[tool.pytest.ini_options]`) `python_files = test_*.py`
 ve `asyncio_mode = auto` ile test evrenini deterministik koşturur.
 
 CI hattı (`.github/workflows/ci.yml`) coverage eşiğinden hemen önce
@@ -667,15 +659,15 @@ ratchet üst sınırını birlikte loglar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **213 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **215** adettir.
+- Güncel depoda `test_*.py` desenine uyan **247 test modülü** bulunur; `tests/*` toplamı (yardımcı dosyalar dahil) **300** adettir.
 - Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
 - Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
 
 ### 6.4 Asenkron Test Altyapısı
 
-- `pytest.ini` içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = session` ayarları ile tüm async testler otomatik olarak session kapsamlı event loop'ta çalışır.
-- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, session kapsamlı event loop yönetimi `pytest.ini` üzerinden yapılandırılmıştır.
-- `pytest.ini`'ye `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
+- `pyproject.toml` (`[tool.pytest.ini_options]`) içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = function` ayarları ile tüm async testler otomatik olarak fonksiyon kapsamlı event loop'ta çalışır.
+- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, event loop kapsamı `pyproject.toml` üzerinden yapılandırılmıştır.
+- `pyproject.toml`'daki pytest ayarlarına `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
 - CI (`.github/workflows/ci.yml`) üzerinde ayrı `pg-stress` job'ı yer alır; PostgreSQL 16 service container, Alembic migration ve `tests/test_db_postgresql_branches.py` üstünden bağlantı havuzu yük testi otomatik olarak çalışır.
 
 ---
@@ -684,7 +676,7 @@ ratchet üst sınırını birlikte loglar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` ve `web_ui_react/package.json` dosyalarına göre v5.0.0-alpha bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında, React SPA bağımlılıkları ise `web_ui_react/package.json` içinde yönetilir.)
+Bu bölüm, güncel `pyproject.toml` ve `web_ui_react/package.json` dosyalarına göre v5.2.0 bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt`/`requirements-dev.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında `uv` ile yönetilir, React SPA bağımlılıkları ise `web_ui_react/package.json` içindedir. Conda `environment.yml` arşive taşınmıştır: `docs/archive/environment.yml`.)
 
 > **Sistem bağımlılığı notu (multimodal ingest):** `core/multimodal.py` içindeki dış video/ses işleme akışlarının (özellikle `ingest_video_insights`) sorunsuz çalışabilmesi için host/container seviyesinde `yt-dlp`, `ffmpeg` ve `whisper` CLI araçlarının kurulu olması gerekir.
 
@@ -761,7 +753,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db/` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
 
 ---
 
@@ -769,9 +761,9 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
+Bu bölüm, 2026-07-24 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Hacimsel özet (yönetici görünümü):** 2026-03-26 ölçümünde takipli depo yüzeyi **408 dosya / 116.053 satır** seviyesindedir (`.py/.js/.css/.html/.md`). Python tarafında üretim kodu **32.936 satır / 70 dosya**, test havuzu **65.729 satır / 213 `test_*.py` modülü**, toplam Python hacmi ise **98.665 satır / 285 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **10.148 satır / 102 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **38** takipli dosya / **10.792** satırlık SPA hacmi ve `web_ui/` altındaki **4.769** satırlık legacy yüzey birlikte değerlendirildiğinde, Coverage/Poyraz ajanlarıyla genişleyen Faz E yüzeyi artık ölçülebilir ürün olgunluğunun parçası haline gelmiştir.
+**Hacimsel özet (yönetici görünümü):** 2026-07-24 ölçümünde takipli depo yüzeyi **734 dosya / 203.213 satır** seviyesindedir (`.py/.js/.css/.html/.md`). Python tarafında üretim kodu **70.043 satır / 305 dosya**, test havuzu **111.813 satır / 247 `test_*.py` modülü**, toplam Python hacmi ise **178.055 satır / 578 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **15.155 satır / 117 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **84** takipli dosya / **24.737** satırlık SPA hacmi tek Web UI yüzeyidir; legacy `web_ui/` dizini kaldırılmıştır. Coverage/Poyraz ajanlarıyla genişleyen Faz E yüzeyi artık ölçülebilir ürün olgunluğunun parçası haline gelmiştir.
 
 - **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
@@ -797,8 +789,8 @@ Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `agent/swarm.py` | 541 |
 | `core/llm_client.py` | 1.388 |
 | `core/memory.py` | 301 |
-| `core/rag.py` | 1.685 |
-| `core/db.py` | 1.861 |
+| `core/rag/` (19 modül + `backends/`) | 4.528 |
+| `core/db/` (20 modül) | 4.770 |
 | `core/llm_metrics.py` | 282 |
 | `core/agent_metrics.py` | 118 |
 | `core/dlp.py` | 320 |
@@ -853,10 +845,10 @@ Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `scripts/audit_metrics.sh` | 84 |
 | `scripts/collect_repo_metrics.sh` | 35 |
 | `scripts/install_host_sandbox.sh` | 201 |
-| `docker/prometheus/prometheus.yml` | 8 |
-| `docker/grafana/provisioning/datasources/prometheus.yml` | 9 |
-| `docker/grafana/provisioning/dashboards/dashboards.yml` | 11 |
-| `docker/grafana/dashboards/sidar-llm-overview.json` | 1.004 |
+| `docker_setup/prometheus/prometheus.yml` | 25 |
+| `docker_setup/grafana/provisioning/datasources/prometheus.yml` | 8 |
+| `docker_setup/grafana/provisioning/dashboards/dashboards.yml` | 10 |
+| `docker_setup/grafana/dashboards/sidar-llm-overview.json` | 1.175 |
 | `runbooks/production-cutover-playbook.md` | 182 |
 | `runbooks/observability_simulation.md` | 87 |
 | `runbooks/plugin_marketplace_demo.md` | 32 |
@@ -868,37 +860,31 @@ Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 
 ### 8.4 Frontend ve Test Özeti
 
+> Legacy `web_ui/` (vanilla JS) dizini kaldırılmıştır; `web_ui_react/` artık tek Web UI yüzeyidir.
+
 | Kapsam | Değer |
 |---|---:|
-| `web_ui/index.html` | 640 |
-| `web_ui/style.css` | 1.685 |
-| `web_ui/chat.js` | 711 |
-| `web_ui/sidebar.js` | 413 |
-| `web_ui/rag.js` | 132 |
-| `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **15.561** |
-| **Legacy UI (`web_ui/` toplam takipli satır)** | **4.769** |
-| **React UI (`web_ui_react/` toplam takipli satır)** | **10.792** |
-| **Voice UI alt kümesi (`VoiceAssistantPanel.jsx` + `useVoiceAssistant.js`)** | **711** |
-| **Test modülü (`tests/test_*.py`)** | **213** |
-| **`tests/*.py` toplam satır** | **65.729** |
+| **React UI (`web_ui_react/` toplam takipli dosya / satır)** | **84 dosya / 24.737** |
+| **Voice UI alt kümesi (`VoiceAssistantPanel.jsx` + `useVoiceAssistant.js`)** | **720** |
+| **Test modülü (`tests/test_*.py`)** | **247** |
+| **`tests/*` toplam dosya / satır** | **300 / 111.813** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 213 |
-| `tests/` | `*.py` toplam dosya | 215 |
-| `tests/` | `*.py` toplam satır | 65.729 |
-| `web_ui_react/` | toplam takipli satır | 10.792 |
-| `scripts/` | dosya sayısı | 7 |
-| `scripts/` | toplam satır | 613 |
-| `migrations/` | `.py` dosya sayısı (env.py + 4 versions) | 5 |
-| `migrations/` | `*.py` toplam satır | 396 |
+| `tests/` | `test_*.py` modül sayısı | 247 |
+| `tests/` | `*` toplam dosya | 300 |
+| `tests/` | `*` toplam satır | 111.813 |
+| `web_ui_react/` | toplam takipli dosya / satır | 84 / 24.737 |
+| `scripts/` | dosya sayısı | 91 |
+| `scripts/` | toplam satır | 21.925 |
+| `migrations/` | `.py` dosya sayısı (env.py + 6 versions) | 7 |
+| `migrations/` | `*.py` toplam satır | 1.044 |
 | `helm/sidar/` | şablon dosyası sayısı (templates/ dahil) | 25 |
-| `helm/sidar/` | toplam satır | 913 |
-| `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
-| `docker/` | ilgili telemetri dosyaları toplam satır | 1.032 |
+| `helm/sidar/` | toplam satır | 996 |
+| `docker_setup/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 6 |
+| `docker_setup/` | toplam satır | 1.231 |
 
 
 ## 9. Modül Bağımlılık Haritası
@@ -945,9 +931,9 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 [ 4. Çekirdek AI ve Veri Servisleri ]
   ├── core/llm_client.py (Ollama, Gemini, Anthropic, OpenAI-uyumlu, LiteLLM gateway)
-  ├── core/rag.py (pgvector, ChromaDB, BM25 hibrit arama)
+  ├── core/rag/ (pgvector, ChromaDB, BM25 hibrit arama)
   ├── core/memory.py + core/entity_memory.py (kalıcı oturum + persona belleği)
-  ├── core/db.py (oturum, kullanıcı, kota, prompt, policy, audit)
+  ├── core/db/ (oturum, kullanıcı, kota, prompt, policy, audit)
   └── redis (semantic cache / rate-limit altyapısı)
 
                  | (araçlar ve dış dünya eylemleri)
@@ -981,7 +967,7 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 ### 9.4 DB Merkezli Bellek ve Kimlik Hiyerarşisi
 
-- `core/memory.py` içindeki `ConversationMemory`, kalıcılık için doğrudan `core/db.py::Database` katmanına bağlıdır.
+- `core/memory.py` içindeki `ConversationMemory`, kalıcılık için doğrudan `core/db/monolith.py::Database` katmanına bağlıdır.
 - Web katmanı (`web_server.py`) token tabanlı kimlik doğrulama/oturum çözümlemesinde DB kayıtlarını kullanır.
 - `agent/core/memory_hub.py` ise DB yerine kısa ömürlü role/global notlar tutan hafif bir orchestrasyon belleğidir; DB merkezli uzun ömürlü oturum belleğinin yerini almaz, onu tamamlar.
 
@@ -995,7 +981,7 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 **Döngüsel bağımlılık:** Tespit edilmedi. `config.py` hâlâ bağımlılık ağacının kökü konumundadır.
 
-**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları; araç dispatch için `agent/tooling.py`, kalıcı konuşma verisi için `core/memory.py` + `core/db.py`, canlı durum akışı için `agent/core/event_stream.py`, maliyet/telemetri için `core/llm_metrics.py` katmanlarını birlikte kullanır.
+**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları; araç dispatch için `agent/tooling.py`, kalıcı konuşma verisi için `core/memory.py` + `core/db/`, canlı durum akışı için `agent/core/event_stream.py`, maliyet/telemetri için `core/llm_metrics.py` katmanlarını birlikte kullanır.
 
 ---
 
@@ -1053,7 +1039,7 @@ ConversationMemory.aadd(role, content)
     │
     ├─► in-memory turns güncelle (RLock korumalı)
     │
-    └─► core/db.py.add_message(...)
+    └─► core/db/sessions.py::add_message(...)
            ├─► `sessions` tablosu (oturum meta)
            └─► `messages` tablosu (kalıcı konuşma)
                  (tenant izolasyonu: user_id zorunlu)
@@ -1106,7 +1092,7 @@ docs_add / docs_add_file
 
 6. **HITL, Yayın ve Kalıcılık:**
    - Üretilen eylem planı sistem bütünlüğünü etkiliyorsa `core/hitl.py` devreye girer ve akış açık onay gelene kadar duraklar.
-   - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db.py` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
+   - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db/` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
 
 > **Not:** Bu 6 adımın tamamı boyunca OpenTelemetry ve metrik toplayıcıları (`core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`) arka planda span, maliyet, gecikme ve cache davranışını Jaeger / OTLP / Prometheus yüzeylerine aktarır.
 
@@ -1181,7 +1167,7 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 ### 11.3 v5.0 Faz-6 Coverage Kapanışı
 
-- `core/voice.py`, `web_ui_react` duplex ses akışı, `managers/browser_manager.py`, `main.py`, `core/rag.py`, `agent/core/contracts.py`, `core/ci_remediation.py` ve event-driven federation/webhook zinciri için beklenen regresyon kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_rag_graph.py`, `tests/test_contracts_federation.py`, `tests/test_ci_remediation.py` ve `tests/test_web_server_autonomy.py` ile repoda mevcuttur.
+- `core/voice.py`, `web_ui_react` duplex ses akışı, `managers/browser_manager.py`, `main.py`, `core/rag/`, `agent/core/contracts.py`, `core/ci_remediation.py` ve event-driven federation/webhook zinciri için beklenen regresyon kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_rag_graph.py`, `tests/test_contracts_federation.py`, `tests/test_ci_remediation.py` ve `tests/test_web_server_autonomy.py` ile repoda mevcuttur.
 - Opsiyonel `pyttsx3` bağımlılığı, HITL onay akışları ve launcher alt süreç davranışı için mocking/fake adapter stratejileri test dosyalarında uygulanmış durumdadır; bu başlık artık aktif borç değil, sürdürülen regresyon korumasıdır.
 
 ### 11.4 Operasyonel İzleme Başlıkları
@@ -1474,7 +1460,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Maliyet Optimizasyonu (Semantic Cache)** | Redis tabanlı semantic cache, cosine similarity eşleşmesi, TTL/LRU davranışı ve cache metrikleri (`core/llm_client.py`, `core/cache_metrics.py`) | ✅ Tamamlandı |
 | **Veri Güvenliği ve İzolasyon (DLP)** | LLM çağrısından önce hassas verilerin maskelenmesi (`core/dlp.py`) | ✅ Tamamlandı |
 | **Güvenli Otonomi (HITL)** | Yıkıcı eylemler öncesi insan onayı bekleyen asenkron karar kapısı (`core/hitl.py`, `web_server.py`) | ✅ Tamamlandı |
-| **Çoklu-Kiracı (Multi-Tenant) & RBAC** | Tenant tabanlı kullanıcı/politika modeli, access policy enforcement ve audit trail (`core/db.py`, `web_server.py`, `migrations/versions/0003_audit_trail.py`) | ✅ Tamamlandı |
+| **Çoklu-Kiracı (Multi-Tenant) & RBAC** | Tenant tabanlı kullanıcı/politika modeli, access policy enforcement ve audit trail (`core/db/`, `web_server.py`, `migrations/versions/0003_audit_trail.py`) | ✅ Tamamlandı |
 | **Modern Asenkron Arayüz (SPA)** | React + Vite + WebSocket/event-driven sunum katmanı (`web_ui_react/`, `web_server.py`) | ✅ Tamamlandı |
 | **Model Ağ Geçidi (LLM Gateway)** | OpenAI/Anthropic/Ollama/LiteLLM yollarını tekleştiren sağlayıcı soyutlama katmanı (`core/llm_client.py`, `core/router.py`) | ✅ Tamamlandı |
 | **Dinamik Genişletilebilirlik** | Runtime kayıt edilen ajan pazaryeri ve plugin yükleme akışı (`agent/registry.py`, `plugins/`, `web_server.py`) | ✅ Tamamlandı |
@@ -1483,7 +1469,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Dynamic Browser Automation** | Playwright/Selenium tabanlı, HITL ve audit trail ile kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | ✅ Tamamlandı |
-| **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
+| **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag/`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
 | **Coverage Test Quality Gate** | CoverageAgent aday testlerini reviewer LLM öncesinde AST ile denetler; `assert True`, sabit/trivial assertion, import-only kontrat ve hedef davranışına bağlanmayan testler yazılmadan fail-closed reddedilir (`agent/roles/coverage_agent.py`) | ✅ Tamamlandı |
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
@@ -1519,7 +1505,7 @@ Kurumsal hata yönetimi tek bir ajan veya tek bir model başarısız olduğunda 
 
 ### 16.4 Kurumsal Denetim İzleri (Audit Logging)
 
-Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok kiracılı (multi-tenant) kurumsal denetlenebilirlik için de tasarlanmıştır. `web_server.py` içindeki `_schedule_access_audit_log(...)` akışı ve `core/db.py` içindeki `audit_logs` şeması; kullanıcı, tenant, kaynak, aksiyon, IP adresi ve allow/deny sonucunu kalıcı denetim izi olarak kaydeder.
+Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok kiracılı (multi-tenant) kurumsal denetlenebilirlik için de tasarlanmıştır. `web_server.py` içindeki `_schedule_access_audit_log(...)` akışı ve `core/db/` içindeki `audit_logs` şeması; kullanıcı, tenant, kaynak, aksiyon, IP adresi ve allow/deny sonucunu kalıcı denetim izi olarak kaydeder.
 
 Bu audit trail yaklaşımı, güvenlik kararlarının sonradan yeniden üretilebilmesini sağlar. İnsan onayı gerektiren işlemler için `core/hitl.py` ve ilgili API uçları üzerinden yürüyen Human-in-the-Loop (HITL) süreçlerinde reddedilen veya zaman aşımına uğrayan eylemler de görünür kalır. Sonuç olarak hata yönetimi, loglama ve observability katmanı; operasyonel arıza teşhisi, güvenlik denetimi ve tenant izolasyonu için ortak bir kurumsal kayıt sistemi haline gelmiştir.
 ---

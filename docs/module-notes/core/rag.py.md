@@ -1,10 +1,28 @@
-# 3.10 `core/rag.py` — RAG Motoru (783 satır)
+# 3.19 `core/rag/` — RAG Motoru (package facade, 19 modül + `backends/`, toplam 4.528 satır)
 
-## Rapor İçeriği (Taşınan Bölüm)
+## Güncel kaynak yerleşimi
+
+`core.rag` artık tek dosyalık `core/rag.py` modülü değil, geriye dönük uyumlu bir
+package facade'dır (`from core.rag import DocumentStore` gibi mevcut importlar
+korunur). Ana `DocumentStore` gövdesi hâlâ `core/rag/__init__.py` içinde (1.581
+satır) yaşar; RRF/BM25/vektör arama motoru soyutlaması, GraphRAG ve destek
+fonksiyonları ise ayrı modüllere ayrıştırılmıştır:
+
+- `core/rag/__init__.py`: `DocumentStore` public facade ve ana orkestrasyon.
+- `core/rag/facade.py`, `query.py`, `strategies.py`: sorgu planlama ve arama modu seçimi.
+- `core/rag/backends/chroma.py`, `backends/bm25.py`, `backends/keyword.py`, `backends/pgvector.py`: motor bazlı arama backend'leri.
+- `core/rag/chunking.py`: `RecursiveCharacterTextSplitter` benzeri chunking motoru.
+- `core/rag/embeddings_wrapper.py`: GPU/FP16 embedding fonksiyonu ve offline HF runtime ayarları.
+- `core/rag/graph.py`, `graph_formatting.py`, `entity_graph_store.py`, `entity_extraction.py`, `llm_entity_extraction.py`, `projection.py`: GraphRAG (modül bağımlılık grafiği + entity graph) katmanı.
+- `core/rag/document_store.py`, `session_documents.py`, `metadata.py`, `formatting.py`, `readiness.py`, `entity_helpers.py`, `pgvector_helpers.py`: belge yaşam döngüsü, oturum izolasyonu ve destek yardımcıları.
+
+`docs/REFACTOR_PLAN.md` bu paketin `__init__.py` içindeki kalan gerçek
+implementasyonu daha küçük servis modüllerine (`store.py`, `graph_service.py`,
+`index_service.py`) taşıma planını takip eder.
+
+## Rapor İçeriği (Taşınan Bölüm — davranış hâlâ geçerli, dosya adları güncellendi)
 
 **Amaç:** ChromaDB (vektör) + BM25 + Keyword hibrit belge deposu. v3.0 ile birlikte **RRF birleştirme**, **oturum izolasyonu** ve disk tabanlı BM25 altyapısı birlikte çalışır.
-
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/rag.py` çıktısına göre **783** olarak ölçülmüştür.
 
 **Arama Modları (v3.0):**
 
