@@ -17,6 +17,8 @@ ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
 )
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_merge
+ORIGINAL_CHECK_BRANCH_PROTECTION_BEST_EFFORT = gu.check_branch_protection_best_effort
+ORIGINAL_CREATE_DRAFT_PR_BEST_EFFORT = gu.create_draft_pr_best_effort
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +28,13 @@ def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
     monkeypatch.setattr(gu, "reexec_after_external_branch_merge", lambda: None)
+    # Draft PR creation and branch-protection lookups hit the real GitHub API via
+    # urllib; tests default to a safe no-op unless a test overrides these to
+    # exercise the PR/branch-protection flow itself.
+    monkeypatch.setattr(gu, "create_draft_pr_best_effort", lambda branch, version: None)
+    monkeypatch.setattr(
+        gu, "check_branch_protection_best_effort", lambda owner_repo, branch, token: None
+    )
 
 
 def test_reexec_after_external_branch_merge_loads_new_code_without_repull(monkeypatch, tmp_path):
@@ -378,14 +387,181 @@ def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
     assert "Başarısız merge otomatik" in capsys.readouterr().out
 
 
-def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
+def test_generate_upload_branch_name_is_timestamped_and_unique_prefix():
+    name = gu.generate_upload_branch_name()
+    assert name.startswith("sidar-upload/")
+    assert len(name) == len("sidar-upload/") + 14  # YYYYMMDDHHMMSS
+
+
+def test_create_and_checkout_upload_branch_success(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(
+        gu, "run_command", lambda cmd, show_output=True: (calls.append(cmd), (True, ""))[1]
+    )
+
+    branch = gu.create_and_checkout_upload_branch("main")
+
+    assert branch.startswith("sidar-upload/")
+    assert calls == [["git", "checkout", "-b", branch]]
+    assert "yeni bir dala alınıyor" in capsys.readouterr().out
+
+
+def test_create_and_checkout_upload_branch_failure_exits(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=True: (False, "boom"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.create_and_checkout_upload_branch("main")
+    assert exc_info.value.code == 1
+
+
+def test_resolve_owner_repo_handles_https_ssh_and_failure(monkeypatch):
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=True: (True, "https://github.com/acme/widgets.git\n"),
+    )
+    assert gu.resolve_owner_repo() == "acme/widgets"
+
+    monkeypatch.setattr(
+        gu, "run_command", lambda cmd, show_output=True: (True, "git@github.com:acme/widgets.git")
+    )
+    assert gu.resolve_owner_repo() == "acme/widgets"
+
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=True: (False, ""))
+    assert gu.resolve_owner_repo() == ""
+
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=True: (True, "not-a-github-url"))
+    assert gu.resolve_owner_repo() == ""
+
+
+class _FakeHTTPResponse:
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body.encode("utf-8")
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+def test_create_pull_request_via_api_success(monkeypatch):
+    monkeypatch.setattr(
+        gu,
+        "urlopen",
+        lambda request, timeout=20: _FakeHTTPResponse(
+            201, '{"number": 42, "html_url": "https://github.com/acme/widgets/pull/42"}'
+        ),
+    )
+
+    success, info = gu.create_pull_request_via_api(
+        "acme/widgets", "sidar-upload/x", "main", "title", "body", "tok"
+    )
+
+    assert success is True
+    assert "#42" in info
+    assert "pull/42" in info
+
+
+def test_create_pull_request_via_api_missing_owner_repo():
+    success, info = gu.create_pull_request_via_api("", "head", "main", "t", "b", "tok")
+    assert success is False
+    assert "owner/repo" in info
+
+
+def test_create_pull_request_via_api_http_error(monkeypatch):
+    def raise_http_error(request, timeout=20):
+        raise gu.HTTPError("url", 422, "Unprocessable", None, None)
+
+    monkeypatch.setattr(gu, "urlopen", raise_http_error)
+
+    success, info = gu.create_pull_request_via_api("acme/widgets", "head", "main", "t", "b", "tok")
+    assert success is False
+    assert "422" in info
+
+
+def test_create_pull_request_via_api_network_error(monkeypatch):
+    def raise_url_error(request, timeout=20):
+        raise gu.URLError("network down")
+
+    monkeypatch.setattr(gu, "urlopen", raise_url_error)
+
+    success, info = gu.create_pull_request_via_api("acme/widgets", "head", "main", "t", "b", "tok")
+    assert success is False
+    assert "erişilemedi" in info
+
+
+def test_check_branch_protection_best_effort_true_false_unknown(monkeypatch):
+    monkeypatch.setattr(gu, "urlopen", lambda request, timeout=20: _FakeHTTPResponse(200, "{}"))
+    assert ORIGINAL_CHECK_BRANCH_PROTECTION_BEST_EFFORT("acme/widgets", "main", "tok") is True
+
+    def raise_404(request, timeout=20):
+        raise gu.HTTPError("url", 404, "Not Found", None, None)
+
+    monkeypatch.setattr(gu, "urlopen", raise_404)
+    assert ORIGINAL_CHECK_BRANCH_PROTECTION_BEST_EFFORT("acme/widgets", "main", "tok") is False
+
+    def raise_network_error(request, timeout=20):
+        raise gu.URLError("down")
+
+    monkeypatch.setattr(gu, "urlopen", raise_network_error)
+    assert ORIGINAL_CHECK_BRANCH_PROTECTION_BEST_EFFORT("acme/widgets", "main", "tok") is None
+
+    assert ORIGINAL_CHECK_BRANCH_PROTECTION_BEST_EFFORT("", "main", "tok") is None
+
+
+def test_create_draft_pr_best_effort_success_prints_pr_url(monkeypatch, capsys):
+    monkeypatch.setattr(gu, "resolve_owner_repo", lambda: "acme/widgets")
+    monkeypatch.setattr(gu, "resolve_github_token", lambda: "tok")
+    monkeypatch.setattr(
+        gu, "create_pull_request_via_api", lambda *a, **k: (True, "#7 https://x/pull/7")
+    )
+
+    ORIGINAL_CREATE_DRAFT_PR_BEST_EFFORT("sidar-upload/x", "9.9")
+
+    assert "Draft PR oluşturuldu" in capsys.readouterr().out
+
+
+def test_create_draft_pr_best_effort_failure_prints_manual_compare_link(monkeypatch, capsys):
+    monkeypatch.setattr(gu, "resolve_owner_repo", lambda: "acme/widgets")
+    monkeypatch.setattr(gu, "resolve_github_token", lambda: "tok")
+    monkeypatch.setattr(gu, "create_pull_request_via_api", lambda *a, **k: (False, "boom"))
+
+    ORIGINAL_CREATE_DRAFT_PR_BEST_EFFORT("sidar-upload/x", "9.9")
+
+    out = capsys.readouterr().out
+    assert "otomatik oluşturulamadı" in out
+    assert "compare/main...sidar-upload/x" in out
+
+
+def test_require_direct_main_confirmation_wrong_input_exits(monkeypatch):
+    monkeypatch.setattr(gu, "check_branch_protection_best_effort", lambda *a, **k: False)
+    monkeypatch.setattr("builtins.input", lambda _p="": "not direct main")
+
+    with pytest.raises(SystemExit) as exc_info:
+        gu.require_direct_main_confirmation("acme/widgets", "tok")
+    assert exc_info.value.code == 1
+
+
+def test_require_direct_main_confirmation_exact_phrase_proceeds(monkeypatch):
+    monkeypatch.setattr(gu, "check_branch_protection_best_effort", lambda *a, **k: True)
+    monkeypatch.setattr("builtins.input", lambda _p="": "DIRECT-MAIN")
+
+    gu.require_direct_main_confirmation("acme/widgets", "tok")  # must not raise
+
+
+def test_report_auto_merge_changes_prints_changed_files(monkeypatch, capsys):
     monkeypatch.setattr(
         gu,
         "run_command",
         lambda cmd, show_output=True: (True, "remote.py\nlocal.md\n"),
     )
 
-    gu.report_ours_strategy_changes()
+    gu.report_auto_merge_changes()
 
     out = capsys.readouterr().out
     assert "remote.py" in out
@@ -828,7 +1004,7 @@ def test_main_setup_identity_invalid_repo_url(monkeypatch):
 def test_main_switch_to_main_checkout_fail_with_stash_pop(monkeypatch):
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -846,7 +1022,7 @@ def test_main_switch_to_main_checkout_fail_with_stash_pop(monkeypatch):
 def test_main_switch_to_main_stash_pop_conflict(monkeypatch):
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -877,8 +1053,9 @@ def test_main_rollback_rejects_when_not_enough_commits(monkeypatch):
     assert run_main_and_exit_code() == 1
 
 
-def test_main_rollback_yes_push_fail(monkeypatch):
-    MainHarness(
+def test_main_rollback_default_is_revert_not_force_push(monkeypatch):
+    """Default rollback (-N without --force-rollback) uses `git revert`, never `--force`."""
+    h = MainHarness(
         monkeypatch,
         ["-2"],
         outputs=[
@@ -887,12 +1064,15 @@ def test_main_rollback_yes_push_fail(monkeypatch):
             (True, "origin"),
             (True, "main"),
             (True, "5"),
-            (True, "reset ok"),
+            (True, "reverted"),
             (False, "protected"),
         ],
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 1
+    assert ["git", "revert", "--no-edit", "HEAD~2..HEAD"] in h.calls
+    assert not any("--force" in call for call in h.calls if call[:2] == ["git", "push"])
+    assert not any(call[:3] == ["git", "reset", "--hard"] for call in h.calls)
 
 
 def test_main_rollback_cancel(monkeypatch):
@@ -974,6 +1154,7 @@ def test_main_nothing_to_push_exits(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, ""),
             (True, " M x"),
@@ -997,6 +1178,7 @@ def test_main_commit_fail(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (False, "commit err"),
@@ -1071,6 +1253,7 @@ def test_main_push_rejected_then_merge_then_retry_fail_rule(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "ok"),
             (True, "A a.py"),
@@ -1097,6 +1280,7 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (True, "ok"),
@@ -1106,7 +1290,7 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
     )
     gu.main()
 
-    # merge command fails
+    # merge command fails (real conflict; fail-closed abort, no -X ours)
     MainHarness(
         monkeypatch,
         [],
@@ -1115,15 +1299,18 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (True, "ok"),
             (False, "non-fast-forward"),
-            (False, "fatal"),
+            (False, "CONFLICT (content): fatal"),
+            (True, ""),  # print_unmerged_files -> get_unmerged_files
+            (True, ""),  # abort_in_progress_merge -> git merge --abort
         ],
         inputs=["m", "y"],
     )
-    gu.main()
+    assert run_main_and_exit_code() == 1
 
     # unknown push error
     MainHarness(
@@ -1134,6 +1321,7 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (True, "ok"),
@@ -1211,7 +1399,7 @@ def test_collect_safe_files_default_and_directory_skip(monkeypatch, tmp_path):
 def test_main_switch_to_main_stash_creation_fails(monkeypatch):
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -1229,7 +1417,7 @@ def test_main_switch_to_main_success_without_stash(monkeypatch):
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -1237,17 +1425,19 @@ def test_main_switch_to_main_success_without_stash(monkeypatch):
             (True, "feature"),
             (True, ""),
             (True, "ok"),
+            (True, "https://github.com/test/repo.git"),  # resolve_owner_repo (direct-main confirm)
             (True, ""),
             (True, ""),
             (True, "unpushed"),
             (True, "push"),
         ],
+        inputs=["DIRECT-MAIN"],
     )
     gu.main()
 
 
-def test_main_rollback_reset_fail(monkeypatch):
-    MainHarness(
+def test_main_rollback_revert_conflict_aborts(monkeypatch):
+    h = MainHarness(
         monkeypatch,
         ["-1"],
         outputs=[
@@ -1256,13 +1446,15 @@ def test_main_rollback_reset_fail(monkeypatch):
             (True, "origin"),
             (True, "main"),
             (True, "3"),
-            (False, "reset fail"),
+            (False, "CONFLICT: revert fail"),
+            (True, ""),  # git revert --abort
         ],
         inputs=["yes"],
     )
 
     with pytest.raises(SystemExit) as exc_info:
         gu.main()
+    assert ["git", "revert", "--abort"] in h.calls
 
     assert exc_info.value.code == 1
 
@@ -1280,6 +1472,7 @@ def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (False, "merge made"),
             (True, ""),
             (True, "A a.py"),
@@ -1306,6 +1499,7 @@ def test_main_retry_push_failure_non_rule_violations(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (True, "ok"),
@@ -1331,6 +1525,7 @@ def test_main_retry_push_success(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, "A a.py"),
             (True, "ok"),
@@ -1346,7 +1541,7 @@ def test_main_retry_push_success(monkeypatch):
 def test_main_checkout_fail_without_stash(monkeypatch):
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -1364,7 +1559,7 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
         monkeypatch,
-        [],
+        ["--direct-main"],
         outputs=[
             (True, "git version"),
             (True, "name"),
@@ -1374,11 +1569,13 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
             (True, "stashed"),
             (True, "checkout"),
             (True, "pop"),
+            (True, "https://github.com/test/repo.git"),  # resolve_owner_repo (direct-main confirm)
             (True, ""),
             (True, ""),
             (True, "unpushed"),
             (True, "pushed"),
         ],
+        inputs=["DIRECT-MAIN"],
     )
     gu.main()
 
@@ -1434,6 +1631,7 @@ def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
             (True, "name"),
             (True, "origin"),
             (True, "main"),
+            (True, "checkout ok"),  # git checkout -b <upload branch>
             (True, ""),
             (True, ""),
             (True, ""),
@@ -1445,8 +1643,8 @@ def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
     assert gate_calls == []
 
 
-def test_main_rollback_push_success(monkeypatch):
-    MainHarness(
+def test_main_rollback_revert_push_success(monkeypatch):
+    h = MainHarness(
         monkeypatch,
         ["-1"],
         outputs=[
@@ -1455,9 +1653,58 @@ def test_main_rollback_push_success(monkeypatch):
             (True, "origin"),
             (True, "main"),
             (True, "2"),
-            (True, "reset ok"),
+            (True, "reverted"),
             (True, "push ok"),
         ],
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 0
+    assert ["git", "revert", "--no-edit", "HEAD~1..HEAD"] in h.calls
+    assert ["git", "push", "origin", "main"] in h.calls
+
+
+def test_main_force_rollback_requires_force_rollback_steps(monkeypatch):
+    """`--force-rollback` without -N is a usage error, not a silent no-op."""
+    MainHarness(monkeypatch, ["--force-rollback"], outputs=[])
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_force_rollback_wrong_sha_cancels_without_destructive_action(monkeypatch):
+    h = MainHarness(
+        monkeypatch,
+        ["-1", "--force-rollback"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "2"),
+            (True, "deadbeefcafe"),  # git rev-parse HEAD
+        ],
+        inputs=["evet", "not-the-real-sha"],
+    )
+    assert run_main_and_exit_code() == 1
+    assert not any(call[:3] == ["git", "reset", "--hard"] for call in h.calls)
+    assert not any("--force" in call for call in h.calls if call[:2] == ["git", "push"])
+
+
+def test_main_force_rollback_exact_sha_confirms_reset_and_force_push(monkeypatch):
+    h = MainHarness(
+        monkeypatch,
+        ["-1", "--force-rollback"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "2"),
+            (True, "deadbeefcafe"),  # git rev-parse HEAD
+            (True, "tag ok"),  # create_rollback_backup_tag
+            (True, "reset ok"),
+            (True, "push ok"),
+        ],
+        inputs=["evet", "deadbeefcafe"],
+    )
+    assert run_main_and_exit_code() == 0
+    assert ["git", "reset", "--hard", "HEAD~1"] in h.calls
+    assert ["git", "push", "--force", "origin", "main"] in h.calls

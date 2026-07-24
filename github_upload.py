@@ -3,12 +3,23 @@
 Sürüm: Sidar ürün sürümüyle senkronize edilir.
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
+
+Varsayılan davranış artık `main`'e doğrudan push YAPMAZ: değişiklikler
+`sidar-upload/<zaman damgası>` dalına commit edilir, push edilir ve GitHub'da
+bir draft PR açılır. Eski doğrudan-main davranışı yalnızca açık `--direct-main`
+bayrağıyla ve ek bir onayla etkinleşir.
+
 Kullanım:
-  python github_upload.py                 -> Normal yükleme
-  python github_upload.py <branch_adi>    -> Dış dalı çekip birleştirme
-  python github_upload.py -<sayi>         -> Son <sayi> işlemi geri alma (Örn: -3)
+  python github_upload.py                    -> Yeni dal + commit + push + draft PR
+  python github_upload.py --direct-main       -> (Opt-in) main'e doğrudan commit/push
+  python github_upload.py <branch_adi>       -> Dış dalı çekip birleştirme (varsayılan: yeni dal + PR akışına dahil edilir)
+  python github_upload.py -<sayi>             -> Son <sayi> commit'i `git revert` ile GERİ ALINABİLİR şekilde geri alır
+  python github_upload.py -<sayi> --force-rollback
+                                              -> (Opt-in) eski `reset --hard` + force-push davranışı;
+                                                 mevcut HEAD commit SHA'sının aynen yazılmasını ister.
 """
 
+import json
 import os
 import re
 import subprocess  # nosec B404
@@ -16,12 +27,18 @@ import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from config import Config
 from managers.code.git_validation import is_valid_git_ref_name
 from sidar_version import PRODUCT_VERSION
 
 cfg = Config()
+
+# Branch protection'ın PR incelemesini zorunlu kıldığı varsayılan hedef dal.
+DEFAULT_BASE_BRANCH = "main"
+GITHUB_API_BASE_URL = "https://api.github.com"
 
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
 FORBIDDEN_PATHS = [
@@ -302,8 +319,338 @@ def create_rollback_backup_tag() -> str:
     return tag_name
 
 
-def report_ours_strategy_changes() -> None:
-    """`-X ours` merge sonrasında değişen dosyaları görünür hale getirir."""
+# ═══════════════════════════════════════════════════════════════
+# BRANCH + DRAFT PR AKIŞI (Risk A: doğrudan main push varsayılanı kaldırıldı)
+# ═══════════════════════════════════════════════════════════════
+def generate_upload_branch_name() -> str:
+    """`main`'e dokunmadan çalışmak için benzersiz bir yükleme dalı adı üretir."""
+    return f"sidar-upload/{datetime.now():%Y%m%d%H%M%S}"
+
+
+def create_and_checkout_upload_branch(current_branch: str) -> str:
+    """Varsayılan akış artık `main`'i doğrudan değiştirmez; yeni bir dal açar.
+
+    Commit ve push bu yeni dala gider; push sonrası `main`'e karşı bir draft PR
+    açılır. Eski `main`'e doğrudan geçiş davranışı yalnızca `--direct-main` ile
+    (bkz. ``ensure_on_main_branch``) etkinleşir.
+    """
+    branch_name = generate_upload_branch_name()
+    print(
+        f"\n{Colors.OKBLUE}🌱 Değişiklikler doğrudan '{DEFAULT_BASE_BRANCH}' yerine yeni "
+        f"bir dala alınıyor: '{branch_name}'{Colors.ENDC}"
+    )
+    checkout_success, checkout_err = run_command(
+        ["git", "checkout", "-b", branch_name], show_output=False
+    )
+    if not checkout_success:
+        print(f"{Colors.FAIL}❌ Yükleme dalı oluşturulamadı:\n{checkout_err}{Colors.ENDC}")
+        sys.exit(1)
+    print(f"{Colors.OKGREEN}✅ '{branch_name}' dalına geçildi.{Colors.ENDC}\n")
+    return branch_name
+
+
+def ensure_on_main_branch(current_branch: str) -> None:
+    """Çalışma ağacını `main` dalına taşır (yalnızca rollback ve --direct-main için)."""
+    if current_branch == DEFAULT_BASE_BRANCH:
+        return
+
+    print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
+    print(
+        f"{Colors.OKBLUE}🔄 İşlemlerin '{DEFAULT_BASE_BRANCH}' dalında yapılması için geçiş "
+        f"hazırlanıyor...{Colors.ENDC}"
+    )
+
+    _, stash_status = run_command(["git", "status", "--porcelain"], show_output=False)
+    stash_created = False
+    if stash_status.strip():
+        stash_success, stash_err = run_command(
+            ["git", "stash", "push", "-u", "-m", "github_upload:auto-switch-to-main"],
+            show_output=False,
+        )
+        if not stash_success:
+            print(
+                f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e "
+                f"alınamadı:\n{stash_err}{Colors.ENDC}"
+            )
+            sys.exit(1)
+        stash_created = True
+
+    checkout_success, checkout_err = run_command(
+        ["git", "checkout", DEFAULT_BASE_BRANCH], show_output=False
+    )
+    if not checkout_success:
+        print(
+            f"{Colors.FAIL}❌ '{DEFAULT_BASE_BRANCH}' dalına geçiş başarısız "
+            f"oldu:\n{checkout_err}{Colors.ENDC}"
+        )
+        if stash_created:
+            run_command(["git", "stash", "pop"], show_output=False)
+        print(
+            f"{Colors.WARNING}Lütfen terminalden 'git checkout {DEFAULT_BASE_BRANCH}' yazarak "
+            f"çakışmaları kontrol edin.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+    if stash_created:
+        pop_success, pop_err = run_command(["git", "stash", "pop"], show_output=False)
+        if not pop_success:
+            print(f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma oluştu:\n{pop_err}{Colors.ENDC}")
+            print(
+                f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar "
+                f"çalıştırabilirsiniz.{Colors.ENDC}"
+            )
+            sys.exit(1)
+
+    print(f"{Colors.OKGREEN}✅ '{DEFAULT_BASE_BRANCH}' dalına başarıyla geçildi.{Colors.ENDC}\n")
+
+
+def resolve_owner_repo() -> str:
+    """`origin` remote URL'inden GitHub API çağrıları için 'owner/repo' çözer."""
+    success, url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    if not success or not url.strip():
+        return ""
+    normalized = url.strip()
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    if normalized.startswith("git@github.com:"):
+        return normalized[len("git@github.com:") :]
+    marker = "github.com/"
+    if marker in normalized:
+        return normalized.rsplit(marker, 1)[1]
+    return ""
+
+
+def _github_api_request(
+    url: str, token: str, *, method: str = "GET", payload: dict[str, object] | None = None
+) -> tuple[int | None, str]:
+    """GitHub REST API'sine stdlib `urllib` ile istek atar (ek bağımlılık gerektirmez).
+
+    Dönüş: (http_status_or_none, gövde_veya_hata_metni). Ağ/izin hatalarında
+    exception fırlatmaz; çağıran taraf durumu best-effort olarak yorumlar.
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "sidar-github-upload",
+        "Authorization": f"Bearer {token}",
+    }
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = Request(url, data=data, method=method, headers=headers)
+    try:
+        with urlopen(request, timeout=20) as response:  # nosec B310  # sabit GitHub API host'u.
+            return response.status, response.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except OSError:
+            pass
+        return exc.code, detail or str(exc.reason)
+    except URLError as exc:
+        return None, str(exc.reason)
+
+
+def check_branch_protection_best_effort(owner_repo: str, branch: str, token: str) -> bool | None:
+    """Dal koruması durumunu en iyi çaba ile sorgular. Bilinmiyorsa None döner."""
+    if not owner_repo:
+        return None
+    status, _ = _github_api_request(
+        f"{GITHUB_API_BASE_URL}/repos/{owner_repo}/branches/{branch}/protection", token
+    )
+    if status == 200:
+        return True
+    if status == 404:
+        return False
+    return None
+
+
+def require_direct_main_confirmation(owner_repo: str, token: str) -> None:
+    """`--direct-main` için PR incelemesini atlayan yüksek riskli yolu açıkça onaylatır."""
+    print(
+        f"\n{Colors.FAIL}{Colors.BOLD}🚨 --direct-main: '{DEFAULT_BASE_BRANCH}' dalına "
+        f"PR incelemesi OLMADAN doğrudan push yapılacak.{Colors.ENDC}"
+    )
+    protection = check_branch_protection_best_effort(owner_repo, DEFAULT_BASE_BRANCH, token)
+    if protection is True:
+        print(
+            f"{Colors.OKBLUE}ℹ️ '{DEFAULT_BASE_BRANCH}' üzerinde branch protection etkin "
+            f"görünüyor; GitHub bu push'u reddedebilir.{Colors.ENDC}"
+        )
+    elif protection is False:
+        print(
+            f"{Colors.WARNING}⚠️ '{DEFAULT_BASE_BRANCH}' üzerinde branch protection "
+            f"bulunamadı; bu push kod incelemesini TAMAMEN atlayacak!{Colors.ENDC}"
+        )
+    else:
+        print(
+            f"{Colors.WARNING}⚠️ Branch protection durumu doğrulanamadı (API erişilemedi "
+            f"veya token yetkisi yetersiz).{Colors.ENDC}"
+        )
+
+    confirm = input(
+        f"{Colors.OKBLUE}Devam etmek için tam olarak DIRECT-MAIN yazın: {Colors.ENDC}"
+    ).strip()
+    if confirm != "DIRECT-MAIN":
+        print(
+            f"{Colors.WARNING}⏹️ Doğrudan '{DEFAULT_BASE_BRANCH}' push'u iptal edildi.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+
+def create_pull_request_via_api(
+    owner_repo: str, head: str, base: str, title: str, body: str, token: str
+) -> tuple[bool, str]:
+    """GitHub REST API ile draft PR oluşturur; ağ/izin hatasında (False, sebep) döner."""
+    if not owner_repo:
+        return False, "origin remote'undan owner/repo çözülemedi."
+    status, body_text = _github_api_request(
+        f"{GITHUB_API_BASE_URL}/repos/{owner_repo}/pulls",
+        token,
+        method="POST",
+        payload={"title": title, "head": head, "base": base, "body": body, "draft": True},
+    )
+    if status is None:
+        return False, f"GitHub API'ye erişilemedi: {body_text}"
+    if status not in (200, 201):
+        return False, f"HTTP {status}: {body_text}"
+    try:
+        data = json.loads(body_text)
+    except json.JSONDecodeError:
+        return False, "GitHub API yanıtı ayrıştırılamadı."
+    pr_number = data.get("number", "")
+    pr_url = data.get("html_url", "")
+    return True, f"#{pr_number} {pr_url}".strip()
+
+
+def create_draft_pr_best_effort(branch: str, upload_version: str) -> None:
+    """Push sonrası draft PR açmayı dener; başarısızlıkta manuel talimat basar."""
+    owner_repo = resolve_owner_repo()
+    title = f"🚀 Sidar {upload_version} - Otomatik Dağıtım ({datetime.now():%Y-%m-%d %H:%M})"
+    body = "Bu PR `github_upload.py` tarafından otomatik oluşturuldu (draft)."
+    pr_success, pr_info = create_pull_request_via_api(
+        owner_repo, branch, DEFAULT_BASE_BRANCH, title, body, resolve_github_token()
+    )
+    if pr_success:
+        print(f"{Colors.OKGREEN}✅ Draft PR oluşturuldu: {pr_info}{Colors.ENDC}")
+        return
+    print(f"{Colors.WARNING}⚠️ Draft PR otomatik oluşturulamadı ({pr_info}).{Colors.ENDC}")
+    if owner_repo:
+        print(
+            f"{Colors.OKBLUE}Elle açmak için: https://github.com/{owner_repo}/compare/"
+            f"{DEFAULT_BASE_BRANCH}...{branch}?expand=1{Colors.ENDC}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# ROLLBACK STRATEJİLERİ (Risk C: force-push varsayılanı kaldırıldı)
+# ═══════════════════════════════════════════════════════════════
+def perform_revert_rollback(rollback_steps: int, current_branch: str) -> None:
+    """Varsayılan güvenli geri alma: `git revert` ile yeni commit'ler üretir.
+
+    Force-push YOKTUR; geçmiş yeniden yazılmaz, uzak dalda başka birinin
+    o sırada push ettiği commit'ler kaybolmaz. Geri almanın kendisi de
+    (revert'in revert'i ile) her zaman geri alınabilir.
+    """
+    print(
+        f"\n{Colors.WARNING}⏳ Son {rollback_steps} commit `git revert` ile geri alınıyor "
+        f"(force push YOK)...{Colors.ENDC}"
+    )
+    revert_success, revert_err = run_command(
+        ["git", "revert", "--no-edit", f"HEAD~{rollback_steps}..HEAD"], show_output=False
+    )
+    if not revert_success:
+        print(f"{Colors.FAIL}❌ Revert başarısız oldu; geri alınıyor:\n{revert_err}{Colors.ENDC}")
+        run_command(["git", "revert", "--abort"], show_output=False)
+        print(
+            f"{Colors.WARNING}Çakışmayı manuel çözüp `git revert` işlemini terminalden "
+            f"tamamlayabilir veya bunun yerine bir PR üzerinden çözebilirsiniz.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+    push_success, push_err = run_command(
+        ["git", "push", "origin", current_branch], show_output=False
+    )
+    if push_success:
+        print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+        print(
+            f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Son {rollback_steps} commit, yeni "
+            f"revert commit'leriyle güvenli biçimde geri alındı.{Colors.ENDC}"
+        )
+        print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+    else:
+        print(f"{Colors.FAIL}❌ Revert commit'leri push edilemedi:\n{push_err}{Colors.ENDC}")
+    sys.exit(0 if push_success else 1)
+
+
+def perform_force_rollback(rollback_steps: int, current_branch: str) -> None:
+    """Eski davranış: `reset --hard` + `git push --force`. Yalnızca `--force-rollback` ile.
+
+    Ek güvenlik: kullanıcı, geri alınacak mevcut HEAD commit SHA'sını tam
+    olarak (kopyala-yapıştır değil, kasıtlı olarak yazarak) onaylamalıdır.
+    """
+    head_success, head_out = run_command(["git", "rev-parse", "HEAD"], show_output=False)
+    if not head_success:
+        print(f"{Colors.FAIL}❌ Mevcut HEAD SHA'sı okunamadı:\n{head_out}{Colors.ENDC}")
+        sys.exit(1)
+    head_sha = head_out.strip()
+
+    print(
+        f"\n{Colors.FAIL}{Colors.BOLD}🚨 --force-rollback: geçmiş YENİDEN YAZILACAK ve "
+        f"force-push yapılacak. Bu işlem GERİ ALINAMAZ (backup tag hariç).{Colors.ENDC}"
+    )
+    typed_sha = input(
+        f"{Colors.OKBLUE}Onaylamak için mevcut HEAD SHA'sını tam olarak yazın "
+        f"({head_sha}): {Colors.ENDC}"
+    ).strip()
+    if typed_sha != head_sha:
+        print(
+            f"{Colors.WARNING}⏹️ SHA eşleşmedi; force-rollback iptal edildi. "
+            f"Kodlarınız güvende.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+    create_rollback_backup_tag()
+
+    reset_success, reset_err = run_command(
+        ["git", "reset", "--hard", f"HEAD~{rollback_steps}"], show_output=False
+    )
+    if not reset_success:
+        print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
+        sys.exit(1)
+
+    print(f"{Colors.WARNING}⏳ GitHub deposu zorla (force) güncelleniyor...{Colors.ENDC}")
+    push_success, push_err = run_command(
+        ["git", "push", "--force", "origin", current_branch], show_output=False
+    )
+    if push_success:
+        print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+        print(
+            f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} "
+            f"adım önceki haline döndürüldü.{Colors.ENDC}"
+        )
+        print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+    else:
+        print(
+            f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız oldu:\n{push_err}{Colors.ENDC}"
+        )
+        print(
+            f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force "
+            f"push'u engelliyor olabilir.{Colors.ENDC}"
+        )
+    sys.exit(0 if push_success else 1)
+
+
+def report_auto_merge_changes() -> None:
+    """Otomatik pull/merge sonrası değişen dosyaları görünür hale getirir.
+
+    Not: Bu araç artık çakışmaları körü körüne yerel sürüm lehine çözen
+    `-X ours` stratejisini kullanmıyor (bkz. Risk B, docs/CI_REQUIRED_CHECKS.md).
+    Gerçek içerik çakışması varsa merge fail-closed olarak durur; bu fonksiyon
+    yalnızca çakışmasız otomatik merge'lerin görünürlüğünü artırır.
+    """
     _, changed = run_command(
         ["git", "diff", "--name-only", "ORIG_HEAD..HEAD"],
         show_output=False,
@@ -311,10 +658,7 @@ def report_ours_strategy_changes() -> None:
     changed_files = [line.strip() for line in changed.splitlines() if line.strip()]
     if not changed_files:
         return
-    print(
-        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel "
-        f"sürümün korunduğu dosyalar:{Colors.ENDC}"
-    )
+    print(f"{Colors.OKBLUE}ℹ️ Otomatik merge sonrası değişen dosyalar:{Colors.ENDC}")
     for file_path in changed_files:
         print(f"  - {file_path}")
 
@@ -596,9 +940,15 @@ def main() -> None:
     target_branch = None
     rollback_steps = 0
 
-    # Argüman kontrolü: Dal adı mı yoksa -X (Geri alma) komutu mu?
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].strip()
+    # Bayrakları ayır: --direct-main / --force-rollback herhangi bir sırada olabilir;
+    # kalan tek pozisyonel argüman dal adı ya da -N (rollback) olarak yorumlanır.
+    raw_args = sys.argv[1:]
+    direct_main = "--direct-main" in raw_args
+    force_rollback = "--force-rollback" in raw_args
+    positional_args = [a for a in raw_args if a not in ("--direct-main", "--force-rollback")]
+
+    if positional_args:
+        arg = positional_args[0].strip()
         # Eğer argüman -1, -5, -10 vb. formattaysa
         if re.match(r"^-\d+$", arg):
             rollback_steps = int(arg[1:])
@@ -617,6 +967,13 @@ def main() -> None:
                 )
                 sys.exit(1)
             target_branch = arg
+
+    if force_rollback and rollback_steps == 0:
+        print(
+            f"{Colors.FAIL}❌ Hata: --force-rollback yalnızca -N (Örn: -3) ile birlikte "
+            f"kullanılabilir.{Colors.ENDC}"
+        )
+        sys.exit(1)
 
     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     upload_version = resolve_upload_version()
@@ -682,75 +1039,30 @@ def main() -> None:
 
     assert_no_unmerged_files()
 
-    # Çalışma akışını her zaman main dalında sürdür.
-    if current_branch != "main":
-        print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
-        print(
-            f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş "
-            f"hazırlanıyor...{Colors.ENDC}"
-        )
-
-        _, stash_status = run_command(["git", "status", "--porcelain"], show_output=False)
-        stash_created = False
-        if stash_status.strip():
-            stash_success, stash_err = run_command(
-                ["git", "stash", "push", "-u", "-m", "github_upload:auto-switch-to-main"],
-                show_output=False,
-            )
-            if not stash_success:
-                print(
-                    f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e "
-                    f"alınamadı:\n{stash_err}{Colors.ENDC}"
-                )
-                sys.exit(1)
-            stash_created = True
-
-        checkout_success, checkout_err = run_command(["git", "checkout", "main"], show_output=False)
-        if not checkout_success:
-            print(
-                f"{Colors.FAIL}❌ 'main' dalına geçiş başarısız oldu:\n{checkout_err}{Colors.ENDC}"
-            )
-            if stash_created:
-                run_command(["git", "stash", "pop"], show_output=False)
-            print(
-                f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları "
-                f"kontrol edin.{Colors.ENDC}"
-            )
-            sys.exit(1)
-
-        current_branch = "main"
-
-        if stash_created:
-            pop_success, pop_err = run_command(["git", "stash", "pop"], show_output=False)
-            if not pop_success:
-                print(
-                    f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma "
-                    f"oluştu:\n{pop_err}{Colors.ENDC}"
-                )
-                print(
-                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar "
-                    f"çalıştırabilirsiniz.{Colors.ENDC}"
-                )
-                sys.exit(1)
-
-        print(f"{Colors.OKGREEN}✅ 'main' dalına başarıyla geçildi.{Colors.ENDC}\n")
-
     # ═══════════════════════════════════════════════════════════════
     # GERİ ALMA (ROLLBACK) İŞLEMİ
     # ═══════════════════════════════════════════════════════════════
     if rollback_steps > 0:
-        print(
-            f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI "
-            f"🚨{Colors.ENDC}"
-        )
-        print(
-            f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz "
-            f"kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}"
-        )
-        print(
-            f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de "
-            f"GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
-        )
+        ensure_on_main_branch(current_branch)
+        current_branch = DEFAULT_BASE_BRANCH
+
+        if force_rollback:
+            print(
+                f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: --force-rollback İŞLEMİ "
+                f"BAŞLATILDI 🚨{Colors.ENDC}"
+            )
+            print(
+                f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz "
+                f"kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK; geçmiş yeniden "
+                f"yazılıp force-push yapılacak.{Colors.ENDC}"
+            )
+        else:
+            print(f"\n{Colors.HEADER}🔙 GERİ ALMA (revert) İŞLEMİ BAŞLATILDI{Colors.ENDC}")
+            print(
+                f"{Colors.OKBLUE}Son {rollback_steps} commit, yeni `git revert` commit'leriyle "
+                f"GERİ ALINABİLİR biçimde geri alınacak. Geçmiş yeniden yazılmaz, force-push "
+                f"yapılmaz.{Colors.ENDC}"
+            )
 
         confirm = (
             input(f"\n{Colors.OKBLUE}Bu işlemi onaylıyor musunuz? (evet / hayır): {Colors.ENDC}")
@@ -758,64 +1070,38 @@ def main() -> None:
             .lower()
         )
 
-        if confirm in ["e", "evet", "y", "yes"]:
-            print(
-                f"\n{Colors.WARNING}⏳ Proje {rollback_steps} adım geriye sarılıyor...{Colors.ENDC}"
-            )
-
-            # 1. Yerel commit geçmişini kullanıcının istediği kadar adım geri sar.
-            # ORIG_HEAD merge/pull geçmişine bağlı olarak beklenmedik referansa işaret edebilir;
-            # kullanıcı -N verdiğinde en anlaşılır ve deterministik hedef HEAD~N'dir.
-            print(f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch}{Colors.ENDC}")
-
-            available_commits = get_commit_count()
-            if available_commits <= rollback_steps:
-                print(
-                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} "
-                    f"commit var, "
-                    f"{rollback_steps} adım geriye gidilemez.{Colors.ENDC}"
-                )
-                sys.exit(1)
-
-            create_rollback_backup_tag()
-
-            reset_success, reset_err = run_command(
-                ["git", "reset", "--hard", f"HEAD~{rollback_steps}"], show_output=False
-            )
-            if not reset_success:
-                print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
-                sys.exit(1)
-
-            # 2. GitHub'ı zorla (force) güncelle
-            print(f"{Colors.WARNING}⏳ GitHub deposu zorla (force) güncelleniyor...{Colors.ENDC}")
-            push_success, push_err = run_command(
-                ["git", "push", "--force", "origin", current_branch], show_output=False
-            )
-
-            if push_success:
-                print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
-                print(
-                    f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} "
-                    f"adım önceki haline döndürüldü.{Colors.ENDC}"
-                )
-                print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
-            else:
-                print(
-                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız "
-                    f"oldu:\n{push_err}{Colors.ENDC}"
-                )
-                print(
-                    f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force "
-                    f"push'u engelliyor olabilir.{Colors.ENDC}"
-                )
-
-            sys.exit(0 if push_success else 1)  # Geri alma bitti, başarı durumuna göre çık
-        else:
+        if confirm not in ["e", "evet", "y", "yes"]:
             print(
                 f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız "
                 f"güvende.{Colors.ENDC}"
             )
             sys.exit(0)
+
+        print(f"{Colors.OKBLUE}📍 Mevcut dal: {current_branch}{Colors.ENDC}")
+        available_commits = get_commit_count()
+        if available_commits <= rollback_steps:
+            print(
+                f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} "
+                f"commit var, "
+                f"{rollback_steps} adım geriye gidilemez.{Colors.ENDC}"
+            )
+            sys.exit(1)
+
+        if force_rollback:
+            perform_force_rollback(rollback_steps, current_branch)
+        else:
+            perform_revert_rollback(rollback_steps, current_branch)
+        return  # perform_*_rollback her zaman sys.exit ile sonlanır.
+
+    # ═══════════════════════════════════════════════════════════════
+    # DAL SEÇİMİ: doğrudan main (opt-in) vs. varsayılan yeni dal + PR
+    # ═══════════════════════════════════════════════════════════════
+    if direct_main:
+        ensure_on_main_branch(current_branch)
+        current_branch = DEFAULT_BASE_BRANCH
+        require_direct_main_confirmation(resolve_owner_repo(), github_token)
+    else:
+        current_branch = create_and_checkout_upload_branch(current_branch)
 
     # ═══════════════════════════════════════════════════════════════
     # DAL ÇEKME (PULL/MERGE) İŞLEMİ
@@ -1017,6 +1303,8 @@ def main() -> None:
             f"yüklendi!{Colors.ENDC}"
         )
         print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+        if not direct_main:
+            create_draft_pr_best_effort(current_branch, upload_version)
     elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
         confirm = (
@@ -1031,8 +1319,11 @@ def main() -> None:
         if confirm == "y":
             print(
                 f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+                f"(yalnızca çakışma yoksa otomatik devam edilecek)...{Colors.ENDC}"
             )
+            # NOT: `-X ours` KULLANILMIYOR (Risk B). Gerçek bir içerik çakışması
+            # varsa merge fail-closed olarak durur; yerel sürüm otomatik olarak
+            # uzaktaki değişikliklerin üzerine yazılmaz.
             pull_cmd = [
                 "git",
                 "pull",
@@ -1041,13 +1332,11 @@ def main() -> None:
                 "--rebase=false",
                 "--allow-unrelated-histories",
                 "--no-edit",
-                "-X",
-                "ours",
             ]
             pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
             if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
-                report_ours_strategy_changes()
+                report_auto_merge_changes()
                 assert_no_unmerged_files()
                 print(
                     f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden "
@@ -1081,6 +1370,8 @@ def main() -> None:
                         f"proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
                     )
                     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
+                    if not direct_main:
+                        create_draft_pr_best_effort(current_branch, upload_version)
                 else:
                     if "rule violations" in retry_err:
                         print(
@@ -1094,11 +1385,19 @@ def main() -> None:
                         )
             else:
                 print(
-                    f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale "
-                    f"manuel yazıp hatayı okuyun:{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Birleştirme sırasında çakışma oluştu; veri kaybını önlemek "
+                    f"için otomatik birleştirme durduruldu (fail-closed):{Colors.ENDC}"
+                )
+                print_unmerged_files()
+                abort_in_progress_merge()
+                print(
+                    f"{Colors.WARNING}Çakışmaları manuel çözüp commit aldıktan sonra aracı "
+                    f"tekrar çalıştırın, veya bunun yerine bir PR üzerinden birleştirin. "
+                    f"Manuel komut:{Colors.ENDC}"
                 )
                 print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
                 print(f"Hata Çıktısı:\n{pull_err}")
+                sys.exit(1)
         else:
             print(
                 f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "

@@ -60,10 +60,37 @@ GitHub API cannot be reached/authorized during the scheduled audit.
 ## Autonomous/direct push guardrails
 
 Branch protection remains the authoritative control for keeping red CI off
-`main`, but local automation must also fail closed before it attempts a direct
-push. The bundled `github_upload.py` flow therefore runs this synchronous
-pre-push gate after creating any local commit and again before a retry push
-following an automatic pull/merge:
+`main`, but local automation must also fail closed before it attempts to write
+to `main` at all.
+
+### Default: new branch + draft PR, not a direct push
+
+`github_upload.py` no longer pushes to `main` by default. A plain
+`python github_upload.py` run commits local changes onto a fresh
+`sidar-upload/<timestamp>` branch, pushes that branch, and opens a **draft**
+pull request against `main` via the GitHub REST API (`create_pull_request_via_api`
+in `github_upload.py`, stdlib `urllib` only — no extra dependency). If the PR
+API call fails (network, missing scope, etc.), the tool prints a manual
+`compare/main...<branch>` link instead of failing the run; the branch is
+already safely pushed at that point. This means every autonomous/local upload
+now goes through the same PR review path as a human contributor, and branch
+protection on `main` (required checks, required reviews) applies to it exactly
+as it would to any other PR.
+
+### Opt-in: `--direct-main`
+
+The old direct-to-`main` behavior still exists for maintainers who explicitly
+need it, behind `python github_upload.py --direct-main`. Before pushing, this
+path:
+
+- best-effort checks whether `main` has branch protection enabled (via the
+  GitHub API) and prints a loud warning if it does not — an unprotected `main`
+  means this push will skip review entirely;
+- requires the operator to type the literal string `DIRECT-MAIN` to proceed
+  (a plain y/n confirmation is not enough for a path that bypasses PR review);
+- then runs the same synchronous pre-push quality gate as before, after
+  creating any local commit and again before a retry push following an
+  automatic pull/merge:
 
 ```bash
 uv run ruff format --check .
@@ -72,13 +99,34 @@ uv run pytest tests/unit -q --no-cov -x
 ```
 
 If any command fails, the upload tool exits without calling `git push`. The full
-unit package catches code/test contract drift before autonomous backup/deployment
-loops can write directly to `main`; the broader GitHub required checks still cover
-production-readiness, installer smoke, dependency-profile, PostgreSQL stress, and
-benchmark compare behavior. Repository administrators should still periodically
-inspect GitHub branch protection/rulesets and confirm the required contexts in the
-table above are selected for `main`; the local guard is a defense in depth, not a
-replacement for required status checks.
+unit package catches code/test contract drift before a direct-main write lands;
+the broader GitHub required checks still cover production-readiness, installer
+smoke, dependency-profile, PostgreSQL stress, and benchmark compare behavior.
+Repository administrators should still periodically inspect GitHub branch
+protection/rulesets and confirm the required contexts in the table above are
+selected for `main`; the local guard is a defense in depth, not a replacement
+for required status checks.
+
+### Conflict handling never favors the local copy silently
+
+Both the default branch flow and `--direct-main` retry-on-rejected-push path
+pull with plain `git pull --no-rebase --allow-unrelated-histories --no-edit` —
+**no `-X ours`**. A real content conflict aborts the merge and stops with a
+fail-closed error instead of silently resolving every conflicting hunk in
+favor of the local copy (which could discard someone else's already-pushed
+work). Resolve conflicts manually, or push the branch and let the draft PR
+handle the merge through review.
+
+### Rollback defaults to `git revert`, not `reset --hard` + force-push
+
+`python github_upload.py -N` now reverts the last `N` commits with
+`git revert --no-edit HEAD~N..HEAD` and a normal (non-force) push by default —
+recoverable, no rewritten history, no force-push. The old `reset --hard` +
+`git push --force` behavior is still available via
+`python github_upload.py -N --force-rollback`, but it additionally requires
+the operator to type the exact current `HEAD` commit SHA as a second
+confirmation (not just "evet"/"yes") before anything destructive happens, on
+top of the existing pre-reset backup tag (`backup/pre-rollback-<timestamp>`).
 
 ## Installer manifest and smoke gate
 
@@ -200,8 +248,9 @@ küçük pin fixup commit'ini otomatik oluşturur. Yalnız diff üretmek için
 
 The `pytest-meta-contracts` hook also runs at `pre-push` and covers the script,
 quality-gate, and dependency-profile contracts most likely to detect configuration
-drift quickly. The direct-main `github_upload.py` path deliberately runs the full
-`tests/unit` package rather than relying on this faster subset.
+drift quickly. `github_upload.py`'s pre-push quality gate deliberately runs the full
+`tests/unit` package rather than relying on this faster subset, for both the
+default branch+PR flow and `--direct-main`.
 
 ## PR visibility for core installer files
 

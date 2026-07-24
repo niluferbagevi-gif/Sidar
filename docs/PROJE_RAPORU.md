@@ -813,7 +813,7 @@ Bu bölüm, 2026-07-24 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
 | `managers/browser_manager.py` | 718 |
-| `github_upload.py` | 295 |
+| `github_upload.py` | 1.418 |
 | `gui_launcher.py` | 98 |
 
 ### 8.2 Multi-Agent Çekirdek ve Roller
