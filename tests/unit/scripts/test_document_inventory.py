@@ -44,7 +44,6 @@ def test_source_for_note_returns_none_when_candidate_is_not_tracked() -> None:
 
 def test_render_index_is_deterministic_and_lists_mapping_sorted() -> None:
     metrics = {
-        "source_commit": "deadbeef",
         "project_version": "9.9.9",
         "tracked_file_count": 3,
         "production_python_count": 1,
@@ -58,9 +57,25 @@ def test_render_index_is_deterministic_and_lists_mapping_sorted() -> None:
 
     assert first == second
     assert first.index("`a.py`") < first.index("`b.py`")
-    assert "deadbeef" in first
     assert "9.9.9" in first
     assert "- **Ayrı not üretilen kaynak sayısı:** 2" in first
+
+
+def test_render_index_does_not_embed_a_commit_sha() -> None:
+    """A file tracked in git cannot describe "as of commit X" without going
+    stale the instant it is committed as part of X; --check would then fail
+    on every single commit. Guard against source_commit sneaking back in."""
+    metrics = {
+        "project_version": "9.9.9",
+        "tracked_file_count": 1,
+        "production_python_count": 1,
+        "test_file_count": 0,
+        "frontend_file_count": 0,
+    }
+
+    rendered = gen.render_index(metrics, {})
+
+    assert "commit" not in rendered.lower()
 
 
 def test_repo_metrics_reports_current_project_version() -> None:

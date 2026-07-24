@@ -5,11 +5,10 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > Bu dosya `scripts/generate_module_notes_index.py` tarafından otomatik üretilir;
 > elle düzenlenmemelidir. Güncellemek için betiği yeniden çalıştırın.
 
-- **Kaynak commit:** 58ba46f13f70d8db718c04e669c3f6d6088ef013
 - **Proje sürümü:** 5.2.0
-- **Toplam takipli dosya:** 982
-- **Üretim Python dosyası (tests hariç):** 305
-- **Test dosyası (`test_*.py`):** 247
+- **Toplam takipli dosya:** 984
+- **Üretim Python dosyası (tests hariç):** 306
+- **Test dosyası (`test_*.py`):** 248
 - **Frontend dosyası (`web_ui_react/`):** 84
 - **Ayrı not üretilen kaynak sayısı:** 70
 

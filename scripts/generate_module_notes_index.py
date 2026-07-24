@@ -8,6 +8,11 @@ under `docs/module-notes/`, so the index can no longer go stale silently.
 
 Run with `--check` (as a CI gate) to fail when the committed INDEX.md does
 not match what this script would generate.
+
+Deliberately not included: a commit SHA. A file that is itself tracked in
+git cannot describe "as of commit X" without going stale the moment it is
+committed as part of X (the same reason install_sidar.sh pins its module
+commit from a *separate*, already-landed commit).
 """
 
 from __future__ import annotations
@@ -68,12 +73,6 @@ def _git_ls_files(*patterns: str) -> list[str]:
     ]
 
 
-def _git_head_sha() -> str:
-    return subprocess.check_output(
-        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
-    ).strip()
-
-
 def source_for_note(relative_note_path: str, tracked_files: set[str]) -> str | None:
     """Return the tracked source path a module-notes file documents, or None."""
     if relative_note_path in SOURCE_OVERRIDES:
@@ -116,7 +115,6 @@ def repo_metrics(tracked_files: list[str]) -> dict[str, int | str]:
     production_python_files = [f for f in py_files if not f.startswith("tests/")]
     frontend_files = [f for f in tracked_files if f.startswith("web_ui_react/")]
     return {
-        "source_commit": _git_head_sha(),
         "project_version": resolve_pyproject_version(REPO_ROOT / "pyproject.toml"),
         "tracked_file_count": len(tracked_files),
         "production_python_count": len(production_python_files),
@@ -134,7 +132,6 @@ def render_index(metrics: dict[str, int | str], mapping: dict[str, str]) -> str:
         "> Bu dosya `scripts/generate_module_notes_index.py` tarafından otomatik üretilir;",
         "> elle düzenlenmemelidir. Güncellemek için betiği yeniden çalıştırın.",
         "",
-        f"- **Kaynak commit:** {metrics['source_commit']}",
         f"- **Proje sürümü:** {metrics['project_version']}",
         f"- **Toplam takipli dosya:** {metrics['tracked_file_count']}",
         f"- **Üretim Python dosyası (tests hariç):** {metrics['production_python_count']}",
