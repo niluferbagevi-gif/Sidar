@@ -1198,9 +1198,12 @@ async def test_attempt_autonomous_self_heal_short_circuits_on_mechanical_autofix
 async def test_attempt_autonomous_self_heal_lazy_inits_attempts_registry_when_missing(
     sidar_agent_factory,
 ) -> None:
-    """`_self_heal_attempts` __init__ içinde her zaman set edilir; bu test o özniteliği
-    hiç görmemiş "temiz" bir örnekle circuit-breaker akışının hâlâ lazy-init
-    fallback'ini (agent/sidar_agent.py:797-798) tetiklediğini doğrular."""
+    """`_self_heal_attempts` __init__ içinde her zaman set edilir.
+
+    Bu test o özniteliği hiç görmemiş "temiz" bir örnekle circuit-breaker
+    akışının hâlâ lazy-init fallback'ini (agent/sidar_agent.py:797-798)
+    tetiklediğini doğrular.
+    """
     agent = sidar_agent_factory()
     _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
     agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
