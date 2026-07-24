@@ -120,6 +120,67 @@ birebir aynı `setXForm((prev) => ({...prev, [key]: value}))` güncelleyicileri
 paylaşılan bir `src/hooks/useFormState.js` hook'una çıkarıldı (davranış birebir
 korundu, `OperationsQaPanel.test.jsx` + yeni `useFormState.test.js` ile doğrulandı).
 
+## CI/Test altyapısı değerlendirmesi (2026-07-24)
+
+Bir arkadaş kod incelemesinde `.github/workflows/` ve `run_tests.sh` için altı
+bulgu tespit edildi; her biri gerçek workflow/script içeriğine karşı doğrulandı.
+İkisi zaten çözülmüş/yanlış, biri kasıtlı bir politika kararı (kod değişikliği
+değil, sahip onayı gerektirir), ikisi önerilen haliyle uygulanırsa regresyona yol
+açar, biri zaten ayrı bir bölümde takip ediliyor:
+
+- **`gpu-inference-policy-gate` her fork/GPU runner'sız ortamda `production-readiness`'i bloke ediyor (doğrulandı, KASITLI TASARIM — kod değişikliği yapılmadı):**
+  `docs/CI_REQUIRED_CHECKS.md` bunu açıkça belgeliyor: *"Forks without an eligible
+  runner must provision one before claiming merge/release readiness; there is no
+  silent checklist-only bypass."* Bu, sessizce atlanabilen bir kalite kapısını
+  kapatmak için bilinçli olarak sertleştirilmiş bir tasarım — kazara oluşmuş bir
+  bug değil. Ancak repo'nun gerçek `ENABLE_GPU_BENCH_GATE` repo/org değişkeni ve
+  self-hosted GPU runner'ı fiilen yapılandırılı değilse, bu politika **hiçbir
+  PR'ın** (bu PR dahil) "Production readiness aggregate" required check'ini
+  geçemeyeceği anlamına gelir. Bu, yalnızca repo sahibinin bilebileceği bir
+  operasyonel durum ve kasıtlı bir güvenlik/kalite politikasını gevşetmek
+  tek taraflı alınacak bir karar değil; kullanıcıya soruldu.
+- **Tek "test" job'unda shellcheck+BATS+npm+bandit+pip-audit+production-readiness sırayla (doğrulandı, uygulanmadı):**
+  Gerçek — `test` job'u (ci.yml:130-524) hepsini tek runner'da sırayla çalıştırıyor.
+  Ancak iş parçacığı zaten `run_tests.sh` satırındaki üstteki tabloda takip
+  ediliyor ("benchmark/frontend/coverage stage helper'larını ayrı script
+  modüllerine çıkarmak"); CI job topolojisini bölmek `docs/CI_REQUIRED_CHECKS.md`
+  tarafından açıkça riskli işaretlenmiş: *"If a job `name:` changes, update
+  branch protection at the same time or this audit will fail; without that sync,
+  PRs may either be blocked forever ... or allowed to merge without the intended
+  release gate."* Bu yüzden job bölme, branch protection güncellemesiyle
+  eş zamanlı, repo sahibinin GitHub ayarlarına erişimi olan ayrı bir adımda
+  yapılmalı.
+- **Benchmark cache key'i `github.run_id` içeriyor (doğrulandı, ÖNERİLEN DÜZELTME YANLIŞ — uygulanmadı):**
+  `run_id`'yi kaydetme (save) anahtarından çıkarmak önerisi incelendi ve
+  **regresyona yol açacağı** için uygulanmadı: GitHub Actions cache action aynı
+  anahtarla mevcut bir girdiyi güncellemez (yalnızca yeni/benzersiz anahtarlarda
+  kaydeder). `run_id` olmadan, bir (`ref`, `lockfile`) kombinasyonu için cache
+  yalnızca ilk seferinde kaydedilir ve bir daha asla güncellenmez — "rolling
+  baseline" mekanizması tamamen kırılır. Mevcut tasarım (benzersiz save-key +
+  prefix-match `restore-keys`) bu deseni doğru şekilde uyguluyor; cache tahliyesi
+  gerçek bir risk ama zaten dokümante edilmiş bir manuel kurtarma akışı var
+  (`benchmark-baseline-seed.yml`, `seed_benchmark_baseline` workflow_dispatch
+  girdisi) ve eksik baseline durumunda step summary bu akışı doğrudan gösteriyor.
+- **10 workflow arasında örtüşme (doğrulandı, kısmen yanlış karakterize edilmiş):**
+  `nightly-*`/`weekly-*`/`release-*` workflow'larının çoğu yalnızca cron ile
+  tetikleniyor (PR başına maliyet eklemiyorlar), bu yüzden "CI süresi" endişesiyle
+  ilgisizler — bakım yükü endişesi geçerli ama düşük öncelikli. Tek gerçek
+  per-PR örtüşme adayı `migration-cutover-checks.yml` (push/PR üzerinde
+  tetikleniyor, `ci.yml`'deki `pg-stress` ile aynı Postgres/migration alanında);
+  incelendiğinde farklı teknikler kullandığı görüldü (Alembic
+  upgrade/downgrade/upgrade zinciri + SQLite→Postgres dry-run rehearsal +
+  `load_test_db_pool.py` betiği ile 50 eşzamanlı bağlantı yük testi vs.
+  `pg-stress`'in `pytest -m pg_stress` tabanlı entegrasyon testleri) — bu yüzden
+  saf bir tekrar değil, konsolidasyon sinyal kaybı riski taşıyor. Aksiyon
+  alınmadı.
+- **Ruff borç ratchet tarihleri yalnızca işaretleniyor, CI'ı bloke etmiyor (doğrulandı YANLIŞ, kod değişikliği gerekmedi):**
+  `scripts/ci/check_policy_dates.py` (CI'da `test` job'unun "Check dated
+  policy/debt expirations" adımında çalışıyor) süresi geçmiş
+  `close_docstring_campaign_by`/`e501_global_ignore_review_by`/
+  `close_async240_campaign_by`/torch CVE tarihlerinde **`return 1` ile CI'ı
+  gerçekten kırıyor** (`_add_if_expired`); yalnızca yaklaşan tarihler için
+  non-blocking uyarı (`_add_if_due_soon`) veriyor. Bulgu güncel koda uymuyor.
+
 ## Gerçek TODO envanteri
 
 - `core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO` (eski TODO), 2026-Q3 başlangıcında kapatıldı: deterministic GraphRAG entity extraction artık `ENABLE_RAG_LLM_ENTITY_EXTRACTION` feature flag'i arkasında LLM-destekli extractor ile genişletilebilir. `core/rag/llm_entity_extraction.py` içindeki prompt/coercion/schema validator sınırı korunur; LLM çıktısı bu sınırı geçmeden entity graph'a yazılmamalıdır.
