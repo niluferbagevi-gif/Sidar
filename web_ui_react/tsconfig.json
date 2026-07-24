@@ -1,4 +1,14 @@
 {
+  // checkJs is intentionally false: the app is almost entirely .jsx/.js (one
+  // .ts file exists, src/hooks/useThrottledStream.ts). `npm run typecheck`
+  // therefore only type-checks that one file plus TS-side module resolution
+  // -- it does not type-check component/hook logic. Do not read a passing
+  // `npm run typecheck` as type safety for the .jsx/.js tree; use it only as
+  // a regression gate for genuinely-typed (.ts/.tsx) code.
+  // Tracking: incremental .jsx -> .tsx migration is unscheduled debt (no
+  // owner/target date yet); see docs/TESTING.md for the current gate scope
+  // note. Enabling checkJs=true today surfaces ~3000 pre-existing errors
+  // across the untyped tree and cannot be flipped without that migration.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

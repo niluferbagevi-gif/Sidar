@@ -8,6 +8,7 @@ import {
   runCoverageBatch,
 } from "../lib/api.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
+import { useFormState } from "../hooks/useFormState.js";
 
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
@@ -31,14 +32,14 @@ export function OperationsQaPanel() {
   const [output, setOutput] = useState(null);
   const [busyAction, setBusyAction] = useState("");
   const actionInFlightRef = useRef(false);
-  const [landingForm, setLandingForm] = useState({
+  const [landingForm, setLandingField] = useFormState({
     brand_name: "Sidar",
     offer: "Kurumsal ajan operasyon merkezi",
     audience: "Pazarlama ve QA ekipleri",
     call_to_action: "Demo planla",
     tone: "güven veren",
   });
-  const [campaignForm, setCampaignForm] = useState({
+  const [campaignForm, setCampaignField] = useFormState({
     campaign_name: "Operasyon Kontrol Sprinti",
     objective: "Poyraz ve Coverage ajanlarını sahaya almak",
     audience: "Operasyon liderleri",
@@ -46,8 +47,8 @@ export function OperationsQaPanel() {
     offer: "Canlı ajan kontrol paneli",
     tone: "net",
   });
-  const [coverageForm, setCoverageForm] = useState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 10 });
-  const [batchForm, setBatchForm] = useState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 5, batch_size: 1, append: true });
+  const [coverageForm, setCoverageField] = useFormState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 10 });
+  const [batchForm, setBatchField] = useFormState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 5, batch_size: 1, append: true });
 
   const ws = useWebSocket("ops-qa", {
     roomId: activeRoom,
@@ -132,7 +133,7 @@ export function OperationsQaPanel() {
         }}>
           <h3>Poyraz Landing Page</h3>
           {Object.entries(landingForm).map(([key, value]) => (
-            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setLandingForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
+            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setLandingField(key, e.target.value)} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Landing üret</button>
         </form>
@@ -147,7 +148,7 @@ export function OperationsQaPanel() {
         }}>
           <h3>Poyraz Kampanya</h3>
           {Object.entries(campaignForm).map(([key, value]) => (
-            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setCampaignForm((prev) => ({ ...prev, [key]: e.target.value }))} /></label>
+            <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setCampaignField(key, e.target.value)} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Kopya üret</button>
         </form>
@@ -159,9 +160,9 @@ export function OperationsQaPanel() {
           runAction("Coverage analiz", () => analyzeCoverage({ ...coverageForm, room_id: QA_ROOM_ID }));
         }}>
           <h3>Coverage Analizi</h3>
-          <label>coverage_xml<input value={coverageForm.coverage_xml} onChange={(e) => setCoverageForm((prev) => ({ ...prev, coverage_xml: e.target.value }))} /></label>
-          <label>coveragerc<input value={coverageForm.coveragerc} onChange={(e) => setCoverageForm((prev) => ({ ...prev, coveragerc: e.target.value }))} /></label>
-          <label>limit<input type="number" value={coverageForm.limit} onChange={(e) => setCoverageForm((prev) => ({ ...prev, limit: Number(e.target.value) }))} /></label>
+          <label>coverage_xml<input value={coverageForm.coverage_xml} onChange={(e) => setCoverageField("coverage_xml", e.target.value)} /></label>
+          <label>coveragerc<input value={coverageForm.coveragerc} onChange={(e) => setCoverageField("coveragerc", e.target.value)} /></label>
+          <label>limit<input type="number" value={coverageForm.limit} onChange={(e) => setCoverageField("limit", Number(e.target.value))} /></label>
           <button type="submit" disabled={Boolean(busyAction)}>Analiz et</button>
         </form>
 
@@ -170,10 +171,10 @@ export function OperationsQaPanel() {
           runAction("Coverage batch", () => runCoverageBatch({ ...batchForm, room_id: QA_ROOM_ID }));
         }}>
           <h3>Coverage Batch</h3>
-          <label>coverage_xml<input value={batchForm.coverage_xml} onChange={(e) => setBatchForm((prev) => ({ ...prev, coverage_xml: e.target.value }))} /></label>
-          <label>limit<input type="number" value={batchForm.limit} onChange={(e) => setBatchForm((prev) => ({ ...prev, limit: Number(e.target.value) }))} /></label>
-          <label>batch_size<input type="number" value={batchForm.batch_size} onChange={(e) => setBatchForm((prev) => ({ ...prev, batch_size: Number(e.target.value) }))} /></label>
-          <label className="checkbox-row"><input type="checkbox" checked={batchForm.append} onChange={(e) => setBatchForm((prev) => ({ ...prev, append: e.target.checked }))} /> append</label>
+          <label>coverage_xml<input value={batchForm.coverage_xml} onChange={(e) => setBatchField("coverage_xml", e.target.value)} /></label>
+          <label>limit<input type="number" value={batchForm.limit} onChange={(e) => setBatchField("limit", Number(e.target.value))} /></label>
+          <label>batch_size<input type="number" value={batchForm.batch_size} onChange={(e) => setBatchField("batch_size", Number(e.target.value))} /></label>
+          <label className="checkbox-row"><input type="checkbox" checked={batchForm.append} onChange={(e) => setBatchField("append", e.target.checked)} /> append</label>
           <button type="submit" disabled={Boolean(busyAction)}>Batch çalıştır</button>
         </form>
       </div>

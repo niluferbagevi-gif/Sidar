@@ -60,6 +60,66 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 | `managers/browser_manager.py` | Playwright, Selenium fallback, scraping, screenshot, visual drift ve multimodal escalation tek sınıfta. | `managers/browser/playwright.py`, `managers/browser/selenium.py`, `managers/browser/screenshot.py`, `managers/browser/visual_drift.py`, `managers/browser/scraping.py`, `managers/browser/models.py` | P2 Playwright/Selenium adapter arayüzlerini ayırıp screenshot ve visual-drift pure helper'larını alt modüllere taşımak. | `tests/unit/managers/test_browser_manager.py`, browser visual QA tests |
 | `agent/swarm.py` | Task routing, parallel/pipeline execution, P2P handoff, retry/loop guard ve distributed dispatch tek orchestration dosyasında. | `agent/swarm/router.py`, `agent/swarm/executor.py`, `agent/swarm/handoff.py`, `agent/swarm/distributed.py`, `agent/swarm/models.py` | `SwarmTask`/`SwarmResult` modellerini ve `TaskRouter`'ı alt modüllere taşıyıp `agent.swarm` facade export'unu korumak. | `tests/test_swarm_orchestrator.py`, `tests/unit/agent/core/test_supervisor.py` |
 
+## Frontend (web_ui_react) refactor backlog'u (2026-07-24)
+
+Backend/installer tablolarındaki ilkeler (davranış koruma, küçük PR, test-first
+güvence) burada da geçerlidir. Aşağıdaki maddeler bir arkadaş kod incelemesinde
+tespit edildi, gerçek koda karşı doğrulandı ve düşük riskli olmadıkları için bu
+turda uygulanmadı — bilinçli olarak backlog'a alındı.
+
+- **TypeScript kapısı "tiyatro" (uygulanmadı, netleştirildi):** `tsconfig.json`
+  içinde `checkJs: false`; ağaç neredeyse tamamen `.jsx`/`.js` (tek `.ts` dosyası:
+  `src/hooks/useThrottledStream.ts`), 0 `.tsx`. `npm run typecheck` bu yüzden
+  yalnızca o tek dosyayı ve TS tarafı modül çözümlemesini denetliyor;
+  `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
+  `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
+  ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
+  Bu PR'da `tsconfig.json` ve `run_tests.sh` içine kapının gerçek kapsamını
+  belirten yorum/log satırı eklendi (bkz. ilgili commit); kademeli `.jsx` →
+  `.tsx` taşıması ayrı, planlı bir kampanya gerektirir (owner/tarih henüz atanmadı).
+- **`src/components/SwarmFlowPanel.jsx` (~435 satır):** 14 `useState`, 5
+  `fetchJson` çağrısı ve graph inşa mantığı tek dosyada; `GraphView`'e ~19 prop
+  geçiyor. Hedef adım: state + API orchestration'ı `useSwarmFlowController()`
+  hook'una çıkarmak, `GraphView` prop yüzeyini tek bir controller nesnesine indirmek.
+  Test kapısı: `src/components/SwarmFlowPanel.test.jsx`, `SwarmFlowPanel.helpers.test.jsx`.
+- **`src/lib/api.js` (~242 satır):** token yaşam döngüsü (bellek + localStorage +
+  eski format migrasyonu + `sidar:token-change` custom event), genel `fetchJson`
+  HTTP client'ı ve ~10 domain-özel endpoint fonksiyonu aynı dosyada. Hedef adım:
+  `src/lib/tokenStore.js` (token okuma/yazma/migrasyon/event), `src/lib/httpClient.js`
+  (`fetchJson`/auth header) ve `src/lib/api.js` (yalnız domain endpoint'leri, mevcut
+  import yolunu re-export ederek) olarak ayırmak — en kırılgan parça (auth) izole
+  test edilebilir hale gelir. Test kapısı: `src/lib/api.test.js` (zaten
+  `npm run test:critical` içinde ayrıca çalıştırılıyor).
+- **`src/hooks/useWebSocket.js` (~285 satır):** `onmessage` içinde eski düz mesaj
+  şeması (`type` alanı olmadan `chunk`/`error`/`status` gibi alanlara duck-typing
+  ile bakan fallback) ile yeni oda-tabanlı şema (`room_state`/`presence`/
+  `collaboration_event` vb. açık `type` alanlı) aynı if/else zincirinde karışıyor.
+  `{type: handler}` dispatch map'e geçiş mümkün ama `type` alanı olmayan legacy
+  mesajlar için mutlaka bir fallback dalı korunmalı — naif bir map bunları
+  sessizce kaybeder. Test kapısı: `src/hooks/useWebSocket.test.js`.
+- **`src/hooks/useVoiceAssistant.js` (~648 satır):** mikrofon yakalama, VAD,
+  websocket protokolü ve ses oynatma kuyruğu tek hook'ta. Hedef adım:
+  `useMicCapture`/`useVAD`/`useVoiceSocket`/`useAudioPlaybackQueue` gibi
+  kompoze edilebilir hook'lara bölmek; gerçek mikrofon/ses donanımına bağımlı
+  olduğu için bu bölme yalnızca mock'lanmış test kapısıyla (mevcut
+  `src/hooks/useVoiceAssistant.test.js`) doğrulanabilir, manuel donanım testi
+  bu ortamda mümkün değil.
+- **Auth token durumu (modül-seviyesi singleton + `sidar:token-change` DOM event):**
+  bir `TokenProvider` React context'ine taşımak bağımlılığı daha açık/test edilebilir
+  yapar, ancak `api.js` bölünmesiyle aynı yüzeyi paylaşıyor ve tüm tüketicilerin
+  (component ağacının sarılması dahil) güncellenmesini gerektiriyor — `api.js`
+  bölünmesinden sonra, ayrı bir adım olarak ele alınmalı.
+- **`src/lib/routerShim.jsx` (113 satır):** bundle bütçesi için makul bir
+  `react-router-dom` alternatifi; parametreli/nested route desteği yok. Bu bir
+  hata değil, bilinçli bir trade-off — detay sayfaları eklendiğinde ölçeklenme
+  sınırı olarak not edilir, şu an için aksiyon gerektirmiyor.
+
+Bu turda tek somut kod değişikliği: `OperationsQaPanel.jsx` içindeki 4 form
+state'inin (`landingForm`/`campaignForm`/`coverageForm`/`batchForm`) neredeyse
+birebir aynı `setXForm((prev) => ({...prev, [key]: value}))` güncelleyicileri
+paylaşılan bir `src/hooks/useFormState.js` hook'una çıkarıldı (davranış birebir
+korundu, `OperationsQaPanel.test.jsx` + yeni `useFormState.test.js` ile doğrulandı).
+
 ## Gerçek TODO envanteri
 
 - `core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO` (eski TODO), 2026-Q3 başlangıcında kapatıldı: deterministic GraphRAG entity extraction artık `ENABLE_RAG_LLM_ENTITY_EXTRACTION` feature flag'i arkasında LLM-destekli extractor ile genişletilebilir. `core/rag/llm_entity_extraction.py` içindeki prompt/coercion/schema validator sınırı korunur; LLM çıktısı bu sınırı geçmeden entity graph'a yazılmamalıdır.

@@ -2084,7 +2084,11 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
           FRONTEND_EXIT_CODE=${FRONTEND_LINT_EXIT_CODE}
         fi
 
-        echo "🧪 Frontend typecheck kalite kapısı çalıştırılıyor: npm run typecheck"
+        # NOT: web_ui_react/tsconfig.json içinde checkJs=false; ağaç neredeyse
+        # tamamen .jsx/.js olduğundan bu kapı yalnızca tek .ts dosyasını ve TS
+        # tarafı modül çözümlemesini denetler, .jsx/.js bileşen/hook mantığı
+        # için gerçek bir tip güvencesi vermez (bkz. tsconfig.json).
+        echo "🧪 Frontend typecheck kalite kapısı çalıştırılıyor: npm run typecheck (yalnız .ts + modül çözümleme; .jsx/.js tip denetlenmiyor)"
         FRONTEND_TYPECHECK_RAN=1
         run_checked npm run typecheck
         FRONTEND_TYPECHECK_EXIT_CODE=$?
