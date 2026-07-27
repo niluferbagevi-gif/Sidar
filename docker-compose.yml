@@ -57,7 +57,13 @@ services:
 
   ollama:
     profiles: ["cpu"]
-    image: ollama/ollama:latest
+    # ollama/ollama:latest kasıtlı olarak deterministik değildir (mutable tag).
+    # Production'da OLLAMA_DOCKER_IMAGE ile incelenmiş bir digest'e pinleyin, örn.
+    #   OLLAMA_DOCKER_IMAGE=ollama/ollama@sha256:<İNCELENMİŞ-DIGEST>
+    # Digest'i üretmek için (image'ı çekip inceledikten sonra):
+    #   docker pull ollama/ollama:<sürüm>
+    #   docker inspect --format='{{index .RepoDigests 0}}' ollama/ollama:<sürüm>
+    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
     container_name: sidar_ollama
     restart: unless-stopped
     environment:
@@ -77,7 +83,8 @@ services:
 
   ollama-gpu:
     profiles: ["gpu"]
-    image: ollama/ollama:latest
+    # ollama'daki gibi production'da OLLAMA_DOCKER_IMAGE ile digest'e pinleyin.
+    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
     container_name: sidar_ollama
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-nvidia}
@@ -280,7 +287,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
@@ -326,8 +333,13 @@ services:
     mem_limit: ${SIDAR_WEB_MEM_LIMIT:-4g}
     command: --quick web --host 0.0.0.0 --port 7860
 
+    # Varsayılan WEB_BIND_ADDR=0.0.0.0 mevcut LAN'dan/başka cihazdan erişim
+    # davranışını korur (hızlı başlangıç: `docker compose up --build sidar-web`).
+    # Production'da UI'ı doğrudan internete açmak yerine WEB_BIND_ADDR=127.0.0.1
+    # verip önüne TLS sonlandıran bir Nginx/Caddy reverse proxy koyun (bkz. README
+    # "Production'da web arayüzü" notu).
     ports:
-      - "${WEB_PORT:-7860}:7860"
+      - "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-7860}:7860"
 
     deploy:
       resources:
@@ -395,8 +407,9 @@ services:
     mem_limit: ${SIDAR_WEB_GPU_MEM_LIMIT:-8g}
     command: --quick web --host 0.0.0.0 --port 7860
 
+    # WEB_BIND_ADDR'de sidar-web ile aynı davranış/gerekçe geçerlidir.
     ports:
-      - "${WEB_GPU_PORT:-7861}:7860"
+      - "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_GPU_PORT:-7861}:7860"
 
     deploy:
       resources:
@@ -425,7 +438,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki

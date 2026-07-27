@@ -771,8 +771,15 @@ ensure_prerequisites() {
         warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
-    if [[ "$DOCKER_ONLY" == true ]]; then
-        info "--docker-only: host Ollama kurulumu atlanıyor; AI provider docker-compose'daki 'ollama'/'ollama-gpu' servisi üzerinden sağlanacak."
+    # NOT: bu fonksiyon (ensure_prerequisites) select_runtime_mode()'dan ÖNCE
+    # çalışır (bkz. sidar_phase_runtime_prerequisites() 03_runtime.sh), bu yüzden
+    # APP_RUNTIME_MODE_SELECTED burada henüz set edilmemiştir ve "ask" modunda
+    # interaktif seçimi bu noktada bilemeyiz. Bunun yerine CLI'dan erkenden
+    # çözülen ham APP_RUNTIME_MODE'u kontrol ediyoruz (--runtime-mode=docker
+    # açıkça verildiyse "docker" olur); interaktif "ask" akışında kullanıcı
+    # sonradan tam Docker modunu seçerse bu adım zaten çalışmış olur.
+    if [[ "$DOCKER_ONLY" == true || "${APP_RUNTIME_MODE:-ask}" == "docker" ]]; then
+        info "--docker-only/--runtime-mode=docker: host Ollama kurulumu atlanıyor; AI provider docker-compose'daki 'ollama'/'ollama-gpu' servisi üzerinden sağlanacak."
         info "Bu, host'ta 11434 portunun boş kalmasını sağlar; aksi halde host Ollama, Docker'daki ollama/ollama-gpu servisinin aynı portu (11434:11434) yayınlamasını engelleyebilir."
     else
         _ollama_install_step
@@ -823,6 +830,27 @@ wait_for_docker_nvidia_runtime() {
 }
 
 setup_nvidia_docker() {
+    # WSL2'de GPU desteği Docker Desktop tarafından WSL2 backend üzerinden sağlanır;
+    # NVIDIA'nın Windows sürücüsü libcuda.so aracılığıyla WSL2'ye zaten aktarılır.
+    # WSL Ubuntu'ya ayrıca Linux NVIDIA ekran sürücüsü kurmak veya bu distro'da
+    # `nvidia-ctk runtime configure` ile /etc/docker/daemon.json'ı değiştirmeye
+    # çalışmak yanlış hedefi düzenler: bu Ubuntu distro'daki `docker` CLI yalnız
+    # Docker Desktop'ın ayrı motoruna bağlanan bir istemcidir, o motorun kendi
+    # daemon.json'ı bu distro'da değildir. Bu yüzden WSL2'de önce doğrudan
+    # `--gpus all` passthrough'unu ampirik olarak doğruluyoruz; çalışıyorsa
+    # aşağıdaki apt/nvidia-ctk kurulum yolu tamamen atlanır.
+    if [[ "$WSL2" == true && "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
+        step "Docker Desktop / WSL2 GPU doğrulaması"
+        local wsl_gpu_verify_image="${SIDAR_WSL_GPU_VERIFY_IMAGE:-nvidia/cuda:13.0.0-runtime-ubuntu22.04}"
+
+        if docker run --rm --gpus all "$wsl_gpu_verify_image" nvidia-smi; then
+            ok "Docker Desktop GPU passthrough doğrulandı."
+            return 0
+        fi
+
+        fail "Docker Desktop GPU passthrough başarısız. Windows NVIDIA sürücüsü ve Docker Desktop GPU desteğini kontrol edin."
+    fi
+
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
         if ! command -v nvidia-ctk &>/dev/null; then
