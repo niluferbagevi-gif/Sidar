@@ -3873,6 +3873,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
             "-c",
             f"""
             set -Eeuo pipefail
+            unset OLLAMA_INSTALL_SHA256 UV_INSTALL_SHA256
             export SIDAR_INSTALL_TEST_MODE=1
             export SIDAR_REMOTE_CHECKSUMS_FILE={checksum_file!s}
             export OLLAMA_INSTALL_SHA256=operator-ollama
