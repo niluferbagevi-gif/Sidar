@@ -264,7 +264,25 @@ ASOUNDRC
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
     local target_kernel_command_line="cgroup_no_v1=all"
-    local target_sparse_vhd="true"
+
+    # sparseVhd, WSL'in deneysel VHD sıkıştırma özelliğidir. Microsoft, geçmişte
+    # rapor edilen veri bozulması vakaları nedeniyle bu özelliği varsayılan olarak
+    # KAPALI tutar ve `wsl --manage <Distro> --set-sparse true` çalıştırıldığında
+    # "Sparse VHD support is disabled due to data corruption" uyarısını verir; bu
+    # mesaj bir kurulum hatası değildir. Sidar bu deneysel ayarı kullanıcı açıkça
+    # SIDAR_WSL_SPARSE_VHD=true vermediği sürece ZORLAMAZ; varsayılan "false" WSL'in
+    # kendi normal (sparse olmayan) VHD davranışını korur.
+    local target_sparse_vhd="${SIDAR_WSL_SPARSE_VHD:-false}"
+    if [[ "$target_sparse_vhd" != "true" && "$target_sparse_vhd" != "false" ]]; then
+        warn "WSL2: SIDAR_WSL_SPARSE_VHD='${target_sparse_vhd}' tanınmıyor; güvenli varsayılan 'false' kullanılacak."
+        target_sparse_vhd="false"
+    fi
+    if [[ "$target_sparse_vhd" == "true" ]]; then
+        warn "WSL2: sparseVhd=true isteniyor (SIDAR_WSL_SPARSE_VHD=true). Bu deneysel özellik geçmişte veri"
+        warn "bozulmasına yol açtığı için Windows tarafından varsayılan olarak kapalı tutulur. Sidar bu"
+        warn "isteği yalnızca siz açıkça belirttiğiniz için uyguluyor; '--allow-unsafe' bayrağını kendiniz"
+        warn "ELLE ÇALIŞTIRMAYIN ve riski kabul etmiyorsanız SIDAR_WSL_SPARSE_VHD değişkenini tanımlamayın."
+    fi
     info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap}, processors=${target_processors}, kernelCommandLine=${target_kernel_command_line}, sparseVhd=${target_sparse_vhd} (host RAM: ${host_ram_gb}GB, logical processors: ${host_processors})."
 
     # Genel INI anahtar-değer yardımcı fonksiyonu. Belirtilen bölümde anahtarı
