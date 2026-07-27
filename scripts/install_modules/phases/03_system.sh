@@ -344,8 +344,11 @@ install_system_dependencies() {
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
         fi
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
+        # pkg-config: Dockerfile'daki referans build ortamıyla aynı — uv sync --all-extras
+        # ile kurulan bazı Rust/C tabanlı paketler (örn. tokenizers) hedef platform için
+        # önceden derlenmiş wheel bulamazsa kaynaktan derlemeye düşer ve pkg-config gerekir.
         sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
-            curl wget git build-essential shellcheck bats software-properties-common zstd ca-certificates gnupg jq \
+            curl wget git build-essential pkg-config shellcheck bats software-properties-common zstd ca-certificates gnupg jq \
             postgresql-client-common postgresql-client
 
         ensure_docker_cli_available || warn "Docker CLI otomatik kurulamadı; Docker gerektiren adımlar manuel kurulumdan sonra çalıştırılabilir."

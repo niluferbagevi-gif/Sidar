@@ -2084,7 +2084,7 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert (
-        "curl wget git build-essential shellcheck bats software-properties-common"
+        "curl wget git build-essential pkg-config shellcheck bats software-properties-common"
         in sidar_installer_contract
     )
     assert (
