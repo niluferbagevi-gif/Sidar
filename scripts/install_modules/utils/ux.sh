@@ -11,7 +11,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lo
   --upgrade-lock  Intentionally update uv.lock
   --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
   --cpu  Force CPU mode even when a GPU is detected
-  --docker-only  Do not install PostgreSQL/Redis on the host; use Docker services only
+  --docker-only  Do not install PostgreSQL/Redis/Ollama on the host; use Docker services only
   --runtime-mode=local|docker  Runtime mode: local=app local + infrastructure in Docker, docker=all services in Docker
   --strict-docker  Fail-fast if Docker daemon cannot be reached after retries
   --force-postgres-volume-cleanup / --force-docker-cleanup  Enable project-scoped aggressive docker rm -f cleanup after DB password hardening
@@ -82,7 +82,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrad
   --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
   --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
   --cpu  GPU algılansa bile CPU modunda kur
-  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan
+  --docker-only  PostgreSQL/Redis/Ollama'yı hosta kurma, sadece Docker servislerini kullan
   --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker
   --strict-docker  Docker daemon hazır değilse retry sonunda fail-fast dur
   --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir

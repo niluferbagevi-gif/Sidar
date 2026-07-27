@@ -771,7 +771,12 @@ ensure_prerequisites() {
         warn "psql bulunamadı. Bu kurulum akışı Docker Compose PostgreSQL servisini esas alır."
     fi
 
-    _ollama_install_step
+    if [[ "$DOCKER_ONLY" == true ]]; then
+        info "--docker-only: host Ollama kurulumu atlanıyor; AI provider docker-compose'daki 'ollama'/'ollama-gpu' servisi üzerinden sağlanacak."
+        info "Bu, host'ta 11434 portunun boş kalmasını sağlar; aksi halde host Ollama, Docker'daki ollama/ollama-gpu servisinin aynı portu (11434:11434) yayınlamasını engelleyebilir."
+    else
+        _ollama_install_step
+    fi
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────

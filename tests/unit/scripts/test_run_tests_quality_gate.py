@@ -3956,6 +3956,60 @@ def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell
     assert "download_verified_script_soft()" in remote_script_util
 
 
+def _extract_ensure_prerequisites_ollama_tail() -> str:
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
+    start = system_phase.index("    # Redis (Local Event Bus / cache)")
+    end = system_phase.index("\n}\n", start) + len("\n}\n")
+    return system_phase[start:end]
+
+
+def test_docker_only_skips_host_ollama_install(tmp_path: Path) -> None:
+    """Regression test: --docker-only must not install/start host Ollama.
+
+    `_ollama_install_step` used to run unconditionally regardless of
+    `DOCKER_ONLY`, so it could install Ollama on the host and bind port
+    11434 even when the operator explicitly asked for a Docker-only setup
+    -- causing the Docker `ollama`/`ollama-gpu` service's own `11434:11434`
+    port publish to conflict with it.
+    """
+    tail = _extract_ensure_prerequisites_ollama_tail()
+    assert '_ollama_install_step' in tail
+    assert 'if [[ "$DOCKER_ONLY" == true ]]' in tail
+
+    harness = tmp_path / "ollama_gate_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'warn() { :; }\n'
+        'info() { :; }\n'
+        'ok() { :; }\n'
+        '_ollama_install_step() { echo "OLLAMA_INSTALL_CALLED"; }\n'
+        'WSL2=false\n'
+        "ensure_prerequisites() {\n"
+        + tail
+        + "\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    docker_only_result = subprocess.run(
+        ["bash", "-c", f'source {harness}; DOCKER_ONLY=true ensure_prerequisites'],
+        capture_output=True,
+        text=True,
+    )
+    assert docker_only_result.returncode == 0, docker_only_result.stdout + docker_only_result.stderr
+    assert "OLLAMA_INSTALL_CALLED" not in docker_only_result.stdout
+
+    non_docker_only_result = subprocess.run(
+        ["bash", "-c", f'source {harness}; DOCKER_ONLY=false ensure_prerequisites'],
+        capture_output=True,
+        text=True,
+    )
+    assert (
+        non_docker_only_result.returncode == 0
+    ), non_docker_only_result.stdout + non_docker_only_result.stderr
+    assert "OLLAMA_INSTALL_CALLED" in non_docker_only_result.stdout
+
+
 def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     tmp_path: Path,
 ) -> None:
