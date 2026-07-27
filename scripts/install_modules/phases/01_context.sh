@@ -111,6 +111,19 @@ ensure_noninteractive_sudo_ready() {
 
 
 
+sidar_warn_if_repo_on_windows_mount() {
+    [[ "$WSL2" == true ]] || return 0
+    case "${SCRIPT_DIR:-}" in
+        /mnt/*)
+            warn "Repo, Windows dosya sisteminde çalışıyor gibi görünüyor (${SCRIPT_DIR})."
+            warn "Docker'ın resmi WSL önerisi kaynak kodun WSL'nin kendi Linux dosya sisteminde (örn. \$HOME altında) tutulmasıdır;"
+            warn "/mnt/c gibi Windows sürücüleri 9p/DrvFs üzerinden erişildiği için kayda değer ölçüde yavaş olabilir ve dosya"
+            warn "izni/symlink davranışı farklılık gösterebilir."
+            info "Önerilen: cd \"\$HOME\" && git clone https://github.com/niluferbagevi-gif/Sidar.git && cd Sidar && ./install_sidar.sh"
+            ;;
+    esac
+}
+
 sidar_fail_if_wsl_integration_autofix_applied_current_session() {
     if [[ "$WSL2" == true && ("${WSL_INTEGRATION_AUTOFIX_APPLIED:-false}" == "true" || -f "${TMPDIR:-/tmp}/sidar_wsl_integration_applied") ]]; then
         fail "WSL integration ilk defa açıldı. Lütfen Windows'tan wsl --shutdown çalıştırın, Ubuntu'ya yeniden girin ve ./install_sidar.sh komutunu tekrar başlatın."
@@ -121,6 +134,7 @@ sidar_phase_initialize_context() {
     banner
     report_repo_lookup_context
     detect_environment
+    sidar_warn_if_repo_on_windows_mount
     sidar_source_install_utils "wsl_gpu_preflight.sh"
     sidar_source_install_utils "wsl_integration_autofix.sh"
     run_wsl2_gpu_preflight

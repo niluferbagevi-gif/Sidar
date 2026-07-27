@@ -2084,7 +2084,7 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
 
     assert "PACKAGES=(portaudio19-dev shellcheck bats)" in installer
     assert (
-        "curl wget git build-essential shellcheck bats software-properties-common"
+        "curl wget git build-essential pkg-config shellcheck bats software-properties-common"
         in sidar_installer_contract
     )
     assert (
@@ -3954,6 +3954,175 @@ def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell
     assert '"${NVM_INSTALL_SHA256:-}"' in system_phase
     assert system_phase.count("download_verified_script_soft") == 2
     assert "download_verified_script_soft()" in remote_script_util
+
+
+def _extract_ensure_prerequisites_ollama_tail() -> str:
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
+    start = system_phase.index("    # Redis (Local Event Bus / cache)")
+    end = system_phase.index("\n}\n", start) + len("\n}\n")
+    return system_phase[start:end]
+
+
+def test_docker_only_skips_host_ollama_install(tmp_path: Path) -> None:
+    """Regression test: --docker-only / --runtime-mode=docker must not install host Ollama.
+
+    `_ollama_install_step` used to run unconditionally regardless of
+    `DOCKER_ONLY`, so it could install Ollama on the host and bind port
+    11434 even when the operator explicitly asked for a Docker-only setup
+    -- causing the Docker `ollama`/`ollama-gpu` service's own `11434:11434`
+    port publish to conflict with it. Also gated on APP_RUNTIME_MODE (the
+    raw CLI value, resolved before select_runtime_mode() runs) so an
+    explicit `--runtime-mode=docker` skips the host install too, not just
+    `--docker-only`.
+    """
+    tail = _extract_ensure_prerequisites_ollama_tail()
+    assert '_ollama_install_step' in tail
+    assert (
+        'if [[ "$DOCKER_ONLY" == true || "${APP_RUNTIME_MODE:-ask}" == "docker" ]]' in tail
+    )
+
+    harness = tmp_path / "ollama_gate_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'warn() { :; }\n'
+        'info() { :; }\n'
+        'ok() { :; }\n'
+        '_ollama_install_step() { echo "OLLAMA_INSTALL_CALLED"; }\n'
+        'WSL2=false\n'
+        "ensure_prerequisites() {\n"
+        + tail
+        + "\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    docker_only_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; DOCKER_ONLY=true APP_RUNTIME_MODE=ask ensure_prerequisites',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert docker_only_result.returncode == 0, docker_only_result.stdout + docker_only_result.stderr
+    assert "OLLAMA_INSTALL_CALLED" not in docker_only_result.stdout
+
+    runtime_mode_docker_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=docker ensure_prerequisites',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert (
+        runtime_mode_docker_result.returncode == 0
+    ), runtime_mode_docker_result.stdout + runtime_mode_docker_result.stderr
+    assert "OLLAMA_INSTALL_CALLED" not in runtime_mode_docker_result.stdout
+
+    non_docker_only_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=local ensure_prerequisites',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert (
+        non_docker_only_result.returncode == 0
+    ), non_docker_only_result.stdout + non_docker_only_result.stderr
+    assert "OLLAMA_INSTALL_CALLED" in non_docker_only_result.stdout
+
+
+def _extract_setup_nvidia_docker() -> str:
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
+    start = system_phase.index("setup_nvidia_docker() {")
+    end = system_phase.index("\n}\n", start) + len("\n}\n")
+    return system_phase[start:end]
+
+
+def test_wsl2_verifies_gpu_passthrough_before_nvidia_ctk_install(tmp_path: Path) -> None:
+    """Regression test: WSL2 must probe Docker Desktop GPU passthrough directly.
+
+    Docker Desktop provides WSL2 GPU support via its own backend -- NVIDIA's
+    Windows driver is passed through to WSL2 via libcuda.so. Installing a Linux
+    NVIDIA driver or running `nvidia-ctk runtime configure` (which rewrites
+    /etc/docker/daemon.json) inside the WSL Ubuntu distro edits the wrong
+    daemon.json: that distro's `docker` CLI is just a client to Docker
+    Desktop's separate engine. setup_nvidia_docker() must therefore verify
+    `--gpus all` passthrough empirically on WSL2 and skip the apt/nvidia-ctk
+    path entirely when it already works.
+    """
+    body = _extract_setup_nvidia_docker()
+    assert 'if [[ "$WSL2" == true && "$GPU_AVAILABLE" == true ]]' in body
+    assert "docker run --rm --gpus all" in body
+    assert "nvidia-ctk runtime configure" in body
+
+    harness = tmp_path / "nvidia_docker_probe.sh"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'step() { :; }\n'
+        'warn() { :; }\n'
+        'info() { :; }\n'
+        'ok() { echo "OK:$*"; }\n'
+        'fail() { echo "FAIL:$*"; exit 1; }\n'
+        'wait_for_docker_nvidia_runtime() { echo "WAIT_FOR_RUNTIME_CALLED"; return 0; }\n'
+        'print_docker_desktop_restart_notice() { :; }\n'
+        + body
+        + "\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    nvidia_ctk_stub = fake_bin / "nvidia-ctk"
+    nvidia_ctk_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    nvidia_ctk_stub.chmod(0o755)
+
+    def run_probe(*, wsl2: str, gpu: str, docker_script: str) -> subprocess.CompletedProcess[str]:
+        docker_stub = fake_bin / "docker"
+        docker_stub.write_text(docker_script, encoding="utf-8")
+        docker_stub.chmod(0o755)
+        env = dict(**{"PATH": f"{fake_bin}:/usr/bin:/bin"})
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'source {harness}; WSL2={wsl2} GPU_AVAILABLE={gpu} setup_nvidia_docker',
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    passthrough_ok = run_probe(
+        wsl2="true",
+        gpu="true",
+        docker_script="#!/usr/bin/env bash\nexit 0\n",
+    )
+    assert passthrough_ok.returncode == 0, passthrough_ok.stdout + passthrough_ok.stderr
+    assert "OK:Docker Desktop GPU passthrough doğrulandı." in passthrough_ok.stdout
+    assert "WAIT_FOR_RUNTIME_CALLED" not in passthrough_ok.stdout
+
+    passthrough_failed = run_probe(
+        wsl2="true",
+        gpu="true",
+        docker_script="#!/usr/bin/env bash\nexit 1\n",
+    )
+    assert "FAIL:Docker Desktop GPU passthrough başarısız" in passthrough_failed.stdout
+    assert "WAIT_FOR_RUNTIME_CALLED" not in passthrough_failed.stdout
+
+    non_wsl2_fallback = run_probe(
+        wsl2="false",
+        gpu="true",
+        docker_script="#!/usr/bin/env bash\nexit 1\n",
+    )
+    assert "WAIT_FOR_RUNTIME_CALLED" in non_wsl2_fallback.stdout
 
 
 def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
@@ -5857,6 +6026,192 @@ def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> No
     assert "REDIS_PASSWORD:?" in redis_block
     assert "127.0.0.1:${REDIS_PORT:-6379}:6379" in redis_block
     assert "0.0.0.0:" not in redis_block
+
+
+def _compose_service_block(compose: str, service_marker: str, next_marker: str) -> str:
+    start = compose.index(service_marker)
+    end = compose.index(next_marker, start)
+    return compose[start:end]
+
+
+def test_docker_compose_gpu_services_default_ollama_url_to_ollama_gpu() -> None:
+    """Regression test: GPU compose services must not fall back to the CPU 'ollama' host.
+
+    sidar-agent-gpu/sidar-web-gpu depend_on the `ollama-gpu` compose service, but
+    their OLLAMA_URL fallback used to read `http://ollama:11434/api` -- a hostname
+    that isn't reachable in the gpu compose profile (only `ollama-gpu` runs there).
+    Compounding this, the bare `${OLLAMA_URL:-...}` pattern let the host-oriented
+    `OLLAMA_URL=http://localhost:11434/api` from .env shadow the fallback entirely
+    (verified with `docker compose --profile gpu config`), so containers never even
+    reached the wrong fallback -- they got a loopback address instead. CPU services
+    key off SIDAR_CONTAINER_OLLAMA_URL and GPU services off their own
+    SIDAR_CONTAINER_OLLAMA_GPU_URL (distinct variables, mirroring the
+    SIDAR_CONTAINER_DATABASE_URL pattern) so the host-oriented .env default can't
+    shadow the container-correct one, and a per-profile override doesn't get
+    clobbered when switching between the cpu/gpu compose profiles.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    agent_gpu_block = _compose_service_block(compose, "\n  sidar-gpu:\n", "\n  sidar-web:\n")
+    assert "ollama-gpu:\n        condition: service_started" in agent_gpu_block
+    assert (
+        "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}"
+        in agent_gpu_block
+    )
+
+    web_gpu_block = _compose_service_block(compose, "\n  sidar-web-gpu:\n", "\n  jaeger:\n")
+    assert "ollama-gpu:\n        condition: service_started" in web_gpu_block
+    assert (
+        "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}"
+        in web_gpu_block
+    )
+
+    agent_block = _compose_service_block(compose, "\n  sidar-ai:\n", "\n  sidar-gpu:\n")
+    assert "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}" in agent_block
+
+    web_block = _compose_service_block(compose, "\n  sidar-web:\n", "\n  sidar-web-gpu:\n")
+    assert "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}" in web_block
+
+    assert compose.count("OLLAMA_URL=${OLLAMA_URL:-") == 0
+
+
+def test_docker_compose_postgres_and_ollama_are_bound_to_loopback() -> None:
+    """Regression test: only Redis was loopback-bound; Postgres/Ollama published on all interfaces.
+
+    docker-compose.yml published PostgreSQL (5432) and Ollama (11434, both the
+    cpu and gpu profile services) on every host interface by default, unlike
+    Redis's `127.0.0.1:${REDIS_PORT:-6379}:6379` binding. On a host/server
+    install this exposes a database port to the network and, worse, an
+    unauthenticated Ollama inference API to anyone who can reach the host --
+    other compose services never needed the host port publish at all, they
+    already reach these over the Docker-internal network by service name.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    postgres_block = _compose_service_block(compose, "\n  postgres:\n", "\n  ollama:\n")
+    assert '- "127.0.0.1:${POSTGRES_PORT:-5432}:5432"' in postgres_block
+    assert '"${POSTGRES_PORT:-5432}:5432"' not in postgres_block.replace(
+        '"127.0.0.1:${POSTGRES_PORT:-5432}:5432"', ""
+    )
+
+    ollama_block = _compose_service_block(compose, "\n  ollama:\n", "\n  ollama-gpu:\n")
+    assert '- "127.0.0.1:11434:11434"' in ollama_block
+
+    ollama_gpu_block = _compose_service_block(compose, "\n  ollama-gpu:\n", "\n  sidar-migrate:\n")
+    assert '- "127.0.0.1:11434:11434"' in ollama_gpu_block
+
+    assert compose.count('- "11434:11434"') == 0
+
+
+def test_docker_compose_web_ports_use_configurable_bind_addr() -> None:
+    """Regression test: web ports need an overridable bind address, not a hardcoded default.
+
+    Unlike Postgres/Ollama (nothing external should ever hit them directly),
+    sidar-web/sidar-web-gpu are meant to be reached by users' browsers, so the
+    quick-start default must stay 0.0.0.0. But a production/server install
+    should be able to restrict this to loopback (and put a TLS-terminating
+    reverse proxy in front) without editing docker-compose.yml -- so the bind
+    address must be a WEB_BIND_ADDR env override, not a bare port publish.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    web_block = _compose_service_block(compose, "\n  sidar-web:\n", "\n  sidar-web-gpu:\n")
+    assert '- "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-7860}:7860"' in web_block
+
+    web_gpu_block = _compose_service_block(compose, "\n  sidar-web-gpu:\n", "\n  jaeger:\n")
+    assert '- "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_GPU_PORT:-7861}:7860"' in web_gpu_block
+
+
+def test_docker_compose_ollama_image_is_pinnable_not_bare_latest() -> None:
+    """Regression test: ollama/ollama:latest must be overridable for production pinning.
+
+    `ollama/ollama:latest` is a mutable upstream tag, not a supply-chain-safe
+    pin. Both the cpu and gpu ollama services must resolve their image through
+    an OLLAMA_DOCKER_IMAGE override (defaulting to :latest so nothing breaks
+    out of the box) so a production install can pin a reviewed
+    `ollama/ollama@sha256:<digest>` without editing docker-compose.yml.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    ollama_block = _compose_service_block(compose, "\n  ollama:\n", "\n  ollama-gpu:\n")
+    assert "image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}" in ollama_block
+
+    ollama_gpu_block = _compose_service_block(compose, "\n  ollama-gpu:\n", "\n  sidar-migrate:\n")
+    assert "image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}" in ollama_gpu_block
+
+    assert compose.count("image: ollama/ollama:latest") == 0
+
+
+def _extract_context_phase_function(name: str, next_marker: str) -> str:
+    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(
+        encoding="utf-8"
+    )
+    start = context_phase.index(f"{name}() {{")
+    end = context_phase.index(next_marker, start)
+    return context_phase[start:end]
+
+
+def test_wsl2_warns_when_repo_checked_out_on_windows_mount(tmp_path: Path) -> None:
+    """Regression test: WSL2 installs from /mnt/* should warn, not silently proceed.
+
+    Docker's official WSL guidance is to keep source code on the WSL Linux
+    filesystem, not under /mnt/c -- Windows drives are exposed via 9p/DrvFs
+    inside WSL2 and are dramatically slower, with different file
+    permission/symlink behavior. install_sidar.sh had no check for this at
+    all; a user cloning to /mnt/c/Users/.../Sidar would get no signal.
+    """
+    fn = _extract_context_phase_function(
+        "sidar_warn_if_repo_on_windows_mount", "\nsidar_fail_if_wsl_integration_autofix_applied_current_session() {"
+    )
+    assert '/mnt/*' in fn
+    assert "WSL2" in fn
+
+    harness = tmp_path / "mount_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'warn() { echo "WARN:$*"; }\n'
+        'info() { echo "INFO:$*"; }\n'
+        + fn
+        + "\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    windows_mount_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=true SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert windows_mount_result.returncode == 0, windows_mount_result.stdout + windows_mount_result.stderr
+    assert "WARN:" in windows_mount_result.stdout
+
+    linux_fs_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=true SCRIPT_DIR=/home/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert linux_fs_result.returncode == 0, linux_fs_result.stdout + linux_fs_result.stderr
+    assert linux_fs_result.stdout == ""
+
+    non_wsl2_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=false SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert non_wsl2_result.returncode == 0, non_wsl2_result.stdout + non_wsl2_result.stderr
+    assert non_wsl2_result.stdout == ""
 
 
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:

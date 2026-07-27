@@ -36,8 +36,15 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env; default passwords are refused}
+    # Redis'teki gibi port yalnız loopback arayüzüne bind edilir; LAN/internete
+    # publish edilmez. Diğer compose servisleri buna zaten Docker'ın dahili
+    # ağı üzerinden `postgres:5432` adresiyle erişir, host port publish'i
+    # yalnız hosttan `psql`/araç bağlantısı için var. Uzak/başka host'tan
+    # erişim gerekiyorsa .env'de POSTGRES_PORT ile birlikte bilinçli bir
+    # reverse proxy/SSH tüneli veya ayrı bir bind adresi kullanın; bu
+    # docker-compose.yml varsayılanını 0.0.0.0'a genişletmeyin.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker_setup/postgres/init.d/01_create_envs.sql:/docker-entrypoint-initdb.d/01_create_envs.sql:ro
@@ -50,7 +57,13 @@ services:
 
   ollama:
     profiles: ["cpu"]
-    image: ollama/ollama:latest
+    # ollama/ollama:latest kasıtlı olarak deterministik değildir (mutable tag).
+    # Production'da OLLAMA_DOCKER_IMAGE ile incelenmiş bir digest'e pinleyin, örn.
+    #   OLLAMA_DOCKER_IMAGE=ollama/ollama@sha256:<İNCELENMİŞ-DIGEST>
+    # Digest'i üretmek için (image'ı çekip inceledikten sonra):
+    #   docker pull ollama/ollama:<sürüm>
+    #   docker inspect --format='{{index .RepoDigests 0}}' ollama/ollama:<sürüm>
+    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
     container_name: sidar_ollama
     restart: unless-stopped
     environment:
@@ -58,14 +71,20 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
+    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
+    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
+    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
+    # erişimi ve GPU/VRAM tüketimi verir.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
 
   ollama-gpu:
     profiles: ["gpu"]
-    image: ollama/ollama:latest
+    # ollama'daki gibi production'da OLLAMA_DOCKER_IMAGE ile digest'e pinleyin.
+    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
     container_name: sidar_ollama
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-nvidia}
@@ -74,8 +93,13 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
+    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
+    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
+    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
+    # erişimi ve GPU/VRAM tüketimi verir.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:
@@ -189,7 +213,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
@@ -263,7 +287,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
@@ -309,8 +333,13 @@ services:
     mem_limit: ${SIDAR_WEB_MEM_LIMIT:-4g}
     command: --quick web --host 0.0.0.0 --port 7860
 
+    # Varsayılan WEB_BIND_ADDR=0.0.0.0 mevcut LAN'dan/başka cihazdan erişim
+    # davranışını korur (hızlı başlangıç: `docker compose up --build sidar-web`).
+    # Production'da UI'ı doğrudan internete açmak yerine WEB_BIND_ADDR=127.0.0.1
+    # verip önüne TLS sonlandıran bir Nginx/Caddy reverse proxy koyun (bkz. README
+    # "Production'da web arayüzü" notu).
     ports:
-      - "${WEB_PORT:-7860}:7860"
+      - "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-7860}:7860"
 
     deploy:
       resources:
@@ -334,7 +363,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki
@@ -378,8 +407,9 @@ services:
     mem_limit: ${SIDAR_WEB_GPU_MEM_LIMIT:-8g}
     command: --quick web --host 0.0.0.0 --port 7860
 
+    # WEB_BIND_ADDR'de sidar-web ile aynı davranış/gerekçe geçerlidir.
     ports:
-      - "${WEB_GPU_PORT:-7861}:7860"
+      - "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_GPU_PORT:-7861}:7860"
 
     deploy:
       resources:
@@ -408,7 +438,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki

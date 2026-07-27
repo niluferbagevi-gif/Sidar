@@ -541,7 +541,13 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 >
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 >
+> **GPU Compose Ollama adresi notu:** `docker-compose.yml`'daki `sidar-ai`/`sidar-web` (CPU profili) `ollama` servisine, `sidar-gpu`/`sidar-web-gpu` (GPU profili) ise `ollama-gpu` servisine `depends_on` ile bağlıdır; CPU servisleri `${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}`, GPU servisleri ise ayrı `${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}` değişkenini kullanır — `.env`'deki host-odaklı `OLLAMA_URL` (`http://localhost:11434/api`, yalnızca `python main.py`/local runtime için doğru) bu container varsayılanlarını **gölgelemez**. Container'ların farklı/harici bir Ollama uç noktasına bağlanması gerekiyorsa `.env`'de ilgili değişken (`SIDAR_CONTAINER_OLLAMA_URL` veya `SIDAR_CONTAINER_OLLAMA_GPU_URL`) açıkça tanımlanmalıdır (bkz. `.env.advanced.example`).
+
+> **Ollama image pinning notu:** `ollama`/`ollama-gpu` servisleri varsayılan olarak `ollama/ollama:latest` kullanır — bu, upstream tarafından değiştirilebilen (deterministik olmayan) bir tag'dir. Production kurulumlarında `.env`'de `OLLAMA_DOCKER_IMAGE=ollama/ollama@sha256:<İNCELENMİŞ-DIGEST>` vererek incelediğiniz bir sürümü pinleyin: `docker pull ollama/ollama:<sürüm>` ile indirip `docker inspect --format='{{index .RepoDigests 0}}' ollama/ollama:<sürüm>` ile digest'i alın, ardından o digest'i `.env`'e yazın (bkz. `.env.advanced.example`). Sidar bu digest'i sizin adınıza üretmez/sabitlemez — SHA-256 kurulum betiği pinlerinde olduğu gibi TOFU (trust-on-first-use) sorumluluğu operatördedir.
+
 > **⚠️ Kritik uyarı:** `wsl --unregister docker-desktop` komutunu **ASLA** çalıştırmayın. Bu komut Docker Desktop'ın engine backend dağıtımını siler; genellikle yalnızca **Docker Desktop → Settings → Troubleshoot → Reset to factory defaults** veya Docker Desktop'ı tamamen yeniden kurma ile geri gelir.
+
+> **`.wslconfig` sparseVhd notu:** Kurulum betiği `%UserProfile%\.wslconfig` içindeki `memory`/`swap`/`processors`/`kernelCommandLine` değerlerini host donanımına göre otomatik ayarlarken `[experimental] sparseVhd` anahtarını **varsayılan olarak `false` bırakır** — bu, WSL'in kendi normal (sparse olmayan) VHD davranışıdır. Bu deneysel özellik geçmişte rapor edilen veri bozulması vakaları nedeniyle Microsoft tarafından da varsayılan kapalı tutulur; `wsl --manage <Dağıtım> --set-sparse true` çalıştırıldığında görülen **"Sparse VHD support is disabled due to data corruption"** mesajı bir kurulum hatası değildir, WSL'in kendi koruması çalışıyor demektir — `--allow-unsafe` bayrağıyla bu korumayı manuel aşmayın. Riski bilinçli olarak kabul edip sıkıştırılmış VHD'den disk alanı kazanmak isteyenler yalnızca `SIDAR_WSL_SPARSE_VHD=true ./install_sidar.sh` ile açıkça opt-in olabilir; installer bu durumda uyarıyı konsola basar.
 
 > **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `qwen2.5-coder:7b` için `ollama ps` çıktısında `PROCESSOR` sütununun `100% GPU` görünmesi sağlıklı offload sinyalidir; bu tek başına hata değildir, aksine inference'ın GPU üzerinde çalıştığını doğrular. `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir. Sidar istemcisindeki güvenli `OLLAMA_NUM_BATCH=2048` ve Ollama servis tarafındaki `OLLAMA_NUM_CTX=8192` varsayılanları, uzun prompt/GPU smoke isteklerinin Ollama `n_batch=512` / düşük context varsayılanlarına çarpıp `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` ile düşmesini önlemek içindir. Küçük/CPU-only makinelerde bilinçli olarak `OLLAMA_NUM_BATCH=0` verilirse küçük bağlamlarda Ollama sunucu varsayılanı korunur; `OLLAMA_CODING_NUM_CTX>2048` olduğunda istemci yine güvenli `num_batch` değerini otomatik ekler ve en fazla `4096` olarak sınırlar. Throughput tuning gerektiğinde `.env` üzerinden örneğin `1024`, `2048` veya `4096` verilebilir. GPU işi harici Ollama sürecinde yürüdüğünden Sidar sürecine `torch.cuda.Stream` veya `torch.cuda.empty_cache()` eklemek Ollama VRAM yönetimini değiştirmez.
 
@@ -568,6 +574,8 @@ export SIDAR_TEMP_MOUNT=sidar_temp_prod
 docker compose up -d sidar-web
 ```
 
+> **Production'da web arayüzü:** `sidar-web`/`sidar-web-gpu` varsayılan olarak `WEB_BIND_ADDR=0.0.0.0` ile tüm ağ arayüzlerinde yayınlanır — bu, hızlı başlangıç akışını (LAN'dan/başka cihazdan doğrudan erişim) korumak içindir. Bir production/sunucu kurulumunda UI'ı doğrudan internete/ağa açık bırakmayın: `.env`'de `WEB_BIND_ADDR=127.0.0.1` verip host portunu loopback'e sınırlayın, ardından TLS sonlandıran bir Nginx/Caddy reverse proxy'yi `127.0.0.1:${WEB_PORT:-7860}` (veya GPU için `${WEB_GPU_PORT:-7861}`) adresine yönlendirin ve dış erişimi yalnız bu proxy üzerinden verin. `API_KEY` boşken `0.0.0.0` ile yayınlamak aynı ağdaki herkese kimliksiz erişim anlamına gelir — bkz. `.env.advanced.example` içindeki `WEB_HOST`/`WEB_BIND_ADDR` notları.
+
 
 ### GitHub Codespaces / Dev Container
 
@@ -590,6 +598,55 @@ Repo artık Codespaces açılışında `.devcontainer/devcontainer.json` yapıla
 Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerine GitHub Codespaces secrets/repository secrets kullanın. Secret değerleri gerektiğinde Codespaces ortam değişkeni olarak gelir; `.env.test.example` yalnız güvenli yerel varsayılanlar içindir.
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
+
+> **Windows Ön Kontrol / PowerShell Doğrulaması:** WSL2 üzerinde kurulum yapmadan önce, Docker Desktop açık ve **"Engine running"** durumundayken Windows PowerShell'de aşağıdaki komutları çalıştırarak WSL2/Docker Desktop durumunu doğrulayabilirsiniz:
+>
+> ```powershell
+> wsl --version
+> wsl --status
+> wsl --set-default-version 2
+> wsl --set-default Ubuntu
+> wsl --list --verbose
+> ```
+>
+> Beklenen temel durum (`wsl --list --verbose` çıktısı):
+>
+> ```
+> Ubuntu          Running/Stopped    2
+> docker-desktop  Running            2
+> ```
+>
+> Bazı yeni Docker Desktop kurulumlarında ayrı `docker-desktop-data` dağıtımı bulunmayabilir; bu tek başına bir hata değildir. Ancak `docker-desktop` görünmüyor **ve** Ubuntu içinden `docker version` başarısız oluyorsa: (1) Docker Desktop → Settings → Troubleshoot, (2) Reset to factory defaults, (3) Docker Desktop'ı yeniden başlatın, (4) Ubuntu için WSL Integration'ı tekrar açın. Bu senaryoda da **`wsl --unregister docker-desktop` kullanmayın** — Docker Desktop kendi `docker-desktop` dağıtımını yönetir ve Ubuntu entegrasyonu yalnız açıkça etkinleştirildiğinde Docker CLI Ubuntu'ya sunulur (bkz. yukarıdaki "Kritik uyarı"). `install_sidar.sh` bu backend kaydını ve WSL Integration durumunu zaten otomatik doğrular (`scripts/install_modules/phases/03_runtime.sh`); bu adımlar manuel bir ön-kontrol veya installer'ın verdiği hatayı yorumlamak içindir.
+
+> **Ubuntu temel paket hazırlığı notu:** `install_sidar.sh` ilk fazda (`install_system_dependencies()`, `scripts/install_modules/phases/03_system.sh`) `ca-certificates`, `curl`, `wget`, `git`, `jq`, `zstd`, `build-essential` (`make` dahil), `pkg-config`, `shellcheck`, `bats`, `gnupg`, `postgresql-client` gibi temel paketleri APT ile **zaten otomatik kurar** — bunları manuel önceden kurmanız gerekmez (`ffmpeg`/`portaudio19-dev` ayrı bir adımda kurulur). Bilinçli olarak yapmadıkları: (1) `apt-get full-upgrade` çalıştırmaz — bir uygulama kurulumunun sistem çapında paket yükseltmesi zorlaması riskli/kapsam dışı kabul edilir; gerekiyorsa `sudo apt-get full-upgrade -y` komutunu siz ayrıca çalıştırın, (2) global `git config --global core.autocrlf/init.defaultBranch` ayarlarını değiştirmez — bunlar tüm git repolarınızı etkileyen kişisel tercihlerdir, installer kapsamı dışındadır. Docker Desktop kullanırken Ubuntu içine `docker-ce`/`docker.io`/bağımsız Docker Engine kurulmasını önlemek için de `install_sidar.sh` WSL2'de varsayılan olarak yalnızca Docker **CLI**'ı (`docker-ce-cli`/`docker-buildx-plugin`/`docker-compose-plugin`, motor değil) kurar ve bunu bile yalnızca `--install-docker-cli`/`DOCKER_CLI_INSTALL_MODE=always` ile açıkça istendiğinde yapar; varsayılan öncelik Docker Desktop'ın kendi WSL Integration'ıdır.
+
+> **WSL2/Docker/GPU ön doğrulaması:** Özellikle GPU'lu (örn. RTX 30/40 serisi) WSL2 kurulumlarından önce Ubuntu terminalinde şu komutlarla ortamı doğrulayabilirsiniz:
+>
+> ```bash
+> printf '\n=== Ubuntu ===\n'
+> cat /etc/os-release
+> uname -a
+> printf 'Kullanıcı: %s\n' "$(whoami)"
+> printf 'WSL dağıtımı: %s\n' "${WSL_DISTRO_NAME:-bilinmiyor}"
+>
+> printf '\n=== NVIDIA ===\n'
+> nvidia-smi
+>
+> printf '\n=== Docker ===\n'
+> docker version
+> docker compose version
+> docker info
+>
+> printf '\n=== Docker temel smoke ===\n'
+> docker run --rm hello-world
+>
+> printf '\n=== Docker GPU smoke ===\n'
+> docker run --rm --gpus all \
+>     nvidia/cuda:13.0.0-runtime-ubuntu22.04 \
+>     nvidia-smi
+> ```
+>
+> Son komut GPU'nuzu göstermiyorsa Sidar kurulumuna geçmeyin — önce Windows NVIDIA sürücüsünü ve Docker Desktop GPU desteğini doğrulayın. **WSL2 içine ayrıca Linux NVIDIA ekran sürücüsü (`nvidia-driver-*` gibi bir paket) kurmayın**; yalnızca Windows tarafındaki NVIDIA sürücüsü kullanılmalıdır, WSL2'ye `libcuda.so` üzerinden zaten aktarılır (bkz. yukarıdaki `.wslconfig`/GPU notları). `install_sidar.sh` bu "Docker GPU smoke" adımını zaten kendisi otomatik çalıştırıyor: WSL2 + GPU tespit edildiğinde `setup_nvidia_docker()` (`scripts/install_modules/phases/03_system.sh`) aynı `docker run --rm --gpus all ... nvidia-smi` doğrulamasını yapar ve başarısız olursa kuruluma devam etmeden net bir hatayla durur — hiçbir zaman `nvidia-driver` kurmayı denemez, yalnızca (gerektiğinde, WSL2 dışı Linux hostlarda) `nvidia-container-toolkit`'i (container runtime hook, ekran sürücüsü değil) kurar.
 
 **Varsayılan çevrimiçi kurulum yöntemi Release bundle artefaktıdır.**
 Kullanıcıya öncelikle GitHub Release üzerinden yayınlanan tek dosyalık
