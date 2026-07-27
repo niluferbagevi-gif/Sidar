@@ -189,7 +189,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
@@ -263,7 +263,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
@@ -334,7 +334,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki
@@ -408,7 +408,7 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}
+      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
       # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki

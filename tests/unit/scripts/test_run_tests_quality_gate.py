@@ -5913,6 +5913,51 @@ def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> No
     assert "0.0.0.0:" not in redis_block
 
 
+def _compose_service_block(compose: str, service_marker: str, next_marker: str) -> str:
+    start = compose.index(service_marker)
+    end = compose.index(next_marker, start)
+    return compose[start:end]
+
+
+def test_docker_compose_gpu_services_default_ollama_url_to_ollama_gpu() -> None:
+    """Regression test: GPU compose services must not fall back to the CPU 'ollama' host.
+
+    sidar-agent-gpu/sidar-web-gpu depend_on the `ollama-gpu` compose service, but
+    their OLLAMA_URL fallback used to read `http://ollama:11434/api` -- a hostname
+    that isn't reachable in the gpu compose profile (only `ollama-gpu` runs there).
+    Compounding this, the bare `${OLLAMA_URL:-...}` pattern let the host-oriented
+    `OLLAMA_URL=http://localhost:11434/api` from .env shadow the fallback entirely
+    (verified with `docker compose --profile gpu config`), so containers never even
+    reached the wrong fallback -- they got a loopback address instead. Both app
+    service pairs must key off a dedicated SIDAR_CONTAINER_OLLAMA_URL override
+    (the same pattern already used for SIDAR_CONTAINER_DATABASE_URL) so the
+    host-oriented .env default can't shadow the container-correct one.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    agent_gpu_block = _compose_service_block(compose, "\n  sidar-gpu:\n", "\n  sidar-web:\n")
+    assert "ollama-gpu:\n        condition: service_started" in agent_gpu_block
+    assert (
+        "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}"
+        in agent_gpu_block
+    )
+
+    web_gpu_block = _compose_service_block(compose, "\n  sidar-web-gpu:\n", "\n  jaeger:\n")
+    assert "ollama-gpu:\n        condition: service_started" in web_gpu_block
+    assert (
+        "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama-gpu:11434/api}"
+        in web_gpu_block
+    )
+
+    agent_block = _compose_service_block(compose, "\n  sidar-ai:\n", "\n  sidar-gpu:\n")
+    assert "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}" in agent_block
+
+    web_block = _compose_service_block(compose, "\n  sidar-web:\n", "\n  sidar-web-gpu:\n")
+    assert "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}" in web_block
+
+    assert compose.count("OLLAMA_URL=${OLLAMA_URL:-") == 0
+
+
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
