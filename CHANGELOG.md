@@ -29,6 +29,7 @@
 
 ### Dokümantasyon
 - **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; ölçülen `%100` günlük local/CI coverage baseline olarak commitlenir, ratchet bu değeri düşürmez ve sonraki `%99.x` regresyonları fail-closed engellenir.
+- **Kurulum öncesi Windows/WSL2 Docker Desktop durumunu manuel doğrulamak için bir PowerShell kontrol listesi dokümante edilmemişti:** `install_sidar.sh` `docker-desktop` backend kaydını ve WSL Integration durumunu zaten otomatik doğruluyor (`scripts/install_modules/phases/03_runtime.sh`), ancak kullanıcıların kuruluma başlamadan önce veya bir installer hatasını yorumlarken kendi başlarına çalıştırabilecekleri `wsl --version`/`wsl --status`/`wsl --list --verbose` tabanlı bir ön-kontrol listesi README'de yoktu. `README.md`'ye "Windows Ön Kontrol / PowerShell Doğrulaması" notu eklendi: beklenen `wsl --list --verbose` çıktısı, yeni Docker Desktop kurulumlarında ayrı `docker-desktop-data` dağıtımının bulunmayabileceği (tek başına hata değil) açıklaması ve `docker-desktop` gerçekten eksikse (Reset to factory defaults → yeniden kurulum → WSL Integration'ı tekrar açma) izlenecek adımlar; mevcut "`wsl --unregister docker-desktop` kullanmayın" uyarısına çapraz referans verildi.
 
 ---
 

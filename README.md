@@ -599,6 +599,25 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
+> **Windows Ön Kontrol / PowerShell Doğrulaması:** WSL2 üzerinde kurulum yapmadan önce, Docker Desktop açık ve **"Engine running"** durumundayken Windows PowerShell'de aşağıdaki komutları çalıştırarak WSL2/Docker Desktop durumunu doğrulayabilirsiniz:
+>
+> ```powershell
+> wsl --version
+> wsl --status
+> wsl --set-default-version 2
+> wsl --set-default Ubuntu
+> wsl --list --verbose
+> ```
+>
+> Beklenen temel durum (`wsl --list --verbose` çıktısı):
+>
+> ```
+> Ubuntu          Running/Stopped    2
+> docker-desktop  Running            2
+> ```
+>
+> Bazı yeni Docker Desktop kurulumlarında ayrı `docker-desktop-data` dağıtımı bulunmayabilir; bu tek başına bir hata değildir. Ancak `docker-desktop` görünmüyor **ve** Ubuntu içinden `docker version` başarısız oluyorsa: (1) Docker Desktop → Settings → Troubleshoot, (2) Reset to factory defaults, (3) Docker Desktop'ı yeniden başlatın, (4) Ubuntu için WSL Integration'ı tekrar açın. Bu senaryoda da **`wsl --unregister docker-desktop` kullanmayın** — Docker Desktop kendi `docker-desktop` dağıtımını yönetir ve Ubuntu entegrasyonu yalnız açıkça etkinleştirildiğinde Docker CLI Ubuntu'ya sunulur (bkz. yukarıdaki "Kritik uyarı"). `install_sidar.sh` bu backend kaydını ve WSL Integration durumunu zaten otomatik doğrular (`scripts/install_modules/phases/03_runtime.sh`); bu adımlar manuel bir ön-kontrol veya installer'ın verdiği hatayı yorumlamak içindir.
+
 **Varsayılan çevrimiçi kurulum yöntemi Release bundle artefaktıdır.**
 Kullanıcıya öncelikle GitHub Release üzerinden yayınlanan tek dosyalık
 `install_sidar.sh` bundle'ı verilmelidir; bu dosya `scripts/tools/bundle_install_sidar.sh`
