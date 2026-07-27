@@ -36,8 +36,15 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env; default passwords are refused}
+    # Redis'teki gibi port yalnız loopback arayüzüne bind edilir; LAN/internete
+    # publish edilmez. Diğer compose servisleri buna zaten Docker'ın dahili
+    # ağı üzerinden `postgres:5432` adresiyle erişir, host port publish'i
+    # yalnız hosttan `psql`/araç bağlantısı için var. Uzak/başka host'tan
+    # erişim gerekiyorsa .env'de POSTGRES_PORT ile birlikte bilinçli bir
+    # reverse proxy/SSH tüneli veya ayrı bir bind adresi kullanın; bu
+    # docker-compose.yml varsayılanını 0.0.0.0'a genişletmeyin.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker_setup/postgres/init.d/01_create_envs.sql:/docker-entrypoint-initdb.d/01_create_envs.sql:ro
@@ -58,8 +65,13 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
+    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
+    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
+    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
+    # erişimi ve GPU/VRAM tüketimi verir.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
 
@@ -74,8 +86,13 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
+    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
+    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
+    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
+    # erişimi ve GPU/VRAM tüketimi verir.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:

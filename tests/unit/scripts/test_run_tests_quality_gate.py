@@ -5958,6 +5958,34 @@ def test_docker_compose_gpu_services_default_ollama_url_to_ollama_gpu() -> None:
     assert compose.count("OLLAMA_URL=${OLLAMA_URL:-") == 0
 
 
+def test_docker_compose_postgres_and_ollama_are_bound_to_loopback() -> None:
+    """Regression test: only Redis was loopback-bound; Postgres/Ollama published on all interfaces.
+
+    docker-compose.yml published PostgreSQL (5432) and Ollama (11434, both the
+    cpu and gpu profile services) on every host interface by default, unlike
+    Redis's `127.0.0.1:${REDIS_PORT:-6379}:6379` binding. On a host/server
+    install this exposes a database port to the network and, worse, an
+    unauthenticated Ollama inference API to anyone who can reach the host --
+    other compose services never needed the host port publish at all, they
+    already reach these over the Docker-internal network by service name.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    postgres_block = _compose_service_block(compose, "\n  postgres:\n", "\n  ollama:\n")
+    assert '- "127.0.0.1:${POSTGRES_PORT:-5432}:5432"' in postgres_block
+    assert '"${POSTGRES_PORT:-5432}:5432"' not in postgres_block.replace(
+        '"127.0.0.1:${POSTGRES_PORT:-5432}:5432"', ""
+    )
+
+    ollama_block = _compose_service_block(compose, "\n  ollama:\n", "\n  ollama-gpu:\n")
+    assert '- "127.0.0.1:11434:11434"' in ollama_block
+
+    ollama_gpu_block = _compose_service_block(compose, "\n  ollama-gpu:\n", "\n  sidar-migrate:\n")
+    assert '- "127.0.0.1:11434:11434"' in ollama_gpu_block
+
+    assert compose.count('- "11434:11434"') == 0
+
+
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
