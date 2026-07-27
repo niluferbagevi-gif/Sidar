@@ -311,9 +311,15 @@ setup_nvidia_docker() {
 
             # NVIDIA repolarını ekle ve kur
             curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
+            # apt, InRelease imzasını _apt (unprivileged) kullanıcısı üzerinden gpgv ile
+            # doğrular; root'un umask'ı 022'den daha kısıtlayıcıysa (örn. 077) dearmor
+            # çıktısı 600 ile oluşur ve _apt anahtarı okuyamaz (NO_PUBKEY). Bu yüzden
+            # izinleri açıkça world-readable yapıyoruz.
+            sudo chmod 0644 /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
             curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
               sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
               sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+            sudo chmod 0644 /etc/apt/sources.list.d/nvidia-container-toolkit.list
 
             sudo apt-get update
             sudo apt-get install -y nvidia-container-toolkit
