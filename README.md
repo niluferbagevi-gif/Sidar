@@ -620,6 +620,34 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 > **Ubuntu temel paket hazırlığı notu:** `install_sidar.sh` ilk fazda (`install_system_dependencies()`, `scripts/install_modules/phases/03_system.sh`) `ca-certificates`, `curl`, `wget`, `git`, `jq`, `zstd`, `build-essential` (`make` dahil), `pkg-config`, `shellcheck`, `bats`, `gnupg`, `postgresql-client` gibi temel paketleri APT ile **zaten otomatik kurar** — bunları manuel önceden kurmanız gerekmez (`ffmpeg`/`portaudio19-dev` ayrı bir adımda kurulur). Bilinçli olarak yapmadıkları: (1) `apt-get full-upgrade` çalıştırmaz — bir uygulama kurulumunun sistem çapında paket yükseltmesi zorlaması riskli/kapsam dışı kabul edilir; gerekiyorsa `sudo apt-get full-upgrade -y` komutunu siz ayrıca çalıştırın, (2) global `git config --global core.autocrlf/init.defaultBranch` ayarlarını değiştirmez — bunlar tüm git repolarınızı etkileyen kişisel tercihlerdir, installer kapsamı dışındadır. Docker Desktop kullanırken Ubuntu içine `docker-ce`/`docker.io`/bağımsız Docker Engine kurulmasını önlemek için de `install_sidar.sh` WSL2'de varsayılan olarak yalnızca Docker **CLI**'ı (`docker-ce-cli`/`docker-buildx-plugin`/`docker-compose-plugin`, motor değil) kurar ve bunu bile yalnızca `--install-docker-cli`/`DOCKER_CLI_INSTALL_MODE=always` ile açıkça istendiğinde yapar; varsayılan öncelik Docker Desktop'ın kendi WSL Integration'ıdır.
 
+> **WSL2/Docker/GPU ön doğrulaması:** Özellikle GPU'lu (örn. RTX 30/40 serisi) WSL2 kurulumlarından önce Ubuntu terminalinde şu komutlarla ortamı doğrulayabilirsiniz:
+>
+> ```bash
+> printf '\n=== Ubuntu ===\n'
+> cat /etc/os-release
+> uname -a
+> printf 'Kullanıcı: %s\n' "$(whoami)"
+> printf 'WSL dağıtımı: %s\n' "${WSL_DISTRO_NAME:-bilinmiyor}"
+>
+> printf '\n=== NVIDIA ===\n'
+> nvidia-smi
+>
+> printf '\n=== Docker ===\n'
+> docker version
+> docker compose version
+> docker info
+>
+> printf '\n=== Docker temel smoke ===\n'
+> docker run --rm hello-world
+>
+> printf '\n=== Docker GPU smoke ===\n'
+> docker run --rm --gpus all \
+>     nvidia/cuda:13.0.0-runtime-ubuntu22.04 \
+>     nvidia-smi
+> ```
+>
+> Son komut GPU'nuzu göstermiyorsa Sidar kurulumuna geçmeyin — önce Windows NVIDIA sürücüsünü ve Docker Desktop GPU desteğini doğrulayın. **WSL2 içine ayrıca Linux NVIDIA ekran sürücüsü (`nvidia-driver-*` gibi bir paket) kurmayın**; yalnızca Windows tarafındaki NVIDIA sürücüsü kullanılmalıdır, WSL2'ye `libcuda.so` üzerinden zaten aktarılır (bkz. yukarıdaki `.wslconfig`/GPU notları). `install_sidar.sh` bu "Docker GPU smoke" adımını zaten kendisi otomatik çalıştırıyor: WSL2 + GPU tespit edildiğinde `setup_nvidia_docker()` (`scripts/install_modules/phases/03_system.sh`) aynı `docker run --rm --gpus all ... nvidia-smi` doğrulamasını yapar ve başarısız olursa kuruluma devam etmeden net bir hatayla durur — hiçbir zaman `nvidia-driver` kurmayı denemez, yalnızca (gerektiğinde, WSL2 dışı Linux hostlarda) `nvidia-container-toolkit`'i (container runtime hook, ekran sürücüsü değil) kurar.
+
 **Varsayılan çevrimiçi kurulum yöntemi Release bundle artefaktıdır.**
 Kullanıcıya öncelikle GitHub Release üzerinden yayınlanan tek dosyalık
 `install_sidar.sh` bundle'ı verilmelidir; bu dosya `scripts/tools/bundle_install_sidar.sh`
