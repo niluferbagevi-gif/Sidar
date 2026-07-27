@@ -6142,6 +6142,78 @@ def test_docker_compose_ollama_image_is_pinnable_not_bare_latest() -> None:
     assert compose.count("image: ollama/ollama:latest") == 0
 
 
+def _extract_context_phase_function(name: str, next_marker: str) -> str:
+    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(
+        encoding="utf-8"
+    )
+    start = context_phase.index(f"{name}() {{")
+    end = context_phase.index(next_marker, start)
+    return context_phase[start:end]
+
+
+def test_wsl2_warns_when_repo_checked_out_on_windows_mount(tmp_path: Path) -> None:
+    """Regression test: WSL2 installs from /mnt/* should warn, not silently proceed.
+
+    Docker's official WSL guidance is to keep source code on the WSL Linux
+    filesystem, not under /mnt/c -- Windows drives are exposed via 9p/DrvFs
+    inside WSL2 and are dramatically slower, with different file
+    permission/symlink behavior. install_sidar.sh had no check for this at
+    all; a user cloning to /mnt/c/Users/.../Sidar would get no signal.
+    """
+    fn = _extract_context_phase_function(
+        "sidar_warn_if_repo_on_windows_mount", "\nsidar_fail_if_wsl_integration_autofix_applied_current_session() {"
+    )
+    assert '/mnt/*' in fn
+    assert "WSL2" in fn
+
+    harness = tmp_path / "mount_probe.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\nset -uo pipefail\n"
+        'warn() { echo "WARN:$*"; }\n'
+        'info() { echo "INFO:$*"; }\n'
+        + fn
+        + "\n",
+        encoding="utf-8",
+    )
+    harness.chmod(0o755)
+
+    windows_mount_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=true SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert windows_mount_result.returncode == 0, windows_mount_result.stdout + windows_mount_result.stderr
+    assert "WARN:" in windows_mount_result.stdout
+
+    linux_fs_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=true SCRIPT_DIR=/home/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert linux_fs_result.returncode == 0, linux_fs_result.stdout + linux_fs_result.stderr
+    assert linux_fs_result.stdout == ""
+
+    non_wsl2_result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {harness}; WSL2=false SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert non_wsl2_result.returncode == 0, non_wsl2_result.stdout + non_wsl2_result.stderr
+    assert non_wsl2_result.stdout == ""
+
+
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
