@@ -29,30 +29,40 @@ review_and_pin_remote_script_checksum() {
     local script_label="$3"
     local actual_sha="$4"
     local checksum_var="${5:-${script_label^^}_SHA256}"
+    local tty_fd
 
     # AUTO_INSTALL yalnız diğer kurulum sorularının varsayılanlarını otomatikleştirir;
     # yeni bir uzak betiğe güvenme kararı ise TTY varsa daima operatöre aittir.
     # Böylece normal `./install_sidar.sh` akışında AUTO_INSTALL seçilmiş olsa bile
     # eksik pin, kullanıcıya manuel export yaptırmak yerine güvenli biçimde
     # inceleme/onay kapısına düşer. CI/no-interaction çalışmaları fail-closed kalır.
-    if [[ "${NO_INTERACTION:-false}" == true || ! -t 0 || ! -t 1 ]]; then
+    if [[ "${NO_INTERACTION:-false}" == true ]]; then
+        return 1
+    fi
+
+    # install_sidar.sh stdout/stderr'i maskeleyip loglamak için bir pipe'a
+    # yönlendirir. Bu nedenle burada `-t 1` kontrolü gerçek bir interaktif
+    # kurulumda bile false olur. Kontrol ve tüm güven kararı I/O'su için
+    # controlling terminal'i doğrudan aç; CI/container gibi controlling TTY'si
+    # olmayan ortamlarda open başarısız olur ve akış fail-closed kalır.
+    if ! exec {tty_fd}<>/dev/tty 2>/dev/null; then
         return 1
     fi
 
     warn "HATA: ${script_label} checksum değeri tanımlı değil; supply-chain doğrulaması olmadan kurulum sürdürülemez."
     info "Sidar betiği indirdi ve SHA-256 değerini hesapladı; yalnız siz onaylarsanız betik gösterilecek, değer bu oturum için pinlenecek ve kurulum kaldığı adımdan devam edecektir."
-    printf '%s\n' "URL: ${script_url}" "Hesaplanan SHA-256: ${actual_sha}"
-    printf '%s' "Betiği inceleyip checksum değerini oluşturmak ve kurulumu yeniden denemek ister misiniz? [y/N] "
+    printf '%s\n' "URL: ${script_url}" "Hesaplanan SHA-256: ${actual_sha}" >&"$tty_fd"
+    printf '%s' "Betiği inceleyip checksum değerini oluşturmak ve kurulumu yeniden denemek ister misiniz? [y/N] " >&"$tty_fd"
     local review_answer=""
-    read -r review_answer
+    read -r review_answer <&"$tty_fd"
     case "${review_answer,,}" in
         y|yes|e|evet) ;;
         *) return 1 ;;
     esac
-    "${PAGER:-less}" "$script_file" || return 1
-    printf '%s' "${checksum_var}=${actual_sha} olarak bu kurulum oturumu için kabul edilsin mi? [y/N] "
+    "${PAGER:-less}" "$script_file" <&"$tty_fd" >&"$tty_fd" || return 1
+    printf '%s' "${checksum_var}=${actual_sha} olarak bu kurulum oturumu için kabul edilsin mi? [y/N] " >&"$tty_fd"
     local answer=""
-    read -r answer
+    read -r answer <&"$tty_fd"
     case "${answer,,}" in
         y|yes|e|evet)
             printf -v "$checksum_var" '%s' "$actual_sha"

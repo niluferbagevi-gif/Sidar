@@ -26,6 +26,9 @@ def test_remote_script_interactive_pin_remains_available_in_auto_install(
         "warn() { printf 'WARN:%s\\n' \"$*\"; }\n"
         "info() { printf 'INFO:%s\\n' \"$*\"; }\n"
         "source scripts/install_modules/utils/remote_script.sh\n"
+        # install_sidar.sh masks and logs output through a process-substitution
+        # pipe, so stdout is deliberately not a TTY at the trust gate.
+        "exec > >(cat) 2>&1\n"
         "AUTO_INSTALL=true NO_INTERACTION=false PAGER=cat "
         'review_and_pin_remote_script_checksum "$1" '
         "https://example.invalid/install.sh fixture abc123 FIXTURE_SHA256\n"
@@ -47,6 +50,42 @@ def test_remote_script_interactive_pin_remains_available_in_auto_install(
     assert "HATA: fixture checksum değeri tanımlı değil" in result.stdout
     assert "checksum değerini oluşturmak" in result.stdout
     assert "PIN=abc123" in result.stdout
+
+
+def test_remote_script_interactive_pin_fails_closed_without_controlling_tty(
+    tmp_path: Path,
+) -> None:
+    """A /dev/tty node alone must not make headless execution interactive."""
+    downloaded = tmp_path / "install.sh"
+    downloaded.write_text("#!/bin/sh\necho safe fixture\n", encoding="utf-8")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -Eeuo pipefail
+            warn() { :; }
+            info() { :; }
+            source scripts/install_modules/utils/remote_script.sh
+            if NO_INTERACTION=false PAGER=cat review_and_pin_remote_script_checksum \
+                "$1" https://example.invalid/install.sh fixture abc123 FIXTURE_SHA256; then
+                echo unexpected-success
+            else
+                echo fail-closed
+            fi
+            """,
+            "bash",
+            str(downloaded),
+        ],
+        cwd=REPO_ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "fail-closed"
 
 
 @pytest.mark.parametrize(
