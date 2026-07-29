@@ -650,6 +650,7 @@ sidar_handle_install_failure() {
     local attempt="${SIDAR_INSTALL_REMEDIATION_ATTEMPT:-0}"
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
     local failure_signature=""
+    local failure_code=""
 
     sidar_install_auto_heal_enabled || return 1
     [[ -n "$phase" ]] || return 1
@@ -662,6 +663,7 @@ sidar_handle_install_failure() {
     max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
     failure_signature="$(sidar_failure_signature "$phase" "$failed_cmd" "$reason" "$exit_code")"
+    failure_code="$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)"
 
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
@@ -707,7 +709,12 @@ sidar_handle_install_failure() {
         sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
         return 1
     fi
-    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
+    # uv timeout remediation her retry'da timeout'u büyüterek yürütme koşulunu
+    # değiştirir. İmza normalizasyonu 30s/300s gibi süreleri eşitlediği için bu
+    # sınıfı bütçe tükenene kadar generic tekrar-imza korumasından hariç tut.
+    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && \
+        "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" && \
+        !( "$failure_code" == "uv-network-timeout" && "$attempt" -lt "$max_attempts" ) ]]; then
         warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
         sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
         return 1
