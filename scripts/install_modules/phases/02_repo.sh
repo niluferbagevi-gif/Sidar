@@ -1,37 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-sidar_phase_apply_coverage_dark_mode_assets() {
-    local source_css="$SCRIPT_DIR/assets/dark_mode.css"
-    local -a coverage_asset_dirs=(
-        "$SCRIPT_DIR/htmlcov/assets"
-        "$SCRIPT_DIR/artifacts/htmlcov/assets"
-    )
-    local -a coverage_html_dirs=(
-        "$SCRIPT_DIR/htmlcov"
-        "$SCRIPT_DIR/artifacts/htmlcov"
-    )
-    local assets_dir=""
-    local html_dir=""
-
-    if [[ ! -f "$source_css" ]]; then
-        warn "Coverage dark-mode CSS bulunamadı: $source_css"
-        return 0
-    fi
-
-    for assets_dir in "${coverage_asset_dirs[@]}"; do
-        mkdir -p "$assets_dir"
-        cp -f "$source_css" "$assets_dir/dark_mode.css"
-    done
-
-    for html_dir in "${coverage_html_dirs[@]}"; do
-        [[ -d "$html_dir" ]] || continue
-        find "$html_dir" -type f -name '*.html' -exec sed -i -E "s/(class=\"[^\"]*)\\blight-mode\\b/\\1dark-mode/g; s/(class='[^']*)\\blight-mode\\b/\\1dark-mode/g" {} +
-    done
-
-    ok "Coverage dark-mode varlıkları hazırlandı ve mevcut HTML raporları dark-mode'a geçirildi."
-}
-
 deploy_with_helm() {
     step "Kubernetes/Helm Dağıtımı"
     local chart_dir="$SCRIPT_DIR/helm/sidar"
@@ -202,5 +171,4 @@ sidar_phase_bootstrap_repo_system() {
     install_system_dependencies
     sync_repo
     cd "$SCRIPT_DIR" || return
-    sidar_phase_apply_coverage_dark_mode_assets
 }

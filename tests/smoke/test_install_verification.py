@@ -83,53 +83,22 @@ def _normalize_bash_function(function_text: str) -> str:
     return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
 
 
-def test_dark_mode_assets_exist(tmp_path: Path) -> None:
+def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
     assert source_dark_css.exists()
-
-    script_dir = tmp_path / "sidar"
-    (script_dir / "assets").mkdir(parents=True)
-    (script_dir / "assets" / "dark_mode.css").write_text(
-        source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
+    repo_phase = (repo_root / "scripts/install_modules/phases/02_repo.sh").read_text(
+        encoding="utf-8"
     )
-    html_report = script_dir / "htmlcov" / "index.html"
-    html_report.parent.mkdir(parents=True)
-    html_report.write_text(
-        '<html><body class="light-mode"><a href="/light-mode/help">light-mode '
-        "text</a></body></html>",
-        encoding="utf-8",
+    coverage_helpers = (repo_root / "scripts/test_gates/coverage_helpers.sh").read_text(
+        encoding="utf-8"
     )
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 
-    repo_phase_script = textwrap.dedent(
-        """
-        set -euo pipefail
-        source scripts/install_modules/phases/02_repo.sh
-
-        warn(){ :; }
-        ok(){ :; }
-
-        export SCRIPT_DIR="$1"
-        sidar_phase_apply_coverage_dark_mode_assets
-        """
-    )
-
-    subprocess.run(
-        ["bash", "--noprofile", "--norc", "-c", repo_phase_script, "sidar-smoke", str(script_dir)],
-        cwd=repo_root,
-        env=_installer_test_env(tmp_path),
-        check=True,
-    )
-
-    coverage_css = script_dir / "htmlcov" / "assets" / "dark_mode.css"
-    artifact_coverage_css = script_dir / "artifacts" / "htmlcov" / "assets" / "dark_mode.css"
-    assert coverage_css.exists()
-    assert artifact_coverage_css.exists()
-    assert "background-color" in coverage_css.read_text(encoding="utf-8")
-    html = html_report.read_text(encoding="utf-8")
-    assert 'class="dark-mode"' in html
-    assert "/light-mode/help" in html
-    assert ">light-mode text<" in html
+    assert "sidar_phase_apply_coverage_dark_mode_assets" not in repo_phase
+    assert "htmlcov" not in repo_phase
+    assert "coverage html -d htmlcov" in coverage_helpers
+    assert 'extra_css = "assets/dark_mode.css"' in pyproject
 
 
 def test_python_version() -> None:
