@@ -3208,6 +3208,17 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "artifacts/install/remediation" in remediation_utils
 
 
+def test_uv_progress_configuration_uses_only_supported_tty_behavior() -> None:
+    """Installer must not advertise an unsupported uv progress environment variable."""
+    python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UV_PROGRESS_BAR" not in python_env
+    assert 'if [[ ! -t 1 && ! -t 2 ]]; then' in python_env
+    assert "canlı yüzde çubuğu yerine paket indirme satırları" in python_env
+
+
 def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

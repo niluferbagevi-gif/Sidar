@@ -9,7 +9,6 @@ SIDAR_INSTALL_UTIL_PYTHON_ENV_SH_LOADED=1
 
 install_uv_cli() {
     step "uv CLI Paket Yöneticisi"
-    export UV_PROGRESS_BAR=on
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if ! command -v uv &>/dev/null; then
@@ -293,6 +292,9 @@ install_python_deps() {
     info "Bağımlılık profili: ${dependency_profile} — ${sync_command_label}."
     if [[ "$dependency_profile" == "production" || "$dependency_profile" == "production-minimal" ]]; then
         warn "Production dependency profili dev/test araçlarını kurmaz; smoke/CI/self-healing için dev-full veya dev-light kullanın."
+    fi
+    if [[ ! -t 1 && ! -t 2 ]]; then
+        info "uv çıktısı bir TTY'ye bağlı değil; canlı yüzde çubuğu yerine paket indirme satırları gösterilecek."
     fi
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
