@@ -3582,6 +3582,7 @@ def test_install_sidar_download_verified_script_fails_after_http_200_when_checks
             set --
             source ./install_sidar.sh
             OFFLINE_MODE=false
+            NO_INTERACTION=true
             unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
             download_verified_script 'https://example.invalid/install.sh' '' 'uv_install'
             """,
@@ -3997,6 +3998,7 @@ def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
             set --
             source ./install_sidar.sh
             OFFLINE_MODE=false
+            NO_INTERACTION=true
             unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
             if download_verified_script_soft 'https://example.invalid/install.sh' '' \
               'probe_install'; then
