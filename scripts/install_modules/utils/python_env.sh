@@ -218,6 +218,10 @@ build_custom_dependency_sync_args() {
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
+    # uv'nin 30 saniyelik varsayılanı büyük GPU wheel'lerinde yavaş veya kararsız
+    # bağlantıları gereksiz yere başarısız kılar. Kullanıcının açık override'ını koru.
+    export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-300}"
+
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 

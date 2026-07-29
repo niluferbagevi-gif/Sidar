@@ -3132,6 +3132,8 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
                 sidar_retry_budget_for_failure 03_runtime 'network fetch' 'temporary failure'
             sidar_retry_budget_for_failure 03_runtime 'pytest' 'deterministic failure'
             sidar_retry_budget_for_failure 04_workspace 'unknown' 'unknown'
+            sidar_retry_budget_for_failure 04_workspace 'uv sync' \
+              'Failed to download distribution due to network timeout. Try increasing UV_HTTP_TIMEOUT'
             if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' \
               'sudo: timed out deterministic'; then
                 echo deterministic
@@ -3146,7 +3148,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
         text=True,
     )
 
-    assert result.stdout.splitlines() == ["3", "2", "1", "1", "transient"]
+    assert result.stdout.splitlines() == ["3", "2", "1", "1", "3", "transient"]
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:

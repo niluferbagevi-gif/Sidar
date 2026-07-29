@@ -70,6 +70,10 @@ sidar_failure_code_for_signal() {
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
 
     case "$normalized" in
+        *"network timeout"*|*"uv_http_timeout"*|*"failed to extract archive"*)
+            echo "uv-network-timeout"
+            return 0
+            ;;
         *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
             echo "remote-script-checksum-missing"
             return 0
@@ -253,6 +257,12 @@ sidar_retry_budget_for_failure() {
         return 0
     fi
 
+    if [[ "$phase" == "04_workspace" ]] && \
+        [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "uv-network-timeout" ]]; then
+        echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
+        return 0
+    fi
+
     case "$phase" in
         02_repo|03_runtime|05_frontend|06_models|06_services)
             echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
@@ -372,6 +382,7 @@ sidar_fix_pep639_legacy_license_classifier() {
 sidar_remediate_uv_sync_failure() {
     local failure_signal="${1:-}"
     local action="uv-sync-remediation"
+    local failure_code=""
     cd "$SCRIPT_DIR" || return 1
 
     if ! command -v uv &>/dev/null; then
@@ -380,6 +391,19 @@ sidar_remediate_uv_sync_failure() {
     fi
 
     mkdir -p artifacts/install/remediation
+
+    failure_code="$(sidar_failure_code_for_signal "uv sync" "$failure_signal" || true)"
+    if [[ "$failure_code" == "uv-network-timeout" ]]; then
+        local current_timeout="${UV_HTTP_TIMEOUT:-30}"
+        [[ "$current_timeout" =~ ^[0-9]+$ ]] || current_timeout=30
+        if (( current_timeout < 300 )); then
+            export UV_HTTP_TIMEOUT=300
+        elif (( current_timeout < 600 )); then
+            export UV_HTTP_TIMEOUT=600
+        fi
+        action="${action}+http-timeout-${UV_HTTP_TIMEOUT}s"
+        warn "Auto-heal: uv ağ zaman aşımı algılandı; UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}s ile yeniden denenecek."
+    fi
 
     sidar_fix_pep639_legacy_license_classifier "$failure_signal" action || true
 
@@ -410,7 +434,9 @@ sidar_remediate_uv_sync_failure() {
         action="${action}+uv-lock-created"
     fi
 
-    if ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
+    if [[ "$failure_code" == "uv-network-timeout" ]]; then
+        info "Auto-heal: ağ zaman aşımında geçerli indirme cache'i korunuyor."
+    elif ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
         warn "Auto-heal: uv cache prune başarısız oldu; sync retry yine de denenecek."
     else
         action="${action}+uv-cache-pruned"

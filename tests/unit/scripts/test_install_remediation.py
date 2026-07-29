@@ -188,6 +188,63 @@ def test_install_modules_declare_strict_mode_for_standalone_safety() -> None:
 
 
 @pytest.mark.parametrize(
+    ("initial_timeout", "expected_timeout"),
+    [("30", "300"), ("300", "600"), ("900", "900")],
+)
+def test_uv_network_timeout_remediation_increases_timeout_without_pruning_cache(
+    tmp_path: Path, initial_timeout: str, expected_timeout: str
+) -> None:
+    """A network retry must preserve downloads and progressively widen uv's timeout."""
+    (tmp_path / "uv.lock").touch()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    uv_log = tmp_path / "uv.log"
+    uv = fake_bin / "uv"
+    uv.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$*" >> "$UV_STUB_LOG"\n'
+        '[[ "$*" == "lock --check" ]]\n',
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    script = r"""
+        set -Eeuo pipefail
+        source scripts/install_modules/utils/install_remediation.sh
+        warn() { :; }
+        info() { :; }
+        sidar_write_remediation_report() { :; }
+        SCRIPT_DIR="$1"
+        export UV_HTTP_TIMEOUT="$2"
+        export UV_STUB_LOG="$3"
+        export PATH="$4:$PATH"
+        sidar_remediate_uv_sync_failure \
+          'Failed to download distribution due to network timeout; increase UV_HTTP_TIMEOUT'
+        printf '%s\n' "$UV_HTTP_TIMEOUT"
+    """
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            script,
+            "bash",
+            str(tmp_path),
+            initial_timeout,
+            str(uv_log),
+            str(fake_bin),
+        ],
+        cwd=REPO_ROOT,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == expected_timeout
+    assert "lock --check" in uv_log.read_text(encoding="utf-8")
+    assert "cache prune" not in uv_log.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
     ("package_version", "expected_rc"),
     [
         ("20.20.2-1nodesource1", 0),

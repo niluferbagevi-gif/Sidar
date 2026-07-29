@@ -213,12 +213,13 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
         expected_sync_call="$3"
 
         unset DEPENDENCY_PROFILE SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS \
-          RUN_CI_FULL_VALIDATION
+          RUN_CI_FULL_VALIDATION UV_HTTP_TIMEOUT
         eval "$4"
 
         install_python_deps
 
         grep -q "^${expected_sync_call}$" "$UV_STUB_LOG"
+        test "$UV_HTTP_TIMEOUT" = "${EXPECTED_UV_HTTP_TIMEOUT:-300}"
         ! grep -q -- "uv pip" "$UV_STUB_LOG"
         """
     )
