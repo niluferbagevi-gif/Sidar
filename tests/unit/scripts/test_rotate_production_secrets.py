@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import scripts.rotate_production_secrets as rotation
 from scripts.rotate_production_secrets import ROTATION_KEYS, main
 
 
@@ -67,3 +68,14 @@ def test_apply_requires_memory_key_impact_acknowledgement(tmp_path):
         assert exc.code == 2
     else:
         raise AssertionError("rotation unexpectedly proceeded without acknowledgement")
+
+
+def test_generated_secrets_retry_values_rejected_by_post_write_audit(monkeypatch):
+    """Random placeholder-like output cannot make rotation fail intermittently."""
+    rejected = "random-output-rejected-by-policy"
+    accepted = "Kp9_Zm7-Qx2_Vc8-Nr5_Wf6-Yh3_Tj4-Ls9_Bd7-Gn2"
+    candidates = iter([rejected, accepted])
+
+    monkeypatch.setattr(rotation, "is_weak_secret", lambda value: value == rejected)
+
+    assert rotation._generate_accepted_secret(lambda: next(candidates)) == accepted
