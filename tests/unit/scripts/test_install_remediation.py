@@ -201,7 +201,7 @@ def test_nodesource_detection_uses_installed_dpkg_version(
     dpkg_query = fake_bin / "dpkg-query"
     dpkg_query.write_text(
         "#!/usr/bin/env bash\n"
-        "[[ \"$*\" == *nodejs* ]] || exit 2\n"
+        '[[ "$*" == *nodejs* ]] || exit 2\n'
         f"printf '%s' {package_version!r}\n",
         encoding="utf-8",
     )
@@ -211,8 +211,7 @@ def test_nodesource_detection_uses_installed_dpkg_version(
         [
             "bash",
             "-c",
-            "source scripts/install_modules/install_helpers.sh; "
-            "nodejs_package_is_from_nodesource",
+            "source scripts/install_modules/install_helpers.sh; nodejs_package_is_from_nodesource",
         ],
         cwd=REPO_ROOT,
         env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
