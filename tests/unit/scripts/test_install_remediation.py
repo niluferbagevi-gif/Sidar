@@ -27,7 +27,7 @@ def test_remote_script_interactive_pin_remains_available_in_auto_install(
         "info() { printf 'INFO:%s\\n' \"$*\"; }\n"
         "source scripts/install_modules/utils/remote_script.sh\n"
         "AUTO_INSTALL=true NO_INTERACTION=false PAGER=cat "
-        "review_and_pin_remote_script_checksum \"$1\" "
+        'review_and_pin_remote_script_checksum "$1" '
         "https://example.invalid/install.sh fixture abc123 FIXTURE_SHA256\n"
         "printf 'PIN=%s\\n' \"$FIXTURE_SHA256\"\n",
         encoding="utf-8",
