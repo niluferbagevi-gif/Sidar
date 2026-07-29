@@ -3793,6 +3793,35 @@ def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wal
     assert "retry" in remote_script_util.lower()
 
 
+def test_install_sidar_review_and_pin_survives_log_tee_stdout_redirect() -> None:
+    """Regression test: interactive review-and-pin must not be defeated by logging.
+
+    `install_sidar.sh` redirects its own stdout/stderr through a `tee`-based
+    logging pipe (`exec > >(...) 2>&1`) very early. From that point on, a live
+    `[[ -t 1 ]]` check is permanently false even in a genuinely interactive
+    terminal, because fd 1 is now a pipe rather than the tty. The interactive
+    checksum review-and-pin flow in `review_and_pin_remote_script_checksum`
+    must therefore rely on the tty-ness captured *before* that redirect
+    (`SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY`) instead of a live `-t 1` check, or
+    operators are silently dropped into the non-interactive
+    manual-fix-required path even when running from a real terminal.
+    """
+    script = installer_contract_sources()
+    remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY" in script
+    # Captured strictly before the logging exec redirect reassigns fd 1/2.
+    assert script.index("SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY=false") < script.index(
+        "exec > >(mask_install_log_stream"
+    )
+
+    assert "SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY" in remote_script_util
+    assert "! -t 1" not in remote_script_util
+    assert "! -t 0" in remote_script_util
+
+
 def test_install_sidar_uses_single_source_project_version() -> None:
     script = installer_contract_sources()
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")

@@ -367,6 +367,14 @@ SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
+# Loglama için stdout/stderr aşağıda process substitution pipe'ına yönlendirilir
+# (exec > >(...) 2>&1); bu noktadan sonra `-t 1`/`-t 2` her zaman false döner,
+# gerçek bir interaktif terminalde çalışılsa bile. İnteraktif akışların (ör.
+# review-and-pin checksum onayı) bunu yanlışlıkla "non-interactive" sanmaması
+# için orijinal tty durumunu yönlendirmeden önce burada sabitliyoruz.
+SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY=false
+[[ -t 1 ]] && SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY=true
+export SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
     if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
         LOG_DIR="${TMPDIR:-/tmp}"

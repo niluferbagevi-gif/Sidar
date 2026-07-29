@@ -30,23 +30,29 @@ review_and_pin_remote_script_checksum() {
     local actual_sha="$4"
     local checksum_var="${5:-${script_label^^}_SHA256}"
 
-    if [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true || ! -t 0 || ! -t 1 ]]; then
+    # NOT: install_sidar.sh loglama için stdout/stderr'i bir process substitution
+    # pipe'ına yönlendirir (exec > >(...) 2>&1), bu yüzden bu noktadan sonra
+    # canlı `-t 1` her zaman false döner — gerçek bir interaktif terminalde
+    # çalışılsa bile. Gerçek sinyal için redirect öncesi sabitlenen
+    # SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY kullanılır; stdin (`-t 0`) redirect'ten
+    # etkilenmediği için doğrudan kontrol edilebilir.
+    if [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true || ! -t 0 || "${SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY:-true}" != true ]]; then
         return 1
     fi
 
     warn "${script_label} checksum değeri tanımlı değil; fail-safe mod normalde kurulumu durdurur."
-    info "İnteraktif review-and-pin akışı: indirilen betiği inceleyip yalnız güveniyorsanız bu oturum için pinleyebilirsiniz."
+    info "İnteraktif review-and-pin akışı: indirilen betiği inceleyip onaylarsanız SHA-256 bu oturum için otomatik üretilip kuruluma devam edilecek."
     printf '%s\n' "URL: ${script_url}" "SHA-256: ${actual_sha}" "Betiği görüntülemek için ENTER, iptal için Ctrl+C."
     read -r _sidar_review_ack
-    "${PAGER:-less}" "$script_file" || return 1
-    printf '%s' "${checksum_var}=${actual_sha} olarak bu kurulum oturumu için kabul edilsin mi? [y/N] "
+    "${PAGER:-less}" "$script_file" </dev/tty >/dev/tty || return 1
+    printf '%s' "Bu betiği inceledim; ${checksum_var}=${actual_sha} olarak kabul edilip kuruluma devam edilsin mi? [y/N] "
     local answer=""
     read -r answer
     case "${answer,,}" in
         y|yes|e|evet)
             printf -v "$checksum_var" '%s' "$actual_sha"
             export "${checksum_var?}"
-            warn "${script_label} checksum bu oturum için interaktif TOFU ile kabul edildi. Kalıcı pin için scripts/install_modules/remote_checksums.env güncellenmelidir."
+            warn "${script_label} checksum bu oturum için interaktif TOFU ile kabul edildi; kuruluma devam ediliyor. Kalıcı pin için scripts/install_modules/remote_checksums.env güncellenmelidir."
             return 0
             ;;
         *)
