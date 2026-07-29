@@ -2,24 +2,25 @@
 
 Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 
-- **Toplam kaynak dosya (tests dahil):** 171
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 78
-- **Tests dosya sayısı (tek notta özetlenen):** 93
+> Bu dosya `scripts/generate_module_notes_index.py` tarafından otomatik üretilir;
+> elle düzenlenmemelidir. Güncellemek için betiği yeniden çalıştırın.
+
+- **Proje sürümü:** 5.2.0
+- **Toplam takipli dosya:** 986
+- **Üretim Python dosyası (tests hariç):** 307
+- **Test dosyası (`test_*.py`):** 248
+- **Frontend dosyası (`web_ui_react/`):** 84
+- **Ayrı not üretilen kaynak sayısı:** 70
 
 ## Not dosyaları
-- `.coveragerc` → `docs/module-notes/coveragerc.md`
 - `.env.example` → `docs/module-notes/env.example.md`
 - `.github/workflows/ci.yml` → `docs/module-notes/.github/workflows/ci.yml.md`
 - `.github/workflows/migration-cutover-checks.yml` → `docs/module-notes/.github/workflows/migration-cutover-checks.yml.md`
 - `.gitignore` → `docs/module-notes/gitignore.md`
 - `.note` → `docs/module-notes/note.md`
 - `CHANGELOG.md` → `docs/module-notes/CHANGELOG.md.md`
-- `CLAUDE.md` → `docs/module-notes/CLAUDE.md.md`
 - `Dockerfile` → `docs/module-notes/Dockerfile.md`
-- `PROJE_RAPORU.md` → `docs/module-notes/PROJE_RAPORU.md.md`
 - `README.md` → `docs/module-notes/README.md.md`
-- `RFC-MultiAgent.md` → `docs/module-notes/RFC-MultiAgent.md.md`
-- `SIDAR.md` → `docs/module-notes/SIDAR.md.md`
 - `agent/__init__.py` → `docs/module-notes/agent/__init__.py.md`
 - `agent/auto_handle.py` → `docs/module-notes/agent/auto_handle.py.md`
 - `agent/base_agent.py` → `docs/module-notes/agent/base_agent.py.md`
@@ -44,15 +45,20 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
-- `core/rag.py` → `docs/module-notes/core/rag.py.md`
+- `core/rag/` → `docs/module-notes/core/rag.py.md`
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
 - `docker-compose.yml` → `docs/module-notes/docker-compose.yml.md`
-- `docker/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker/grafana/dashboards/sidar-llm-overview.json.md`
-- `docker/grafana/provisioning/dashboards/dashboards.yml` → `docs/module-notes/docker/grafana/provisioning/dashboards/dashboards.yml.md`
-- `docker/grafana/provisioning/datasources/prometheus.yml` → `docs/module-notes/docker/grafana/provisioning/datasources/prometheus.yml.md`
-- `docker/prometheus/prometheus.yml` → `docs/module-notes/docker/prometheus/prometheus.yml.md`
-- `environment.yml` → `docs/module-notes/environment.yml.md`
+- `docker_setup/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker/grafana/dashboards/sidar-llm-overview.json.md`
+- `docker_setup/grafana/provisioning/dashboards/dashboards.yml` → `docs/module-notes/docker/grafana/provisioning/dashboards/dashboards.yml.md`
+- `docker_setup/grafana/provisioning/datasources/prometheus.yml` → `docs/module-notes/docker/grafana/provisioning/datasources/prometheus.yml.md`
+- `docker_setup/prometheus/prometheus.yml` → `docs/module-notes/docker/prometheus/prometheus.yml.md`
+- `docs/CLAUDE.md` → `docs/module-notes/CLAUDE.md.md`
+- `docs/PROJE_RAPORU.md` → `docs/module-notes/PROJE_RAPORU.md.md`
+- `docs/RFC-MultiAgent.md` → `docs/module-notes/RFC-MultiAgent.md.md`
+- `docs/SIDAR.md` → `docs/module-notes/SIDAR.md.md`
+- `docs/archive/environment.yml` → `docs/module-notes/environment.yml.md`
 - `github_upload.py` → `docs/module-notes/github_upload.py.md`
+- `gui_launcher.py` → `docs/module-notes/gui_launcher.py.md`
 - `install_sidar.sh` → `docs/module-notes/install_sidar.sh.md`
 - `main.py` → `docs/module-notes/main.py.md`
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
@@ -67,9 +73,6 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `migrations/script.py.mako` → `docs/module-notes/migrations/script.py.mako.md`
 - `migrations/versions/0001_baseline_schema.py` → `docs/module-notes/migrations/versions/0001_baseline_schema.py.md`
 - `pyproject.toml` → `docs/module-notes/pyproject.toml.md`
-- `pytest.ini` → `docs/module-notes/pytest.ini.md`
-- `requirements-dev.txt` → `docs/module-notes/requirements-dev.txt.md`
-- `requirements.txt` → `docs/module-notes/requirements.txt.md`
 - `run_tests.sh` → `docs/module-notes/run_tests.sh.md`
 - `runbooks/production-cutover-playbook.md` → `docs/module-notes/runbooks/production-cutover-playbook.md.md`
 - `scripts/audit_metrics.sh` → `docs/module-notes/scripts/audit_metrics.sh.md`
@@ -78,5 +81,5 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `scripts/install_host_sandbox.sh` → `docs/module-notes/scripts/install_host_sandbox.sh.md`
 - `scripts/load_test_db_pool.py` → `docs/module-notes/scripts/load_test_db_pool.py.md`
 - `scripts/migrate_sqlite_to_pg.py` → `docs/module-notes/scripts/migrate_sqlite_to_pg.py.md`
-- `web_server.py` → `docs/module-notes/web_server.py.md`
 - `tests/*` → `docs/module-notes/tests.md`
+- `web_server.py` → `docs/module-notes/web_server.py.md`

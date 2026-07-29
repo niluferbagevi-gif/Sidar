@@ -214,6 +214,9 @@ jobs:
       - name: Check release version consistency
         run: uv run python scripts/check_release_version_consistency.py
 
+      - name: Check module-notes index is not stale
+        run: uv run python scripts/generate_module_notes_index.py --check
+
       - name: Check dated policy/debt expirations
         run: uv run python scripts/ci/check_policy_dates.py
 
@@ -355,6 +358,9 @@ jobs:
           # in the uploaded artifact so reviewers can tell a network blip from
           # a real CVE without reading the raw stderr.
           exit 1
+
+      - name: Check nosec suppression inventory ratchet
+        run: uv run python scripts/ci/check_nosec_inventory.py
 
       - name: Upload security audit artifacts
         if: always()

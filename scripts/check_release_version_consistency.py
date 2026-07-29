@@ -88,6 +88,26 @@ def _check_docs(version: str, errors: list[str]) -> None:
             _expect(stale not in docs, f"docs/CLAUDE.md still contains stale {stale}", errors)
 
 
+def _check_report(version: str, errors: list[str]) -> None:
+    # PROJE_RAPORU.md intentionally keeps historical version narrative (e.g. "v4.3.0
+    # ile ..." phase summaries), so only the declared current-version header field is
+    # checked here rather than banning old version substrings across the whole report.
+    report = _read_text("docs/PROJE_RAPORU.md")
+    version_field = re.search(r"\*\*Proje Sürümü:\*\*\s*v([0-9]+\.[0-9]+\.[0-9]+)", report)
+    _expect(
+        version_field is not None,
+        "docs/PROJE_RAPORU.md must declare a '**Proje Sürümü:** vX.Y.Z' header field",
+        errors,
+    )
+    if version_field is not None:
+        _expect(
+            version_field.group(1) == version,
+            "docs/PROJE_RAPORU.md **Proje Sürümü** header is "
+            f"v{version_field.group(1)}, expected v{version}",
+            errors,
+        )
+
+
 def main() -> int:
     version = _canonical_version()
     errors: list[str] = []
@@ -95,6 +115,7 @@ def main() -> int:
     _check_chart("helm/sidar/Chart.yaml", version, errors)
     _check_chart("sidar_assets/helm/sidar/Chart.yaml", version, errors)
     _check_docs(version, errors)
+    _check_report(version, errors)
     if errors:
         print("Release version consistency check failed:", file=sys.stderr)
         for error in errors:
