@@ -508,7 +508,10 @@ EOF
             info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
             linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
         fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
+        # Headless/WSL geliştirme ortamında masaüstü playback yığınını çeken
+        # Recommends paketlerini kurma; gerçek CLI/dev Depends bağımlılıkları korunur.
+        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
+            --no-install-recommends "${linux_media_pkgs[@]}"
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
         info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
@@ -516,10 +519,13 @@ EOF
     elif command -v dnf &>/dev/null; then
         warn "RedHat/Fedora tabanlı sistem tespit edildi. Paketler dnf ile kuruluyor..."
         sudo dnf upgrade -y
-        sudo dnf install -y curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
+        sudo dnf install -y --setopt=install_weak_deps=False \
+            curl wget git zstd nodejs npm portaudio-devel alsa-utils v4l-utils ffmpeg
         info "Host PostgreSQL/Redis servis kurulumu atlandı. Servisleri Docker Compose ile yönetin."
     elif command -v pacman &>/dev/null; then
         warn "Arch tabanlı sistem tespit edildi. Paketler pacman ile kuruluyor..."
+        # pacman varsayılan olarak optdepends paketlerini otomatik kurmaz; ayrıca
+        # bir "no recommends" bayrağı gerekmez.
         sudo pacman -Sy --noconfirm --needed \
             curl wget git zstd nodejs npm portaudio alsa-utils v4l-utils ffmpeg
         node_bin="$(resolve_native_binary_path node || true)"

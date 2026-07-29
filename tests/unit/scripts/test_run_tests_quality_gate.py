@@ -2116,6 +2116,22 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     )
 
 
+def test_installer_media_packages_disable_weak_desktop_dependencies() -> None:
+    """Headless installs must retain required media tools without desktop recommendations."""
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "apt-get -o Acquire::Retries=3 install -y \\\n"
+        '            --no-install-recommends "${linux_media_pkgs[@]}"'
+        in system_phase
+    )
+    assert "dnf install -y --setopt=install_weak_deps=False" in system_phase
+    assert "zypper --non-interactive install --no-recommends" in system_phase
+    assert "pacman varsayılan olarak optdepends paketlerini otomatik kurmaz" in system_phase
+
+
 def test_ci_system_dependency_installer_check_mode_reports_apt_missing(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
