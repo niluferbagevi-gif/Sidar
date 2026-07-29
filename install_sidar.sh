@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="a8f7c1123ff2cec3bfb877633f84e7cb0225e738"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="af935d0ea1cbd823b72ca819635e156948bb2fcb"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -367,6 +367,14 @@ SIDAR_INSTALL_ORIGINAL_ARGS=("$@")
 # Not: Repo clone/sync tamamlanmadan TARGET_DIR altında dosya üretmeyin.
 # Aksi halde "sıfır kurulum" akışında hedef dizin gereksiz yere dolu görünebilir.
 LOG_DIR="$SCRIPT_DIR/logs"
+# Loglama için stdout/stderr aşağıda process substitution pipe'ına yönlendirilir
+# (exec > >(...) 2>&1); bu noktadan sonra `-t 1`/`-t 2` her zaman false döner,
+# gerçek bir interaktif terminalde çalışılsa bile. İnteraktif akışların (ör.
+# review-and-pin checksum onayı) bunu yanlışlıkla "non-interactive" sanmaması
+# için orijinal tty durumunu yönlendirmeden önce burada sabitliyoruz.
+SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY=false
+[[ -t 1 ]] && SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY=true
+export SIDAR_INSTALL_ORIGINAL_STDOUT_IS_TTY
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
     if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
         LOG_DIR="${TMPDIR:-/tmp}"
@@ -622,7 +630,7 @@ d154b3e6b9f3ec882f9563538f6c5283708c2ed3c5dfa3cebfbf3c308b685431  scripts/instal
 2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
 04d67e8a412448bb38bd94ab525f8d5d95856d20fa7bb10a098ad3e893676ea2  scripts/install_modules/utils/playwright_ubuntu_override.sh
 a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
-ae01c4d07589332e304f189928e78555514aa5d1b85b2178e0a35fb40e60ed11  scripts/install_modules/utils/remote_script.sh
+7e21bc1eab10de3d02bec6835d93c1a96f26064b4c2a7c0bc878206f9115005a  scripts/install_modules/utils/remote_script.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
 4effdccc94e05adaf27362aef74593b64bf34acab8930baba7b147289c640587  scripts/install_modules/utils/ux.sh
 7340b3b24a8d0d563f0054a6b507c8dbd262d047dfb82aa7e76f7c020524eb83  scripts/install_modules/utils/wsl_gpu_preflight.sh
