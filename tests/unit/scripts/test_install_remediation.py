@@ -79,6 +79,11 @@ def test_remote_script_interactive_pin_fails_closed_without_controlling_tty(
         ],
         cwd=REPO_ROOT,
         stdin=subprocess.DEVNULL,
+        # Redirecting stdin does not detach a child from the parent's
+        # controlling terminal. Start a new session so opening /dev/tty really
+        # exercises the headless/CI path instead of consuming the test runner's
+        # terminal input.
+        start_new_session=True,
         capture_output=True,
         text=True,
         check=False,
