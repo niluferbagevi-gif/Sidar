@@ -1,12 +1,52 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_remote_script_interactive_pin_remains_available_in_auto_install(
+    tmp_path: Path,
+) -> None:
+    """AUTO_INSTALL must not suppress the explicit remote-script trust gate."""
+    if shutil.which("script") is None:
+        pytest.skip("util-linux script komutu bu ortamda yok")
+
+    downloaded = tmp_path / "install.sh"
+    downloaded.write_text("#!/bin/sh\necho safe fixture\n", encoding="utf-8")
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        "warn() { printf 'WARN:%s\\n' \"$*\"; }\n"
+        "info() { printf 'INFO:%s\\n' \"$*\"; }\n"
+        "source scripts/install_modules/utils/remote_script.sh\n"
+        "AUTO_INSTALL=true NO_INTERACTION=false PAGER=cat "
+        "review_and_pin_remote_script_checksum \"$1\" "
+        "https://example.invalid/install.sh fixture abc123 FIXTURE_SHA256\n"
+        "printf 'PIN=%s\\n' \"$FIXTURE_SHA256\"\n",
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    result = subprocess.run(
+        ["script", "-qec", f"{probe} {downloaded}", "/dev/null"],
+        cwd=REPO_ROOT,
+        input="evet\nevet\n",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "HATA: fixture checksum değeri tanımlı değil" in result.stdout
+    assert "checksum değerini oluşturmak" in result.stdout
+    assert "PIN=abc123" in result.stdout
 
 
 @pytest.mark.parametrize(

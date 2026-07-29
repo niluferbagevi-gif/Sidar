@@ -30,14 +30,25 @@ review_and_pin_remote_script_checksum() {
     local actual_sha="$4"
     local checksum_var="${5:-${script_label^^}_SHA256}"
 
-    if [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true || ! -t 0 || ! -t 1 ]]; then
+    # AUTO_INSTALL yalnız diğer kurulum sorularının varsayılanlarını otomatikleştirir;
+    # yeni bir uzak betiğe güvenme kararı ise TTY varsa daima operatöre aittir.
+    # Böylece normal `./install_sidar.sh` akışında AUTO_INSTALL seçilmiş olsa bile
+    # eksik pin, kullanıcıya manuel export yaptırmak yerine güvenli biçimde
+    # inceleme/onay kapısına düşer. CI/no-interaction çalışmaları fail-closed kalır.
+    if [[ "${NO_INTERACTION:-false}" == true || ! -t 0 || ! -t 1 ]]; then
         return 1
     fi
 
-    warn "${script_label} checksum değeri tanımlı değil; fail-safe mod normalde kurulumu durdurur."
-    info "İnteraktif review-and-pin akışı: indirilen betiği inceleyip yalnız güveniyorsanız bu oturum için pinleyebilirsiniz."
-    printf '%s\n' "URL: ${script_url}" "SHA-256: ${actual_sha}" "Betiği görüntülemek için ENTER, iptal için Ctrl+C."
-    read -r _sidar_review_ack
+    warn "HATA: ${script_label} checksum değeri tanımlı değil; supply-chain doğrulaması olmadan kurulum sürdürülemez."
+    info "Sidar betiği indirdi ve SHA-256 değerini hesapladı; yalnız siz onaylarsanız betik gösterilecek, değer bu oturum için pinlenecek ve kurulum kaldığı adımdan devam edecektir."
+    printf '%s\n' "URL: ${script_url}" "Hesaplanan SHA-256: ${actual_sha}"
+    printf '%s' "Betiği inceleyip checksum değerini oluşturmak ve kurulumu yeniden denemek ister misiniz? [y/N] "
+    local review_answer=""
+    read -r review_answer
+    case "${review_answer,,}" in
+        y|yes|e|evet) ;;
+        *) return 1 ;;
+    esac
     "${PAGER:-less}" "$script_file" || return 1
     printf '%s' "${checksum_var}=${actual_sha} olarak bu kurulum oturumu için kabul edilsin mi? [y/N] "
     local answer=""
@@ -47,6 +58,7 @@ review_and_pin_remote_script_checksum() {
             printf -v "$checksum_var" '%s' "$actual_sha"
             export "${checksum_var?}"
             warn "${script_label} checksum bu oturum için interaktif TOFU ile kabul edildi. Kalıcı pin için scripts/install_modules/remote_checksums.env güncellenmelidir."
+            info "${checksum_var} oluşturuldu; kurulum doğrulanmış betikle kaldığı adımdan yeniden devam ediyor."
             return 0
             ;;
         *)

@@ -2797,6 +2797,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
         encoding="utf-8"
@@ -2899,6 +2900,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "Ollama API" in preflight_utils
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
+    assert "install_nvidia_container_repository()" in gpu_utils
+    assert "sudo install -m 0644" in gpu_utils
+    assert "sudo install -d -m 0755 /usr/share/keyrings" in gpu_utils
+    assert "--retry-all-errors" in gpu_utils
+    assert "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey |" not in gpu_utils
+    assert "setup_nvidia_docker()" not in system_phase
     assert "docker_nvidia_runtime_registered()" in gpu_utils
     assert "wait_for_docker_nvidia_runtime()" in gpu_utils
     assert "SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS" in gpu_utils
