@@ -182,6 +182,62 @@ def test_install_modules_declare_strict_mode_for_standalone_safety() -> None:
     assert missing == []
 
 
+@pytest.mark.parametrize(
+    ("package_version", "expected_rc"),
+    [
+        ("20.20.2-1nodesource1", 0),
+        ("22.14.0-1NODESOURCE1", 0),
+        ("20.19.4+dfsg-1ubuntu1", 1),
+    ],
+)
+def test_nodesource_detection_uses_installed_dpkg_version(
+    tmp_path: Path,
+    package_version: str,
+    expected_rc: int,
+) -> None:
+    """NodeSource detection must not depend on the mutable apt policy cache."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    dpkg_query = fake_bin / "dpkg-query"
+    dpkg_query.write_text(
+        "#!/usr/bin/env bash\n"
+        "[[ \"$*\" == *nodejs* ]] || exit 2\n"
+        f"printf '%s' {package_version!r}\n",
+        encoding="utf-8",
+    )
+    dpkg_query.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "source scripts/install_modules/install_helpers.sh; "
+            "nodejs_package_is_from_nodesource",
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == expected_rc, result.stdout + result.stderr
+
+
+def test_nodejs_package_source_checks_do_not_use_apt_policy_cache() -> None:
+    system_phase = (REPO_ROOT / "scripts/install_modules/phases/03_system.sh").read_text(
+        encoding="utf-8"
+    )
+    react_phase = (REPO_ROOT / "scripts/install_modules/phases/14_react.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "apt-cache policy nodejs" not in system_phase
+    assert "apt-cache policy nodejs" not in react_phase
+    assert "nodejs_package_is_from_nodesource" in system_phase
+    assert "nodejs_package_is_from_nodesource" in react_phase
+
+
 def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_cleanup() -> None:
     result = subprocess.run(
         [

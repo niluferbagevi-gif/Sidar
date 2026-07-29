@@ -472,10 +472,10 @@ EOF
                     installed_node_version="$("$node_bin" --version 2>/dev/null || true)"
                 fi
                 installed_node_major="$(echo "$installed_node_version" | grep -oE '[0-9]+' | head -n1 || true)"
-                if sudo apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
+                if nodejs_package_is_from_nodesource; then
                     ok "Node.js NodeSource üzerinden kuruldu: ${installed_node_version:-sürüm alınamadı}"
                 else
-                    warn "Node.js kurulumu tamamlandı ancak aktif paket kaynağı NodeSource görünmüyor: ${installed_node_version:-sürüm alınamadı}."
+                    warn "Node.js kurulumu tamamlandı ancak kurulu nodejs paket sürümü NodeSource imzası taşımıyor: ${installed_node_version:-sürüm alınamadı}."
                 fi
                 if [[ -n "$installed_node_major" && "$installed_node_major" != "$node_target_major" ]]; then
                     warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif ${installed_node_version}. React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
