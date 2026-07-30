@@ -5213,6 +5213,20 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert "gerçek high veya üstü güvenlik bulgusu" in unrelated.stderr
 
 
+def test_frontend_typescript_migration_has_an_owned_ratchet() -> None:
+    """Typed frontend files and the dated migration contract must not regress."""
+    frontend_src = Path("web_ui_react/src")
+    typed_files = [*frontend_src.rglob("*.ts"), *frontend_src.rglob("*.tsx")]
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert len(typed_files) >= 2
+    assert (frontend_src / "hooks/useFormState.ts").is_file()
+    assert not (frontend_src / "hooks/useFormState.js").exists()
+    assert "**Sahip:** Frontend bakım ekibi" in plan
+    assert "**İlk kilometre taşı:** 2026-08-31" in plan
+    assert "**İkinci değerlendirme:** 2026-09-30" in plan
+
+
 def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
     """The temporary npm advisory exception must remain documented and removable."""
     plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")

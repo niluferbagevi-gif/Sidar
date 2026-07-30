@@ -67,16 +67,22 @@ güvence) burada da geçerlidir. Aşağıdaki maddeler bir arkadaş kod inceleme
 tespit edildi, gerçek koda karşı doğrulandı ve düşük riskli olmadıkları için bu
 turda uygulanmadı — bilinçli olarak backlog'a alındı.
 
-- **TypeScript kapısı "tiyatro" (uygulanmadı, netleştirildi):** `tsconfig.json`
-  içinde `checkJs: false`; ağaç neredeyse tamamen `.jsx`/`.js` (tek `.ts` dosyası:
-  `src/hooks/useThrottledStream.ts`), 0 `.tsx`. `npm run typecheck` bu yüzden
-  yalnızca o tek dosyayı ve TS tarafı modül çözümlemesini denetliyor;
+- **TypeScript kapsam kampanyası (başlatıldı):** `tsconfig.json` içinde
+  `checkJs: false`; ağaç hâlâ büyük ölçüde `.jsx`/`.js`. `npm run typecheck` bu yüzden
+  yalnızca kademeli taşınmış `.ts`/`.tsx` dosyalarını ve TS tarafı modül çözümlemesini denetliyor;
   `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
   `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
   ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
-  Bu PR'da `tsconfig.json` ve `run_tests.sh` içine kapının gerçek kapsamını
-  belirten yorum/log satırı eklendi (bkz. ilgili commit); kademeli `.jsx` →
-  `.tsx` taşıması ayrı, planlı bir kampanya gerektirir (owner/tarih henüz atanmadı).
+  **Sahip:** Frontend bakım ekibi. **İlk kilometre taşı:** 2026-08-31 — saf/shared
+  hook ve helper yüzeyindeki ilk beş dosyayı `.ts`/`.tsx` kapsamına almak.
+  `src/hooks/useFormState.js` → `useFormState.ts` taşıması ilk ratchet adımıdır;
+  mevcut `.js` import yolu bundler module resolution ile korunur. Sonraki adaylar
+  `useChatStore.js`, `rehypeSidarHighlight.js`, `routerShim.jsx` ve
+  `PanelErrorBoundary.jsx`'dir. Her taşıma kendi testini, `npm run typecheck`, lint,
+  coverage ve build kapılarını geçirmeli; taşınmış dosya tekrar `.js`/`.jsx`'e
+  döndürülmemelidir. **İkinci değerlendirme:** 2026-09-30 — hata envanterini yeniden
+  ölç, kalan dosyaları domain dilimlerine ayır ve `checkJs` global geçiş tarihini
+  yalnız hata sayısı sıfıra indiğinde belirle.
 - **`src/components/SwarmFlowPanel.jsx` (~435 satır):** 14 `useState`, 5
   `fetchJson` çağrısı ve graph inşa mantığı tek dosyada; `GraphView`'e ~19 prop
   geçiyor. Hedef adım: state + API orchestration'ı `useSwarmFlowController()`
