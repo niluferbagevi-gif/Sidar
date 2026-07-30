@@ -20,6 +20,7 @@ run_installer_function() {
     export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
+    unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
@@ -1173,6 +1174,7 @@ EOF
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
     SCRIPT_DIR="$tmpdir"
+    export TEST_SUMMARY_JSON="$tmpdir/artifacts/test-summary.json"
     RUN_CI_FULL_VALIDATION=false
     GPU_AVAILABLE=true
     SMOKE_TEST_STATUS="tamamlandi"

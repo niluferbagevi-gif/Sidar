@@ -325,7 +325,16 @@ render_generated_secret_sentinels() {
     return 0
   fi
 
-  generated_password="$(generate_test_secret_value)"
+  # Ambient POSTGRES_PASSWORD (e.g. CI's job-level env, matching the already-live
+  # Postgres service and DATABASE_URL) must win over a fresh random secret here —
+  # otherwise the newly written .env.test overrides the app's own dotenv chain
+  # with a password that matches neither the live DB role nor DATABASE_URL, and
+  # Config's DATABASE_URL/POSTGRES_PASSWORD sync check fails boot-time validation.
+  if [ -n "${POSTGRES_PASSWORD:-}" ]; then
+    generated_password="${POSTGRES_PASSWORD}"
+  else
+    generated_password="$(generate_test_secret_value)"
+  fi
   if [ -z "${generated_password}" ]; then
     echo "⚠️ POSTGRES_PASSWORD=__GENERATE__ için parola üretilemedi; '${target}' dosyasını elle güncelleyin."
     return 1
