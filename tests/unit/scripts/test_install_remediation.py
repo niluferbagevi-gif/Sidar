@@ -38,7 +38,7 @@ def test_remote_script_interactive_pin_remains_available_in_auto_install(
         # writer and join `cat`, otherwise the final PIN line can be lost when
         # util-linux `script` observes the probe shell exiting first.
         "exec 1>&- 2>&-\n"
-        "wait \"$log_pipe_pid\"\n",
+        'wait "$log_pipe_pid"\n',
         encoding="utf-8",
     )
     probe.chmod(0o755)
