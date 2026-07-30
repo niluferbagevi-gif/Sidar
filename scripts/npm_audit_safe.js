@@ -23,6 +23,15 @@ const PATCHED_BRACE_EXPANSION_ADVISORY = 1124334;
 const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.17";
 const PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN =
   "docs/development/frontend-eslint-10-migration.md";
+const PATCHED_BRACE_EXPANSION_REVIEW_AT = "2026-09-30T00:00:00Z";
+
+function patchedAdvisoryReviewIsDue() {
+  const forcedNow = Date.parse(process.env.FRONTEND_NPM_AUDIT_TEST_NOW || "");
+  // The test clock can only move the effective time forward, so it cannot be
+  // abused to extend an expired security exception in CI.
+  const effectiveNow = Number.isNaN(forcedNow) ? Date.now() : Math.max(Date.now(), forcedNow);
+  return effectiveNow >= Date.parse(PATCHED_BRACE_EXPANSION_REVIEW_AT);
+}
 
 function severityMeetsThreshold(severity, threshold) {
   const severityIndex = AUDIT_LEVELS.indexOf(String(severity || "").toLowerCase());
@@ -167,7 +176,10 @@ function classifyAuditFailure(stdout, stderr, threshold) {
   const combined = `${stdout}\n${stderr}`.toLowerCase();
   const payload = parseAuditPayload(stdout);
   if (hasAuditFindingsAtOrAboveLevel(payload, threshold)) {
-    return usesVerifiedBraceExpansionBackport(payload) ? "patched_advisory" : "vulnerability";
+    if (usesVerifiedBraceExpansionBackport(payload)) {
+      return patchedAdvisoryReviewIsDue() ? "expired_exception" : "patched_advisory";
+    }
+    return "vulnerability";
   }
 
   if (NETWORK_MARKERS.some((marker) => combined.includes(marker))) {
@@ -241,6 +253,8 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
         failure_category: category,
         exit_code: effectiveExitCode,
         audit_level: options.level,
+        exception_review_at:
+          category === "expired_exception" ? PATCHED_BRACE_EXPANSION_REVIEW_AT : undefined,
         raw_report: rawReportPath,
         stderr_log: stderrLogPath,
       },
@@ -261,6 +275,11 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
     console.error(
       `❌ npm audit ağ/registry hatası strict modda fail edildi (FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=${options.allowNetworkFailure ? "1" : "0"}).`,
     );
+  } else if (category === "expired_exception") {
+    console.error(
+      `❌ GHSA-mh99-v99m-4gvg geçici istisnasının yeniden değerlendirme tarihi doldu (${PATCHED_BRACE_EXPANSION_REVIEW_AT}); kalite kapısı fail-closed durduruldu.`,
+    );
+    console.error(`    Bakım planı: ${PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN}`);
   } else if (category === "vulnerability") {
     console.error(`❌ npm audit gerçek ${options.level} veya üstü güvenlik bulgusu raporladı.`);
   } else {

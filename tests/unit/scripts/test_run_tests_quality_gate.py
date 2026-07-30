@@ -5138,12 +5138,16 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         "eslint": {"severity": "high", "via": ["minimatch"]},
     }
 
-    def run_audit(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
+    def run_audit(
+        payload: dict[str, object], *, test_now: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
             "AUDIT_JSON": json.dumps(payload),
             "FRONTEND_NPM_AUDIT_NPM_BINARY": str(npm),
         }
+        if test_now is not None:
+            env["FRONTEND_NPM_AUDIT_TEST_NOW"] = test_now
         return subprocess.run(
             [
                 "node",
@@ -5169,6 +5173,21 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert "1.1.17 güvenlik backport'unu" in patched.stderr
     assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
 
+    expired = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        },
+        test_now="2026-09-30T00:00:00Z",
+    )
+    assert expired.returncode == 1
+    assert "yeniden değerlendirme tarihi doldu" in expired.stderr
+    failure = json.loads(
+        (tmp_path / "artifacts/npm-audit-failure.json").read_text(encoding="utf-8")
+    )
+    assert failure["failure_category"] == "expired_exception"
+    assert failure["exception_review_at"] == "2026-09-30T00:00:00Z"
+
     vulnerabilities["unrelated-package"] = {
         "severity": "critical",
         "via": [{"source": 9999999, "severity": "critical"}],
@@ -5191,6 +5210,7 @@ def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
     assert "eslint-plugin-react@7.37.5" in plan
     assert "eslint-plugin-jsx-a11y@6.10.2" in plan
     assert "**İlk yeniden değerlendirme:** 2026-09-30" in plan
+    assert "`expired_exception` kategorisiyle fail-closed" in plan
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high" in plan
     assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
 

@@ -41,6 +41,13 @@ bozulması veya eski eklenti sürümlerine downgrade edilmesi riskini taşır.
 dependency metadata'sı değiştiğinde (hangisi önce olursa).
 **Takvim kaydı:** `docs/reminders/frontend-eslint-10-review-2026-09-30.ics`
 
+Bu tarih yalnız takvim hatırlatıcısı değildir. `scripts/npm_audit_safe.js`, UTC olarak
+2026-09-30 başladığında geçici allowlist'i otomatik olarak geçersiz sayar ve aynı
+advisory zinciri devam ediyorsa `expired_exception` kategorisiyle fail-closed durur.
+İstisnanın süresini ileri taşımak yerine aşağıdaki yeniden değerlendirme tamamlanmalı;
+devam kararı gerekiyorsa güncel registry/upstream kanıtı ve yeni, sonlu bir tarih ayrı
+bir bakım değişikliğinde kaydedilmelidir.
+
 Kalıcı geçiş ayrı bir bakım PR'ında şu sırayla yapılmalıdır:
 
 1. `eslint-plugin-react` ve `eslint-plugin-jsx-a11y` sürümlerinin ESLint 10'u resmi
