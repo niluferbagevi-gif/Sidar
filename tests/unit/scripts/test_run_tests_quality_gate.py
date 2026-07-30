@@ -4984,6 +4984,7 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     assert "npm-audit-failure.json" in npm_audit_safe
     assert "audit endpoint returned an error" in npm_audit_safe
     assert "failure_category: category" in npm_audit_safe
+    assert "hasAuditFindingsAtOrAboveLevel(payload, threshold)" in npm_audit_safe
     assert (
         "options.allowNetworkFailure = !process.env.CI && !process.env.GITHUB_ACTIONS"
         in npm_audit_safe
@@ -4996,6 +4997,74 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     )
     assert 'if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then' in frontend_gate_block
     assert 'else\n          echo "🧹 Frontend lint' not in frontend_gate_block
+
+
+def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
+    tmp_path: Path,
+) -> None:
+    """The JSON vulnerability counts must override an unreliable npm exit code."""
+    audit_wrapper = Path("scripts/npm_audit_safe.js").resolve()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    npm = bin_dir / "npm"
+    npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat <<'JSON'\n"
+        '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,'
+        '"high":7,"critical":0,"total":7}}}\n'
+        "JSON\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    artifact_dir = tmp_path / "artifacts"
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    result = subprocess.run(
+        [
+            "node",
+            str(audit_wrapper),
+            "--level=high",
+            "--retries=1",
+            f"--artifact-dir={artifact_dir}",
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in result.stderr
+    failure = json.loads((artifact_dir / "npm-audit-failure.json").read_text(encoding="utf-8"))
+    assert failure["failure_category"] == "vulnerability"
+    assert failure["exit_code"] == 1
+    assert failure["audit_level"] == "high"
+
+    npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' "
+        "'{\"metadata\":{\"vulnerabilities\":{\"moderate\":3,\"high\":0,\"critical\":0}}}'\n",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    below_threshold = subprocess.run(
+        [
+            "node",
+            str(audit_wrapper),
+            "--level=high",
+            "--retries=1",
+            f"--artifact-dir={artifact_dir}",
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert below_threshold.returncode == 0, below_threshold.stderr
+    assert not (artifact_dir / "npm-audit-failure.json").exists()
 
 
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:

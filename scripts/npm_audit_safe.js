@@ -15,6 +15,41 @@ const NETWORK_MARKERS = [
   "timeout",
   "tunneling socket could not be established",
 ];
+const AUDIT_LEVELS = ["info", "low", "moderate", "high", "critical"];
+
+function severityMeetsThreshold(severity, threshold) {
+  const severityIndex = AUDIT_LEVELS.indexOf(String(severity || "").toLowerCase());
+  const thresholdIndex = AUDIT_LEVELS.indexOf(String(threshold || "").toLowerCase());
+  return severityIndex >= 0 && thresholdIndex >= 0 && severityIndex >= thresholdIndex;
+}
+
+function parseAuditPayload(stdout) {
+  if (!stdout.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return {};
+  }
+}
+
+function hasAuditFindingsAtOrAboveLevel(payload, threshold) {
+  const counts = payload.metadata?.vulnerabilities;
+  if (counts && typeof counts === "object") {
+    return AUDIT_LEVELS.some(
+      (level) => severityMeetsThreshold(level, threshold) && Number(counts[level] || 0) > 0,
+    );
+  }
+
+  const vulnerabilities = payload.vulnerabilities;
+  if (vulnerabilities && typeof vulnerabilities === "object") {
+    return Object.values(vulnerabilities).some((finding) =>
+      severityMeetsThreshold(finding?.severity, threshold),
+    );
+  }
+  return false;
+}
 
 function parseArgs(argv) {
   const options = {
@@ -63,28 +98,11 @@ function parseArgs(argv) {
   return options;
 }
 
-function classifyAuditFailure(stdout, stderr) {
+function classifyAuditFailure(stdout, stderr, threshold) {
   const combined = `${stdout}\n${stderr}`.toLowerCase();
-  let payload = {};
-  if (stdout.trim()) {
-    try {
-      payload = JSON.parse(stdout);
-    } catch {
-      payload = {};
-    }
-  }
-
-  const vulnerabilities = payload.vulnerabilities;
-  if (vulnerabilities && typeof vulnerabilities === "object" && Object.keys(vulnerabilities).length > 0) {
+  const payload = parseAuditPayload(stdout);
+  if (hasAuditFindingsAtOrAboveLevel(payload, threshold)) {
     return "vulnerability";
-  }
-
-  const counts = payload.metadata?.vulnerabilities;
-  if (counts && typeof counts === "object") {
-    const hasHighOrCritical = ["high", "critical"].some((level) => Number(counts[level] || 0) > 0);
-    if (hasHighOrCritical) {
-      return "vulnerability";
-    }
   }
 
   if (NETWORK_MARKERS.some((marker) => combined.includes(marker))) {
@@ -117,14 +135,17 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
   writeFileSync(rawReportPath, stdout, "utf8");
   writeFileSync(stderrLogPath, stderr, "utf8");
 
-  if (result.status === 0) {
+  // npm versions have not always applied --audit-level consistently to the
+  // JSON-mode exit status. Treat the JSON report as the security gate's source
+  // of truth, even when npm itself exits successfully.
+  const category = classifyAuditFailure(stdout, stderr, options.level);
+  if (result.status === 0 && category !== "vulnerability") {
     rmSync(failureArtifactPath, { force: true });
     process.stdout.write(stdout);
     process.stderr.write(stderr);
     process.exit(0);
   }
 
-  const category = classifyAuditFailure(stdout, stderr);
   if (category === "network" && attempt < options.retries) {
     console.warn(
       `⚠️ npm audit ağ hatası aldı (deneme ${attempt}/${options.retries}). ${options.retryWaitSeconds}s sonra yeniden denenecek...`,
@@ -134,13 +155,15 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
   }
 
   mkdirSync(dirname(failureArtifactPath), { recursive: true });
+  const effectiveExitCode = result.status || 1;
   writeFileSync(
     failureArtifactPath,
     `${JSON.stringify(
       {
         tool: "npm audit",
         failure_category: category,
-        exit_code: result.status ?? 1,
+        exit_code: effectiveExitCode,
+        audit_level: options.level,
         raw_report: rawReportPath,
         stderr_log: stderrLogPath,
       },
@@ -162,12 +185,12 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
       `❌ npm audit ağ/registry hatası strict modda fail edildi (FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=${options.allowNetworkFailure ? "1" : "0"}).`,
     );
   } else if (category === "vulnerability") {
-    console.error("❌ npm audit gerçek high/critical güvenlik bulgusu raporladı.");
+    console.error(`❌ npm audit gerçek ${options.level} veya üstü güvenlik bulgusu raporladı.`);
   } else {
     console.error(`❌ npm audit hata sınıflandırması belirsiz (failure_category=${category}).`);
   }
   console.error(`🧾 npm audit hata artefaktı yazıldı: ${failureArtifactPath}`);
   process.stdout.write(stdout);
   process.stderr.write(stderr);
-  process.exit(result.status || 1);
+  process.exit(effectiveExitCode);
 }
