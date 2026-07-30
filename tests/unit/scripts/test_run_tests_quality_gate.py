@@ -5123,9 +5123,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         json.dumps(
             {
                 "packages": {
-                    "node_modules/minimatch/node_modules/brace-expansion": {
-                        "version": "1.1.17"
-                    }
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.17"}
                 }
             }
         ),

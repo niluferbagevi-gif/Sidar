@@ -143,7 +143,12 @@ def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
     ("doctor_exit", "write_report", "expected_status", "expected_message"),
     [
         (0, True, 0, "OK:Doctor raporu üretildi"),
-        (1, True, 1, "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda"),
+        (
+            1,
+            True,
+            1,
+            "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda",
+        ),
         (1, False, 1, "WARN:Doctor çalıştırılamadı ve rapor üretilemedi"),
         (0, False, 1, "WARN:Doctor tamamlandı ancak rapor üretilemedi"),
     ],
