@@ -14,8 +14,11 @@ def check_database_connectivity() -> DoctorCheck:
     return _doctor.check_database_connectivity()
 
 
-def check_pgvector_ready() -> DoctorCheck:
-    return _doctor.check_pgvector_ready()
+def check_pgvector_ready(
+    database_connectivity: DoctorCheck | None = None,
+) -> DoctorCheck:
+    """Check pgvector while optionally reusing the connectivity probe result."""
+    return _doctor.check_pgvector_ready(database_connectivity=database_connectivity)
 
 
 __all__ = ["check_database_connectivity", "check_database_env", "check_pgvector_ready"]

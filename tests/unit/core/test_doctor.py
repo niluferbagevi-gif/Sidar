@@ -699,6 +699,57 @@ def test_pgvector_ready_reports_probe_errors_without_leaking_credentials(monkeyp
     assert "secret-value" not in check.details["error"]
 
 
+def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+    monkeypatch.setattr(
+        doctor,
+        "_run_coro_sync",
+        lambda _awaitable: pytest.fail("pgvector readiness repeated the connectivity probe"),
+    )
+    connectivity = DoctorCheck(
+        "database_connectivity",
+        "warn",
+        "PostgreSQL unavailable",
+        {
+            "error": "connection refused",
+            "error_type": "ConnectionRefusedError",
+            "failure_category": "connection",
+        },
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "warn"
+    assert check.details["blocked_by"] == "database_connectivity"
+    assert check.details["failure_category"] == "connection"
+    assert "blocked by the PostgreSQL connectivity check" in check.message
+
+
+def test_pgvector_ready_reuses_successful_connectivity_probe(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+    monkeypatch.setattr(
+        doctor,
+        "_run_coro_sync",
+        lambda _awaitable: pytest.fail("pgvector readiness repeated the connectivity probe"),
+    )
+    connectivity = DoctorCheck(
+        "database_connectivity",
+        "pass",
+        "PostgreSQL connectivity smoke passed",
+        {"select_1": True, "pgvector_extension_installed": True},
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "pass"
+    assert check.details["database_connectivity_status"] == "pass"
+    assert check.details["pgvector_extension_installed"] is True
+
+
 def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")

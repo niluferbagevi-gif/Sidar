@@ -802,7 +802,10 @@ def check_database_connectivity() -> DoctorCheck:
     )
 
 
-def check_pgvector_ready() -> DoctorCheck:
+def check_pgvector_ready(
+    database_connectivity: DoctorCheck | None = None,
+) -> DoctorCheck:
+    """Check pgvector after reusing an optional PostgreSQL connectivity result."""
     vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
     details: dict[str, Any] = {
         "vector_backend": vector_backend,
@@ -847,22 +850,46 @@ def check_pgvector_ready() -> DoctorCheck:
             details,
         )
 
+    if database_connectivity is not None:
+        details["database_connectivity_status"] = database_connectivity.status
+        connectivity_details = database_connectivity.details
+        if connectivity_details.get("select_1"):
+            details.update(
+                {
+                    key: connectivity_details[key]
+                    for key in ("select_1", "pgvector_extension_installed")
+                    if key in connectivity_details
+                }
+            )
+        elif database_connectivity.status != "pass":
+            details["blocked_by"] = "database_connectivity"
+            for key in ("error", "error_type", "failure_category"):
+                if key in connectivity_details:
+                    details[key] = connectivity_details[key]
+            return DoctorCheck(
+                "pgvector_ready",
+                "warn",
+                "pgvector readiness is blocked by the PostgreSQL connectivity check",
+                details,
+            )
+
     timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
     details["timeout_seconds"] = timeout_seconds
-    try:
-        probe = _run_coro_sync(
-            _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
-        )
-        details.update(probe)
-    except Exception as exc:
-        details["error"] = _redact_exception_text(exc, database_url=database_url)
-        details["error_type"] = type(exc).__name__
-        return DoctorCheck(
-            "pgvector_ready",
-            "warn",
-            "pgvector readiness could not be verified because PostgreSQL connectivity probe failed",
-            details,
-        )
+    if "select_1" not in details:
+        try:
+            probe = _run_coro_sync(
+                _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
+            )
+            details.update(probe)
+        except Exception as exc:
+            details["error"] = _redact_exception_text(exc, database_url=database_url)
+            details["error_type"] = type(exc).__name__
+            return DoctorCheck(
+                "pgvector_ready",
+                "warn",
+                "pgvector readiness could not be verified because PostgreSQL connectivity probe failed",
+                details,
+            )
 
     if not details.get("pgvector_extension_installed"):
         return DoctorCheck(
@@ -1728,18 +1755,27 @@ def run_doctor_report(
         environment_profile_check(),
         gpu_memory_config_check(),
         database_env_check(),
-        database_connectivity_check(),
-        pgvector_ready_check(),
-        rag_index_ready_check(),
-        graphrag_entity_memory_ready_check(),
-        check_migrations(),
-        check_agent_catalog(),
-        check_supervisor_routing(),
-        check_websocket_routes(),
-        redis_check(),
-        gpu_check(),
-        check_model(smoke=include_model_smoke),
     ]
+    database_connectivity = database_connectivity_check()
+    checks.extend(
+        [
+            database_connectivity,
+            pgvector_ready_check(database_connectivity=database_connectivity),
+        ]
+    )
+    checks.extend(
+        [
+            rag_index_ready_check(),
+            graphrag_entity_memory_ready_check(),
+            check_migrations(),
+            check_agent_catalog(),
+            check_supervisor_routing(),
+            check_websocket_routes(),
+            redis_check(),
+            gpu_check(),
+            check_model(smoke=include_model_smoke),
+        ]
+    )
     report = build_doctor_report(checks)
     write_doctor_report(report, output_path)
     return report
