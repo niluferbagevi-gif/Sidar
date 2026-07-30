@@ -35,10 +35,10 @@ def build_agent_router(
 ) -> LegacyExportRouter:
     """Build router for /api/agents and plugin marketplace endpoints.
 
-    ``require_admin_user`` on the plugin-registration endpoints is the actual
-    security boundary for arbitrary plugin code: web_server.py's AST/builtins
-    restriction is an in-process defense-in-depth layer, not a process or
-    container sandbox, so only already-trusted admins may reach it.
+    ``require_admin_user`` limits plugin registration to trusted operators. The
+    runtime additionally rejects all in-process plugin execution in production;
+    AST/builtins restrictions remain defense-in-depth for explicit non-production
+    compatibility mode, not a process or container sandbox.
     """
     router = LegacyExportRouter()
     _resolve_mfcb = (

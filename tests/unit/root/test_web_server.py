@@ -2176,13 +2176,15 @@ def test_plugin_source_execution_fails_closed_in_production(monkeypatch):
     assert "process-içi" in exc.value.detail
 
 
-def test_plugin_source_execution_production_override_requires_explicit_opt_in(monkeypatch):
+def test_plugin_source_execution_production_cannot_be_overridden(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
-    namespace = web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_allowed")
+    with pytest.raises(HTTPException) as exc:
+        web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_override_rejected")
 
-    assert namespace["VALUE"] == 1
+    assert exc.value.status_code == 403
+    assert "production kısıtını kaldıramaz" in exc.value.detail
 
 
 def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
