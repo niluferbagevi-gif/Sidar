@@ -5123,7 +5123,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         json.dumps(
             {
                 "packages": {
-                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.17"}
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.18"}
                 }
             }
         ),
@@ -5166,8 +5166,38 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         }
     )
     assert patched.returncode == 0, patched.stderr
-    assert "1.1.17 güvenlik backport'unu" in patched.stderr
+    assert "1.1.18 güvenlik backport'unu" in patched.stderr
     assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
+
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.17"}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    stale_backport = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        }
+    )
+    assert stale_backport.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in stale_backport.stderr
+
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.18"}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     vulnerabilities["unrelated-package"] = {
         "severity": "critical",

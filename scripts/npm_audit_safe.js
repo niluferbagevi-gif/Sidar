@@ -17,10 +17,11 @@ const NETWORK_MARKERS = [
 ];
 const AUDIT_LEVELS = ["info", "low", "moderate", "high", "critical"];
 // npm's advisory range currently treats every 1.x release as <=5.0.7 even
-// though 1.1.17 is the upstream backport that adds bounded expansion length.
+// though 1.1.18 is the upstream backport that enforces bounded expansion
+// count and length across sequence and comma expansion paths.
 // Keep this exception exact and fail closed until the registry range catches up.
 const PATCHED_BRACE_EXPANSION_ADVISORY = 1124334;
-const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.17";
+const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.18";
 const PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN =
   "docs/development/frontend-eslint-10-migration.md";
 

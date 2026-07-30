@@ -8,12 +8,13 @@ Frontend `npm audit`, aynı bağımlılık zincirinden yayılan yedi `high` kay�
 `brace-expansion` → `GHSA-mh99-v99m-4gvg`.
 
 Bu kayıtlar yedi bağımsız güvenlik açığı değildir. Sidar, `brace-expansion` sürümünü
-upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitler. npm advisory
+sequence ve comma expansion yollarında hem sonuç sayısı hem toplam uzunluk sınırlarını
+uygulayan güncel upstream güvenlik backport'u `1.1.18` sürümüne sabitler. npm advisory
 aralığı bu backport'u tanımadığı sürece `scripts/npm_audit_safe.js`, yalnız aşağıdaki
 koşulların tümü sağlanırsa bu tek advisory zincirini geçici olarak kabul eder:
 
 1. Advisory kaynak kimliği tam olarak `1124334` olmalıdır.
-2. Lockfile içindeki bütün `brace-expansion` örnekleri tam olarak `1.1.17` olmalıdır.
+2. Lockfile içindeki bütün `brace-expansion` örnekleri tam olarak `1.1.18` olmalıdır.
 3. Bütün raporlanan paketler yalnızca bu advisory zincirine ulaşmalıdır.
 4. İlişkisiz herhangi bir `high` veya `critical` bulgu kalite kapısını kapatmalıdır.
 
