@@ -1086,6 +1086,46 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults_for_env_chain repairs stale URLs in every existing variant" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    for profile in "" development test advanced; do
+      if [[ -z "$profile" ]]; then
+        env_file="$tmpdir/.env"
+        db_name="sidar"
+      else
+        env_file="$tmpdir/.env.$profile"
+        db_name="sidar_$profile"
+      fi
+      cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=$db_name
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/$db_name?application_name=sidar&ssl=disable
+EOF
+    done
+
+    ensure_database_url_defaults_for_env_chain "$tmpdir/.env"
+
+    for profile in "" development test advanced; do
+      if [[ -z "$profile" ]]; then
+        env_file="$tmpdir/.env"
+        db_name="sidar"
+      else
+        env_file="$tmpdir/.env.$profile"
+        db_name="sidar_$profile"
+      fi
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/$db_name$" "$env_file"
+      ! grep -q "[?&]ssl=" "$env_file"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
