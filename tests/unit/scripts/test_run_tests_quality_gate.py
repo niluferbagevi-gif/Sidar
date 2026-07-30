@@ -4032,6 +4032,27 @@ def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell
     assert "download_verified_script_soft()" in remote_script_util
 
 
+def test_node_install_fallbacks_report_failures_and_validate_apt_major() -> None:
+    """Every Node fallback must explain degradation and enforce the .nvmrc major check."""
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
+
+    assert "Volta node@${node_target_major} komutu başarısız oldu" in system_phase
+    assert "Volta çalıştırılabilir dosyası bulunamadı" in system_phase
+    assert "NVM install/alias default ${node_target_major} komutu başarısız oldu" in system_phase
+    assert "NVM başlangıç dosyası bulunamadı" in system_phase
+    assert "NodeSource apt deposu hazırlandı ancak apt update başarısız oldu" in system_phase
+    assert "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı" in system_phase
+    assert "ek Debian node-* bağımlılıklarını kurabilir" in system_phase
+    assert (
+        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource"'
+        in system_phase
+    )
+    assert (
+        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" '
+        '"varsayılan apt fallback"' in system_phase
+    )
+
+
 def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     tmp_path: Path,
 ) -> None:
