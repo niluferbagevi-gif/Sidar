@@ -1108,6 +1108,48 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "database URL defaults repair stale ssl parameters in every existing env variant" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/$variant" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar?ssl=disable
+EOF
+    done
+
+    ensure_database_url_defaults_for_variants
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar$" "$tmpdir/$variant"
+      ! grep -q "[?&]ssl=" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL variant repair skips missing dotenv files" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+
+    ensure_database_url_defaults_for_variants
+
+    [[ ! -e "$tmpdir/.env.development" ]]
+    [[ ! -e "$tmpdir/.env.test" ]]
+    [[ ! -e "$tmpdir/.env.advanced" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "sync_database_env_chain_after_setup reruns helper even when prior sync marker exists" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

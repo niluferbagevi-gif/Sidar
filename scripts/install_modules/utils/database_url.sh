@@ -324,3 +324,16 @@ ensure_database_url_defaults() {
         fi
     fi
 }
+
+ensure_database_url_defaults_for_variants() {
+    local spec=""
+    local variant_file=""
+    local -a variant_specs=()
+
+    mapfile -t variant_specs < <(sidar_default_db_env_variant_specs)
+    for spec in "${variant_specs[@]}"; do
+        variant_file="${spec%%:*}"
+        [[ -n "$variant_file" && -f "$variant_file" ]] || continue
+        ensure_database_url_defaults "$variant_file"
+    done
+}

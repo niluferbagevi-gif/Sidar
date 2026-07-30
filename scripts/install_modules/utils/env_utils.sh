@@ -31,6 +31,10 @@ read_env_value_from_file() {
 
 
 sync_database_env_chain_after_setup() {
+    # Eski installer turlarından kalmış açık URL'leri uv/Python helper'ına
+    # bağımlı olmadan tüm mevcut runtime dotenv varyantlarında da onar.
+    ensure_database_url_defaults_for_variants
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
