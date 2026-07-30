@@ -30,6 +30,10 @@ def test_in_process_plugin_execution_env_matrix() -> None:
 
     assert in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
     assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "production"})
+    for explicit in ("1", "true", "yes", "on"):
+        assert not in_process_plugin_execution_allowed(
+            {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "production"}
+        )
 
 
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(

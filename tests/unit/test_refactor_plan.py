@@ -86,7 +86,10 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
     assert "AST-validated `exec()`" in plan
     assert "plugin AST/policy helperları `web/plugins/sandbox.py`" in plan
-    assert "process-içi plugin exec varsayılan olarak fail-closed" in plan
+    assert (
+        "process-içi plugin exec artık yalnız varsayılan olarak değil koşulsuz fail-closed" in plan
+    )
+    assert "`SIDAR_ENABLE_IN_PROCESS_PLUGINS=1` bu sınırı aşamaz" in plan
     assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan

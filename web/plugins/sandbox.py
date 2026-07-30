@@ -67,16 +67,19 @@ def in_process_plugin_execution_allowed(env: Mapping[str, str] | None = None) ->
     """Return whether in-process plugin source execution is allowed.
 
     Development/test deployments keep the legacy behavior. Production deployments
-    fail closed unless an operator explicitly sets ``SIDAR_ENABLE_IN_PROCESS_PLUGINS=1``.
+    always fail closed: an environment variable must not turn a known lack of OS-level
+    isolation into a runtime security-boundary bypass.
     """
     environ = os.environ if env is None else env
+    sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
+    if sidar_env in {"prod", "production"}:
+        return False
     explicit = str(environ.get("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "")).strip().lower()
     if explicit in {"1", "true", "yes", "on"}:
         return True
     if explicit in {"0", "false", "no", "off"}:
         return False
-    sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
-    return sidar_env not in {"prod", "production"}
+    return True
 
 
 def validate_plugin_source(source_code: str) -> None:
@@ -227,13 +230,13 @@ def build_restricted_plugin_builtins() -> dict[str, Any]:
 
 
 def assert_in_process_plugin_execution_allowed() -> None:
-    """Fail closed for production unless an operator explicitly enables legacy exec."""
+    """Fail closed whenever the deployment policy disallows legacy in-process exec."""
     if not in_process_plugin_execution_allowed():
         raise HTTPException(
             status_code=403,
             detail=(
-                "Plugin kaynak kodunun process-içi çalıştırılması production ortamında kapalı. "
-                "İzole container/process sandbox entegrasyonu kullanılmalı veya risk kabulüyle "
-                "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 açıkça verilmelidir."
+                "Plugin kaynak kodunun process-içi çalıştırılması deployment politikası "
+                "tarafından kapalı. Production koruması ortam değişkeniyle aşılamaz; izole "
+                "container/process sandbox entegrasyonu kullanılmalıdır."
             ),
         )
