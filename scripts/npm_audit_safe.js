@@ -56,6 +56,7 @@ function parseArgs(argv) {
     allowNetworkFailure: undefined,
     artifactDir: process.env.FRONTEND_NPM_AUDIT_ARTIFACT_DIR || "../artifacts/frontend-security",
     level: process.env.FRONTEND_NPM_AUDIT_LEVEL || "high",
+    npmBinary: process.env.FRONTEND_NPM_AUDIT_NPM_BINARY || "npm",
     retries: Number.parseInt(process.env.FRONTEND_NPM_AUDIT_MAX_RETRIES || "2", 10),
     retryWaitSeconds: Number.parseInt(process.env.FRONTEND_NPM_AUDIT_RETRY_WAIT_SECONDS || "5", 10),
   };
@@ -126,7 +127,7 @@ const failureArtifactPath = resolve(artifactDir, "npm-audit-failure.json");
 mkdirSync(artifactDir, { recursive: true });
 
 for (let attempt = 1; attempt <= options.retries; attempt += 1) {
-  const result = spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"], {
+  const result = spawnSync(options.npmBinary, ["audit", `--audit-level=${options.level}`, "--json"], {
     encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024,
   });

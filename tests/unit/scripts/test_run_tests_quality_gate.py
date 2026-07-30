@@ -5005,8 +5005,10 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     assert "function classifyAuditFailure" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_MAX_RETRIES" in npm_audit_safe
+    assert "FRONTEND_NPM_AUDIT_NPM_BINARY" in npm_audit_safe
     assert (
-        'spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"]' in npm_audit_safe
+        'spawnSync(options.npmBinary, ["audit", `--audit-level=${options.level}`, "--json"]'
+        in npm_audit_safe
     )
     assert "npm-audit-report.raw.json" in npm_audit_safe
     assert "npm-audit-stderr.log" in npm_audit_safe
@@ -5049,6 +5051,9 @@ def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
     artifact_dir = tmp_path / "artifacts"
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    # Volta gibi Node shim'leri child process başlamadan PATH'i yeniden
+    # sıralayabilir. Wrapper'ın açık binary kontratı testi ortamdan bağımsız tutar.
+    env["FRONTEND_NPM_AUDIT_NPM_BINARY"] = str(npm)
 
     result = subprocess.run(
         [
