@@ -172,6 +172,12 @@ def test_web_server_route_table_has_no_duplicate_method_path_pairs():
 def _reset_collaboration_state(monkeypatch, tmp_path):
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
+    # Plugin class-loading branch tests intentionally exercise the legacy
+    # non-production compatibility path. Do not depend on the developer's
+    # ambient SIDAR_ENV/.env values: opt in explicitly for this test module.
+    # Production-policy tests below still win because production is rejected
+    # before this flag is considered.
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
     # web_server.app is a module-level singleton, so its app-scoped runtime
     # state (agent/agent_lock/etc., see web/app_factory.py) persists across

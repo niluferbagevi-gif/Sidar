@@ -86,7 +86,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
     assert "AST-validated `exec()`" in plan
     assert "plugin AST/policy helperları `web/plugins/sandbox.py`" in plan
-    assert "process-içi plugin exec varsayılan olarak fail-closed" in plan
+    assert "process-içi plugin exec production'da koşulsuz kapatıldı" in plan
+    assert "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1` artık production kısıtını kaldıramaz" in plan
     assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
@@ -137,7 +138,7 @@ def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt(
     assert "Zero-Debt kapsamı" in claude
     assert "otomatik audit/quality-gate taramalarında açık bulgu olmamasını" in claude
     assert "plugin sandbox gibi bilinçli mimari refactor/güvenlik borçları" in claude
-    assert "plugin sandbox policy üretimde fail-closed" in plan
+    assert "process-içi plugin yürütme üretimde koşulsuz fail-closed" in plan
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
