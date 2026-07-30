@@ -73,7 +73,7 @@ setup_env_file() {
     if [[ -f "$ENV_FILE" ]]; then
         ok ".env dosyası zaten mevcut — varsayılanlar ve güvenlik anahtarları kontrol ediliyor."
         ensure_sidar_env_default "$ENV_FILE"
-        ensure_database_url_defaults "$ENV_FILE"
+        ensure_database_url_defaults_for_env_chain "$ENV_FILE"
         ensure_rag_vector_backend_pgvector "$ENV_FILE"
         harden_database_credentials "$ENV_FILE"
         sync_postgres_env_with_database_url "$ENV_FILE"
@@ -98,7 +98,7 @@ setup_env_file() {
     install -m 600 "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_sidar_env_default "$ENV_FILE"
-    ensure_database_url_defaults "$ENV_FILE"
+    ensure_database_url_defaults_for_env_chain "$ENV_FILE"
     ensure_rag_vector_backend_pgvector "$ENV_FILE"
     harden_database_credentials "$ENV_FILE"
     sync_postgres_env_with_database_url "$ENV_FILE"

@@ -66,17 +66,20 @@ def plugin_source_filename(module_label: str) -> str:
 def in_process_plugin_execution_allowed(env: Mapping[str, str] | None = None) -> bool:
     """Return whether in-process plugin source execution is allowed.
 
-    Development/test deployments keep the legacy behavior. Production deployments
-    fail closed unless an operator explicitly sets ``SIDAR_ENABLE_IN_PROCESS_PLUGINS=1``.
+    Test deployments keep the legacy behavior for hermetic contract coverage. All
+    other environments require an explicit opt-in, and production cannot opt in:
+    arbitrary source must use the future process/container isolation boundary.
     """
     environ = os.environ if env is None else env
+    sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
+    if sidar_env in {"prod", "production"}:
+        return False
     explicit = str(environ.get("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "")).strip().lower()
-    if explicit in {"1", "true", "yes", "on"}:
-        return True
     if explicit in {"0", "false", "no", "off"}:
         return False
-    sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
-    return sidar_env not in {"prod", "production"}
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    return sidar_env in {"test", "testing"}
 
 
 def validate_plugin_source(source_code: str) -> None:
@@ -227,13 +230,14 @@ def build_restricted_plugin_builtins() -> dict[str, Any]:
 
 
 def assert_in_process_plugin_execution_allowed() -> None:
-    """Fail closed for production unless an operator explicitly enables legacy exec."""
+    """Reject legacy execution unless it is explicitly enabled outside production."""
     if not in_process_plugin_execution_allowed():
         raise HTTPException(
             status_code=403,
             detail=(
                 "Plugin kaynak kodunun process-içi çalıştırılması production ortamında kapalı. "
-                "İzole container/process sandbox entegrasyonu kullanılmalı veya risk kabulüyle "
-                "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 açıkça verilmelidir."
+                "İzole container/process sandbox entegrasyonu kullanılmalıdır. Development "
+                "ortamında geçici uyumluluk gerekiyorsa SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 "
+                "açıkça verilebilir; bu bayrak production kısıtını kaldıramaz."
             ),
         )

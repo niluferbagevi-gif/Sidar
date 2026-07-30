@@ -1384,11 +1384,11 @@ def _plugin_source_filename(module_label: str) -> str:
 # sistemi/process seviyesinde GERÇEK bir izolasyon SAĞLAMAZ. Statik izin/red
 # listeleri tarihsel olarak bypass edilebilir (dolaylı öznitelik zincirleri,
 # izin verilen modüller üzerinden erişilen üçüncü parti kod, bytecode/marshal
-# manipülasyonu vb.). Buradaki gerçek güvenlik sınırı, bu yola erişimin
-# `require_admin_user`'a (bkz. web/routes/agent.py) sıkı biçimde bağlı olması
-# ve dolayısıyla sadece zaten güvenilen adminlerin plugin kodu
-# kaydedebilmesidir — AST/builtins kısıtlaması burada savunma-derinliği
-# katmanıdır, birincil güvenlik sınırı değildir.
+# manipülasyonu vb.). Production güvenlik sınırı bu yürütme yolunun koşulsuz
+# kapalı olmasıdır. Non-production uyumluluk modunda erişim ayrıca
+# `require_admin_user`'a (bkz. web/routes/agent.py) sıkı biçimde bağlıdır;
+# AST/builtins kısıtlaması savunma-derinliği katmanıdır, birincil güvenlik
+# sınırı değildir.
 #
 # Gerçek izolasyon (plugin kodunu ayrı bir subprocess/container'da çalıştırıp
 # orchestration'a IPC üzerinden bağlamak) kasıtlı olarak bu bulgunun kapsamı

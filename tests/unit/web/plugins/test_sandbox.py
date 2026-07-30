@@ -22,14 +22,20 @@ def test_plugin_source_filename_sanitizes_label() -> None:
 
 def test_in_process_plugin_execution_env_matrix() -> None:
     for explicit in ("1", "true", "yes", "on"):
-        assert in_process_plugin_execution_allowed({"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit})
+        assert in_process_plugin_execution_allowed(
+            {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "development"}
+        )
+        assert not in_process_plugin_execution_allowed(
+            {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "production"}
+        )
     for explicit in ("0", "false", "no", "off"):
         assert not in_process_plugin_execution_allowed(
             {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "development"}
         )
 
-    assert in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
+    assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
     assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "production"})
+    assert in_process_plugin_execution_allowed({"SIDAR_ENV": "test"})
 
 
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(
@@ -45,6 +51,10 @@ def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(
 
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     assert_in_process_plugin_execution_allowed()
+
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    with pytest.raises(HTTPException):
+        assert_in_process_plugin_execution_allowed()
 
 
 def test_validate_plugin_source_rejects_syntax_and_banned_imports() -> None:

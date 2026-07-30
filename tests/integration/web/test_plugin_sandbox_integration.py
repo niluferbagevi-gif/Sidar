@@ -18,8 +18,12 @@ from agent.registry import AgentCatalog
 
 
 @pytest.mark.integration
-def test_plugin_sandbox_registers_agent_and_blocks_forbidden_imports() -> None:
+def test_plugin_sandbox_registers_agent_and_blocks_forbidden_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Register a sandboxed plugin agent and reject an unsafe import in the same path."""
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     role_name = "integration_plugin_sandbox_agent"
     AgentCatalog.unregister(role_name)
     source = """
