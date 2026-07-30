@@ -271,7 +271,10 @@ ensure_database_url_defaults() {
         else
             ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
         fi
-        return
+        # Keep fresh-create on the same validation path as pre-existing URLs.
+        # Re-read the generated value instead of returning early so future changes
+        # to DSN generation cannot silently bypass ssl/query and database-name checks.
+        current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then

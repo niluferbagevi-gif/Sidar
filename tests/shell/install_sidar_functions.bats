@@ -1039,6 +1039,32 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults validates a freshly composed DSN" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_development
+EOF
+    validation_log="$tmpdir/database-name-validation.log"
+    database_name_from_postgresql_url() {
+      printf "%s\n" "$1" >> "$validation_log"
+      printf "%s\n" "sidar_development"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$validation_log"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "ensure_database_url_defaults rotates weak PostgreSQL password when composing missing DSNs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
