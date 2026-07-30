@@ -971,6 +971,7 @@ def test_graphrag_entity_memory_ready_warns_when_store_probe_is_empty(monkeypatc
 
     assert check.status == "warn"
     assert "empty after store probe" in check.message
+    assert check.details["advisory_only"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag --metadata-only"
 
 

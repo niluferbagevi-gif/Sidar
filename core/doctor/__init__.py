@@ -1160,6 +1160,7 @@ def check_graphrag_entity_memory_ready() -> DoctorCheck:
 
     if entity_memory_empty:
         details["auto_fix"] = "uv run python -m scripts.seed_rag --metadata-only"
+        details["advisory_only"] = True
         details["recommended_commands"] = [
             "uv run python -m scripts.seed_rag --metadata-only",
             "uv run python -m core.doctor artifacts/install/doctor.json",

@@ -241,6 +241,14 @@ sidar_summary_materialize_real_keys_to_env_enabled() {
     esac
 }
 
+print_optional_rag_next_step() {
+    echo -e "  7️⃣  İsteğe bağlı RAG bilgi tabanını hazırla:"
+    echo "       RAG kullanacaksanız örnek belgeleri ve GraphRAG entity memory verisini seed edin:"
+    echo "       uv run python -m scripts.seed_rag"
+    echo "       Bu adım isteğe bağlıdır; boş RAG index/entity memory kurulumu veya release kapısını engellemez."
+    echo "       Sonucu doğrula: uv run python -m core.doctor artifacts/install/doctor.json"
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
@@ -324,6 +332,8 @@ print_summary() {
     echo -e "  6️⃣  Testleri çalıştır (varsayılan kurulumda hazır):"
     echo "       ./run_tests.sh"
     echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
+    echo ""
+    print_optional_rag_next_step
     echo ""
     print_release_readiness_next_action
     echo ""

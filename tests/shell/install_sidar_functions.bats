@@ -2245,6 +2245,18 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "finish summary presents empty RAG state as an optional next step" {
+  run_installer_function '
+    print_optional_rag_next_step
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"İsteğe bağlı RAG bilgi tabanını hazırla"* ]]
+  [[ "$output" == *"uv run python -m scripts.seed_rag"* ]]
+  [[ "$output" == *"boş RAG index/entity memory kurulumu veya release kapısını engellemez"* ]]
+  [[ "$output" == *"uv run python -m core.doctor artifacts/install/doctor.json"* ]]
+}
+
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {
   run_installer_function '
     sidar_source_install_utils wsl_gpu_preflight.sh
