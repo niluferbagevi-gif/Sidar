@@ -518,10 +518,13 @@ def test_prefixed_env_helpers_use_legacy_and_default_fallbacks(monkeypatch):
     monkeypatch.delenv("LEGACY_INT", raising=False)
     monkeypatch.setenv("SIDAR_FLOAT", "   ")
     monkeypatch.setenv("LEGACY_FLOAT", "4.5")
+    monkeypatch.delenv("SIDAR_FLOAT_MISSING", raising=False)
+    monkeypatch.delenv("LEGACY_FLOAT_MISSING", raising=False)
 
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
     assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 9) == 9
     assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 4.5
+    assert config.get_float_prefixed_env("SIDAR_FLOAT_MISSING", "LEGACY_FLOAT_MISSING", 3.5) == 3.5
 
 
 def test_blank_prefixed_string_env_helpers_use_legacy_fallbacks(monkeypatch):
