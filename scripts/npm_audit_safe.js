@@ -21,6 +21,8 @@ const AUDIT_LEVELS = ["info", "low", "moderate", "high", "critical"];
 // Keep this exception exact and fail closed until the registry range catches up.
 const PATCHED_BRACE_EXPANSION_ADVISORY = 1124334;
 const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.17";
+const PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN =
+  "docs/development/frontend-eslint-10-migration.md";
 
 function severityMeetsThreshold(severity, threshold) {
   const severityIndex = AUDIT_LEVELS.indexOf(String(severity || "").toLowerCase());
@@ -206,6 +208,9 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
     rmSync(failureArtifactPath, { force: true });
     console.warn(
       `⚠️ npm advisory veritabanı ${PATCHED_BRACE_EXPANSION_BACKPORT} güvenlik backport'unu henüz tanımıyor; doğrulanmış GHSA-mh99-v99m-4gvg düzeltmesi kabul edildi.`,
+    );
+    console.warn(
+      `    Geçici istisna ve kalıcı geçiş planı: ${PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN}`,
     );
     process.stdout.write(stdout);
     process.stderr.write(stderr);

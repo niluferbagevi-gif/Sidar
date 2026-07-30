@@ -5167,6 +5167,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     )
     assert patched.returncode == 0, patched.stderr
     assert "1.1.17 güvenlik backport'unu" in patched.stderr
+    assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
 
     vulnerabilities["unrelated-package"] = {
         "severity": "critical",
@@ -5180,6 +5181,18 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     )
     assert unrelated.returncode == 1
     assert "gerçek high veya üstü güvenlik bulgusu" in unrelated.stderr
+
+
+def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
+    """The temporary npm advisory exception must remain documented and removable."""
+    plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
+
+    assert "yedi bağımsız güvenlik açığı değildir" in plan
+    assert "eslint-plugin-react@7.37.5" in plan
+    assert "eslint-plugin-jsx-a11y@6.10.2" in plan
+    assert "**İlk yeniden değerlendirme:** 2026-09-30" in plan
+    assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high" in plan
+    assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
 
 
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
