@@ -928,7 +928,14 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
     assert 'local optional_command="make dev-full"' in validation_phase
-    assert "env AUTO_OPEN_ARTIFACTS=0 make dev-full" in validation_phase
+    assert "AUTO_OPEN_ARTIFACTS=0 make dev-full" in validation_phase
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        assert f"-u {checksum_var}" in validation_phase
     assert "make production-readiness" in validation_phase
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in makefile
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in makefile
@@ -1506,6 +1513,67 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 
     assert "CI_FULL_VALIDATION_STATUS=hata" in result.stdout
     assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
+
+
+def test_optional_dev_full_validation_does_not_leak_tofu_checksum_state(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    make = bin_dir / "make"
+    make.write_text(
+        "#!/usr/bin/env bash\n"
+        "for name in OLLAMA_INSTALL_SHA256 UV_INSTALL_SHA256 "
+        "VOLTA_INSTALL_SHA256 NVM_INSTALL_SHA256; do\n"
+        "  [[ -z ${!name+x} ]] || exit 42\n"
+        "done\n",
+        encoding="utf-8",
+    )
+    make.chmod(0o755)
+    (tmp_path / "run_tests.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        env[checksum_var] = f"tofu-{checksum_var.lower()}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+SCRIPT_DIR="$2"
+GPU_AVAILABLE=true
+SMOKE_TEST_STATUS=tamamlandi
+NO_INTERACTION=false
+AUTO_INSTALL=false
+SILENT_MODE=false
+info() { :; }
+warn() { :; }
+ok() { :; }
+prompt_yes_no_with_timeout_default_no() { printf 'e'; }
+run_optional_dev_full_validation_prompt
+printf 'status=%s\n' "$CI_FULL_VALIDATION_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "status=tamamlandi" in result.stdout
 
 
 def test_finish_frontend_qa_block_refreshes_summary_before_printing(tmp_path: Path) -> None:

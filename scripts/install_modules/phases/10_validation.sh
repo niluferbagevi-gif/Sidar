@@ -627,7 +627,15 @@ run_optional_dev_full_validation_prompt() {
     esac
 
     info "Development tam doğrulama başlıyor: ${optional_command}"
-    if (cd "$SCRIPT_DIR" && env AUTO_OPEN_ARTIFACTS=0 make dev-full); then
+    # Interactive TOFU pins are installer-session state.  Do not leak them into
+    # the repository test process: installer contract tests intentionally load
+    # their own checksum fixture/default environment.
+    if (cd "$SCRIPT_DIR" && env \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make dev-full); then
         ok "Development tam doğrulaması başarıyla tamamlandı (make dev-full)."
         info "Production readiness uyarısı final kurulum doğrulama özetinde tek merkezden raporlanacak."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
@@ -676,7 +684,16 @@ run_install_ci_full_validation() {
     fi
 
     info "Tam doğrulama başlıyor: make production-readiness"
-    if (cd "$script_dir" && env -u TEST_PROFILE -u RUN_BENCHMARKS -u RUN_FRONTEND_E2E -u SIDAR_PRODUCTION_READINESS AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
+    if (cd "$script_dir" && env \
+        -u TEST_PROFILE \
+        -u RUN_BENCHMARKS \
+        -u RUN_FRONTEND_E2E \
+        -u SIDAR_PRODUCTION_READINESS \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
         ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
