@@ -6,6 +6,7 @@ from core.doctor import DoctorCheck
 def test_check_redis_passes_when_url_is_configured(monkeypatch):
     from core.doctor.checks import redis as redis_checks
 
+    monkeypatch.setenv("SIDAR_REDIS_URL", "")
     monkeypatch.setenv("REDIS_URL", "redis://cache.local:6379/0")
     monkeypatch.setenv("SIDAR_EVENT_BUS_BACKEND", "redis")
 
@@ -24,12 +25,16 @@ def test_check_redis_warns_when_redis_backend_has_no_url(monkeypatch):
     from core.doctor.checks import redis as redis_checks
 
     monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("SIDAR_REDIS_URL", "")
     monkeypatch.setenv("SIDAR_EVENT_BUS_BACKEND", "redis")
 
     check = redis_checks.check_redis()
 
     assert check.status == "warn"
-    assert check.message == "REDIS_URL is not set; Redis event bus will use local fallback"
+    assert (
+        check.message == "Neither SIDAR_REDIS_URL nor REDIS_URL is set; "
+        "Redis event bus will use local fallback"
+    )
     assert check.details == {
         "redis_url_set": False,
         "event_bus_backend": "redis",
@@ -37,10 +42,32 @@ def test_check_redis_warns_when_redis_backend_has_no_url(monkeypatch):
     }
 
 
+def test_check_redis_passes_when_only_sidar_redis_url_is_configured(monkeypatch):
+    """Regression test: SIDAR_REDIS_URL is the primary variable, REDIS_URL a legacy alias.
+
+    install_sidar.sh's own generated .env only sets SIDAR_REDIS_URL, and the real
+    connection resolver (core.config_rate_limit.resolve_redis_url) checks it first.
+    Checking REDIS_URL alone used to report a false "not configured" warning for
+    every install that never sets the legacy alias.
+    """
+    from core.doctor.checks import redis as redis_checks
+
+    monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("SIDAR_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("SIDAR_EVENT_BUS_BACKEND", "redis")
+
+    check = redis_checks.check_redis()
+
+    assert check.status == "pass"
+    assert check.message == "Redis URL is configured"
+    assert check.details["redis_url_set"] is True
+
+
 def test_check_redis_passes_when_non_redis_backend_has_no_url(monkeypatch):
     from core.doctor.checks import redis as redis_checks
 
     monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("SIDAR_REDIS_URL", "")
     monkeypatch.setenv("SIDAR_EVENT_BUS_BACKEND", "kafka")
 
     check = redis_checks.check_redis()

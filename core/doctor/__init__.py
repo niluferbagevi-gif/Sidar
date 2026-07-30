@@ -8,6 +8,7 @@ opaque installation phase.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -271,6 +272,41 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                 ],
                 "auto_fix": "uv run python -m scripts.create_missing_databases",
                 "recommended_commands": common_commands,
+            },
+        )
+    if "ssl" in text and any(
+        marker in text for marker in ("cannot be changed now", "cantchangeruntimeparamerror")
+    ):
+        return (
+            'DATABASE_URL contains an unsupported ssl query value (e.g. "ssl=disable") that '
+            "asyncpg forwards to PostgreSQL as a startup parameter; PostgreSQL rejects it "
+            "because ssl is a server-only GUC. This is not a certificate/handshake problem.",
+            {
+                "failure_category": "invalid_ssl_query_param",
+                "root_cause_hints": [
+                    "DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL has a libpq-style sslmode value "
+                    '(e.g. "?ssl=disable") that asyncpg does not understand as a client-side '
+                    "flag",
+                    "asyncpg passes the unrecognized value through as a server startup "
+                    'parameter, and PostgreSQL refuses it with `parameter "ssl" cannot be '
+                    "changed now`",
+                    "This is usually a legacy value left over from an older install/config; "
+                    "the current auto-derivation path never emits ssl=<value>",
+                ],
+                "remediation_steps": [
+                    "Run uv run python -m scripts.sync_database_passwords "
+                    "--remove-explicit-urls to drop the explicit DATABASE_URL/"
+                    "SIDAR_CONTAINER_DATABASE_URL and let Sidar re-derive them from "
+                    "POSTGRES_* parts.",
+                    "If an explicit URL must be kept, remove the ssl query parameter "
+                    "entirely (asyncpg does not accept libpq sslmode strings such as "
+                    "disable/allow/prefer/require).",
+                ],
+                "auto_fix": "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
+                "recommended_commands": [
+                    "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
+                    *common_commands,
+                ],
             },
         )
     if any(
@@ -1328,6 +1364,16 @@ def check_gpu_memory_config() -> DoctorCheck:
     from config import Config
     from core.config_gpu_detect import normalize_gpu_memory_fractions
 
+    # Config.GPU_INFO/GPU_COUNT/etc. are lazy-loaded on first Config() instantiation
+    # (see Config._ensure_hardware_info_loaded). Reading the class attribute below
+    # before anything else in this process has constructed a Config() leaves
+    # GPU_INFO frozen at its "Devre Dışı / CPU Modu" placeholder even when USE_GPU
+    # is true, producing a self-contradictory report. Force the hardware probe so
+    # both fields agree; suppress errors so a broken .env doesn't turn this
+    # diagnostic check itself into a crash.
+    with contextlib.suppress(Exception):
+        Config._ensure_hardware_info_loaded()
+
     provider = str(getattr(Config, "AI_PROVIDER", "ollama") or "ollama").strip().lower()
     coding_model = str(getattr(Config, "CODING_MODEL", "") or "").strip()
     access_level = str(getattr(Config, "ACCESS_LEVEL", "") or "").strip().lower()
@@ -1497,19 +1543,47 @@ def check_supervisor_routing() -> DoctorCheck:
     )
 
 
+def _iter_effective_routes(routes: Any) -> list[Any]:
+    """Recursively flatten a FastAPI/Starlette route tree.
+
+    FastAPI >=0.137 defers ``include_router`` by wrapping the included router in
+    an internal ``_IncludedRouter`` node (exposing the original router via
+    ``original_router``) instead of eagerly copying its routes onto
+    ``app.routes``. Older FastAPI/Starlette shapes (plain ``Mount``/``APIRouter``
+    with a ``.routes`` list) are walked the same way, so route discovery keeps
+    working regardless of which FastAPI version is installed.
+    """
+    flattened: list[Any] = []
+    for route in routes or []:
+        nested_routes = getattr(getattr(route, "original_router", None), "routes", None)
+        if nested_routes is None:
+            nested_routes = getattr(route, "routes", None)
+        if nested_routes is not None:
+            flattened.extend(_iter_effective_routes(nested_routes))
+        else:
+            flattened.append(route)
+    return flattened
+
+
 def check_websocket_routes() -> DoctorCheck:
     try:
         from web_server import app
 
         websocket_paths = sorted(
             getattr(route, "path", "")
-            for route in app.routes
+            for route in _iter_effective_routes(app.routes)
             if "WebSocket" in route.__class__.__name__
         )
     except Exception as exc:  # pragma: no cover - defensive runtime path
-        source = (BASE_DIR / "web_server.py").read_text(encoding="utf-8")
         required = {"/ws/chat", "/ws/voice"}
-        static_paths = sorted(path for path in required if f'@app.websocket("{path}")' in source)
+        static_paths = sorted(
+            path
+            for path in required
+            if any(
+                f'@router.websocket("{path}")' in (BASE_DIR / rel).read_text(encoding="utf-8")
+                for rel in ("web/routes/ws_chat.py", "web/routes/ws_voice.py")
+            )
+        )
         missing_static = sorted(required - set(static_paths))
         return DoctorCheck(
             "websocket_routes",

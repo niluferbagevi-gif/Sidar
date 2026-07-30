@@ -82,8 +82,10 @@ def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
 
 
 def test_websocket_check_falls_back_to_static_routes(monkeypatch, tmp_path):
-    source = tmp_path / "web_server.py"
-    source.write_text('@app.websocket("/ws/chat")\n@app.websocket("/ws/voice")\n', encoding="utf-8")
+    routes_dir = tmp_path / "web" / "routes"
+    routes_dir.mkdir(parents=True)
+    (routes_dir / "ws_chat.py").write_text('@router.websocket("/ws/chat")\n', encoding="utf-8")
+    (routes_dir / "ws_voice.py").write_text('@router.websocket("/ws/voice")\n', encoding="utf-8")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
 
     import builtins
@@ -187,6 +189,29 @@ def test_postgres_connectivity_failure_guidance_classifies_errors(error, categor
 
     assert message
     assert details["failure_category"] == category
+
+
+def test_postgres_connectivity_guidance_distinguishes_invalid_ssl_query_param_from_tls(
+    monkeypatch,
+):
+    """A libpq-style '?ssl=disable' query value is not a TLS handshake failure.
+
+    asyncpg forwards an unrecognized `ssl` query value to PostgreSQL as a server
+    startup parameter, and PostgreSQL rejects it with `parameter "ssl" cannot be
+    changed now` (CantChangeRuntimeParamError). That message previously matched
+    the generic "ssl"/"tls" bucket, which pointed users at certificate/handshake
+    remediation instead of the real fix (drop the invalid query param).
+    """
+
+    class CantChangeRuntimeParamError(RuntimeError):
+        pass
+
+    error = CantChangeRuntimeParamError('parameter "ssl" cannot be changed now')
+    message, details = doctor._postgres_connectivity_failure_guidance(error)
+
+    assert details["failure_category"] == "invalid_ssl_query_param"
+    assert "remove-explicit-urls" in details["auto_fix"]
+    assert "not a certificate" in message.lower()
 
 
 def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypatch, tmp_path):
@@ -1084,6 +1109,52 @@ def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
     assert "DOCKER_TEST_IMAGE=sidar:latest" in check.details["recommended_commands"][-1]
 
 
+def test_gpu_memory_config_forces_lazy_hardware_probe_before_reading_gpu_info(monkeypatch):
+    """Regression test: gpu_info must not stay frozen at its CPU-mode placeholder.
+
+    Config.GPU_INFO/USE_GPU are only populated by the real hardware probe inside
+    Config._ensure_hardware_info_loaded(), which runs lazily on the first Config()
+    instantiation anywhere in the process. Because check_gpu_memory_config() reads
+    the class attributes directly (without ever constructing a Config()), running
+    it before anything else touched Config used to report a self-contradictory
+    "use_gpu": true / "gpu_info": "Devre Dışı / CPU Modu" pair on real GPU machines.
+    """
+    from config import Config, HardwareInfo
+
+    monkeypatch.setattr(Config, "_hardware_loaded", False)
+    monkeypatch.setattr(Config, "USE_GPU", True)
+    monkeypatch.setattr(Config, "GPU_INFO", "Devre Dışı / CPU Modu")
+    fake_hw = HardwareInfo(
+        has_cuda=True,
+        gpu_name="NVIDIA Test GPU",
+        gpu_count=1,
+        cpu_count=8,
+        cuda_version="12.4",
+        driver_version="550.10",
+        gpu_vram_mb=8192,
+    )
+    monkeypatch.setattr("config.check_hardware", lambda: fake_hw)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.details["use_gpu"] is True
+    assert check.details["gpu_info"] == "NVIDIA Test GPU"
+
+
+def test_gpu_memory_config_probe_failure_is_swallowed(monkeypatch):
+    """A broken hardware probe must not turn this diagnostic check into a crash."""
+    from config import Config
+
+    def _raise() -> None:
+        raise RuntimeError("hardware probe broken")
+
+    monkeypatch.setattr(Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: _raise()))
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status in {"pass", "warn"}
+
+
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
@@ -1261,7 +1332,10 @@ def test_websocket_check_reports_imported_routes_and_missing_static(monkeypatch,
     assert imported_missing.status == "fail"
     assert imported_missing.details["websocket_paths"] == ["/ws/chat"]
 
-    (tmp_path / "web_server.py").write_text('@app.websocket("/ws/chat")\n', encoding="utf-8")
+    routes_dir = tmp_path / "web" / "routes"
+    routes_dir.mkdir(parents=True)
+    (routes_dir / "ws_chat.py").write_text('@router.websocket("/ws/chat")\n', encoding="utf-8")
+    (routes_dir / "ws_voice.py").write_text("", encoding="utf-8")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
 
     def broken_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -1273,6 +1347,61 @@ def test_websocket_check_reports_imported_routes_and_missing_static(monkeypatch,
     static_missing = doctor.check_websocket_routes()
     assert static_missing.status == "fail"
     assert static_missing.details["websocket_paths"] == ["/ws/chat"]
+
+
+def test_websocket_check_recurses_into_wrapped_included_routers(monkeypatch):
+    """Regression test for FastAPI>=0.137's deferred ``_IncludedRouter`` shape.
+
+    Newer FastAPI versions no longer flatten ``include_router`` calls onto
+    ``app.routes`` eagerly; they wrap the sub-router in a node exposing the
+    original router via ``original_router``. The doctor check must recurse
+    into that wrapper (and into plain ``Mount``-style ``.routes`` containers)
+    to find the real websocket routes instead of reporting a false failure.
+    """
+
+    class WebSocketRoute:
+        def __init__(self, path):
+            self.path = path
+
+    class HttpRoute:
+        path = "/http"
+
+    class OriginalRouter:
+        def __init__(self, routes):
+            self.routes = routes
+
+    class IncludedRouter:
+        def __init__(self, original_router):
+            self.original_router = original_router
+
+    class Mount:
+        def __init__(self, routes):
+            self.routes = routes
+
+    nested_ws_router = OriginalRouter([WebSocketRoute("/ws/voice")])
+    app = type(
+        "App",
+        (),
+        {
+            "routes": [
+                HttpRoute(),
+                IncludedRouter(OriginalRouter([WebSocketRoute("/ws/chat")])),
+                Mount([IncludedRouter(nested_ws_router)]),
+            ]
+        },
+    )()
+    original_import = __import__
+
+    def web_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "web_server":
+            return type("WebServerModule", (), {"app": app})()
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", web_import)
+    check = doctor.check_websocket_routes()
+
+    assert check.status == "pass"
+    assert check.details["websocket_paths"] == ["/ws/chat", "/ws/voice"]
 
 
 def test_gpu_check_uses_torch_fallback_and_records_torch_errors(monkeypatch):
