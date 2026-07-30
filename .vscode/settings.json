@@ -1,5 +1,5 @@
 {
-    "python.defaultInterpreterPath": "/home/crbs/Sidar/.venv/bin/python",
+    "python.defaultInterpreterPath": "/home/elf/Sidar/.venv/bin/python",
     "python.terminal.activateEnvironment": true,
     "terminal.integrated.defaultProfile.linux": "bash"
 }
