@@ -63,6 +63,8 @@ class QualityGateSettings(BaseSettings):
             return value
 
         legacy_key = info.field_name
+        if legacy_key is None:
+            return value
         legacy_value = os.getenv(legacy_key)
         return legacy_value if legacy_value is not None and legacy_value.strip() else value
 
