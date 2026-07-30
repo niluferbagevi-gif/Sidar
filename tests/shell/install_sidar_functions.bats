@@ -1064,6 +1064,50 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults replaces asyncpg-incompatible ssl query URLs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?application_name=sidar&ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@localhost:5432/sidar
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_DB=sidar_development$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "sync_database_env_chain_after_setup reruns helper even when prior sync marker exists" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

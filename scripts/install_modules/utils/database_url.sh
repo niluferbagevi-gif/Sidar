@@ -236,9 +236,26 @@ write_generated_default_database_url() {
     } >> "$env_file"
 }
 
+database_name_from_postgresql_url() {
+    local db_url="$1"
+    local authority_and_path=""
+    local db_path=""
+
+    [[ "$db_url" == postgresql://* || "$db_url" == postgresql+asyncpg://* ]] || return 1
+    authority_and_path="${db_url#*://}"
+    [[ "$authority_and_path" == */* ]] || return 1
+    db_path="${authority_and_path#*/}"
+    db_path="${db_path%%\?*}"
+    db_path="${db_path%%\#*}"
+    [[ -n "$db_path" ]] || return 1
+    printf '%s\n' "$db_path"
+}
+
 ensure_database_url_defaults() {
     local env_file="$1"
     local current_db_url=""
+    local current_db_name=""
+    local configured_db_name=""
 
     if [[ ! -f "$env_file" ]]; then
         return
@@ -277,6 +294,33 @@ ensure_database_url_defaults() {
             ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
         else
             ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+        fi
+        return
+    fi
+
+    if [[ "${current_db_url,,}" =~ [\?\&]ssl= ]]; then
+        warn ".env içinde asyncpg ile uyumsuz ssl query parametresi içeren DATABASE_URL tespit edildi; güvenli PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok ".env: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        else
+            ok ".env: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL mevcut güçlü PostgreSQL parolasıyla güncellendi."
+        fi
+        return
+    fi
+
+    configured_db_name=$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')
+    if [[ -n "${configured_db_name//[[:space:]]/}" ]] && \
+        current_db_name=$(database_name_from_postgresql_url "$current_db_url") && \
+        [[ "$current_db_name" != "$configured_db_name" ]]; then
+        warn ".env içinde DATABASE_URL veritabanı (${current_db_name}) POSTGRES_DB (${configured_db_name}) ile eşleşmiyor; profile özgü PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok ".env: DATABASE_URL, POSTGRES_DB ile güçlü rastgele PostgreSQL parolası kullanılarak senkronize edildi."
+        else
+            ok ".env: DATABASE_URL, POSTGRES_DB ile mevcut güçlü PostgreSQL parolası korunarak senkronize edildi."
         fi
     fi
 }
