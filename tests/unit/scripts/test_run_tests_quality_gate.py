@@ -4044,8 +4044,7 @@ def test_node_install_fallbacks_report_failures_and_validate_apt_major() -> None
     assert "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı" in system_phase
     assert "ek Debian node-* bağımlılıklarını kurabilir" in system_phase
     assert (
-        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource"'
-        in system_phase
+        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource"' in system_phase
     )
     assert (
         'warn_if_node_major_mismatch "$node_bin" "$node_target_major" '
@@ -5066,7 +5065,7 @@ def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
     npm.write_text(
         "#!/usr/bin/env bash\n"
         "printf '%s\\n' "
-        "'{\"metadata\":{\"vulnerabilities\":{\"moderate\":3,\"high\":0,\"critical\":0}}}'\n",
+        '\'{"metadata":{"vulnerabilities":{"moderate":3,"high":0,"critical":0}}}\'\n',
         encoding="utf-8",
     )
     npm.chmod(0o755)
