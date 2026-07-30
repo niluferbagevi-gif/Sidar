@@ -687,7 +687,7 @@ class SidarAgent:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
         execution: dict[str, Any]
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
-            execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
+            execution: dict[str, Any] = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
             remediation["self_heal_execution"] = execution
             return execution
         if str(remediation_loop.get("status", "")).strip() != "planned":
