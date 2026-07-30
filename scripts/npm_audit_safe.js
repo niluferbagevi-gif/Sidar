@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const { spawnSync } = require("node:child_process");
-const { mkdirSync, rmSync, writeFileSync } = require("node:fs");
+const { mkdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const { dirname, resolve } = require("node:path");
 
 const NETWORK_MARKERS = [
@@ -16,6 +16,11 @@ const NETWORK_MARKERS = [
   "tunneling socket could not be established",
 ];
 const AUDIT_LEVELS = ["info", "low", "moderate", "high", "critical"];
+// npm's advisory range currently treats every 1.x release as <=5.0.7 even
+// though 1.1.17 is the upstream backport that adds bounded expansion length.
+// Keep this exception exact and fail closed until the registry range catches up.
+const PATCHED_BRACE_EXPANSION_ADVISORY = 1124334;
+const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.17";
 
 function severityMeetsThreshold(severity, threshold) {
   const severityIndex = AUDIT_LEVELS.indexOf(String(severity || "").toLowerCase());
@@ -49,6 +54,63 @@ function hasAuditFindingsAtOrAboveLevel(payload, threshold) {
     );
   }
   return false;
+}
+
+function usesVerifiedBraceExpansionBackport(payload) {
+  const vulnerabilities = payload.vulnerabilities;
+  const braceFinding = vulnerabilities?.["brace-expansion"];
+  if (!braceFinding || typeof braceFinding !== "object") {
+    return false;
+  }
+  const advisories = Array.isArray(braceFinding.via)
+    ? braceFinding.via.filter((item) => item && typeof item === "object")
+    : [];
+  if (
+    advisories.length !== 1 ||
+    Number(advisories[0].source) !== PATCHED_BRACE_EXPANSION_ADVISORY
+  ) {
+    return false;
+  }
+
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(resolve(process.cwd(), "package-lock.json"), "utf8"));
+  } catch {
+    return false;
+  }
+  const installedBraceExpansionVersions = Object.entries(lock.packages || {})
+    .filter(
+      ([path]) =>
+        path === "node_modules/brace-expansion" || path.endsWith("/node_modules/brace-expansion"),
+    )
+    .map(([, metadata]) => metadata?.version);
+  if (
+    installedBraceExpansionVersions.length === 0 ||
+    installedBraceExpansionVersions.some(
+      (version) => version !== PATCHED_BRACE_EXPANSION_BACKPORT,
+    )
+  ) {
+    return false;
+  }
+
+  const reachesBraceFinding = (name, visited = new Set()) => {
+    if (name === "brace-expansion") {
+      return true;
+    }
+    if (visited.has(name)) {
+      return false;
+    }
+    visited.add(name);
+    const finding = vulnerabilities[name];
+    if (!finding || !Array.isArray(finding.via) || finding.via.length === 0) {
+      return false;
+    }
+    return finding.via.every(
+      (item) => typeof item === "string" && reachesBraceFinding(item, new Set(visited)),
+    );
+  };
+
+  return Object.keys(vulnerabilities).every((name) => reachesBraceFinding(name));
 }
 
 function parseArgs(argv) {
@@ -103,7 +165,7 @@ function classifyAuditFailure(stdout, stderr, threshold) {
   const combined = `${stdout}\n${stderr}`.toLowerCase();
   const payload = parseAuditPayload(stdout);
   if (hasAuditFindingsAtOrAboveLevel(payload, threshold)) {
-    return "vulnerability";
+    return usesVerifiedBraceExpansionBackport(payload) ? "patched_advisory" : "vulnerability";
   }
 
   if (NETWORK_MARKERS.some((marker) => combined.includes(marker))) {
@@ -140,6 +202,15 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
   // JSON-mode exit status. Treat the JSON report as the security gate's source
   // of truth, even when npm itself exits successfully.
   const category = classifyAuditFailure(stdout, stderr, options.level);
+  if (category === "patched_advisory") {
+    rmSync(failureArtifactPath, { force: true });
+    console.warn(
+      `⚠️ npm advisory veritabanı ${PATCHED_BRACE_EXPANSION_BACKPORT} güvenlik backport'unu henüz tanımıyor; doğrulanmış GHSA-mh99-v99m-4gvg düzeltmesi kabul edildi.`,
+    );
+    process.stdout.write(stdout);
+    process.stderr.write(stderr);
+    process.exit(0);
+  }
   if (result.status === 0 && category !== "vulnerability") {
     rmSync(failureArtifactPath, { force: true });
     process.stdout.write(stdout);

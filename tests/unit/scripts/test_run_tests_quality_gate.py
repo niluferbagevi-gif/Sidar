@@ -5101,6 +5101,82 @@ def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
     assert not (artifact_dir / "npm-audit-failure.json").exists()
 
 
+def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
+    tmp_path: Path,
+) -> None:
+    """The temporary advisory exception must be exact and fail closed."""
+    audit_wrapper = Path("scripts/npm_audit_safe.js").resolve()
+    npm = tmp_path / "npm"
+    npm.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$AUDIT_JSON\"\nexit 1\n",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/minimatch/node_modules/brace-expansion": {
+                        "version": "1.1.17"
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    vulnerabilities = {
+        "brace-expansion": {
+            "severity": "high",
+            "via": [{"source": 1124334, "severity": "high"}],
+        },
+        "minimatch": {"severity": "high", "via": ["brace-expansion"]},
+        "eslint": {"severity": "high", "via": ["minimatch"]},
+    }
+
+    def run_audit(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "AUDIT_JSON": json.dumps(payload),
+            "FRONTEND_NPM_AUDIT_NPM_BINARY": str(npm),
+        }
+        return subprocess.run(
+            [
+                "node",
+                str(audit_wrapper),
+                "--level=high",
+                "--retries=1",
+                f"--artifact-dir={tmp_path / 'artifacts'}",
+            ],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+            env=env,
+            text=True,
+        )
+
+    patched = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        }
+    )
+    assert patched.returncode == 0, patched.stderr
+    assert "1.1.17 güvenlik backport'unu" in patched.stderr
+
+    vulnerabilities["unrelated-package"] = {
+        "severity": "critical",
+        "via": [{"source": 9999999, "severity": "critical"}],
+    }
+    unrelated = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3, "critical": 1}},
+        }
+    )
+    assert unrelated.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in unrelated.stderr
+
+
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
     """Lint, typecheck, coverage, build and E2E must retain separate results."""
     frontend_gate_block = _script()[
