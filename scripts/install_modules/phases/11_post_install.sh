@@ -302,19 +302,30 @@ run_doctor_phase() {
     step "Sidar Doctor"
     cd "$SCRIPT_DIR" || return 1
     mkdir -p artifacts/install
+    local doctor_report="artifacts/install/doctor.json"
     local -a doctor_cmd=()
     if command -v uv &>/dev/null; then
-        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(uv run python -m core.doctor "$doctor_report")
     elif command -v python3 &>/dev/null; then
-        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(python3 -m core.doctor "$doctor_report")
     else
         fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
     fi
 
-    if SIDAR_CONFIG_QUIET=1 "${doctor_cmd[@]}"; then
-        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
+    # Eski bir rapor, çöken yeni bir doctor çalıştırmasını başarılı göstermemelidir.
+    rm -f "$doctor_report"
+    if SIDAR_CONFIG_QUIET=true "${doctor_cmd[@]}"; then
+        if [[ ! -s "$doctor_report" ]]; then
+            warn "Doctor tamamlandı ancak rapor üretilemedi: $doctor_report"
+            return 1
+        fi
+        ok "Doctor raporu üretildi: $doctor_report"
     else
-        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
+        if [[ -s "$doctor_report" ]]; then
+            warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: $doctor_report"
+        else
+            warn "Doctor çalıştırılamadı ve rapor üretilemedi: $doctor_report"
+        fi
         return 1
     fi
 }

@@ -139,6 +139,63 @@ def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
     assert "git reset --hard origin/main" not in phase
 
 
+@pytest.mark.parametrize(
+    ("doctor_exit", "write_report", "expected_status", "expected_message"),
+    [
+        (0, True, 0, "OK:Doctor raporu üretildi"),
+        (1, True, 1, "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda"),
+        (1, False, 1, "WARN:Doctor çalıştırılamadı ve rapor üretilemedi"),
+        (0, False, 1, "WARN:Doctor tamamlandı ancak rapor üretilemedi"),
+    ],
+)
+def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
+    tmp_path: Path,
+    doctor_exit: int,
+    write_report: bool,
+    expected_status: int,
+    expected_message: str,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -u
+                step() { :; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; return 1; }
+                uv() {
+                    [[ "${SIDAR_CONFIG_QUIET:-}" == "true" ]] || return 90
+                    if [[ "$WRITE_REPORT" == "true" ]]; then
+                        printf '{"status":"test"}\n' > "${@: -1}"
+                    fi
+                    return "$DOCTOR_EXIT"
+                }
+                source scripts/install_modules/phases/11_post_install.sh
+                export SCRIPT_DIR="$1"
+                run_doctor_phase
+                """
+            ),
+            "doctor-phase-smoke",
+            str(tmp_path),
+        ],
+        cwd=Path(os.getcwd()),
+        env={
+            **_installer_test_env(tmp_path),
+            "DOCTOR_EXIT": str(doctor_exit),
+            "WRITE_REPORT": str(write_report).lower(),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_status, result.stderr + result.stdout
+    assert expected_message in result.stdout
+    assert "SIDAR_CONFIG_QUIET" not in result.stderr
+
+
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
     repo_dir = tmp_path / "Sidar"
