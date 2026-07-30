@@ -2397,9 +2397,15 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: check-install-module-hashes" in config
     assert (
         "entry: uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-manifest-only"
+    ) in config
+    assert "id: check-install-module-pin" in config
+    assert (
+        "entry: uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in config
-    assert "stages: [pre-commit, pre-push]" in config
+    assert "stages: [pre-commit]" in config
+    assert "stages: [pre-push]" in config
     assert ".sidar_manifest" in config
     assert "core/(memory|multimodal)" in config
     assert "scripts/install_modules/.*\\.(sh|ps1)" in config
@@ -2423,7 +2429,8 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     )
     assert "check-core-install-manifest" in readme
     assert "check-install-module-hashes" in readme
-    assert "installer manifest drift" in readme
+    assert "check-install-module-pin" in readme
+    assert "manifest drift'ini" in readme
     assert "id: shellcheck" in config
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config
