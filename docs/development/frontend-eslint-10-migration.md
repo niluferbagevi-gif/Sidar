@@ -39,13 +39,16 @@ bozulması veya eski eklenti sürümlerine downgrade edilmesi riskini taşır.
 **Sahip:** Frontend bakım ekibi  
 **İlk yeniden değerlendirme:** 2026-09-30 veya npm advisory aralığı/plugin peer
 dependency metadata'sı değiştiğinde (hangisi önce olursa).
+**Takvim kaydı:** `docs/reminders/frontend-eslint-10-review-2026-09-30.ics`
 
 Kalıcı geçiş ayrı bir bakım PR'ında şu sırayla yapılmalıdır:
 
 1. `eslint-plugin-react` ve `eslint-plugin-jsx-a11y` sürümlerinin ESLint 10'u resmi
    peer dependency olarak desteklediğini doğrula.
 2. `eslint` ve `@eslint/js` paketlerini aynı ESLint 10 sürüm ailesine yükselt; uyumlu
-   React, hooks ve accessibility eklentilerini birlikte güncelle.
+   React, hooks ve accessibility eklentilerini birlikte güncelle. `package.json`
+   `engines.node` aralığını ve CI Node sürümünü ESLint 10'un desteklediği sürümlerle
+   eşleştir.
 3. `npm install` ile lockfile'ı yeniden üret ve `overrides.brace-expansion` girdisini
    yalnız dependency ağacında artık gerekmediği doğrulanırsa kaldır.
 4. Flat config/rule davranış değişikliklerini incele; kuralları geçici olarak kapatmak
