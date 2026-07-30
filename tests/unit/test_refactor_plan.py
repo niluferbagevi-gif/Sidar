@@ -101,6 +101,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "Launcher Doctor preflight" in plan
     assert "core/doctor/launcher_preflight.py" in plan
     assert "config_rag_defaults.py" in plan
+    assert "docs/development/frontend-typescript-migration.md" in plan
+    assert "hedef tamamlanma **2027-03-31**" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:

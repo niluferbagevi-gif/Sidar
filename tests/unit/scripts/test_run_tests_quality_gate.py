@@ -4911,7 +4911,11 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium" in testing_doc
     assert "403 Domain forbidden" in readme
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
-    assert '"typecheck": "tsc --noEmit"' in package_json
+    assert '"typecheck": "tsc --noEmit && npm run typecheck:inventory"' in package_json
+    assert (
+        '"typecheck:inventory": "node ../scripts/check_frontend_typescript_migration.js"'
+        in package_json
+    )
     assert '"test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js"' in package_json
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
@@ -5213,6 +5217,40 @@ def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
     assert "`expired_exception` kategorisiyle fail-closed" in plan
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high" in plan
     assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
+
+
+def test_frontend_typescript_inventory_ratchet_fails_closed(tmp_path: Path) -> None:
+    """The migration inventory must reject new untyped debt and typed regressions."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "legacy.jsx").write_text("export default null;\n", encoding="utf-8")
+    (source / "typed.ts").write_text("export const value: number = 1;\n", encoding="utf-8")
+    baseline = tmp_path / "typescript-migration-baseline.json"
+    baseline.write_text(
+        json.dumps({"maximum_untyped_files": 1, "minimum_typed_files": 1}), encoding="utf-8"
+    )
+
+    def run_inventory() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["node", str(checker), f"--root={tmp_path}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    assert run_inventory().returncode == 0
+
+    (source / "new-debt.js").write_text("export const debt = true;\n", encoding="utf-8")
+    increased = run_inventory()
+    assert increased.returncode == 1
+    assert "untyped source count increased: 2 > 1" in increased.stderr
+
+    (source / "new-debt.js").unlink()
+    (source / "typed.ts").unlink()
+    decreased = run_inventory()
+    assert decreased.returncode == 1
+    assert "typed source count decreased: 0 < 1" in decreased.stderr
 
 
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:

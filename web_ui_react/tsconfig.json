@@ -5,10 +5,10 @@
   // -- it does not type-check component/hook logic. Do not read a passing
   // `npm run typecheck` as type safety for the .jsx/.js tree; use it only as
   // a regression gate for genuinely-typed (.ts/.tsx) code.
-  // Tracking: incremental .jsx -> .tsx migration is unscheduled debt (no
-  // owner/target date yet); see docs/TESTING.md for the current gate scope
-  // note. Enabling checkJs=true today surfaces ~3000 pre-existing errors
-  // across the untyped tree and cannot be flipped without that migration.
+  // Tracking: the Frontend bakım ekibi owns the incremental .jsx -> .tsx
+  // campaign through 2027-03-31; see
+  // docs/development/frontend-typescript-migration.md. Enabling checkJs=true
+  // today surfaces ~3000 pre-existing errors and cannot be flipped at once.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

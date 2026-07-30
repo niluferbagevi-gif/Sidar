@@ -76,7 +76,11 @@ turda uygulanmadı — bilinçli olarak backlog'a alındı.
   ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
   Bu PR'da `tsconfig.json` ve `run_tests.sh` içine kapının gerçek kapsamını
   belirten yorum/log satırı eklendi (bkz. ilgili commit); kademeli `.jsx` →
-  `.tsx` taşıması ayrı, planlı bir kampanya gerektirir (owner/tarih henüz atanmadı).
+  `.tsx` taşıması için sahip **Frontend bakım ekibi**, ilk değerlendirme
+  **2026-09-30**, hedef tamamlanma **2027-03-31** olarak atandı. JS/JSX toplamındaki
+  net artış `npm run typecheck:inventory` ratchet'iyle fail-closed engellenir; aşamalar ve
+  baseline güncelleme sözleşmesi
+  `docs/development/frontend-typescript-migration.md` içinde tutulur.
 - **`src/components/SwarmFlowPanel.jsx` (~435 satır):** 14 `useState`, 5
   `fetchJson` çağrısı ve graph inşa mantığı tek dosyada; `GraphView`'e ~19 prop
   geçiyor. Hedef adım: state + API orchestration'ı `useSwarmFlowController()`

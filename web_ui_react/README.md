@@ -65,6 +65,12 @@ olanların tamamını çalıştırır ve her birini `artifacts/test-summary.json
 raporlar. Örneğin lint hatası typecheck veya coverage sonucunu `skipped` yapmaz; browser
 hazırlığı CDN/proxy nedeniyle başarısız olsa bile browser gerektirmeyen sinyaller korunur.
 
+`npm run typecheck`, mevcut `.ts` kaynaklarını `tsc` ile denetlemenin yanında TypeScript
+geçiş envanterini de çalıştırır. `checkJs: false` kaldığı sürece bu kapı `.js`/`.jsx`
+bileşenler için tam tip güvencesi iddia etmez; bunun yerine untyped dosya toplamının
+artmasını ve typed dosya toplamının azalmasını engeller. Kampanya takvimi ve baseline
+güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` içindedir.
+
 - `run_tests.sh`, CI profilinde `RUN_FRONTEND_E2E=1` varsayılanıyla Playwright WebSocket smoke
   senaryolarını coverage sonrasında çalıştırır. Yerel hızlı akışta varsayılan `auto` değeridir:
   Node Playwright'ın beklediği Chromium executable cache'de hazırsa smoke kapısı otomatik çalışır;
