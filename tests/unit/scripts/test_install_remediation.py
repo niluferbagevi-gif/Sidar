@@ -29,10 +29,16 @@ def test_remote_script_interactive_pin_remains_available_in_auto_install(
         # install_sidar.sh masks and logs output through a process-substitution
         # pipe, so stdout is deliberately not a TTY at the trust gate.
         "exec > >(cat) 2>&1\n"
+        "log_pipe_pid=$!\n"
         "AUTO_INSTALL=true NO_INTERACTION=false PAGER=cat "
         'review_and_pin_remote_script_checksum "$1" '
         "https://example.invalid/install.sh fixture abc123 FIXTURE_SHA256\n"
-        "printf 'PIN=%s\\n' \"$FIXTURE_SHA256\"\n",
+        "printf 'PIN=%s\\n' \"$FIXTURE_SHA256\"\n"
+        # Bash does not automatically wait for process substitutions. Close the
+        # writer and join `cat`, otherwise the final PIN line can be lost when
+        # util-linux `script` observes the probe shell exiting first.
+        "exec 1>&- 2>&-\n"
+        "wait \"$log_pipe_pid\"\n",
         encoding="utf-8",
     )
     probe.chmod(0o755)
