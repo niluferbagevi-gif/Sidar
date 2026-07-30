@@ -3937,11 +3937,20 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
 def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operator_env(
     tmp_path: Path,
 ) -> None:
+    """Checksum defaults must be tested independently of the invoking shell state."""
     checksum_file = tmp_path / "remote_checksums.env"
     checksum_file.write_text(
         ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n: "${UV_INSTALL_SHA256:=file-uv}"\n',
         encoding="utf-8",
     )
+    clean_env = os.environ.copy()
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        clean_env.pop(checksum_var, None)
 
     result = subprocess.run(
         [
@@ -3960,7 +3969,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
         ],
         check=False,
         capture_output=True,
-        env=os.environ.copy(),
+        env=clean_env,
         text=True,
     )
 
