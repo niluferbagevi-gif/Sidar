@@ -266,6 +266,11 @@ def print_unmerged_files(prefix: str = "Çakışan dosyalar") -> None:
 
 def abort_in_progress_merge() -> None:
     """Başarısız pull/merge sonrası çalışma ağacını temiz state'e döndürmeye çalışır."""
+    merge_active, _ = run_command(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], show_output=False
+    )
+    if not merge_active:
+        return
     abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
     if abort_success:
         print(
@@ -830,6 +835,7 @@ def main() -> None:
         pull_cmd = [
             "git",
             "pull",
+            "--autostash",
             "origin",
             target_branch,
             "--no-rebase",
