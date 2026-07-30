@@ -302,7 +302,9 @@ def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, di
                     "entirely (asyncpg does not accept libpq sslmode strings such as "
                     "disable/allow/prefer/require).",
                 ],
-                "auto_fix": "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
+                "auto_fix": (
+                    "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+                ),
                 "recommended_commands": [
                     "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
                     *common_commands,
