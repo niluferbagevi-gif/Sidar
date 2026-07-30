@@ -1423,37 +1423,16 @@ def _execute_validated_plugin_source(
 
 
 def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
-    """Validate plugin source and execute it with restricted builtins only.
+    """Delegate to the explicitly legacy in-process plugin backend.
 
-    Not a process/container-level sandbox — see the "PLUGIN AGENT SANDBOX"
-    note above `_PLUGIN_BANNED_BUILTINS` for the residual risk this accepts
-    and why the admin-only gate on the callers of this function is the real
-    security boundary.
+    Production is fail-closed. The wrapper remains for compatibility while the
+    container/process RPC backend tracked in ``docs/REFACTOR_PLAN.md`` is built.
     """
-    try:
-        _validate_plugin_source(source_code)
-        plugin_sandbox.assert_in_process_plugin_execution_allowed()
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
-
-    # Defense-in-depth: AST doğrulamasının yanında runtime namespace'ini de daraltıyoruz.
-    # Tehlikeli built-in'ler (`exec`, `eval`, `compile`, `open`, `input`, `breakpoint`, ...)
-    # plugin koduna sızdırılmadığı için statik kontrol bypass edilse bile çağrı yapılamaz.
-    namespace: dict[str, Any] = {
-        "__name__": module_label,
-        "__builtins__": _build_restricted_plugin_builtins(),
-    }
-    try:
-        _execute_validated_plugin_source(source_code, module_label, namespace)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
-        ) from exc
-    return namespace
+    return plugin_sandbox.run_plugin_source_in_process(
+        source_code,
+        module_label,
+        validator=_validate_plugin_source,
+    )
 
 
 def _load_plugin_agent_class(

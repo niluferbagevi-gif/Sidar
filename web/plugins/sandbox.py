@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import builtins
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
 
@@ -173,6 +173,41 @@ def execute_validated_plugin_source(
     """Compile and execute already-validated plugin source in the provided namespace."""
     code = compile(source_code, plugin_source_filename(module_label), "exec")
     exec(code, namespace)  # nosec B102
+
+
+def run_plugin_source_in_process(
+    source_code: str,
+    module_label: str,
+    *,
+    validator: Callable[[str], None] = validate_plugin_source,
+) -> dict[str, Any]:
+    """Run a validated plugin through the explicitly legacy in-process backend.
+
+    Keeping this backend behind one function makes the remaining isolation boundary
+    explicit and gives a future Docker/process RPC backend a single replacement seam.
+    Production remains fail-closed and can never select this backend.
+    """
+    try:
+        validator(source_code)
+        assert_in_process_plugin_execution_allowed()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
+
+    namespace: dict[str, Any] = {
+        "__name__": module_label,
+        "__builtins__": build_restricted_plugin_builtins(),
+    }
+    try:
+        execute_validated_plugin_source(source_code, module_label, namespace)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
+        ) from exc
+    return namespace
 
 
 def restricted_plugin_import(

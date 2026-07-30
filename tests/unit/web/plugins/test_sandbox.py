@@ -10,6 +10,7 @@ from web.plugins.sandbox import (
     in_process_plugin_execution_allowed,
     plugin_source_filename,
     restricted_plugin_import,
+    run_plugin_source_in_process,
     validate_plugin_source,
 )
 
@@ -125,3 +126,15 @@ def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:
     execute_validated_plugin_source("RESULT = 42", "plugin/name", namespace)
 
     assert namespace["RESULT"] == 42
+
+
+def test_in_process_backend_executes_only_outside_production(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    namespace = run_plugin_source_in_process("RESULT = 42", "safe_plugin")
+    assert namespace["RESULT"] == 42
+
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("RESULT = 42", "blocked_plugin")
+    assert exc.value.status_code == 403
