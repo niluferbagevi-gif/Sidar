@@ -429,6 +429,27 @@ def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monk
     assert check.details["container_database_url_source_unattributed"] is False
 
 
+def test_database_env_allows_valid_unattributed_database_url(monkeypatch):
+    """Do not diagnose a healthy parent-shell URL merely because it is unattributed."""
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "pass"
+    assert check.message == "database environment looks secure"
+    assert check.details["database_url_source_unattributed"] is True
+    assert "inherited from the parent process/shell environment" not in check.message
+
+
 def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/sidar.db")
     monkeypatch.setenv("POSTGRES_USER", "sidar")
