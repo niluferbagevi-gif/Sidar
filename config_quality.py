@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +54,17 @@ class QualityGateSettings(BaseSettings):
         default="",
         validation_alias=AliasChoices("SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL"),
     )
+
+    @field_validator("JUDGE_MODEL", "JUDGE_PROVIDER", "JUDGE_RESPONSE_MODEL", mode="before")
+    @classmethod
+    def use_non_blank_legacy_string(cls, value: object, info: ValidationInfo) -> object:
+        """Let a legacy judge string win when its preferred alias is blank."""
+        if not isinstance(value, str) or value.strip():
+            return value
+
+        legacy_key = info.field_name
+        legacy_value = os.getenv(legacy_key)
+        return legacy_value if legacy_value is not None and legacy_value.strip() else value
 
 
 def load_quality_gate_settings(*, env_path: Path, skip_default_dotenv: bool) -> QualityGateSettings:

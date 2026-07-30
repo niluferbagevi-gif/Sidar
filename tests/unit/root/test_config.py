@@ -384,6 +384,27 @@ def test_quality_gate_settings_legacy_env_var_works_without_prefix(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("prefixed_key", "legacy_key", "field_name"),
+    [
+        ("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "JUDGE_MODEL"),
+        ("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "JUDGE_PROVIDER"),
+        ("SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL"),
+    ],
+)
+def test_quality_gate_blank_prefixed_strings_use_legacy_values(
+    monkeypatch, prefixed_key, legacy_key, field_name
+):
+    """Blank preferred aliases must not disable configured legacy judge settings."""
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv(prefixed_key, "   ")
+    monkeypatch.setenv(legacy_key, "legacy-value")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert getattr(settings, field_name) == "legacy-value"
+
+
+@pytest.mark.parametrize(
     "env_key,env_value",
     [
         ("JUDGE_SAMPLE_RATE", "1.5"),
@@ -500,7 +521,16 @@ def test_prefixed_env_helpers_use_legacy_and_default_fallbacks(monkeypatch):
 
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
     assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 9) == 9
-    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 2.5
+    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 4.5
+
+
+def test_blank_prefixed_string_env_helpers_use_legacy_fallbacks(monkeypatch):
+    """Blank optional overrides must not shadow configured legacy values."""
+    monkeypatch.setenv("SIDAR_TEXT", "   ")
+    monkeypatch.setenv("LEGACY_TEXT", "legacy-value")
+
+    assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
+    assert config.get_optional_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT") == "legacy-value"
 
 
 def test_get_int_and_float_prefixed_env_warn_on_malformed_value(monkeypatch, caplog):
