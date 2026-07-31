@@ -34,7 +34,9 @@ def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys)
     assert "kapasitesi yetersiz" in capsys.readouterr().err
 
     fixture.write_text(
-        json.dumps({"runners": [_runner("primary", labels=labels), _runner("standby", labels=labels)]})
+        json.dumps(
+            {"runners": [_runner("primary", labels=labels), _runner("standby", labels=labels)]}
+        )
     )
     assert capacity.main(["--fixture", str(fixture)]) == 0
     assert "primary" in capsys.readouterr().out

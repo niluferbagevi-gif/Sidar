@@ -456,9 +456,7 @@ class SidarAgent:
     def _resolve_self_heal_scope_batches(
         self, scope_paths: list[str], remediation_loop: dict[str, Any]
     ) -> list[list[str]]:
-        batch_size = max(
-            1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
-        )
+        batch_size = max(1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
         return resolve_self_heal_scope_batches_service(
             scope_paths, remediation_loop, batch_size=batch_size
         )

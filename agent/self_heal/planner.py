@@ -100,9 +100,7 @@ async def build_plan(
     max_operations = max(1, int(getattr(cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3))
     timeout_seconds = max(30, int(getattr(cfg, "SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180) or 180))
     max_retries = max(1, int(getattr(cfg, "SELF_HEAL_PLAN_MAX_RETRIES", 3) or 3))
-    skip_full_scope_min = max(
-        1, int(getattr(cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6)
-    )
+    skip_full_scope_min = max(1, int(getattr(cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6))
     batch_size = max(1, int(getattr(cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
 
     async def generate(paths: list[str]) -> dict[str, Any]:
