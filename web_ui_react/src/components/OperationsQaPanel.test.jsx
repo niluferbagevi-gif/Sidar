@@ -85,8 +85,14 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
     await renderOperationsQaPanel();
 
     const landingButton = screen.getByRole("button", { name: "Landing üret" });
-    fireEvent.click(landingButton);
-    fireEvent.click(landingButton);
+    const landingForm = landingButton.closest("form");
+    expect(landingForm).not.toBeNull();
+    act(() => {
+      // Submit the form twice in the same React batch. The disabled-button state
+      // cannot protect this path yet, so the synchronous ref guard must do so.
+      fireEvent.submit(landingForm);
+      fireEvent.submit(landingForm);
+    });
 
     expect(apiMocks.generateLandingPage).toHaveBeenCalledTimes(1);
     for (const name of ["Landing üret", "Kopya üret", "Analiz et", "Batch çalıştır"]) {
