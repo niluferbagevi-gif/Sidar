@@ -81,10 +81,11 @@ turda uygulanmadı — bilinçli olarak backlog'a alındı.
   net artış `npm run typecheck:inventory` ratchet'iyle fail-closed engellenir; aşamalar ve
   baseline güncelleme sözleşmesi
   `docs/development/frontend-typescript-migration.md` içinde tutulur.
-- **`src/components/SwarmFlowPanel.jsx` (~435 satır):** 14 `useState`, 5
-  `fetchJson` çağrısı ve graph inşa mantığı tek dosyada; `GraphView`'e ~19 prop
-  geçiyor. Hedef adım: state + API orchestration'ı `useSwarmFlowController()`
-  hook'una çıkarmak, `GraphView` prop yüzeyini tek bir controller nesnesine indirmek.
+- **`src/components/SwarmFlowPanel.jsx` (435 → ~140 satır):** 14 `useState`, 5
+  `fetchJson` çağrısı, graph türetme ve operasyon callback'leri
+  `src/hooks/useSwarmFlowController.js` hook'una çıkarıldı; panel artık render/composition
+  sınırı olarak kaldı. Kalan adım: `GraphView`'e geçen ~19 prop'u görünüm-modeli ve action
+  nesneleriyle gruplamak; hook'un geniş dönüş yüzeyini domain alt-hook'larına ayırmak.
   Test kapısı: `src/components/SwarmFlowPanel.test.jsx`, `SwarmFlowPanel.helpers.test.jsx`.
 - **`src/lib/api.js` (~242 satır):** token yaşam döngüsü (bellek + localStorage +
   eski format migrasyonu + `sidar:token-change` custom event), genel `fetchJson`
