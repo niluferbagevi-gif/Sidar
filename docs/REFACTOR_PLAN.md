@@ -31,7 +31,7 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 
 | Dosya | Yaklaşık satır | Not |
 |---|---:|---|
-| `web_server.py` | 2747 | Auth/JWT `web/security.py`, rate-limit `web/middleware/ratelimit.py`, plugin policy `web/plugins/sandbox.py` ve route domainleri `web/routes/` altında ayrıldı; ana dosyada legacy monkeypatch/import wrapper azaltımı sürmeli. |
+| `web_server.py` | 2747 | Auth/JWT `web/security.py`, rate-limit `web/middleware/ratelimit.py`, plugin policy `web/plugins/sandbox.py` ve route domainleri `web/routes/` altında ayrıldı; plugin sandbox policy üretimde fail-closed kalır, ana dosyada legacy monkeypatch/import wrapper azaltımı sürmeli. |
 | `run_tests.sh` | 2211 | Quality gate orchestration büyüdü; summary JSON üretimi ayrıldı, benchmark/frontend/coverage stage helper'ları ayrı script modüllerine çıkarılmalı. |
 | `core/db/monolith.py` | 1846 | Eski `core/db.py` artık `core/db/` paketi; auth/audit/session/user/prompt/metrics/diagnostics/records/dialect/helpers modülleri ayrıldı ve `core/db/__init__.py` geriye dönük uyumlu facade oldu. `list_marketing_campaigns`/`list_content_assets`/`list_operation_checklists` read-only query gövdeleri `core/db/marketing.py` içine taşındı (facade metotları korundu); yazma yollu `upsert_marketing_campaign`/`add_content_asset`/`add_operation_checklist` ve coverage/access-policy API yüzeyi hâlâ `monolith.py` içinde yoğunlaşıyor. |
 | `config.py` | 1856 | Dotenv, logging, secret hardening, runtime path inference, rate-limit/Redis, event bus/Kafka, RAG store ve Docker sandbox loaderları ayrıldı; facade hâlâ çok sayıda class attribute compatibility yüzeyi taşıyor. |
