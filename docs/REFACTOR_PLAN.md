@@ -105,9 +105,10 @@ tespit edildi, gerçek koda karşı doğrulandı ve düşük riskli olmadıklar�
 turda uygulanmadı — bilinçli olarak backlog'a alındı.
 
 - **TypeScript kapısı "tiyatro" (uygulanmadı, netleştirildi):** `tsconfig.json`
-  içinde `checkJs: false`; ağaç neredeyse tamamen `.jsx`/`.js` (tek `.ts` dosyası:
-  `src/hooks/useThrottledStream.ts`), 0 `.tsx`. `npm run typecheck` bu yüzden
-  yalnızca o tek dosyayı ve TS tarafı modül çözümlemesini denetliyor;
+  içinde `checkJs: false`; ağaç neredeyse tamamen `.jsx`/`.js` (iki `.ts` dosyası:
+  `src/hooks/useThrottledStream.ts` ve `src/hooks/useFormState.ts`), 0 `.tsx`.
+  `npm run typecheck` bu yüzden yalnızca bu iki dosyayı ve TS tarafı modül
+  çözümlemesini denetliyor;
   `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
   `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
   ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.

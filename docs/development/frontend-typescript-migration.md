@@ -9,7 +9,9 @@
 - **Takvim kaydı:** `docs/reminders/frontend-typescript-review-2026-09-30.ics`
 
 Başlangıçta `web_ui_react/src` altında 16 `.js`, 42 `.jsx`, 1 `.ts` ve 0 `.tsx`
-dosyası vardır. `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
+dosyası vardı. İlk dilimde `src/hooks/useFormState.ts` de TypeScript'e taşındı;
+2026-07-31 ratchet envanteri 16 `.js`, 42 `.jsx`, 2 `.ts` ve 0 `.tsx` gösterir.
+`checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
 yürütülür.
@@ -17,7 +19,7 @@ yürütülür.
 ## Zorunlu ratchet
 
 `typescript-migration-baseline.json`, en fazla 58 untyped (`.js` + `.jsx`) ve en az
-1 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+2 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

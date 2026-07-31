@@ -168,6 +168,34 @@ Playwright Chromium cache veya `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` ve `.benchm
 baseline dosyası tek raporda listelenir. Eksik varsa rapor önerilen aksiyonu basar;
 örneğin baseline yoksa `make benchmark-seed && make production-readiness` önerilir.
 
+### Doctor ve test sayıları nasıl yorumlanır?
+
+Doctor sonucu depo sağlığı ile çalıştırılan makinenin hazır olma durumunu ayırır.
+Bir kontrolün kırmızı olması doğrudan ürün kodunda regresyon bulunduğu anlamına
+gelmez; fakat o makinede production-readiness kapısının **henüz kanıtlanmadığı**
+anlamına gelir. Bu nedenle eksik sistem paketi, dev aracı, Chromium veya benchmark
+baseline'ı bulunan bir çıktıyı yalnız geçmiş bir CI koşusuna dayanarak “genel durum
+sağlıklı” diye yeşil sınıflandırmayın. Önce doctor aksiyonlarını tamamlayın, ardından
+`make production-readiness` sonucunu esas alın.
+
+Test adedi (`4364`, `507` gibi), coverage yüzdesi, Bandit bulgu sayısı ve GPU/
+benchmark sonucu kalıcı proje sabitleri değildir. Bunlar yalnız komut, commit SHA,
+profil ve çalışma zamanı ile birlikte anlamlı olan **koşu kanıtlarıdır**. Güncel durum
+raporunda en az aşağıdakileri kaydedin:
+
+- `git rev-parse HEAD` ve koşu zamanı;
+- çalıştırılan tam komut ile `TEST_PROFILE`/GPU/benchmark bayrakları;
+- `artifacts/test-summary.json`, JUnit ve coverage artifact yolları;
+- doctor başarısızlıkları ve uygulanmamış aksiyonlar;
+- frontend için `npm run typecheck:inventory` çıktısı ve
+  `FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high` sonucu.
+
+Bu kanıtlar yoksa geçmiş test sayıları “son bilinen örnek” olarak etiketlenmeli;
+mevcut dalın doğrulanmış sonucu veya kabul kriteri gibi sunulmamalıdır. TypeScript
+envanterinin görece kapsamı ve npm audit geçici istisnası sırasıyla
+`development/frontend-typescript-migration.md` ve
+`development/frontend-eslint-10-migration.md` belgelerinde izlenir.
+
 `make production-readiness` hedefi bilinçli olarak şu kanonik komutu çalıştırır:
 
 ```bash
