@@ -1261,6 +1261,11 @@ def check_rag_readiness() -> DoctorCheck:
         auto_fix_value = details.get("auto_fix")
         if isinstance(auto_fix_value, list) and auto_fix_value:
             details["auto_fix"] = auto_fix_value[0]
+        # Preserve the split-check contract on the backward-compatible aggregate:
+        # an empty, otherwise unblocked index means "not seeded yet", not a
+        # production defect. Consumers that still call check_rag_readiness() can
+        # therefore distinguish this advisory warning from a blocked backend.
+        details["advisory_only"] = True
         if not details.get("index_exists", False):
             message = "RAG index file is missing; no indexed documents yet; entity memory is empty"
         else:

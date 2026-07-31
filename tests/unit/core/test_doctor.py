@@ -833,6 +833,7 @@ def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_pa
     assert check.status == "warn"
     assert check.details["document_count"] == 0
     assert check.details["index_exists"] is False
+    assert check.details["advisory_only"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag"
     assert "index file is missing" in check.message
     assert "entity memory is empty" in check.message
@@ -851,6 +852,7 @@ def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
 
     assert check.status == "warn"
     assert check.details["index_exists"] is True
+    assert check.details["advisory_only"] is True
     assert "no indexed documents" in check.message
     assert "index file is missing" not in check.message
 
@@ -874,6 +876,7 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     assert "blocked until database_env is fixed" in check.message
     assert check.details["database_env_status"] == "fail"
     assert check.details["blocked_by"] == "database_env"
+    assert "advisory_only" not in check.details
     assert (
         check.details["auto_fix"]
         == "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
