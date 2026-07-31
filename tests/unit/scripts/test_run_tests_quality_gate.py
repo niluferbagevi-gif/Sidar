@@ -2337,9 +2337,9 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     )
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
 
-    gpu_job = ci[ci.index("  gpu-inference-quality-gate:") : ci.index(
-        "  gpu-inference-policy-gate:"
-    )]
+    gpu_job = ci[
+        ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
+    ]
     assert "runs-on: [self-hosted, linux, gpu]" in gpu_job
     assert "timeout-minutes: 45" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
