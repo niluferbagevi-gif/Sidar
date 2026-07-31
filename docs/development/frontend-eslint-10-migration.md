@@ -13,7 +13,9 @@ aralığı bu backport'u tanımadığı sürece `scripts/npm_audit_safe.js`, yal
 koşulların tümü sağlanırsa bu tek advisory zincirini geçici olarak kabul eder:
 
 1. Advisory kaynak kimliği tam olarak `1124334` olmalıdır.
-2. Lockfile içindeki bütün `brace-expansion` örnekleri tam olarak `1.1.17` olmalıdır.
+2. `package.json` içindeki `overrides.brace-expansion` kalıcı pini ve lockfile içindeki
+   bütün `brace-expansion` örnekleri tam olarak `1.1.17` olmalıdır. Böylece yalnız mevcut
+   kurulum değil, sonraki temiz `npm ci` ve lockfile yenilemeleri de doğrulanır.
 3. Bütün raporlanan paketler yalnızca bu advisory zincirine ulaşmalıdır.
 4. İlişkisiz herhangi bir `high` veya `critical` bulgu kalite kapısını kapatmalıdır.
 

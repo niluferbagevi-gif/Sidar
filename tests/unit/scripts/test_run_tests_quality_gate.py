@@ -5134,6 +5134,10 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         ),
         encoding="utf-8",
     )
+    manifest_path = tmp_path / "package.json"
+    manifest_path.write_text(
+        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+    )
     vulnerabilities = {
         "brace-expansion": {
             "severity": "high",
@@ -5188,6 +5192,20 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert exception["days_remaining"] > 0
     assert exception["maintenance_plan"] == ("docs/development/frontend-eslint-10-migration.md")
 
+    manifest_path.write_text(json.dumps({"overrides": {}}), encoding="utf-8")
+    missing_durable_pin = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        }
+    )
+    assert missing_durable_pin.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in missing_durable_pin.stderr
+    assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
+    manifest_path.write_text(
+        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+    )
+
     expired = run_audit(
         {
             "vulnerabilities": vulnerabilities,
@@ -5223,6 +5241,7 @@ def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
     plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
 
     assert "yedi bağımsız güvenlik açığı değildir" in plan
+    assert "`overrides.brace-expansion` kalıcı pini" in plan
     assert "eslint-plugin-react@7.37.5" in plan
     assert "eslint-plugin-jsx-a11y@6.10.2" in plan
     assert "**İlk yeniden değerlendirme:** 2026-09-30" in plan

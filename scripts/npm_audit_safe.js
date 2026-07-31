@@ -91,10 +91,19 @@ function usesVerifiedBraceExpansionBackport(payload) {
     return false;
   }
 
+  let manifest;
   let lock;
   try {
+    manifest = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8"));
     lock = JSON.parse(readFileSync(resolve(process.cwd(), "package-lock.json"), "utf8"));
   } catch {
+    return false;
+  }
+  // The lockfile proves what is installed now; the manifest override ensures the
+  // verified backport survives the next clean `npm ci`/lockfile regeneration.
+  // Require both so a stale local lockfile cannot keep the exception alive after
+  // the durable security pin is accidentally removed.
+  if (manifest.overrides?.["brace-expansion"] !== PATCHED_BRACE_EXPANSION_BACKPORT) {
     return false;
   }
   const installedBraceExpansionVersions = Object.entries(lock.packages || {})
