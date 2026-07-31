@@ -5362,6 +5362,48 @@ def test_frontend_typescript_inventory_ratchet_fails_closed(tmp_path: Path) -> N
     assert "typed source count decreased: 0 < 1" in decreased.stderr
 
 
+def test_frontend_typescript_inventory_enforces_dated_milestones(tmp_path: Path) -> None:
+    """Dated migration targets must become fail-closed without a manual baseline edit."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "legacy.jsx").write_text("export default null;\n", encoding="utf-8")
+    (source / "typed.ts").write_text("export const value: number = 1;\n", encoding="utf-8")
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(
+            {
+                "maximum_untyped_files": 1,
+                "minimum_typed_files": 1,
+                "milestones": [
+                    {
+                        "deadline": "2026-09-30",
+                        "maximum_untyped_files": 0,
+                        "minimum_typed_files": 2,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    before = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}", "--date=2026-09-29"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    after = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}", "--date=2026-09-30"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert before.returncode == 0
+    assert after.returncode == 1
+    assert "2026-09-30 milestone missed: untyped=1 > 0" in after.stderr
+    assert "2026-09-30 milestone missed: typed=1 < 2" in after.stderr
+
+
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
     """Lint, typecheck, coverage, build and E2E must retain separate results."""
     frontend_gate_block = _script()[

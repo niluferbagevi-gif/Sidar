@@ -1,0 +1,27 @@
+name: GPU Runner Capacity Watchdog
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-redundant-capacity:
+    name: Verify two online GPU runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check primary and warm-standby capacity
+        env:
+          GPU_RUNNER_MONITOR_TOKEN: ${{ secrets.GPU_RUNNER_MONITOR_TOKEN }}
+        run: |
+          python scripts/ci/check_gpu_runner_capacity.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --minimum-online 2

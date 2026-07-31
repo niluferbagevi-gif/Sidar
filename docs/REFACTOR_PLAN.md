@@ -101,10 +101,11 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 
 Backend/installer tablolarındaki ilkeler (davranış koruma, küçük PR, test-first
 güvence) burada da geçerlidir. Aşağıdaki maddeler bir arkadaş kod incelemesinde
-tespit edildi, gerçek koda karşı doğrulandı ve düşük riskli olmadıkları için bu
-turda uygulanmadı — bilinçli olarak backlog'a alındı.
+tespit edildi ve gerçek koda karşı doğrulandı. TypeScript envanter maddesi artık
+tarihli fail-closed kilometre taşlarıyla aktif kampanyadır; kalan geniş bileşen
+taşımaları küçük domain PR'ları için backlog'da tutulur.
 
-- **TypeScript kapısı "tiyatro" (uygulanmadı, netleştirildi):** `tsconfig.json`
+- **TypeScript kademeli kapısı (aktif):** `tsconfig.json`
   içinde `checkJs: false`; ağaç hâlâ ağırlıklı olarak `.jsx`/`.js`, ancak üç `.ts`
   dosyası (`src/hooks/useThrottledStream.ts`, `src/hooks/useFormState.ts` ve
   `src/lib/swarmFlowGraph.ts`) strict kapıya alınmış durumda; 0 `.tsx` var.
@@ -113,12 +114,11 @@ turda uygulanmadı — bilinçli olarak backlog'a alındı.
   `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
   `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
   ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
-  Bu PR'da `tsconfig.json` ve `run_tests.sh` içine kapının gerçek kapsamını
-  belirten yorum/log satırı eklendi (bkz. ilgili commit); kademeli `.jsx` →
-  `.tsx` taşıması için sahip **Frontend bakım ekibi**, ilk değerlendirme
-  **2026-09-30**, hedef tamamlanma **2027-03-31** olarak atandı. JS/JSX toplamındaki
-  net artış `npm run typecheck:inventory` ratchet'iyle fail-closed engellenir; aşamalar ve
-  baseline güncelleme sözleşmesi
+  Kademeli `.jsx` → `.tsx` taşıması için sahip **Frontend bakım ekibi**, ilk değerlendirme
+  **2026-09-30**, hedef tamamlanma **2027-03-31** olarak atanmıştır. JS/JSX toplamındaki
+  net artış anlık ratchet ile engellenir; ayrıca 2026-09-30'dan başlayarak 45/15,
+  30/30, 12/48 ve 0/60 untyped/typed ara hedefleri tarih geldiğinde
+  `npm run typecheck:inventory` tarafından fail-closed uygulanır. Aşamalar ve baseline sözleşmesi
   `docs/development/frontend-typescript-migration.md` içinde tutulur.
 - **`src/components/SwarmFlowPanel.jsx` (435 → ~140 satır):** 14 `useState`, 5
   `fetchJson` çağrısı, graph türetme ve operasyon callback'leri
@@ -168,11 +168,11 @@ korundu, `OperationsQaPanel.test.jsx` + yeni `useFormState.test.js` ile doğrula
 
 Bir arkadaş kod incelemesinde `.github/workflows/` ve `run_tests.sh` için altı
 bulgu tespit edildi; her biri gerçek workflow/script içeriğine karşı doğrulandı.
-İkisi zaten çözülmüş/yanlış, biri kasıtlı bir politika kararı (kod değişikliği
-değil, sahip onayı gerektirir), ikisi önerilen haliyle uygulanırsa regresyona yol
+İkisi zaten çözülmüş/yanlış, biri kasıtlı bir politika kararı (kapı gevşetilmedi;
+runner sürekliliği ayrıca sertleştirildi), ikisi önerilen haliyle uygulanırsa regresyona yol
 açar, biri zaten ayrı bir bölümde takip ediliyor:
 
-- **`gpu-inference-policy-gate` her fork/GPU runner'sız ortamda `production-readiness`'i bloke ediyor (doğrulandı, KASITLI TASARIM — kod değişikliği yapılmadı):**
+- **`gpu-inference-policy-gate` her fork/GPU runner'sız ortamda `production-readiness`'i bloke ediyor (doğrulandı, KASITLI TASARIM — süreklilik planı eklendi):**
   `docs/CI_REQUIRED_CHECKS.md` bunu açıkça belgeliyor: *"Forks without an eligible
   runner must provision one before claiming merge/release readiness; there is no
   silent checklist-only bypass."* Bu, sessizce atlanabilen bir kalite kapısını
@@ -181,8 +181,9 @@ açar, biri zaten ayrı bir bölümde takip ediliyor:
   self-hosted GPU runner'ı fiilen yapılandırılı değilse, bu politika **hiçbir
   PR'ın** (bu PR dahil) "Production readiness aggregate" required check'ini
   geçemeyeceği anlamına gelir. Bu, yalnızca repo sahibinin bilebileceği bir
-  operasyonel durum ve kasıtlı bir güvenlik/kalite politikasını gevşetmek
-  tek taraflı alınacak bir karar değil; kullanıcıya soruldu.
+  operasyonel durumdur; kapı gevşetilmedi. Bunun yerine primary + warm-standby
+  runner sözleşmesi, saatlik iki-online-runner watchdog'u, 30 dakikalık RTO ve üç aylık
+  failover tatbikatı `docs/runbooks/gpu-runner-continuity.md` ile devreye alındı.
 - **Tek "test" job'unda shellcheck+BATS+npm+bandit+pip-audit+production-readiness sırayla (doğrulandı, uygulanmadı):**
   Gerçek — `test` job'u (ci.yml:130-524) hepsini tek runner'da sırayla çalıştırıyor.
   Ancak iş parçacığı zaten `run_tests.sh` satırındaki üstteki tabloda takip

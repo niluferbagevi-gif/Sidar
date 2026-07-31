@@ -13,6 +13,8 @@ jobs:
   gpu-performance-benchmarks:
     name: GPU Benchmark Suite (nightly)
     runs-on: [self-hosted, linux, gpu]
+    # Ortak labels primary arızasında warm-standby'a otomatik yönlendirme sağlar.
+    # Üç aylık failover tatbikatı: docs/runbooks/gpu-runner-continuity.md
     timeout-minutes: 90
 
     env:

@@ -28,7 +28,17 @@ function parseRoot(argv) {
   return resolve(rootArgument ? rootArgument.slice("--root=".length) : process.cwd());
 }
 
+function parseEvaluationDate(argv) {
+  const dateArgument = argv.find((argument) => argument.startsWith("--date="));
+  const value = dateArgument ? dateArgument.slice("--date=".length) : new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`Invalid --date value: ${value}`);
+  }
+  return value;
+}
+
 const root = parseRoot(process.argv.slice(2));
+const evaluationDate = parseEvaluationDate(process.argv.slice(2));
 const sourceDir = resolve(root, "src");
 const baselinePath = resolve(root, "typescript-migration-baseline.json");
 if (!existsSync(sourceDir) || !existsSync(baselinePath)) {
@@ -50,6 +60,7 @@ const counts = countSourceExtensions(sourceDir);
 const untyped = counts.js + counts.jsx;
 const typed = counts.ts + counts.tsx;
 const failures = [];
+const milestones = Array.isArray(baseline.milestones) ? baseline.milestones : [];
 
 if (untyped > baseline.maximum_untyped_files) {
   failures.push(
@@ -59,9 +70,32 @@ if (untyped > baseline.maximum_untyped_files) {
 if (typed < baseline.minimum_typed_files) {
   failures.push(`typed source count decreased: ${typed} < ${baseline.minimum_typed_files}`);
 }
+for (const milestone of milestones) {
+  if (
+    typeof milestone.deadline !== "string" ||
+    !Number.isInteger(milestone.maximum_untyped_files) ||
+    !Number.isInteger(milestone.minimum_typed_files)
+  ) {
+    console.error(`TypeScript migration milestone is invalid: ${JSON.stringify(milestone)}`);
+    process.exit(2);
+  }
+  if (evaluationDate < milestone.deadline) {
+    continue;
+  }
+  if (untyped > milestone.maximum_untyped_files) {
+    failures.push(
+      `${milestone.deadline} milestone missed: untyped=${untyped} > ${milestone.maximum_untyped_files}`,
+    );
+  }
+  if (typed < milestone.minimum_typed_files) {
+    failures.push(
+      `${milestone.deadline} milestone missed: typed=${typed} < ${milestone.minimum_typed_files}`,
+    );
+  }
+}
 
 console.log(
-  `Frontend TypeScript migration inventory: js=${counts.js}, jsx=${counts.jsx}, ts=${counts.ts}, tsx=${counts.tsx}; untyped=${untyped}, typed=${typed}`,
+  `Frontend TypeScript migration inventory (${evaluationDate}): js=${counts.js}, jsx=${counts.jsx}, ts=${counts.ts}, tsx=${counts.tsx}; untyped=${untyped}, typed=${typed}`,
 );
 if (failures.length > 0) {
   for (const failure of failures) {

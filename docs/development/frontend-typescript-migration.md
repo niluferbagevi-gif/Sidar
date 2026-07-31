@@ -41,6 +41,20 @@ değişiklikler kampanya sahibinin açık onayını gerektirir.
 
 ## Aşamalar ve kapılar
 
+Tarihlerin yalnız dokümantasyon niyeti olarak kalmaması için baseline içindeki milestone
+değerleri `npm run typecheck:inventory` tarafından tarih geldiğinde fail-closed uygulanır:
+
+| Son tarih | En fazla untyped | En az typed | Teslim odağı |
+|---|---:|---:|---|
+| 2026-09-30 | 45 | 15 | Düşük bağımlılıklı hook/helper ve ortak API tipleri |
+| 2026-12-15 | 30 | 30 | `src/lib`, veri/state ve controller katmanı |
+| 2027-02-15 | 12 | 48 | Leaf React bileşenleri ve prop/event/ref tipleri |
+| 2027-03-31 | 0 | 60 | Tam `.ts/.tsx` kaynak ağacı ve compatibility kapısının kaldırılması |
+
+Milestone zamanı geldiğinde baseline'daki genel ratchet daha gevşek kalsa bile tarihli hedef
+önceliklidir. Gecikme, baseline veya tarihi ileri taşıyarak gizlenemez; sahip onayı, gerekçe ve
+yeni expiry tarihi içeren ayrı bir istisna kaydı gerekir.
+
 1. **2026-09-30 — altyapı ve düşük bağımlılıklı hook'lar:** ortak API tipleri ile saf
    hook/helper dosyalarını taşı; `npm run typecheck`, lint ve ilgili Vitest testlerini çalıştır.
 2. **2026-12-15 — veri ve orchestration katmanı:** `src/lib` ve state/controller hook'larını

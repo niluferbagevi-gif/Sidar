@@ -32,6 +32,13 @@ no longer become green without TTFT/latency evidence. Forks without an eligible
 runner must provision one before claiming merge/release readiness; there is no
 silent checklist-only bypass.
 
+Bu donanım kapısı tek-host bağımlılığı olarak işletilmez. Primary ve farklı arıza alanındaki
+warm-standby runner aynı `[self-hosted, linux, gpu]` etiketlerini taşır; saatlik
+`GPU Runner Capacity Watchdog` en az iki online runner arar. Watchdog için repository runner
+metadata okuma yetkili `GPU_RUNNER_MONITOR_TOKEN` secret'ı gerekir. Failover, RTO ve üç aylık
+tatbikat adımları [`docs/runbooks/gpu-runner-continuity.md`](runbooks/gpu-runner-continuity.md)
+içinde tanımlıdır. Watchdog erken uyarıdır; required GPU benchmark kanıtının yerine geçmez.
+
 Repository administrators should periodically verify that the required check
 names above are selected for protected `main`/`master` branches. This repository
 now includes a scheduled/manual audit workflow (`Branch protection audit`) that

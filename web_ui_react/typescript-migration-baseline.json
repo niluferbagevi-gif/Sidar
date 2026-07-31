@@ -2,5 +2,11 @@
   "captured_at": "2026-07-31",
   "owner": "Frontend bakım ekibi",
   "maximum_untyped_files": 54,
-  "minimum_typed_files": 6
+  "minimum_typed_files": 6,
+  "milestones": [
+    {"deadline": "2026-09-30", "maximum_untyped_files": 45, "minimum_typed_files": 15},
+    {"deadline": "2026-12-15", "maximum_untyped_files": 30, "minimum_typed_files": 30},
+    {"deadline": "2027-02-15", "maximum_untyped_files": 12, "minimum_typed_files": 48},
+    {"deadline": "2027-03-31", "maximum_untyped_files": 0, "minimum_typed_files": 60}
+  ]
 }

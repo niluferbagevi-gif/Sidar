@@ -872,6 +872,8 @@ jobs:
     name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
     runs-on: [self-hosted, linux, gpu]
+    # Primary ve warm-standby aynı etiketleri taşır; GitHub uygun online hostu seçer.
+    # Kapasite/RTO sözleşmesi: docs/runbooks/gpu-runner-continuity.md
     # Bounds execution after a runner accepts the job. GitHub does not apply
     # timeout-minutes while a self-hosted job is still queued/offline; the
     # operator runbook documents that separate availability failure mode.
@@ -935,7 +937,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${GPU_GATE_ENABLED}" != "true" ]]; then
-            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Configure a [self-hosted, linux, gpu] runner; production readiness must not pass without TTFT/latency evidence."
+            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Keep primary + warm-standby [self-hosted, linux, gpu] runners online (docs/runbooks/gpu-runner-continuity.md); production readiness must not pass without TTFT/latency evidence."
             exit 1
           fi
           if [[ "${GPU_GATE_RESULT}" != "success" ]]; then
