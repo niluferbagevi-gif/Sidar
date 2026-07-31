@@ -453,6 +453,64 @@ def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monk
     assert check.details["container_database_url_source_unattributed"] is False
 
 
+def test_database_env_rejects_unattributed_asyncpg_ssl_query_with_shell_fix(monkeypatch):
+    """Expose the effective fix when an old exported URL contains ssl=disable."""
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar?ssl=disable",
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "unsupported ssl query parameter" in check.message
+    assert "inherited from the parent process/shell environment" in check.message
+    assert check.details["recommended_commands"][0] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert "parent shell/process" in check.details["remediation_steps"][0]
+
+
+def test_database_connectivity_adds_parent_shell_fix_for_unattributed_ssl_url(monkeypatch):
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar?ssl=disable",
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    async def _raise_ssl_error(*_args, **_kwargs):
+        raise RuntimeError('parameter "ssl" cannot be changed now')
+
+    monkeypatch.setattr(doctor, "_probe_postgres_connectivity", _raise_ssl_error)
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert check.details["failure_category"] == "invalid_ssl_query_param"
+    assert check.details["database_url_source_unattributed"] is True
+    assert check.details["parent_environment_remediation"] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert check.details["recommended_commands"][0] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert "dotenv repair command cannot change it" in check.message
+
+
 @pytest.mark.parametrize(
     ("env_name", "host", "detail_key"),
     (

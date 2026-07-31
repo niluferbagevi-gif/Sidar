@@ -480,6 +480,19 @@ def _validate_postgres_env_sync(
     if not _is_postgres_url(parsed):
         return failures, warnings
 
+    # ``parse_qsl`` is deliberately avoided here: Doctor only needs the key and
+    # malformed percent escapes in a DSN must not make the readiness report crash.
+    query_keys = {
+        item.partition("=")[0].strip().lower()
+        for item in str(getattr(parsed, "query", "") or "").split("&")
+        if item.partition("=")[0].strip()
+    }
+    if "ssl" in query_keys:
+        failures.append(
+            f"{label} contains unsupported ssl query parameter; remove it instead of using "
+            "libpq-style ssl=disable/allow/prefer/require with asyncpg"
+        )
+
     url_user = unquote(str(getattr(parsed, "username", "") or ""))
     url_password = unquote(str(getattr(parsed, "password", "") or ""))
     url_db = _database_name(parsed)
@@ -602,13 +615,17 @@ def check_database_env() -> DoctorCheck:
             continue
         if not any(msg.startswith(f"{key} ") for msg in (*failures, *warnings)):
             continue
-        warnings.append(
+        source_diagnostic = (
             f"{key} is set but not defined in Sidar's dotenv chain (.env, .env.advanced, "
             ".env.<SIDAR_ENV>, DOTENV_FILE, SIDAR_KEYS_FILE); it is inherited from the parent "
             "process/shell environment (or a Docker Compose environment:/env_file injection), "
             "so scripts.sync_database_passwords cannot edit it. Unset it in the parent shell or "
             "Docker Compose config, or restart the launcher, before rechecking."
         )
+        # Keep source attribution visible in the top-level message even when the
+        # underlying URL defect is a failure (Doctor otherwise renders failures
+        # instead of warnings).
+        (failures if failures else warnings).append(source_diagnostic)
 
     if (explicit_database_url or explicit_container_url) and failures:
         warnings.append(
@@ -638,6 +655,11 @@ def check_database_env() -> DoctorCheck:
         ]
         if database_config_missing
         else [
+            *(
+                ["unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"]
+                if database_url_unattributed or container_url_unattributed
+                else []
+            ),
             sync_command,
             "uv run python -m scripts.sync_database_passwords",
             "uv run python -m core.doctor artifacts/install/doctor.json",
@@ -680,6 +702,17 @@ def check_database_env() -> DoctorCheck:
                 "POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
             ],
             "remediation_steps": [
+                *(
+                    [
+                        "DATABASE_URL veya SIDAR_CONTAINER_DATABASE_URL parent shell/process "
+                        "ortamından geliyorsa önce `unset DATABASE_URL "
+                        "SIDAR_CONTAINER_DATABASE_URL` çalıştırın; bir alt süreç parent shell "
+                        "değişkenlerini silemeyeceği için dosya tabanlı auto-fix tek başına bu "
+                        "override'ı düzeltemez. Ardından Doctor'ı aynı shell'de yeniden çalıştırın."
+                    ]
+                    if database_url_unattributed or container_url_unattributed
+                    else []
+                ),
                 "Kalıcı çözüm için uv run python -m scripts.sync_database_passwords "
                 "--remove-explicit-urls ile dotenv zincirindeki açık DATABASE_URL ve "
                 "SIDAR_CONTAINER_DATABASE_URL tanımlarını kaldırıp Sidar'ın POSTGRES_* "
@@ -753,6 +786,13 @@ def check_database_connectivity() -> DoctorCheck:
             "uv run python -m core.doctor artifacts/install/doctor.json",
         ],
     }
+    source_report = _dotenv_source_report(("DATABASE_URL",))
+    database_url_source = (source_report.get("sources", {}).get("DATABASE_URL") or {}).get(
+        "path", ""
+    )
+    database_url_unattributed = bool(explicit_database_url) and not database_url_source
+    details["database_url_source"] = database_url_source
+    details["database_url_source_unattributed"] = database_url_unattributed
     if not database_url:
         return DoctorCheck(
             "database_connectivity",
@@ -797,6 +837,23 @@ def check_database_connectivity() -> DoctorCheck:
         details["error_type"] = type(exc).__name__
         message, guidance = _postgres_connectivity_failure_guidance(exc)
         details.update(guidance)
+        if database_url_unattributed and guidance.get("failure_category") == (
+            "invalid_ssl_query_param"
+        ):
+            unset_command = "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+            message += (
+                " The effective DATABASE_URL is inherited from the parent process/shell; the "
+                "dotenv repair command cannot change it. Unset it there and rerun Doctor."
+            )
+            details["parent_environment_remediation"] = unset_command
+            details.setdefault("remediation_steps", []).insert(
+                0,
+                "Run `unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL` in the parent shell, "
+                "then rerun Doctor from that same shell.",
+            )
+            recommended = details.setdefault("recommended_commands", [])
+            if unset_command not in recommended:
+                recommended.insert(0, unset_command)
         return DoctorCheck("database_connectivity", "warn", message, details)
 
     if os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() == "pgvector" and not details.get(
