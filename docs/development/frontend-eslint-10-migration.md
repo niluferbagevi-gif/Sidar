@@ -44,6 +44,10 @@ dependency metadata'sı değiştiğinde (hangisi önce olursa).
 Bu tarih yalnız takvim hatırlatıcısı değildir. `scripts/npm_audit_safe.js`, UTC olarak
 2026-09-30 başladığında geçici allowlist'i otomatik olarak geçersiz sayar ve aynı
 advisory zinciri devam ediyorsa `expired_exception` kategorisiyle fail-closed durur.
+İstisna kabul edildiği her koşuda terminal çıktısı son tarihi ve kalan gün sayısını
+gösterir; ayrıca `artifacts/frontend-security/npm-audit-exception.json` makine-okunur
+takip artefaktını üretir. CI bakım planlaması terminal metnini ayrıştırmak yerine bu
+artefaktın `exception_review_at` ve `days_remaining` alanlarını kullanabilir.
 İstisnanın süresini ileri taşımak yerine aşağıdaki yeniden değerlendirme tamamlanmalı;
 devam kararı gerekiyorsa güncel registry/upstream kanıtı ve yeni, sonlu bir tarih ayrı
 bir bakım değişikliğinde kaydedilmelidir.

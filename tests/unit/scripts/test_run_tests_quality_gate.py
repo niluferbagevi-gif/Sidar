@@ -5177,6 +5177,18 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert patched.returncode == 0, patched.stderr
     assert "1.1.17 güvenlik backport'unu" in patched.stderr
     assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
+    assert "2026-09-30T00:00:00Z" in patched.stderr
+    assert "Bu tarihte kapı fail-closed kapanır" in patched.stderr
+    exception = json.loads(
+        (tmp_path / "artifacts/npm-audit-exception.json").read_text(encoding="utf-8")
+    )
+    assert exception["advisory"] == "GHSA-mh99-v99m-4gvg"
+    assert exception["backport_version"] == "1.1.17"
+    assert exception["exception_review_at"] == "2026-09-30T00:00:00Z"
+    assert exception["days_remaining"] > 0
+    assert exception["maintenance_plan"] == (
+        "docs/development/frontend-eslint-10-migration.md"
+    )
 
     expired = run_audit(
         {
@@ -5192,6 +5204,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     )
     assert failure["failure_category"] == "expired_exception"
     assert failure["exception_review_at"] == "2026-09-30T00:00:00Z"
+    assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
 
     vulnerabilities["unrelated-package"] = {
         "severity": "critical",

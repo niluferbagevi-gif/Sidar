@@ -25,12 +25,20 @@ const PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN =
   "docs/development/frontend-eslint-10-migration.md";
 const PATCHED_BRACE_EXPANSION_REVIEW_AT = "2026-09-30T00:00:00Z";
 
-function patchedAdvisoryReviewIsDue() {
+function effectiveAuditNow() {
   const forcedNow = Date.parse(process.env.FRONTEND_NPM_AUDIT_TEST_NOW || "");
   // The test clock can only move the effective time forward, so it cannot be
   // abused to extend an expired security exception in CI.
-  const effectiveNow = Number.isNaN(forcedNow) ? Date.now() : Math.max(Date.now(), forcedNow);
-  return effectiveNow >= Date.parse(PATCHED_BRACE_EXPANSION_REVIEW_AT);
+  return Number.isNaN(forcedNow) ? Date.now() : Math.max(Date.now(), forcedNow);
+}
+
+function patchedAdvisoryReviewIsDue() {
+  return effectiveAuditNow() >= Date.parse(PATCHED_BRACE_EXPANSION_REVIEW_AT);
+}
+
+function patchedAdvisoryReviewDaysRemaining() {
+  const reviewAt = Date.parse(PATCHED_BRACE_EXPANSION_REVIEW_AT);
+  return Math.max(0, Math.ceil((reviewAt - effectiveAuditNow()) / (24 * 60 * 60 * 1000)));
 }
 
 function severityMeetsThreshold(severity, threshold) {
@@ -200,6 +208,7 @@ const artifactDir = resolve(process.cwd(), options.artifactDir);
 const rawReportPath = resolve(artifactDir, "npm-audit-report.raw.json");
 const stderrLogPath = resolve(artifactDir, "npm-audit-stderr.log");
 const failureArtifactPath = resolve(artifactDir, "npm-audit-failure.json");
+const exceptionArtifactPath = resolve(artifactDir, "npm-audit-exception.json");
 mkdirSync(artifactDir, { recursive: true });
 
 for (let attempt = 1; attempt <= options.retries; attempt += 1) {
@@ -218,16 +227,38 @@ for (let attempt = 1; attempt <= options.retries; attempt += 1) {
   const category = classifyAuditFailure(stdout, stderr, options.level);
   if (category === "patched_advisory") {
     rmSync(failureArtifactPath, { force: true });
+    writeFileSync(
+      exceptionArtifactPath,
+      `${JSON.stringify(
+        {
+          advisory: "GHSA-mh99-v99m-4gvg",
+          backport_version: PATCHED_BRACE_EXPANSION_BACKPORT,
+          exception_review_at: PATCHED_BRACE_EXPANSION_REVIEW_AT,
+          days_remaining: patchedAdvisoryReviewDaysRemaining(),
+          maintenance_plan: PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
     console.warn(
       `⚠️ npm advisory veritabanı ${PATCHED_BRACE_EXPANSION_BACKPORT} güvenlik backport'unu henüz tanımıyor; doğrulanmış GHSA-mh99-v99m-4gvg düzeltmesi kabul edildi.`,
     );
     console.warn(
       `    Geçici istisna ve kalıcı geçiş planı: ${PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN}`,
     );
+    console.warn(
+      `    Zorunlu yeniden değerlendirme: ${PATCHED_BRACE_EXPANSION_REVIEW_AT} (kalan süre: ${patchedAdvisoryReviewDaysRemaining()} gün). Bu tarihte kapı fail-closed kapanır.`,
+    );
+    console.warn(`    İzleme artefaktı: ${exceptionArtifactPath}`);
     process.stdout.write(stdout);
     process.stderr.write(stderr);
     process.exit(0);
   }
+  // Never leave a previously accepted exception artifact behind after the
+  // advisory expires, disappears, or is joined by an unrelated finding.
+  rmSync(exceptionArtifactPath, { force: true });
   if (result.status === 0 && category !== "vulnerability") {
     rmSync(failureArtifactPath, { force: true });
     process.stdout.write(stdout);
