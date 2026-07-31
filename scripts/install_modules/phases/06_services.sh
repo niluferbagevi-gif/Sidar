@@ -971,6 +971,10 @@ PY
         fi
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
+        # Geliştirici modu da tam Docker ve smoke akışlarıyla aynı başlangıç
+        # bilgi tabanına sahip olmalı. Yardımcı, migrasyon tamamlanmadıysa veya
+        # AUTO_SEED_RAG_METADATA=false ise güvenli biçimde no-op olur.
+        seed_rag_metadata_after_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
         # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
         # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.

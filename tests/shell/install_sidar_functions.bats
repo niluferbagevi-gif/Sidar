@@ -2185,6 +2185,7 @@ EOF
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
     ensure_postgres_databases_exist() { events+=(ensure_postgres_databases_exist); }
     run_migrations() { events+=(run_migrations); }
+    seed_rag_metadata_after_migrations() { events+=(seed_rag_metadata_after_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
@@ -2194,7 +2195,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2265,16 +2266,17 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "finish summary presents empty RAG state as an optional next step" {
+@test "finish summary links RAG onboarding and explains automatic metadata seed" {
   run_installer_function '
     print_optional_rag_next_step
   '
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"İsteğe bağlı RAG bilgi tabanını hazırla"* ]]
+  [[ "$output" == *"RAG/GraphRAG hazır oluşunu doğrula"* ]]
+  [[ "$output" == *"metadata seed varsayılan olarak migrasyondan sonra uygulanır"* ]]
   [[ "$output" == *"uv run python -m scripts.seed_rag"* ]]
-  [[ "$output" == *"boş RAG index/entity memory kurulumu veya release kapısını engellemez"* ]]
   [[ "$output" == *"uv run python -m core.doctor artifacts/install/doctor.json"* ]]
+  [[ "$output" == *"docs/RAG_ONBOARDING.md"* ]]
 }
 
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {

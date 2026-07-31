@@ -242,11 +242,11 @@ sidar_summary_materialize_real_keys_to_env_enabled() {
 }
 
 print_optional_rag_next_step() {
-    echo -e "  7️⃣  İsteğe bağlı RAG bilgi tabanını hazırla:"
-    echo "       RAG kullanacaksanız örnek belgeleri ve GraphRAG entity memory verisini seed edin:"
-    echo "       uv run python -m scripts.seed_rag"
-    echo "       Bu adım isteğe bağlıdır; boş RAG index/entity memory kurulumu veya release kapısını engellemez."
+    echo -e "  7️⃣  RAG/GraphRAG hazır oluşunu doğrula:"
+    echo "       Geliştirici kurulumunda metadata seed varsayılan olarak migrasyondan sonra uygulanır."
+    echo "       Tam vektör seed veya yeniden oluşturma: uv run python -m scripts.seed_rag"
     echo "       Sonucu doğrula: uv run python -m core.doctor artifacts/install/doctor.json"
+    echo "       Onboarding ve pgvector fallback teşhisi: docs/RAG_ONBOARDING.md"
 }
 
 # ── 15. Özet ─────────────────────────────────────────────────────────────────

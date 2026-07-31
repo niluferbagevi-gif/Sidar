@@ -2632,7 +2632,7 @@ def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clon
 
 
 def test_installer_doctor_fix_is_forwarded_and_scope_limited() -> None:
-    """Installer doctor must expose the safe repair without implying RAG writes."""
+    """Installer Doctor fix stays DB-scoped while install-time RAG seed is documented."""
     install_cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
     post_install = Path("scripts/install_modules/phases/11_post_install.sh").read_text(
         encoding="utf-8"
@@ -2646,7 +2646,10 @@ def test_installer_doctor_fix_is_forwarded_and_scope_limited() -> None:
     assert "doctor_cmd+=(--fix)" in post_install
     assert "[--fix]" in ux
     assert "./install_sidar.sh doctor --fix" in readme
-    assert "RAG seed işlemi veri yazdığı için bilinçli olarak otomatik uygulanmaz" in readme
+    assert "AUTO_SEED_RAG_METADATA=true" in readme
+    assert "AUTO_SEED_RAG_DOCKER_WARMUP=true" in readme
+    assert "Her iki otomasyon açıkça `false` verilerek kapatılabilir" in readme
+    assert "docs/RAG_ONBOARDING.md" in readme
 
 
 def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None:
