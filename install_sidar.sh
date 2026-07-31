@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="0acf88a4eaaa3f7f37ab3fde944fee2cdda28f04"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="06e41290fadc3a568ab9a092fbd68341ca6f22f0"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -583,6 +583,7 @@ INSTALL_PHASE_MODULES=(
 
 INSTALL_REMOTE_MODULES=(
     "install_helpers.sh"
+    "install_runtime.sh"
     "install_cli.sh"
     "install_dispatcher.sh"
     "${INSTALL_UTILITY_MODULES[@]}"
@@ -596,6 +597,7 @@ read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || tru
 776d8636ceaaac819415f73939f8e55fe101f8940c2500d731700a6b83c92a64  scripts/install_modules/install_cli.sh
 da28d54a68a4d2d30ff539cd8d0435265fe87000e24727505b312fee79e33603  scripts/install_modules/install_dispatcher.sh
 a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/install_modules/install_helpers.sh
+054b069b8b5656b60204a40d72f30f6bdcb81cbb94473ed1cc407369814d34c1  scripts/install_modules/install_runtime.sh
 2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
 d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
@@ -604,7 +606,7 @@ d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/instal
 4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
 2e0fc43c0f177da51d1252e3da257025df9f5ce476f0f16324af3fbb0fb38d87  scripts/install_modules/phases/06_services.sh
-1d15811d323818d868d273f719178a04e37ad953c76e4ab62b08dd7bac59645c  scripts/install_modules/phases/07_finish.sh
+9b2baebbb9d5dfc20c1388d7a280b9d1070c88bd7f75fa45784cf0dc91f010d1  scripts/install_modules/phases/07_finish.sh
 ae7549a7b5d2114741c6d89580096bef32c2b8c1591a448cb74096ee7e0ec80a  scripts/install_modules/phases/08_env.sh
 3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
 7fc8b9f6d2dc1a153b468a8cdc8ab0efb6e8e71f6e9c0b2ea982fd98aa27fb68  scripts/install_modules/phases/10_validation.sh
@@ -612,7 +614,7 @@ cc38e858e1fde0a14a0db63bfdbb3d6571fa992a96df27646084aebdea15cbe2  scripts/instal
 bdebacb1fac3f4d6c3f6caee6042ecf8a71d092de7012c6e13853bae0789b03e  scripts/install_modules/phases/12_alembic.sh
 9d612775f0ae694f228a075fd73d0ae547cc619f280ff5d2760ac69aebadb82a  scripts/install_modules/phases/13_playwright.sh
 ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
-2475c8a14484b5db6d0f7158acf088867ac568f0e46061211962880b74e9cdde  scripts/install_modules/utils/database_url.sh
+e7ff273a08bec38292025f0077c545f0b6f35c27783bdab13d3acfb524b32c0b  scripts/install_modules/utils/database_url.sh
 642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
 785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
 2455508c980e8a0a6311fe6e016524aa280d54f1bbe3f06535dde92844467ff5  scripts/install_modules/utils/env_utils.sh
@@ -1712,113 +1714,10 @@ unset SIDAR_INSTALL_REQUESTED_VERSION
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
-run_with_progress_hint() {
-    local label="$1"
-    shift
-    local -a cmd=("$@")
-
-    "${cmd[@]}" &
-    local cmd_pid=$!
-    local pct=5
-
-    while kill -0 "$cmd_pid" 2>/dev/null; do
-        local filled=$((pct / 4))
-        local empty=$((25 - filled))
-        local bar_filled
-        local bar_empty
-        printf -v bar_filled '%*s' "$filled" ''
-        printf -v bar_empty '%*s' "$empty" ''
-        bar_filled="${bar_filled// /█}"
-        bar_empty="${bar_empty// /░}"
-        echo -e "${BLUE}[${bar_filled}${bar_empty}] ${pct}% ${label}${NC}" >&2
-
-        pct=$((pct + 5))
-        if (( pct > 95 )); then
-            pct=95
-        fi
-        sleep 4
-    done
-
-    wait "$cmd_pid"
-    local cmd_rc=$?
-    if [[ "$cmd_rc" -eq 0 ]]; then
-        echo -e "${GREEN}[█████████████████████████] 100% ${label}${NC}" >&2
-    fi
-    return "$cmd_rc"
-}
-
-SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
-
-prompt_yes_no_with_timeout_default_yes() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_yes "$timeout_seconds")"
-        reply="E"
-    fi
-
-    echo "$reply"
-}
-
-prompt_yes_no_with_timeout_default_no() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_no "$timeout_seconds")"
-        reply="H"
-    fi
-
-    echo "$reply"
-}
-
-cleanup_temp_install_modules_if_needed() {
-    local exit_code="${1:-0}"
-    local keep_temp_raw="${SIDAR_KEEP_TEMP_MODULES:-0}"
-    keep_temp_raw="$(echo "$keep_temp_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-    if [[ "${KEEP_TEMP_MODULES:-false}" == "true" || "$keep_temp_raw" == "1" || "$keep_temp_raw" == "true" || "$keep_temp_raw" == "yes" ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && info "Geçici modül dizini korunuyor (debug): $INSTALL_HELPERS_TEMP_DIR"
-        return 0
-    fi
-
-    if [[ "$exit_code" -ne 0 ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
-        warn "İsterseniz sonraki çalıştırmada --keep-temp-modules veya SIDAR_KEEP_TEMP_MODULES=1 kullanabilirsiniz."
-        return 0
-    fi
-
-    if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
-        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
-    fi
-}
-
-relocate_log_file_if_needed() {
-    [[ -n "${TARGET_DIR:-}" ]] || return 0
-    local target_log_dir="${TARGET_DIR}/logs"
-    local source_log_dir="$LOG_DIR"
-
-    if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
-        mkdir -p "$target_log_dir"
-        mv "$LOG_FILE" "$target_log_dir/"
-        LOG_DIR="$target_log_dir"
-        LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
-        info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
-
-        if [[ -d "$source_log_dir" ]]; then
-            rmdir "$source_log_dir" 2>/dev/null || true
-        fi
-    fi
-}
+# Post-bootstrap progress, prompt, cleanup, and log relocation helpers live in
+# scripts/install_modules/install_runtime.sh.
+# shellcheck source=scripts/install_modules/install_runtime.sh
+source "${INSTALL_MODULE_DIR}/install_runtime.sh"
 
 # shellcheck disable=SC2154
 trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; if declare -F sidar_phase06_cleanup_pre_service_smoke_log >/dev/null 2>&1; then sidar_phase06_cleanup_pre_service_smoke_log || true; fi; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT

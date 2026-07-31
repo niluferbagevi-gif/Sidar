@@ -2820,6 +2820,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     main_body = shell_function_body(script, "sidar_dispatch_install_phases")
 
     expected_modules = (
+        "install_runtime.sh",
         "phases/01_context.sh",
         "phases/02_repo.sh",
         "phases/03_runtime.sh",
