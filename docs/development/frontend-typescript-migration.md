@@ -10,9 +10,11 @@
 
 Başlangıçta `web_ui_react/src` altında 16 `.js`, 42 `.jsx`, 1 `.ts` ve 0 `.tsx`
 dosyası vardı. İlk dilimde `src/hooks/useFormState.ts` de TypeScript'e taşındı;
-İlk state/logic dilimlerinden sonra ratchet envanteri 15 `.js`, 42 `.jsx`, 3 `.ts`
-ve 0 `.tsx` gösterir. Saf swarm graph oluşturma katmanı
-`src/lib/swarmFlowGraph.ts` olarak taşınmış ve dış API tipleri tanımlanmıştır.
+İlk state/logic dilimlerinden sonra `useSwarmFlowController.ts` de paylaşılan swarm
+graph tiplerini kullanacak şekilde taşınmış; ratchet envanteri 14 `.js`, 42 `.jsx`,
+4 `.ts` ve 0 `.tsx` seviyesine sıkılaştırılmıştır. Saf swarm graph oluşturma katmanı
+`src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
+tanımlanmıştır.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -20,8 +22,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 57 untyped (`.js` + `.jsx`) ve en az
-3 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 56 untyped (`.js` + `.jsx`) ve en az
+4 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

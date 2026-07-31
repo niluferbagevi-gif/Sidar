@@ -25,6 +25,55 @@ import {
   NODE_HEIGHT,
   NODE_WIDTH,
 } from "../lib/swarmFlowGraph";
+import type {
+  AutonomyItem,
+  GraphEdge,
+  SwarmResult,
+  SwarmTask,
+  TelemetryStep,
+} from "../lib/swarmFlowGraph";
+
+type TaskDraft = Required<SwarmTask>;
+type TaskField = keyof TaskDraft;
+type OperationTone = "info" | "success" | "warning" | "error";
+
+interface SwarmResponse {
+  results?: SwarmResult[];
+}
+
+interface AutonomyActivity {
+  items: AutonomyItem[];
+  counts_by_status: Record<string, number>;
+  counts_by_source: Record<string, number>;
+  total?: number;
+}
+
+interface PendingApproval {
+  request_id: string;
+  [key: string]: unknown;
+}
+
+interface OperationLogEntry {
+  id: string;
+  tone: OperationTone;
+  message: string;
+  ts: string;
+}
+
+interface ExecuteSwarmMeta {
+  mode?: string;
+  sessionId?: string;
+  maxConcurrency?: number;
+}
+
+interface PositionedGraphEdge extends GraphEdge {
+  curve: string;
+  labelX: number;
+  labelY: number;
+}
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 const DEFAULT_TASKS = [
   {
@@ -42,28 +91,28 @@ const DEFAULT_TASKS = [
 const OPERATION_LOG_LIMIT = 10;
 
 export function useSwarmFlowController() {
-  const telemetryEvents = useChatStore((s) => s.telemetryEvents);
-  const [tasks, setTasks] = useState(DEFAULT_TASKS);
+  const telemetryEvents = useChatStore((s: { telemetryEvents: TelemetryStep[] }) => s.telemetryEvents);
+  const [tasks, setTasks] = useState<TaskDraft[]>(DEFAULT_TASKS);
   const [mode, setMode] = useState("parallel");
   const [sessionId, setSessionId] = useState("ui-swarm-session");
   const [maxConcurrency, setMaxConcurrency] = useState(3);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [response, setResponse] = useState(null);
-  const [autonomyActivity, setAutonomyActivity] = useState({
+  const [response, setResponse] = useState<SwarmResponse | null>(null);
+  const [autonomyActivity, setAutonomyActivity] = useState<AutonomyActivity>({
     items: [],
     counts_by_status: {},
     counts_by_source: {},
   });
   const [activityLoading, setActivityLoading] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [hitlLoading, setHitlLoading] = useState(false);
-  const [operationLog, setOperationLog] = useState([]);
+  const [operationLog, setOperationLog] = useState<OperationLogEntry[]>([]);
   const [actionBusy, setActionBusy] = useState(false);
   const loaderErrorsRef = useRef({ activity: "", hitl: "" });
 
-  const updateLoaderError = useCallback((source, message = "") => {
+  const updateLoaderError = useCallback((source: "activity" | "hitl", message = "") => {
     const previousLoaderErrors = Object.values(loaderErrorsRef.current).filter(
       Boolean,
     );
@@ -76,7 +125,7 @@ export function useSwarmFlowController() {
     });
   }, []);
 
-  const pushOperationLog = useCallback((message, tone = "info") => {
+  const pushOperationLog = useCallback((message: string, tone: OperationTone = "info") => {
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       tone,
@@ -89,14 +138,15 @@ export function useSwarmFlowController() {
   const loadPendingApprovals = useCallback(async () => {
     setHitlLoading(true);
     try {
-      const data = await fetchJson("/api/hitl/pending");
+      const data: { pending?: PendingApproval[] } = await fetchJson("/api/hitl/pending");
       setPendingApprovals(data.pending || []);
       updateLoaderError("hitl");
     } catch (err) {
       setPendingApprovals([]);
-      updateLoaderError("hitl", err.message);
+      const message = errorMessage(err);
+      updateLoaderError("hitl", message);
       pushOperationLog(
-        `HITL bekleyen kayıtları alınamadı: ${err.message}`,
+        `HITL bekleyen kayıtları alınamadı: ${message}`,
         "error",
       );
     } finally {
@@ -107,7 +157,9 @@ export function useSwarmFlowController() {
   const loadAutonomyActivity = useCallback(async () => {
     setActivityLoading(true);
     try {
-      const data = await fetchJson("/api/autonomy/activity?limit=8");
+      const data: { activity?: AutonomyActivity } = await fetchJson(
+        "/api/autonomy/activity?limit=8",
+      );
       setAutonomyActivity(
         data.activity || {
           items: [],
@@ -122,9 +174,10 @@ export function useSwarmFlowController() {
         counts_by_status: {},
         counts_by_source: {},
       });
-      updateLoaderError("activity", err.message);
+      const message = errorMessage(err);
+      updateLoaderError("activity", message);
       pushOperationLog(
-        `Autonomy aktivitesi alınamadı: ${err.message}`,
+        `Autonomy aktivitesi alınamadı: ${message}`,
         "error",
       );
     } finally {
@@ -141,7 +194,7 @@ export function useSwarmFlowController() {
     () =>
       telemetryEvents
         .filter(
-          (evt) =>
+          (evt: TelemetryStep) =>
             evt.kind === "tool_call" ||
             evt.kind === "status" ||
             evt.kind === "thought",
@@ -272,7 +325,7 @@ export function useSwarmFlowController() {
           labelY: midY - 10,
         };
       })
-      .filter(Boolean);
+      .filter((edge): edge is PositionedGraphEdge => edge !== null);
   }, [graphData]);
 
   useEffect(() => {
@@ -293,7 +346,7 @@ export function useSwarmFlowController() {
     [selectedNode],
   );
 
-  const updateTask = useCallback((index, field, value) => {
+  const updateTask = useCallback((index: number, field: TaskField, value: string) => {
     setTasks((prev) =>
       prev.map((task, idx) =>
         idx === index ? { ...task, [field]: value } : task,
@@ -308,12 +361,12 @@ export function useSwarmFlowController() {
     ]);
   }, []);
 
-  const removeTask = useCallback((index) => {
+  const removeTask = useCallback((index: number) => {
     setTasks((prev) => prev.filter((_, idx) => idx !== index));
   }, []);
 
   const executeSwarm = useCallback(
-    async (overrideTasks = null, overrideMeta = {}) => {
+    async (overrideTasks: TaskDraft[] | null = null, overrideMeta: ExecuteSwarmMeta = {}) => {
       const sourceTasks = overrideTasks || tasks;
       const normalizedTasks = sourceTasks
         .map((task) => ({
@@ -333,7 +386,7 @@ export function useSwarmFlowController() {
       setError("");
       setResponse(null);
       try {
-        const data = await fetchJson("/api/swarm/execute", {
+        const data: SwarmResponse = await fetchJson("/api/swarm/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -348,8 +401,9 @@ export function useSwarmFlowController() {
         setRunning(false);
         return true;
       } catch (err) {
-        setError(err.message);
-        pushOperationLog(`Swarm tetiklenemedi: ${err.message}`, "error");
+        const message = errorMessage(err);
+        setError(message);
+        pushOperationLog(`Swarm tetiklenemedi: ${message}`, "error");
         setRunning(false);
         return false;
       }
@@ -399,7 +453,7 @@ export function useSwarmFlowController() {
   const requestNodeReview = useCallback(async () => {
     setActionBusy(true);
     try {
-      const data = await fetchJson("/api/hitl/request", {
+      const data: { request_id: string } = await fetchJson("/api/hitl/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -424,18 +478,19 @@ export function useSwarmFlowController() {
       );
       await loadPendingApprovals();
     } catch (err) {
-      setError(err.message);
-      pushOperationLog(`HITL isteği oluşturulamadı: ${err.message}`, "error");
+      const message = errorMessage(err);
+      setError(message);
+      pushOperationLog(`HITL isteği oluşturulamadı: ${message}`, "error");
     } finally {
       setActionBusy(false);
     }
   }, [loadPendingApprovals, pushOperationLog, selectedNode]);
 
   const respondToApproval = useCallback(
-    async (requestId, approved) => {
+    async (requestId: string, approved: boolean) => {
       setActionBusy(true);
       try {
-        const data = await fetchJson(
+        const data: { request_id: string; decision: string } = await fetchJson(
           `/api/hitl/respond/${encodeURIComponent(requestId)}`,
           {
             method: "POST",
@@ -455,8 +510,9 @@ export function useSwarmFlowController() {
         );
         await loadPendingApprovals();
       } catch (err) {
-        setError(err.message);
-        pushOperationLog(`HITL kararı gönderilemedi: ${err.message}`, "error");
+        const message = errorMessage(err);
+        setError(message);
+        pushOperationLog(`HITL kararı gönderilemedi: ${message}`, "error");
       } finally {
         setActionBusy(false);
       }

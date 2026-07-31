@@ -1,4 +1,4 @@
-import { useSwarmFlowController } from "../hooks/useSwarmFlowController.js";
+import { useSwarmFlowController } from "../hooks/useSwarmFlowController";
 import { formatTime, NODE_HEIGHT, NODE_WIDTH } from "../lib/swarmFlowGraph";
 import { AutonomyTimeline } from "./panels/swarm/AutonomyTimeline.jsx";
 import { GraphView } from "./panels/swarm/GraphView.jsx";
