@@ -5265,6 +5265,22 @@ def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
     assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
 
 
+def test_frontend_security_exception_has_scheduled_fail_closed_review() -> None:
+    """The dated advisory exception must be checked even without repository activity."""
+    workflow = Path(".github/workflows/frontend-security-review.yml").read_text(encoding="utf-8")
+    plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
+
+    assert 'cron: "17 6 * * 1"' in workflow
+    assert "workflow_dispatch:" in workflow
+    assert 'FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE: "0"' in workflow
+    assert "run: npm run audit:high" in workflow
+    assert "if: ${{ always() }}" in workflow
+    assert "path: artifacts/frontend-security/" in workflow
+    assert "if-no-files-found: error" in workflow
+    assert ".github/workflows/frontend-security-review.yml" in plan
+    assert "son tarihe yakın bir PR veya push olmasa bile" in plan
+
+
 def test_frontend_typescript_inventory_ratchet_fails_closed(tmp_path: Path) -> None:
     """The migration inventory must reject new untyped debt and typed regressions."""
     checker = Path("scripts/check_frontend_typescript_migration.js").resolve()

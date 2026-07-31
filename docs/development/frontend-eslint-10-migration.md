@@ -42,10 +42,16 @@ bozulması veya eski eklenti sürümlerine downgrade edilmesi riskini taşır.
 **İlk yeniden değerlendirme:** 2026-09-30 veya npm advisory aralığı/plugin peer
 dependency metadata'sı değiştiğinde (hangisi önce olursa).
 **Takvim kaydı:** `docs/reminders/frontend-eslint-10-review-2026-09-30.ics`
+**Otomatik takip:** `.github/workflows/frontend-security-review.yml`, her pazartesi
+06:17 UTC'de strict audit'i çalıştırır ve güvenlik kanıtını artefakt olarak saklar.
 
 Bu tarih yalnız takvim hatırlatıcısı değildir. `scripts/npm_audit_safe.js`, UTC olarak
 2026-09-30 başladığında geçici allowlist'i otomatik olarak geçersiz sayar ve aynı
 advisory zinciri devam ediyorsa `expired_exception` kategorisiyle fail-closed durur.
+Haftalık güvenlik workflow'u, bu kapının son tarihe yakın bir PR veya push olmasa bile
+çalışmasını garanti eder; `workflow_dispatch` bakım PR'ında talep üzerine yeniden
+doğrulama sağlar. Workflow'un yüklediği raw rapor, stderr ve exception/failure JSON
+dosyaları yeniden değerlendirme kararının denetlenebilir kanıtıdır.
 İstisna kabul edildiği her koşuda terminal çıktısı son tarihi ve kalan gün sayısını
 gösterir; ayrıca `artifacts/frontend-security/npm-audit-exception.json` makine-okunur
 takip artefaktını üretir. CI bakım planlaması terminal metnini ayrıştırmak yerine bu
