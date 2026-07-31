@@ -1,0 +1,47 @@
+name: Benchmark baseline cache keepalive
+
+on:
+  schedule:
+    # Touch the reviewed default-branch cache more often than GitHub's
+    # inactivity eviction window without generating a new baseline.
+    - cron: "17 5 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-baseline-cache-keepalive-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  restore-reviewed-baseline:
+    name: Restore reviewed benchmark baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore and touch reviewed baseline cache
+        id: benchmark-baseline-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-keepalive-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+
+      - name: Require reviewed baseline evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! find .benchmarks -type f -name '*_baseline.json' -print -quit | grep -q .; then
+            echo "::error title=Benchmark baseline cache missing::Run Benchmark baseline seed, review its artifact, then rerun this keepalive workflow."
+            exit 1
+          fi
+          echo "### Benchmark baseline cache keepalive" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Reviewed baseline cache restored; no benchmark was executed and no baseline was regenerated." >> "$GITHUB_STEP_SUMMARY"
+          find .benchmarks -type f -name '*_baseline.json' -print | sed 's/^/- `/' | sed 's/$/`/' >> "$GITHUB_STEP_SUMMARY"

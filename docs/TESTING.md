@@ -317,7 +317,8 @@ bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün haz
 `gpu-inference-quality-gate`, yalnız `[self-hosted, linux, gpu]` etiketlerinin tümünü taşıyan
 bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
 çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
-sınırlamaz. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
+sınırlamaz. Job bir runner tarafından alındıktan sonraki kurulum ve benchmark çalışması
+`timeout-minutes: 45` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
 aggregate job'ı da tamamlanamaz.
 
 Operatör kontrol listesi:
@@ -347,6 +348,12 @@ edemezse yeni baseline üretmez ve fail-closed durur. Cache eviction veya seed a
 retention süresinin dolması normal CI'ı bloke edebilir. Çözüm, eşiği gevşetmek değil aşağıdaki
 `CI benchmark baseline cache boşsa ne yapılır?` runbook'uyla `seed_benchmark_baseline=true`
 workflow_dispatch çalıştırmak ve ardından normal CI'ı yeniden koşmaktır.
+
+`.github/workflows/benchmark-baseline-keepalive.yml` Pazartesi ve Perşembe günleri mevcut,
+gözden geçirilmiş default-branch cache'ini restore ederek erişim süresini tazeler. Bu workflow
+**benchmark çalıştırmaz, baseline üretmez ve performans regresyonunu yeni baseline olarak
+kabul etmez**. Cache zaten kayıpsa fail-closed kırılır; operatör aşağıdaki seed/review
+runbook'unu uygulamalıdır.
 
 Bu üç durumun hiçbiri uygulama test regresyonu olmak zorunda değildir; ancak dış kanıt tekrar
 üretilene kadar production-readiness sonucu **kanıtlanmamış** ve release-blocking kalır.

@@ -872,6 +872,10 @@ jobs:
     name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
     runs-on: [self-hosted, linux, gpu]
+    # Bounds execution after a runner accepts the job. GitHub does not apply
+    # timeout-minutes while a self-hosted job is still queued/offline; the
+    # operator runbook documents that separate availability failure mode.
+    timeout-minutes: 45
     needs: test
 
     env:

@@ -2329,6 +2329,32 @@ def test_testing_docs_explain_external_production_readiness_dependencies() -> No
     assert "production-readiness sonucu **kanıtlanmamış**" in testing
 
 
+def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> None:
+    """Bound running GPU work and preserve only reviewed benchmark evidence."""
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    keepalive = Path(".github/workflows/benchmark-baseline-keepalive.yml").read_text(
+        encoding="utf-8"
+    )
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    gpu_job = ci[ci.index("  gpu-inference-quality-gate:") : ci.index(
+        "  gpu-inference-policy-gate:"
+    )]
+    assert "runs-on: [self-hosted, linux, gpu]" in gpu_job
+    assert "timeout-minutes: 45" in gpu_job
+    assert 'cron: "17 5 * * 1,4"' in keepalive
+    assert "uses: actions/cache/restore@v4" in keepalive
+    assert "Require reviewed baseline evidence" in keepalive
+    assert "find .benchmarks -type f -name '*_baseline.json'" in keepalive
+    assert "exit 1" in keepalive
+    assert "benchmark-save" not in keepalive
+    assert "no benchmark was executed and no baseline was regenerated" in keepalive
+    assert "queued süreyi" in testing
+    assert "timeout-minutes: 45" in testing
+    assert "benchmark-baseline-keepalive.yml" in testing
+    assert "benchmark çalıştırmaz, baseline üretmez" in testing
+
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
