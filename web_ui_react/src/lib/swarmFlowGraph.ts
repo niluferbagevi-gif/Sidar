@@ -5,7 +5,109 @@
  * isolation from the React component that consumes it.
  */
 
-const ROLE_LABELS = {
+type DetailValue = string | number | boolean | null | undefined | DetailValue[];
+type DetailRecord = Record<string, DetailValue>;
+
+export interface SwarmTask {
+  goal?: string;
+  intent?: string;
+  preferred_agent?: string;
+}
+
+export interface SwarmGraph {
+  sender?: string;
+  receiver?: string;
+  intent?: string;
+  p2p_sender?: string;
+  p2p_receiver?: string;
+  p2p_reason?: string;
+  p2p_handoff_depth?: number;
+  swarm_hop?: number;
+}
+
+export interface HandoffEvent {
+  task_id?: string;
+  sender?: string;
+  receiver?: string;
+  reason?: string;
+  intent?: string;
+  handoff_depth?: number;
+  swarm_hop?: number;
+  resultIndex: number;
+  handoffIndex: number;
+}
+
+export interface SwarmResult {
+  task_id?: string;
+  agent_role?: string;
+  status?: string;
+  elapsed_ms?: number;
+  summary?: string;
+  handoffs?: Omit<HandoffEvent, "resultIndex" | "handoffIndex">[];
+  graph?: SwarmGraph;
+}
+
+export interface TelemetryStep {
+  id: string | number;
+  kind?: string;
+  content?: string;
+  ts: string | number | Date;
+}
+
+export interface TelemetryWithActor extends TelemetryStep {
+  actor: string;
+}
+
+export interface Lane {
+  id: string;
+  label: string;
+  x: number;
+}
+
+export interface DetailEntry {
+  key: string;
+  value: string;
+}
+
+export interface GraphNode {
+  id: string;
+  type: string;
+  title: string;
+  subtitle: string;
+  body: string;
+  x: number;
+  y: number;
+  actor?: string;
+  laneId?: string;
+  details: DetailEntry[];
+}
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  emphasis?: string;
+}
+
+export interface AutonomyItem {
+  trigger_id?: string;
+  status?: string;
+  event_name?: string;
+  source?: string;
+  summary?: string;
+  payload?: DetailRecord;
+}
+
+function requireLane(laneMap: Map<string, Lane>, role: string): Lane {
+  const lane = laneMap.get(role) || laneMap.get("supervisor");
+  if (!lane) {
+    throw new Error(`Graph lane is missing for role: ${role}`);
+  }
+  return lane;
+}
+
+const ROLE_LABELS: Record<string, string> = {
   supervisor: "Supervisor",
   coder: "Coder",
   reviewer: "Reviewer",
@@ -16,22 +118,22 @@ const ROLE_LABELS = {
   system: "System",
 };
 
-export const prettifyRole = (value) => {
+export const prettifyRole = (value: unknown): string => {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "Unknown";
   return ROLE_LABELS[normalized] || normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-export const clampText = (value, maxLength = 140) => {
+export const clampText = (value: unknown, maxLength = 140): string => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return "Açıklama bekleniyor.";
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
 };
 
-export const formatTime = (value) =>
+export const formatTime = (value: string | number | Date): string =>
   new Date(value).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-export const inferTelemetryActor = (step, roleHints) => {
+export const inferTelemetryActor = (step: Partial<TelemetryStep>, roleHints: string[]): string => {
   const content = String(step?.content || "").trim();
   if (!content) return "system";
 
@@ -46,7 +148,7 @@ export const inferTelemetryActor = (step, roleHints) => {
   return step?.kind === "tool_call" ? "supervisor" : "system";
 };
 
-export const getTaskTargetRole = (task, responseResults, index) =>
+export const getTaskTargetRole = (task: SwarmTask, responseResults: SwarmResult[], index: number): string =>
   String(
     task.preferred_agent?.trim()
     || responseResults[index]?.agent_role
@@ -57,13 +159,13 @@ export const getTaskTargetRole = (task, responseResults, index) =>
 export const NODE_WIDTH = 220;
 export const NODE_HEIGHT = 104;
 
-export const prettifyReason = (value) =>
+export const prettifyReason = (value: unknown): string =>
   String(value || "")
     .trim()
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-export const toDetailEntries = (record) =>
+export const toDetailEntries = (record: DetailRecord | null | undefined): DetailEntry[] =>
   Object.entries(record || {})
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
     .map(([key, value]) => ({
@@ -71,7 +173,7 @@ export const toDetailEntries = (record) =>
       value: Array.isArray(value) ? value.join(" · ") : String(value),
     }));
 
-export const buildTaskDraftFromNode = (node) => {
+export const buildTaskDraftFromNode = (node: GraphNode): Required<SwarmTask> => {
   const intent = String(node.subtitle || "mixed")
     .split("·")[0]
     .trim()
@@ -87,7 +189,7 @@ export const buildTaskDraftFromNode = (node) => {
   };
 };
 
-export const inferHitlActionFromNode = (node) => {
+export const inferHitlActionFromNode = (node: Partial<GraphNode>): string => {
   const type = String(node?.type || "manual").toLowerCase();
   if (type.includes("handoff")) return "handoff_review";
   if (type.includes("autonomy")) return "autonomy_review";
@@ -106,7 +208,7 @@ export const ROW_Y = {
   telemetry: 992,
 };
 
-export function buildHandoffEvents(responseResults) {
+export function buildHandoffEvents(responseResults: SwarmResult[]): HandoffEvent[] {
   return responseResults.flatMap((item, resultIndex) => {
     const chain = Array.isArray(item.handoffs) ? item.handoffs : [];
     if (chain.length > 0) {
@@ -132,7 +234,7 @@ export function buildHandoffEvents(responseResults) {
   });
 }
 
-export function buildRoleHints(tasks, responseResults, handoffEvents) {
+export function buildRoleHints(tasks: SwarmTask[], responseResults: SwarmResult[], handoffEvents: HandoffEvent[]): string[] {
   return Array.from(
     new Set(
       [
@@ -144,14 +246,14 @@ export function buildRoleHints(tasks, responseResults, handoffEvents) {
   );
 }
 
-export function buildTelemetryWithActors(steps, roleHints) {
+export function buildTelemetryWithActors(steps: TelemetryStep[], roleHints: string[]): TelemetryWithActor[] {
   return steps.map((step) => ({
     ...step,
     actor: inferTelemetryActor(step, roleHints),
   }));
 }
 
-export function buildLanes(roleHints, telemetryWithActors) {
+export function buildLanes(roleHints: string[], telemetryWithActors: TelemetryWithActor[]): Lane[] {
   return Array.from(new Set(["supervisor", ...roleHints, ...telemetryWithActors.map((step) => step.actor)]))
     .filter(Boolean)
     .map((role, index) => ({
@@ -161,7 +263,7 @@ export function buildLanes(roleHints, telemetryWithActors) {
     }));
 }
 
-export function buildAutonomyNodes(autonomyItems, lanes) {
+export function buildAutonomyNodes(autonomyItems: AutonomyItem[], lanes: Lane[]): GraphNode[] {
   return autonomyItems.map((item, index) => {
     const lane = lanes[Math.min(index, Math.max(lanes.length - 1, 0))];
     return {
@@ -183,14 +285,14 @@ export function buildAutonomyNodes(autonomyItems, lanes) {
   });
 }
 
-export function buildSupervisorNode({ laneMap, mode, sessionId, maxConcurrency }) {
+export function buildSupervisorNode({ laneMap, mode, sessionId, maxConcurrency }: { laneMap: Map<string, Lane>; mode: string; sessionId: string; maxConcurrency: string | number }): GraphNode {
   return {
     id: "supervisor",
     type: "root",
     title: "Supervisor",
     subtitle: mode === "parallel" ? "run_parallel" : "run_pipeline",
     body: clampText(sessionId.trim() || "ui-swarm-session", 80),
-    x: laneMap.get("supervisor").x,
+    x: requireLane(laneMap, "supervisor").x,
     y: ROW_Y.supervisor,
     details: toDetailEntries({
       session_id: sessionId.trim() || "ui-swarm-session",
@@ -200,10 +302,10 @@ export function buildSupervisorNode({ laneMap, mode, sessionId, maxConcurrency }
   };
 }
 
-export function buildTaskNodes(tasks, responseResults, laneMap) {
+export function buildTaskNodes(tasks: SwarmTask[], responseResults: SwarmResult[], laneMap: Map<string, Lane>): GraphNode[] {
   return tasks.map((task, index) => {
     const laneId = getTaskTargetRole(task, responseResults, index);
-    const lane = laneMap.get(laneId);
+    const lane = requireLane(laneMap, laneId);
     return {
       id: `task-${index}`,
       type: "task",
@@ -222,7 +324,7 @@ export function buildTaskNodes(tasks, responseResults, laneMap) {
   });
 }
 
-export function buildAgentNodes(lanes) {
+export function buildAgentNodes(lanes: Lane[]): GraphNode[] {
   return lanes
     .filter((lane) => lane.id !== "system")
     .map((lane) => ({
@@ -243,10 +345,10 @@ export function buildAgentNodes(lanes) {
     }));
 }
 
-export function buildHandoffNodes(handoffEvents, laneMap, responseResults) {
+export function buildHandoffNodes(handoffEvents: HandoffEvent[], laneMap: Map<string, Lane>, responseResults: SwarmResult[]): GraphNode[] {
   return handoffEvents.map((handoff, index) => {
     const receiverRole = String(handoff.receiver || "supervisor").toLowerCase();
-    const lane = laneMap.get(receiverRole);
+    const lane = requireLane(laneMap, receiverRole);
     const sender = prettifyRole(handoff.sender || "unknown");
     const receiver = prettifyRole(handoff.receiver || "unknown");
     const reason = prettifyReason(handoff.reason || "delegation");
@@ -270,10 +372,10 @@ export function buildHandoffNodes(handoffEvents, laneMap, responseResults) {
   });
 }
 
-export function buildResultNodes(responseResults, laneMap) {
+export function buildResultNodes(responseResults: SwarmResult[], laneMap: Map<string, Lane>): GraphNode[] {
   return responseResults.map((item, index) => {
     const laneRole = String(item.agent_role || "").toLowerCase();
-    const lane = laneMap.get(laneRole) || laneMap.get("supervisor");
+    const lane = requireLane(laneMap, laneRole);
     const graph = item.graph || {};
     return {
       id: `result-${item.task_id || index}`,
@@ -297,14 +399,14 @@ export function buildResultNodes(responseResults, laneMap) {
   });
 }
 
-export function buildTelemetryNodes(telemetryWithActors, laneMap, laneDecisionCounts) {
+export function buildTelemetryNodes(telemetryWithActors: TelemetryWithActor[], laneMap: Map<string, Lane>, laneDecisionCounts: Map<string, number>): GraphNode[] {
   return telemetryWithActors.map((step) => {
-    const lane = laneMap.get(step.actor);
+    const lane = requireLane(laneMap, step.actor);
     const laneCount = laneDecisionCounts.get(step.actor) || 0;
     laneDecisionCounts.set(step.actor, laneCount + 1);
     return {
       id: `telemetry-${step.id}`,
-      type: step.kind,
+      type: step.kind || "status",
       title: step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Decision" : "Status",
       subtitle: `${prettifyRole(step.actor)} · ${formatTime(step.ts)}`,
       body: clampText(step.content, 170),
@@ -321,8 +423,8 @@ export function buildTelemetryNodes(telemetryWithActors, laneMap, laneDecisionCo
   });
 }
 
-export function buildAutonomyEdges(autonomyNodes, supervisorNode) {
-  const edges = [];
+export function buildAutonomyEdges(autonomyNodes: GraphNode[], supervisorNode: GraphNode): GraphEdge[] {
+  const edges: GraphEdge[] = [];
   autonomyNodes.forEach((node, index) => {
     edges.push({
       id: `edge-autonomy-${node.id}`,
@@ -343,8 +445,8 @@ export function buildAutonomyEdges(autonomyNodes, supervisorNode) {
   return edges;
 }
 
-export function buildTaskEdges(taskNodes, supervisorNode, mode) {
-  const edges = [];
+export function buildTaskEdges(taskNodes: GraphNode[], supervisorNode: GraphNode, mode: string): GraphEdge[] {
+  const edges: GraphEdge[] = [];
   taskNodes.forEach((taskNode, index) => {
     const targetRole = taskNode.laneId;
     edges.push({
@@ -372,15 +474,15 @@ export function buildTaskEdges(taskNodes, supervisorNode, mode) {
   return edges;
 }
 
-export function buildResultEdges(resultNodes, responseResults, taskNodes, handoffNodes, supervisorNode, mode) {
-  const edges = [];
+export function buildResultEdges(resultNodes: GraphNode[], responseResults: SwarmResult[], taskNodes: GraphNode[], handoffNodes: GraphNode[], supervisorNode: GraphNode, mode: string): GraphEdge[] {
+  const edges: GraphEdge[] = [];
   resultNodes.forEach((resultNode, index) => {
     const result = responseResults[index];
     const role = String(result?.agent_role || taskNodes[index]?.laneId || taskNodes[taskNodes.length - 1]?.laneId).toLowerCase();
     const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
     const resultHandoffs = handoffNodes.filter((node) => node.id.startsWith(`handoff-${result?.task_id || index}`));
     const latestResultHandoff = resultHandoffs[resultHandoffs.length - 1];
-    const resultSourceId = [latestResultHandoff?.id, taskNode?.id, supervisorNode.id].find(Boolean);
+    const resultSourceId = latestResultHandoff?.id || taskNode?.id || supervisorNode.id;
     edges.push({
       id: `edge-task-result-${resultNode.id}`,
       from: resultSourceId,
@@ -407,8 +509,8 @@ export function buildResultEdges(resultNodes, responseResults, taskNodes, handof
   return edges;
 }
 
-export function buildHandoffEdges(handoffNodes, handoffEvents, taskNodes, responseResults) {
-  const edges = [];
+export function buildHandoffEdges(handoffNodes: GraphNode[], handoffEvents: HandoffEvent[], taskNodes: GraphNode[], responseResults: SwarmResult[]): GraphEdge[] {
+  const edges: GraphEdge[] = [];
   handoffNodes.forEach((node, index) => {
     const handoff = handoffEvents[index];
     const senderRole = String(handoff.sender || "supervisor").toLowerCase();
@@ -449,8 +551,8 @@ export function buildHandoffEdges(handoffNodes, handoffEvents, taskNodes, respon
   return edges;
 }
 
-export function buildTelemetryEdges(telemetryNodes, resultNodes, responseResults) {
-  const latestResultByRole = new Map();
+export function buildTelemetryEdges(telemetryNodes: GraphNode[], resultNodes: GraphNode[], responseResults: SwarmResult[]): GraphEdge[] {
+  const latestResultByRole = new Map<string, string>();
   resultNodes.forEach((node, index) => {
     latestResultByRole.set(String(responseResults[index]?.agent_role || "").toLowerCase(), node.id);
   });
@@ -462,7 +564,7 @@ export function buildTelemetryEdges(telemetryNodes, resultNodes, responseResults
       .find((item) => item.actor === telemetryNode.actor);
     return {
       id: `edge-telemetry-${telemetryNode.id}`,
-      from: previousTelemetry?.id || latestResultByRole.get(telemetryNode.actor) || `agent-${telemetryNode.actor}`,
+      from: previousTelemetry?.id || latestResultByRole.get(telemetryNode.actor || "system") || `agent-${telemetryNode.actor || "system"}`,
       to: telemetryNode.id,
       label: telemetryNode.title.toLowerCase(),
       emphasis: telemetryNode.type === "thought" ? "strong" : "light",
@@ -470,7 +572,7 @@ export function buildTelemetryEdges(telemetryNodes, resultNodes, responseResults
   });
 }
 
-export function computeGraphDimensions(lanes, laneDecisionCounts) {
+export function computeGraphDimensions(lanes: Lane[], laneDecisionCounts: Map<string, number>) {
   const width = Math.max(1180, lanes.length * 260 + 140);
   const height = Math.max(
     980,
@@ -479,7 +581,7 @@ export function computeGraphDimensions(lanes, laneDecisionCounts) {
   return { width, height };
 }
 
-export function computeGraphMetrics(lanes, taskNodes, telemetryNodes, handoffNodes) {
+export function computeGraphMetrics(lanes: Lane[], taskNodes: GraphNode[], telemetryNodes: GraphNode[], handoffNodes: GraphNode[]) {
   return {
     roles: lanes.length,
     tasks: taskNodes.length,
@@ -487,4 +589,3 @@ export function computeGraphMetrics(lanes, taskNodes, telemetryNodes, handoffNod
     handoffs: handoffNodes.length,
   };
 }
-

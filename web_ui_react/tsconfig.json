@@ -1,7 +1,7 @@
 {
-  // checkJs is intentionally false: the app is almost entirely .jsx/.js (one
-  // .ts file exists, src/hooks/useThrottledStream.ts). `npm run typecheck`
-  // therefore only type-checks that one file plus TS-side module resolution
+  // checkJs is intentionally false: most of the app remains .jsx/.js (three
+  // .ts files currently exist). `npm run typecheck` therefore only type-checks
+  // those migrated files plus TS-side module resolution
   // -- it does not type-check component/hook logic. Do not read a passing
   // `npm run typecheck` as type safety for the .jsx/.js tree; use it only as
   // a regression gate for genuinely-typed (.ts/.tsx) code.

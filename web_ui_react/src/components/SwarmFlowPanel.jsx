@@ -1,5 +1,5 @@
 import { useSwarmFlowController } from "../hooks/useSwarmFlowController.js";
-import { formatTime, NODE_HEIGHT, NODE_WIDTH } from "../lib/swarmFlowGraph.js";
+import { formatTime, NODE_HEIGHT, NODE_WIDTH } from "../lib/swarmFlowGraph";
 import { AutonomyTimeline } from "./panels/swarm/AutonomyTimeline.jsx";
 import { GraphView } from "./panels/swarm/GraphView.jsx";
 import { HitlQueue } from "./panels/swarm/HitlQueue.jsx";
@@ -13,7 +13,7 @@ export {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "../lib/swarmFlowGraph.js";
+} from "../lib/swarmFlowGraph";
 
 export function SwarmFlowPanel() {
   const {

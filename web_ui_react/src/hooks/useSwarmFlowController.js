@@ -24,7 +24,7 @@ import {
   inferHitlActionFromNode,
   NODE_HEIGHT,
   NODE_WIDTH,
-} from "../lib/swarmFlowGraph.js";
+} from "../lib/swarmFlowGraph";
 
 const DEFAULT_TASKS = [
   {
