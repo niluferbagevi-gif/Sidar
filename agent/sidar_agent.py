@@ -52,6 +52,9 @@ from agent.self_heal.executor import (
 from agent.self_heal.executor import (
     restore_self_heal_backups as restore_self_heal_backups_service,
 )
+from agent.self_heal.planner import build_plan as build_self_heal_plan_service
+from agent.self_heal.planner import collect_snapshots as collect_self_heal_snapshots_service
+from agent.self_heal.planner import resolve_scope_batches as resolve_self_heal_scope_batches_service
 from config import Config
 from core.ci_remediation import (
     build_ci_failure_context,
@@ -448,58 +451,17 @@ class SidarAgent:
             break
 
     async def _collect_self_heal_snapshots(self, scope_paths: list[str]) -> list[dict[str, str]]:
-        snapshots: list[dict[str, str]] = []
-        for path in scope_paths[:6]:
-            normalized = str(path or "").strip().lstrip("./")
-            if not normalized:
-                continue
-            ok, content = await asyncio.to_thread(self.code.read_file, normalized, False)
-            if not ok:
-                continue
-            snapshots.append({"path": normalized, "content": str(content)})
-        return snapshots
+        return await collect_self_heal_snapshots_service(self.code, scope_paths)
 
     def _resolve_self_heal_scope_batches(
         self, scope_paths: list[str], remediation_loop: dict[str, Any]
     ) -> list[list[str]]:
-        configured_batch_size = max(
+        batch_size = max(
             1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
         )
-        candidate_batches: list[list[str]] = []
-        for item in list(remediation_loop.get("autonomous_batches") or []):
-            if not isinstance(item, dict):
-                continue
-            batch_scope = [
-                str(path).strip()
-                for path in list(item.get("scope_paths") or [])
-                if str(path).strip()
-            ]
-            if batch_scope:
-                candidate_batches.append(batch_scope)
-        if not candidate_batches:
-            candidate_batches = [
-                scope_paths[index : index + configured_batch_size]
-                for index in range(0, len(scope_paths), configured_batch_size)
-            ]
-
-        normalized: list[list[str]] = []
-        seen_keys: set[tuple[str, ...]] = set()
-        for batch_scope in candidate_batches:
-            chunk: list[str] = []
-            seen_in_chunk: set[str] = set()
-            for path in batch_scope:
-                if path not in scope_paths or path in seen_in_chunk:
-                    continue
-                seen_in_chunk.add(path)
-                chunk.append(path)
-            if not chunk:
-                continue
-            key = tuple(chunk)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            normalized.append(chunk)
-        return normalized
+        return resolve_self_heal_scope_batches_service(
+            scope_paths, remediation_loop, batch_size=batch_size
+        )
 
     async def _build_self_heal_plan(
         self,
@@ -508,148 +470,18 @@ class SidarAgent:
         diagnosis: str,
         remediation_loop: dict[str, Any],
     ) -> dict[str, Any]:
-        scope_paths = [
-            str(item).strip()
-            for item in list(remediation_loop.get("scope_paths") or [])
-            if str(item).strip()
-        ]
-        if not scope_paths:
-            return {
-                "summary": "Self-heal kapsamı boş olduğu için plan oluşturulmadı.",
-                "confidence": "unknown",
-                "operations": [],
-                "validation_commands": list(remediation_loop.get("validation_commands") or []),
-            }
-
-        max_operations = max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3))
-        fallback_validation_commands = list(remediation_loop.get("validation_commands") or [])
-        plan_timeout_seconds = max(
-            30,
-            int(getattr(self.cfg, "SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180) or 180),
+        return await build_self_heal_plan_service(
+            code=self.code,
+            llm=self.llm,
+            cfg=self.cfg,
+            ci_context=ci_context,
+            diagnosis=diagnosis,
+            remediation_loop=remediation_loop,
+            prompt_builder=build_self_heal_patch_prompt,
+            plan_normalizer=normalize_self_heal_plan,
+            logger=logger,
+            range_factory=globals().get("range", range),
         )
-        plan_max_retries = max(
-            1,
-            int(getattr(self.cfg, "SELF_HEAL_PLAN_MAX_RETRIES", 3) or 3),
-        )
-        skip_full_scope_min_files = max(
-            1,
-            int(getattr(self.cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6),
-        )
-
-        async def _generate_plan_for_scope(paths: list[str]) -> dict[str, Any]:
-            last_plan: dict[str, Any] | None = None
-            for attempt in range(1, plan_max_retries + 1):
-                snapshots = await self._collect_self_heal_snapshots(paths)
-                scope_loop = dict(remediation_loop)
-                scope_loop["scope_paths"] = paths
-                scope_loop["plan_retry"] = {"attempt": attempt, "max_retries": plan_max_retries}
-                prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
-                try:
-                    raw_plan = await asyncio.wait_for(
-                        self.llm.chat(
-                            messages=[{"role": "user", "content": prompt}],
-                            model=getattr(self.cfg, "CODING_MODEL", None),
-                            temperature=0.1,
-                            stream=False,
-                            json_mode=True,
-                        ),
-                        timeout=plan_timeout_seconds,
-                    )
-                except TimeoutError:
-                    logger.warning(
-                        "Self-heal plan generation timeout: scope=%s timeout=%ss attempt=%s/%s",
-                        ",".join(paths[:6]),
-                        plan_timeout_seconds,
-                        attempt,
-                        plan_max_retries,
-                    )
-                    last_plan = {
-                        "summary": (
-                            "Self-heal planı zaman aşımına uğradı; "
-                            "daha küçük batch ile yeniden denenecek."
-                        ),
-                        "confidence": "unknown",
-                        "operations": [],
-                        "validation_commands": fallback_validation_commands,
-                    }
-                    continue
-                except Exception as exc:
-                    logger.warning(
-                        "Self-heal plan generation failed for scope %s at attempt %s/%s: %s",
-                        paths,
-                        attempt,
-                        plan_max_retries,
-                        exc,
-                    )
-                    last_plan = {
-                        "summary": f"Self-heal planı üretilemedi: {exc}",
-                        "confidence": "unknown",
-                        "operations": [],
-                        "validation_commands": fallback_validation_commands,
-                    }
-                    continue
-
-                normalized = normalize_self_heal_plan(
-                    raw_plan,
-                    scope_paths=paths,
-                    fallback_validation_commands=fallback_validation_commands,
-                    max_operations=max_operations,
-                )
-                normalized["plan_attempt"] = attempt
-                normalized["plan_max_retries"] = plan_max_retries
-                if list(normalized.get("operations") or []):
-                    return normalized
-                last_plan = normalized
-
-            if last_plan is not None:
-                summary = str(last_plan.get("summary") or "").strip()
-                attempts_info = f" (attempts: {plan_max_retries}/{plan_max_retries})"
-                last_plan["summary"] = (
-                    f"{summary}{attempts_info}" if summary else attempts_info.strip()
-                )
-                last_plan["plan_attempt"] = plan_max_retries
-                last_plan["plan_max_retries"] = plan_max_retries
-                return last_plan
-
-            return {
-                "summary": "Self-heal planı üretilemedi; plan deneme döngüsü çalışmadı.",
-                "confidence": "unknown",
-                "operations": [],
-                "validation_commands": fallback_validation_commands,
-                "plan_attempt": 0,
-                "plan_max_retries": plan_max_retries,
-            }
-
-        should_attempt_full_scope = len(scope_paths) < skip_full_scope_min_files and not list(
-            remediation_loop.get("autonomous_batches") or []
-        )
-        fallback_plan: dict[str, Any] | None = None
-        if should_attempt_full_scope:
-            initial_plan = await _generate_plan_for_scope(scope_paths)
-            if list(initial_plan.get("operations") or []):
-                return initial_plan
-            fallback_plan = initial_plan
-
-        for chunk in self._resolve_self_heal_scope_batches(scope_paths, remediation_loop):
-            batch_plan = await _generate_plan_for_scope(chunk)
-            if list(batch_plan.get("operations") or []):
-                summary = str(batch_plan.get("summary") or "").strip()
-                batch_plan["summary"] = (
-                    f"{summary} (batch plan: {len(chunk)}/{len(scope_paths)} dosya)"
-                    if summary
-                    else f"Batch plan ile patch üretildi: {len(chunk)}/{len(scope_paths)} dosya."
-                )
-                return batch_plan
-            fallback_plan = batch_plan
-
-        if fallback_plan is not None:
-            return fallback_plan
-        return {
-            "summary": "Self-heal planı üretilemedi.",
-            "confidence": "unknown",
-            "operations": [],
-            "validation_commands": fallback_validation_commands,
-        }
 
     async def _restore_self_heal_backups(self, backups: dict[str, str]) -> None:
         await restore_self_heal_backups_service(self.code, backups)
