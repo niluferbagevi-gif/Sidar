@@ -1089,6 +1089,38 @@ PY_TEST_DB_PASSWORD
   echo "✅ Test PostgreSQL parolası dotenv zincirinden güvenli biçimde çözüldü (değer loglanmadı)."
 }
 
+# Pytest's test-profile dotenv is an intentional override layer.  Remove its
+# explicit PostgreSQL URLs before exporting the freshly prepared sidar_test DSN;
+# otherwise a legacy ?ssl=disable URL can overwrite that process value during
+# collection and make asyncpg fall back to the shared degraded SQLite database.
+sanitize_test_database_url_overrides() {
+  local test_dotenv_file="${DOTENV_FILE:-.env.test}"
+
+  if [ ! -f "${test_dotenv_file}" ]; then
+    return 0
+  fi
+
+  if ! uv run python - "${test_dotenv_file}" <<'PY_SANITIZE_TEST_DATABASE_URLS'
+from pathlib import Path
+import sys
+
+from scripts.sync_database_passwords import remove_explicit_database_urls_from_text
+
+path = Path(sys.argv[1])
+original = path.read_text(encoding="utf-8")
+updated, summary = remove_explicit_database_urls_from_text(original)
+if updated != original:
+    path.write_text(updated, encoding="utf-8")
+print(",".join(summary["removed_keys"]))
+PY_SANITIZE_TEST_DATABASE_URLS
+  then
+    echo "❌ Test dotenv DATABASE_URL pre-flight temizliği başarısız: ${test_dotenv_file}"
+    return 1
+  fi
+
+  echo "✅ Test dotenv PostgreSQL URL override pre-flight kontrolü tamamlandı: ${test_dotenv_file}"
+}
+
 sync_postgres_login_role() {
   local admin_db_user="$1"
   local role_name="$2"
@@ -1857,7 +1889,7 @@ run_bats_shell_tests() {
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
 if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then
   if backend_infra_required_for_stage; then
-    if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && load_test_database_password_env && ensure_test_services && prepare_test_database; then
+    if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && sanitize_test_database_url_overrides && load_test_database_password_env && ensure_test_services && prepare_test_database; then
       run_pytest_coverage_report
       run_bats_shell_tests
       update_progressive_coverage_gate

@@ -398,6 +398,8 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
     script = _script()
 
+    assert "sanitize_test_database_url_overrides()" in script
+    assert "remove_explicit_database_urls_from_text" in script
     assert "load_test_database_password_env()" in script
     assert 'DOTENV_FILE="${test_dotenv_file}" uv run python - "${password_file}"' in script
     assert "_effective_postgres_password(discover_env_chain())" in script
@@ -432,9 +434,9 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
         in script
     )
     assert "DATABASE_URL test için ayarlandı: ${DATABASE_URL}" not in script
-    assert script.index("load_test_database_password_env && ensure_test_services") < script.index(
-        "&& prepare_test_database; then"
-    )
+    preflight = "sanitize_test_database_url_overrides && load_test_database_password_env"
+    assert preflight in script
+    assert script.index(preflight) < script.index("&& prepare_test_database; then")
 
 
 def test_prepare_test_database_rejects_case_folded_primary_database_collision(

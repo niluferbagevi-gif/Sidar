@@ -2525,6 +2525,17 @@ def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -
     assert "data/sidar_degraded.db" in fallback_url
 
 
+def test_postgres_degraded_sqlite_url_is_xdist_worker_specific(tmp_path, monkeypatch) -> None:
+    """Concurrent degraded workers must not share SQLite WAL/SHM files."""
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw/1")
+    cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
+    db = Database(cfg=cfg)
+
+    fallback_url = db._postgres_degraded_sqlite_url()
+
+    assert fallback_url.endswith("/data/sidar_degraded.gw_1.db")
+
+
 @pytest.mark.asyncio
 async def test_add_messages_bulk_handles_diverse_token_types(sqlite_db: Database) -> None:
     """Lines 3367, 3370-3376: tokens_used için bool/str/diğer tipler güvenle çevrilmeli."""
