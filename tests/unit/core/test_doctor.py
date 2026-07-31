@@ -2182,6 +2182,152 @@ def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection()
         doctor.validate_auto_fix_command("uv run python -m scripts.seed_rag bad;arg")
 
 
+def test_database_env_fix_skips_check_without_published_auto_fix(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "fail", "drift", {"auto_fix": "  "}),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair == {
+        "check": "database_env",
+        "before_status": "fail",
+        "attempted": False,
+        "success": False,
+        "message": "database environment check did not publish an auto-fix",
+    }
+
+
+def test_database_env_fix_skips_already_healthy_environment(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "pass", "healthy"),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is False
+    assert repair["success"] is True
+    assert repair["message"] == "database environment already healthy; no repair was needed"
+
+
+def test_database_env_fix_reports_rejected_auto_fix(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "fail", "drift", {"auto_fix": "unsafe command"}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "validate_auto_fix_command",
+        lambda command: (_ for _ in ()).throw(ValueError(f"rejected {command}")),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is False
+    assert repair["success"] is False
+    assert (
+        repair["message"] == "database environment auto-fix was rejected: rejected unsafe command"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_details", "expected_database_url", "expected_container_url"),
+    [
+        (
+            {
+                "database_url_source": ".env",
+                "container_database_url_source": ".env.local",
+            },
+            None,
+            None,
+        ),
+        (
+            {"database_url_source": ".env", "container_database_url_source": ""},
+            None,
+            "shell-container",
+        ),
+        (
+            {"database_url_source": "", "container_database_url_source": None},
+            "shell-db",
+            "shell-container",
+        ),
+    ],
+)
+def test_database_env_fix_clears_only_urls_owned_by_editable_sources(
+    monkeypatch, source_details, expected_database_url, expected_container_url
+) -> None:
+    command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    monkeypatch.setenv("DATABASE_URL", "shell-db")
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "shell-container")
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck(
+            "database_env", "fail", "drift", {"auto_fix": command, **source_details}
+        ),
+    )
+    monkeypatch.setattr(doctor, "validate_auto_fix_command", lambda value: [value])
+    monkeypatch.setattr(doctor, "_run_command", lambda tokens, timeout: (0, "password=secret"))
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is True
+    assert repair["success"] is True
+    assert repair["output"] == "password=***"
+    assert doctor.os.environ.get("DATABASE_URL") == expected_database_url
+    assert doctor.os.environ.get("SIDAR_CONTAINER_DATABASE_URL") == expected_container_url
+
+
+def test_database_env_fix_preserves_urls_when_repair_command_fails(monkeypatch) -> None:
+    command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    monkeypatch.setenv("DATABASE_URL", "shell-db")
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck(
+            "database_env",
+            "fail",
+            "drift",
+            {"auto_fix": command, "database_url_source": ".env"},
+        ),
+    )
+    monkeypatch.setattr(doctor, "validate_auto_fix_command", lambda value: [value])
+    monkeypatch.setattr(doctor, "_run_command", lambda tokens, timeout: (1, "repair failed"))
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is True
+    assert repair["success"] is False
+    assert repair["message"] == "database environment auto-fix failed"
+    assert doctor.os.environ["DATABASE_URL"] == "shell-db"
+
+
+def test_doctor_main_fix_persists_repair_in_report(monkeypatch, tmp_path, capsys) -> None:
+    repair = {"check": "database_env", "attempted": True, "success": True}
+    report = {"overall_status": "pass", "checks": []}
+    writes = []
+    monkeypatch.setattr(doctor, "_apply_database_env_fix", lambda: repair)
+    monkeypatch.setattr(doctor, "run_doctor_report", lambda output_path: report)
+    monkeypatch.setattr(
+        doctor,
+        "write_doctor_report",
+        lambda payload, output_path: writes.append((payload.copy(), output_path)),
+    )
+    output = tmp_path / "doctor.json"
+
+    exit_code = doctor.main(["--fix", str(output)])
+
+    assert exit_code == 0
+    assert report["repairs"] == [repair]
+    assert writes == [(report, output)]
+    assert json.loads(capsys.readouterr().out)["repairs"] == [repair]
+
+
 def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
     check = DoctorCheck(
         "db",
