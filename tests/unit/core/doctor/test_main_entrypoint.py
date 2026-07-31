@@ -33,9 +33,7 @@ def test_database_env_fix_runs_allowlisted_command_and_clears_editable_urls(
         "fail",
         "drift",
         {
-            "auto_fix": (
-                "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
-            ),
+            "auto_fix": ("uv run python -m scripts.sync_database_passwords --remove-explicit-urls"),
             "database_url_source": "/repo/.env.development",
             "container_database_url_source": "",
         },
@@ -43,9 +41,7 @@ def test_database_env_fix_runs_allowlisted_command_and_clears_editable_urls(
     monkeypatch.setattr(doctor, "check_database_env", lambda: check)
     monkeypatch.setattr(doctor, "_run_command", lambda command, timeout: (0, "updated"))
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:secret@localhost/sidar")
-    monkeypatch.setenv(
-        "SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:secret@postgres/sidar"
-    )
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:secret@postgres/sidar")
 
     result = doctor._apply_database_env_fix()
 
