@@ -13,9 +13,7 @@ from typing import Any, Protocol
 
 
 class _CodeReader(Protocol):
-    def read_file(
-        self, path: str, include_line_numbers: bool = False
-    ) -> tuple[bool, Any]:
+    def read_file(self, path: str, include_line_numbers: bool = False) -> tuple[bool, Any]:
         raise NotImplementedError
 
 
