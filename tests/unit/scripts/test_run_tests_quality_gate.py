@@ -5186,9 +5186,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert exception["backport_version"] == "1.1.17"
     assert exception["exception_review_at"] == "2026-09-30T00:00:00Z"
     assert exception["days_remaining"] > 0
-    assert exception["maintenance_plan"] == (
-        "docs/development/frontend-eslint-10-migration.md"
-    )
+    assert exception["maintenance_plan"] == ("docs/development/frontend-eslint-10-migration.md")
 
     expired = run_audit(
         {
