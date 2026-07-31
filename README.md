@@ -1301,8 +1301,8 @@ ile başlar; `install_sidar.sh` yalnız GPU tespit ettiğinde oluşturulan `.env
 `true` yapar. `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
 `RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı güvenli
 0.8 hedefini aşarsa (0.8–1.0 arasındaki gri bölge dahil) Sidar oranları koruyarak
-0.8 toplamına normalize eder. Örneğin `0.6 + 0.3 = 0.9`, etkin olarak yaklaşık
-`0.5333 + 0.2667 = 0.8` uygulanır; WSL2/düşük VRAM ortamında
+0.8 toplamına normalize eder. Güncel geliştirme şablonu doğrudan güvenli
+`0.53 + 0.27 = 0.8` bütçesiyle başlar; WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API
 tokenlarını ise `.env` veya tercihen repo dışında `~/.sidar_keys.env` içinde tutun;
 `.env.advanced` yalnız referans/override şablonudur ve güncel anahtar şablonu

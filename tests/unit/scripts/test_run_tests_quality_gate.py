@@ -1903,12 +1903,23 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "USE_GPU=false" in env_development
     assert "REQUIRE_GPU=false" in env_development
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
-    assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development
-    assert "RAG_GPU_MEMORY_FRACTION=0.3" in env_development
+    assert "LLM_GPU_MEMORY_FRACTION=0.53" in env_development
+    assert "RAG_GPU_MEMORY_FRACTION=0.27" in env_development
+    assert "LLM_GPU_MEMORY_FRACTION=0.6" not in env_development
+    assert "RAG_GPU_MEMORY_FRACTION=0.3" not in env_development
     assert (
         "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars"
         in env_development
     )
+
+
+def test_advanced_env_gpu_defaults_stay_within_safe_vram_budget() -> None:
+    env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+
+    assert "GPU_MEMORY_FRACTION=0.8" in env_advanced
+    assert "LLM_GPU_MEMORY_FRACTION=0.53" in env_advanced
+    assert "RAG_GPU_MEMORY_FRACTION=0.27" in env_advanced
+    assert "Toplamın 0.90 - 0.95 arası olması önerilir" not in env_advanced
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
