@@ -2631,6 +2631,24 @@ def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clon
     ) < missing_module_flow.index("bootstrap_clone_and_reexec")
 
 
+def test_installer_doctor_fix_is_forwarded_and_scope_limited() -> None:
+    """Installer doctor must expose the safe repair without implying RAG writes."""
+    install_cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
+    post_install = Path("scripts/install_modules/phases/11_post_install.sh").read_text(
+        encoding="utf-8"
+    )
+    ux = Path("scripts/install_modules/utils/ux.sh").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "DOCTOR_FIX=false" in install_cli
+    assert "--fix) DOCTOR_FIX=true" in install_cli
+    assert '"$INSTALL_SUBCOMMAND" != "doctor"' in install_cli
+    assert "doctor_cmd+=(--fix)" in post_install
+    assert "[--fix]" in ux
+    assert "./install_sidar.sh doctor --fix" in readme
+    assert "RAG seed işlemi veri yazdığı için bilinçli olarak otomatik uygulanmaz" in readme
+
+
 def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 

@@ -86,6 +86,7 @@ sidar_parse_install_cli() {
 
 
     INSTALL_SUBCOMMAND="full"
+    DOCTOR_FIX=false
     # shellcheck disable=SC2034  # UPGRADE_LOCK is consumed by sourced python_env.sh install_python_deps.
     for arg in "$@"; do
         case "$arg" in
@@ -96,6 +97,7 @@ sidar_parse_install_cli() {
             --dependency-profile=*) DEPENDENCY_PROFILE="${arg#*=}" ;;
             --i-understand-full-access) ALLOW_FULL_ACCESS=true ;;
             doctor|prepare-system|sync-deps|provision-models|smoke) INSTALL_SUBCOMMAND="$arg" ;;
+            --fix) DOCTOR_FIX=true ;;
             --cpu)  FORCE_CPU=true ;;
             --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
             --silent) SILENT_MODE=true ;;
@@ -141,6 +143,11 @@ sidar_parse_install_cli() {
             *)      warn "$(sidar_t invalid_arg "$arg")"; exit 1 ;;
         esac
     done
+
+    if [[ "$DOCTOR_FIX" == true && "$INSTALL_SUBCOMMAND" != "doctor" ]]; then
+        warn "--fix yalnız './install_sidar.sh doctor --fix' ile kullanılabilir."
+        exit 1
+    fi
 
     AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
     SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"

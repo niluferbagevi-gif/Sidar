@@ -311,6 +311,9 @@ run_doctor_phase() {
     else
         fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
     fi
+    if [[ "${DOCTOR_FIX:-false}" == true ]]; then
+        doctor_cmd+=(--fix)
+    fi
 
     # Eski bir rapor, çöken yeni bir doctor çalıştırmasını başarılı göstermemelidir.
     rm -f "$doctor_report"
