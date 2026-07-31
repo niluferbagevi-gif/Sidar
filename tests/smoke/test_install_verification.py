@@ -201,6 +201,38 @@ def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
     assert "SIDAR_CONFIG_QUIET" not in result.stderr
 
 
+def test_default_install_runs_doctor_before_finish_and_preserves_diagnostics() -> None:
+    """Run Doctor before the success summary without making findings fatal."""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -Eeuo pipefail
+                events=()
+                sidar_run_install_phase() { events+=("$1"); }
+                sidar_fail_if_wsl_integration_autofix_applied_current_session_main() { :; }
+                sidar_phase_handle_early_exit() { return 1; }
+                cleanup_bootstrap_script_copy() { :; }
+                run_doctor_phase() { events+=("doctor"); return 1; }
+                source scripts/install_modules/install_dispatcher.sh
+                sidar_dispatch_install_phases
+                printf '%s\n' "${events[@]}"
+                """
+            ),
+            "default-install-doctor-smoke",
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    events = result.stdout.splitlines()
+    assert events[-3:] == ["06_services", "doctor", "07_finish"]
+
+
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
     repo_dir = tmp_path / "Sidar"

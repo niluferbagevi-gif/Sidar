@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="3fcde19f470511217325ee969635f0e38ff01809"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="ef10634d73914ed5a9e357b4a3a839a98fdbb2bf"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -595,7 +595,7 @@ INSTALL_REMOTE_MODULES=(
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
 434bc6ea5f92c4a3b37df4df1b7b22036ee477e5f47d88dc2e5001f46e17a416  scripts/install_modules/install_cli.sh
-da28d54a68a4d2d30ff539cd8d0435265fe87000e24727505b312fee79e33603  scripts/install_modules/install_dispatcher.sh
+4a668ed1f4e9563352bf2f3bf5a58a5c88d27423cacf07c578e578dfe8a9d2ba  scripts/install_modules/install_dispatcher.sh
 a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/install_modules/install_helpers.sh
 054b069b8b5656b60204a40d72f30f6bdcb81cbb94473ed1cc407369814d34c1  scripts/install_modules/install_runtime.sh
 2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
