@@ -248,6 +248,26 @@ def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypat
     assert report["definitions"]["POSTGRES_DB"] == []
 
 
+def test_dotenv_source_report_ignores_non_effective_definition(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("POSTGRES_DB=sidar_file\nDATABASE_URL=postgresql://file/db\n")
+    monkeypatch.setenv("POSTGRES_DB", "sidar_process")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://file/db")
+
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "get_dotenv_load_report",
+        lambda: [{"loaded": True, "path": str(env_file), "label": "base", "override": False}],
+    )
+
+    report = doctor._dotenv_source_report(("POSTGRES_DB", "DATABASE_URL"))
+
+    assert "POSTGRES_DB" not in report["sources"]
+    assert report["sources"]["DATABASE_URL"]["label"] == "base"
+
+
 def test_uv_check_reports_missing_and_lock_failure(monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     missing = doctor.check_uv()
@@ -433,13 +453,26 @@ def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monk
     assert check.details["container_database_url_source_unattributed"] is False
 
 
-def test_database_env_allows_valid_unattributed_database_url(monkeypatch):
+@pytest.mark.parametrize(
+    ("env_name", "host", "detail_key"),
+    (
+        ("DATABASE_URL", "localhost", "database_url_source_unattributed"),
+        (
+            "SIDAR_CONTAINER_DATABASE_URL",
+            "postgres",
+            "container_database_url_source_unattributed",
+        ),
+    ),
+)
+def test_database_env_allows_valid_unattributed_database_url(
+    monkeypatch, env_name, host, detail_key
+):
     """Do not diagnose a healthy parent-shell URL merely because it is unattributed."""
     password = _STRONG_TEST_PASSWORD
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
-    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+    monkeypatch.setenv(env_name, f"postgresql://sidar:{password}@{host}:5432/sidar")
     monkeypatch.setattr(
         doctor,
         "_dotenv_source_report",
@@ -450,7 +483,7 @@ def test_database_env_allows_valid_unattributed_database_url(monkeypatch):
 
     assert check.status == "pass"
     assert check.message == "database environment looks secure"
-    assert check.details["database_url_source_unattributed"] is True
+    assert check.details[detail_key] is True
     assert "inherited from the parent process/shell environment" not in check.message
 
 
@@ -718,7 +751,6 @@ def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monk
         "PostgreSQL unavailable",
         {
             "error": "connection refused",
-            "error_type": "ConnectionRefusedError",
             "failure_category": "connection",
         },
     )
@@ -729,6 +761,26 @@ def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monk
     assert check.details["blocked_by"] == "database_connectivity"
     assert check.details["failure_category"] == "connection"
     assert "blocked by the PostgreSQL connectivity check" in check.message
+
+
+def test_pgvector_ready_probes_when_passed_connectivity_has_no_evidence(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+
+    def _successful_probe(awaitable):
+        awaitable.close()
+        return {"select_1": True, "pgvector_extension_installed": True}
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _successful_probe)
+    connectivity = DoctorCheck(
+        "database_connectivity", "pass", "PostgreSQL connectivity smoke passed", {}
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "pass"
+    assert check.details["pgvector_extension_installed"] is True
 
 
 def test_pgvector_ready_reuses_successful_connectivity_probe(monkeypatch):
@@ -835,6 +887,19 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     )
     assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
     assert "uv run python -m scripts.seed_rag" in check.details["follow_up_commands"]
+
+
+def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatch, tmp_path):
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
 
 
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
