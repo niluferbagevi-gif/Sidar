@@ -120,7 +120,7 @@ export default defineConfig(() => {
           "src/**/*.test.{js,jsx,ts,tsx}",
           "src/test/**",
           "src/components/PanelErrorBoundary.jsx", // minimal fallback boundary; behavior is covered by dedicated tests
-          "src/lib/routerShim.jsx", // shim behavior is covered by dedicated router tests
+          "src/lib/routerShim.tsx", // shim behavior is covered by dedicated router tests
         ],
         thresholds: {
           lines: 90,

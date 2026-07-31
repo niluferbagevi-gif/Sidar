@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "./lib/routerShim.jsx";
+import { MemoryRouter } from "./lib/routerShim.tsx";
 import App from "./App.jsx";
 
 vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div>Chat Mock</div> }));

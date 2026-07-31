@@ -7,7 +7,7 @@ import {
   Routes,
   Navigate,
   NavLink,
-} from "./routerShim.jsx";
+} from "./routerShim.tsx";
 
 // ─────────────────────────────────────────────────────────
 // Yardımcılar

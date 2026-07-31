@@ -12,7 +12,10 @@ Başlangıçta `web_ui_react/src` altında 16 `.js`, 42 `.jsx`, 1 `.ts` ve 0 `.t
 dosyası vardı. İlk dilimde `src/hooks/useFormState.ts` de TypeScript'e taşındı;
 İlk state/logic dilimlerinden sonra `useSwarmFlowController.ts` de paylaşılan swarm
 graph tiplerini kullanacak şekilde taşınmış; ratchet envanteri 14 `.js`, 42 `.jsx`,
-4 `.ts` ve 0 `.tsx` seviyesine sıkılaştırılmıştır. Saf swarm graph oluşturma katmanı
+4 `.ts` ve 0 `.tsx` seviyesine sıkılaştırılmıştır. İlk React dilimi olarak
+`src/lib/routerShim.tsx`, router context ve bileşen prop sözleşmeleri açık tiplerle
+taşınmış; güncel ratchet 14 `.js`, 41 `.jsx`, 4 `.ts` ve 1 `.tsx` olmuştur.
+Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
@@ -22,8 +25,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 56 untyped (`.js` + `.jsx`) ve en az
-4 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 55 untyped (`.js` + `.jsx`) ve en az
+5 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

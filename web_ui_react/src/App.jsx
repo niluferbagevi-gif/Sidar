@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "./lib/routerShim.jsx";
+import { NavLink, Navigate, Route, Routes } from "./lib/routerShim.tsx";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, getTokenPrincipal, isAdminPrincipal, setStoredToken } from "./lib/api.js";

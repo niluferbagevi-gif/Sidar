@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "./lib/routerShim.jsx";
+import { MemoryRouter } from "./lib/routerShim.tsx";
 import App from "./App.jsx";
 
 const chatStore = {

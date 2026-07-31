@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "./lib/routerShim.jsx";
+import { BrowserRouter } from "./lib/routerShim.tsx";
 import App from "./App.jsx";
 import "./index.css";
 

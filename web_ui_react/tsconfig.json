@@ -1,6 +1,6 @@
 {
-  // checkJs is intentionally false: most of the app remains .jsx/.js (three
-  // .ts files currently exist). `npm run typecheck` therefore only type-checks
+  // checkJs is intentionally false: most of the app remains .jsx/.js (only
+  // five .ts/.tsx files currently exist). `npm run typecheck` therefore only type-checks
   // those migrated files plus TS-side module resolution
   // -- it does not type-check component/hook logic. Do not read a passing
   // `npm run typecheck` as type safety for the .jsx/.js tree; use it only as
