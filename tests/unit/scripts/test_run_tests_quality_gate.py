@@ -5000,7 +5000,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "strictPort: true" in vite_server
     assert "html.includes('id=\"root\"')" in vite_server
     assert "`${url}/src/main.jsx`" in vite_server
-    assert "`${url}/src/App.jsx`" in vite_server
+    assert "`${url}/src/App.tsx`" in vite_server
     assert "`${url}/src/components/StatusBar.jsx`" in vite_server
     assert "`${url}/src/lib/routerShim.jsx`" in vite_server
     assert 'test.describe.configure({ mode: "serial" })' in websocket_spec
@@ -5035,7 +5035,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "optimizeDeps:" in vite
     assert '"index.html"' in vite
     assert '"src/main.jsx"' in vite
-    assert '"src/App.jsx"' in vite
+    assert '"src/App.tsx"' in vite
     assert '"src/components/*.jsx"' in vite
     assert '"!src/**/*.test.{js,jsx}"' in vite
     assert '"!e2e/**"' in vite
