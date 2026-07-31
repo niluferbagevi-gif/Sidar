@@ -19,11 +19,34 @@ run_installer_function() {
     trap "rm -rf \"$test_summary_tmpdir\"" EXIT
     export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
+    # Installer function tests must not inherit quality-gate state from the
+    # run_tests.sh process that invokes BATS (notably production-readiness).
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
+    unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
+    unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
   ' _ "$root" "$snippet"
+}
+
+@test "installer helper isolates tests from inherited quality-gate environment" {
+  export SIDAR_PRODUCTION_READINESS=1
+  export PRODUCTION_READINESS=1
+  export TEST_PROFILE=ci
+  export RUN_BENCHMARKS=required
+  export RUN_FRONTEND_E2E=1
+  export AUTO_OPEN_ARTIFACTS=1
+
+  run_installer_function '
+    [[ -z "${SIDAR_PRODUCTION_READINESS+x}" ]]
+    [[ -z "${PRODUCTION_READINESS+x}" ]]
+    [[ -z "${TEST_PROFILE+x}" ]]
+    [[ -z "${RUN_BENCHMARKS+x}" ]]
+    [[ -z "${RUN_FRONTEND_E2E+x}" ]]
+    [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {
