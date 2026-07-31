@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "./lib/routerShim.tsx";
-import App from "./App.jsx";
+import App from "./App.tsx";
 import * as api from "./lib/api.js";
 
 const { chatPanelMountSpy } = vi.hoisted(() => ({ chatPanelMountSpy: vi.fn() }));

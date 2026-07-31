@@ -27,7 +27,7 @@ npm run test:e2e    # Playwright ile WebSocket uçtan uca senaryoları
 
 ```
 src/
-├── App.jsx                    # Kök bileşen — WS + store bağlantısı
+├── App.tsx                    # Kök bileşen — WS + store bağlantısı
 ├── main.jsx                   # ReactDOM giriş noktası
 ├── index.css                  # Global stiller (koyu tema)
 ├── hooks/

@@ -82,7 +82,7 @@ export default defineConfig(() => {
       entries: [
         "index.html",
         "src/main.jsx",
-        "src/App.jsx",
+        "src/App.tsx",
         "src/components/*.jsx",
         "!src/**/*.test.{js,jsx}",
         "!e2e/**",

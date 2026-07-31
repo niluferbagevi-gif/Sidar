@@ -9,7 +9,7 @@ function base64UrlEncode(value) {
 }
 
 /**
- * Build a fake-but-decodable JWT for e2e purposes: App.jsx's client-side
+ * Build a fake-but-decodable JWT for e2e purposes: App.tsx's client-side
  * admin routing (getTokenPrincipal/isAdminPrincipal in src/lib/api.js) reads
  * `role` out of the middle (payload) segment of any `.`-delimited 3-part
  * token — it never verifies the signature — so the mock backend only needs

@@ -50,7 +50,7 @@ async function waitUntilReady(url) {
         fetchReadyResponse(url, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/chat`, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/src/main.jsx`),
-        fetchReadyResponse(`${url}/src/App.jsx`),
+        fetchReadyResponse(`${url}/src/App.tsx`),
         fetchReadyResponse(`${url}/src/components/StatusBar.jsx`),
         fetchReadyResponse(`${url}/src/lib/routerShim.jsx`),
         ...[

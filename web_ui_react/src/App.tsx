@@ -1,17 +1,26 @@
-import { lazy, Suspense, useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "./lib/routerShim.tsx";
+import { lazy, Suspense, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { NavLink, Navigate, Route, Routes } from "./lib/routerShim";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, getTokenPrincipal, isAdminPrincipal, setStoredToken } from "./lib/api.js";
 
-function MissingLazyPanel({ exportName }) {
+type NavigationItem = {
+  to: string;
+  label: string;
+  requiresAdmin?: boolean;
+};
+
+function MissingLazyPanel({ exportName }: { exportName: string }) {
   return <div className="panel__hint">Panel bileşeni yüklenemedi: {exportName}</div>;
 }
 
-function lazyNamed(loader, exportName) {
+function lazyNamed<ExportName extends string>(
+  loader: () => Promise<Record<ExportName, ComponentType>>,
+  exportName: ExportName,
+) {
   return lazy(() =>
     loader().then((module) => {
-      const Component = module?.[exportName];
+      const Component = module[exportName];
       return { default: Component || (() => <MissingLazyPanel exportName={exportName} />) };
     }),
   );
@@ -32,11 +41,11 @@ const ADMIN_ROUTES = [
   { path: "/admin/tenants", Panel: TenantAdminPanel },
 ];
 
-function withLazyPanel(node) {
+function withLazyPanel(node: ReactNode) {
   return withPanelErrorBoundary(<Suspense fallback={<div className="panel__hint">Panel yükleniyor...</div>}>{node}</Suspense>);
 }
 
-const NAV_ITEMS = [
+const NAV_ITEMS: NavigationItem[] = [
   { to: "/chat", label: "Sohbet" },
   { to: "/p2p", label: "P2P Diyalog" },
   { to: "/swarm", label: "Swarm Akışı" },
@@ -47,7 +56,7 @@ const NAV_ITEMS = [
   { to: "/admin/tenants", label: "Tenant Admin", requiresAdmin: true },
 ];
 
-function AdminRoute({ isAdmin, children }) {
+function AdminRoute({ isAdmin, children }: { isAdmin: boolean; children: ReactNode }) {
   if (isAdmin) return children;
   return (
     <section className="panel" role="alert">
