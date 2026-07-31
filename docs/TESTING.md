@@ -11,6 +11,16 @@ Kurulum veya `run_tests.sh` çıktısındaki sarı `RELEASE KAPSAMI EKSİK` /
 gösterir. Bu durumda geliştirici ortamı sağlıklı olabilir, ancak release/merge için
 aşağıdaki kanonik kapı ayrıca geçmelidir: `make production-readiness`.
 
+Backend `%100` branch coverage tabanı standart local/CI profillerinde korunur; kritik-yol
+dışı modüller için örtük daha düşük bir eşik uygulanmaz. GPU/opsiyonel bağımlılık ve yarış
+koşulu gibi gerçekten deterministik test edilemeyen yollar dar, gerekçeli
+`# pragma: no cover` kullanabilir. Bu istisnaların büyüyerek `%100` değerini anlamsızlaştırmasını
+önlemek için `scripts/ci/check_coverage_exclusion_budget.py`, test ve coverage-omit kapsamı
+dışındaki üretim Python dosyalarını sayar. Commitli
+`scripts/ci/coverage-exclusion-baseline.json` bütçesi tek yönlüdür: istisnalar kaldırıldıkça
+azaltılır; yeni istisna eklemek için başka bir istisnanın kaldırılması veya açık reviewer
+gerekçesi gerekir. Normal çözüm, daha gevşek modül eşiği değil deterministik hata-yolu testidir.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest

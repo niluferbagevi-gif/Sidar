@@ -302,6 +302,9 @@ jobs:
       - name: Check Ruff docstring and ASYNC240 debt baseline
         run: uv run python scripts/ci/check_ruff_debt_baseline.py
 
+      - name: Check production coverage exclusion budget
+        run: uv run python scripts/ci/check_coverage_exclusion_budget.py
+
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
 
