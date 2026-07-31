@@ -1112,6 +1112,26 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults identifies the target env variant in ssl repair logs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env.development"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env.development içinde asyncpg ile uyumsuz ssl query parametresi"* ]]
+  [[ "$output" == *".env.development: Uyumsuz ssl parametresi kaldırıldı"* ]]
+}
+
 @test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

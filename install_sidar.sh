@@ -179,7 +179,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="a541f82186f6e5cf7f879f96059dce2abb8c80bc"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="55d7245164cd7f82c0b0c6ba06f384cabe9a3faa"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -614,7 +614,7 @@ cc38e858e1fde0a14a0db63bfdbb3d6571fa992a96df27646084aebdea15cbe2  scripts/instal
 bdebacb1fac3f4d6c3f6caee6042ecf8a71d092de7012c6e13853bae0789b03e  scripts/install_modules/phases/12_alembic.sh
 9d612775f0ae694f228a075fd73d0ae547cc619f280ff5d2760ac69aebadb82a  scripts/install_modules/phases/13_playwright.sh
 ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
-e7ff273a08bec38292025f0077c545f0b6f35c27783bdab13d3acfb524b32c0b  scripts/install_modules/utils/database_url.sh
+8c142eb04f13e86e67a5cc673af9fc79ef8be2f61dd35c3451edc4ddc407fcbb  scripts/install_modules/utils/database_url.sh
 642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
 785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
 2455508c980e8a0a6311fe6e016524aa280d54f1bbe3f06535dde92844467ff5  scripts/install_modules/utils/env_utils.sh
