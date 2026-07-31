@@ -625,6 +625,24 @@ def check_database_env() -> DoctorCheck:
     status = "fail" if failures else ("warn" if warnings else "pass")
     message = "; ".join(failures or warnings or ["database environment looks secure"])
     failure_reason = "; ".join(failures) if failures else ""
+    database_config_missing = not database_url and not postgres_password
+    bootstrap_command = "uv run python -m scripts.bootstrap_env --profile development"
+    sync_command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    auto_fix = bootstrap_command if database_config_missing else sync_command
+    recommended_commands = (
+        [
+            bootstrap_command,
+            "SIDAR_ENV=development uv run python -m core.doctor artifacts/install/doctor.json",
+            "docker compose up -d postgres",
+        ]
+        if database_config_missing
+        else [
+            sync_command,
+            "uv run python -m scripts.sync_database_passwords",
+            "uv run python -m core.doctor artifacts/install/doctor.json",
+            "docker compose ps postgres",
+        ]
+    )
     return DoctorCheck(
         "database_env",
         status,
@@ -652,13 +670,8 @@ def check_database_env() -> DoctorCheck:
                 "path", ""
             ),
             "env_source_definitions": env_definitions,
-            "auto_fix": "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
-            "recommended_commands": [
-                "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
-                "uv run python -m scripts.sync_database_passwords",
-                "uv run python -m core.doctor artifacts/install/doctor.json",
-                "docker compose ps postgres",
-            ],
+            "auto_fix": auto_fix,
+            "recommended_commands": recommended_commands,
             "root_cause_hints": [
                 "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı "
                 "değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",

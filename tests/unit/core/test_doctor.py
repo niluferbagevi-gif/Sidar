@@ -284,6 +284,10 @@ def test_database_env_warns_without_url(monkeypatch):
 
     assert check.status == "warn"
     assert check.details["database_url_set"] is False
+    assert (
+        check.details["auto_fix"] == "uv run python -m scripts.bootstrap_env --profile development"
+    )
+    assert check.details["recommended_commands"][1].startswith("SIDAR_ENV=development ")
 
 
 def test_database_env_derives_urls_when_missing_but_postgres_password_present(monkeypatch):
