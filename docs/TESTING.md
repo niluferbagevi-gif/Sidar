@@ -287,11 +287,59 @@ protection altında en az şu CI job'ları required check olmalıdır:
 - `Installer manifest and smoke gate` (`installer-smoke` job'ı) — installer manifest/hash
   drift'i, raw installer smoke ve kritik kurulum zinciri kontrollerini merge öncesi zorunlu
   yapar.
+- `GPU Inference Required Evidence Gate` (`gpu-inference-policy-gate`) — GPU kanıtı
+  devre dışıysa veya GPU kalite job'ı başarıyla tamamlanmadıysa fail-closed kapanır.
+- `Production readiness aggregate` (`production-readiness`) — `test`, benchmark compare ve
+  GPU policy sonuçlarını tek merge/release kararı altında birleştirir.
 
-Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu iki required check ve
+Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu required check'ler ve
 production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
 Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
 bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+
+## CI production-readiness dışsal bağımlılıkları
+
+Production-readiness kod içi kapıları geçmenin yanında üç dışsal kanıta bağımlıdır. Bunlar
+bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün hazır olduğunu kanıtlamaz.
+
+### 1. Self-hosted GPU runner kullanılabilirliği
+
+`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, gpu]` etiketlerinin tümünü taşıyan
+bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
+çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
+sınırlamaz. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
+aggregate job'ı da tamamlanamaz.
+
+Operatör kontrol listesi:
+
+1. Repository/organization **Settings → Actions → Runners** altında runner'ın `Idle`/`Online`
+   olduğunu ve `self-hosted`, `linux`, `gpu` etiketlerini taşıdığını doğrulayın.
+2. Runner servisinin, GPU sürücüsünün ve model servisinin sağlığını kontrol edin; etiketi GPU
+   kanıtı üretemeyen genel amaçlı bir runner'a ekleyerek kapıyı atlatmayın.
+3. Runner hazır olduktan sonra kuyruktaki job'ı yeniden çalıştırın. Geçmiş bir başarılı GPU
+   artefaktı yeni commit SHA için kanıt sayılmaz.
+
+### 2. GPU policy repository değişkeni
+
+Repository variable `ENABLE_GPU_BENCH_GATE` tam olarak `true` olmalıdır. Değer eksik, farklı
+yazılmış veya `false` ise GPU quality job'ının atlanması beklenir; bağımsız
+`gpu-inference-policy-gate` bunu kabul etmez ve merge/release kararını `exit 1` ile durdurur.
+Bu davranış konfigürasyon hatasını yeşil sonuca dönüştürmemek için kasıtlıdır.
+
+Değişkeni **Settings → Secrets and variables → Actions → Variables** altında doğrulayın.
+Değişiklikten sonra workflow'u yeniden çalıştırın ve hem `gpu-inference-quality-gate` hem de
+`gpu-inference-policy-gate` sonuçlarının `success` olduğunu görmeden merge onayı vermeyin.
+
+### 3. Benchmark baseline cache/artifact ömrü
+
+Benchmark compare job'ı gözden geçirilmiş `.benchmarks/*_baseline.json` kanıtını restore
+edemezse yeni baseline üretmez ve fail-closed durur. Cache eviction veya seed artifact'inin
+retention süresinin dolması normal CI'ı bloke edebilir. Çözüm, eşiği gevşetmek değil aşağıdaki
+`CI benchmark baseline cache boşsa ne yapılır?` runbook'uyla `seed_benchmark_baseline=true`
+workflow_dispatch çalıştırmak ve ardından normal CI'ı yeniden koşmaktır.
+
+Bu üç durumun hiçbiri uygulama test regresyonu olmak zorunda değildir; ancak dış kanıt tekrar
+üretilene kadar production-readiness sonucu **kanıtlanmamış** ve release-blocking kalır.
 
 ## CI benchmark baseline cache boşsa ne yapılır?
 

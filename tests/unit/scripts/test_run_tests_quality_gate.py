@@ -2314,6 +2314,21 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır" in pr_template
 
 
+def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
+    """Operators must have a durable runbook for CI's external fail-closed gates."""
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "## CI production-readiness dışsal bağımlılıkları" in testing
+    assert "[self-hosted, linux, gpu]" in testing
+    assert "timeout-minutes" in testing
+    assert "queued süreyi" in testing
+    assert "ENABLE_GPU_BENCH_GATE" in testing
+    assert "gpu-inference-policy-gate" in testing
+    assert "seed_benchmark_baseline=true" in testing
+    assert "Cache eviction" in testing
+    assert "production-readiness sonucu **kanıtlanmamış**" in testing
+
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
