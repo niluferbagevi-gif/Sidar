@@ -900,7 +900,10 @@ def check_pgvector_ready(
             return DoctorCheck(
                 "pgvector_ready",
                 "warn",
-                "pgvector readiness could not be verified because PostgreSQL connectivity probe failed",
+                (
+                    "pgvector readiness could not be verified because PostgreSQL "
+                    "connectivity probe failed"
+                ),
                 details,
             )
 
