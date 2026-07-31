@@ -8,7 +8,7 @@ prevents the runtime agent from growing a second copy of remediation policy.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Protocol
 
 
@@ -17,7 +17,15 @@ class _CodeReader(Protocol):
 
 
 class _ChatClient(Protocol):
-    async def chat(self, **kwargs: Any) -> Any: ...
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> str | AsyncIterator[str]: ...
 
 
 async def collect_snapshots(code: _CodeReader, scope_paths: list[str]) -> list[dict[str, str]]:
