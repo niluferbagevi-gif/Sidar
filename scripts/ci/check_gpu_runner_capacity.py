@@ -42,7 +42,7 @@ def fetch_runner_payload(repository: str, token: str) -> dict[str, Any]:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=20) as response:  # nosec B310  # sabit https://api.github.com hedefi, kullanıcı girdisi değil.
             payload = json.loads(response.read().decode("utf-8"))
             if not isinstance(payload, dict):
                 raise RuntimeError("GPU runner API cevabı JSON object değil.")

@@ -275,19 +275,20 @@ PY
     unset POSTGRES_PASSWORD
     if [[ -f "$ENV_FILE" ]]; then
         local refreshed_db_url=""
-        local refreshed_postgres_password=""
         if resolve_runtime_database_url >/dev/null; then
             refreshed_db_url="$RUNTIME_DATABASE_URL"
         fi
-        refreshed_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$ENV_FILE")
 
+        # DATABASE_URL/POSTGRES_PASSWORD kasıtlı olarak env'e export edilmiyor:
+        # ALEMBIC_CMD ve sonraki alembic current/heads çağrıları bu değerleri
+        # her seferinde `env` prefix'i ile açıkça alır. Export etmek, üstteki
+        # `unset DATABASE_URL` ile önlenmeye çalışılan sızıntıyı geri getirir
+        # ve installer sürecinin geri kalanındaki (ör. Doctor fazı, SIDAR_ENV
+        # değişikliği sonrası is_alembic_at_head çağrısı) DATABASE_URL
+        # çözümlemesini proses ortamından gelen bayat değere kilitler.
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
             DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE} (yenilendi)"
-            export DATABASE_URL="$refreshed_db_url"
-        fi
-        if [[ -n "$refreshed_postgres_password" ]]; then
-            export POSTGRES_PASSWORD="$refreshed_postgres_password"
         fi
     fi
 

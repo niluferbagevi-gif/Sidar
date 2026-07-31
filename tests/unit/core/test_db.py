@@ -2517,7 +2517,12 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
     assert db._postgres_degraded_sqlite_url() == "sqlite+aiosqlite:////tmp/configured-degraded.db"
 
 
-def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:
+def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path, monkeypatch) -> None:
+    # Run outside any xdist worker context: run_tests.sh always executes unit
+    # tests under `-n auto`, which sets PYTEST_XDIST_WORKER and would append a
+    # worker suffix (see test_..._is_xdist_worker_specific below) that this
+    # serial-mode assertion doesn't expect.
+    monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
     cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
     db = Database(cfg=cfg)
     fallback_url = db._postgres_degraded_sqlite_url()
