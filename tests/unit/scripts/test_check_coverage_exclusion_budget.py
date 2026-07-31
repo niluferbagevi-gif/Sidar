@@ -28,7 +28,9 @@ def test_exclusion_budget_is_one_way_and_fails_closed(tmp_path: Path) -> None:
 
     assert main(["--root", str(tmp_path), "--baseline", str(baseline)]) == 0
 
-    source.write_text(source.read_text(encoding="utf-8") + "c = 3  # pragma: no cover\n", encoding="utf-8")
+    source.write_text(
+        source.read_text(encoding="utf-8") + "c = 3  # pragma: no cover\n", encoding="utf-8"
+    )
     assert main(["--root", str(tmp_path), "--baseline", str(baseline)]) == 1
 
 
