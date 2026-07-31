@@ -13,7 +13,10 @@ from typing import Any, Protocol
 
 
 class _CodeReader(Protocol):
-    def read_file(self, path: str, include_line_numbers: bool = False) -> tuple[bool, Any]: ...
+    def read_file(
+        self, path: str, include_line_numbers: bool = False
+    ) -> tuple[bool, Any]:
+        raise NotImplementedError
 
 
 class _ChatClient(Protocol):
@@ -25,7 +28,8 @@ class _ChatClient(Protocol):
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
-    ) -> str | AsyncIterator[str]: ...
+    ) -> str | AsyncIterator[str]:
+        raise NotImplementedError
 
 
 async def collect_snapshots(code: _CodeReader, scope_paths: list[str]) -> list[dict[str, str]]:
@@ -139,7 +143,10 @@ async def build_plan(
                     max_retries,
                 )
                 last_plan = {
-                    "summary": "Self-heal planı zaman aşımına uğradı; daha küçük batch ile yeniden denenecek.",
+                    "summary": (
+                        "Self-heal planı zaman aşımına uğradı; daha küçük batch ile "
+                        "yeniden denenecek."
+                    ),
                     "confidence": "unknown",
                     "operations": [],
                     "validation_commands": fallback_commands,
