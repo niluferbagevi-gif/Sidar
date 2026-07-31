@@ -1,4 +1,4 @@
-# SIDAR.md — Çalışma Prensipleri (v5.0.0-alpha)
+# SIDAR.md — Çalışma Prensipleri (v5.2.0)
 
 Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu dosya operasyonel sınırlarını belirler.
 
@@ -7,7 +7,7 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 - **Model Standardı:** Yerel (Ollama: `qwen2.5-coder:7b`) ve Bulut (Gemini: `gemini-2.5-flash`, OpenAI: `gpt-4o-mini`, Anthropic: `claude-3-5-sonnet`)
 - **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `PROJE_RAPORU.md` takip edilir.
 - **Rol Dağılımı:** Tüm görevler Supervisor ajan tarafından koordine edilir. Kodlama (Coder), araştırma (Researcher) ve kalite kontrol (Reviewer) süreçleri uzman ajanlara delege edilir.
-- **Güncel Durum:** `v5.0.0-alpha` ürün baseline'ında çalışan sistem; Faz A + Faz B teslimlerini kapatmış, multimodal/voice, browser automation, GraphRAG + LSP reviewer ve proaktif cron/webhook akışlarıyla açık audit bulgusu olmadan ilerler.
+- **Güncel Durum:** `v5.2.0` ürün baseline'ında çalışan sistem; Faz A + Faz B teslimlerini kapatmış, multimodal/voice, browser automation, GraphRAG + LSP reviewer ve proaktif cron/webhook akışlarıyla ilerler. v5.0/v5.1 adlı mimari belgeler ürün sürümünü değil, tarihsel vizyon ve faz evrimini belirtir.
 - **Swarm Görünürlüğü:** Ajanlar arası P2P görev devirleri, otonom cron tetikleri ve sonuç zinciri artık React tarafındaki `SwarmFlowPanel` üzerinde kullanıcıya görsel akış diyagramı olarak yansıtılır.
 - **Maliyet Disiplini:** LLM çağrıları `core/router.py` üzerinden karmaşıklık + günlük bütçe sinyaline göre izlenir; bütçe baskısında fail-safe olarak lokal sağlayıcıya dönülür.
 

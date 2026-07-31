@@ -1271,7 +1271,7 @@ class Config:
 
     @classmethod
     def _apply_gpu_memory_safety_check(cls) -> None:
-        """LLM+RAG VRAM fraksiyonu 1.0'ı aşarsa toplamı güvenli 0.8'e normalize eder."""
+        """LLM+RAG VRAM fraksiyonlarını güvenli 0.8 hedef bütçesine normalize eder."""
         llm = float(cls.LLM_GPU_MEMORY_FRACTION or 0.0)
         rag = float(cls.RAG_GPU_MEMORY_FRACTION or 0.0)
         total = llm + rag

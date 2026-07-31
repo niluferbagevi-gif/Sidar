@@ -7,10 +7,10 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-21
-> **Son Güncelleme:** 2026-03-26 (v5.1.0 belge senkronizasyonu: Faz C, D ve E kapsamındaki kod tabanı güncellemeleri rapor metniyle hizalandı.)
+> **Son Güncelleme:** 2026-07-31 (aktif ürün/runtime baseline'ı v5.2.0 ile hizalandı; aşağıdaki v5.0/v5.1 kayıtları tarihsel faz ve denetim bağlamı olarak korunur.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
-> **Proje Sürümü:** v5.1.0
-> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) ve çalışma zamanı (`config.py`) sürümü `5.1.0` olarak hizalanmıştır.
+> **Proje Sürümü:** v5.2.0
+> **Sürüm Notu:** Paket ve çalışma zamanı sürümünün tek doğruluk kaynağı `pyproject.toml` + `sidar_version.py` zinciridir. `SIDAR_v5_0_MIMARI_RAPORU.md` v5.0 vizyonunu, `SIDAR_v5_1_MIMARI_RAPORU.md` ise v5.2.0 baseline'a taşınan Faz C–E evrimini belgeler; bu adlar güncel runtime sürümü iddiası değildir.
 > **İleri Yol Haritası / Faz Durumu:** Faz A, Faz B, Faz D ve Faz E ajan teslimatları belge-bazında senkronize edildi; aktif geliştirme odağı Faz E'nin YouTube/dış video ingest genişlemesi ve v5.x derinleştirme eksenidir.
 
 > **Önceki Kayıt:** 3.0.30

@@ -1248,7 +1248,7 @@ def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image
     check = doctor.check_gpu_memory_config()
 
     assert check.status == "warn"
-    assert "VRAM fractions are very high" in check.message
+    assert "exceed the safe 80% target" in check.message
     assert "differs from the Sidar standard" in check.message
     assert "runtime is CPU mode" in check.message
     assert "access level is not sandbox" in check.message
@@ -1287,10 +1287,12 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
 
     check = doctor.check_gpu_memory_config()
 
-    assert check.status == "pass"
+    assert check.status == "warn"
     assert check.details["coding_model"] == "qwen2.5-coder:7b"
     assert check.details["access_level"] == "sandbox"
     assert check.details["total_gpu_memory_fraction"] == pytest.approx(0.9)
+    assert check.details["effective_gpu_memory_fraction"] == pytest.approx(0.8)
+    assert check.details["normalized"] is True
 
 
 def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
@@ -2158,7 +2160,8 @@ def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(
 
     check = doctor.check_gpu_memory_config()
 
-    assert check.status == "pass"
+    assert check.status == "warn"
+    assert "exceed the safe 80% target" in check.message
     assert "docker_test_image_hint" not in check.details
 
 

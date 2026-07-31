@@ -907,12 +907,12 @@ def test_validate_critical_settings_rejects_unsafe_production_secret(monkeypatch
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
     assert safe == {
-        "llm": 0.6,
-        "rag": 0.3,
-        "gpu": 0.9,
-        "total": 0.9,
+        "llm": 0.5333,
+        "rag": 0.2667,
+        "gpu": 0.8,
+        "total": 0.8,
         "original_total": 0.9,
-        "normalized": False,
+        "normalized": True,
     }
 
     normalized = config.normalize_gpu_memory_fractions(0.9, 0.4)
@@ -922,7 +922,7 @@ def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     assert normalized["llm"] + normalized["rag"] == pytest.approx(0.8)
 
 
-def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
+def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_safe_target(monkeypatch):
     monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
     monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
     monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)

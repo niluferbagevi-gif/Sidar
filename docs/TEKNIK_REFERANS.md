@@ -1,6 +1,10 @@
-# Sidar v5.1.0-docs / v5.0.0-alpha runtime — Teknik Referans ve Operasyon Kılavuzu
+# Sidar v5.2.0 — Teknik Referans ve Operasyon Kılavuzu
 
 Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (DB şeması, endpoint envanteri, WebSocket protokolü, agent akışı, operasyon parametreleri) toplar.
+
+> **Sürüm sözleşmesi:** Aktif ürün/runtime baseline `v5.2.0`'dır. Dosya adında sürüm
+> taşıyan v5.0 ve v5.1 mimari/audit belgeleri tarihsel vizyon ve faz kayıtlarıdır;
+> çalışma zamanı sürümü için `pyproject.toml` ve `sidar_version.py` esas alınır.
 
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
 > Son doğrulama turu: **2026-03-21** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.

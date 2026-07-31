@@ -1519,13 +1519,8 @@ def check_gpu_memory_config() -> DoctorCheck:
     warnings: list[str] = []
     if budget["normalized"]:
         warnings.append(
-            "LLM/RAG VRAM fractions exceed 100% or are non-positive; Sidar will normalize the "
-            "effective GPU budget to 80%"
-        )
-    elif total > 0.95:
-        warnings.append(
-            "LLM/RAG VRAM fractions are very high; consider lowering .env.development limits "
-            "before bulk RAG ingestion"
+            "LLM/RAG VRAM fractions exceed the safe 80% target or are non-positive; Sidar will "
+            "normalize the effective GPU budget to 80%"
         )
     if provider == "ollama" and coding_model != "qwen2.5-coder:7b":
         warnings.append(

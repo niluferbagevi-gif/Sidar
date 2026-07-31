@@ -398,6 +398,15 @@ sidar doctor                           # artifacts/install/doctor.json üretir
 
 `./install_sidar.sh doctor --fix`, Doctor'ın izinli ve shell-free veritabanı ortam onarımını aynı rapor akışında çalıştırır. Varsayılan geliştirici kurulumunda başarılı migrasyonun ardından `AUTO_SEED_RAG_METADATA=true` ile hafif RAG/GraphRAG metadata seed'i; tam Docker kurulumunda ayrıca `AUTO_SEED_RAG_DOCKER_WARMUP=true` ile container içi warmup seed'i otomatik uygulanır. Her iki otomasyon açıkça `false` verilerek kapatılabilir; tam vektör seed veya yeniden oluşturma için `uv run python -m scripts.seed_rag` kullanılabilir. Ayrıntılı başlangıç, doğrulama ve pgvector→BM25 fallback teşhisi için [RAG onboarding rehberine](docs/RAG_ONBOARDING.md) bakın. `sidar doctor`; `uv`, `uv.lock`, Prometheus runtime bağımlılığı (`prometheus-client`), veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir; indeks boşsa repo dokümantasyonunu tek adımda yüklemek için `uv run python -m scripts.seed_rag`, dış kaynak eklemek için `uv run python cli.py -c "belge ekle <url>"` komutlarını önerir. `scripts.seed_rag`, README/AGENTS ve seçili `docs/*.md` kaynaklarını aynı `DocumentStore` yoluyla index, BM25, opsiyonel Chroma/pgvector ve `entity_graph.json` GraphRAG projection'ına yazar; hızlı/offline metadata doğrulaması için `--metadata-only`, özel kaynaklar için tekrarlanabilir `--include <repo-göreli-yol-veya-glob>` kullanılabilir. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
 
+> **`database_env` ve üst shell önceliği:** Doctor, `DATABASE_URL` veya
+> `SIDAR_CONTAINER_DATABASE_URL` değerinin parent/üst shell'den miras kaldığını ve
+> dotenv zincirinden farklı olduğunu doğru biçimde raporlayabilir; ancak `--fix` çalışan
+> prosesin ebeveyn shell ortamını değiştiremez. Bu durumda önce `unset DATABASE_URL
+> SIDAR_CONTAINER_DATABASE_URL` çalıştırın (veya terminal/launcher oturumunu yeniden
+> başlatın), ardından `./install_sidar.sh doctor --fix` ve `./install_sidar.sh doctor`
+> komutlarını yeniden çalıştırın. Kalıcı değer gerekiyorsa shell profilini değil,
+> seçili `.env`/`DOTENV_FILE` kaynağını güncelleyin.
+
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
 ```bash
@@ -1290,8 +1299,10 @@ böylece temel/production `POSTGRES_DB=sidar` verisiyle aynı veritabanına yazm
 Ollama + `qwen2.5-coder:7b` kullanımında CPU-only geliştirme şablonu `USE_GPU=false` / `REQUIRE_GPU=false`
 ile başlar; `install_sidar.sh` yalnız GPU tespit ettiğinde oluşturulan `.env` dosyasında bu değerleri
 `true` yapar. `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
-`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
-aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında
+`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı güvenli
+0.8 hedefini aşarsa (0.8–1.0 arasındaki gri bölge dahil) Sidar oranları koruyarak
+0.8 toplamına normalize eder. Örneğin `0.6 + 0.3 = 0.9`, etkin olarak yaklaşık
+`0.5333 + 0.2667 = 0.8` uygulanır; WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API
 tokenlarını ise `.env` veya tercihen repo dışında `~/.sidar_keys.env` içinde tutun;
 `.env.advanced` yalnız referans/override şablonudur ve güncel anahtar şablonu
