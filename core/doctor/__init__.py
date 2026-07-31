@@ -852,8 +852,7 @@ def check_database_connectivity() -> DoctorCheck:
                 "then rerun Doctor from that same shell.",
             )
             recommended = details.setdefault("recommended_commands", [])
-            if unset_command not in recommended:
-                recommended.insert(0, unset_command)
+            recommended.insert(0, unset_command)
         return DoctorCheck("database_connectivity", "warn", message, details)
 
     if os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() == "pgvector" and not details.get(
