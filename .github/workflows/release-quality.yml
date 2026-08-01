@@ -127,7 +127,7 @@ jobs:
         with:
           enable-cache: true
       - name: Restore benchmark coverage trend history
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: artifacts/benchmark-coverage-trend/history.json
           key: benchmark-coverage-trend-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
