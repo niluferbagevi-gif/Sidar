@@ -5,7 +5,15 @@
 import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "../hooks/useChatStore.js";
 
-const STATUS_LABEL = {
+interface StatusBarProps {
+  wsStatus: string;
+  onNewSession: () => void;
+  voiceStatus?: string;
+  roomId?: string;
+  collaborators?: number;
+}
+
+const STATUS_LABEL: Record<string, { icon: string; text: string }> = {
   connected:    { icon: "🟢", text: "Bağlı" },
   connecting:   { icon: "🟡", text: "Bağlanıyor…" },
   reconnecting: { icon: "🟡", text: "Yeniden bağlanıyor…" },
@@ -14,7 +22,13 @@ const STATUS_LABEL = {
   unauthenticated: { icon: "🟠", text: "Token gerekli" },
 };
 
-export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır", roomId = "", collaborators = 0 }) {
+export function StatusBar({
+  wsStatus,
+  onNewSession,
+  voiceStatus = "Hazır",
+  roomId = "",
+  collaborators = 0,
+}: StatusBarProps) {
   const { sessionId, messages } = useChatStore(
     useShallow((s) => ({ sessionId: s.sessionId, messages: s.messages })),
   );

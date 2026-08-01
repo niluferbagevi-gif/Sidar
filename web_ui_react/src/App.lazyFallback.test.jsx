@@ -4,7 +4,7 @@ import { MemoryRouter } from "./lib/routerShim.tsx";
 import App from "./App.tsx";
 
 vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div>Chat Mock</div> }));
-vi.mock("./components/P2PDialoguePanel.jsx", () => ({ P2PDialoguePanel: undefined }));
+vi.mock("./components/P2PDialoguePanel.tsx", () => ({ P2PDialoguePanel: undefined }));
 
 describe("App lazy panel fallback", () => {
   it("renders MissingLazyPanel hint when lazy module lacks the named export", async () => {

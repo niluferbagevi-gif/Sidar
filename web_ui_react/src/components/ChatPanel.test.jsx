@@ -72,8 +72,8 @@ vi.mock("../hooks/useVoiceAssistant.js", () => ({
   },
 }));
 
-vi.mock("./ChatWindow.jsx", () => ({ ChatWindow: () => <div>ChatWindow Mock</div> }));
-vi.mock("./VoiceAssistantPanel.jsx", () => ({ VoiceAssistantPanel: () => <div>VoiceAssistant Mock</div> }));
+vi.mock("./ChatWindow.tsx", () => ({ ChatWindow: () => <div>ChatWindow Mock</div> }));
+vi.mock("./VoiceAssistantPanel.tsx", () => ({ VoiceAssistantPanel: () => <div>VoiceAssistant Mock</div> }));
 vi.mock("./ChatInput.jsx", () => ({
   ChatInput: ({ onSend, disabled }) => (
     <button onClick={() => onSend("Merhaba SİDAR")} disabled={disabled}>
@@ -81,7 +81,7 @@ vi.mock("./ChatInput.jsx", () => ({
     </button>
   ),
 }));
-vi.mock("./StatusBar.jsx", () => ({
+vi.mock("./StatusBar.tsx", () => ({
   StatusBar: ({ onNewSession, collaborators, roomId, voiceStatus, wsStatus }) => (
     <div>
       <span>{`${wsStatus}-${voiceStatus}-${roomId}-${collaborators}`}</span>

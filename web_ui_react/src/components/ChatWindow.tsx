@@ -6,7 +6,7 @@
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useChatStore } from "../hooks/useChatStore.js";
-import { ChatMessage } from "./ChatMessage.jsx";
+import { ChatMessage } from "./ChatMessage.js";
 
 export function ChatWindow() {
   const { messages, streamingText, isStreaming, error } = useChatStore(
@@ -17,7 +17,7 @@ export function ChatWindow() {
       error: s.error,
     })),
   );
-  const bottomRef = useRef(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Yeni içerik gelince alta kaydır
   useEffect(() => {
@@ -39,7 +39,12 @@ export function ChatWindow() {
 
       {isStreaming && streamingText && (
         <ChatMessage
-          message={{ id: "streaming", role: "assistant", content: streamingText, ts: Date.now() }}
+          message={{
+            id: "streaming",
+            role: "assistant",
+            content: streamingText,
+            ts: new Date().toISOString(),
+          }}
           isStreaming
         />
       )}

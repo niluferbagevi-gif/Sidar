@@ -16,7 +16,7 @@ vi.mock("./components/ChatPanel.jsx", () => ({
     return <div data-testid="chat-panel">Chat Panel Mock</div>;
   },
 }));
-vi.mock("./components/P2PDialoguePanel.jsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
+vi.mock("./components/P2PDialoguePanel.tsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
 vi.mock("./components/SwarmFlowPanel.jsx", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
 vi.mock("./components/PromptAdminPanel.jsx", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));

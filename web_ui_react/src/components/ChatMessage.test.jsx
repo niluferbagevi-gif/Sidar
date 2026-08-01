@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { ChatMessage } from "./ChatMessage.jsx";
+import { ChatMessage } from "./ChatMessage.tsx";
 
 // ReactMarkdown ve eklentilerini stub'la — jsdom ortamında sorunsuz çalışsın
 vi.mock("react-markdown", () => ({

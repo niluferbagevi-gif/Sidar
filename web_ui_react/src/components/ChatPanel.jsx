@@ -1,9 +1,9 @@
 import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ChatWindow } from "./ChatWindow.jsx";
+import { ChatWindow } from "./ChatWindow.tsx";
 import { ChatInput } from "./ChatInput.jsx";
-import { StatusBar } from "./StatusBar.jsx";
-import { VoiceAssistantPanel } from "./VoiceAssistantPanel.jsx";
+import { StatusBar } from "./StatusBar.tsx";
+import { VoiceAssistantPanel } from "./VoiceAssistantPanel.tsx";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { useVoiceAssistant } from "../hooks/useVoiceAssistant.js";
 import { useChatStore } from "../hooks/useChatStore.js";

@@ -1,5 +1,34 @@
+import type {
+  VoiceAssistantResult,
+  VoiceAssistantState,
+  VoiceDiagnostic,
+  VoiceVadState,
+} from "../hooks/useVoiceAssistant.js";
 
-export function VoiceAssistantPanel({ voice }) {
+type VoicePanelState = Pick<
+  VoiceAssistantState,
+  | "status"
+  | "isMicActive"
+  | "isAssistantAudioPlaying"
+  | "queueDepth"
+  | "summary"
+  | "transcript"
+  | "lastInterruptReason"
+  | "assistantTurnId"
+  | "bufferedBytes"
+  | "audioMimeType"
+> & {
+  diagnostics: VoiceDiagnostic[];
+  vad: Pick<VoiceVadState, "level" | "speaking">;
+};
+
+interface VoiceAssistantPanelProps {
+  voice: Pick<VoiceAssistantResult, "statusLabel" | "toggle" | "interrupt" | "supported"> & {
+    state: VoicePanelState;
+  };
+}
+
+export function VoiceAssistantPanel({ voice }: VoiceAssistantPanelProps) {
   const { state, statusLabel, toggle, interrupt, supported } = voice;
 
   return (

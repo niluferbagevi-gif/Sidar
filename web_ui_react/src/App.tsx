@@ -26,7 +26,10 @@ function lazyNamed<ExportName extends string>(
   );
 }
 
-const P2PDialoguePanel = lazyNamed(() => import("./components/P2PDialoguePanel.jsx"), "P2PDialoguePanel");
+const P2PDialoguePanel = lazyNamed(
+  () => import("./components/P2PDialoguePanel.js"),
+  "P2PDialoguePanel",
+);
 const SwarmFlowPanel = lazyNamed(() => import("./components/SwarmFlowPanel.jsx"), "SwarmFlowPanel");
 const OperationsQaPanel = lazyNamed(() => import("./components/OperationsQaPanel.jsx"), "OperationsQaPanel");
 const PromptAdminPanel = lazyNamed(() => import("./components/PromptAdminPanel.jsx"), "PromptAdminPanel");

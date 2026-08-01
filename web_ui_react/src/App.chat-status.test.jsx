@@ -32,8 +32,8 @@ vi.mock("./hooks/useVoiceAssistant.js", () => ({
   }),
 }));
 
-vi.mock("./components/ChatWindow.jsx", () => ({ ChatWindow: () => <div /> }));
-vi.mock("./components/VoiceAssistantPanel.jsx", () => ({ VoiceAssistantPanel: () => <div /> }));
+vi.mock("./components/ChatWindow.tsx", () => ({ ChatWindow: () => <div /> }));
+vi.mock("./components/VoiceAssistantPanel.tsx", () => ({ VoiceAssistantPanel: () => <div /> }));
 vi.mock("./components/ChatInput.jsx", () => ({ ChatInput: () => <div /> }));
 
 describe("App /chat websocket status integration", () => {

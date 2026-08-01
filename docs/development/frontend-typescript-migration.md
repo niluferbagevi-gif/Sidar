@@ -44,6 +44,11 @@ ref'i ve klavye olayını; `components/PanelErrorBoundary.tsx` ise children, hat
 ve React error-boundary lifecycle sözleşmesini açık tiplerle taşımıştır. Envanter
 10 `.js`, 35 `.jsx`, 8 `.ts`, 7 `.tsx` ve ratchet 45 untyped / 15 typed seviyesine
 gelerek 2026-09-30 ara hedefini zamanından önce karşılamıştır.
+İkinci leaf component diliminde `ChatMessage.tsx`, `ChatWindow.tsx`, `StatusBar.tsx`,
+`VoiceAssistantPanel.tsx` ve `P2PDialoguePanel.tsx` taşınmıştır. Mesaj modeli,
+timestamp normalizasyonu, DOM ref'i, WebSocket durum prop'ları ve voice view-model
+sözleşmeleri artık TypeScript tarafından doğrulanır. Envanter 10 `.js`, 30 `.jsx`,
+8 `.ts`, 12 `.tsx`; ratchet ise 40 untyped / 20 typed seviyesine sıkılaştırılmıştır.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -54,8 +59,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 45 untyped (`.js` + `.jsx`) ve en az
-15 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 40 untyped (`.js` + `.jsx`) ve en az
+20 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
