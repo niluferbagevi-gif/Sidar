@@ -8,8 +8,94 @@ const RECONNECT_BASE_DELAY_MS = 800;
 const RECONNECT_MAX_DELAY_MS = 20_000;
 const RECONNECT_JITTER_MS = 600;
 
+export type WebSocketStatus =
+  | "unauthenticated"
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
+
+export type RoomParticipant = Record<string, unknown>;
+export type RoomMessage = Record<string, unknown>;
+export type CollaborationEvent = Record<string, unknown> & {
+  kind?: "status" | "tool_call" | "thought" | string;
+  source?: string;
+  content?: string;
+};
+export type RoomStateMessage = Record<string, unknown> & {
+  type: "room_state";
+  room_id: string;
+  participants: RoomParticipant[];
+  messages: RoomMessage[];
+  telemetry: CollaborationEvent[];
+};
+
+export type SidarWebSocketMessage =
+  | { auth_ok: true }
+  | RoomStateMessage
+  | { type: "presence"; room_id: string; participants: RoomParticipant[] }
+  | { type: "room_message"; message: RoomMessage }
+  | { type: "assistant_stream_start"; room_id: string; request_id: string; author_name: string }
+  | { type: "assistant_chunk"; room_id: string; request_id: string; chunk: string; author_name: string }
+  | { type: "assistant_done"; room_id: string; request_id: string; message: RoomMessage | null; cancelled?: boolean }
+  | { type: "collaboration_event"; event: CollaborationEvent }
+  | { type: "room_error"; room_id: string; error: string; request_id?: string };
+
+type IncomingMessage = Record<string, unknown> & {
+  type?: string;
+  auth_ok?: boolean;
+  room_id?: string;
+  participants?: RoomParticipant[];
+  message?: RoomMessage | null;
+  request_id?: string;
+  chunk?: string;
+  content?: string;
+  event?: CollaborationEvent;
+  error?: string;
+  done?: boolean;
+  status?: string;
+  tool_call?: string;
+  thought?: string;
+};
+
+export interface UseWebSocketOptions {
+  roomId?: string;
+  displayName?: string;
+  onChunk?: (chunk: string, requestId?: string) => void;
+  onDone?: (message: string | RoomMessage | null, requestId?: string) => void;
+  onError?: (message: string) => void;
+  onStatus?: (status: string) => void;
+  onToolCall?: (toolCall: string) => void;
+  onThought?: (thought: string) => void;
+  onRoomState?: (state: RoomStateMessage) => void;
+  onRoomMessage?: (message: RoomMessage) => void;
+  onPresence?: (participants: RoomParticipant[]) => void;
+  onRoomEvent?: (event: CollaborationEvent) => void;
+  onAssistantStart?: (requestId: string) => void;
+}
+
+export type OutgoingWebSocketMessage = string | Record<string, unknown>;
+
+export interface UseWebSocketResult {
+  send: (message: OutgoingWebSocketMessage) => void;
+  status: WebSocketStatus;
+  connect: () => void;
+  disconnect: () => void;
+  joinRoom: (roomId?: string, displayName?: string) => void;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseIncomingMessage = (raw: string): IncomingMessage => {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed)) throw new TypeError("WebSocket payload must be an object");
+  return parsed as IncomingMessage;
+};
+
 export function useWebSocket(
-  _sessionId,
+  _sessionId: string | undefined,
   {
     roomId,
     displayName,
@@ -24,19 +110,19 @@ export function useWebSocket(
     onPresence,
     onRoomEvent,
     onAssistantStart,
-  } = {},
-) {
-  const wsRef = useRef(null);
-  const joinedRoomRef = useRef("");
-  const [status, setStatus] = useState(() =>
+  }: UseWebSocketOptions = {},
+): UseWebSocketResult {
+  const wsRef = useRef<WebSocket | null>(null);
+  const joinedRoomRef = useRef<string>("");
+  const [status, setStatus] = useState<WebSocketStatus>(() =>
     getStoredToken() ? "disconnected" : "unauthenticated"
   );
-  const bufferRef = useRef("");
+  const bufferRef = useRef<string>("");
   const reconnectAttemptRef = useRef(0);
-  const reconnectTimerRef = useRef(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualCloseRef = useRef(false);
-  const connectRef = useRef(null);
-  const callbacksRef = useRef({});
+  const connectRef = useRef<(() => void) | null>(null);
+  const callbacksRef = useRef<UseWebSocketOptions>({});
   callbacksRef.current = {
     onChunk,
     onDone,
@@ -73,7 +159,7 @@ export function useWebSocket(
     }, nextDelay);
   }, [clearReconnectTimer]);
 
-  const joinRoom = useCallback((targetRoomId, targetDisplayName) => {
+  const joinRoom = useCallback((targetRoomId?: string, targetDisplayName?: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     const nextRoom = String(targetRoomId || "").trim();
     if (!nextRoom || joinedRoomRef.current === nextRoom) return;
@@ -104,7 +190,7 @@ export function useWebSocket(
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
-      const raw = event.data;
+      const raw = typeof event.data === "string" ? event.data : String(event.data);
 
       if (raw === "[DONE]") {
         callbacksRef.current.onDone?.(bufferRef.current);
@@ -113,7 +199,7 @@ export function useWebSocket(
       }
 
       try {
-        const msg = JSON.parse(raw);
+        const msg = parseIncomingMessage(raw);
         if (msg.auth_ok) {
           reconnectAttemptRef.current = 0;
           setStatus("connected");
@@ -124,7 +210,15 @@ export function useWebSocket(
 
         if (msg.type === "room_state") {
           joinedRoomRef.current = msg.room_id || joinedRoomRef.current;
-          callbacksRef.current.onRoomState?.(msg);
+          // Normalize older servers to the canonical typed room-state contract.
+          callbacksRef.current.onRoomState?.({
+            ...msg,
+            type: "room_state",
+            room_id: msg.room_id || "",
+            participants: Array.isArray(msg.participants) ? msg.participants : [],
+            messages: Array.isArray(msg.messages) ? msg.messages : [],
+            telemetry: Array.isArray(msg.telemetry) ? msg.telemetry : [],
+          });
           return;
         }
         if (msg.type === "presence") {
@@ -165,11 +259,12 @@ export function useWebSocket(
         }
 
         if (msg.type === "chunk" || typeof msg.chunk === "string") {
-          const chunk = msg.content ?? msg.chunk;
+          const chunk = typeof msg.content === "string" ? msg.content : msg.chunk || "";
           bufferRef.current += chunk;
           callbacksRef.current.onChunk?.(chunk);
         } else if (msg.type === "error" || typeof msg.error === "string") {
-          callbacksRef.current.onError?.(msg.content ?? msg.error);
+          const error = typeof msg.content === "string" ? msg.content : msg.error || "";
+          callbacksRef.current.onError?.(error);
         } else if (msg.type === "done" || msg.done === true) {
           callbacksRef.current.onDone?.(bufferRef.current || msg.content || "");
           bufferRef.current = "";
@@ -239,7 +334,7 @@ export function useWebSocket(
     connectRef.current = connect;
   }, [connect]);
 
-  const send = useCallback((message) => {
+  const send = useCallback((message: OutgoingWebSocketMessage) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       callbacksRef.current.onError?.("Bağlantı kapalı.");
       return;
@@ -267,7 +362,7 @@ export function useWebSocket(
     /* c8 ignore next -- React SSR sırasında effect çalışmadığı için bu savunma dalı runtime guard olarak tutulur. */
     if (typeof window === "undefined") return undefined;
     const handleTokenChange = () => restartConnection();
-    const handleStorage = (event) => {
+    const handleStorage = (event: StorageEvent) => {
       if (event.key === TOKEN_KEY) restartConnection();
     };
     window.addEventListener(TOKEN_CHANGE_EVENT, handleTokenChange);
