@@ -2050,6 +2050,47 @@ def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, 
     assert state["details"]["blocked_by"] == "database_env"
 
 
+def test_rag_readiness_state_derives_database_url_when_postgres_password_present(
+    monkeypatch, tmp_path
+) -> None:
+    """RAG readiness must resolve DATABASE_URL the same way check_database_env() does."""
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    database_env_check = doctor.check_database_env()
+    state = doctor._rag_readiness_state()
+
+    assert database_env_check.status == "pass"
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+    assert state["blockers"] == []
+
+
+def test_rag_readiness_aggregate_not_blocked_when_database_url_only_derived(
+    monkeypatch, tmp_path
+) -> None:
+    rag_dir = tmp_path / "rag"
+    rag_dir.mkdir()
+    (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
+    (rag_dir / "entity_graph.json").write_text(
+        '{"nodes": {"brand:x": {"label": "Brand"}}, "edges": []}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    check = doctor.check_rag_readiness()
+
+    assert check.details.get("blocked_by") != "database_env"
+    assert check.status != "fail"
+
+
 def test_rag_readiness_state_records_backend_probe_paths(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
 
