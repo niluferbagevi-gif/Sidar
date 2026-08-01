@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -33,7 +33,6 @@ from agent.autonomy.service import (
     get_autonomy_activity as get_autonomy_activity_service,
 )
 from agent.bootstrap import log_sidar_agent_startup
-from agent.core.contracts import ExternalTrigger
 from agent.core.contracts_fallback import (
     default_derive_correlation_id as _default_derive_correlation_id,
 )
@@ -52,9 +51,14 @@ from agent.self_heal.executor import (
 from agent.self_heal.executor import (
     restore_self_heal_backups as restore_self_heal_backups_service,
 )
+from agent.self_heal.orchestrator import (
+    attempt_autonomous_self_heal as attempt_autonomous_self_heal_service,
+)
 from agent.self_heal.planner import build_plan as build_self_heal_plan_service
 from agent.self_heal.planner import collect_snapshots as collect_self_heal_snapshots_service
 from agent.self_heal.planner import resolve_scope_batches as resolve_self_heal_scope_batches_service
+from agent.triggers import build_trigger_correlation as build_trigger_correlation_service
+from agent.triggers import handle_external_trigger as handle_external_trigger_service
 from config import Config
 from core.ci_remediation import (
     build_ci_failure_context,
@@ -514,243 +518,14 @@ class SidarAgent:
         remediation: dict[str, Any],
         human_approval: bool | None = None,
     ) -> dict[str, Any]:
-        remediation_loop = dict(remediation.get("remediation_loop") or {})
-        execution: dict[str, Any]
-        if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
-            execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
-            remediation["self_heal_execution"] = execution
-            return execution
-        if str(remediation_loop.get("status", "")).strip() != "planned":
-            execution = {"status": "skipped", "summary": "Remediation loop plan durumunda değil."}
-            remediation["self_heal_execution"] = execution
-            return execution
-        if bool(remediation_loop.get("needs_human_approval")):
-            default_hitl_decision = (
-                str(getattr(self.cfg, "SELF_HEAL_DEFAULT_DECISION", "prompt")).strip().lower()
-            )
-            if human_approval is None and default_hitl_decision in {
-                "approve",
-                "approved",
-                "yes",
-                "true",
-                "1",
-            }:
-                human_approval = True
-            elif human_approval is None and default_hitl_decision in {
-                "reject",
-                "rejected",
-                "no",
-                "false",
-                "0",
-            }:
-                human_approval = False
-            elif human_approval is None and default_hitl_decision in {
-                "prompt",
-                "ask",
-                "interactive",
-            }:
-                human_approval = None
-            if human_approval is False:
-                remediation_loop["status"] = "rejected"
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="rejected",
-                    detail="HITL onayı reddedildi; self-heal uygulanmadı.",
-                )
-                execution = cast(
-                    dict[str, Any],
-                    {
-                        "status": "rejected",
-                        "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
-                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                    },
-                )
-                remediation["remediation_loop"] = remediation_loop
-                remediation["self_heal_execution"] = execution
-                return execution
-            if human_approval is True:
-                remediation_loop["needs_human_approval"] = False
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="running",
-                    detail="HITL onayı alındı; otonom self-heal devam ediyor.",
-                )
-            else:
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="awaiting_hitl",
-                    detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
-                )
-                execution = cast(
-                    dict[str, Any],
-                    {
-                        "status": "awaiting_hitl",
-                        "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
-                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                    },
-                )
-                remediation["remediation_loop"] = remediation_loop
-                remediation["self_heal_execution"] = execution
-                return execution
-        if not hasattr(self, "code") or not hasattr(self, "llm"):
-            execution = {
-                "status": "blocked",
-                "summary": "Self-heal için code/llm bağımlılıkları hazır değil.",
-            }
-            remediation["self_heal_execution"] = execution
-            return execution
-
-        revision_identity = str(
-            ci_context.get("sha")
-            or ci_context.get("run_id")
-            or ci_context.get("branch")
-            or "unknown"
-        ).strip()
-        attempt_key = (
-            "|".join(
-                (
-                    str(ci_context.get("repo", "") or "").strip(),
-                    str(ci_context.get("workflow_name", "") or "").strip(),
-                    revision_identity,
-                )
-            )
-            or "default"
-        )
-        default_max_attempts = 1 if remediation_loop.get("needs_human_approval") else 2
-        max_auto_attempts = max(
-            1,
-            int(remediation_loop.get("max_auto_attempts") or default_max_attempts),
-        )
-        if not hasattr(self, "_self_heal_attempts"):
-            self._self_heal_attempts = {}
-        attempts_lock = getattr(self, "_self_heal_attempts_lock", None)
-        if attempts_lock is None:
-            attempts_lock = asyncio.Lock()
-            self._self_heal_attempts_lock = attempts_lock
-        async with attempts_lock:
-            attempts_used = self._self_heal_attempts.get(attempt_key, 0)
-            if attempts_used >= max_auto_attempts:
-                remediation_loop["status"] = "circuit_open"
-                execution = {
-                    "status": "circuit_open",
-                    "summary": (
-                        "Self-heal deneme limiti aşıldı; yeni otomatik LLM/patch çağrıları "
-                        "insan müdahalesine kadar engellendi."
-                    ),
-                    "attempt_key": attempt_key,
-                    "attempts_used": attempts_used,
-                    "max_auto_attempts": max_auto_attempts,
-                }
-                remediation["remediation_loop"] = remediation_loop
-                remediation["self_heal_execution"] = execution
-                return execution
-            self._self_heal_attempts[attempt_key] = attempts_used + 1
-
-        mechanical_execution = await self._attempt_mechanical_autofix(
-            remediation_loop=remediation_loop
-        )
-        if mechanical_execution.get("status") == "applied":
-            self._self_heal_attempts.pop(attempt_key, None)
-            remediation_loop["status"] = "applied"
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="completed",
-                detail=str(mechanical_execution.get("summary") or ""),
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "validate",
-                status="completed",
-                detail="Mekanik autofix sonrası sandbox doğrulamaları geçti.",
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "handoff",
-                status="completed",
-                detail="Mekanik autofix (ruff --fix) LLM plan üretimine gerek kalmadan uygulandı.",
-            )
-            remediation["remediation_loop"] = remediation_loop
-            remediation["self_heal_execution"] = mechanical_execution
-            return mechanical_execution
-
-        plan = await self._build_self_heal_plan(
+        """Delegate bounded self-heal orchestration to its domain service."""
+        return await attempt_autonomous_self_heal_service(
+            self,
             ci_context=ci_context,
             diagnosis=diagnosis,
-            remediation_loop=remediation_loop,
+            remediation=remediation,
+            human_approval=human_approval,
         )
-        remediation["self_heal_plan"] = plan
-        if not list(plan.get("operations") or []):
-            execution = {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
-            if int(plan.get("plan_attempt") or 0) >= int(plan.get("plan_max_retries") or 0) > 0:
-                remediation_loop["needs_human_intervention"] = True
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="pending",
-                    detail=(
-                        "Maksimum self-heal plan retry limiti aşıldı; insan müdahalesi gerekiyor."
-                    ),
-                )
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="blocked",
-                detail="LLM güvenli patch planı üretemedi.",
-            )
-            remediation["remediation_loop"] = remediation_loop
-            remediation["self_heal_execution"] = execution
-            return execution
-
-        self._update_remediation_step(
-            remediation_loop,
-            "patch",
-            status="running",
-            detail="Self-heal patch operasyonları uygulanıyor.",
-        )
-        execution = await self._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan)
-        remediation["self_heal_execution"] = execution
-
-        if execution["status"] == "applied":
-            self._self_heal_attempts.pop(attempt_key, None)
-            remediation_loop["status"] = "applied"
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="completed",
-                detail=f"{len(execution.get('operations_applied', []))} patch uygulandı.",
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "validate",
-                status="completed",
-                detail="Sandbox doğrulamaları başarıyla geçti.",
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "handoff",
-                status="completed",
-                detail="Değişiklikler başarıyla uygulandı; sonraki adım PR/proposal güncellemesi.",
-            )
-        else:
-            remediation_loop["status"] = execution["status"]
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="failed",
-                detail=execution["summary"],
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "validate",
-                status="failed",
-                detail="Self-heal doğrulaması başarısız olduğu için rollback yapıldı.",
-            )
-        remediation["remediation_loop"] = remediation_loop
-        return execution
 
     @staticmethod
     def _trigger_attr(
@@ -785,190 +560,19 @@ class SidarAgent:
         trigger: ExternalTriggerType | dict[str, Any],
         payload_dict: dict[str, Any],
     ) -> dict[str, Any]:
-        self._ensure_autonomy_runtime_state()
-        trigger_meta = SidarAgent._trigger_meta(trigger)
-        correlation_id = derive_correlation_id(
-            SidarAgent._trigger_attr(trigger, "correlation_id", ""),
-            trigger_meta.get("correlation_id", ""),
-            payload_dict.get("correlation_id", ""),
-            payload_dict.get("related_task_id", ""),
-            payload_dict.get("task_id", ""),
-            SidarAgent._trigger_attr(trigger, "trigger_id", ""),
-        )
-        related_trigger_id = str(payload_dict.get("related_trigger_id") or "").strip()
-        related_task_id = str(
-            payload_dict.get("related_task_id") or payload_dict.get("task_id") or ""
-        ).strip()
-
-        matches: list[dict[str, Any]] = []
-        for item in reversed(list(getattr(self, "_autonomy_history", []) or [])):
-            item_trigger_id = str(item.get("trigger_id", "") or "")
-            item_payload = dict(item.get("payload") or {})
-            item_corr = derive_correlation_id(
-                item.get("correlation", {}).get("correlation_id", "")
-                if isinstance(item.get("correlation"), dict)
-                else "",
-                item.get("meta", {}).get("correlation_id", "")
-                if isinstance(item.get("meta"), dict)
-                else "",
-                item_payload.get("correlation_id", ""),
-                item_payload.get("related_task_id", ""),
-                item_payload.get("task_id", ""),
-                item_trigger_id,
-            )
-            if correlation_id and item_corr == correlation_id:
-                matches.append(item)
-            elif related_trigger_id and item_trigger_id == related_trigger_id:
-                matches.append(item)
-            elif related_task_id and str(item_payload.get("task_id", "") or "") == related_task_id:
-                matches.append(item)
-
-        unique_matches: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        for item in matches:
-            item_id = str(item.get("trigger_id", "") or "")
-            if not item_id or item_id in seen_ids:
-                continue
-            seen_ids.add(item_id)
-            unique_matches.append(item)
-
-        related_trigger_ids = [str(item.get("trigger_id", "") or "") for item in unique_matches[:8]]
-        related_sources = list(
-            dict.fromkeys(
-                str(item.get("source", "") or "")
-                for item in unique_matches[:8]
-                if str(item.get("source", "") or "")
-            )
-        )
-        return {
-            "correlation_id": correlation_id,
-            "related_trigger_id": related_trigger_id,
-            "related_task_id": related_task_id,
-            "matched_records": len(unique_matches),
-            "related_trigger_ids": related_trigger_ids,
-            "related_sources": related_sources,
-            "latest_related_status": str(unique_matches[0].get("status", "") or "")
-            if unique_matches
-            else "",
-        }
+        """Delegate external-trigger correlation to its domain service."""
+        return build_trigger_correlation_service(self, trigger, payload_dict)
 
     async def handle_external_trigger(
         self, trigger: ExternalTriggerType | dict[str, Any]
     ) -> dict[str, Any]:
-        """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
-        await self.initialize()
-        self._ensure_autonomy_runtime_state()
-        self.mark_activity("external_trigger")
-
-        if isinstance(trigger, dict):
-            trigger = ExternalTrigger(
-                trigger_id=str(trigger.get("trigger_id", f"trigger-{int(time.time())}")),
-                source=str(trigger.get("source", "external")),
-                event_name=str(trigger.get("event_name", "event")),
-                payload=dict(trigger.get("payload", {}) or {}),
-                meta=dict(trigger.get("meta", {}) or {}),
-            )
-
-        payload_dict = self._trigger_payload(trigger)
-        event_name = str(self._trigger_attr(trigger, "event_name", "event"))
-        ci_context = (
-            payload_dict
-            if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"}
-            and payload_dict.get("workflow_name")
-            else build_ci_failure_context(event_name, payload_dict)
+        """Delegate external-trigger processing to its domain service."""
+        return await handle_external_trigger_service(
+            self,
+            trigger,
+            ci_context_builder=build_ci_failure_context,
+            remediation_builder=build_ci_remediation_payload,
         )
-        correlation = self._build_trigger_correlation(trigger, payload_dict)
-        prompt = self._build_trigger_prompt(trigger, payload_dict, ci_context)
-        started_at = time.time()
-        status = "success"
-        summary = ""
-        remediation: dict[str, Any] | None = None
-        try:
-            revision_identity = str(
-                (ci_context or {}).get("sha")
-                or (ci_context or {}).get("run_id")
-                or (ci_context or {}).get("branch")
-                or "unknown"
-            ).strip()
-            preflight_attempt_key = "|".join(
-                (
-                    str((ci_context or {}).get("repo", "") or "").strip(),
-                    str((ci_context or {}).get("workflow_name", "") or "").strip(),
-                    revision_identity,
-                )
-            )
-            preflight_limit = 1 if (ci_context or {}).get("human_approval_required") else 2
-            attempts_used = getattr(self, "_self_heal_attempts", {}).get(preflight_attempt_key, 0)
-            if (
-                ci_context
-                and bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False))
-                and attempts_used >= preflight_limit
-            ):
-                status = "circuit_open"
-                summary = (
-                    "Self-heal circuit breaker açık; aynı CI revision için yeni teşhis/patch "
-                    "LLM çağrısı yapılmadı."
-                )
-                remediation = build_ci_remediation_payload(ci_context, summary)
-                remediation["remediation_loop"]["status"] = "circuit_open"
-                remediation["self_heal_execution"] = {
-                    "status": "circuit_open",
-                    "summary": summary,
-                    "attempt_key": preflight_attempt_key,
-                    "attempts_used": attempts_used,
-                    "max_auto_attempts": preflight_limit,
-                }
-            else:
-                summary = await self._try_multi_agent(prompt)
-            if not isinstance(summary, str) or not summary.strip():
-                status = "empty"
-                summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
-            elif ci_context and remediation is None:
-                remediation = build_ci_remediation_payload(ci_context, summary)
-                try:
-                    await self._attempt_autonomous_self_heal(
-                        ci_context=ci_context,
-                        diagnosis=summary,
-                        remediation=remediation,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "Autonomous self-heal execution failed for trigger_id=%s",
-                        trigger.trigger_id,
-                    )
-                    remediation["self_heal_execution"] = {
-                        "status": "failed",
-                        "summary": f"Autonomous self-heal hata verdi: {exc}",
-                    }
-        except Exception as exc:
-            logger.exception(
-                "External autonomy trigger processing failed: source=%s event=%s",
-                self._trigger_attr(trigger, "source", "external"),
-                event_name,
-            )
-            status = "failed"
-            summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
-
-        record = {
-            "trigger_id": str(self._trigger_attr(trigger, "trigger_id", "")),
-            "source": str(self._trigger_attr(trigger, "source", "external")),
-            "event_name": event_name,
-            "status": status,
-            "summary": summary,
-            "payload": payload_dict,
-            "meta": self._trigger_meta(trigger),
-            "correlation": correlation,
-            "prompt": prompt,
-            "created_at": started_at,
-            "completed_at": time.time(),
-        }
-        if remediation:
-            record["remediation"] = remediation
-
-        await self._append_autonomy_history(record)
-        await self._memory_add("user", f"[AUTONOMY_TRIGGER] {prompt}")
-        await self._memory_add("assistant", summary)
-        return record
 
     async def run_nightly_memory_maintenance(
         self,

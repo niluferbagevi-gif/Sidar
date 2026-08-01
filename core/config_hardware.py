@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ def apply_vram_memory_fraction(
     get_float_env: Callable[[str, float], float],
     get_bool_env: Callable[[str, bool], bool],
     get_int_env: Callable[[str, int], int],
-    normalize_gpu_memory_fractions: Callable[[float, float], dict[str, Any]],
+    normalize_gpu_memory_fractions: Callable[[float, float], Mapping[str, Any]],
     log_first_load_info: Callable[..., None],
     logger: Any,
     environ: MutableMapping[str, str],
