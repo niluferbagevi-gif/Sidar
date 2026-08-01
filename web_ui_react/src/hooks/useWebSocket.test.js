@@ -422,6 +422,24 @@ describe("useWebSocket — mesaj işleme", () => {
     expect(onError).toHaveBeenCalledWith("content error");
   });
 
+  it("normalizes non-string frames and empty legacy fields", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: { toString: () => JSON.stringify({ chunk: "binary-like" }) } });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "chunk", chunk: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "error", error: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify([]) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("binary-like");
+    expect(onChunk).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("");
+    expect(onChunk).toHaveBeenCalledWith("[]");
+  });
+
   it("routes standalone tool_call and thought payloads", () => {
     const onToolCall = vi.fn();
     const onThought = vi.fn();

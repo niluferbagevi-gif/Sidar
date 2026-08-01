@@ -86,6 +86,14 @@ describe("ChatMessage — asistan mesajı", () => {
     await screen.findByTestId("markdown");
     expect(container.querySelector(".code-block-wrapper")).toBeInTheDocument();
   });
+
+  it("normalizes sparse messages to safe assistant defaults", async () => {
+    const { container } = render(<ChatMessage message={{ id: "sparse" }} />);
+
+    expect(container.querySelector(".message--assistant")).toBeInTheDocument();
+    expect(container.querySelector("time")?.dateTime).toBeTruthy();
+    expect(await screen.findByTestId("markdown")).toHaveTextContent("");
+  });
 });
 
 describe("ChatMessage — sistem mesajı", () => {

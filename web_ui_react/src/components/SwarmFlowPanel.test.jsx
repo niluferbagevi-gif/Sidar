@@ -74,6 +74,14 @@ describe("SwarmFlowPanel", () => {
     ];
   });
 
+  it("renders non-Error loader failures", async () => {
+    fetchJson.mockRejectedValue("swarm ham hata");
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("swarm ham hata")).toBeInTheDocument();
+  });
+
   it("loads autonomy activity and pending approvals, then refreshes activity on demand", async () => {
     const user = userEvent.setup();
     fetchJson

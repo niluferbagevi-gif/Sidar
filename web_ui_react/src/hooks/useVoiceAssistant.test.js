@@ -105,6 +105,11 @@ describe("useVoiceAssistant — voice protokol doğrulaması", () => {
     )).toBeNull();
     expect(__voiceAssistantTestables.parseVoiceMessage(JSON.stringify(["done"]))).toBeNull();
     expect(__voiceAssistantTestables.parseVoiceMessage(new ArrayBuffer(1))).toBeNull();
+    expect(__voiceAssistantTestables.parseVoiceMessage(
+      JSON.stringify({ buffered_bytes: "not-a-number" }),
+    )).toBeNull();
+    expect(__voiceAssistantTestables.parseVoiceMessage(JSON.stringify({ auth_ok: "yes" }))).toBeNull();
+    expect(__voiceAssistantTestables.parseVoiceMessage(JSON.stringify({ done: "yes" }))).toBeNull();
   });
 });
 

@@ -190,6 +190,13 @@ describe("api.js localStorage checks", () => {
 });
 
 describe("buildAuthHeaders", () => {
+  it("normalizes tuple arrays and Headers instances", () => {
+    expect(buildAuthHeaders([["X-Array", "yes"]])).toEqual({ "X-Array": "yes" });
+    expect(buildAuthHeaders(new globalThis.Headers({ "X-Headers": "yes" }))).toEqual({
+      "x-headers": "yes",
+    });
+  });
+
   it("returns Authorization header when token exists", () => {
     setStoredToken("my-token");
     const headers = buildAuthHeaders();
@@ -358,6 +365,17 @@ describe("fetchJson — hata yanıtları", () => {
     });
 
     await expect(fetchJson("/api/unprocessable")).rejects.toThrow("İstek başarısız oldu");
+  });
+
+  it("throws the default message for primitive JSON error payloads", async () => {
+    mockFetch({
+      ok: false,
+      status: 500,
+      headers: { get: () => "application/json" },
+      json: async () => 42,
+    });
+
+    await expect(fetchJson("/api/primitive-error")).rejects.toThrow("İstek başarısız oldu");
   });
 
   it("passes custom options to fetch", async () => {
@@ -531,6 +549,20 @@ describe("agent API bridge helpers", () => {
       expect(options.method).toBe("POST");
       expect(options.headers["Content-Type"]).toBe("application/json");
     }
+  });
+
+  it("normalizes explicit null operation payloads to empty objects", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await generateLandingPage(null);
+    await generateCampaignCopy(null);
+    await planServiceOperations(null);
+
+    expect(fetchMock.mock.calls.map(([, options]) => options.body)).toEqual([
+      "{}",
+      "{}",
+      "{}",
+    ]);
   });
 
   it("uses QA coverage REST endpoints", async () => {

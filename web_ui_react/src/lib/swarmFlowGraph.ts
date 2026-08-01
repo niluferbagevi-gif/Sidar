@@ -107,6 +107,8 @@ function requireLane(laneMap: Map<string, Lane>, role: string): Lane {
   return lane;
 }
 
+export const __swarmFlowGraphTestables = { requireLane };
+
 const ROLE_LABELS: Record<string, string> = {
   supervisor: "Supervisor",
   coder: "Coder",

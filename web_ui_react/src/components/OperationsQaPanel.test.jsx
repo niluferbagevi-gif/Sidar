@@ -169,6 +169,16 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
     expect(await screen.findByText("Landing patladı")).toBeInTheDocument();
     expect(await screen.findByText("Landing page başarısız.")).toBeInTheDocument();
   });
+
+  it("Error olmayan REST redlerini okunabilir banner'a dönüştürür", async () => {
+    const user = userEvent.setup();
+    apiMocks.generateLandingPage.mockRejectedValue("ham hata");
+    await renderOperationsQaPanel();
+
+    await user.click(screen.getByRole("button", { name: "Landing üret" }));
+
+    expect(await screen.findByText("ham hata")).toBeInTheDocument();
+  });
 });
 
 describe("OperationsQaPanel — form girdileri", () => {
@@ -340,6 +350,16 @@ describe("OperationsQaPanel — WebSocket olay akışı", () => {
 
     expect(await screen.findByText("api · status")).toBeInTheDocument();
     expect(screen.getByText("2026-05-11T09:00:00Z")).toBeInTheDocument();
+  });
+
+  it("id, timestamp ve content olmadan gelen WS olayı için kararlı fallback id üretir", async () => {
+    await renderOperationsQaPanel();
+
+    act(() => {
+      webSocketOptions.onRoomEvent({ source: "ops" });
+    });
+
+    expect(await screen.findByText("ops · status")).toBeInTheDocument();
   });
 
   it("zaman damgası eksik WS olaylarını boş ts ile render eder", async () => {
