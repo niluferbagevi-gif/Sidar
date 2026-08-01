@@ -14,13 +14,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 import config_autonomy
 import config_gpu
 import config_llm
 import config_quality
 import config_rag_defaults
+import core.config_hardware as config_hardware
 import core.config_logging_setup as config_logging_setup
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
@@ -295,54 +294,20 @@ ENV_PATH = base_env_path
 SECURITY_SETTINGS = load_security_settings()
 
 
-class DotenvReloadPlan(BaseModel):
-    """Validated plan for the dotenv precedence chain used during reloads."""
-
-    model_config = ConfigDict(frozen=True)
-
-    profile: str = ""
-    base_path: Path
-    advanced_path: Path
-    explicit_path: str = ""
-    sidar_keys_file: str = "~/.sidar_keys.env"
-    skip_default_layers: bool = False
-    labels: tuple[str, ...] = Field(
-        default=(
-            "base",
-            "advanced",
-            "environment",
-            "explicit:DOTENV_FILE",
-            "secret:SIDAR_KEYS_FILE",
-        ),
-        min_length=5,
-        max_length=5,
-    )
-
-    @field_validator("profile")
-    @classmethod
-    def _normalize_profile(cls, value: str) -> str:
-        """Normalize dotenv profile names before environment-specific file lookup."""
-        normalized = str(value or "").strip().lower()
-        if any(char in normalized for char in ("/", "\\", "..")):
-            raise ValueError("SIDAR_ENV profile cannot contain path separators")
-        return normalized
+DotenvReloadPlan = config_dotenv.DotenvReloadPlan
 
 
 def _build_dotenv_reload_plan(
     effective_env: dict[str, str], *, profile: str | None
 ) -> DotenvReloadPlan:
     """Build and validate the dotenv reload chain plan from the effective environment."""
-    selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-    plan = DotenvReloadPlan(
-        profile=selected_profile,
-        base_path=BASE_DIR / ".env",
-        advanced_path=BASE_DIR / ".env.advanced",
-        explicit_path=effective_env.get("DOTENV_FILE", "").strip(),
-        sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
+    return config_dotenv.build_dotenv_reload_plan(
+        effective_env,
+        profile=profile,
+        base_dir=BASE_DIR,
         skip_default_layers=_skip_default_dotenv_layers(effective_env),
+        validate_secret_overlay=_validate_sidar_keys_file_path,
     )
-    _validate_sidar_keys_file_path(plan.sidar_keys_file)
-    return plan
 
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
@@ -476,112 +441,38 @@ PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND = config_gpu.PYTORCH_RECOMMENDED_CUDA_I
 
 
 def _is_wsl2() -> bool:
-    """WSL2 ortamını tespit eder (/proc/sys/kernel/osrelease içinde 'microsoft' arar)."""
-    try:
-        return "microsoft" in Path("/proc/sys/kernel/osrelease").read_text().lower()
-    except Exception:
-        return False
+    """Compatibility facade for the extracted WSL2 detector."""
+    return config_hardware.is_wsl2()
 
 
 def _apply_vram_memory_fraction(info: HardwareInfo) -> None:
-    """Apply Sidar's VRAM-fraction policy after the shared GPU probe succeeds."""
-    if not info.has_cuda:
-        if _is_wsl2() and info.gpu_name == "CUDA Bulunamadı":
-            logger.warning(
-                "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
-                "Windows NVIDIA sürücüsü güncel mi? "
-                "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
-                "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
-                ", ".join(PYTORCH_STABLE_CUDA_WHEEL_TAGS),
-                PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
-            )
-        return
-
-    try:
-        import torch
-    except Exception as exc:
-        logger.debug("VRAM fraksiyon ayarı için torch yeniden açılamadı: %s", exc)
-        return
-
-    legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
-    rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
-    if (
-        os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
-        or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
-    ):
-        vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
-        frac = float(vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"])
-        if vram_budget["normalized"]:
-            logger.warning(
-                "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize "
-                "edilmiş bütçeyi uyguluyor "
-                "(LLM=%.2f, RAG=%.2f).",
-                vram_budget["original_total"],
-                vram_budget["gpu"],
-                vram_budget["llm"],
-                vram_budget["rag"],
-            )
-    else:
-        frac = legacy_frac
-    if not (0.1 <= frac < 1.0):
-        logger.warning(
-            "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) — "
-            "varsayılan 0.8 kullanılıyor.",
-            frac,
-        )
-        frac = 0.8
-    multi_gpu = get_bool_env("MULTI_GPU", False)
-    target_device = max(0, get_int_env("GPU_DEVICE", 0))
-    try:
-        if multi_gpu and info.gpu_count > 1:
-            for device_idx in range(info.gpu_count):
-                torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
-            _log_first_load_info(
-                "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
-                frac * 100,
-                info.gpu_count,
-            )
-        else:
-            if info.gpu_count > 0:
-                target_device = min(target_device, info.gpu_count - 1)
-            torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
-            _log_first_load_info(
-                "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)", frac * 100, target_device
-            )
-    except Exception as exc:
-        logger.debug("VRAM fraksiyon ayarı atlandı: %s", exc)
+    """Compatibility facade for the extracted VRAM policy."""
+    config_hardware.apply_vram_memory_fraction(
+        info,
+        is_wsl2_runtime=_is_wsl2,
+        stable_cuda_wheel_tags=PYTORCH_STABLE_CUDA_WHEEL_TAGS,
+        recommended_cuda_install_command=PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
+        get_float_env=get_float_env,
+        get_bool_env=get_bool_env,
+        get_int_env=get_int_env,
+        normalize_gpu_memory_fractions=normalize_gpu_memory_fractions,
+        log_first_load_info=_log_first_load_info,
+        logger=logger,
+        environ=os.environ,
+    )
 
 
 def check_hardware() -> HardwareInfo:
-    """GPU/CPU donanımını shared probe ile tespit eder, sadece VRAM fraksiyonunu burada uygular."""
-    original_is_wsl2 = config_gpu_detect.is_wsl2
-    config_gpu_detect.is_wsl2 = _is_wsl2
-    try:
-        info = config_gpu_detect.detect_gpu(
-            get_bool_env=get_bool_env,
-            get_int_env=get_int_env,
-            get_float_env=get_float_env,
-            logger=logger,
-        )
-    finally:
-        config_gpu_detect.is_wsl2 = original_is_wsl2
-
-    _apply_vram_memory_fraction(info)
-
-    try:
-        import pynvml
-
-        pynvml.nvmlInit()
-        info.driver_version = pynvml.nvmlSystemGetDriverVersion()
-        pynvml.nvmlShutdown()
-    except Exception as exc:
-        logger.debug(
-            "NVML driver version okunamadı (opsiyonel bağımlılık/ortam kısıtı olabilir): %s",
-            exc,
-        )
-
-    return info
+    """Detect hardware through the extracted service while preserving the public facade."""
+    return config_hardware.check_hardware(
+        gpu_detect_module=config_gpu_detect,
+        is_wsl2_runtime=_is_wsl2,
+        apply_vram_policy=_apply_vram_memory_fraction,
+        get_bool_env=get_bool_env,
+        get_int_env=get_int_env,
+        get_float_env=get_float_env,
+        logger=logger,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
