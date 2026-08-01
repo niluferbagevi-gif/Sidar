@@ -31,7 +31,10 @@ güncel envanter 11 `.js`, 40 `.jsx`, 7 `.ts`, 2 `.tsx` ve ratchet
 `TenantAdminPanel.tsx` ve `OperationsQaPanel.tsx`; RBAC/audit kayıtları, HITL,
 coverage, Poyraz form state'i ve hata sınırlarını açık tiplerle taşımış; güncel
 envanteri 11 `.js`, 38 `.jsx`, 7 `.ts`, 4 `.tsx` ve ratchet'i
-49 untyped / 11 typed seviyesine ilerletmiştir.
+49 untyped / 11 typed seviyesine ilerletmiştir. Typed swarm controller'ın graph
+verisi, positioned edge'leri, node aksiyonları ve klavye/fare olaylarını tüketen
+son halka `components/panels/swarm/GraphView.tsx` olarak taşınmış; güncel envanter
+11 `.js`, 37 `.jsx`, 7 `.ts`, 5 `.tsx` ve ratchet 48 untyped / 12 typed'dır.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -42,8 +45,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 49 untyped (`.js` + `.jsx`) ve en az
-11 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 48 untyped (`.js` + `.jsx`) ve en az
+12 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

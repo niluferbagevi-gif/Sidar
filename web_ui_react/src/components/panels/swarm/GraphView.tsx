@@ -1,4 +1,45 @@
-import React from "react";
+import React, { type KeyboardEvent, type MouseEvent } from "react";
+import type {
+  PositionedGraphEdge,
+  SwarmGraphData,
+} from "../../../hooks/useSwarmFlowController.js";
+import type { GraphNode, SwarmTask } from "../../../lib/swarmFlowGraph.js";
+
+type AsyncAction = () => Promise<void>;
+
+interface GraphNodeProps {
+  node: GraphNode;
+  isSelected: boolean;
+  nodeWidth: number;
+  nodeHeight: number;
+  actionBusy: boolean;
+  running: boolean;
+  onSelectNode: (nodeId: string) => void;
+  onRunSelectedNode: AsyncAction;
+  onAddDraftTaskFromSelected: () => void;
+}
+
+interface GraphViewProps {
+  graphData: SwarmGraphData;
+  graphEdges: PositionedGraphEdge[];
+  selectedNode: GraphNode;
+  selectedNodeId: string;
+  selectedTaskDraft: Required<SwarmTask>;
+  nodeWidth: number;
+  nodeHeight: number;
+  activityLoading: boolean;
+  hitlLoading: boolean;
+  actionBusy: boolean;
+  running: boolean;
+  onSelectNode: (nodeId: string) => void;
+  onLoadAutonomyActivity: AsyncAction;
+  onSyncOperationSurface: AsyncAction;
+  onAddDraftTaskFromSelected: () => void;
+  onReplaceFirstTaskFromSelected: () => void;
+  onRunSelectedNode: AsyncAction;
+  onRequestNodeReview: AsyncAction;
+  onLoadPendingApprovals: AsyncAction;
+}
 
 const GraphNode = React.memo(function GraphNode({
   node,
@@ -10,19 +51,19 @@ const GraphNode = React.memo(function GraphNode({
   onSelectNode,
   onRunSelectedNode,
   onAddDraftTaskFromSelected,
-}) {
+}: GraphNodeProps) {
   const handleSelect = () => onSelectNode(node.id);
-  const handleKeyDown = (event) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelectNode(node.id);
     }
   };
-  const handleRunNode = (event) => {
+  const handleRunNode = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     void onRunSelectedNode();
   };
-  const handleAddDraftTask = (event) => {
+  const handleAddDraftTask = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     onAddDraftTaskFromSelected();
   };
@@ -82,7 +123,7 @@ export const GraphView = React.memo(function GraphView({
   onRunSelectedNode,
   onRequestNodeReview,
   onLoadPendingApprovals,
-}) {
+}: GraphViewProps) {
   return (
     <div className="card">
       <div className="inline-controls inline-controls--compact">

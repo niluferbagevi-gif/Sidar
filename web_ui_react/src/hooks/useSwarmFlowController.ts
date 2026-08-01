@@ -28,6 +28,8 @@ import {
 import type {
   AutonomyItem,
   GraphEdge,
+  GraphNode,
+  Lane,
   SwarmResult,
   SwarmTask,
   TelemetryStep,
@@ -66,10 +68,25 @@ interface ExecuteSwarmMeta {
   maxConcurrency?: number;
 }
 
-interface PositionedGraphEdge extends GraphEdge {
+export interface PositionedGraphEdge extends GraphEdge {
   curve: string;
   labelX: number;
   labelY: number;
+}
+
+export interface SwarmGraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  lanes: Lane[];
+  width: number;
+  height: number;
+  metrics: {
+    roles: number;
+    tasks: number;
+    decisions: number;
+    handoffs: number;
+  };
+  nodeMap: Map<string, GraphNode>;
 }
 
 const errorMessage = (error: unknown): string =>
@@ -203,7 +220,7 @@ export function useSwarmFlowController() {
     [telemetryEvents],
   );
 
-  const graphData = useMemo(() => {
+  const graphData = useMemo<SwarmGraphData>(() => {
     const responseResults = response?.results || [];
     const handoffEvents = buildHandoffEvents(responseResults);
     const roleHints = buildRoleHints(tasks, responseResults, handoffEvents);
