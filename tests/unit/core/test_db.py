@@ -32,7 +32,11 @@ from core.db import (
     _utc_now_iso,
     _verify_password,
 )
-from core.db.dialect import assert_safe_sql_identifier, is_safe_sql_identifier
+from core.db.dialect import (
+    assert_safe_sql_identifier,
+    is_safe_sql_identifier,
+    join_sql_identifiers,
+)
 from core.db.helpers import json_dumps as _json_dumps
 
 
@@ -454,6 +458,18 @@ def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
         assert_safe_sql_identifier("bad-name")
     with pytest.raises(ValueError, match="Invalid SQL identifier: 'events'"):
         assert_safe_sql_identifier("events", allowed={"messages"})
+
+
+def test_join_sql_identifiers_validates_the_joined_values() -> None:
+    assert join_sql_identifiers(("id", "role_name")) == "id, role_name"
+    assert join_sql_identifiers(("id",), allowed={"id"}) == "id"
+
+    with pytest.raises(ValueError, match="SQL identifier list cannot be empty"):
+        join_sql_identifiers(())
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "unsafe-name"))
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "role_name"), allowed={"id"})
 
 
 @pytest.mark.asyncio
