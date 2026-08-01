@@ -22,7 +22,9 @@
 
 > **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
-> **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
+> **Mimari belgeler:** Aktif v5.2.0 bileşen ve sahiplik haritası
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasındadır. v5.0/v5.1 adlı raporlar
+> tarihsel vizyon ve faz evrim kayıtlarıdır; güncel dosya/API doğruluk kaynağı değildir.
 
 ### v5.0 Co-Worker Öne Çıkan Özellikler
 
@@ -1091,7 +1093,9 @@ Sidar/
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
-├── PROJE_RAPORU.md         # Mimari + kalite raporu
+├── ARCHITECTURE.md         # Aktif v5.2.0 mimari doğruluk kaynağı
+├── PROJE_RAPORU.md         # Bölümlenmiş kapsamlı rapor indeksi
+├── project-report/         # Konu bazlı proje raporu bölümleri
 ├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
 └── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
 ```
@@ -1366,6 +1370,8 @@ Bu proje Sidar ekosisteminin bir parçasıdır.
 
 ## 🧹 Depo Hijyeni
 
-- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` kullanılmalıdır.
+- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; güncel mimari kararları
+  için `ARCHITECTURE.md` ve `RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
+  bölümlenmiş `PROJE_RAPORU.md` indeksi kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.

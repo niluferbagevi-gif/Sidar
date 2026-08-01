@@ -1,5 +1,7 @@
 # SİDAR v5.0 — İleri Düzey Otonomi ve Yeni Yetenekler Geliştirme Raporu
 
+> **Belge sınıfı:** Tarihsel v5.0 vizyon/faz kaydıdır. Aktif v5.2.0 mimarisi için [`ARCHITECTURE.md`](ARCHITECTURE.md) kullanılmalıdır.
+
 > **Durum:** Faz A ve Faz B tamamlandı; Faz C odağına geçmiş stratejik mimari raporu
 > **Hazırlanma Tarihi:** 2026-03-19
 > **Kapsam:** `PROJE_RAPORU.md`, `README.md`, `core/vision.py`, `core/rag.py`, `agent/tooling.py`, `agent/swarm.py`, `agent/core/supervisor.py`, `managers/web_search.py`, `managers/code_manager.py`, `web_server.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`

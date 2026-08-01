@@ -5,7 +5,9 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 ## ⚙️ Sistem Bilgileri
 - **API/Web Portu:** `7860` (varsayılan)
 - **Model Standardı:** Yerel (Ollama: `qwen2.5-coder:7b`) ve Bulut (Gemini: `gemini-2.5-flash`, OpenAI: `gpt-4o-mini`, Anthropic: `claude-3-5-sonnet`)
-- **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `PROJE_RAPORU.md` takip edilir.
+- **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; aktif sistem mimarisi
+  için `ARCHITECTURE.md`, geliştirme ayrıntıları için `CLAUDE.md`, kapsamlı teknik
+  geçmiş için `PROJE_RAPORU.md` indeksi takip edilir.
 - **Rol Dağılımı:** Tüm görevler Supervisor ajan tarafından koordine edilir. Kodlama (Coder), araştırma (Researcher) ve kalite kontrol (Reviewer) süreçleri uzman ajanlara delege edilir.
 - **Güncel Durum:** `v5.2.0` ürün baseline'ında çalışan sistem; Faz A + Faz B teslimlerini kapatmış, multimodal/voice, browser automation, GraphRAG + LSP reviewer ve proaktif cron/webhook akışlarıyla ilerler. v5.0/v5.1 adlı mimari belgeler ürün sürümünü değil, tarihsel vizyon ve faz evrimini belirtir.
 - **Swarm Görünürlüğü:** Ajanlar arası P2P görev devirleri, otonom cron tetikleri ve sonuç zinciri artık React tarafındaki `SwarmFlowPanel` üzerinde kullanıcıya görsel akış diyagramı olarak yansıtılır.
@@ -46,4 +48,6 @@ LLM döngüsüne girmeden yakalanan sistem komutlarını bil:
 - **Cost-aware model seçimi:** Basit görevler veya günlük bütçe baskısı lokal rotaya çekilir; daha yüksek karmaşıklıkta bulut model devreye alınır.
 
 ## 📝 Dokümantasyon Disiplini
-Yaptığın her anlamlı mimari/işlevsel değişikliği `PROJE_RAPORU.md` dosyasının sonuna yeni bir Session kaydı olarak ekle.
+Yaptığın her anlamlı mimari/işlevsel değişiklikte güncel sözleşmeyi gerekiyorsa
+`ARCHITECTURE.md` içinde değiştir; kronolojik Session kaydını
+`project-report/06-operasyon-sorun-giderme-ve-gecmis.md` dosyasının sonuna ekle.

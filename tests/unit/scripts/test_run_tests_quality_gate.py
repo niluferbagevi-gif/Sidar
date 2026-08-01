@@ -37,6 +37,12 @@ def installer_contract_sources() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
+def project_report_sources() -> str:
+    """Return the project report index and all topic sections as one contract surface."""
+    paths = [Path("docs/PROJE_RAPORU.md"), *sorted(Path("docs/project-report").glob("*.md"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+
 def _run_tests_frontend_playwright_helpers() -> str:
     """Return frontend Playwright helper definitions with required run_tests defaults."""
     run_tests = RUN_TESTS.read_text(encoding="utf-8")
@@ -201,7 +207,7 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
 
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
-    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    project_report = project_report_sources()
 
     assert f"güncel repo gate: `%{coverage_fail_under:g}`" in coverage_agent_docs
     assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
@@ -778,7 +784,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
-    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    project_report = project_report_sources()
     environment_configuration = Path("docs/ENVIRONMENT_CONFIGURATION.md").read_text(
         encoding="utf-8"
     )
