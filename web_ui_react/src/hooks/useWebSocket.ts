@@ -17,7 +17,12 @@ export type WebSocketStatus =
   | "error";
 
 export type RoomParticipant = Record<string, unknown>;
-export type RoomMessage = Record<string, unknown>;
+export type RoomMessage = Record<string, unknown> & {
+  id: string;
+  content?: string;
+  role?: string;
+  request_id?: string;
+};
 export type CollaborationEvent = Record<string, unknown> & {
   kind?: "status" | "tool_call" | "thought" | string;
   source?: string;
