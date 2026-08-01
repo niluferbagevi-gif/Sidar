@@ -5715,7 +5715,7 @@ format_backend_failure_reasons() { printf 'none'; }
 
 
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
-    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
+    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.ts").read_text(encoding="utf-8")
 
     assert (
         'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";'
