@@ -17,6 +17,8 @@ pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
 _FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "5.0") or "5.0")
+_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3
+_PASSWORD_BENCHMARK_ROUNDS = 10
 
 
 def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
@@ -289,8 +291,8 @@ def test_user_registration_password_hash_cpu_cost(
 
     user_id = benchmark.pedantic(
         _run_once,
-        warmup_rounds=1,
-        rounds=5,
+        warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS,
+        rounds=_PASSWORD_BENCHMARK_ROUNDS,
         iterations=1,
     )
     _attach_latency_percentiles(benchmark, "password_hash")
@@ -321,8 +323,8 @@ def test_user_authentication_password_verify_cpu_cost(
 
     authenticated_user_id = benchmark.pedantic(
         _run_once,
-        warmup_rounds=1,
-        rounds=5,
+        warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS,
+        rounds=_PASSWORD_BENCHMARK_ROUNDS,
         iterations=1,
     )
     _attach_latency_percentiles(benchmark, "password_verify")

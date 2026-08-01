@@ -695,6 +695,15 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "yalnız SQLite varyantını koşturur" in env_test_example
 
 
+def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
+    benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
+
+    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3" in benchmark_test
+    assert "_PASSWORD_BENCHMARK_ROUNDS = 10" in benchmark_test
+    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 2
+    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 2
+
+
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
@@ -2339,7 +2348,8 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
 
     assert "Lokal benchmark baseline bootstrap içindir" in makefile
     assert "seed_benchmark_baseline=true" in makefile
-    assert "BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED)" in benchmark_seed_block
+    assert "BENCHMARK_COMPARE_REQUIRED=0" in benchmark_seed_block
+    assert "BENCHMARK_ENFORCE_COMPARE=0" in benchmark_seed_block
     assert "RUN_BENCHMARKS=required bash run_tests.sh --stage all" in benchmark_seed_block
     assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
     assert "TEST_PROFILE=ci" not in benchmark_seed_block

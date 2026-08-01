@@ -94,7 +94,7 @@ doctor-production-readiness:
 # Lokal benchmark baseline bootstrap içindir; CI baseline için workflow_dispatch
 # seed_benchmark_baseline=true kullanılmalıdır.
 benchmark-seed:
-	BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED) RUN_BENCHMARKS=required bash run_tests.sh --stage all
+	BENCHMARK_COMPARE_REQUIRED=0 BENCHMARK_ENFORCE_COMPARE=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all
 
 frontend-gate:
 	RUN_FRONTEND_E2E=1 FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh --stage frontend

@@ -399,6 +399,18 @@ make benchmark-seed
 make production-readiness
 ```
 
+`make benchmark-seed` bilinçli olarak `BENCHMARK_COMPARE_REQUIRED=0` ve
+`BENCHMARK_ENFORCE_COMPARE=0` kullanır: amacı mevcut ölçümü geçer/geçmez diye
+sınıflandırmak değil, bu makineye özgü yerel başlangıç verisini oluşturmaktır. Seed ile
+`make production-readiness` çalıştırmasını aynı yoğun laptop oturumunda arka arkaya
+koşturmak CPU-bound parola hash/verify ölçümlerini scheduler, WSL2/Docker ve diğer arka
+plan yüklerinin gürültüsüne açık bırakır. Arka plan yükü kararlı hale geldikten sonra
+kapıyı ayrı bir koşuda çalıştırın. Parola benchmarkları bu varyansı azaltmak için üç
+ısınma ve on ölçüm turu kullanır; buna rağmen yerel baseline CI baseline kanıtı değildir.
+Merge/release kararı, gözden geçirilmiş baseline'ı cache/artifact'tan restore edip temiz
+bir GitHub-hosted runner'da çalışan required GitHub Actions production-readiness
+kontrolüne dayanmalıdır.
+
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 
 ```bash
