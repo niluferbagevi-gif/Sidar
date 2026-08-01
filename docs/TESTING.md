@@ -293,19 +293,27 @@ Bu çıktıyı şu şekilde yorumlayın:
   `true` yapılmaz: GPU sonucu ayrı self-hosted CI job'ında oluşur ve
   `gpu-inference-policy-gate` ile production-readiness aggregate tarafından doğrulanır.
 
-Local başarıdan release onayına geçmek için tek kanonik komut:
+Local başarıdan sonra PR öncesi aynı base kalite sözleşmesini doğrulamak için kanonik
+yerel komut:
 
 ```bash
 make production-readiness
 ```
+
+Bu komut başarılı olsa bile **asıl release/merge kararı yerel makinede verilmez**.
+PR'ı açın ve GitHub Actions'taki required **Production readiness aggregate**
+(`production-readiness`) check'inin geçmesini bekleyin. Aggregate; base `test`, izole
+`benchmark-compare` ve `gpu-inference-policy-gate` job'larının üçünü birleştirir. Yerel
+koşu bu GitHub-hosted baseline/runner kanıtını ve ayrı self-hosted GPU evidence akışını
+ikame etmez.
 
 ## CI branch protection / required checks
 
 GitHub repository settings dosya içinde doğrulanamaz; ancak merge güvenliği için branch
 protection altında en az şu CI job'ları required check olmalıdır:
 
-- `test` — normal CI yolunda benchmark baseline restore edilir, `make production-readiness`
-  çalışır ve `scripts/ci/validate_test_summary.py --mode release` ile
+- `test` — normal CI yolunda `make production-readiness` çalışır ve
+  `scripts/ci/validate_test_summary.py --mode release` ile
   `artifacts/test-summary.json` release modunda doğrulanır.
 - `Installer manifest and smoke gate` (`installer-smoke` job'ı) — installer manifest/hash
   drift'i, raw installer smoke ve kritik kurulum zinciri kontrollerini merge öncesi zorunlu

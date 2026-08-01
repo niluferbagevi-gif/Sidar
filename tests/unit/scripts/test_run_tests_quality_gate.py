@@ -1007,7 +1007,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         "benchmark baseline gerektirebilir" in validation_phase
     )
     assert "Development validation ≠ release/merge onayı" in validation_phase
-    assert "Release/merge için tek zorunlu komut" in validation_phase
+    assert "Yerel ön doğrulama (merge kararı değildir)" in validation_phase
+    assert "Production readiness aggregate" in validation_phase
     assert "DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS" in validation_phase
     assert "AUTO_OPEN_ARTIFACTS=0 make production-readiness" in validation_phase
     assert (
@@ -1713,7 +1714,8 @@ print_install_validation_coverage""",
     assert "Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ" in result.stdout
     assert "Development full validation geçti = geliştirici ortamı sağlıklı" in result.stdout
     assert "Development validation ≠ release/merge onayı" in result.stdout
-    assert "Release/merge için tek zorunlu komut" in result.stdout
+    assert "Yerel ön doğrulama (merge kararı değildir)" in result.stdout
+    assert "Production readiness aggregate" in result.stdout
     assert "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
     assert result.stdout.count("Production readiness:") == 1
     assert "Production readiness: GEÇMEDİ" not in result.stdout

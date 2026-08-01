@@ -573,9 +573,10 @@ print_install_production_readiness_notice() {
                 echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
                 print_install_dependency_profile_readiness_legend
             fi
-            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; required GitHub Actions aggregate hâlâ zorunlu.${NC}"
             echo -e "   ${YELLOW}   DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS${NC}"
-            echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Yerel ön doğrulama (merge kararı değildir): ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Asıl release/merge kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i.${NC}"
             ;;
         *)
             echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ / DURUM BİLİNMİYOR (${status:-yok})${NC}"

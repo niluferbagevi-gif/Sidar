@@ -226,9 +226,11 @@ print_release_readiness_next_action() {
     echo -e "       ${YELLOW}   bu gate'i (production-readiness job) her push/PR'da otomatik çalıştırır${NC}"
     echo -e "       ${YELLOW}   (bkz. .github/workflows/ci.yml). Aşağıdaki komut yereldeki eşdeğer çalıştırmadır.${NC}"
     echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
-    echo -e "       ${BOLD}Release/merge için tek zorunlu kapı:${NC}"
+    echo -e "       ${BOLD}Yerel ön doğrulama (merge kararı değildir):${NC}"
     echo "       make production-readiness"
     echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    echo -e "       ${BOLD}Asıl release/merge kararı:${NC} PR'ı açın ve required GitHub Actions"
+    echo "       'Production readiness aggregate' check'inin geçmesini bekleyin."
 }
 
 
@@ -390,8 +392,9 @@ print_summary() {
     echo "  dev-full (local tam doğrulama; backend + frontend + benchmark + BATS + security):"
     echo "    make dev-full"
     echo "    # Eşdeğer: bash run_tests.sh --stage all"
-    echo "  production-readiness (merge/release kapısı):"
+    echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
     echo "    make production-readiness"
+    echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"
