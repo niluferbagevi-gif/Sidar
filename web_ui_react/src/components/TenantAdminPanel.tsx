@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { fetchJson } from "../lib/api.js";
+import type { AccessPolicy, AuditLog, ItemsResponse } from "../lib/api.js";
 
-const DEFAULT_POLICY_FORM = {
+interface PolicyForm {
+  user_id: string;
+  tenant_id: string;
+  resource_type: string;
+  resource_id: string;
+  action: string;
+  effect: string;
+}
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const DEFAULT_POLICY_FORM: PolicyForm = {
   user_id: "",
   tenant_id: "default",
   resource_type: "rag",
@@ -14,7 +27,7 @@ const RESOURCE_OPTIONS = ["rag", "github", "agents", "swarm", "operations", "cov
 const ACTION_OPTIONS = ["read", "write", "execute", "register", "manage"];
 const TENANT_DATA_DEBOUNCE_MS = 300;
 
-function normalizePolicyForm(form) {
+function normalizePolicyForm(form: PolicyForm): PolicyForm {
   return {
     user_id: form.user_id.trim(),
     tenant_id: form.tenant_id.trim() || "default",
@@ -25,7 +38,7 @@ function normalizePolicyForm(form) {
   };
 }
 
-function formatDate(value) {
+function formatDate(value?: string): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -34,13 +47,13 @@ function formatDate(value) {
 
 export function TenantAdminPanel() {
   const [policyForm, setPolicyForm] = useState(DEFAULT_POLICY_FORM);
-  const [policies, setPolicies] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
+  const [policies, setPolicies] = useState<AccessPolicy[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
-  const activeRequestRef = useRef(null);
+  const activeRequestRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
 
   const currentTenantId = policyForm.tenant_id.trim() || "default";
@@ -59,20 +72,26 @@ export function TenantAdminPanel() {
       if (currentUserId) auditQuery.set("user_id", currentUserId);
 
       const requestOptions = { signal: controller.signal };
-      const requests = [fetchJson(`/admin/audit-logs?${auditQuery.toString()}`, requestOptions)];
+      const auditRequest = fetchJson<ItemsResponse<AuditLog>>(
+        `/admin/audit-logs?${auditQuery.toString()}`,
+        requestOptions,
+      );
+      let policyRequest: Promise<ItemsResponse<AccessPolicy>> = Promise.resolve({ items: [] });
       if (currentUserId) {
         const policyQuery = new URLSearchParams({ tenant_id: currentTenantId });
-        requests.unshift(fetchJson(`/admin/policies/${encodeURIComponent(currentUserId)}?${policyQuery.toString()}`, requestOptions));
+        policyRequest = fetchJson<ItemsResponse<AccessPolicy>>(
+          `/admin/policies/${encodeURIComponent(currentUserId)}?${policyQuery.toString()}`,
+          requestOptions,
+        );
       }
 
-      const results = await Promise.all(requests);
+      const [policyResult, auditResult] = await Promise.all([policyRequest, auditRequest]);
       if (requestSequence !== requestSequenceRef.current) return;
-      const auditResult = results[results.length - 1];
       setAuditLogs(auditResult.items || []);
-      setPolicies(currentUserId ? (results[0].items || []) : []);
-    } catch (err) {
+      setPolicies(policyResult.items || []);
+    } catch (err: unknown) {
       if (controller.signal.aborted || requestSequence !== requestSequenceRef.current) return;
-      setError(err.message);
+      setError(errorMessage(err));
     } finally {
       if (requestSequence === requestSequenceRef.current) {
         activeRequestRef.current = null;
@@ -90,11 +109,11 @@ export function TenantAdminPanel() {
     };
   }, [loadTenantData]);
 
-  const updateForm = useCallback((field, value) => {
+  const updateForm = useCallback((field: keyof PolicyForm, value: string) => {
     setPolicyForm((prev) => ({ ...prev, [field]: value }));
   }, []);
 
-  const handleSubmit = useCallback(async (event) => {
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const payload = normalizePolicyForm(policyForm);
     if (!payload.user_id) {
@@ -105,7 +124,7 @@ export function TenantAdminPanel() {
     setFeedback("");
     setError("");
     try {
-      const data = await fetchJson("/admin/policies", {
+      const data = await fetchJson<ItemsResponse<AccessPolicy>>("/admin/policies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -113,8 +132,8 @@ export function TenantAdminPanel() {
       setPolicies(data.items || []);
       setFeedback(`${payload.tenant_id} tenant erişim politikası kaydedildi.`);
       await loadTenantData();
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }

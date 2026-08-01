@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { HitlPendingItem } from "../lib/api.js";
+import type { CollaborationEvent } from "../hooks/useWebSocket.js";
 import {
   analyzeCoverage,
   generateCampaignCopy,
@@ -12,7 +14,7 @@ import { useFormState } from "../hooks/useFormState.js";
 
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
-const FORM_FIELD_LABELS = {
+const FORM_FIELD_LABELS: Record<string, string> = {
   brand_name: "Marka adı",
   campaign_name: "Kampanya adı",
   objective: "Amaç",
@@ -23,15 +25,21 @@ const FORM_FIELD_LABELS = {
   tone: "Ton",
 };
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const typedEntries = <T extends Record<string, unknown>>(value: T) =>
+  Object.entries(value) as [keyof T, T[keyof T]][];
+
 export function OperationsQaPanel() {
   const [activeRoom, setActiveRoom] = useState(OPS_ROOM_ID);
-  const [events, setEvents] = useState([]);
-  const [hitlPending, setHitlPending] = useState([]);
+  const [events, setEvents] = useState<CollaborationEvent[]>([]);
+  const [hitlPending, setHitlPending] = useState<HitlPendingItem[]>([]);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [output, setOutput] = useState(null);
+  const [output, setOutput] = useState<unknown>(null);
   const [busyAction, setBusyAction] = useState("");
-  const actionInFlightRef = useRef(false);
+  const actionInFlightRef = useRef<boolean>(false);
   const [landingForm, setLandingField] = useFormState({
     brand_name: "Sidar",
     offer: "Kurumsal ajan operasyon merkezi",
@@ -63,8 +71,8 @@ export function OperationsQaPanel() {
       const data = await listHitlPending();
       setHitlPending(data.pending || []);
       setError("");
-    } catch (exc) {
-      setError(exc.message);
+    } catch (exc: unknown) {
+      setError(errorMessage(exc));
     }
   }, []);
 
@@ -72,7 +80,7 @@ export function OperationsQaPanel() {
     loadHitl();
   }, [loadHitl]);
 
-  const runAction = useCallback(async (label, fn) => {
+  const runAction = useCallback(async (label: string, fn: () => Promise<unknown>): Promise<boolean> => {
     if (actionInFlightRef.current) return false;
     actionInFlightRef.current = true;
     setBusyAction(label);
@@ -83,8 +91,8 @@ export function OperationsQaPanel() {
       setOutput(result);
       setStatus(`${label} tamamlandı.`);
       await loadHitl();
-    } catch (exc) {
-      setError(exc.message);
+    } catch (exc: unknown) {
+      setError(errorMessage(exc));
       setStatus(`${label} başarısız.`);
     } finally {
       actionInFlightRef.current = false;
@@ -93,7 +101,7 @@ export function OperationsQaPanel() {
     return true;
   }, [loadHitl]);
 
-  const respond = useCallback(async (requestId, approved) => {
+  const respond = useCallback(async (requestId: string, approved: boolean) => {
     await runAction(approved ? "HITL onay" : "HITL red", () => respondHitl(requestId, {
       approved,
       decided_by: "ops-qa-panel",
@@ -102,10 +110,10 @@ export function OperationsQaPanel() {
   }, [runAction]);
 
   const eventItems = useMemo(() => events.map((event) => ({
-    id: event.id || `${event.ts}-${event.content}`,
+    id: String(event.id || `${event.ts || ""}-${event.content || ""}`),
     title: `${event.source || "api"} · ${event.kind || "status"}`,
-    content: event.content || "",
-    ts: event.ts || "",
+    content: typeof event.content === "string" ? event.content : "",
+    ts: typeof event.ts === "string" ? event.ts : "",
   })), [events]);
 
   return (
@@ -132,7 +140,7 @@ export function OperationsQaPanel() {
           runAction("Landing page", () => generateLandingPage({ ...landingForm, room_id: OPS_ROOM_ID }));
         }}>
           <h3>Poyraz Landing Page</h3>
-          {Object.entries(landingForm).map(([key, value]) => (
+          {typedEntries(landingForm).map(([key, value]) => (
             <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setLandingField(key, e.target.value)} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Landing üret</button>
@@ -147,7 +155,7 @@ export function OperationsQaPanel() {
           }));
         }}>
           <h3>Poyraz Kampanya</h3>
-          {Object.entries(campaignForm).map(([key, value]) => (
+          {typedEntries(campaignForm).map(([key, value]) => (
             <label key={key}>{FORM_FIELD_LABELS[key]}<input value={value} onChange={(e) => setCampaignField(key, e.target.value)} /></label>
           ))}
           <button type="submit" disabled={Boolean(busyAction)}>Kopya üret</button>

@@ -70,6 +70,31 @@ export interface CoverageBatchResponse extends ApiSuccessResponse {
   tenant_id?: string;
 }
 
+export interface AccessPolicy extends JsonObject {
+  id: string | number;
+  user_id: string;
+  tenant_id: string;
+  resource_type: string;
+  resource_id: string;
+  action: string;
+  effect: string;
+}
+
+export interface AuditLog extends JsonObject {
+  id: string | number;
+  user_id?: string;
+  tenant_id?: string;
+  action: string;
+  resource: string;
+  allowed: boolean;
+  timestamp?: string;
+}
+
+export interface ItemsResponse<T> extends JsonObject {
+  items?: T[];
+  success?: boolean;
+}
+
 let inMemoryToken = "";
 
 function getBrowserStorage(kind: "localStorage" | "sessionStorage" = "localStorage"): Storage | null {

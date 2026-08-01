@@ -27,7 +27,11 @@ güncel envanteri 12 `.js`, 40 `.jsx`, 6 `.ts`, 2 `.tsx` ve ratchet'i
 52 untyped / 8 typed seviyesine ilerletmiştir. Chat ve stream state machine'i
 `src/hooks/useChatStore.ts` olarak WebSocket mesaj sözleşmelerine bağlanmış;
 güncel envanter 11 `.js`, 40 `.jsx`, 7 `.ts`, 2 `.tsx` ve ratchet
-51 untyped / 9 typed seviyesindedir.
+51 untyped / 9 typed seviyesine gelmiştir. CRUD/API yoğun ilk panel dalgasında
+`TenantAdminPanel.tsx` ve `OperationsQaPanel.tsx`; RBAC/audit kayıtları, HITL,
+coverage, Poyraz form state'i ve hata sınırlarını açık tiplerle taşımış; güncel
+envanteri 11 `.js`, 38 `.jsx`, 7 `.ts`, 4 `.tsx` ve ratchet'i
+49 untyped / 11 typed seviyesine ilerletmiştir.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -38,8 +42,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 51 untyped (`.js` + `.jsx`) ve en az
-9 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 49 untyped (`.js` + `.jsx`) ve en az
+11 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
