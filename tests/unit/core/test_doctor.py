@@ -963,6 +963,50 @@ def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatc
     assert state["details"].get("blocked_by") is None
 
 
+def test_rag_readiness_state_derives_database_url_from_postgres_parts(monkeypatch, tmp_path):
+    """Regression test for the installer's intended default.
+
+    DATABASE_URL is never written explicitly to dotenv files, only derived
+    from POSTGRES_* parts at runtime (see scripts/install_modules and
+    config.py). _rag_readiness_state() used to read os.getenv("DATABASE_URL")
+    directly instead of going through _resolved_database_urls(), so this
+    exact (and common) configuration always reported
+    database_env_status="fail" and falsely blocked pgvector readiness, even
+    though check_database_env()/check_database_connectivity() (which already
+    used _resolved_database_urls()) correctly reported the environment as
+    healthy.
+    """
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+
+
+def test_rag_readiness_aggregate_derives_database_url_from_postgres_parts(monkeypatch, tmp_path):
+    """Same regression as above, exercised through the aggregate check.
+
+    check_rag_readiness() is the backward-compatible aggregate, which
+    independently re-derived DATABASE_URL via a second raw
+    os.getenv("DATABASE_URL") call.
+    """
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    check = doctor.check_rag_readiness()
+
+    assert check.details.get("blocked_by") is None
+    assert check.details.get("database_env_status") != "fail"
+
+
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
