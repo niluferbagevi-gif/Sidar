@@ -1892,6 +1892,9 @@ def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> N
     assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0" in finish_phase
     assert "ℹ️  .env dosyasında" in summary_block
     assert "beklenen güvenli kurulum davranışıdır" in summary_block
+    assert "sidar_summary_external_api_key_count" in finish_phase
+    assert "Secret overlay durumu:" in summary_block
+    assert "read_env_value_from_file" in finish_phase
     assert "SIDAR_KEYS_FILE" in summary_block
     assert "Kritik key kaynak özeti" in summary_block
     assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1" in summary_block

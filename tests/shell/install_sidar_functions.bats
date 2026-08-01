@@ -2921,6 +2921,23 @@ ENV
   [[ "$output" != *"izinleri güvenli değil"* ]]
 }
 
+@test "summary counts non-empty API keys from external secret overlay" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    cat > "$SIDAR_KEYS_FILE" <<EOF
+OPENAI_API_KEY=secret-openai
+GEMINI_API_KEY=secret-gemini
+ANTHROPIC_API_KEY=
+EOF
+
+    [[ "$(sidar_summary_external_api_key_count)" == "2" ]]
+  '
+
+  [ "$status" -eq 0 ]
+}
+
 @test "verify_sidar_keys_file_permissions repairs generated env secret file permissions" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
