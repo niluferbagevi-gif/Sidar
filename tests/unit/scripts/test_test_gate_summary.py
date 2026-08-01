@@ -91,6 +91,17 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
     assert payload["benchmark_baseline"]["local_seed_command"] == (
         "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
     )
+    assert payload["gpu_inference_evidence"] == {
+        "included": False,
+        "status": "not_run",
+        "scope": "external_ci_required_check",
+        "quality_gate": "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
+        "policy_gate": "GPU Inference Required Evidence Gate",
+        "required_variable": "ENABLE_GPU_BENCH_GATE=true",
+        "required_runner_labels": ["self-hosted", "linux", "gpu"],
+        "ttft_budget_ms": 200,
+        "latency_budget_ms": 250,
+    }
     assert payload["backend_failed_tests"] == [
         "tests/unit/root/test_config.py::test_failure",
         "tests/unit/root/test_config.py::test_error",

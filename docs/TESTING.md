@@ -279,6 +279,11 @@ Bu çıktıyı şu şekilde yorumlayın:
 - `production_ready=false`, `validation_class=development_full` veya
   `release_blocking=true` değerleri `artifacts/test-summary.json` içinde görülürse
   bu, local doğrulamanın başarılı ama release için henüz yeterli olmadığını anlatır.
+- Yerel/base kapıda `production_ready=true` görülse bile aynı özetteki
+  `gpu_inference_evidence.included=false` ve `status=not_run` alanları bu koşunun
+  TTFT/latency kanıtı üretmediğini makine-okunur biçimde belirtir. Bu alan yerelde
+  `true` yapılmaz: GPU sonucu ayrı self-hosted CI job'ında oluşur ve
+  `gpu-inference-policy-gate` ile production-readiness aggregate tarafından doğrulanır.
 
 Local başarıdan release onayına geçmek için tek kanonik komut:
 

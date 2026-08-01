@@ -202,8 +202,9 @@ print_release_readiness_next_action() {
 
     echo -e "  ${BOLD}🚦 Release / merge readiness:${NC}"
     if [[ "$production_ready" == "true" ]]; then
-        echo -e "       ${GREEN}✅ Production readiness geçti.${NC}"
-        echo "       Release/merge kapısı tamamlandı: make production-readiness"
+        echo -e "       ${GREEN}✅ Yerel/base production-readiness kapısı geçti.${NC}"
+        echo -e "       ${YELLOW}⚠️  Bu sonuç self-hosted GPU TTFT/latency kanıtını içermez.${NC}"
+        echo "       Release/merge için CI GPU Inference Required Evidence Gate ve aggregate sonucu zorunludur."
         return
     fi
 

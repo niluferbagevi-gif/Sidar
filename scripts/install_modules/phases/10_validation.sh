@@ -557,7 +557,9 @@ print_install_production_readiness_notice() {
 
     case "$status" in
         passed)
-            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            echo -e "   ${GREEN}✅ Yerel/base production readiness: GEÇTİ${NC}"
+            echo -e "   ${YELLOW}   ⚠️  GPU TTFT≤200ms / latency≤250ms kanıtı bu özete dahil değildir.${NC}"
+            echo -e "   ${YELLOW}   Release/merge için CI GPU Required Evidence Gate + aggregate zorunludur.${NC}"
             ;;
         failed)
             echo -e "   ${RED}${BOLD}❌ Production readiness: GEÇMEDİ${NC}"
@@ -974,7 +976,7 @@ print_install_validation_coverage() {
     fi
 
     if [[ "${summary_production_ready:-}" == true ]]; then
-        print_install_final_readiness_block "Evet — production-readiness gate geçti" "Evet — release/merge kapısı tamamlandı" ""
+        print_install_final_readiness_block "Evet — yerel/base production-readiness gate geçti" "CI aggregate bekleniyor" "Yerel production_ready=true self-hosted GPU TTFT/latency kanıtını içermez; release/merge için GPU Required Evidence Gate zorunludur."
     elif [[ "$ci_status" == "tamamlandi" ]]; then
         if sidar_install_production_gate_required; then
             print_install_final_readiness_block "Evet — tam doğrulama komutu tamamlandı" "Hayır — production-readiness özeti doğrulanamadı" "artifacts/test-summary.json içinde production_ready=true görülmeden release/merge onayı vermeyin."
