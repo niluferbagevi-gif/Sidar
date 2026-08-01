@@ -963,6 +963,40 @@ def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatc
     assert state["details"].get("blocked_by") is None
 
 
+def test_rag_readiness_accepts_derived_database_url_without_explicit_env(monkeypatch, tmp_path):
+    """DATABASE_URL absent from dotenv but derivable from POSTGRES_* must not block pgvector.
+
+    Regression test for a bug where `_rag_readiness_state()` read raw
+    `os.getenv("DATABASE_URL", "")` instead of the shared `_resolved_database_urls()`
+    resolver that `check_database_env()`/`check_database_connectivity()` use. Installs that
+    intentionally omit DATABASE_URL (deriving it from POSTGRES_USER/PASSWORD/DB) saw
+    `database_env` report "pass" while `rag_index_ready`/`graphrag_entity_memory_ready`
+    incorrectly reported "blocked_by: database_env" in the same run.
+    """
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+
+    index_check = doctor.check_rag_index_ready()
+    assert index_check.status != "warn" or "blocked" not in index_check.message
+    assert index_check.details.get("blocked_by") is None
+
+    graph_check = doctor.check_graphrag_entity_memory_ready()
+    assert graph_check.details.get("blocked_by") is None
+
+    aggregate_check = doctor.check_rag_readiness()
+    assert aggregate_check.details.get("blocked_by") is None
+
+
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()

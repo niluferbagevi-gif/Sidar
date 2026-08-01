@@ -1019,7 +1019,7 @@ def _rag_readiness_state() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
     if vector_backend == "pgvector":
-        database_url = os.getenv("DATABASE_URL", "").strip()
+        database_url = _resolved_database_urls()[0]
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
         parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
         parsed_database_url, _ = _parse_url(database_url)
@@ -1254,7 +1254,7 @@ def check_rag_readiness() -> DoctorCheck:
     state = _rag_readiness_state()
     base_details = state.get("details", {}) if isinstance(state, dict) else {}
     vector_backend = str(base_details.get("vector_backend", "") or "").lower()
-    db_url_raw = os.getenv("DATABASE_URL", "")
+    db_url_raw = _resolved_database_urls()[0]
     postgres_password = os.getenv("POSTGRES_PASSWORD", "")
     mismatch_block = (
         vector_backend == "pgvector"
