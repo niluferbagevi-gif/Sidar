@@ -69,9 +69,7 @@ def test_regression_direction_does_not_alarm_on_improvements() -> None:
 
 
 def test_current_metrics_records_vram_load_latency_separately_from_peak_memory() -> None:
-    metrics = trend._current_metrics(
-        _benchmarks(vram_load_mean=2.28002, vram=4096.0)
-    )
+    metrics = trend._current_metrics(_benchmarks(vram_load_mean=2.28002, vram=4096.0))
 
     assert metrics["vram_load_mean_ms"] == 2280.02
     assert metrics["vram_peak_mib"] == 4096.0
