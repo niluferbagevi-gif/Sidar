@@ -424,6 +424,36 @@ Merge/release kararı, gözden geçirilmiş baseline'ı cache/artifact'tan resto
 bir GitHub-hosted runner'da çalışan required GitHub Actions production-readiness
 kontrolüne dayanmalıdır.
 
+### Yerel benchmark regresyonu ve sistem gürültüsü
+
+Yerel `make production-readiness` koşusunda `Performance has regressed` mesajı görmek,
+özellikle milisaniye ölçeğindeki PostgreSQL concurrency ölçümlerinde, tek başına kod
+regresyonu kanıtı değildir. `TEST_PROFILE=ci` sözleşmesi yerelde de CI'ın `mean:10%`
+eşiğini uygular; normal local profil ise scheduler, WSL2/Docker, termal durum ve aynı
+makinedeki GPU/LLM yüküne tolerans için `mean:15%` kullanır. `tests/performance` dosya
+sırasına güvenmeyin: tüm performans bataryası tek pytest sürecinde çalıştığından önceki
+GPU veya CPU yoğun testlerin sistem durumunu etkilemesi mümkündür.
+
+Önce GPU/LLM işini ve gereksiz arka plan süreçlerini durdurun, makinenin kararlı hale
+gelmesini bekleyin ve **aynı baseline** ile tekrar ölçün. Yerel teşhis için iki bilinçli
+override vardır:
+
+```bash
+# Local profil toleransıyla karşılaştır; regresyon varsa yine başarısız olur.
+BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness
+
+# Karşılaştırmayı göster fakat eşik nedeniyle komutu başarısız etme.
+BENCHMARK_ENFORCE_COMPARE=0 make production-readiness
+```
+
+İkinci komut yalnız rapor/teşhis içindir; başarılı çıkış kodu production-readiness veya
+release kanıtı sayılmamalıdır. İlk komut da yerel gürültünün etkisini sınamak içindir ve
+CI'ın zorunlu `mean:10%` politikasını değiştirmez. Karar verirken ortalamayla birlikte
+min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikten sonra sapma
+tekrarlanıyorsa hedef testi izole koşup kod/SQL/pool değişikliklerini araştırın. Yerel
+`.benchmarks` dosyaları GitHub Actions'ın seed/cache/artifact baseline'ını değiştirmez;
+merge/release kararı required GitHub Actions production-readiness sonucuna dayanır.
+
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 
 ```bash

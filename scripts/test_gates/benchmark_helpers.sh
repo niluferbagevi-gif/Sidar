@@ -172,6 +172,15 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     BENCHMARK_EXIT_CODE=1
   fi
 
+  if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ] \
+    && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ] \
+    && [ "${IS_CI_ENV}" -eq 0 ]; then
+    echo "ℹ️ Yerel benchmark karşılaştırma hatası tek başına kod regresyonunu kanıtlamaz."
+    echo "   Gürültü teşhisi (local eşik, yine fail-closed): BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness"
+    echo "   Rapor-only teşhis (release kanıtı değildir): BENCHMARK_ENFORCE_COMPARE=0 make production-readiness"
+    echo "   GPU/CPU yükünü durdurup aynı baseline ile tekrar ölçün; merge/release için GitHub Actions production-readiness sonucunu esas alın."
+  fi
+
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_TREND_COMPARE}" = "1" ]; then
     if [ -f "coverage.xml" ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
       echo "📉 Benchmark trend + coverage.xml karşılaştırması çalıştırılıyor..."

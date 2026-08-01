@@ -592,6 +592,9 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
         "./run_tests.sh" in script
     )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
+    assert "Yerel benchmark karşılaştırma hatası tek başına kod regresyonunu kanıtlamaz" in script
+    assert "BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness" in script
+    assert "BENCHMARK_ENFORCE_COMPARE=0 make production-readiness" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
     assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
     assert "Local production-readiness için benchmark baseline bulunamadı" in script
