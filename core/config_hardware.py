@@ -51,9 +51,7 @@ def apply_vram_memory_fraction(
 
     legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
     llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
-    rag_frac = get_float_env(
-        "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35))
-    )
+    rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
     if "LLM_GPU_MEMORY_FRACTION" in environ or "RAG_GPU_MEMORY_FRACTION" in environ:
         vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
         frac = float(vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"])

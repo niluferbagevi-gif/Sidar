@@ -1202,16 +1202,17 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
     root_cause = build_root_cause_summary(info, diagnosis_text)
     validation_commands = _extract_validation_commands(info, diagnosis_text)
     combined_text = "\n".join(
-        str(item) for item in (
-            diagnosis_text, root_cause, info.get("failure_summary", ""), info.get("log_excerpt", "")
-        ) if item
+        str(item)
+        for item in (
+            diagnosis_text,
+            root_cause,
+            info.get("failure_summary", ""),
+            info.get("log_excerpt", ""),
+        )
+        if item
     ).lower()
-    scope_hitl_threshold = max(
-        1, int(getattr(Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3) or 3)
-    )
-    auto_batch_size = max(
-        1, int(getattr(Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
-    )
+    scope_hitl_threshold = max(1, int(getattr(Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3) or 3))
+    auto_batch_size = max(1, int(getattr(Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
     hitl_reasons = _collect_remediation_hitl_reasons(
         combined_text=combined_text,
         suspected_targets=suspected_targets,

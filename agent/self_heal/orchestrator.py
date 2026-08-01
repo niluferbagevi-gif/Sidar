@@ -105,10 +105,7 @@ async def attempt_autonomous_self_heal(
         return execution
 
     revision_identity = str(
-        ci_context.get("sha")
-        or ci_context.get("run_id")
-        or ci_context.get("branch")
-        or "unknown"
+        ci_context.get("sha") or ci_context.get("run_id") or ci_context.get("branch") or "unknown"
     ).strip()
     attempt_key = (
         "|".join(
@@ -192,9 +189,7 @@ async def attempt_autonomous_self_heal(
                 remediation_loop,
                 "handoff",
                 status="pending",
-                detail=(
-                    "Maksimum self-heal plan retry limiti aşıldı; insan müdahalesi gerekiyor."
-                ),
+                detail=("Maksimum self-heal plan retry limiti aşıldı; insan müdahalesi gerekiyor."),
             )
         agent._update_remediation_step(
             remediation_loop,
