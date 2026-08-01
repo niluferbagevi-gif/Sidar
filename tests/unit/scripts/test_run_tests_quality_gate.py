@@ -109,6 +109,7 @@ def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked(
         'run_checked "${phase1_cmd[@]}"\n    phase1_exit=$?',
         'run_checked "${phase2_cmd[@]}"\n    phase2_exit=$?',
         'run_checked "${benchmark_cmd[@]}"\n    BENCHMARK_EXIT_CODE=$?',
+        'run_checked "${benchmark_gpu_cmd[@]}"\n      benchmark_gpu_exit_code=$?',
         "run_checked npm ci",
         "run_checked npm install",
         "run_checked npm run audit:high",
@@ -5096,8 +5097,19 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "html.includes('id=\"root\"')" in vite_server
     assert "`${url}/src/main.jsx`" in vite_server
     assert "`${url}/src/App.tsx`" in vite_server
-    assert "`${url}/src/components/StatusBar.jsx`" in vite_server
-    assert "`${url}/src/lib/routerShim.jsx`" in vite_server
+    assert "`${url}/src/components/StatusBar.tsx`" in vite_server
+    assert "`${url}/src/lib/routerShim.tsx`" in vite_server
+    for migrated_component in (
+        "ChatInput.tsx",
+        "ChatMessage.tsx",
+        "ChatWindow.tsx",
+        "OperationsQaPanel.tsx",
+        "P2PDialoguePanel.tsx",
+        "PanelErrorBoundary.tsx",
+        "TenantAdminPanel.tsx",
+        "VoiceAssistantPanel.tsx",
+    ):
+        assert f'"{migrated_component}"' in vite_server
     assert 'test.describe.configure({ mode: "serial" })' in websocket_spec
     assert (
         "await page.waitForSelector('[data-testid=\"ws-status\"]', { timeout: 30_000 })"
