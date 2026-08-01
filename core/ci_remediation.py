@@ -1046,46 +1046,16 @@ def _extract_validation_commands(context: dict[str, Any], diagnosis: str) -> lis
     return list(dict.fromkeys(cmd for cmd in commands if cmd))[:5]
 
 
-def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
-    info = dict(context or {})
-    diagnosis_text = str(diagnosis or "").strip()
-    suspected_targets = [
-        str(item).strip() for item in list(info.get("suspected_targets") or []) if str(item).strip()
-    ]
-    failed_jobs = [
-        str(item).strip() for item in list(info.get("failed_jobs") or []) if str(item).strip()
-    ]
-    root_cause = build_root_cause_summary(info, diagnosis_text)
-    validation_commands = _extract_validation_commands(info, diagnosis_text)
-    high_risk_keywords = (
-        "syntaxerror",
-        "modulenotfounderror",
-        "importerror",
-        "timeout",
-        "typeerror",
-        "valueerror",
-    )
-    combined_text = "\n".join(
-        filter(
-            None,
-            [
-                diagnosis_text,
-                root_cause,
-                info.get("failure_summary", ""),
-                info.get("log_excerpt", ""),
-            ],
-        )
-    ).lower()
-    scope_hitl_threshold = max(
-        1,
-        int(getattr(Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3) or 3),
-    )
-    auto_batch_size = max(
-        1,
-        int(getattr(Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5),
-    )
+def _collect_remediation_hitl_reasons(
+    *,
+    combined_text: str,
+    suspected_targets: list[str],
+    scope_hitl_threshold: int,
+    external_approval_required: bool,
+) -> list[str]:
+    """Classify fail-closed HITL reasons independently from loop assembly."""
     hitl_reasons: list[str] = []
-    if info.get("human_approval_required") is True:
+    if external_approval_required:
         hitl_reasons.append(_EXTERNAL_CI_APPROVAL_REASON)
     if "syntaxerror" in combined_text:
         hitl_reasons.append("syntax_error")
@@ -1106,9 +1076,21 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         hitl_reasons.append(
             f"scope_exceeds_threshold:{len(suspected_targets)}>{scope_hitl_threshold}"
         )
+    high_risk_keywords = (
+        "syntaxerror",
+        "modulenotfounderror",
+        "importerror",
+        "timeout",
+        "typeerror",
+        "valueerror",
+    )
     if not hitl_reasons and any(keyword in combined_text for keyword in high_risk_keywords):
         hitl_reasons.append("high_risk_failure_signal")
-    needs_human_approval = bool(hitl_reasons)
+    return hitl_reasons
+
+
+def _extract_remediation_bootstrap_commands(combined_text: str) -> list[str]:
+    """Return allowlisted uv bootstrap commands inferred from dependency failures."""
     missing_modules = sorted(
         {
             match.group("module").strip()
@@ -1130,21 +1112,6 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             if match.group("pkg").strip()
         }
     )
-    ruff_failure_detected = "ruff" in combined_text
-    unsafe_selectors = list(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS)
-    autofix_commands = (
-        [build_scoped_ruff_autofix_command(suspected_targets)] if ruff_failure_detected else []
-    )
-    unsafe_autofix_policy = {
-        "unsafe_fixes_default": False,
-        "unsafe_fixes_env": "RUFF_AUTOFIX_UNSAFE=1",
-        "unsafe_rule_selectors_env": "RUFF_AUTOFIX_UNSAFE_RULES",
-        "allowed_unsafe_selectors": unsafe_selectors,
-        "guidance": (
-            "Ruff --unsafe-fixes yalnız açık operatör tercihiyle ve sınırlı selector listesiyle "
-            "çalıştırılmalıdır; varsayılan self-heal yalnız güvenli --fix uygular."
-        ),
-    }
     bootstrap_commands: list[str] = []
     for module_name in missing_modules:
         package_name = _AUTO_INSTALL_PACKAGES.get(module_name)
@@ -1156,24 +1123,123 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
             bootstrap_commands.append(f"uv pip install {package_name}")
     for package_name in hinted_stub_packages:
         bootstrap_commands.append(f"uv pip install {package_name}")
-    batched_scope = len(suspected_targets) > scope_hitl_threshold
+    return list(dict.fromkeys(bootstrap_commands))
+
+
+def _build_remediation_batches(
+    suspected_targets: list[str], *, scope_hitl_threshold: int, auto_batch_size: int
+) -> list[dict[str, Any]]:
+    """Partition oversized remediation scope into deterministic module batches."""
+    if len(suspected_targets) <= scope_hitl_threshold:
+        return []
     autonomous_batches: list[dict[str, Any]] = []
-    if batched_scope:
-        for index in range(0, len(suspected_targets), auto_batch_size):
-            chunk = suspected_targets[index : index + auto_batch_size]
-            module_hint = str(chunk[0]).split("/", 1)[0] if chunk else "module"
-            autonomous_batches.append(
-                {
-                    "batch_id": f"batch-{(index // auto_batch_size) + 1}",
-                    "module_hint": module_hint,
-                    "scope_paths": chunk,
-                    "suggested_prompt": (
-                        f"Sadece {module_hint}/ kapsamındaki no-untyped-def ve argüman tipi "
-                        f"hatalarını düzelt. "
-                        f"Hedef dosyalar: {', '.join(chunk[:5])}"
-                    ),
-                }
-            )
+    for index in range(0, len(suspected_targets), auto_batch_size):
+        chunk = suspected_targets[index : index + auto_batch_size]
+        module_hint = str(chunk[0]).split("/", 1)[0] if chunk else "module"
+        autonomous_batches.append(
+            {
+                "batch_id": f"batch-{(index // auto_batch_size) + 1}",
+                "module_hint": module_hint,
+                "scope_paths": chunk,
+                "suggested_prompt": (
+                    f"Sadece {module_hint}/ kapsamındaki no-untyped-def ve argüman tipi "
+                    f"hatalarını düzelt. Hedef dosyalar: {', '.join(chunk[:5])}"
+                ),
+            }
+        )
+    return autonomous_batches
+
+
+def _build_remediation_steps(
+    *,
+    diagnosis_text: str,
+    root_cause: str,
+    suspected_targets: list[str],
+    validation_commands: list[str],
+    needs_human_approval: bool,
+    hitl_reasons: list[str],
+) -> list[dict[str, str]]:
+    """Build the stable diagnose/patch/validate/handoff state-machine steps."""
+    return [
+        {
+            "name": "diagnose",
+            "status": "completed" if diagnosis_text else "pending",
+            "detail": root_cause,
+        },
+        {
+            "name": "patch",
+            "status": "pending" if suspected_targets else "blocked",
+            "detail": "Şüpheli dosyalar için minimal ve kontrollü patch hazırlanacak.",
+        },
+        {
+            "name": "validate",
+            "status": "pending" if validation_commands else "blocked",
+            "detail": "Hedefli testler ve tam regresyon komutları çalıştırılacak.",
+        },
+        {
+            "name": "handoff",
+            "status": "pending",
+            "detail": (
+                f"Riskli remediation önce HITL onayına gidecek. Nedenler: "
+                f"{', '.join(hitl_reasons) or '-'}"
+                if needs_human_approval
+                else "Doğrulama sonrası PR/proposal güncellenecek."
+            ),
+        },
+    ]
+
+
+def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
+    """Assemble a bounded self-heal loop from independently classified stages."""
+    info = dict(context or {})
+    diagnosis_text = str(diagnosis or "").strip()
+    suspected_targets = [
+        str(item).strip() for item in list(info.get("suspected_targets") or []) if str(item).strip()
+    ]
+    failed_jobs = [
+        str(item).strip() for item in list(info.get("failed_jobs") or []) if str(item).strip()
+    ]
+    root_cause = build_root_cause_summary(info, diagnosis_text)
+    validation_commands = _extract_validation_commands(info, diagnosis_text)
+    combined_text = "\n".join(
+        str(item) for item in (
+            diagnosis_text, root_cause, info.get("failure_summary", ""), info.get("log_excerpt", "")
+        ) if item
+    ).lower()
+    scope_hitl_threshold = max(
+        1, int(getattr(Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3) or 3)
+    )
+    auto_batch_size = max(
+        1, int(getattr(Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
+    )
+    hitl_reasons = _collect_remediation_hitl_reasons(
+        combined_text=combined_text,
+        suspected_targets=suspected_targets,
+        scope_hitl_threshold=scope_hitl_threshold,
+        external_approval_required=info.get("human_approval_required") is True,
+    )
+    needs_human_approval = bool(hitl_reasons)
+    bootstrap_commands = _extract_remediation_bootstrap_commands(combined_text)
+    ruff_failure_detected = "ruff" in combined_text
+    autofix_commands = (
+        [build_scoped_ruff_autofix_command(suspected_targets)] if ruff_failure_detected else []
+    )
+    unsafe_autofix_policy = {
+        "unsafe_fixes_default": False,
+        "unsafe_fixes_env": "RUFF_AUTOFIX_UNSAFE=1",
+        "unsafe_rule_selectors_env": "RUFF_AUTOFIX_UNSAFE_RULES",
+        "allowed_unsafe_selectors": list(_DEFAULT_RUFF_UNSAFE_FIX_SELECTORS),
+        "guidance": (
+            "Ruff --unsafe-fixes yalnız açık operatör tercihiyle ve sınırlı selector listesiyle "
+            "çalıştırılmalıdır; varsayılan self-heal yalnız güvenli --fix uygular."
+        ),
+    }
+    autonomous_batches = _build_remediation_batches(
+        suspected_targets,
+        scope_hitl_threshold=scope_hitl_threshold,
+        auto_batch_size=auto_batch_size,
+    )
+    batched_scope = bool(autonomous_batches)
     mode = (
         "self_heal_with_hitl_batched"
         if needs_human_approval and batched_scope
@@ -1206,33 +1272,14 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
         "autofix_commands": autofix_commands,
         "unsafe_autofix_policy": unsafe_autofix_policy,
         "autonomous_batches": autonomous_batches,
-        "steps": [
-            {
-                "name": "diagnose",
-                "status": "completed" if diagnosis_text else "pending",
-                "detail": root_cause,
-            },
-            {
-                "name": "patch",
-                "status": "pending" if suspected_targets else "blocked",
-                "detail": "Şüpheli dosyalar için minimal ve kontrollü patch hazırlanacak.",
-            },
-            {
-                "name": "validate",
-                "status": "pending" if effective_validation_commands else "blocked",
-                "detail": "Hedefli testler ve tam regresyon komutları çalıştırılacak.",
-            },
-            {
-                "name": "handoff",
-                "status": "pending",
-                "detail": (
-                    f"Riskli remediation önce HITL onayına gidecek. Nedenler: "
-                    f"{', '.join(hitl_reasons) or '-'}"
-                    if needs_human_approval
-                    else "Doğrulama sonrası PR/proposal güncellenecek."
-                ),
-            },
-        ],
+        "steps": _build_remediation_steps(
+            diagnosis_text=diagnosis_text,
+            root_cause=root_cause,
+            suspected_targets=suspected_targets,
+            validation_commands=effective_validation_commands,
+            needs_human_approval=needs_human_approval,
+            hitl_reasons=hitl_reasons,
+        ),
         "summary": (
             f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets)} dosya, "
             f"doğrulama={len(effective_validation_commands)} komut, "
