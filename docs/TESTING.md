@@ -442,6 +442,14 @@ makinedeki GPU/LLM yüküne tolerans için `mean:15%` kullanır. `tests/performa
 sırasına güvenmeyin: tüm performans bataryası tek pytest sürecinde çalıştığından önceki
 GPU veya CPU yoğun testlerin sistem durumunu etkilemesi mümkündür.
 
+`run_tests.sh` bu riski azaltmak için CPU/DB karşılaştırmasını önce çalıştırır ve
+`test_gpu_benchmark.py` dosyasını daha sonra ayrı bir pytest process'inde çalıştırır;
+CPU/DB oturumu aynı dosyayı `--ignore` ile dışlar.
+GPU raporu `artifacts/benchmark/gpu-benchmark.json`, karşılaştırmalı CPU/DB raporu ise
+`artifacts/benchmark/benchmark.json` olarak ayrı tutulur. GPU oturumuna baseline
+save/compare verilmez; GPU release kanıtı zaten ayrı self-hosted
+`gpu-inference-policy-gate` tarafından fail-closed doğrulanır.
+
 Önce GPU/LLM işini ve gereksiz arka plan süreçlerini durdurun, makinenin kararlı hale
 gelmesini bekleyin ve **aynı baseline** ile tekrar ölçün. Yerel teşhis için iki bilinçli
 override vardır:

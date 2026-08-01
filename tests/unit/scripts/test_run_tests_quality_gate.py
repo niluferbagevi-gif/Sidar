@@ -584,6 +584,17 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
     assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
+    assert (
+        'BENCHMARK_GPU_TEST_FILE="${BENCHMARK_GPU_TEST_FILE:-${PERFORMANCE_TEST_DIR}/test_gpu_benchmark.py}"'
+        in script
+    )
+    assert 'benchmark_cmd+=(--ignore="${BENCHMARK_GPU_TEST_FILE}")' in script
+    assert '--benchmark-json="${BENCHMARK_GPU_JSON_OUTPUT}"' in script
+    assert "GPU benchmarkları izole pytest oturumunda çalıştırılıyor" in script
+    assert "CPU/DB benchmarkları GPU oturumundan önce ve izole çalıştırılıyor" in script
+    assert script.index("CPU/DB benchmarkları GPU oturumundan önce") < script.index(
+        "GPU benchmarkları izole pytest oturumunda çalıştırılıyor"
+    )
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in script

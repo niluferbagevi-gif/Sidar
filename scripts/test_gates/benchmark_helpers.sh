@@ -79,6 +79,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
+  mkdir -p "$(dirname "${BENCHMARK_GPU_JSON_OUTPUT}")"
   benchmark_cmd=(
     env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
     --benchmark-save="${BENCHMARK_BASELINE_NAME}"
@@ -86,8 +87,23 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     --benchmark-warmup="${BENCHMARK_WARMUP}"
     --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
   )
+  benchmark_gpu_cmd=()
+  if [ -f "${BENCHMARK_GPU_TEST_FILE}" ]; then
+    # GPU benchmarklarını ayrı pytest process'inde çalıştırmak CPU/DB latency
+    # baseline'ını uzun GPU bataryasının termal ve scheduler etkisinden ayırır.
+    benchmark_cmd+=(--ignore="${BENCHMARK_GPU_TEST_FILE}")
+    benchmark_gpu_cmd=(
+      env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${BENCHMARK_GPU_TEST_FILE}" -n 0 --no-cov
+      --benchmark-json="${BENCHMARK_GPU_JSON_OUTPUT}"
+      --benchmark-warmup="${BENCHMARK_WARMUP}"
+      --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
+    )
+  fi
   if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
     benchmark_cmd+=(--benchmark-disable-gc)
+    if [ "${#benchmark_gpu_cmd[@]}" -gt 0 ]; then
+      benchmark_gpu_cmd+=(--benchmark-disable-gc)
+    fi
   fi
 
   benchmark_compare_target_found=0
@@ -150,9 +166,22 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
+    echo "📊 CPU/DB benchmarkları GPU oturumundan önce ve izole çalıştırılıyor..."
     echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
     run_checked "${benchmark_cmd[@]}"
-    BENCHMARK_EXIT_CODE=$?
+    BENCHMARK_COMPARE_EXIT_CODE=$?
+    BENCHMARK_EXIT_CODE="${BENCHMARK_COMPARE_EXIT_CODE}"
+
+    benchmark_gpu_exit_code=0
+    if [ "${#benchmark_gpu_cmd[@]}" -gt 0 ]; then
+      echo "🎮 GPU benchmarkları izole pytest oturumunda çalıştırılıyor..."
+      echo "➡️ Çalıştırılan komut: ${benchmark_gpu_cmd[*]}"
+      run_checked "${benchmark_gpu_cmd[@]}"
+      benchmark_gpu_exit_code=$?
+    fi
+    if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${benchmark_gpu_exit_code}" -ne 0 ]; then
+      BENCHMARK_EXIT_CODE="${benchmark_gpu_exit_code}"
+    fi
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ -f "${BENCHMARK_JSON_OUTPUT}" ]; then
@@ -173,6 +202,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ] \
+    && [ "${BENCHMARK_COMPARE_EXIT_CODE:-0}" -ne 0 ] \
     && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ] \
     && [ "${IS_CI_ENV}" -eq 0 ]; then
     echo "ℹ️ Yerel benchmark karşılaştırma hatası tek başına kod regresyonunu kanıtlamaz."
