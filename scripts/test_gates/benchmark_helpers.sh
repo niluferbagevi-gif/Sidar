@@ -169,8 +169,8 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     echo "📊 CPU/DB benchmarkları GPU oturumundan önce ve izole çalıştırılıyor..."
     echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
     run_checked "${benchmark_cmd[@]}"
-    BENCHMARK_COMPARE_EXIT_CODE=$?
-    BENCHMARK_EXIT_CODE="${BENCHMARK_COMPARE_EXIT_CODE}"
+    BENCHMARK_EXIT_CODE=$?
+    BENCHMARK_COMPARE_EXIT_CODE="${BENCHMARK_EXIT_CODE}"
 
     benchmark_gpu_exit_code=0
     if [ "${#benchmark_gpu_cmd[@]}" -gt 0 ]; then
