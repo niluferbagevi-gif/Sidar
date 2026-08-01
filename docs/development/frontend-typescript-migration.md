@@ -35,6 +35,10 @@ envanteri 11 `.js`, 38 `.jsx`, 7 `.ts`, 4 `.tsx` ve ratchet'i
 verisi, positioned edge'leri, node aksiyonları ve klavye/fare olaylarını tüketen
 son halka `components/panels/swarm/GraphView.tsx` olarak taşınmış; güncel envanter
 11 `.js`, 37 `.jsx`, 7 `.ts`, 5 `.tsx` ve ratchet 48 untyped / 12 typed'dır.
+En büyük hook olan `hooks/useVoiceAssistant.ts`; duplex voice state machine,
+MediaRecorder/Web Audio kaynakları, istemci komutları ve sunucu mesaj alanlarını
+tipleyip gelen JSON'u runtime alan doğrulamasından geçirmiş; güncel envanter
+10 `.js`, 37 `.jsx`, 8 `.ts`, 5 `.tsx` ve ratchet 47 untyped / 13 typed'dır.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -45,8 +49,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 48 untyped (`.js` + `.jsx`) ve en az
-12 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 47 untyped (`.js` + `.jsx`) ve en az
+13 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

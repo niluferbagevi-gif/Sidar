@@ -8,7 +8,136 @@ const VAD_THRESHOLD = 0.035;
 const VAD_SILENCE_MS = 640;
 const MEDIA_TIMESLICE_MS = 250;
 
-const createInitialState = () => ({
+export type VoiceStatus =
+  | "idle"
+  | "requesting_permission"
+  | "connecting_voice"
+  | "listening"
+  | "capturing"
+  | "processing"
+  | "playing"
+  | "interrupted"
+  | "unauthenticated"
+  | "error";
+
+export interface VoiceVadState {
+  threshold: number;
+  level: number;
+  speaking: boolean;
+  silenceMs: number;
+}
+
+export interface VoiceDiagnostic {
+  id: string;
+  label: string;
+  value: string;
+  at: string;
+}
+
+export interface VoiceAssistantState {
+  status: VoiceStatus;
+  summary: string;
+  transcript: string;
+  lastVoiceState: string;
+  assistantTurnId: number;
+  bufferedBytes: number;
+  queueDepth: number;
+  audioMimeType: string;
+  lastInterruptReason: string;
+  diagnostics: VoiceDiagnostic[];
+  isMicActive: boolean;
+  isAssistantAudioPlaying: boolean;
+  isAuthenticated: boolean;
+  vad: VoiceVadState;
+}
+
+export interface VoiceAssistantOptions {
+  onUserTranscript?: (transcript: string) => void;
+  onAssistantChunk?: (chunk: string) => void;
+  onAssistantDone?: () => void;
+  onError?: (message: string) => void;
+  onTelemetry?: (kind: string, content: string) => void;
+}
+
+export interface VoiceAssistantResult {
+  state: VoiceAssistantState;
+  statusLabel: string;
+  toggle: () => void;
+  start: () => Promise<void>;
+  stop: () => void;
+  interrupt: () => void;
+  supported: boolean;
+}
+
+type VoiceStatePatch = Partial<Omit<VoiceAssistantState, "vad">> & {
+  vad?: Partial<VoiceVadState>;
+};
+type VoiceCallbacks = VoiceAssistantOptions;
+type AudioQueueItem = { url: string; mimeType: string };
+type VoiceClientMessage =
+  | { action: "cancel" }
+  | { action: "start" | "commit"; mime_type: string; language: string }
+  | { action: "vad_event"; state: "speech_start" | "speech_end" }
+  | { action: "append_base64"; chunk: string };
+
+type IncomingVoiceMessage = Record<string, unknown> & {
+  auth_ok?: boolean;
+  voice_session?: string;
+  buffered_bytes?: number;
+  voice_state?: string;
+  assistant_turn_id?: number;
+  last_interrupt_reason?: string;
+  voice_interruption?: string;
+  cancelled_audio_sequences?: number;
+  assistant_turn?: string;
+  transcript?: string;
+  chunk?: string;
+  audio_chunk?: string;
+  audio_mime_type?: string;
+  done?: boolean;
+  error?: string;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseVoiceMessage = (raw: unknown): IncomingVoiceMessage | null => {
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    const stringFields = [
+      "voice_session",
+      "voice_state",
+      "last_interrupt_reason",
+      "voice_interruption",
+      "assistant_turn",
+      "transcript",
+      "chunk",
+      "audio_chunk",
+      "audio_mime_type",
+      "error",
+    ];
+    const numberFields = [
+      "buffered_bytes",
+      "assistant_turn_id",
+      "cancelled_audio_sequences",
+    ];
+    if (stringFields.some((field) => field in parsed && typeof parsed[field] !== "string")) {
+      return null;
+    }
+    if (numberFields.some((field) => field in parsed && typeof parsed[field] !== "number")) {
+      return null;
+    }
+    if ("auth_ok" in parsed && typeof parsed.auth_ok !== "boolean") return null;
+    if ("done" in parsed && typeof parsed.done !== "boolean") return null;
+    return parsed as IncomingVoiceMessage;
+  } catch {
+    return null;
+  }
+};
+
+const createInitialState = (): VoiceAssistantState => ({
   status: "idle",
   summary: "Mikrofon beklemede. Duplex konuşma için hazır.",
   transcript: "",
@@ -30,7 +159,7 @@ const createInitialState = () => ({
   },
 });
 
-function appendDiagnostic(prev, label, value) {
+function appendDiagnostic(prev: VoiceDiagnostic[], label: string, value: string): VoiceDiagnostic[] {
   const entry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     label,
@@ -40,7 +169,7 @@ function appendDiagnostic(prev, label, value) {
   return [...prev.slice(-7), entry];
 }
 
-function statusSummary(status) {
+function statusSummary(status: VoiceStatus): string {
   switch (status) {
     case "requesting_permission":
       return "Mikrofon erişimi isteniyor…";
@@ -66,10 +195,11 @@ function statusSummary(status) {
 }
 
 export const __voiceAssistantTestables = {
+  parseVoiceMessage,
   statusSummary,
 };
 
-function toBase64(arrayBuffer) {
+function toBase64(arrayBuffer: ArrayBuffer): string {
   const bytes = new Uint8Array(arrayBuffer);
   let binary = "";
   const chunk = 0x8000;
@@ -79,7 +209,7 @@ function toBase64(arrayBuffer) {
   return btoa(binary);
 }
 
-function fromBase64(base64) {
+function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -88,7 +218,7 @@ function fromBase64(base64) {
   return bytes;
 }
 
-function pickRecorderMimeType() {
+function pickRecorderMimeType(): string {
   /* c8 ignore next -- SSR/test ortamında MediaRecorder olmayabilir; browser runtime fallback dalı korunur. */
   if (typeof MediaRecorder === "undefined") return "audio/webm";
   const candidates = [
@@ -105,26 +235,26 @@ export function useVoiceAssistant({
   onAssistantDone,
   onError,
   onTelemetry,
-} = {}) {
+}: VoiceAssistantOptions = {}): VoiceAssistantResult {
   const [state, setState] = useState(createInitialState);
-  const wsRef = useRef(null);
-  const wsReadyPromiseRef = useRef(null);
-  const analyserRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const mediaStreamRef = useRef(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsReadyPromiseRef = useRef<Promise<WebSocket> | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const speechActiveRef = useRef(false);
   const turnActiveRef = useRef(false);
   const pendingCommitRef = useRef(false);
   const commitTimeoutRef = useRef(0);
   const lastSpeechAtRef = useRef(0);
-  const audioQueueRef = useRef([]);
-  const activeAudioRef = useRef(null);
-  const revokeUrlsRef = useRef(new Set());
+  const audioQueueRef = useRef<AudioQueueItem[]>([]);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const revokeUrlsRef = useRef<Set<string>>(new Set());
   const unmountedRef = useRef(false);
   const stateRef = useRef(createInitialState());
-  const callbacksRef = useRef({});
+  const callbacksRef = useRef<VoiceCallbacks>({});
   callbacksRef.current = {
     onUserTranscript,
     onAssistantChunk,
@@ -133,7 +263,7 @@ export function useVoiceAssistant({
     onTelemetry,
   };
 
-  const setVoiceState = useCallback((patch) => {
+  const setVoiceState = useCallback((patch: VoiceStatePatch) => {
     setState((prev) => {
       const next = {
         ...prev,
@@ -148,7 +278,7 @@ export function useVoiceAssistant({
     });
   }, []);
 
-  const pushDiagnostic = useCallback((label, value) => {
+  const pushDiagnostic = useCallback((label: string, value: string) => {
     setState((prev) => {
       const next = {
         ...prev,
@@ -159,7 +289,7 @@ export function useVoiceAssistant({
     });
   }, []);
 
-  const setStatus = useCallback((status, summary = statusSummary(status)) => {
+  const setStatus = useCallback((status: VoiceStatus, summary = statusSummary(status)) => {
     setVoiceState({ status, summary });
   }, [setVoiceState]);
 
@@ -230,7 +360,7 @@ export function useVoiceAssistant({
     });
   }, [pushDiagnostic, setStatus, setVoiceState]);
 
-  const queueAudioChunk = useCallback((base64, mimeType) => {
+  const queueAudioChunk = useCallback((base64: string, mimeType?: string) => {
     try {
       const bytes = fromBase64(base64);
       const resolvedMimeType = mimeType || "audio/wav";
@@ -249,7 +379,7 @@ export function useVoiceAssistant({
     }
   }, [playNextAudio, setVoiceState]);
 
-  const sendJson = useCallback((payload) => {
+  const sendJson = useCallback((payload: VoiceClientMessage): boolean => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       return false;
     }
@@ -280,7 +410,7 @@ export function useVoiceAssistant({
     }
 
     setStatus("connecting_voice");
-    wsReadyPromiseRef.current = new Promise((resolve, reject) => {
+    wsReadyPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
       // Token is carried only via the WebSocket subprotocol handshake, never
       // in the URL — a query-string token would land in plaintext in proxy
       // access logs and browser history.
@@ -288,12 +418,8 @@ export function useVoiceAssistant({
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
-        let msg;
-        try {
-          msg = JSON.parse(event.data);
-        } catch {
-          return;
-        }
+        const msg = parseVoiceMessage(event.data);
+        if (!msg) return;
 
         if (msg.auth_ok) {
           setVoiceState({ isAuthenticated: true });
@@ -355,7 +481,7 @@ export function useVoiceAssistant({
           return;
         }
         if (typeof msg.audio_chunk === "string") {
-          queueAudioChunk(msg.audio_chunk, msg.audio_mime_type);
+          queueAudioChunk(msg.audio_chunk, typeof msg.audio_mime_type === "string" ? msg.audio_mime_type : undefined);
           return;
         }
         if (msg.done === true) {
@@ -390,7 +516,7 @@ export function useVoiceAssistant({
     return wsReadyPromiseRef.current;
   }, [handleDone, pushDiagnostic, queueAudioChunk, setStatus, setVoiceState, stopPlayback]);
 
-  const beginVoiceTurn = useCallback(async ({ interrupt = false } = {}) => {
+  const beginVoiceTurn = useCallback(async ({ interrupt = false }: { interrupt?: boolean } = {}) => {
     const ws = await ensureVoiceSocket();
     if (interrupt) {
       sendJson({ action: "cancel" });
@@ -539,7 +665,7 @@ export function useVoiceAssistant({
       source.connect(analyser);
 
       const recorder = new MediaRecorder(stream, { mimeType: pickRecorderMimeType() });
-      recorder.ondataavailable = async (event) => {
+      recorder.ondataavailable = async (event: BlobEvent) => {
         if (!event.data || event.data.size === 0 || !turnActiveRef.current) {
           return;
         }

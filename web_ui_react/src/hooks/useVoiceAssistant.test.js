@@ -95,6 +95,19 @@ describe("useVoiceAssistant — başlangıç durumu", () => {
   });
 });
 
+describe("useVoiceAssistant — voice protokol doğrulaması", () => {
+  it("accepts object messages and rejects malformed field types", () => {
+    expect(__voiceAssistantTestables.parseVoiceMessage(
+      JSON.stringify({ voice_state: "processed", assistant_turn_id: 3 }),
+    )).toMatchObject({ voice_state: "processed", assistant_turn_id: 3 });
+    expect(__voiceAssistantTestables.parseVoiceMessage(
+      JSON.stringify({ voice_state: 42 }),
+    )).toBeNull();
+    expect(__voiceAssistantTestables.parseVoiceMessage(JSON.stringify(["done"]))).toBeNull();
+    expect(__voiceAssistantTestables.parseVoiceMessage(new ArrayBuffer(1))).toBeNull();
+  });
+});
+
 describe("useVoiceAssistant — supported prop", () => {
   it("supported is false when navigator.mediaDevices is not available", () => {
     Object.defineProperty(globalThis.navigator, "mediaDevices", {
