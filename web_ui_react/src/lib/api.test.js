@@ -7,6 +7,7 @@ import {
   setStoredToken,
   clearStoredToken,
   getTokenPrincipal,
+  isAdminPrincipal,
   getCurrentUser,
   buildAuthHeaders,
   fetchJson,
@@ -255,6 +256,21 @@ describe("getTokenPrincipal", () => {
       exp: 0,
     });
     expect(getTokenPrincipal(makeJwt({}))).toMatchObject({ id: "", role: "user" });
+  });
+});
+
+describe("isAdminPrincipal", () => {
+  it("accepts the admin role case-insensitively", () => {
+    expect(isAdminPrincipal({ role: "ADMIN", username: "operator" })).toBe(true);
+  });
+
+  it("accepts the bootstrap default_admin identity", () => {
+    expect(isAdminPrincipal({ role: "user", username: "default_admin" })).toBe(true);
+  });
+
+  it("rejects ordinary and missing principals", () => {
+    expect(isAdminPrincipal({ role: "user", username: "operator" })).toBe(false);
+    expect(isAdminPrincipal(null)).toBe(false);
   });
 });
 

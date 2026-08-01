@@ -21,6 +21,14 @@ dışındaki üretim Python dosyalarını sayar. Commitli
 azaltılır; yeni istisna eklemek için başka bir istisnanın kaldırılması veya açık reviewer
 gerekçesi gerekir. Normal çözüm, daha gevşek modül eşiği değil deterministik hata-yolu testidir.
 
+Frontend Vitest kapısı ayrı bir ratchet kullanır: `vite.config.js` içindeki global line,
+function, branch ve statement eşikleri `%90`'dır; tek bir TypeScript modülünün `%100`
+branch coverage altında kalması tek başına gate hatası değildir. Bununla birlikte düşük
+modül oranları görmezden gelinmez. Özellikle WebSocket payload normalizasyonu ve kimlik/
+yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küçük deterministik
+test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
+uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest
