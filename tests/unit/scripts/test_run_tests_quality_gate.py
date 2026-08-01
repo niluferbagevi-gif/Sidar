@@ -2370,6 +2370,25 @@ def test_testing_docs_explain_external_production_readiness_dependencies() -> No
     assert "production-readiness sonucu **kanıtlanmamış**" in testing
 
 
+def test_pr_checklist_requires_current_gpu_evidence_beyond_local_summary() -> None:
+    """Local production_ready must never substitute for the required GPU policy jobs."""
+    checklist = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+    for required_check in (
+        "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+    ):
+        assert f"- [ ] `{required_check}`" in checklist
+    assert "`production_ready=true` yalnız CPU/standart" in checklist
+    assert "kalite kapılarının kanıtıdır; self-hosted GPU kanıtını içermez" in checklist
+    assert "güncel commit SHA" in checklist
+    assert "skip/queued/failed" in checklist
+    assert "bütün merge/release kararları için zorunludur" in checklist
+    assert "etkilemiyorsa: yukarıdaki madde kasıtlı olarak N/A" not in checklist
+    assert "aksi halde skip edilir ve `production_ready` bayrağına dahil edilmez" not in checklist
+
+
 def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> None:
     """Bound running GPU work and preserve only reviewed benchmark evidence."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
