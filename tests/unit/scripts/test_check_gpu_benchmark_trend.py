@@ -5,7 +5,13 @@ import json
 from scripts.ci import check_gpu_benchmark_trend as trend
 
 
-def _benchmarks(*, ttft: float = 0.090, tps: float = 42.0, vram: float = 2048.0):
+def _benchmarks(
+    *,
+    ttft: float = 0.090,
+    tps: float = 42.0,
+    vram: float = 2048.0,
+    vram_load_mean: float = 1.0,
+):
     runtime = {
         "ollama_model": "qwen2.5-coder:7b",
         "ollama_num_batch": 512,
@@ -31,7 +37,7 @@ def _benchmarks(*, ttft: float = 0.090, tps: float = 42.0, vram: float = 2048.0)
         },
         {
             "name": "test_gpu_vram_peak_under_load",
-            "stats": {"mean": 1.0},
+            "stats": {"mean": vram_load_mean},
             "extra_info": {"vram_peak_mib": vram},
         },
         {
@@ -57,8 +63,58 @@ def test_regression_direction_does_not_alarm_on_improvements() -> None:
 
     assert trend._is_regression("ttft_ms", 25.0, 20.0) is True
     assert trend._is_regression("vram_peak_mib", 25.0, 20.0) is True
+    assert trend._is_regression("vram_load_mean_ms", 25.0, 20.0) is True
     assert trend._is_regression("tps", -25.0, 20.0) is True
     assert trend._is_regression("oom_failures", 1.0, 20.0) is True
+
+
+def test_current_metrics_records_vram_load_latency_separately_from_peak_memory() -> None:
+    metrics = trend._current_metrics(
+        _benchmarks(vram_load_mean=2.28002, vram=4096.0)
+    )
+
+    assert metrics["vram_load_mean_ms"] == 2280.02
+    assert metrics["vram_peak_mib"] == 4096.0
+
+
+def test_main_reports_small_vram_load_slowdown_without_failing_threshold(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    benchmark_path = tmp_path / "benchmark.json"
+    history_path = tmp_path / "history.json"
+    benchmarks = _benchmarks(vram_load_mean=2.28002)
+    benchmark_path.write_text(json.dumps({"benchmarks": benchmarks}), encoding="utf-8")
+    profile = trend._profile_key(benchmarks, "driver-550")
+    history_path.write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    profile: [
+                        {"metrics": {"vram_load_mean_ms": 2215.77}},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        trend.sys,
+        "argv",
+        [
+            "check_gpu_benchmark_trend.py",
+            str(benchmark_path),
+            str(history_path),
+            "7",
+            "10",
+            "driver-550",
+        ],
+    )
+
+    assert trend.main() == 0
+    output = capsys.readouterr().out
+    assert "metric=vram_load_mean_ms" in output
+    assert "current=2280.020" in output
+    assert "median7=2215.770 delta=+2.90%" in output
 
 
 def test_main_records_new_profile_without_comparing_incompatible_history(

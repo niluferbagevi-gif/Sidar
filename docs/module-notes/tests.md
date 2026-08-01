@@ -299,8 +299,12 @@ metriği yerine yazılmamalıdır.
   quantization, mimari, driver, `GPU_BENCH_NUM_BATCH`, `GPU_BENCH_NUM_CTX`,
   `GPU_BENCH_NUM_PREDICT` ve `OLLAMA_KEEP_ALIVE` değerlerini içerir. Bu ayarlardan biri
   değişirse önce yeni profil baseline'ı oluşturulur; eski profil yanlış pozitif alarm üretmez.
-- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT/VRAM artışı ve token/sn düşüşü
-  regresyondur. TTFT/VRAM düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
+- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT, VRAM tepe kullanımı ve
+  `test_gpu_vram_peak_under_load` mean süresi artışı ile token/sn düşüşü regresyondur.
+  GPU trend geçmişi VRAM stres testinin mean süresini `vram_load_mean_ms` olarak ayrıca
+  kaydeder ve eşik altındaki küçük sapmaları da loglar; böylece tek koşu alarm üretmeden
+  birkaç eşdeğer production/nightly koşusundaki aynı yön izlenebilir. TTFT/VRAM/mean süre
+  düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
 - Örnek başlatma komutları:
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`

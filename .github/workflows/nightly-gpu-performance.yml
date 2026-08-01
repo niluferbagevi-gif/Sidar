@@ -69,7 +69,7 @@ jobs:
             --no-cov \
             --benchmark-json=artifacts/gpu/benchmark.json
 
-      - name: Check 7-run median trend guards (TTFT/TPS/VRAM)
+      - name: Check 7-run median trend guards (TTFT/TPS/VRAM peak/load latency)
         run: |
           python scripts/ci/check_gpu_benchmark_trend.py \
             artifacts/gpu/benchmark.json \
