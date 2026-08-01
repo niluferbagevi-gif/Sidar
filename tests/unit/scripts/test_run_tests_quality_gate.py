@@ -62,6 +62,26 @@ def _extract_run_tests_function(name: str) -> str:
     return shell_function_body(_script(), name)
 
 
+def test_run_tests_delegates_cross_cutting_gates_to_focused_modules() -> None:
+    """Keep the root runner focused on ordering and aggregate exit status."""
+    root_script = RUN_TESTS.read_text(encoding="utf-8")
+    module_contracts = {
+        "environment_helpers.sh": "ensure_project_venv() {",
+        "production_readiness_helpers.sh": "production_readiness_gate_active() {",
+        "backend_helpers.sh": "run_static_analysis_gates() {",
+        "bats_helpers.sh": "run_bats_shell_tests() {",
+        "service_helpers.sh": "ensure_test_services() {",
+        "summary_helpers.sh": "write_test_summary_json() {",
+    }
+
+    for module_name, representative_function in module_contracts.items():
+        source_line = f'source "${{SCRIPT_DIR}}/scripts/test_gates/{module_name}"'
+        module = Path("scripts/test_gates", module_name).read_text(encoding="utf-8")
+        assert source_line in root_script
+        assert representative_function in module
+        assert representative_function not in root_script
+
+
 def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
     """Regression test: exit codes feeding the aggregate must use run_checked().
 
@@ -869,7 +889,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert (
         "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
     )
-    run_tests_script = Path("run_tests.sh").read_text(encoding="utf-8")
+    run_tests_script = _script()
     assert (
         'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
         'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
@@ -1053,11 +1073,15 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
 
 
 def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
-    script = _script()
     summary_json = tmp_path / "test-summary.json"
-    summary_block = script[
-        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
-    ]
+    summary_block = "\n".join(
+        _extract_run_tests_function(name)
+        for name in (
+            "quality_summary_status",
+            "backend_stage_summary_status",
+            "write_test_summary_json",
+        )
+    )
     runner = tmp_path / "summary_probe.sh"
     runner.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
@@ -1225,7 +1249,6 @@ def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
 
 
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
-    script = _script()
     summary_json = tmp_path / "test-summary.json"
     junit_dir = tmp_path / "pytest"
     junit_dir.mkdir()
@@ -1249,9 +1272,14 @@ def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Pa
         ),
         encoding="utf-8",
     )
-    summary_block = script[
-        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
-    ]
+    summary_block = "\n".join(
+        _extract_run_tests_function(name)
+        for name in (
+            "quality_summary_status",
+            "backend_stage_summary_status",
+            "write_test_summary_json",
+        )
+    )
     runner = tmp_path / "summary_failed_tests_probe.sh"
     runner.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
@@ -1935,7 +1963,7 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
 
 
 def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
-    script = RUN_TESTS.read_text(encoding="utf-8")
+    script = _script()
 
     assert "render_generated_secret_sentinels" in script
     assert "POSTGRES_PASSWORD=__GENERATE__" in script
