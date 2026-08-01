@@ -20,7 +20,11 @@ envanter 14 `.js`, 40 `.jsx`, 4 `.ts` ve 2 `.tsx` seviyesine ilerletilmiş; ratc
 54 untyped / 6 typed olarak yeniden sıkılaştırılmıştır. WebSocket protokolünün
 `room_state`, `presence`, `assistant_*` ve legacy mesaj ayrıştırmasını kapsayan
 `src/hooks/useWebSocket.ts` geçişiyle güncel envanter 13 `.js`, 40 `.jsx`, 5 `.ts`
-ve 2 `.tsx`; ratchet ise 53 untyped / 7 typed seviyesindedir.
+ve 2 `.tsx`; ratchet ise 53 untyped / 7 typed seviyesine gelmiştir. REST istemci
+çekirdeğinin `src/lib/api.ts` geçişi; generic `fetchJson<T>`, token principal,
+HITL, coverage ve operasyon endpoint sözleşmelerini TypeScript kapısına almış;
+güncel envanteri 12 `.js`, 40 `.jsx`, 6 `.ts`, 2 `.tsx` ve ratchet'i
+52 untyped / 8 typed seviyesine ilerletmiştir.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -31,8 +35,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 53 untyped (`.js` + `.jsx`) ve en az
-7 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 52 untyped (`.js` + `.jsx`) ve en az
+8 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

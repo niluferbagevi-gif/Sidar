@@ -2,9 +2,77 @@ export const TOKEN_KEY = "sidar_access_token";
 export const TOKEN_CHANGE_EVENT = "sidar:token-change";
 export const TOKEN_STORAGE_MODE_KEY = "sidar_token_storage_mode";
 
+export type JsonObject = Record<string, unknown>;
+
+export interface TokenPrincipal {
+  id: string;
+  username: string;
+  role: string;
+  tenant_id: string;
+  exp: number;
+}
+
+export interface CurrentUser {
+  id: string;
+  username: string;
+  role: string;
+}
+
+export interface FetchJsonOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+export interface HitlPendingItem extends JsonObject {
+  request_id: string;
+  action?: string;
+  description?: string;
+  payload?: JsonObject;
+}
+
+export interface HitlPendingResponse extends JsonObject {
+  pending?: HitlPendingItem[];
+  count?: number;
+}
+
+export interface CoverageTaskFilters {
+  status?: string;
+  limit?: number;
+}
+
+export interface ApiSuccessResponse extends JsonObject {
+  success?: boolean;
+  ok?: boolean;
+}
+
+export interface PoyrazOperationResponse extends ApiSuccessResponse {
+  tool?: string;
+  output?: unknown;
+  result?: JsonObject;
+}
+
+export interface CoverageTasksResponse extends ApiSuccessResponse {
+  tasks?: JsonObject[];
+}
+
+export interface CoverageAnalysisResponse extends ApiSuccessResponse {
+  analysis?: unknown;
+  tenant_id?: string;
+}
+
+export interface CoverageCandidateResponse extends ApiSuccessResponse {
+  candidate?: string;
+  quality_rejection_reason?: string;
+  tenant_id?: string;
+}
+
+export interface CoverageBatchResponse extends ApiSuccessResponse {
+  result?: JsonObject;
+  tenant_id?: string;
+}
+
 let inMemoryToken = "";
 
-function getBrowserStorage(kind = "localStorage") {
+function getBrowserStorage(kind: "localStorage" | "sessionStorage" = "localStorage"): Storage | null {
   /* c8 ignore next -- Defensive SSR guard for runtimes without globalThis. */
   if (typeof globalThis === "undefined") return null;
   try {
@@ -19,7 +87,7 @@ function getTokenStorageMode() {
   return storage?.getItem(TOKEN_STORAGE_MODE_KEY) === "local" ? "local" : "memory";
 }
 
-function notifyTokenChange(previousToken, normalized) {
+function notifyTokenChange(previousToken: string, normalized: string): void {
   if (previousToken !== normalized && typeof window !== "undefined") {
     window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
   }
@@ -30,13 +98,13 @@ function readLegacyLocalToken() {
   return (storage?.getItem(TOKEN_KEY) || "").trim();
 }
 
-export function getStoredToken() {
+export function getStoredToken(): string {
   if (inMemoryToken) return inMemoryToken.trim();
   if (getTokenStorageMode() !== "local") return "";
   return readLegacyLocalToken();
 }
 
-export function setStoredToken(token, options = {}) {
+export function setStoredToken(token: unknown, options: { persist?: boolean } = {}): void {
   const previousToken = getStoredToken();
   const normalized = String(token || "").trim();
   const persist = options.persist === true;
@@ -55,17 +123,17 @@ export function setStoredToken(token, options = {}) {
   notifyTokenChange(previousToken, normalized);
 }
 
-export function clearStoredToken() {
+export function clearStoredToken(): void {
   setStoredToken("");
 }
 
-export function getTokenPrincipal(token = getStoredToken()) {
+export function getTokenPrincipal(token: unknown = getStoredToken()): TokenPrincipal | null {
   const parts = String(token || "").split(".");
   if (parts.length < 2) return null;
   try {
     const base64Payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const paddedPayload = base64Payload.padEnd(base64Payload.length + ((4 - (base64Payload.length % 4)) % 4), "=");
-    const payload = JSON.parse(atob(paddedPayload));
+    const payload: JsonObject = JSON.parse(atob(paddedPayload));
     return {
       id: String(payload.sub || payload.id || ""),
       username: String(payload.username || ""),
@@ -78,15 +146,22 @@ export function getTokenPrincipal(token = getStoredToken()) {
   }
 }
 
-export function isAdminPrincipal(principal) {
+export function isAdminPrincipal(principal: TokenPrincipal | null | undefined): boolean {
   const role = String(principal?.role || "").toLowerCase();
   const username = String(principal?.username || "");
   return role === "admin" || username === "default_admin";
 }
 
-export function buildAuthHeaders(extraHeaders = {}) {
+export function buildAuthHeaders(extraHeaders: HeadersInit = {}): Record<string, string> {
+  const normalizedHeaders = Array.isArray(extraHeaders)
+    ? Object.fromEntries(extraHeaders)
+    : extraHeaders instanceof Headers
+      ? Object.fromEntries(extraHeaders.entries())
+      : { ...extraHeaders };
   const token = getStoredToken();
-  return token ? { ...extraHeaders, Authorization: `Bearer ${token}` } : { ...extraHeaders };
+  return token
+    ? { ...normalizedHeaders, Authorization: `Bearer ${token}` }
+    : normalizedHeaders;
 }
 
 // Backend yanıt vermezse (ör. asılı bağlantı, kesilen tünel) çağıran hiçbir
@@ -94,7 +169,7 @@ export function buildAuthHeaders(extraHeaders = {}) {
 // kalırdı. Her istek artık varsayılan olarak zaman aşımına uğrar.
 export const DEFAULT_FETCH_TIMEOUT_MS = 30000;
 
-export async function fetchJson(url, options = {}) {
+export async function fetchJson<T = unknown>(url: string, options: FetchJsonOptions = {}): Promise<T> {
   const { signal: externalSignal, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, ...fetchOptions } = options;
 
   // Dahili AbortController hem varsayılan zaman aşımını hem de çağıranın
@@ -130,26 +205,25 @@ export async function fetchJson(url, options = {}) {
     const response = await fetch(url, {
       ...fetchOptions,
       signal: controller.signal,
-      headers: {
-        ...(fetchOptions.headers || {}),
-        ...buildAuthHeaders(fetchOptions.headers || {}),
-      },
+      headers: buildAuthHeaders(fetchOptions.headers),
     });
 
     const isJson = response.headers.get("content-type")?.includes("application/json");
-    const payload = isJson ? await response.json() : await response.text();
+    const payload: unknown = isJson ? await response.json() : await response.text();
 
     const detail = response.ok
       ? null
       : (typeof payload === "string"
         ? payload
-        : payload?.detail || payload?.error || "İstek başarısız oldu");
+        : (typeof payload === "object" && payload !== null
+          ? String((payload as JsonObject).detail || (payload as JsonObject).error || "İstek başarısız oldu")
+          : "İstek başarısız oldu"));
     if (detail !== null) {
       throw new Error(detail);
     }
-    return payload;
-  } catch (err) {
-    if (err?.name === "AbortError" && timedOut) {
+    return payload as T;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError" && timedOut) {
       throw new Error(`İstek zaman aşımına uğradı (${timeoutMs}ms): ${url}`);
     }
     // AbortError'ın diğer nedeni (çağıranın kendi signal'ı, ör. unmount)
@@ -161,80 +235,80 @@ export async function fetchJson(url, options = {}) {
   }
 }
 
-export function getCurrentUser() {
-  return fetchJson("/auth/me");
+export function getCurrentUser(): Promise<CurrentUser> {
+  return fetchJson<CurrentUser>("/auth/me");
 }
 
-export function runPoyrazOperation(toolName, payload = {}, roomId = "ops:control") {
-  return fetchJson("/api/operations/poyraz/run", {
+export function runPoyrazOperation(toolName: string, payload: JsonObject = {}, roomId = "ops:control"): Promise<PoyrazOperationResponse> {
+  return fetchJson<PoyrazOperationResponse>("/api/operations/poyraz/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tool_name: toolName, payload, room_id: roomId }),
   });
 }
 
-export function generateLandingPage(payload) {
-  return fetchJson("/api/operations/landing-page", {
+export function generateLandingPage(payload: JsonObject | null = {}): Promise<PoyrazOperationResponse> {
+  return fetchJson<PoyrazOperationResponse>("/api/operations/landing-page", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),
   });
 }
 
-export function generateCampaignCopy(payload) {
-  return fetchJson("/api/operations/campaign-copy", {
+export function generateCampaignCopy(payload: JsonObject | null = {}): Promise<PoyrazOperationResponse> {
+  return fetchJson<PoyrazOperationResponse>("/api/operations/campaign-copy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),
   });
 }
 
-export function planServiceOperations(payload) {
-  return fetchJson("/api/operations/service-plan", {
+export function planServiceOperations(payload: JsonObject | null = {}): Promise<PoyrazOperationResponse> {
+  return fetchJson<PoyrazOperationResponse>("/api/operations/service-plan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),
   });
 }
 
-export function listCoverageTasks(params = {}) {
+export function listCoverageTasks(params: CoverageTaskFilters = {}): Promise<CoverageTasksResponse> {
   const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.limit) query.set("limit", String(params.limit));
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  return fetchJson(`/api/qa/coverage/tasks${suffix}`);
+  return fetchJson<CoverageTasksResponse>(`/api/qa/coverage/tasks${suffix}`);
 }
 
-export function analyzeCoverage(payload = {}) {
-  return fetchJson("/api/qa/coverage/analyze", {
+export function analyzeCoverage(payload: JsonObject = {}): Promise<CoverageAnalysisResponse> {
+  return fetchJson<CoverageAnalysisResponse>("/api/qa/coverage/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export function generateCoverageCandidate(payload = {}) {
-  return fetchJson("/api/qa/coverage/generate", {
+export function generateCoverageCandidate(payload: JsonObject = {}): Promise<CoverageCandidateResponse> {
+  return fetchJson<CoverageCandidateResponse>("/api/qa/coverage/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export function runCoverageBatch(payload = {}) {
-  return fetchJson("/api/qa/coverage/batch", {
+export function runCoverageBatch(payload: JsonObject = {}): Promise<CoverageBatchResponse> {
+  return fetchJson<CoverageBatchResponse>("/api/qa/coverage/batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export function listHitlPending() {
-  return fetchJson("/api/hitl/pending");
+export function listHitlPending(): Promise<HitlPendingResponse> {
+  return fetchJson<HitlPendingResponse>("/api/hitl/pending");
 }
 
-export function respondHitl(requestId, payload = {}) {
-  return fetchJson(`/api/hitl/respond/${encodeURIComponent(requestId)}`, {
+export function respondHitl(requestId: string, payload: JsonObject | null = {}): Promise<ApiSuccessResponse> {
+  return fetchJson<ApiSuccessResponse>(`/api/hitl/respond/${encodeURIComponent(requestId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),

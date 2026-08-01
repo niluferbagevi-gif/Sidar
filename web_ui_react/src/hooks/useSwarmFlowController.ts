@@ -138,7 +138,7 @@ export function useSwarmFlowController() {
   const loadPendingApprovals = useCallback(async () => {
     setHitlLoading(true);
     try {
-      const data: { pending?: PendingApproval[] } = await fetchJson("/api/hitl/pending");
+      const data = await fetchJson<{ pending?: PendingApproval[] }>("/api/hitl/pending");
       setPendingApprovals(data.pending || []);
       updateLoaderError("hitl");
     } catch (err) {
@@ -157,7 +157,7 @@ export function useSwarmFlowController() {
   const loadAutonomyActivity = useCallback(async () => {
     setActivityLoading(true);
     try {
-      const data: { activity?: AutonomyActivity } = await fetchJson(
+      const data = await fetchJson<{ activity?: AutonomyActivity }>(
         "/api/autonomy/activity?limit=8",
       );
       setAutonomyActivity(
@@ -386,7 +386,7 @@ export function useSwarmFlowController() {
       setError("");
       setResponse(null);
       try {
-        const data: SwarmResponse = await fetchJson("/api/swarm/execute", {
+        const data = await fetchJson<SwarmResponse>("/api/swarm/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -453,7 +453,7 @@ export function useSwarmFlowController() {
   const requestNodeReview = useCallback(async () => {
     setActionBusy(true);
     try {
-      const data: { request_id: string } = await fetchJson("/api/hitl/request", {
+      const data = await fetchJson<{ request_id: string }>("/api/hitl/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -490,7 +490,7 @@ export function useSwarmFlowController() {
     async (requestId: string, approved: boolean) => {
       setActionBusy(true);
       try {
-        const data: { request_id: string; decision: string } = await fetchJson(
+        const data = await fetchJson<{ request_id: string; decision: string }>(
           `/api/hitl/respond/${encodeURIComponent(requestId)}`,
           {
             method: "POST",
