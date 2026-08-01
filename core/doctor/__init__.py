@@ -1019,14 +1019,14 @@ def _rag_readiness_state() -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
     if vector_backend == "pgvector":
-        database_url = os.getenv("DATABASE_URL", "").strip()
+        database_url, _, _, _ = _resolved_database_urls()
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
         parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
         parsed_database_url, _ = _parse_url(database_url)
         if parsed_database_url:
             parsed_database_password = unquote(str(parsed_database_url.password or ""))
-        password_matches_database_url = bool(postgres_password) and (
-            postgres_password in database_url or parsed_database_password == postgres_password
+        password_matches_database_url = (
+            bool(postgres_password) and parsed_database_password == postgres_password
         )
         database_env_ok = bool(database_url) and password_matches_database_url
         details["database_env_status"] = "pass" if database_env_ok else "fail"
@@ -1254,13 +1254,17 @@ def check_rag_readiness() -> DoctorCheck:
     state = _rag_readiness_state()
     base_details = state.get("details", {}) if isinstance(state, dict) else {}
     vector_backend = str(base_details.get("vector_backend", "") or "").lower()
-    db_url_raw = os.getenv("DATABASE_URL", "")
-    postgres_password = os.getenv("POSTGRES_PASSWORD", "")
+    database_url, _, _, _ = _resolved_database_urls()
+    postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
+    parsed_database_url, _ = _parse_url(database_url)
+    database_password = (
+        unquote(str(parsed_database_url.password or "")) if parsed_database_url else ""
+    )
     mismatch_block = (
         vector_backend == "pgvector"
-        and bool(db_url_raw)
+        and bool(database_url)
         and bool(postgres_password)
-        and postgres_password not in db_url_raw
+        and database_password != postgres_password
     )
     index_check = check_rag_index_ready()
     graph_check = check_graphrag_entity_memory_ready()

@@ -963,6 +963,38 @@ def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatc
     assert state["details"].get("blocked_by") is None
 
 
+def test_rag_readiness_accepts_pgvector_database_url_derived_from_components(monkeypatch, tmp_path):
+    """Keep RAG checks aligned with Doctor's component-derived DSN contract."""
+    password = "Dk4uZsy@Gys/qY:0MtiFeJIgI69s"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_index_ready",
+        lambda: DoctorCheck("rag_index_ready", "pass", "ok", {"recommended_commands": []}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: DoctorCheck(
+            "graphrag_entity_memory_ready", "pass", "ok", {"recommended_commands": []}
+        ),
+    )
+
+    state = doctor._rag_readiness_state()
+    check = doctor.check_rag_readiness()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+    assert check.status == "pass"
+    assert check.details.get("blocked_by") is None
+    assert check.details.get("database_env_status") != "fail"
+
+
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
