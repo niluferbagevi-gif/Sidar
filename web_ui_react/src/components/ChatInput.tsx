@@ -3,13 +3,18 @@
  * Enter gönderir, Shift+Enter yeni satır ekler.
  */
 
-import { useRef, useState, useCallback } from "react";
+import { type KeyboardEvent, useCallback, useRef, useState } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 
-export function ChatInput({ onSend, disabled = false }) {
+interface ChatInputProps {
+  onSend: (message: string) => void;
+  disabled?: boolean;
+}
+
+export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [text, setText] = useState("");
-  const textareaRef = useRef(null);
-  const isStreaming = useChatStore((s) => s.isStreaming);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isStreaming = useChatStore((state) => state.isStreaming);
 
   const handleSubmit = useCallback(() => {
     const trimmed = text.trim();
@@ -19,9 +24,9 @@ export function ChatInput({ onSend, disabled = false }) {
     textareaRef.current?.focus();
   }, [text, isStreaming, disabled, onSend]);
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSubmit();
     }
   };
@@ -32,7 +37,7 @@ export function ChatInput({ onSend, disabled = false }) {
         ref={textareaRef}
         className="chat-input__textarea"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(event) => setText(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="@Sidar ile komut verin veya ekip notu bırakın… (Enter: gönder, Shift+Enter: satır)"
         rows={3}

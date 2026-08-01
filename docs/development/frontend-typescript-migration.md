@@ -39,6 +39,11 @@ En büyük hook olan `hooks/useVoiceAssistant.ts`; duplex voice state machine,
 MediaRecorder/Web Audio kaynakları, istemci komutları ve sunucu mesaj alanlarını
 tipleyip gelen JSON'u runtime alan doğrulamasından geçirmiş; güncel envanter
 10 `.js`, 37 `.jsx`, 8 `.ts`, 5 `.tsx` ve ratchet 47 untyped / 13 typed'dır.
+İlk leaf component diliminde `components/ChatInput.tsx` gönderim callback'i, textarea
+ref'i ve klavye olayını; `components/PanelErrorBoundary.tsx` ise children, hata state'i
+ve React error-boundary lifecycle sözleşmesini açık tiplerle taşımıştır. Envanter
+10 `.js`, 35 `.jsx`, 8 `.ts`, 7 `.tsx` ve ratchet 45 untyped / 15 typed seviyesine
+gelerek 2026-09-30 ara hedefini zamanından önce karşılamıştır.
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
@@ -49,8 +54,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 47 untyped (`.js` + `.jsx`) ve en az
-13 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 45 untyped (`.js` + `.jsx`) ve en az
+15 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
