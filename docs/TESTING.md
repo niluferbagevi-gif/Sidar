@@ -471,6 +471,9 @@ varyansını yanlış regresyon saymamak için ayrı bir pytest sürecinde
 benchmark oturumu concurrency testini `-k not ...` ile dışlar ve sıkı eşiğini korur;
 I/O raporu `artifacts/benchmark/io-benchmark.json` olarak ayrıca saklanır. Bu eşik
 rapor-only değildir; daha büyük I/O regresyonları yine fail-closed sonuçlanır.
+I/O ölçümü 5 warmup sonrasında 50 tur toplar; 25 tura göre örnekleme belirsizliğini azaltır.
+Tur artışı donanım izolasyonunun yerine geçmez: CI compare ve baseline seed işleri yine
+aynı `[self-hosted, linux, benchmark]` runner kontratında çalışmalıdır.
 `make production-readiness` bilinçli olarak `TEST_PROFILE=ci`
 çalıştırdığı için yerelde de CPU eşiği `%10` olur; `%15` yalnız normal local profil
 varsayılanıdır. Karar verirken ortalamayla birlikte

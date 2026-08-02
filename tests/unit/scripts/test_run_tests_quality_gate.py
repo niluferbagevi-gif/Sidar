@@ -713,8 +713,10 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
     assert 'await conn.execute("SELECT 1")' in benchmark_test
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
-    assert "warmup_rounds=5" in benchmark_test
-    assert "rounds=25" in benchmark_test
+    assert "_IO_BENCHMARK_WARMUP_ROUNDS = 5" in benchmark_test
+    assert "_IO_BENCHMARK_ROUNDS = 50" in benchmark_test
+    assert "warmup_rounds=_IO_BENCHMARK_WARMUP_ROUNDS" in benchmark_test
+    assert "rounds=_IO_BENCHMARK_ROUNDS" in benchmark_test
     assert "SIDAR_BENCHMARK_POSTGRES_URL=postgresql+asyncpg://" in env_test_example
     assert "yalnız SQLite varyantını koşturur" in env_test_example
 

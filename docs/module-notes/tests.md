@@ -272,6 +272,9 @@ metriği yerine yazılmamalıdır.
   4. Benchmark ölçümünde schema init/bağlantı aç-kapat maliyetini workload dışında tutarak
      gerçek mesajlaşma throughput'unu ayrı izleyin.
 - Doğrulama notu:
+  - I/O concurrency benchmarkı 5 warmup + 50 ölçüm turu kullanır. Daha geniş örneklem
+    kısa süreli jitter etkisini azaltır; sabit self-hosted donanım ve aynı-runner
+    baseline zorunluluğunun yerine geçmez.
   - SQLite tarafında WAL modu ve `messages(session_id)` indeksinin varlığı
     `tests/unit/core/test_db.py` içinde güvence altına alınmıştır.
 

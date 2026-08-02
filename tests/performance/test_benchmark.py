@@ -19,6 +19,8 @@ pytest.importorskip("pytest_benchmark")
 _FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "5.0") or "5.0")
 _PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3
 _PASSWORD_BENCHMARK_ROUNDS = 10
+_IO_BENCHMARK_WARMUP_ROUNDS = 5
+_IO_BENCHMARK_ROUNDS = 50
 
 
 def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
@@ -264,8 +266,8 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
 
     total_messages = benchmark.pedantic(
         _run_once,
-        warmup_rounds=5,
-        rounds=25,
+        warmup_rounds=_IO_BENCHMARK_WARMUP_ROUNDS,
+        rounds=_IO_BENCHMARK_ROUNDS,
         iterations=1,
     )
     assert total_messages == users * messages_per_session
