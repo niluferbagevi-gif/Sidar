@@ -71,7 +71,7 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 #### 5.3.3 Kriptografik Kimlik/Oturum Güvenliği (Güncellendi)
 - Parola doğrulama akışı yeni kayıtlar için `Argon2id`, legacy kayıtlar için `PBKDF2-HMAC-SHA256` + salt + sabit-zamanlı karşılaştırma (`secrets.compare_digest`) ile uygulanır.
-- **[ÖNEMLİ] Kriptografik Güçlendirme:** Parola türetme algoritmasındaki iterasyon sayısının (önceki: `120000`) güncel OWASP standartlarına (min `600000`) uygun hale getirilmesi teknik bir borç olarak işaretlenmiştir. Yeni nesil GPU'ların kırabilme kapasitesine karşı kurumsal sistemlerde bu değerin artırılması zorunludur.
+- **[KAPANDI] Kriptografik Güçlendirme:** Parola türetme algoritmasının iterasyon sayısı güncel OWASP standardına (min `600000`) yükseltilmiştir — `core/db/auth.py` içindeki `_PBKDF2_MIN_ITERATIONS = 600000` sabiti yeni/aktif hash üretiminde zorunlu tabandır. Eski `120000` değeri artık yalnızca `_PBKDF2_LEGACY_ITERATIONS` olarak, geçmişte bu iterasyonla üretilmiş mevcut hash'lerin doğrulanabilmesi (geriye dönük uyumluluk) amacıyla korunmaktadır ve yeni parola/hash üretiminde kullanılmaz. Bu artık aktif bir teknik borç değildir.
 - Oturum belirteçleri `secrets.token_urlsafe(...)` ile üretilir; kullanıcı/oturum anahtarlarında UUID kullanımı tahmin edilebilirlik riskini azaltır.
 - WebSocket kanalında `auth` handshake zorunludur; geçersiz/eksik token durumunda bağlantı policy violation ile kapatılır.
 
@@ -272,7 +272,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db/auth.py` içinde Argon2id varsayılanı (yeni kayıtlar) ve legacy `PBKDF2-HMAC-SHA256` doğrulamasıyla (min `600000` iterasyon, eski `120000` yalnızca geriye dönük doğrulama için) yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
 
 ---
 
