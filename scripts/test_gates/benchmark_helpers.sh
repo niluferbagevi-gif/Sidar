@@ -79,14 +79,15 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
+  mkdir -p "$(dirname "${BENCHMARK_IO_JSON_OUTPUT}")"
   mkdir -p "$(dirname "${BENCHMARK_GPU_JSON_OUTPUT}")"
   benchmark_cmd=(
     env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
-    --benchmark-save="${BENCHMARK_BASELINE_NAME}"
     --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
     --benchmark-warmup="${BENCHMARK_WARMUP}"
     --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
   )
+  benchmark_io_cmd=()
   benchmark_gpu_cmd=()
   if [ -f "${BENCHMARK_GPU_TEST_FILE}" ]; then
     # GPU benchmarklarını ayrı pytest process'inde çalıştırmak CPU/DB latency
@@ -110,7 +111,22 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   if [ "${BENCHMARK_ENABLE_COMPARE}" = "1" ]; then
     if resolve_benchmark_compare_target "${BENCHMARK_COMPARE_NAME}"; then
       benchmark_compare_target_found=1
-      benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")
+      benchmark_cmd+=(
+        -k "not test_multi_user_session_message_workload_scales_with_concurrency"
+        --benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"
+      )
+      benchmark_io_cmd=(
+        env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v
+        "${PERFORMANCE_TEST_DIR}/test_benchmark.py" -n 0 --no-cov
+        -k "test_multi_user_session_message_workload_scales_with_concurrency"
+        --benchmark-json="${BENCHMARK_IO_JSON_OUTPUT}"
+        --benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"
+        --benchmark-warmup="${BENCHMARK_WARMUP}"
+        --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
+      )
+      if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
+        benchmark_io_cmd+=(--benchmark-disable-gc)
+      fi
       benchmark_baseline_age_days_value="$(benchmark_baseline_age_days "${BENCHMARK_COMPARE_FILE}" 2>/dev/null || true)"
       if [ -n "${benchmark_baseline_age_days_value}" ] \
         && [ "${benchmark_baseline_age_days_value}" -ge "${BENCHMARK_BASELINE_MAX_AGE_DAYS}" ]; then
@@ -129,6 +145,8 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
           BENCHMARK_COMPARE_STATUS="compared_enforced"
           echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
           echo "ℹ️ I/O-bağımlı DB concurrency benchmark eşiği: ${BENCHMARK_IO_COMPARE_FAIL}."
+          benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+          benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")
         fi
       else
         BENCHMARK_COMPARE_STATUS="compared_report_only"
@@ -136,6 +154,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
         echo "ℹ️ Varsayılan sıkı kapıyı geçici rapor moduna almak için BENCHMARK_ENFORCE_COMPARE=0 kullanın."
       fi
     else
+      benchmark_cmd+=(--benchmark-save="${BENCHMARK_BASELINE_NAME}")
       BENCHMARK_COMPARE_STATUS="missing_baseline"
       echo "⚠️ Benchmark karşılaştırması atlandı: '.benchmarks' altında '${BENCHMARK_COMPARE_NAME}' etiketiyle eşleşen kayıt bulunamadı."
       echo "ℹ️ İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME} ile baseline kaydedecek; sonraki koşularda otomatik karşılaştırma yapılacak."
@@ -171,12 +190,14 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     run_checked "${benchmark_cmd[@]}"
     BENCHMARK_EXIT_CODE=$?
     BENCHMARK_COMPARE_EXIT_CODE="${BENCHMARK_EXIT_CODE}"
-    if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ]; then
-      if ! uv run python scripts/ci/check_benchmark_regressions.py \
-        --baseline "${BENCHMARK_COMPARE_FILE}" --current "${BENCHMARK_JSON_OUTPUT}" \
-        --default-limit "${BENCHMARK_COMPARE_FAIL}" --io-limit "${BENCHMARK_IO_COMPARE_FAIL}"; then
-        BENCHMARK_EXIT_CODE=1
-        BENCHMARK_COMPARE_EXIT_CODE=1
+    if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${#benchmark_io_cmd[@]}" -gt 0 ]; then
+      echo "💾 I/O-bound DB concurrency benchmarkı ayrı pytest oturumunda çalıştırılıyor..."
+      echo "➡️ Çalıştırılan komut: ${benchmark_io_cmd[*]}"
+      run_checked "${benchmark_io_cmd[@]}"
+      benchmark_io_exit_code=$?
+      if [ "${benchmark_io_exit_code}" -ne 0 ]; then
+        BENCHMARK_EXIT_CODE="${benchmark_io_exit_code}"
+        BENCHMARK_COMPARE_EXIT_CODE="${benchmark_io_exit_code}"
       fi
     fi
 

@@ -630,8 +630,9 @@ jobs:
         env:
           DOTENV_FILE: .env.test
           BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
+          BENCHMARK_IO_JSON_OUTPUT: artifacts/benchmark/io-benchmark.json
           BENCHMARK_COMPARE_FAIL: mean:10%
-          BENCHMARK_IO_COMPARE_FAIL: mean:35%
+          BENCHMARK_IO_COMPARE_FAIL: mean:25%
           BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}
         run: |
           set -o pipefail
@@ -653,8 +654,11 @@ jobs:
           )
           PY
           uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --ignore=tests/performance/test_gpu_benchmark.py \
+            -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
             --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
             --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
             --benchmark-warmup=on \
             --benchmark-warmup-iterations=100000 \
             --benchmark-disable-gc \
@@ -662,11 +666,17 @@ jobs:
             2>&1 | tee artifacts/benchmark/benchmark-compare.log
           status=${PIPESTATUS[0]}
           if [ "$status" -eq 0 ]; then
-            uv run python scripts/ci/check_benchmark_regressions.py \
-              --baseline "${BENCHMARK_BASELINE_FILE}" \
-              --current "${BENCHMARK_JSON_OUTPUT}" \
-              --default-limit "${BENCHMARK_COMPARE_FAIL}" \
-              --io-limit "${BENCHMARK_IO_COMPARE_FAIL}" || status=$?
+            uv run python -m pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
+              -k "test_multi_user_session_message_workload_scales_with_concurrency" \
+              --benchmark-json="${BENCHMARK_IO_JSON_OUTPUT}" \
+              --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+              --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}" \
+              --benchmark-warmup=on \
+              --benchmark-warmup-iterations=100000 \
+              --benchmark-disable-gc \
+              --junitxml=artifacts/benchmark/io-benchmark-junit.xml \
+              2>&1 | tee artifacts/benchmark/io-benchmark-compare.log
+            status=${PIPESTATUS[0]}
           fi
           test -s "${BENCHMARK_JSON_OUTPUT}" || {
             printf '{"status":"failed-before-json","exit_code":%s}\n' "$status" \
@@ -683,6 +693,9 @@ jobs:
             artifacts/benchmark/benchmark.json
             artifacts/benchmark/benchmark-compare.log
             artifacts/benchmark/benchmark-junit.xml
+            artifacts/benchmark/io-benchmark.json
+            artifacts/benchmark/io-benchmark-junit.xml
+            artifacts/benchmark/io-benchmark-compare.log
             artifacts/benchmark/baseline-metadata.json
             artifacts/benchmark/failure.json
             .benchmarks/

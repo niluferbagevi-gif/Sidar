@@ -466,12 +466,12 @@ BENCHMARK_ENFORCE_COMPARE=0 make production-readiness
 release kanıtı sayılmamalıdır. İlk komut da yerel gürültünün etkisini sınamak içindir.
 CPU ağırlıklı işler CI'da zorunlu `mean:10%` eşiğini korur. Gerçek SQLite/PostgreSQL
 havuzu, disk ve scheduler kullanan çoklu kullanıcı concurrency iş yükü ise WSL2/Docker
-varyansını yanlış regresyon saymamak için `BENCHMARK_IO_COMPARE_FAIL` (varsayılan
-`mean:35%`) ile değerlendirilir. Bu eşik rapor-only değildir; daha büyük I/O
-regresyonları yine fail-closed sonuçlanır. Ayrım test adından türetilmez; benchmark
-JSON içindeki `extra_info.workload_class=io_bound` metadata'sı kontrattır. Eski
-baseline artefaktları yenilenene kadar yalnız bilinen concurrency testi için isim
-fallback'i korunur. `make production-readiness` bilinçli olarak `TEST_PROFILE=ci`
+varyansını yanlış regresyon saymamak için ayrı bir pytest sürecinde
+`BENCHMARK_IO_COMPARE_FAIL` (varsayılan `mean:25%`) ile değerlendirilir. CPU/password
+benchmark oturumu concurrency testini `-k not ...` ile dışlar ve sıkı eşiğini korur;
+I/O raporu `artifacts/benchmark/io-benchmark.json` olarak ayrıca saklanır. Bu eşik
+rapor-only değildir; daha büyük I/O regresyonları yine fail-closed sonuçlanır.
+`make production-readiness` bilinçli olarak `TEST_PROFILE=ci`
 çalıştırdığı için yerelde de CPU eşiği `%10` olur; `%15` yalnız normal local profil
 varsayılanıdır. Karar verirken ortalamayla birlikte
 min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikten sonra sapma

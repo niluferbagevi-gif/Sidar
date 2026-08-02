@@ -581,12 +581,16 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert 'BENCHMARK_COMPARE_FILE="${latest_file}"' in script
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
     assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
-    assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
+    assert '--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"' in script
     assert 'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then' in script
-    assert 'BENCHMARK_IO_COMPARE_FAIL="${BENCHMARK_IO_COMPARE_FAIL:-mean:35%}"' in script
-    assert "scripts/ci/check_benchmark_regressions.py" in script
-    assert '--default-limit "${BENCHMARK_COMPARE_FAIL}"' in script
-    assert '--io-limit "${BENCHMARK_IO_COMPARE_FAIL}"' in script
+    assert 'BENCHMARK_IO_COMPARE_FAIL="${BENCHMARK_IO_COMPARE_FAIL:-mean:25%}"' in script
+    assert (
+        'BENCHMARK_IO_JSON_OUTPUT="${BENCHMARK_IO_JSON_OUTPUT:-artifacts/benchmark/io-benchmark.json}"'
+        in script
+    )
+    assert '-k "not test_multi_user_session_message_workload_scales_with_concurrency"' in script
+    assert "I/O-bound DB concurrency benchmarkı ayrı pytest oturumunda" in script
+    assert 'benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")' in script
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
     assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
@@ -4870,8 +4874,10 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
     assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
-    assert "BENCHMARK_IO_COMPARE_FAIL: mean:35%" in ci
-    assert "scripts/ci/check_benchmark_regressions.py" in ci
+    assert "BENCHMARK_IO_COMPARE_FAIL: mean:25%" in ci
+    assert "BENCHMARK_IO_JSON_OUTPUT: artifacts/benchmark/io-benchmark.json" in ci
+    assert "io-benchmark-compare.log" in ci
+    assert "--ignore=tests/performance/test_gpu_benchmark.py" in benchmark_job
     assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
