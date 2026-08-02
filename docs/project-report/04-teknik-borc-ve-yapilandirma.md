@@ -12,7 +12,9 @@
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-> **Güncel Durum (2026-03-19 — v5.0.0-alpha):** Kritik mimari, güvenlik ve coverage borçları kapalıdır. Bu bölüm artık aktif kusur listesinden ziyade, sürdürülen operasyonel izleme başlıklarını ve arşiv yönlendirmesini özetler.
+> **Güncel Durum (2026-08-02 — v5.2.0):** Açık kritik/bloklayıcı ürün kusuru
+> bulunmamaktadır. Bununla birlikte “kritik borç yok” ifadesi, tarihli ve ratchet ile
+> yönetilen mühendislik kampanyalarının tamamlandığı anlamına gelmez.
 
 ### 11.1 Durum Özeti Paneli
 
@@ -20,12 +22,27 @@
 |---|---|
 | Aktif Kritik Bulgu | **0** |
 | Aktif Sorun | **0 — açık ürün/bloklayıcı kusur yok** |
-| Açık Teknik Borç | **0 — v5.0-alpha coverage borcu kapatıldı** |
-| Denetim Durumu | **Production Ready (Alpha) / Zero Debt korunuyor** |
-| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı; v5.0-alpha coverage kapanışı CHANGELOG ve test dosyalarıyla teyit edildi** |
+| Açık Kritik Teknik Borç | **0 — release-blocking güvenlik/coverage/mimari borç yok** |
+| İzlenen Mühendislik Kampanyaları | **Var — TypeScript migrasyonu, D100-D107 docstring envanteri ve modülerleştirme ratchet/planlarla yönetiliyor** |
+| Denetim Durumu | **Production-ready kalite kapıları aktif; mutlak “zero debt” iddiası kullanılmıyor** |
+| Son Arşivleme Notu | **Kapanan bulgular `docs/archive/` altında; aktif kampanyalar kendi plan ve baseline dosyalarında tutuluyor** |
 
 - **Stratejik özet:** Ana rapor aktif riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur.
-- **Versiyon durumu:** `v5.0.0-alpha` itibarıyla kritik güvenlik/mimari borç bulunmamaktadır; ses, browser ve launcher kapsamındaki coverage kapanışı repo içindeki test dosyalarıyla doğrulanmıştır.
+- **Versiyon durumu:** `v5.2.0` itibarıyla kritik güvenlik/mimari borç bulunmamaktadır;
+  coverage tabanı `pyproject.toml` içinde `%100`, frontend TypeScript ilerlemesi ise
+  `web_ui_react/typescript-migration-baseline.json` ile fail-closed izlenir.
+
+#### 11.1.1 Borç ve yol haritası ayrımı
+
+- **Açık kritik teknik borç:** Merge/release kararını engelleyen, kabul edilmiş fakat
+  çözülmemiş kusurdur. Güncel sayı sıfırdır.
+- **İzlenen mühendislik borcu:** Ürünü bugün bloklamayan fakat tarihli kapanış ve
+  geriye gitmeme kapısı bulunan işlerdir. TypeScript migrasyonu, kalan D100-D107
+  docstring envanteri ve `docs/REFACTOR_PLAN.md` içindeki modülerleştirme dilimleri bu
+  sınıftadır; bu nedenle genel “Açık Teknik Borç: 0” ifadesi kullanılmaz.
+- **Gelecek ürün fazı:** Mevcut davranışta kusur olmayan yeni kapasitedir. Harici graph
+  backend'i, bağımsız worker/pod tabanlı dağıtık swarm, tam RLHF/DPO eğitim
+  orkestrasyonu ve canlı video/ekran WebRTC genişletmeleri Bölüm 14 yol haritasıdır.
 
 ### 11.2 Arşiv ve Yönlendirme
 
@@ -54,13 +71,14 @@ Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyone
 
 ### 11.5 Gelecek İyileştirmeler (Continuous Improvement)
 
-Aktif teknik borç yalnızca v5.0-alpha test kapsamı başlığında toplanmıştır; bunun dışındaki iyileştirme alanları kapasite ve görünürlük eksenindedir:
+Kritik teknik borç kapalıdır. İzlenen mühendislik kampanyalarına ek olarak aşağıdaki
+iyileştirme alanları kapasite ve görünürlük eksenindedir:
 
 - **Gelişmiş telemetri görselleştirmesi:** Ajanlar arası delegasyon sürelerinin Grafana panellerinde daha ayrıntılı kırılımlarla izlenmesi.
 - **Kurumsal kapasite planlama notları:** pgvector indeks stratejileri, Redis kapasitesi ve uzun dönem maliyet trendlerinin düzenli arşivlenmesi.
 - **Arşiv hijyeni:** Yeni kapanan bulguların ana rapora yığılmadan doğrudan `docs/archive/` altında versiyonlu biçimde tutulması.
 
-## 12. `.env` Tam Değişken Referansı (v5.0.0-alpha Kurumsal Sürüm)
+## 12. `.env` Tam Değişken Referansı (v5.2.0 Kurumsal Sürüm)
 
 [⬆ İçindekilere Dön](#içindekiler)
 

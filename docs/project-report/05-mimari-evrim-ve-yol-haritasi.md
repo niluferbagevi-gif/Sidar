@@ -43,7 +43,9 @@ Bu bant, v4 mimarisinin yalnızca backend kabiliyeti olarak kalmayıp ürün sev
 
 - **Modern React SPA geçişi:** `web_ui_react/` artık standart kullanıcı deneyimidir; `web_server.py` derlenmiş React dağıtımını önceliklendirir, yönetim panelleri (Prompt Admin, Agent Manager, Swarm Flow, tenant ekranları) aynı SPA kabuğunda birleşir.
 - **Dokümantasyon/sürüm tekilleştirmesi:** `CHANGELOG.md`, `README.md`, `config.py`, teknik referanslar ve proje raporu `v4.3.0` çizgisine hizalanarak operasyonda tek bir sürüm gerçeği oluşturuldu.
-- **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%90` olarak kodlanmıştır; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
+- **CI/CD ile korunan geriye-gitmeme disiplini:** Coverage hard gate'i
+  `pyproject.toml [tool.coverage.report].fail_under = 100` olarak kodlanmıştır;
+  tarihli Ruff ve TypeScript ratchet'leri yeni borç birikimini fail-closed engeller.
 - **Kurumsal kapanış yorumu:** Bu aşamada React SPA, swarm, semantic cache, OTel, tenant RBAC/audit, DLP/HITL ve kurumsal deployment yüzeyleri aynı sistem üzerinde bir araya gelmiş; v4.x serisi “özellik ekleme” aşamasını tamamlayıp **operasyonel enterprise platform** seviyesine ulaşmıştır.
 
 ### 13.4 v4.x Tamamlanan Evrim Özeti
@@ -99,24 +101,27 @@ Projenin temel kurumsal altyapısı, swarm mimarisi, güvenlik kontrol noktalar�
 
 ### 14.5 Faz 6 Yol Haritası Özeti
 
-| Faz 6 Alanı | Teknik Yön | Hedef Çıktı |
+Bu tablo “hiç başlanmamış özellikler” listesi değildir. Mevcut temel ile gelecekteki
+ürünleşme sınırını açıkça ayırır; yol haritası kalemleri açık teknik kusur sayılmaz.
+
+| Faz 6 Alanı | Mevcut temel | Kalan gelecek fazı |
 |---|---|---|
-| **GraphRAG** | Knowledge graph + entity relation memory | Çok adımlı reasoning ve kurumsal bilgi keşfi |
-| **Distributed Swarm** | Broker tabanlı mikroservis ajanlar | Yatay ölçeklenen, pod-seviyesinde izole swarm |
-| **Continuous Learning** | Judge + feedback + LoRA/QLoRA + RLHF/DPO | Sürekli iyileşen yerel model kalitesi |
-| **Realtime Multimodality** | WebRTC + vision + streaming SPA | Ses/video destekli gerçek zamanlı ajan etkileşimi |
+| **GraphRAG** | Deterministik entity graph, projection ve ilişkisel arama mevcut | Harici graph backend'i ve çok-adımlı graph reasoning'in ürünleştirilmesi |
+| **Distributed Swarm** | Async delegation kontratı ile Redis/RabbitMQ/Kafka event backend stratejileri mevcut | Bağımsız worker servisleri, broker görev kuyruğu ve pod/tenant ölçekleme |
+| **Continuous Learning** | Judge/feedback sinyali, dataset bundle ve LoRA hazırlıkları mevcut | Otomatik eğitim, değerlendirme, model terfi/rollback içeren RLHF/DPO orkestrasyonu |
+| **Realtime Multimodality** | Duplex voice, VAD/barge-in, vision ve medya ingest mevcut | Canlı video/ekran WebRTC taşıması ve eşzamanlı streaming UX |
 
 ### 14.6 Faz E: Otonom İş Ekosistemi
 
-- **Coverage Agent:** `agent/roles/coverage_agent.py` ile coverage raporlarından eksik satırları okuyup `pytest` koşturan, bulgu analizi yapan, test adayı üreten ve çıktıları `coverage_tasks` / `coverage_findings` yüzeyine yazan otonom QA swarm birimi sisteme eklendi; `tests/test_missing_edge_case_coverage_final.py` ile doğrulanan `%90` baseline bu ajanın çalışma standardı olarak kullanılmaktadır.
-- **Poyraz:** `agent/roles/poyraz_agent.py` ile SİDAR'ın pazarlama ve operasyon kolu aktif hale geldi; sosyal medya yönetimi, web sitesi/landing page taslakları, kampanya içerikleri, WhatsApp iletişimi ve tenant-aware operasyon checklist'leri tek ajan rolünde yürütülüyor.
+- **Coverage Agent:** `agent/roles/coverage_agent.py` ile coverage raporlarından eksik satırları okuyup `pytest` koşturan, bulgu analizi yapan, test adayı üreten ve çıktıları `coverage_tasks` / `coverage_findings` yüzeyine yazan otonom QA swarm birimi sisteme eklendi; `pyproject.toml` içinde ratchet ile korunan `%100` local/CI baseline bu ajanın çalışma standardıdır.
+- **Poyraz:** `agent/roles/poyraz_agent.py` ile Sidar'ın pazarlama ve operasyon kolu aktif hale geldi; sosyal medya yönetimi, web sitesi/landing page taslakları, kampanya içerikleri, WhatsApp iletişimi ve tenant-aware operasyon checklist'leri tek ajan rolünde yürütülüyor.
 - **Platformdan beslenen multimodal içerik zekâsı:** `core/multimodal.py` hattı artık Poyraz'ın `ingest_video_insights` aracı üzerinden dış video kaynaklarını analiz edip bu veriyi içerik, kampanya ve operasyon aksiyonlarına dönüştüren fiili bir veri kaynağı olarak kullanılmaktadır.
 
 > **Sonuç:** v4.x serisi Sidar'ın enterprise temelini tamamlamıştır; v5.x/Faz 6 bu temelin üstüne **daha derin akıl yürütme, daha dağıtık yürütme, daha güçlü öğrenme, daha otonom kurumsal iş akışları ve daha doğal insan-makine etkileşimi** katmanlarını fiilen ekleyen çalışma evresi olarak ilerlemektedir.
 
 ---
 
-## 15. Özellik-Gereksinim Matrisi (v5.0.0-alpha Güncel Durum)
+## 15. Özellik-Gereksinim Matrisi (v5.2.0 Güncel Durum)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
@@ -133,7 +138,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Modern Asenkron Arayüz (SPA)** | React + Vite + WebSocket/event-driven sunum katmanı (`web_ui_react/`, `web_server.py`) | ✅ Tamamlandı |
 | **Model Ağ Geçidi (LLM Gateway)** | OpenAI/Anthropic/Ollama/LiteLLM yollarını tekleştiren sağlayıcı soyutlama katmanı (`core/llm_client.py`, `core/router.py`) | ✅ Tamamlandı |
 | **Dinamik Genişletilebilirlik** | Runtime kayıt edilen ajan pazaryeri ve plugin yükleme akışı (`agent/registry.py`, `plugins/`, `web_server.py`) | ✅ Tamamlandı |
-| **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%90` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
+| **Borç Ratchet Kalite Kapısı** | CI kalite kapıları, `%100` coverage tabanı ve tarihli Ruff/TypeScript geriye-gitmeme kontrolleri (`.github/workflows/ci.yml`, `run_tests.sh`, `pyproject.toml`, `tests/`) | ✅ Aktif |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve typed admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.tsx`) | ✅ Tamamlandı |
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |

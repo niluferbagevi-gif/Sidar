@@ -30,3 +30,22 @@ def test_v52_architecture_is_canonical_and_versioned_reports_are_historical() ->
     assert "ARCHITECTURE.md" in report_index
     assert "Tarihsel v5.0 vizyon/faz kaydıdır" in v50
     assert "Tarihsel Faz C–E evrim kaydıdır" in v51
+
+
+def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
+    """The report must not hide tracked campaigns behind an absolute zero-debt claim."""
+    debt = Path("docs/project-report/04-teknik-borc-ve-yapilandirma.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/project-report/05-mimari-evrim-ve-yol-haritasi.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Açık Kritik Teknik Borç | **0" in debt
+    assert "İzlenen Mühendislik Kampanyaları | **Var" in debt
+    assert "mutlak “zero debt” iddiası kullanılmıyor" in debt
+    assert "TypeScript migrasyonu" in debt
+    assert "D100-D107" in debt
+    assert "yol haritası kalemleri açık teknik kusur sayılmaz" in roadmap
+    assert "Harici graph backend'i" in roadmap
+    assert "RLHF/DPO orkestrasyonu" in roadmap
+    assert "fail_under = 100" in roadmap
+    assert "%90" not in roadmap
