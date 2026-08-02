@@ -70,7 +70,7 @@
 
 Faz E vizyonu artık SİDAR'ı yalnızca yazılım geliştiren bir AI yardımcı olmaktan çıkarıp yazılım, pazarlama, operasyon ve içerik üretimini tek bir otonom ekosistemde birleştiren **otonom şirket simülasyonu** katmanına taşımış durumdadır. Bu fazda devreye alınan yakın dönem odakları şunlardır:
 
-- **Coverage Agent:** `agent/roles/coverage_agent.py` swarm rolü eklendi; ajan `CodeManager` üzerinden `pytest` komutlarını koşturuyor, pytest çıktısını analiz ediyor, eksik test adayları üretiyor, önerilen test dosyasını yazıyor ve bulguları `coverage_tasks` / `coverage_findings` yüzeyine kaydediyor. `%90` test kapsama kalite kapısı artık yalnızca statik eşik değil, aktif test üretim döngüsüyle de destekleniyor.
+- **Coverage Agent:** `agent/roles/coverage_agent.py` swarm rolü eklendi; ajan `CodeManager` üzerinden `pytest` komutlarını koşturuyor, pytest çıktısını analiz ediyor, eksik test adayları üretiyor, önerilen test dosyasını yazıyor ve bulguları `coverage_tasks` / `coverage_findings` yüzeyine kaydediyor. `pyproject.toml` içindeki `%100` ratchet tabanlı test kapsama kalite kapısı artık yalnızca statik eşik değil, aktif test üretim döngüsüyle de destekleniyor.
 - **Poyraz (Dijital Pazarlama ve Operasyon Uzmanı):** `agent/roles/poyraz_agent.py` devreye alındı; `WebSearchManager`, `SocialMediaManager`, `DocumentStore` ve `core.multimodal.MultimodalPipeline` entegrasyonları ile Instagram/Facebook/WhatsApp yayınlama, landing page üretimi, kampanya kopyası hazırlama, video içgörüsü ingest etme ve operasyon checklist'i oluşturma akışları fiilen sisteme eklendi.
 - **YouTube ve Genişletilmiş Multimodal Zeka:** `core/multimodal.py` hattı Poyraz içinde `ingest_video_insights` aracıyla kullanılmaya başlandı; dış video URL'lerinden çıkarılan sahne özeti ve ingest edilen içerik, pazarlama/operasyon çıktısına dönüştürülen aktif veri kaynağı olarak konumlandı.
 
@@ -237,7 +237,7 @@ Sidar/
 │           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
 │           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
-├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%90 eşik)
+├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (`pyproject.toml` fail_under=100 ratchet tabanı)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
 ├── AUDIT_REPORT_v5.0.md       # v5.0 kurumsal geçiş + coverage kapanışı denetim raporu
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi

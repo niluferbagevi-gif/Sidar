@@ -108,10 +108,11 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **213**
-- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
-- **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **`test_*.py` modül sayısı:** **251** (`tests/` altında alt dizinlere dağılmış; `tests/unit`, `tests/integration`, `tests/e2e`, `tests/smoke`, `tests/performance`, `tests/quality`, `tests/shell` dahil)
+- **`tests/**/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **277**
+- **Toplam test satırı (`tests/**/*.py`):** **109.922**
+- **Toplam koşulan test sayısı:** backend `pytest` ~**4.406** + frontend `vitest` ~**166** = **~4.572** (`make dev-full` lokal koşumuna göre; sürekli değişebileceğinden CI'daki güncel `production_readiness` çıktısı esas alınmalıdır)
+- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **`pyproject.toml` `[tool.coverage.report] fail_under = 100` ratchet tabanı** (bkz. §6.2; eski `%90` eşiği artık geçerli değildir)
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -178,7 +179,7 @@ ratchet üst sınırını birlikte loglar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **213 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **215** adettir.
+- Güncel depoda `test_*.py` desenine uyan **251 test modülü** bulunur; `tests/**/*.py` toplamı (yardımcı dosyalar dahil) **277** adettir (güncel toplam koşulan test sayısı için bu bölümün girişindeki özete bakınız).
 - Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
 - Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
 
