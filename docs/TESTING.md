@@ -304,7 +304,7 @@ Bu komut başarılı olsa bile **asıl release/merge kararı yerel makinede veri
 PR'ı açın ve GitHub Actions'taki required **Production readiness aggregate**
 (`production-readiness`) check'inin geçmesini bekleyin. Aggregate; base `test`, izole
 `benchmark-compare` ve `gpu-inference-policy-gate` job'larının üçünü birleştirir. Yerel
-koşu bu GitHub-hosted baseline/runner kanıtını ve ayrı self-hosted GPU evidence akışını
+koşu bu sabit `[self-hosted, linux, benchmark]` baseline/runner kanıtını ve ayrı self-hosted GPU evidence akışını
 ikame etmez.
 
 ## CI branch protection / required checks
@@ -401,7 +401,7 @@ Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
    kapısını çalıştırmaz; yalnız `tests/performance` benchmarklarını
    `--benchmark-save=baseline` ile koşar.
 3. Job sonunda iki kaynak oluşur:
-   - Actions cache: `benchmark-baseline-<OS>-py311-<uv.lock SHA256>-<branch>-<run_id>` anahtarıyla
+   - Actions cache: `benchmark-baseline-<runner adı>-<OS>-py311-<uv.lock SHA256>-<branch>-<run_id>` anahtarıyla
      `.benchmarks/` dizini kaydedilir. Normal CI restore adımı branch, `main`,
      `master` ve genel prefix sırasıyla bu cache'i arar.
    - Artifact: `benchmark-baseline-seed`, `.benchmarks/` dizinini ve
@@ -478,6 +478,18 @@ min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikt
 tekrarlanıyorsa hedef testi izole koşup kod/SQL/pool değişikliklerini araştırın. Yerel
 `.benchmarks` dosyaları GitHub Actions'ın seed/cache/artifact baseline'ını değiştirmez;
 merge/release kararı required GitHub Actions production-readiness sonucuna dayanır.
+
+CI `benchmark-compare` ve iki manuel baseline seed yolu paylaşımlı
+`ubuntu-latest` üzerinde çalışmaz; üçünün de runner kontratı
+`[self-hosted, linux, benchmark]`dır. Runner adı cache anahtarına dahil edildiğinden bir
+makinede üretilen donanıma özgü baseline başka bir makinede sessizce kullanılamaz.
+Benchmark runner'ında CPU governor, container/VM katmanı ve arka plan yükü sabitlenmeli;
+uygun runner çevrimdışıysa job'ın queued kalması gate'i GitHub-hosted gürültülü bir
+makineye düşürmekten daha güvenli, fail-closed davranıştır.
+GitHub-hosted `test` job'ı performans testlerini `RUN_BENCHMARKS=0` ile bilinçli
+olarak dışlar; bu job'ın özeti tek başına production-ready kanıtı değildir. Nihai
+`production-readiness` aggregate sonucu ancak base test, sabit donanımdaki
+`benchmark-compare` ve GPU evidence kapılarının üçü de geçerse başarılı olur.
 
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 

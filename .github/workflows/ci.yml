@@ -26,7 +26,9 @@ jobs:
   seed-benchmark-baseline:
     name: Seed benchmark baseline cache
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # Performance baselines are hardware-specific; never seed them on a shared
+    # GitHub-hosted runner.
+    runs-on: [self-hosted, linux, benchmark]
 
     steps:
       - name: Checkout
@@ -53,12 +55,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Seed benchmark baseline
         env:
@@ -104,7 +106,7 @@ jobs:
             echo "- Baseline name: \`${benchmark_compare_name}\`"
             echo "- Baseline files: \`${#baseline_files[@]}\`"
             echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
-            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
+            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
             echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
             echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
             echo "- Operator path: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
@@ -125,7 +127,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
 
   test:
     name: Base quality gates (lint, smoke, unit, coverage, frontend)
@@ -216,43 +218,6 @@ jobs:
 
       - name: Check dated policy/debt expirations
         run: uv run python scripts/ci/check_policy_dates.py
-
-      - name: Restore benchmark baseline cache
-        id: benchmark-baseline-cache
-        uses: actions/cache@v4
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
-
-      - name: Report benchmark baseline availability
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .benchmarks
-          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
-          if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"
-            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; benchmark-compare job will enforce it."
-            {
-              echo "### Benchmark baseline"
-              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; benchmark-compare job will enforce it."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "BENCHMARK_BASELINE_AVAILABLE=0" >> "$GITHUB_ENV"
-            echo "::warning title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base lint/smoke/unit/coverage/frontend gates will still run; benchmark-compare remains fail-closed."
-            {
-              echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; base quality gates continue so lint, smoke, unit, coverage, shell and frontend failures remain visible."
-              echo "- The separate \`benchmark-compare\` job is fail-closed and blocks production readiness until a reviewed baseline exists."
-              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
-              echo "- Or restore \`.benchmarks/*_${benchmark_compare_name}.json\` from a reviewed benchmark artifact/cache before re-running CI."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Diagnose environment (always)
         if: always()
@@ -412,7 +377,7 @@ jobs:
           shopt -s globstar nullglob
           uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
 
-      - name: Run canonical production-readiness gate
+      - name: Run base quality gates (performance isolated)
         env:
           FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
           RUN_FRONTEND_E2E: "1"
@@ -429,10 +394,12 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p artifacts
-          make production-readiness 2>&1 | tee artifacts/test_run.log
+          TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 \
+            SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all \
+            2>&1 | tee artifacts/test_run.log
 
-      - name: Validate production-readiness test summary
-        run: uv run python scripts/ci/validate_test_summary.py --mode release --summary artifacts/test-summary.json
+      - name: Validate base test summary
+        run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 
       - name: Verify committed coverage ratchet baseline
         run: |
@@ -601,7 +568,9 @@ jobs:
   benchmark-compare:
     name: Benchmark compare gate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # A shared ubuntu-latest VM is too noisy for a release-blocking latency
+    # comparison. The baseline seed jobs use the same named runner/cache scope.
+    runs-on: [self-hosted, linux, benchmark]
 
     steps:
       - name: Checkout
@@ -629,12 +598,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Resolve benchmark baseline gate mode
         id: benchmark-baseline

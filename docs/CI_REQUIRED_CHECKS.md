@@ -9,7 +9,7 @@ the expected required contexts should mirror the release-critical jobs in
 
 | Workflow job id | Required GitHub check name | Why it must be required |
 | --- | --- | --- |
-| `test` | `CI / Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs the broad production-readiness quality gate, including the fail-closed benchmark baseline restore/compare flow and `make production-readiness`. |
+| `test` | `CI / Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs broad non-performance checks on GitHub-hosted infrastructure; performance is deliberately isolated in `benchmark-compare`. |
 | `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
 | `production-profile-dry-run` | `CI / Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
 | `gpu-inference-policy-gate` | `CI / GPU Inference Required Evidence Gate` | Fails closed unless the self-hosted GPU TTFT/latency benchmark is enabled and succeeds. |
@@ -21,6 +21,14 @@ intentionally **not** a required PR check: it only runs via manual
 `workflow_dispatch` bootstrap with `seed_benchmark_baseline=true`. Normal CI must
 remain fail-closed when no reviewed `.benchmarks/*_baseline.json` cache/artifact
 is restored.
+
+The release-blocking `benchmark-compare` job and both baseline seed paths require a
+dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
+cache key, preventing a baseline produced on one hardware host from being restored on
+another host. Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
+runners have variable CPU, storage and scheduler contention and are unsuitable for a
+strict latency comparison. An unavailable benchmark runner must leave readiness
+blocked rather than silently falling back to shared hardware.
 
 The hardware benchmark remains in `gpu-inference-quality-gate` / `GPU Inference
 Quality Gate (TTFT<=200ms, latency<=250ms)` and requires a

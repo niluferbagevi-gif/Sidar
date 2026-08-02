@@ -270,7 +270,9 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     )
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
-    assert "make production-readiness" in ci
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "RUN_BENCHMARKS=0" in ci
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
     assert "uv run python scripts/ci/check_policy_dates.py" in ci
     assert "POSTGRES_PASSWORD: sidar" in ci
     assert "Test-only CI service credentials" in ci
@@ -1086,10 +1088,9 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         in ci
     )
     assert "Benchmark baseline missing" in ci
-    assert "Run canonical production-readiness gate" in ci
-    assert "Validate production-readiness test summary" in ci
-    assert "--mode release --summary artifacts/test-summary.json" in ci
-    assert "--mode development --summary artifacts/test-summary.json" not in ci
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "Validate base test summary" in ci
+    assert "--mode development --summary artifacts/test-summary.json" in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
@@ -4842,28 +4843,28 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
         "${{ github.ref_name }}-${{ github.run_id }}" in ci
     )
     assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-" not in ci
-    assert "Report benchmark baseline availability" in ci
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
-    assert 'echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"' in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
-    assert "Base lint/smoke/unit/coverage/frontend gates will still run" in ci
     assert "Benchmark baseline missing" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
+    benchmark_job = ci[ci.index("  benchmark-compare:") : ci.index("  production-readiness:")]
+    seed_job = ci[ci.index("  seed-benchmark-baseline:") : ci.index("  test:")]
+    assert "runs-on: [self-hosted, linux, benchmark]" in benchmark_job
+    assert "runs-on: ubuntu-latest" not in benchmark_job
+    assert "runs-on: [self-hosted, linux, benchmark]" in seed_job
+    assert "runner.name" in benchmark_job
     assert "Production readiness aggregate" in ci
     assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
-    assert "Run canonical production-readiness gate" in ci
-    assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
-    assert (
-        "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-        not in ci
-    )
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
+    assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
     assert "benchmark compare is fail-closed" in ci
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
@@ -4878,6 +4879,9 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "koşu seed moduna düşmez" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
+    assert "runs-on: [self-hosted, linux, benchmark]" in seed_workflow
+    assert "runs-on: ubuntu-latest" not in seed_workflow
+    assert "runner.name" in seed_workflow
     assert 'BENCHMARK_COMPARE_REQUIRED: "0"' in seed_workflow
     assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
     assert "--benchmark-warmup-iterations=100000" in seed_workflow
@@ -4897,7 +4901,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+            "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
         "${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
     )
     assert "Benchmark baseline seed" in readme
