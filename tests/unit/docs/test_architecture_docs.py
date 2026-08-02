@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -38,12 +39,24 @@ def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
     roadmap = Path("docs/project-report/05-mimari-evrim-ve-yol-haritasi.md").read_text(
         encoding="utf-8"
     )
+    ts_baseline = json.loads(
+        Path("web_ui_react/typescript-migration-baseline.json").read_text(encoding="utf-8")
+    )
 
     assert "Açık Kritik Teknik Borç | **0" in debt
     assert "İzlenen Mühendislik Kampanyaları | **Var" in debt
     assert "mutlak “zero debt” iddiası kullanılmıyor" in debt
     assert "TypeScript migrasyonu" in debt
     assert "D100-D107" in debt
+    assert f"en fazla {ts_baseline['maximum_untyped_files']} untyped" in debt
+    assert f"en az {ts_baseline['minimum_typed_files']} typed" in debt
+    final_milestone = ts_baseline["milestones"][-1]
+    assert final_milestone["deadline"] in debt
+    assert (
+        f"{final_milestone['maximum_untyped_files']}/"
+        f"{final_milestone['minimum_typed_files']}" in debt
+    )
+    assert "npm run typecheck:inventory" in debt
     assert "yol haritası kalemleri açık teknik kusur sayılmaz" in roadmap
     assert "Harici graph backend'i" in roadmap
     assert "RLHF/DPO orkestrasyonu" in roadmap

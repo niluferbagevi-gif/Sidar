@@ -44,6 +44,19 @@
   backend'i, bağımsız worker/pod tabanlı dağıtık swarm, tam RLHF/DPO eğitim
   orkestrasyonu ve canlı video/ekran WebRTC genişletmeleri Bölüm 14 yol haritasıdır.
 
+#### 11.1.2 Frontend TypeScript ratchet durumu
+
+`web_ui_react/typescript-migration-baseline.json`, `web_ui_react/src` için güncel
+geriye-gitmeme sınırını **en fazla 29 untyped (`.js` + `.jsx`)** ve **en az 32 typed
+(`.ts` + `.tsx`)** dosya olarak tanımlar. `npm run typecheck:inventory`, untyped
+sayısındaki artışı veya typed sayısındaki düşüşü fail-closed reddeder. Mevcut baseline,
+2026-09-30 tarihli 45/15 ve 2026-12-15 tarihli 30/30 ara hedeflerinden daha sıkıdır;
+sonraki zorunlu hedefler 2027-02-15 için 12/48 ve 2027-03-31 için **0/60**'tır.
+Tam geçişte `allowJs`/`checkJs` uyumluluk modu kaldırılacaktır. Kampanya sahipliği,
+envanter geçmişi ve kabul kriterleri
+[`frontend-typescript-migration.md`](../development/frontend-typescript-migration.md)
+dosyasında tutulur.
+
 ### 11.2 Arşiv ve Yönlendirme
 
 Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi için `docs/archive/` dizinindeki belgelere bakınız:
