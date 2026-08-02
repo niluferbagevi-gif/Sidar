@@ -56,7 +56,7 @@ async function waitUntilReady(url) {
         ...[
           "ChatPanel.jsx",
           "ChatMessage.tsx",
-          "SwarmFlowPanel.jsx",
+          "SwarmFlowPanel.tsx",
           "OperationsQaPanel.tsx",
           "AgentManagerPanel.jsx",
           "PluginMarketplacePanel.jsx",

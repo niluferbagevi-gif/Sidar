@@ -38,6 +38,7 @@ import type {
 type TaskDraft = Required<SwarmTask>;
 type TaskField = keyof TaskDraft;
 type OperationTone = "info" | "success" | "warning" | "error";
+export type SwarmExecutionMode = "parallel" | "pipeline";
 
 interface SwarmResponse {
   results?: SwarmResult[];
@@ -110,7 +111,7 @@ const OPERATION_LOG_LIMIT = 10;
 export function useSwarmFlowController() {
   const telemetryEvents = useChatStore((s: { telemetryEvents: TelemetryStep[] }) => s.telemetryEvents);
   const [tasks, setTasks] = useState<TaskDraft[]>(DEFAULT_TASKS);
-  const [mode, setMode] = useState("parallel");
+  const [mode, setMode] = useState<SwarmExecutionMode>("parallel");
   const [sessionId, setSessionId] = useState("ui-swarm-session");
   const [maxConcurrency, setMaxConcurrency] = useState(3);
   const [running, setRunning] = useState(false);

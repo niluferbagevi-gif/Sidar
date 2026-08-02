@@ -9,7 +9,7 @@ import {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "./SwarmFlowPanel.jsx";
+} from "./SwarmFlowPanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({

@@ -1,7 +1,7 @@
 /**
  * Pure graph-building logic for SwarmFlowPanel: turns swarm task/response/
  * telemetry/autonomy state into the node/edge graph the panel renders.
- * Extracted out of SwarmFlowPanel.jsx so it can be unit tested and read in
+ * Extracted out of SwarmFlowPanel.tsx so it can be unit tested and read in
  * isolation from the React component that consumes it.
  */
 

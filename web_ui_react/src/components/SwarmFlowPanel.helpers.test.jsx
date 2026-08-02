@@ -6,7 +6,7 @@ import {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "./SwarmFlowPanel.jsx";
+} from "./SwarmFlowPanel.js";
 import {
   __swarmFlowGraphTestables,
   buildResultEdges,

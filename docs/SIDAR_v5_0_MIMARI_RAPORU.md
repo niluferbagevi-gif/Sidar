@@ -4,7 +4,7 @@
 
 > **Durum:** Faz A ve Faz B tamamlandı; Faz C odağına geçmiş stratejik mimari raporu
 > **Hazırlanma Tarihi:** 2026-03-19
-> **Kapsam:** `PROJE_RAPORU.md`, `README.md`, `core/vision.py`, `core/rag.py`, `agent/tooling.py`, `agent/swarm.py`, `agent/core/supervisor.py`, `managers/web_search.py`, `managers/code_manager.py`, `web_server.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`
+> **Kapsam:** `PROJE_RAPORU.md`, `README.md`, `core/vision.py`, `core/rag.py`, `agent/tooling.py`, `agent/swarm.py`, `agent/core/supervisor.py`, `managers/web_search.py`, `managers/code_manager.py`, `web_server.py`, `web_ui_react/src/components/SwarmFlowPanel.tsx`
 
 ---
 
@@ -34,7 +34,7 @@ Bu rapor, ürünleşen yetenekleri mevcut dosya yapısı içinde belgeleyerek he
 | GraphRAG + Reviewer etki analizi | **✅ Faz B: Tamamlandı** | `core/rag.py` içindeki modül bağımlılık grafiği arama/yol açıklama akışı reviewer ajanında birleşik etki analizi ve hedef önerileri üretir. |
 | Reviewer + LSP anlamsal denetim | **✅ Faz B: Tamamlandı** | Reviewer ajanı artık LSP diagnostics ile GraphRAG etki analizi sinyallerini aynı kalite kapısında birleştiriyor. |
 | Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
-| Swarm karar grafiği + operasyon yüzeyi | **✅ Faz B: Tamamlandı** | `SwarmFlowPanel.jsx`, node/edge tabanlı handoff görselleştirmesini canlı operasyon yüzeyine taşıdı; seçili düğümden rerun/follow-up/HITL müdahalesi yapılabiliyor. |
+| Swarm karar grafiği + operasyon yüzeyi | **✅ Faz B: Tamamlandı** | `SwarmFlowPanel.tsx`, node/edge tabanlı handoff görselleştirmesini canlı operasyon yüzeyine taşıdı; seçili düğümden rerun/follow-up/HITL müdahalesi yapılabiliyor. |
 | Interactive CLI Launcher | **✅ Tamamlandı** | `main.py` ön kontrollü etkileşimli başlatıcı olarak ürünleşti. |
 
 ## 1.2 Faz B Tamamlanma Özeti
@@ -58,7 +58,7 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 - **Swarm ve P2P delege zinciri hazır:** `agent/swarm.py` ve `agent/core/supervisor.py` görev yönlendirme, handoff depth, trace ve QA retry davranışlarını zaten yönetiyor.
 - **RAG katmanı hibrit aramaya uygun:** `core/rag.py` ChromaDB + BM25 tabanı üzerine yeni retrieval stratejileri eklemek için iyi bir temel sunuyor.
 - **Web kontrol düzlemi genişlemeye uygun:** `web_server.py` hâlihazırda REST + WebSocket + HITL + swarm yürütme gibi akışları barındırıyor.
-- **UI'da canlı operasyon yüzeyi hazır:** `web_ui_react/src/components/SwarmFlowPanel.jsx` artık görev listesi/telemetriye ek olarak node-graph handoff görünümü, seçili node aksiyonları ve HITL karar yüzeyi sunuyor; Faz C'de odak bu yüzeyi remediation/self-healing ve daha derin browser sinyalleri ile beslemek.
+- **UI'da canlı operasyon yüzeyi hazır:** `web_ui_react/src/components/SwarmFlowPanel.tsx` artık görev listesi/telemetriye ek olarak node-graph handoff görünümü, seçili node aksiyonları ve HITL karar yüzeyi sunuyor; Faz C'de odak bu yüzeyi remediation/self-healing ve daha derin browser sinyalleri ile beslemek.
 
 ### 2.2 v5.0 ile çözülmek istenen açıklar
 
@@ -84,7 +84,7 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 | Çoklu algı (Perception) | Görsel + video + ses + canlı sesli etkileşim | `core/vision.py`, yeni `core/multimodal.py`, yeni `core/voice.py`, `web_server.py` |
 | Araç derinliği (Actionability) | Browser automation + LSP + gelişmiş tool şemaları | `agent/tooling.py`, `managers/browser_manager.py`, `managers/code_manager.py` |
 | Proaktif otonomi (Autonomy) | Webhook/cron ile uyanan, dış swarm ile konuşan ajanlar | `agent/core/contracts.py`, `agent/swarm.py`, `agent/sidar_agent.py`, `web_server.py` |
-| Karar görünürlüğü (Transparency) | Görsel swarm akışı ve canlı çalışma yüzeyleri | `web_ui_react/src/components/SwarmFlowPanel.jsx` |
+| Karar görünürlüğü (Transparency) | Görsel swarm akışı ve canlı çalışma yüzeyleri | `web_ui_react/src/components/SwarmFlowPanel.tsx` |
 
 ---
 
@@ -352,7 +352,7 @@ SİDAR yalnızca kendi Coder/Reviewer/Researcher ajanlarını yönetmekle kalmam
 
 ### 7.1 Visual Chain-of-Thought / Decision Graph Explorer
 
-**Gerçekleştirilen uygulama:** `web_ui_react/src/components/SwarmFlowPanel.jsx` düz timeline yaklaşımından node/graf tabanlı görselleştirmeye taşındı ve canlı operasyon yüzeyi haline geldi.
+**Gerçekleştirilen uygulama:** `web_ui_react/src/components/SwarmFlowPanel.tsx` düz timeline yaklaşımından node/graf tabanlı görselleştirmeye taşındı ve canlı operasyon yüzeyi haline geldi.
 
 #### Neden önemli?
 
@@ -400,7 +400,7 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 3. `managers/browser_manager.py` + temel Playwright araçları **(✅ tamamlandı / beta'ya hazır)**
 4. `agent/tooling.py` içine browser/LSP tool şemaları **(başlatıldı)**
 5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(✅ tamamlandı)**
-6. `SwarmFlowPanel.jsx` için graph veri modeli **(✅ tamamlandı)**
+6. `SwarmFlowPanel.tsx` için graph veri modeli **(✅ tamamlandı)**
 7. `main.py` interactive CLI launcher **(✅ tamamlandı)**
 
 ### Faz B — Güvenli Otonomi ve GraphRAG Derinleşmesi (**Tamamlandı**)
@@ -441,7 +441,7 @@ v5.0 geliştirmeleri aşağıdaki ilkelere bağlı kalmalıdır:
 | P0 | Multimodal medya ingestion MVP | `core/multimodal.py`, `core/vision.py` | ✅ Video + ses bağlam üretimi |
 | P0 | Browser automation manager | `managers/browser_manager.py`, `agent/tooling.py` | ✅ Dinamik web aksiyonları |
 | P1 | Webhook/proaktif ajan omurgası | `web_server.py`, `agent/sidar_agent.py` | ✅ Reaktif → proaktif geçiş |
-| P1 | Live operation surface UI | `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py` | ✅ Görsel swarm görünürlüğü + node tabanlı operatör müdahalesi |
+| P1 | Live operation surface UI | `web_ui_react/src/components/SwarmFlowPanel.tsx`, `core/hitl.py` | ✅ Görsel swarm görünürlüğü + node tabanlı operatör müdahalesi |
 | P1 | GraphRAG + reviewer impact gate | `core/rag.py`, `agent/roles/reviewer_agent.py`, `managers/code_manager.py` | ✅ Mimari bağımlılık sorguları + reviewer hedefleri |
 | P2 | LSP entegrasyonu | `managers/code_manager.py` | ✅ Güvenli refactor |
 | P2 | Voice WebSocket akışı | `core/voice.py`, `web_server.py` | ✅ Gerçek zamanlı duplex konuşma + VAD/buffer olayları |

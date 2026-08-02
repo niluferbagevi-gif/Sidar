@@ -56,6 +56,10 @@ tanımlanmıştır.
 form alanları, aktivasyon cevabı ve bilinmeyen API hata değerlerini açık tiplerle
 daraltmıştır. Güncel envanter 10 `.js`, 29 `.jsx`, 8 `.ts`, 13 `.tsx`; ratchet ise
 39 untyped / 21 typed seviyesindedir.
+`components/SwarmFlowPanel.tsx` geçişi typed controller ve graph katmanlarının React
+orkestrasyon sınırını da TypeScript kapısına almış; execution mode artık
+`"parallel" | "pipeline"` union'ı olarak korunmaktadır. Güncel envanter 10 `.js`,
+28 `.jsx`, 8 `.ts`, 14 `.tsx`; ratchet 38 untyped / 22 typed seviyesindedir.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -63,8 +67,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 39 untyped (`.js` + `.jsx`) ve en az
-21 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 38 untyped (`.js` + `.jsx`) ve en az
+22 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

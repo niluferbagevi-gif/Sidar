@@ -53,7 +53,7 @@
 - **Nightly Memory Pruning / Konsolidasyon (Faz D):** Sistem idle kaldığında `ConversationMemory` eski oturumları özetleyip sıkıştırır, `DocumentStore` aynı oturumdaki düşük değerli RAG belgelerini `memory://nightly-digest` özetine konsolide eder ve `EntityMemory` TTL bakımını çalıştırır; böylece uzun soluklu projelerde hafıza bir insan gibi tazelenir.
 - **Dynamic Browser Automation (Tamamlandı / v5.0-alpha):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, zorunlu HITL geçidi, audit trail ve reviewer/swarm akışına taşınabilen browser signal özetleri ile kontrollü tarayıcı oturumlarını yönetiyor.
 - **Proaktif Otonomi + Swarm Federation (Tamamlandı / Faz B):** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation`, `/api/swarm/federation/feedback` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden kontrollü proaktif/federe co-worker modeline genişliyor.
-- **Canlı Operasyon Yüzeyi (Tamamlandı / Faz B):** `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py` ve ilgili HITL API'leri ile görsel karar grafiği artık sadece izleme değil; seçili düğümden görev türetme, hedefli rerun ve bekleyen onayları yönetme yüzeyi olarak da çalışıyor.
+- **Canlı Operasyon Yüzeyi (Tamamlandı / Faz B):** `web_ui_react/src/components/SwarmFlowPanel.tsx`, `core/hitl.py` ve ilgili HITL API'leri ile görsel karar grafiği artık sadece izleme değil; seçili düğümden görev türetme, hedefli rerun ve bekleyen onayları yönetme yüzeyi olarak da çalışıyor.
 - **Jira / Slack / Teams Entegrasyonu:** Jira Cloud REST API v3, Slack Bot SDK + Webhook fallback (Block Kit), Teams MessageCard + Adaptive Card v1.4 ve HITL onay kartı (`managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py`).
 - **Kök kontrol düzlemi doğrulaması (v5.0-alpha / Faz B):** `main.py` sihirbaz + quick-start başlatma katmanı, `cli.py` tek event-loop CLI oturumu, `web_server.py` geniş FastAPI kontrol düzlemi (mevcut dosyada **88** route/websocket decorator; **86** REST + **2** WebSocket), `config.py` bootstrap/telemetry yükleme yolu, `github_upload.py` güvenli `git ls-files` paketleme akışı ve `gui_launcher.py` Eel köprüsü mevcut repo durumu ile yeniden teyit edilmiştir.
 - **Son doğrulama notu (v3.0.30):** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `core/llm_client.py` ve `web_server.py` üzerindeki D-8..D-14 düzeltmeleri yeniden gözden geçirilmiş; incelenen modüllerde kritik açık bir bulguya rastlanmadığı rapora işlenmiştir.
@@ -196,7 +196,7 @@ Sidar/
 ├── web_ui_react/              # Modern React SPA arayüzü (Vite tabanlı)
 │   ├── src/                     # React bileşenleri, hook'lar ve API yardımcıları
 │   │   ├── components/VoiceAssistantPanel.jsx   # Duplex voice oturumu, transcript ve VAD paneli
-│   │   ├── components/SwarmFlowPanel.jsx        # Canlı swarm karar grafiği ve operasyon yüzeyi
+│   │   ├── components/SwarmFlowPanel.tsx        # Canlı swarm karar grafiği ve operasyon yüzeyi
 │   │   └── hooks/useVoiceAssistant.js           # MediaRecorder + WebSocket + VAD istemci hook'u
 │   ├── package.json             # npm bağımlılıkları ve script'ler
 │   └── vite.config.js           # Vite build konfigürasyonu

@@ -120,7 +120,7 @@ taşımaları küçük domain PR'ları için backlog'da tutulur.
   30/30, 12/48 ve 0/60 untyped/typed ara hedefleri tarih geldiğinde
   `npm run typecheck:inventory` tarafından fail-closed uygulanır. Aşamalar ve baseline sözleşmesi
   `docs/development/frontend-typescript-migration.md` içinde tutulur.
-- **`src/components/SwarmFlowPanel.jsx` (435 → ~140 satır):** 14 `useState`, 5
+- **`src/components/SwarmFlowPanel.tsx` (435 → ~140 satır):** 14 `useState`, 5
   `fetchJson` çağrısı, graph türetme ve operasyon callback'leri
   `src/hooks/useSwarmFlowController.ts` hook'una çıkarıldı; panel artık render/composition
   sınırı olarak kaldı. Kalan adım: `GraphView`'e geçen ~19 prop'u görünüm-modeli ve action

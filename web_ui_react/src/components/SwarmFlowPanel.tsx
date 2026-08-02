@@ -68,7 +68,10 @@ export function SwarmFlowPanel() {
           </p>
         </div>
         <div className="inline-controls">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value === "pipeline" ? "pipeline" : "parallel")}
+          >
             <option value="parallel">run_parallel</option>
             <option value="pipeline">run_pipeline</option>
           </select>
