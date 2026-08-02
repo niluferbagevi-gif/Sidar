@@ -398,16 +398,17 @@ line_length = 100
 close_docstring_campaign_by = "2026-09-30"
 close_async240_campaign_by = "2026-09-30"
 tracking_owner = "qa+reviewer"
+global_ignores_removed_on = "2026-08-02"
 planned_validation_commands = [
   "uv run ruff check . --select D,ASYNC",
   "uv run python scripts/ci/check_ruff_debt_baseline.py",
   "uv run ruff check .",
 ]
 e501_global_ignore_review_by = "2026-09-30"
-e501_global_ignore_reason = "Legacy root entrypoints still contain long lines; new or meaningfully edited code should wrap to line-length=100 and avoid expanding this debt."
+e501_global_ignore_reason = "Global ignore removed early on 2026-08-02; the zero ratchet remains as defense-in-depth until the scheduled review."
 e501_debt_baseline = 0
 async240_global_ignore_review_by = "2026-09-30"
-async240_global_ignore_reason = "Legacy async code paths still contain synchronous pathlib metadata checks that are safe for current small local files but trip Ruff ASYNC240 after flake8-async updates; new async I/O paths should prefer asyncio.to_thread, anyio.Path, or precomputed sync setup instead of expanding this debt."
+async240_global_ignore_reason = "Global ignore removed early on 2026-08-02; new async I/O paths remain directly enforced by Ruff and the zero ratchet."
 legacy_hotspots = ["web_server.py", "main.py"]
 docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
 
@@ -681,8 +682,6 @@ select = [
   "D",
 ]
 ignore = [
-  # E501 remains a temporary legacy compatibility ignore; see [tool.sidar.ruff_debt].
-  "E501",
   # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
   # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik
   # tests/unit/agent/test_builtin_role_contracts.py ile korunur.
@@ -694,19 +693,6 @@ ignore = [
   "D105",
   "D106",
   "D107",
-  # D200-D417 stil ignore'ları aynı kampanyanın 2026-09-30 kapanış kapısında
-  # kaldırılacaktır; yeni dokümantasyon Google convention'a uymalıdır.
-  "D200",
-  "D202",
-  "D205",
-  "D209",
-  "D212",
-  "D403",
-  "D415",
-  "D417",
-  # ASYNC240 is tracked in [tool.sidar.ruff_debt]; new async I/O code should not
-  # add blocking pathlib calls just because this compatibility ignore exists.
-  "ASYNC240",
 ]
 
 [tool.ruff.lint.per-file-ignores]
