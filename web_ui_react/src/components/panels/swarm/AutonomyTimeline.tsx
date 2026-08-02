@@ -1,5 +1,19 @@
+import type { AutonomyActivity, AutonomySummary } from "../../../hooks/useSwarmFlowController.js";
+import type { TelemetryStep } from "../../../lib/swarmFlowGraph.js";
 
-export function AutonomyTimeline({ autonomySummary, autonomyActivity, steps, formatTime }) {
+interface AutonomyTimelineProps {
+  autonomySummary: AutonomySummary;
+  autonomyActivity: AutonomyActivity;
+  steps: TelemetryStep[];
+  formatTime: (value: string | number | Date) => string;
+}
+
+export function AutonomyTimeline({
+  autonomySummary,
+  autonomyActivity,
+  steps,
+  formatTime,
+}: AutonomyTimelineProps) {
   return (
     <>
       <div className="card">

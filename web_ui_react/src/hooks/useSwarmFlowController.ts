@@ -35,8 +35,8 @@ import type {
   TelemetryStep,
 } from "../lib/swarmFlowGraph";
 
-type TaskDraft = Required<SwarmTask>;
-type TaskField = keyof TaskDraft;
+export type TaskDraft = Required<SwarmTask>;
+export type TaskField = keyof TaskDraft;
 type OperationTone = "info" | "success" | "warning" | "error";
 export type SwarmExecutionMode = "parallel" | "pipeline";
 
@@ -44,23 +44,33 @@ interface SwarmResponse {
   results?: SwarmResult[];
 }
 
-interface AutonomyActivity {
+export interface AutonomyActivity {
   items: AutonomyItem[];
   counts_by_status: Record<string, number>;
   counts_by_source: Record<string, number>;
   total?: number;
 }
 
-interface PendingApproval {
+export interface PendingApproval {
   request_id: string;
+  action?: string;
+  description?: string;
+  requested_by?: string;
   [key: string]: unknown;
 }
 
-interface OperationLogEntry {
+export interface OperationLogEntry {
   id: string;
   tone: OperationTone;
   message: string;
   ts: string;
+}
+
+export interface AutonomySummary {
+  total: number;
+  success: number;
+  failed: number;
+  sources: number;
 }
 
 interface ExecuteSwarmMeta {
@@ -312,7 +322,7 @@ export function useSwarmFlowController() {
     tasks,
   ]);
 
-  const autonomySummary = useMemo(() => {
+  const autonomySummary = useMemo<AutonomySummary>(() => {
     const counts = autonomyActivity.counts_by_status || {};
     const sources = autonomyActivity.counts_by_source || {};
     return {

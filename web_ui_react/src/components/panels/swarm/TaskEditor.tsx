@@ -1,4 +1,17 @@
 
+import type { TaskDraft, TaskField } from "../../../hooks/useSwarmFlowController.js";
+
+interface TaskEditorProps {
+  tasks: TaskDraft[];
+  sessionId: string;
+  maxConcurrency: number;
+  onSessionIdChange: (value: string) => void;
+  onMaxConcurrencyChange: (value: number) => void;
+  onTaskChange: (index: number, field: TaskField, value: string) => void;
+  onAddTask: () => void;
+  onRemoveTask: (index: number) => void;
+}
+
 export function TaskEditor({
   tasks,
   sessionId,
@@ -8,7 +21,7 @@ export function TaskEditor({
   onTaskChange,
   onAddTask,
   onRemoveTask,
-}) {
+}: TaskEditorProps) {
   return (
     <div className="card form-card">
       <h3>Görev Tanımı</h3>
@@ -18,7 +31,13 @@ export function TaskEditor({
       </label>
       <label>
         Maksimum eşzamanlılık
-        <input type="number" min="1" max="8" value={maxConcurrency} onChange={(e) => onMaxConcurrencyChange(e.target.value)} />
+        <input
+          type="number"
+          min="1"
+          max="8"
+          value={maxConcurrency}
+          onChange={(e) => onMaxConcurrencyChange(Number(e.target.value))}
+        />
       </label>
       <div className="stack-list">
         {tasks.map((task, index) => (

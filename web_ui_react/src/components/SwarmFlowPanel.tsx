@@ -1,9 +1,9 @@
 import { useSwarmFlowController } from "../hooks/useSwarmFlowController";
 import { formatTime, NODE_HEIGHT, NODE_WIDTH } from "../lib/swarmFlowGraph";
-import { AutonomyTimeline } from "./panels/swarm/AutonomyTimeline.jsx";
+import { AutonomyTimeline } from "./panels/swarm/AutonomyTimeline.js";
 import { GraphView } from "./panels/swarm/GraphView.jsx";
-import { HitlQueue } from "./panels/swarm/HitlQueue.jsx";
-import { TaskEditor } from "./panels/swarm/TaskEditor.jsx";
+import { HitlQueue } from "./panels/swarm/HitlQueue.js";
+import { TaskEditor } from "./panels/swarm/TaskEditor.js";
 
 export {
   buildTaskDraftFromNode,

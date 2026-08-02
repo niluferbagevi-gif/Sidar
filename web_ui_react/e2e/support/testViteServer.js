@@ -67,6 +67,9 @@ async function waitUntilReady(url) {
           "VoiceAssistantPanel.tsx",
           "ChatWindow.tsx",
           "ChatInput.tsx",
+          "panels/swarm/AutonomyTimeline.tsx",
+          "panels/swarm/HitlQueue.tsx",
+          "panels/swarm/TaskEditor.tsx",
         ].map((component) => fetchReadyResponse(`${url}/src/components/${component}`)),
       ]);
       if (

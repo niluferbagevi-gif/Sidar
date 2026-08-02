@@ -68,6 +68,11 @@ runtime alan kontrolünden geçmeden UI state'ine yazılmaz. Güncel envanter 10
 kontratlarını typed sınıra almıştır. Katalog JSON'u `unknown` olarak karşılanıp malformed
 öğeler UI state'ine girmeden elenir. Güncel envanter 10 `.js`, 26 `.jsx`, 8 `.ts`,
 16 `.tsx`; ratchet 36 untyped / 24 typed seviyesindedir.
+Swarm panelinin aynı klasördeki `AutonomyTimeline.tsx`, `HitlQueue.tsx` ve
+`TaskEditor.tsx` alt görünümleri de typed controller modellerine bağlanmıştır. HITL
+callback'i, telemetry zaman değeri ve task field anahtarları artık açık prop
+sözleşmeleridir; number input controller'a string sızdırmadan `number` üretir. Güncel
+envanter 10 `.js`, 23 `.jsx`, 8 `.ts`, 19 `.tsx`; ratchet 33 untyped / 27 typed'dır.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -75,8 +80,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 36 untyped (`.js` + `.jsx`) ve en az
-24 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 33 untyped (`.js` + `.jsx`) ve en az
+27 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

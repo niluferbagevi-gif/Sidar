@@ -1,11 +1,21 @@
 
+import type { OperationLogEntry, PendingApproval } from "../../../hooks/useSwarmFlowController.js";
+
+interface HitlQueueProps {
+  pendingApprovals: PendingApproval[];
+  operationLog: OperationLogEntry[];
+  actionBusy: boolean;
+  onRespondToApproval: (requestId: string, approved: boolean) => Promise<void>;
+  formatTime: (value: string | number | Date) => string;
+}
+
 export function HitlQueue({
   pendingApprovals,
   operationLog,
   actionBusy,
   onRespondToApproval,
   formatTime,
-}) {
+}: HitlQueueProps) {
   return (
     <div className="card">
       <div className="inline-controls inline-controls--compact">
