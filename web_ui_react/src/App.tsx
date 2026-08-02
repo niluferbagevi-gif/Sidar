@@ -34,7 +34,7 @@ const SwarmFlowPanel = lazyNamed(() => import("./components/SwarmFlowPanel.js"),
 const OperationsQaPanel = lazyNamed(() => import("./components/OperationsQaPanel.jsx"), "OperationsQaPanel");
 const PromptAdminPanel = lazyNamed(() => import("./components/PromptAdminPanel.js"), "PromptAdminPanel");
 const PluginMarketplacePanel = lazyNamed(() => import("./components/PluginMarketplacePanel.jsx"), "PluginMarketplacePanel");
-const AgentManagerPanel = lazyNamed(() => import("./components/AgentManagerPanel.jsx"), "AgentManagerPanel");
+const AgentManagerPanel = lazyNamed(() => import("./components/AgentManagerPanel.js"), "AgentManagerPanel");
 const TenantAdminPanel = lazyNamed(() => import("./components/TenantAdminPanel.jsx"), "TenantAdminPanel");
 
 const ADMIN_ROUTES = [

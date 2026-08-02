@@ -1,7 +1,23 @@
 import { useCallback, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { buildAuthHeaders } from "../lib/api.js";
 
-const DEFAULT_FORM = {
+interface AgentRegistrationForm {
+  roleName: string;
+  className: string;
+  capabilities: string;
+  description: string;
+  version: string;
+}
+
+interface RegisteredAgent {
+  role_name: string;
+  version: string;
+  capabilities?: string[];
+  [key: string]: unknown;
+}
+
+const DEFAULT_FORM: AgentRegistrationForm = {
   roleName: "",
   className: "",
   capabilities: "",
@@ -9,24 +25,70 @@ const DEFAULT_FORM = {
   version: "1.0.0",
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function registrationError(payload: unknown): string {
+  if (isRecord(payload)) {
+    if (typeof payload.detail === "string" && payload.detail) return payload.detail;
+    if (typeof payload.error === "string" && payload.error) return payload.error;
+  }
+  return "Ajan yüklenemedi";
+}
+
+function registeredAgent(payload: unknown): RegisteredAgent {
+  if (!isRecord(payload) || !isRecord(payload.agent)) {
+    throw new Error("Ajan kayıt cevabı geçersiz");
+  }
+  const { agent } = payload;
+  if (typeof agent.role_name !== "string" || typeof agent.version !== "string") {
+    throw new Error("Ajan kayıt cevabı geçersiz");
+  }
+  if (
+    agent.capabilities !== undefined &&
+    (!Array.isArray(agent.capabilities) ||
+      !agent.capabilities.every((capability) => typeof capability === "string"))
+  ) {
+    throw new Error("Ajan kayıt cevabı geçersiz");
+  }
+  return {
+    ...agent,
+    role_name: agent.role_name,
+    version: agent.version,
+    capabilities: agent.capabilities,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Ajan yüklenemedi";
+}
+
 export function AgentManagerPanel() {
   const [form, setForm] = useState(DEFAULT_FORM);
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState<RegisteredAgent | null>(null);
 
   const capabilityList = useMemo(
     () => form.capabilities.split(",").map((item) => item.trim()).filter(Boolean),
     [form.capabilities],
   );
 
-  const updateField = useCallback((field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }, []);
+  const updateField = useCallback(
+    <Field extends keyof AgentRegistrationForm>(
+      field: Field,
+      value: AgentRegistrationForm[Field],
+    ) => {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
 
-  const handleSubmit = useCallback(async (event) => {
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const formElement = event.currentTarget;
     if (!file) {
       setError("Lütfen bir Python ajan dosyası seçin.");
       return;
@@ -49,16 +111,16 @@ export function AgentManagerPanel() {
         headers: buildAuthHeaders(),
         body: payload,
       });
-      const data = await response.json();
+      const data: unknown = await response.json();
       if (!response.ok) {
-        throw new Error(data?.detail || data?.error || "Ajan yüklenemedi");
+        throw new Error(registrationError(data));
       }
-      setResult(data.agent);
+      setResult(registeredAgent(data));
       setFile(null);
       setForm(DEFAULT_FORM);
-      event.target.reset();
-    } catch (err) {
-      setError(err.message);
+      formElement.reset();
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }
