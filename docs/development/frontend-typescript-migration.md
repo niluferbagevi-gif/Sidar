@@ -52,6 +52,10 @@ sözleşmeleri artık TypeScript tarafından doğrulanır. Envanter 10 `.js`, 30
 Saf swarm graph oluşturma katmanı
 `src/lib/swarmFlowGraph.ts` olarak taşınmış ve controller ile paylaşılan dış API tipleri
 tanımlanmıştır.
+İlk kritik admin paneli diliminde `components/PromptAdminPanel.tsx`; prompt listeleme,
+form alanları, aktivasyon cevabı ve bilinmeyen API hata değerlerini açık tiplerle
+daraltmıştır. Güncel envanter 10 `.js`, 29 `.jsx`, 8 `.ts`, 13 `.tsx`; ratchet ise
+39 untyped / 21 typed seviyesindedir.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -59,8 +63,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 40 untyped (`.js` + `.jsx`) ve en az
-20 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 39 untyped (`.js` + `.jsx`) ve en az
+21 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

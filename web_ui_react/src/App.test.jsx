@@ -19,7 +19,7 @@ vi.mock("./components/ChatPanel.jsx", () => ({
 vi.mock("./components/P2PDialoguePanel.tsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
 vi.mock("./components/SwarmFlowPanel.jsx", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
-vi.mock("./components/PromptAdminPanel.jsx", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
+vi.mock("./components/PromptAdminPanel.js", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
 vi.mock("./components/AgentManagerPanel.jsx", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
 vi.mock("./components/PluginMarketplacePanel.jsx", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
 vi.mock("./components/OperationsQaPanel.jsx", () => ({ OperationsQaPanel: () => <div>Ops QA Mock</div> }));

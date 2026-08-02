@@ -60,7 +60,7 @@ async function waitUntilReady(url) {
           "OperationsQaPanel.tsx",
           "AgentManagerPanel.jsx",
           "PluginMarketplacePanel.jsx",
-          "PromptAdminPanel.jsx",
+          "PromptAdminPanel.tsx",
           "TenantAdminPanel.tsx",
           "P2PDialoguePanel.tsx",
           "PanelErrorBoundary.tsx",

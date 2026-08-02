@@ -1,14 +1,42 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { fetchJson } from "../lib/api.js";
 
-const EMPTY_FORM = {
+interface PromptItem {
+  id: string | number;
+  role_name: string;
+  prompt_text: string;
+  is_active: boolean;
+  version: number;
+  updated_at: string;
+}
+
+interface PromptListResponse {
+  items?: PromptItem[];
+}
+
+interface PromptActivationResponse {
+  version: number;
+}
+
+interface PromptForm {
+  role_name: string;
+  prompt_text: string;
+  activate: boolean;
+}
+
+const EMPTY_FORM: PromptForm = {
   role_name: "system",
   prompt_text: "",
   activate: true,
 };
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function PromptAdminPanel() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<PromptItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState("system");
@@ -21,10 +49,10 @@ export function PromptAdminPanel() {
     setError("");
     try {
       const query = filter.trim() ? `?role_name=${encodeURIComponent(filter.trim())}` : "";
-      const data = await fetchJson(`/admin/prompts${query}`);
+      const data = await fetchJson<PromptListResponse>(`/admin/prompts${query}`);
       setItems(data.items || []);
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err, "Promptlar yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -39,11 +67,14 @@ export function PromptAdminPanel() {
     [form.role_name, items],
   );
 
-  const updateForm = useCallback((field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }, []);
+  const updateForm = useCallback(
+    <Field extends keyof PromptForm>(field: Field, value: PromptForm[Field]) => {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
 
-  const handleSubmit = useCallback(async (event) => {
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     setFeedback("");
@@ -57,27 +88,27 @@ export function PromptAdminPanel() {
       setFeedback("Prompt kaydedildi.");
       setForm((prev) => ({ ...prev, prompt_text: "" }));
       await loadPrompts();
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err, "Prompt kaydedilemedi."));
     } finally {
       setSubmitting(false);
     }
   }, [form, loadPrompts]);
 
-  const handleActivate = useCallback(async (promptId) => {
+  const handleActivate = useCallback(async (promptId: PromptItem["id"]) => {
     setSubmitting(true);
     setFeedback("");
     setError("");
     try {
-      const data = await fetchJson("/admin/prompts/activate", {
+      const data = await fetchJson<PromptActivationResponse>("/admin/prompts/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt_id: promptId }),
       });
       setFeedback(`Aktif prompt sürümü v${data.version} olarak güncellendi.`);
       await loadPrompts();
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err, "Prompt aktifleştirilemedi."));
     } finally {
       setSubmitting(false);
     }
