@@ -4901,7 +4901,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
     assert (
-            "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
         "${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
     )
     assert "Benchmark baseline seed" in readme

@@ -1,4 +1,5 @@
 """Compare pytest-benchmark artifacts with workload-aware regression limits."""
+
 from __future__ import annotations
 
 import argparse
