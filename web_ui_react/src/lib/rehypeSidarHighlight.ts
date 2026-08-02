@@ -17,6 +17,33 @@ const SIDAR_LANGUAGE_ALIASES = {
   python: ["py"],
 };
 
+interface HastText {
+  type: "text";
+  value: string;
+}
+
+interface HastElement {
+  type: "element";
+  tagName: string;
+  properties?: Record<string, unknown>;
+  children: unknown[];
+}
+
+interface HastRoot {
+  type?: "root";
+  children: unknown[];
+}
+
+type HastNode = HastText | HastElement | HastRoot;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isElement(node: unknown): node is HastElement {
+  return isRecord(node) && node.type === "element" && typeof node.tagName === "string" && Array.isArray(node.children);
+}
+
 for (const [language, definition] of Object.entries(SIDAR_LANGUAGES)) {
   if (!hljs.getLanguage(language)) {
     hljs.registerLanguage(language, definition);
@@ -27,23 +54,24 @@ for (const [languageName, aliases] of Object.entries(SIDAR_LANGUAGE_ALIASES)) {
   hljs.registerAliases(aliases, { languageName });
 }
 
-function getText(node) {
-  if (!node) {
+function getText(node: unknown): string {
+  if (!isRecord(node)) {
     return "";
   }
-  if (node.type === "text") {
-    return node.value || "";
+  if (node.type === "text" && typeof node.value === "string") {
+    return node.value;
   }
   return Array.isArray(node.children) ? node.children.map(getText).join("") : "";
 }
 
-function getClassNames(node) {
-  return Array.isArray(node?.properties?.className)
-    ? node.properties.className
+function getClassNames(node: HastElement): string[] {
+  const className = node.properties?.className;
+  return Array.isArray(className)
+    ? className.filter((value): value is string => typeof value === "string")
     : [];
 }
 
-function getLanguage(node) {
+function getLanguage(node: HastElement): string {
   const classNames = getClassNames(node);
   const languageClass = classNames.find(
     (className) => className.startsWith("language-") || className.startsWith("lang-"),
@@ -54,7 +82,7 @@ function getLanguage(node) {
   return languageClass.replace(/^(language|lang)-/, "").toLowerCase();
 }
 
-function decodeHtmlText(value) {
+function decodeHtmlText(value: unknown): string {
   return String(value || "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -64,19 +92,19 @@ function decodeHtmlText(value) {
     .replace(/&amp;/g, "&");
 }
 
-function classNamesFromHtml(value) {
+function classNamesFromHtml(value: unknown): string[] {
   const match = String(value || "").match(/class="([^"]+)"/);
   return match?.[1]?.split(/\s+/).filter(Boolean) || [];
 }
 
-function highlightHtmlToHastChildren(html) {
-  const root = { children: [] };
-  const stack = [root];
+function highlightHtmlToHastChildren(html: unknown): unknown[] {
+  const root: HastRoot = { type: "root", children: [] };
+  const stack: Array<HastRoot | HastElement> = [root];
   const tokenPattern = /<span(?:\s+class="[^"]+")?>|<\/span>|[^<]+/g;
   for (const token of String(html || "").match(tokenPattern) || []) {
     const current = stack[stack.length - 1];
     if (token.startsWith("<span")) {
-      const node = {
+      const node: HastElement = {
         type: "element",
         tagName: "span",
         properties: { className: classNamesFromHtml(token) },
@@ -97,12 +125,9 @@ function highlightHtmlToHastChildren(html) {
   return root.children;
 }
 
-function visitCodeBlocks(node, parent) {
-  if (!node || typeof node !== "object") {
-    return;
-  }
-
-  if (node.type === "element" && node.tagName === "code" && parent?.tagName === "pre") {
+function visitCodeBlocks(node: unknown, parent?: HastElement): void {
+  if (!isRecord(node)) return;
+  if (isElement(node) && node.tagName === "code" && parent?.tagName === "pre") {
     const language = getLanguage(node);
     if (!language || !hljs.getLanguage(language)) {
       return;
@@ -116,14 +141,12 @@ function visitCodeBlocks(node, parent) {
   }
 
   if (Array.isArray(node.children)) {
-    for (const child of node.children) {
-      visitCodeBlocks(child, node);
-    }
+    for (const child of node.children) visitCodeBlocks(child, isElement(node) ? node : parent);
   }
 }
 
 export default function rehypeSidarHighlight() {
-  return function transform(tree) {
+  return function transform(tree: unknown): void {
     visitCodeBlocks(tree, undefined);
   };
 }

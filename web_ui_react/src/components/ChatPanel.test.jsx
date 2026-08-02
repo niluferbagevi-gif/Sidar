@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatPanel } from "./ChatPanel.jsx";
+import { ChatPanel } from "./ChatPanel.js";
 
 const store = {
   sessionId: "session-1",

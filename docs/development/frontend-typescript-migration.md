@@ -73,6 +73,11 @@ Swarm panelinin aynı klasördeki `AutonomyTimeline.tsx`, `HitlQueue.tsx` ve
 callback'i, telemetry zaman değeri ve task field anahtarları artık açık prop
 sözleşmeleridir; number input controller'a string sızdırmadan `number` üretir. Güncel
 envanter 10 `.js`, 23 `.jsx`, 8 `.ts`, 19 `.tsx`; ratchet 33 untyped / 27 typed'dır.
+`ChatPanel.tsx`, `ChatMarkdownRenderer.tsx`, `main.tsx` ve
+`lib/rehypeSidarHighlight.ts` geçişi chat/voice/WebSocket callback sınırlarını, markdown
+component prop'unu, DOM root bootstrap kontrolünü ve tolerant HAST traversal tiplerini
+kapıya dahil etmiştir. Vite CSS side-effect tipi için `vite-env.d.ts` eklenmiştir.
+Güncel envanter 9 `.js`, 20 `.jsx`, 10 `.ts`, 22 `.tsx`; ratchet 29 untyped / 32 typed'dır.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -80,8 +85,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 33 untyped (`.js` + `.jsx`) ve en az
-27 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 29 untyped (`.js` + `.jsx`) ve en az
+32 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

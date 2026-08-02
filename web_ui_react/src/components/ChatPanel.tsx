@@ -1,12 +1,30 @@
 import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { ChatWindow } from "./ChatWindow.tsx";
-import { ChatInput } from "./ChatInput.jsx";
-import { StatusBar } from "./StatusBar.tsx";
-import { VoiceAssistantPanel } from "./VoiceAssistantPanel.tsx";
+import { ChatWindow } from "./ChatWindow.js";
+import { ChatInput } from "./ChatInput.js";
+import { StatusBar } from "./StatusBar.js";
+import { VoiceAssistantPanel } from "./VoiceAssistantPanel.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
+import type { RoomStateMessage } from "../hooks/useWebSocket.js";
 import { useVoiceAssistant } from "../hooks/useVoiceAssistant.js";
 import { useChatStore } from "../hooks/useChatStore.js";
+import type { ChatRoomSnapshot } from "../hooks/useChatStore.js";
+
+function roomSnapshot(state: RoomStateMessage): ChatRoomSnapshot {
+  const snapshot: ChatRoomSnapshot = { room_id: state.room_id, messages: state.messages };
+  if (Array.isArray(state.participants)) snapshot.participants = state.participants;
+  if (Array.isArray(state.telemetry)) {
+    snapshot.telemetry = state.telemetry.map((event, index) => ({
+      ...event,
+      id: String(event.id || `${state.room_id}-${index}`),
+      kind: event.kind || "status",
+      content: event.content || "",
+      ts: String(event.ts || new Date().toISOString()),
+      source: event.source || "room_state",
+    }));
+  }
+  return snapshot;
+}
 
 export function ChatPanel() {
   const {
@@ -54,7 +72,7 @@ export function ChatPanel() {
     onStatus: (msg) => addTelemetryEvent("status", msg),
     onToolCall: (msg) => addTelemetryEvent("tool_call", msg),
     onThought: (msg) => addTelemetryEvent("thought", msg),
-    onRoomState: hydrateRoom,
+    onRoomState: (state) => hydrateRoom(roomSnapshot(state)),
     onRoomMessage: pushRoomMessage,
     onPresence: updateParticipants,
     onRoomEvent: (event) => addTelemetryEvent(event.kind || "status", event.content || "", event),
@@ -62,7 +80,7 @@ export function ChatPanel() {
   });
 
   const handleSend = useCallback(
-    (text) => {
+    (text: string) => {
       send(text);
     },
     [send],

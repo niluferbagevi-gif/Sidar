@@ -7,7 +7,7 @@ import React, { Suspense } from "react";
 import type { ChatMessage as ChatMessageModel } from "../hooks/useChatStore.js";
 
 const LazyChatMarkdownRenderer = React.lazy<React.ComponentType<{ content: string }>>(() =>
-  import("./ChatMarkdownRenderer.jsx").then((module) => ({
+  import("./ChatMarkdownRenderer.js").then((module) => ({
     default: module.ChatMarkdownRenderer,
   })),
 );

@@ -81,7 +81,7 @@ export default defineConfig(() => {
     optimizeDeps: {
       entries: [
         "index.html",
-        "src/main.jsx",
+        "src/main.tsx",
         "src/App.tsx",
         "src/components/*.jsx",
         "!src/**/*.test.{js,jsx}",
@@ -116,7 +116,7 @@ export default defineConfig(() => {
         include: ["src/**/*.{js,jsx,ts,tsx}"],
         exclude: [
           "src/test/setup.js",
-          "src/main.jsx",
+          "src/main.tsx",
           "src/**/*.test.{js,jsx,ts,tsx}",
           "src/test/**",
           "src/lib/routerShim.tsx", // shim behavior is covered by dedicated router tests

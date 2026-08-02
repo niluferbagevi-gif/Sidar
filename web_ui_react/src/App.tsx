@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes } from "./lib/routerShim";
-import { ChatPanel } from "./components/ChatPanel.jsx";
+import { ChatPanel } from "./components/ChatPanel.js";
 import { withPanelErrorBoundary } from "./components/PanelErrorBoundary.jsx";
 import { getStoredToken, getTokenPrincipal, isAdminPrincipal, setStoredToken } from "./lib/api.js";
 

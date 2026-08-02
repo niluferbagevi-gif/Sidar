@@ -49,12 +49,12 @@ async function waitUntilReady(url) {
       ] = await Promise.all([
         fetchReadyResponse(url, (html) => html.includes('id="root"')),
         fetchReadyResponse(`${url}/chat`, (html) => html.includes('id="root"')),
-        fetchReadyResponse(`${url}/src/main.jsx`),
+        fetchReadyResponse(`${url}/src/main.tsx`),
         fetchReadyResponse(`${url}/src/App.tsx`),
         fetchReadyResponse(`${url}/src/components/StatusBar.tsx`),
         fetchReadyResponse(`${url}/src/lib/routerShim.tsx`),
         ...[
-          "ChatPanel.jsx",
+          "ChatPanel.tsx",
           "ChatMessage.tsx",
           "SwarmFlowPanel.tsx",
           "OperationsQaPanel.tsx",

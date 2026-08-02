@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "./lib/routerShim.tsx";
 import App from "./App.tsx";
 
-vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div>Chat Mock</div> }));
+vi.mock("./components/ChatPanel.js", () => ({ ChatPanel: () => <div>Chat Mock</div> }));
 vi.mock("./components/P2PDialoguePanel.tsx", () => ({ P2PDialoguePanel: undefined }));
 
 describe("App lazy panel fallback", () => {

@@ -8,7 +8,7 @@ import * as api from "./lib/api.js";
 
 const { chatPanelMountSpy } = vi.hoisted(() => ({ chatPanelMountSpy: vi.fn() }));
 
-vi.mock("./components/ChatPanel.jsx", () => ({
+vi.mock("./components/ChatPanel.js", () => ({
   ChatPanel: () => {
     React.useEffect(() => {
       chatPanelMountSpy();
