@@ -463,8 +463,12 @@ BENCHMARK_ENFORCE_COMPARE=0 make production-readiness
 ```
 
 İkinci komut yalnız rapor/teşhis içindir; başarılı çıkış kodu production-readiness veya
-release kanıtı sayılmamalıdır. İlk komut da yerel gürültünün etkisini sınamak içindir ve
-CI'ın zorunlu `mean:10%` politikasını değiştirmez. Karar verirken ortalamayla birlikte
+release kanıtı sayılmamalıdır. İlk komut da yerel gürültünün etkisini sınamak içindir.
+CPU ağırlıklı işler CI'da zorunlu `mean:10%` eşiğini korur. Gerçek SQLite/PostgreSQL
+havuzu, disk ve scheduler kullanan çoklu kullanıcı concurrency iş yükü ise WSL2/Docker
+varyansını yanlış regresyon saymamak için `BENCHMARK_IO_COMPARE_FAIL` (varsayılan
+`mean:35%`) ile değerlendirilir. Bu eşik rapor-only değildir; daha büyük I/O
+regresyonları yine fail-closed sonuçlanır. Karar verirken ortalamayla birlikte
 min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikten sonra sapma
 tekrarlanıyorsa hedef testi izole koşup kod/SQL/pool değişikliklerini araştırın. Yerel
 `.benchmarks` dosyaları GitHub Actions'ın seed/cache/artifact baseline'ını değiştirmez;

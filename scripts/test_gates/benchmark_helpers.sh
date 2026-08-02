@@ -128,7 +128,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
         if [ "${BENCHMARK_COMPARE_STATUS}" != "stale_required" ]; then
           BENCHMARK_COMPARE_STATUS="compared_enforced"
           echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
-          benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+          echo "ℹ️ I/O-bağımlı DB concurrency benchmark eşiği: ${BENCHMARK_IO_COMPARE_FAIL}."
         fi
       else
         BENCHMARK_COMPARE_STATUS="compared_report_only"
@@ -171,6 +171,14 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     run_checked "${benchmark_cmd[@]}"
     BENCHMARK_EXIT_CODE=$?
     BENCHMARK_COMPARE_EXIT_CODE="${BENCHMARK_EXIT_CODE}"
+    if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ]; then
+      if ! uv run python scripts/ci/check_benchmark_regressions.py \
+        --baseline "${BENCHMARK_COMPARE_FILE}" --current "${BENCHMARK_JSON_OUTPUT}" \
+        --default-limit "${BENCHMARK_COMPARE_FAIL}" --io-limit "${BENCHMARK_IO_COMPARE_FAIL}"; then
+        BENCHMARK_EXIT_CODE=1
+        BENCHMARK_COMPARE_EXIT_CODE=1
+      fi
+    fi
 
     benchmark_gpu_exit_code=0
     if [ "${#benchmark_gpu_cmd[@]}" -gt 0 ]; then
