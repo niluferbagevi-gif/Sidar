@@ -61,7 +61,7 @@
 
 ### Mevcut Durum ve Tamamlanan Özellikler
 
-- **Plugin Marketplace (Faz D):** `PluginMarketplacePanel.jsx` çalışma zamanında yüklenen ajan eklentilerini UI üzerinden görünür kılar; `tests/test_plugin_marketplace_hot_reload.py` ise `aws_management_agent.py` ve `slack_notification_agent.py` benzeri ajanların kesintisiz hot-reload zincirini doğrular.
+- **Plugin Marketplace (Faz D):** `PluginMarketplacePanel.tsx` çalışma zamanında yüklenen ajan eklentilerini UI üzerinden görünür kılar; `tests/test_plugin_marketplace_hot_reload.py` ise `aws_management_agent.py` ve `slack_notification_agent.py` benzeri ajanların kesintisiz hot-reload zincirini doğrular.
 - **Multiplayer Collaboration Workspace (Faz D):** `AgentManagerPanel.tsx` ve `useWebSocket.js`, çoklu operatörün aynı çalışma yüzeyini paylaşabildiği anlık durum senkronizasyonunu taşır; `tests/test_collaboration_workspace.py` bu çok kullanıcılı orkestrasyon davranışını regresyon güvencesine bağlar.
 - **Nightly Memory Maintenance (Faz D):** `tests/test_nightly_memory_maintenance.py` ile doğrulanan gece bakım döngüsü, PGVector/RAG belleğinin şişmesini önlemek için oturum özetleme, belge konsolidasyonu ve TTL temizliğini planlı biçimde uygular.
 - **Chaos Engineering Hazırlığı (Faz D):** `runbooks/chaos_live_rehearsal.md` ve `tests/test_system_health_dependency_checks.py`, PostgreSQL veya Redis kesintilerinde sistemin fail-safe davranmasını ve operasyon ekibinin tekrar prova edilebilir bir kurtarma akışı izlemesini sağlar.

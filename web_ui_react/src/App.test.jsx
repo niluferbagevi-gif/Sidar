@@ -21,7 +21,7 @@ vi.mock("./components/SwarmFlowPanel.js", () => ({ SwarmFlowPanel: () => <div>Sw
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
 vi.mock("./components/PromptAdminPanel.js", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
 vi.mock("./components/AgentManagerPanel.js", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
-vi.mock("./components/PluginMarketplacePanel.jsx", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
+vi.mock("./components/PluginMarketplacePanel.js", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
 vi.mock("./components/OperationsQaPanel.jsx", () => ({ OperationsQaPanel: () => <div>Ops QA Mock</div> }));
 
 vi.mock("./lib/api.js", async () => {

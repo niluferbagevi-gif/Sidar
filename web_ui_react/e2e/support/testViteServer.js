@@ -59,7 +59,7 @@ async function waitUntilReady(url) {
           "SwarmFlowPanel.tsx",
           "OperationsQaPanel.tsx",
           "AgentManagerPanel.tsx",
-          "PluginMarketplacePanel.jsx",
+          "PluginMarketplacePanel.tsx",
           "PromptAdminPanel.tsx",
           "TenantAdminPanel.tsx",
           "P2PDialoguePanel.tsx",

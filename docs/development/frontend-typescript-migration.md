@@ -64,6 +64,10 @@ orkestrasyon sınırını da TypeScript kapısına almış; execution mode artı
 cevap doğrulamasını typed sınıra almıştır. Başarılı görünen malformed JSON artık
 runtime alan kontrolünden geçmeden UI state'ine yazılmaz. Güncel envanter 10 `.js`,
 27 `.jsx`, 8 `.ts`, 15 `.tsx`; ratchet 37 untyped / 23 typed seviyesindedir.
+`components/PluginMarketplacePanel.tsx` geçişi katalog ve install/reload/remove aksiyon
+kontratlarını typed sınıra almıştır. Katalog JSON'u `unknown` olarak karşılanıp malformed
+öğeler UI state'ine girmeden elenir. Güncel envanter 10 `.js`, 26 `.jsx`, 8 `.ts`,
+16 `.tsx`; ratchet 36 untyped / 24 typed seviyesindedir.
 `checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
 bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
 kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
@@ -71,8 +75,8 @@ yürütülür.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 37 untyped (`.js` + `.jsx`) ve en az
-23 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 36 untyped (`.js` + `.jsx`) ve en az
+24 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

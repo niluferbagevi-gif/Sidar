@@ -48,7 +48,7 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 | Yüzey | Ölçüm |
 |---|---:|
 | `web_ui_react/` toplam satır | 4.393 |
-| `PluginMarketplacePanel.jsx` | 155 |
+| `PluginMarketplacePanel.tsx` | 155 |
 | `AgentManagerPanel.tsx` | 132 |
 | `useWebSocket.js` | 188 |
 | `tests/test_plugin_marketplace_hot_reload.py` | 67 |
@@ -70,7 +70,7 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 ## 3. Faz D/Faz E Denetim Bulguları
 
 ### 3.1 Plugin Marketplace ve Sıcak Yükleme
-- `web_ui_react/src/components/PluginMarketplacePanel.jsx`, çalışma zamanında ajan eklentilerini listeleyen ve etkinleştiren React paneliyle plugin pazarını görünür kılar.
+- `web_ui_react/src/components/PluginMarketplacePanel.tsx`, çalışma zamanında ajan eklentilerini listeleyen ve etkinleştiren React paneliyle plugin pazarını görünür kılar.
 - `tests/test_plugin_marketplace_hot_reload.py`, sistem durmadan yeni ajanların kayıt defterine girip görev akışına katılabildiğini doğrular.
 
 ### 3.2 Multiplayer Collaboration Workspace

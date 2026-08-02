@@ -1,14 +1,62 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/api.js";
 
-const ACTION_LABELS = {
+type MarketplaceAction = "install" | "reload" | "remove";
+
+interface MarketplaceItem {
+  plugin_id: string;
+  name: string;
+  category?: string;
+  summary?: string;
+  description?: string;
+  role_name?: string;
+  version?: string;
+  entrypoint?: string;
+  capabilities: string[];
+  installed: boolean;
+  live_registered: boolean;
+}
+
+const ACTION_LABELS: Record<MarketplaceAction, string> = {
   install: "Yükle",
   reload: "Yeniden Yükle",
   remove: "Kaldır",
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function marketplaceItems(payload: unknown): MarketplaceItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) return [];
+  return payload.items.flatMap((item) => {
+    if (!isRecord(item) || typeof item.plugin_id !== "string" || typeof item.name !== "string") {
+      return [];
+    }
+    return [{
+      plugin_id: item.plugin_id,
+      name: item.name,
+      category: typeof item.category === "string" ? item.category : undefined,
+      summary: typeof item.summary === "string" ? item.summary : undefined,
+      description: typeof item.description === "string" ? item.description : undefined,
+      role_name: typeof item.role_name === "string" ? item.role_name : undefined,
+      version: typeof item.version === "string" ? item.version : undefined,
+      entrypoint: typeof item.entrypoint === "string" ? item.entrypoint : undefined,
+      capabilities: Array.isArray(item.capabilities)
+        ? item.capabilities.filter((capability): capability is string => typeof capability === "string")
+        : [],
+      installed: item.installed === true,
+      live_registered: item.live_registered === true,
+    }];
+  });
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function PluginMarketplacePanel() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyPluginId, setBusyPluginId] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -18,10 +66,10 @@ export function PluginMarketplacePanel() {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchJson("/api/plugin-marketplace/catalog");
-      setItems(data.items || []);
-    } catch (err) {
-      setError(err.message);
+      const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
+      setItems(marketplaceItems(data));
+    } catch (err: unknown) {
+      setError(errorMessage(err, "Plugin kataloğu yüklenemedi."));
     } finally {
       setLoading(false);
     }
@@ -36,7 +84,7 @@ export function PluginMarketplacePanel() {
     [items],
   );
 
-  const handleAction = useCallback(async (pluginId, action) => {
+  const handleAction = useCallback(async (pluginId: string, action: MarketplaceAction) => {
     setBusyPluginId(`${pluginId}:${action}`);
     setFeedback("");
     setError("");
@@ -54,8 +102,8 @@ export function PluginMarketplacePanel() {
       }
       setFeedback(`Plugin işlemi tamamlandı: ${pluginId} → ${ACTION_LABELS[action]}.`);
       await loadMarketplace();
-    } catch (err) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err, "Plugin işlemi tamamlanamadı."));
     } finally {
       setBusyPluginId("");
     }
@@ -118,7 +166,7 @@ export function PluginMarketplacePanel() {
               </dl>
 
               <div className="marketplace-capabilities">
-                {(item.capabilities || []).map((capability) => (
+                {item.capabilities.map((capability) => (
                   <span key={capability} className="pill">{capability}</span>
                 ))}
               </div>

@@ -33,7 +33,7 @@ const P2PDialoguePanel = lazyNamed(
 const SwarmFlowPanel = lazyNamed(() => import("./components/SwarmFlowPanel.js"), "SwarmFlowPanel");
 const OperationsQaPanel = lazyNamed(() => import("./components/OperationsQaPanel.jsx"), "OperationsQaPanel");
 const PromptAdminPanel = lazyNamed(() => import("./components/PromptAdminPanel.js"), "PromptAdminPanel");
-const PluginMarketplacePanel = lazyNamed(() => import("./components/PluginMarketplacePanel.jsx"), "PluginMarketplacePanel");
+const PluginMarketplacePanel = lazyNamed(() => import("./components/PluginMarketplacePanel.js"), "PluginMarketplacePanel");
 const AgentManagerPanel = lazyNamed(() => import("./components/AgentManagerPanel.js"), "AgentManagerPanel");
 const TenantAdminPanel = lazyNamed(() => import("./components/TenantAdminPanel.jsx"), "TenantAdminPanel");
 
