@@ -151,9 +151,16 @@ run_security_analysis_gates() {
     return 1
   fi
 
-  echo "🛡️ Ruff borç ratchet + SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
+  echo "🛡️ Kaynak borç kapıları + SAST + bağımlılık güvenlik taraması çalıştırılıyor..."
   if ! uv run python scripts/ci/check_ruff_debt_baseline.py; then
     echo "❌ Ruff docstring/E501/ASYNC240 borç baseline kontrolü başarısız."
+    record_backend_failure "security_failed"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
+  if ! uv run python scripts/ci/check_source_debt_markers.py; then
+    echo "❌ Üretim kaynaklarında TODO/FIXME/HACK/XXX teknik borç işareti bulundu."
     record_backend_failure "security_failed"
     BACKEND_EXIT_CODE=1
     return 1

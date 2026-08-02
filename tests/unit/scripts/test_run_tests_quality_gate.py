@@ -1249,11 +1249,18 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
 
     tooling_check = "ensure_security_tool_dependencies"
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
+    marker_check = "uv run python scripts/ci/check_source_debt_markers.py"
     bandit_check = "uv run bandit -r . -c pyproject.toml"
     assert tooling_check in body
     assert debt_check in body
+    assert marker_check in body
     assert bandit_check in body
-    assert body.index(tooling_check) < body.index(debt_check) < body.index(bandit_check)
+    assert (
+        body.index(tooling_check)
+        < body.index(debt_check)
+        < body.index(marker_check)
+        < body.index(bandit_check)
+    )
     assert "Güvenlik analizi önkoşulları hazırlanamadı" in body
     assert "Ruff docstring/E501/ASYNC240 borç baseline kontrolü başarısız" in body
 
@@ -5112,7 +5119,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "port," in vite_server
     assert "strictPort: true" in vite_server
     assert "html.includes('id=\"root\"')" in vite_server
-    assert "`${url}/src/main.jsx`" in vite_server
+    assert "`${url}/src/main.tsx`" in vite_server
     assert "`${url}/src/App.tsx`" in vite_server
     assert "`${url}/src/components/StatusBar.tsx`" in vite_server
     assert "`${url}/src/lib/routerShim.tsx`" in vite_server
@@ -5158,7 +5165,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "localhost:7860" not in vite
     assert "optimizeDeps:" in vite
     assert '"index.html"' in vite
-    assert '"src/main.jsx"' in vite
+    assert '"src/main.tsx"' in vite
     assert '"src/App.tsx"' in vite
     assert '"src/components/*.jsx"' in vite
     assert '"!src/**/*.test.{js,jsx}"' in vite
