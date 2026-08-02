@@ -1284,42 +1284,7 @@ class Database(DatabaseConnectionMixin):
     async def upsert_user_quota(
         self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
     ) -> None:
-        tokens = max(0, int(daily_token_limit or 0))
-        requests = max(0, int(daily_request_limit or 0))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id)
-                    DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
-                                  daily_request_limit=EXCLUDED.daily_request_limit
-                    """,
-                    user_id,
-                    tokens,
-                    requests,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    daily_token_limit=excluded.daily_token_limit,
-                    daily_request_limit=excluded.daily_request_limit
-                """,
-                (user_id, tokens, requests),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_metrics.upsert_user_quota(self, user_id, daily_token_limit, daily_request_limit)
 
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
