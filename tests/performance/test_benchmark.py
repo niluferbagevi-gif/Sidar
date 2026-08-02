@@ -268,6 +268,10 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
         rounds=25,
         iterations=1,
     )
+    # Regresyon kapısı test adını ayrıştırmak yerine bu açık sınıflandırmayı
+    # kullanır. Gerçek DB pool/disk/scheduler yolu CPU benchmarklarıyla aynı
+    # gürültü profiline sahip değildir.
+    benchmark.extra_info["workload_class"] = "io_bound"
     assert total_messages == users * messages_per_session
 
 

@@ -468,7 +468,12 @@ CPU ağırlıklı işler CI'da zorunlu `mean:10%` eşiğini korur. Gerçek SQLit
 havuzu, disk ve scheduler kullanan çoklu kullanıcı concurrency iş yükü ise WSL2/Docker
 varyansını yanlış regresyon saymamak için `BENCHMARK_IO_COMPARE_FAIL` (varsayılan
 `mean:35%`) ile değerlendirilir. Bu eşik rapor-only değildir; daha büyük I/O
-regresyonları yine fail-closed sonuçlanır. Karar verirken ortalamayla birlikte
+regresyonları yine fail-closed sonuçlanır. Ayrım test adından türetilmez; benchmark
+JSON içindeki `extra_info.workload_class=io_bound` metadata'sı kontrattır. Eski
+baseline artefaktları yenilenene kadar yalnız bilinen concurrency testi için isim
+fallback'i korunur. `make production-readiness` bilinçli olarak `TEST_PROFILE=ci`
+çalıştırdığı için yerelde de CPU eşiği `%10` olur; `%15` yalnız normal local profil
+varsayılanıdır. Karar verirken ortalamayla birlikte
 min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikten sonra sapma
 tekrarlanıyorsa hedef testi izole koşup kod/SQL/pool değişikliklerini araştırın. Yerel
 `.benchmarks` dosyaları GitHub Actions'ın seed/cache/artifact baseline'ını değiştirmez;
