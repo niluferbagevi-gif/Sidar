@@ -45,7 +45,7 @@ jobs:
           enable-cache: true
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
