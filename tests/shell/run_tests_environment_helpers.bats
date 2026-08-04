@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 repo_root() {
   cd "$BATS_TEST_DIRNAME/../.." && pwd
 }
@@ -47,8 +49,8 @@ ENV
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"güçlü lokal parola ile değiştirildi"* ]]
-  ! grep -q '^POSTGRES_PASSWORD=__GENERATE__$' "$target"
-  ! grep -q '^POSTGRES_PASSWORD=$' "$target"
+  run ! grep -q '^POSTGRES_PASSWORD=__GENERATE__$' "$target"
+  run ! grep -q '^POSTGRES_PASSWORD=$' "$target"
   rm -rf "$tmpdir"
 }
 
