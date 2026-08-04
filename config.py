@@ -1135,7 +1135,7 @@ class Config:
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
         """Auto-tune Ollama coding context from the loaded hardware inventory."""
-        if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
+        if os.getenv("OLLAMA_CODING_NUM_CTX", "").strip():
             return
         if not cls.USE_GPU:
             return

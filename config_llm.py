@@ -41,7 +41,12 @@ PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 class LLMClientSettings(BaseSettings):
     """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
 
-    model_config = SettingsConfigDict(env_file=None, env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=None,
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+        extra="ignore",
+    )
 
     AI_PROVIDER: str = "ollama"
     GEMINI_API_KEY: str = ""
@@ -86,7 +91,10 @@ def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClient
         {
             "__module__": __name__,
             "model_config": SettingsConfigDict(
-                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
+                env_file=env_file,
+                env_file_encoding="utf-8",
+                env_ignore_empty=True,
+                extra="ignore",
             ),
         },
     )
