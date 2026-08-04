@@ -317,6 +317,17 @@ def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_load_llm_settings_ignores_empty_scoped_int_values(tmp_path, monkeypatch):
+    """Blank advanced dotenv placeholders should not break config imports."""
+    monkeypatch.delenv("OLLAMA_CODING_NUM_CTX", raising=False)
+    env_path = tmp_path / ".env.advanced"
+    env_path.write_text("OLLAMA_CODING_NUM_CTX=\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
 _QUALITY_GATE_ENV_KEYS = (
     "DLP_ENABLED",
     "HITL_ENABLED",
