@@ -77,6 +77,7 @@ from web import autonomy_bridge, collaboration_service, process_lifecycle
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
+from web.middleware import access_policy as access_policy_helpers
 from web.middleware.access_policy import access_policy_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
@@ -1166,53 +1167,19 @@ def _require_metrics_access(request: Request, user: Any = Depends(_get_request_u
 
 
 def _get_user_tenant(user: Any) -> str:
-    return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
+    return access_policy_helpers.get_user_tenant(user)
 
 
 def _serialize_policy(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "resource_type": str(getattr(record, "resource_type", "") or ""),
-        "resource_id": str(getattr(record, "resource_id", "*") or "*"),
-        "action": str(getattr(record, "action", "") or ""),
-        "effect": str(getattr(record, "effect", "allow") or "allow"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return access_policy_helpers.serialize_policy(record)
 
 
 def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
-    path = request.url.path
-    if path.startswith("/rag/"):
-        action = "read" if request.method == "GET" else "write"
-        resource_id = path.rsplit("/", 1)[-1] if request.method == "DELETE" else "*"
-        return ("rag", action, resource_id)
-    if path.startswith("/github-") or path == "/set-repo":
-        action = "read" if request.method == "GET" else "write"
-        return ("github", action, "*")
-    if path.startswith("/api/agents/register"):
-        return ("agents", "register", "*")
-    if path.startswith("/api/swarm/"):
-        return ("swarm", "execute", "*")
-    if path.startswith("/api/operations/"):
-        return ("operations", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/api/qa/coverage/"):
-        return ("coverage", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/admin/"):
-        return ("admin", "manage", "*")
-    if path.startswith("/ws/"):
-        return ("swarm", "execute", "*")
-    return ("", "", "")
+    return access_policy_helpers.resolve_policy_from_request(request)
 
 
 def _build_audit_resource(resource_type: str, resource_id: str) -> str:
-    r_type = (resource_type or "").strip().lower()
-    r_id = (resource_id or "*").strip() or "*"
-    if not r_type:
-        return ""
-    return f"{r_type}:{r_id}"
+    return access_policy_helpers.build_audit_resource(resource_type, resource_id)
 
 
 def _schedule_access_audit_log(
@@ -1266,16 +1233,7 @@ _SwarmExecuteRequest = route_request_models.SwarmExecuteRequest
 
 
 def _serialize_audit_log(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "action": str(getattr(record, "action", "") or ""),
-        "resource": str(getattr(record, "resource", "") or ""),
-        "ip_address": str(getattr(record, "ip_address", "") or ""),
-        "allowed": bool(getattr(record, "allowed", False)),
-        "timestamp": str(getattr(record, "timestamp", "") or ""),
-    }
+    return access_policy_helpers.serialize_audit_log(record)
 
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:

@@ -6,7 +6,9 @@ from typing import Any
 import pytest
 from starlette.datastructures import URL
 
-from web.middleware.access_policy import access_policy_middleware_impl
+from web.middleware import access_policy
+
+access_policy_middleware_impl = access_policy.access_policy_middleware_impl
 
 
 class _Request:
@@ -21,6 +23,49 @@ class _Logger:
 
     def warning(self, message: str, *_args: Any) -> None:
         self.warnings.append(message)
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "expected"),
+    [
+        ("/rag/docs", "GET", ("rag", "read", "*")),
+        ("/rag/docs/doc-1", "DELETE", ("rag", "write", "doc-1")),
+        ("/github-prs", "POST", ("github", "write", "*")),
+        ("/api/agents/register", "POST", ("agents", "register", "*")),
+        ("/api/swarm/execute", "POST", ("swarm", "execute", "*")),
+        ("/api/operations/tasks", "GET", ("operations", "read", "*")),
+        ("/api/qa/coverage/tasks", "POST", ("coverage", "write", "*")),
+        ("/admin/stats", "GET", ("admin", "manage", "*")),
+        ("/ws/chat", "GET", ("swarm", "execute", "*")),
+        ("/healthz", "GET", ("", "", "")),
+    ],
+)
+def test_resolve_policy_from_request_contract(
+    path: str, method: str, expected: tuple[str, str, str]
+) -> None:
+    request = SimpleNamespace(method=method, url=URL(f"http://testserver{path}"))
+
+    assert access_policy.resolve_policy_from_request(request) == expected
+
+
+def test_access_policy_helpers_normalize_and_serialize_records() -> None:
+    assert access_policy.get_user_tenant(SimpleNamespace(tenant_id="  team-a ")) == "team-a"
+    assert access_policy.get_user_tenant(SimpleNamespace(tenant_id="")) == "default"
+    assert access_policy.build_audit_resource(" RAG ", "") == "rag:*"
+    assert access_policy.build_audit_resource("", "doc") == ""
+
+    policy = access_policy.serialize_policy(
+        SimpleNamespace(id="7", user_id="u1", resource_type="rag", action="read")
+    )
+    audit = access_policy.serialize_audit_log(
+        SimpleNamespace(id="8", user_id="u1", resource="rag:*", allowed=1)
+    )
+
+    assert policy["id"] == 7
+    assert policy["resource_id"] == "*"
+    assert policy["effect"] == "allow"
+    assert audit["id"] == 8
+    assert audit["allowed"] is True
 
 
 @pytest.mark.asyncio
