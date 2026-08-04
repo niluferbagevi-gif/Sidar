@@ -42,12 +42,13 @@ export function createSidarManualChunks(id) {
     return "highlight-js-core";
   }
 
-  const parts = modulePath.split("/");
-  if (parts[0]?.startsWith("@") && parts.length > 1) {
-    return `${parts[0]}/${parts[1]}`;
-  }
-
-  return parts[0] || "vendor";
+  // Do not force every transitive package into its own chunk. In particular the
+  // lazy Markdown graph contains many tiny unified/micromark packages; splitting
+  // each one adds module wrappers and a separate gzip stream, inflating the total
+  // budget without improving the initial route. Rollup can co-locate that graph
+  // with its lazy entry while the deliberately high-signal React/highlight chunks
+  // above remain independently observable and cacheable.
+  return undefined;
 }
 
 export function createSidarProxyConfig(

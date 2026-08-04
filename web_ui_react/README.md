@@ -102,8 +102,11 @@ güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` iç
   bundle raporuna göre toplam gzip büyümesini uyarı olarak raporlar; önceki rapor yolu
   `SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH` ile verilebilir. Her koşu en büyük 5 JS chunk'ı
   terminalde listeler ve makinece okunabilir raporu `artifacts/frontend-bundle-budget.json`
-  dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir;
-  `highlight.js/lib/core` ve sınırlı dil modülleri yalnız bu markdown chunk'ına dahildir.
+  dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir. Markdown'ın
+  çok sayıdaki küçük `unified`/`micromark` bağımlılığı Rollup tarafından aynı lazy feature
+  chunk'ında birleştirilir; böylece ayrı gzip stream ve module-wrapper maliyeti toplam bütçeyi
+  şişirmez. `highlight.js/lib/core` yalnız bash, JavaScript, JSON ve Python dil modülleriyle
+  sınırlandırılmış ayrı bir gözlemlenebilir lazy chunk olarak korunur.
 - CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
   uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
   `coverage-final.json` dosyaları tek artefakt altında saklanır.

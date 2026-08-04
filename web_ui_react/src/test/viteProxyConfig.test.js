@@ -19,6 +19,8 @@ describe("createSidarManualChunks", () => {
     expect(createSidarManualChunks("/repo/node_modules/react-dom/client.js")).toBe("react-dom-client");
     expect(createSidarManualChunks("/repo/node_modules/react-dom/server.browser.js")).toBe("react-dom-server");
     expect(createSidarManualChunks("/repo/node_modules/highlight.js/lib/core.js")).toBe("highlight-js-core");
+    expect(createSidarManualChunks("/repo/node_modules/mdast-util-from-markdown/index.js")).toBeUndefined();
+    expect(createSidarManualChunks("/repo/node_modules/@types/example/index.js")).toBeUndefined();
     expect(createSidarManualChunks("/repo/src/App.tsx")).toBeUndefined();
   });
 });
