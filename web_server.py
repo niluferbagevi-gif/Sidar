@@ -13,6 +13,8 @@ import asyncio
 import atexit
 import builtins
 import contextlib
+import hashlib as hashlib  # explicit legacy module export
+import hmac as hmac  # explicit legacy module export
 import importlib
 import importlib.util
 import inspect
@@ -120,11 +122,6 @@ from web.security import (
     require_metrics_access,
     resolve_user_from_token,
 )
-
-# Faz 4 compatibility aliases for callers that historically built signatures
-# through ``web_server.hmac`` / ``web_server.hashlib``.
-hmac = web_security.hmac
-hashlib = web_security.hashlib
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
