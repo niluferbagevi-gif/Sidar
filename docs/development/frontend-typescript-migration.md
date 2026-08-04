@@ -124,3 +124,18 @@ yeni expiry tarihi içeren ayrı bir istisna kaydı gerekir.
 Her taşıma PR'ı dönüştürülen dosyaları, baseline'ın eski/yeni değerini ve çalıştırılan
 Vitest kapsamını listelemelidir. `any`, geniş `unknown` cast'leri veya toplu `@ts-ignore`
 kullanımı dosya uzantısını değiştirmek için kabul kriteri değildir.
+
+## Coverage ratchet'i
+
+TypeScript envanter ratchet'i ile Vitest coverage kapısı birbirinden bağımsızdır: uzantı
+geçişi coverage düşüşünü meşrulaştırmaz. 2026-08-04 baseline ölçümü `%99.70` statement,
+`%98.71` branch, `%99.78` function ve `%99.80` line iken global eşiklerin `%90` kalması
+yaklaşık on puanlık sessiz regresyona izin veriyordu. `ChatPanel`, `AgentManagerPanel`,
+`SwarmFlowPanel` ve `PluginMarketplacePanel` edge-case testleri tamamlandıktan sonra ölçüm
+`%100` statement/function/line ve `%99.77` branch'e yükseldi; global Vitest kapısı ilk
+kademede dört metrik için `%98` olarak sıkılaştırıldı.
+
+Eşik yalnız ölçülen coverage korundukça yukarı taşınmalı; özellikle V8 branch haritalamasında
+tek satırlık JSX ternary/logical expression'ların oynaklığı nedeniyle doğrudan `%100` branch
+kapısı ilan edilmemelidir. Sıradaki ratchet artışı, stabil tam branch kapsamı veya açıkça
+belgelenmiş deterministik baseline görüldüğünde değerlendirilir.

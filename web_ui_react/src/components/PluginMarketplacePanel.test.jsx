@@ -144,7 +144,14 @@ describe("PluginMarketplacePanel", () => {
   it("filters malformed catalog entries and normalizes non-Error failures", async () => {
     const user = userEvent.setup();
     fetchJson
-      .mockResolvedValueOnce({ items: [null, { plugin_id: 42, name: "Invalid" }] })
+      .mockResolvedValueOnce({
+        items: [
+          null,
+          { plugin_id: 42, name: "Invalid" },
+          { plugin_id: "missing-name" },
+          { plugin_id: "invalid-name", name: 42 },
+        ],
+      })
       .mockRejectedValueOnce("network failure");
 
     render(<PluginMarketplacePanel />);
