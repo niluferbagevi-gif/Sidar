@@ -478,6 +478,17 @@ def test_prepare_test_database_rejects_case_folded_primary_database_collision(
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # This harness's parent pytest process may itself be running
+                # under a caller (e.g. CI's "Base quality gates" job) that
+                # sets AUTO_PREPARE_TEST_DB/SMOKE_SKIP_EXTERNAL_INFRA at its
+                # own job/shell level to skip run_tests.sh's *outer* DB prep
+                # (it prepares the DB itself in a separate step). subprocess.run
+                # inherits that ambient environment by default, which would
+                # make prepare_test_database's own early-return guards fire
+                # before ever reaching the case-folded-collision check this
+                # test exercises. Reset them so this harness's behavior only
+                # depends on what it explicitly sets below.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=()",
                 _extract_run_tests_function("is_safe_postgres_identifier"),
@@ -505,6 +516,13 @@ def test_service_readiness_timeout_fails_without_enabling_smoke_skip(tmp_path: P
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # See the same reset in test_prepare_test_database_rejects_
+                # case_folded_primary_database_collision above: this test
+                # asserts SMOKE_SKIP_EXTERNAL_INFRA is unset, which only holds
+                # if the ambient caller environment (e.g. CI's "Base quality
+                # gates" job, which sets it to "0" at job level) hasn't leaked
+                # into this subprocess.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=(fake-compose)",
                 "fake-compose() { return 1; }",
