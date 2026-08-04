@@ -45,7 +45,6 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -94,6 +93,7 @@ from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
 from web.routes import operations_models as operations_route_models
 from web.routes import plugin_marketplace as plugin_marketplace_routes
+from web.routes import request_models as route_request_models
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -1252,61 +1252,17 @@ def _schedule_access_audit_log(
         logger.debug("ACL audit log planlanamadı: event loop yok.")
 
 
-class _RegisterRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-
-
-class _LoginRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-
-
-class _PromptUpsertRequest(BaseModel):
-    role_name: str = Field(..., min_length=1, max_length=64)
-    prompt_text: str = Field(..., min_length=1)
-    activate: bool = Field(default=True)
-
-
-class _PromptActivateRequest(BaseModel):
-    prompt_id: int = Field(..., gt=0)
-
-
-class _PolicyUpsertRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-    resource_type: str = Field(..., min_length=1, max_length=64)
-    resource_id: str = Field(default="*", min_length=1, max_length=256)
-    action: str = Field(..., min_length=1, max_length=64)
-    effect: str = Field(default="allow", min_length=1, max_length=8)
-
-
-class _AgentPluginRegisterRequest(BaseModel):
-    role_name: str = Field(..., min_length=2, max_length=64)
-    source_code: str = Field(..., min_length=1)
-    class_name: str | None = Field(default=None, min_length=1, max_length=128)
-    capabilities: list[str] = Field(default_factory=list)
-    description: str = Field(default="", max_length=512)
-    version: str = Field(default="1.0.0", max_length=32)
-
-
-class _PluginMarketplaceInstallRequest(BaseModel):
-    plugin_id: str = Field(..., min_length=2, max_length=64)
-
-
-class _SwarmTaskRequest(BaseModel):
-    goal: str = Field(..., min_length=1)
-    intent: str = Field(default="mixed", min_length=1, max_length=64)
-    context: dict[str, str] = Field(default_factory=dict)
-    preferred_agent: str | None = Field(default=None, max_length=64)
-
-
-class _SwarmExecuteRequest(BaseModel):
-    mode: str = Field(default="parallel", pattern="^(parallel|pipeline)$")
-    tasks: list[_SwarmTaskRequest] = Field(..., min_length=1)
-    session_id: str = Field(default="", max_length=128)
-    max_concurrency: int = Field(default=4, ge=1, le=16)
+# Faz 4 compatibility aliases: direct imports retain their historical names while
+# route factories consume the focused request-model module.
+_RegisterRequest = route_request_models.RegisterRequest
+_LoginRequest = route_request_models.LoginRequest
+_PromptUpsertRequest = route_request_models.PromptUpsertRequest
+_PromptActivateRequest = route_request_models.PromptActivateRequest
+_PolicyUpsertRequest = route_request_models.PolicyUpsertRequest
+_AgentPluginRegisterRequest = route_request_models.AgentPluginRegisterRequest
+_PluginMarketplaceInstallRequest = route_request_models.PluginMarketplaceInstallRequest
+_SwarmTaskRequest = route_request_models.SwarmTaskRequest
+_SwarmExecuteRequest = route_request_models.SwarmExecuteRequest
 
 
 def _serialize_audit_log(record: Any) -> dict[str, Any]:
