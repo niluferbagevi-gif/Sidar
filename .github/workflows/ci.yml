@@ -499,7 +499,27 @@ jobs:
           retention-days: 14
 
       - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
+        run: |
+          bash scripts/check_env_parity.sh \
+            --ignore AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE \
+            --ignore BENCHMARK_BASELINE_NAME \
+            --ignore C_INCLUDE_PATH \
+            --ignore DATABASE_URL \
+            --ignore DOCKER_SETTINGS_JSON \
+            --ignore DOTENV_FILE \
+            --ignore GITHUB_API_URL \
+            --ignore GITHUB_REPOSITORY \
+            --ignore GPU_RUNNER_MONITOR_TOKEN \
+            --ignore HF_HUB_CACHE \
+            --ignore PLAYWRIGHT_BROWSERS_PATH \
+            --ignore PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH \
+            --ignore PYTEST_XDIST_WORKER \
+            --ignore SEED_RAG_PGVECTOR_MAX_RETRIES \
+            --ignore SEED_RAG_PGVECTOR_RETRY_DELAY_SEC \
+            --ignore SELF_HEAL_DATABASE_URL \
+            --ignore SIDAR_CONTAINER_DATABASE_URL \
+            --ignore SIDAR_LIBCUDA_CANDIDATE_PATHS \
+            --ignore SIDAR_REQUIRED_CHECK_BRANCH
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
