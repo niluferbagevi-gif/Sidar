@@ -95,6 +95,7 @@ from web.routes import operations as operations_routes
 from web.routes import operations_models as operations_route_models
 from web.routes import plugin_marketplace as plugin_marketplace_routes
 from web.routes import request_models as route_request_models
+from web.routes import serialization as route_serialization
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -1237,35 +1238,11 @@ def _serialize_audit_log(record: Any) -> dict[str, Any]:
 
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:
-    prompt_id = getattr(record, "id", 0)
-    serialized_id: int | str
-    try:
-        serialized_id = int(prompt_id)
-    except (TypeError, ValueError):
-        serialized_id = str(prompt_id or "")
-
-    return {
-        "id": serialized_id,
-        "role_name": str(getattr(record, "role_name", "") or ""),
-        "prompt_text": str(getattr(record, "prompt_text", "") or ""),
-        "version": int(getattr(record, "version", 1) or 1),
-        "is_active": bool(getattr(record, "is_active", False)),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return route_serialization.serialize_prompt(record)
 
 
 def _serialize_swarm_result(record: Any) -> dict[str, Any]:
-    return {
-        "task_id": str(getattr(record, "task_id", "") or ""),
-        "agent_role": str(getattr(record, "agent_role", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "summary": str(getattr(record, "summary", "") or ""),
-        "elapsed_ms": int(getattr(record, "elapsed_ms", 0) or 0),
-        "evidence": list(getattr(record, "evidence", []) or []),
-        "handoffs": list(getattr(record, "handoffs", []) or []),
-        "graph": dict(getattr(record, "graph", {}) or {}),
-    }
+    return route_serialization.serialize_swarm_result(record)
 
 
 _serialize_campaign = operations_routes.serialize_campaign
