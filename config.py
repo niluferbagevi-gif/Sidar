@@ -1135,7 +1135,11 @@ class Config:
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
         """Auto-tune Ollama coding context from the loaded hardware inventory."""
-        if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
+        # A blank env value ("OLLAMA_CODING_NUM_CTX=" with no value) must be treated the
+        # same as unset, not as an explicit override — otherwise a blank dotenv line
+        # silently defeats GPU-based auto-tuning below. This mirrors the blank-value
+        # fallback LLMClientSettings applies (config_llm.py) and get_int_env() elsewhere.
+        if (os.getenv("OLLAMA_CODING_NUM_CTX") or "").strip():
             return
         if not cls.USE_GPU:
             return

@@ -2530,6 +2530,35 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
 
 
+def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypatch):
+    """A blank ``OLLAMA_CODING_NUM_CTX=`` dotenv line must not block GPU auto-tuning.
+
+    Regression guard alongside the LLMClientSettings blank-value fallback: an empty
+    string is not an explicit override, so hardware-based auto-selection must still run
+    exactly as it would if the key were absent entirely.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "GPU_VRAM_MB", 16384)
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 0)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
+
+
+def test_autoselect_ollama_coding_ctx_window_respects_explicit_override(monkeypatch):
+    """A real explicit value must still win over GPU auto-tuning."""
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "4096")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "GPU_VRAM_MB", 16384)
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 4096)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 4096
+
+
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
     monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "https://litellm.internal")
