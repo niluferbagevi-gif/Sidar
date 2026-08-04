@@ -33,6 +33,18 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
     assert protocol != token
 
 
+@pytest.mark.parametrize("kwargs", [{"ttl_seconds": 0}, {"ttl_seconds": -1}])
+def test_webhook_replay_guard_rejects_non_positive_ttl(kwargs: dict[str, float]) -> None:
+    with pytest.raises(ValueError, match="ttl_seconds pozitif olmalıdır"):
+        security.WebhookReplayGuard(**kwargs)
+
+
+@pytest.mark.parametrize("kwargs", [{"max_entries": 0}, {"max_entries": -1}])
+def test_webhook_replay_guard_rejects_non_positive_max_entries(kwargs: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="max_entries pozitif olmalıdır"):
+        security.WebhookReplayGuard(**kwargs)
+
+
 def test_webhook_replay_guard_expires_and_bounds_entries() -> None:
     guard = security.WebhookReplayGuard(ttl_seconds=10, max_entries=2)
     guard.reject_replay(label="GitHub", replay_key="old", now=0)
@@ -67,6 +79,17 @@ def test_verify_webhook_hmac_signature_uses_replay_guard() -> None:
         )
 
     assert exc_info.value.status_code == 409
+
+
+def test_verify_webhook_hmac_signature_without_replay_guard_still_validates() -> None:
+    payload = b'{"delivery": true}'
+    secret = "webhook-secret"
+    signature = (
+        "sha256=" + security.hmac.new(secret.encode(), payload, security.hashlib.sha256).hexdigest()
+    )
+
+    # No replay_guard passed: the guard branch must be skippable without raising.
+    security.verify_webhook_hmac_signature(payload, secret, signature, label="GitHub")
 
 
 def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -> None:
