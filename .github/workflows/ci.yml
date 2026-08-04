@@ -389,6 +389,13 @@ jobs:
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
+          # check-bundle-budget.mjs requires both budget vars whenever
+          # TEST_PROFILE=ci (or SIDAR_PRODUCTION_READINESS=1) so a CI run can
+          # never silently skip the frontend bundle-size gate. Match the
+          # Makefile defaults (SIDAR_TOTAL_JS_BUDGET_KB/GZIP_BUDGET_KB ?= 550/170)
+          # used by every local `make dev-full`/`make production-readiness` run.
+          SIDAR_TOTAL_JS_BUDGET_KB: "550"
+          SIDAR_TOTAL_GZIP_BUDGET_KB: "170"
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
           # (current local/CI baseline: %100; coverage_ratchet.py only raises it)
