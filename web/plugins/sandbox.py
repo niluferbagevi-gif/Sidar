@@ -12,7 +12,7 @@ import builtins
 import json
 import os
 import shutil
-import subprocess  # nosec B404 -- fixed-argument Docker client invocation
+import subprocess  # nosec B404
 from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -26,6 +26,8 @@ from managers.code.docker import (
     sanitize_docker_image,
     sanitize_docker_token,
 )
+
+# B404 review: subprocess is limited to the fixed-argument Docker client invocation below.
 
 PLUGIN_RPC_VERSION = "1"
 PLUGIN_RPC_MAX_RESPONSE_BYTES = 1_048_576
