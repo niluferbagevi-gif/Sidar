@@ -41,7 +41,17 @@ PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 class LLMClientSettings(BaseSettings):
     """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
 
-    model_config = SettingsConfigDict(env_file=None, env_file_encoding="utf-8", extra="ignore")
+    # env_ignore_empty=True: shipped .env templates use `KEY=` (blank) as the
+    # "value derived at runtime / not overridden" placeholder for keys like
+    # OLLAMA_CODING_NUM_CTX (see config.Config._autoselect_ollama_coding_ctx_window,
+    # which auto-tunes it from detected GPU VRAM). Without this, pydantic-settings
+    # tries to parse the empty string against the field's int/float type and
+    # raises a ValidationError instead of falling back to the field default,
+    # crashing every entrypoint that imports config.py as soon as `.env.advanced`
+    # (copied verbatim from .env.advanced.example) is present on disk.
+    model_config = SettingsConfigDict(
+        env_file=None, env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+    )
 
     AI_PROVIDER: str = "ollama"
     GEMINI_API_KEY: str = ""
@@ -86,7 +96,10 @@ def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClient
         {
             "__module__": __name__,
             "model_config": SettingsConfigDict(
-                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
+                env_file=env_file,
+                env_file_encoding="utf-8",
+                extra="ignore",
+                env_ignore_empty=True,
             ),
         },
     )

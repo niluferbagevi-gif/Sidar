@@ -297,6 +297,33 @@ def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(m
     assert settings.OLLAMA_NUM_BATCH == 2048
 
 
+def test_llm_client_settings_tolerates_blank_ollama_coding_num_ctx(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must fall back to the field default, not raise.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) on purpose so a
+    fresh install can auto-tune it from detected GPU VRAM (see
+    Config._autoselect_ollama_coding_ctx_window). config.py's dotenv chain loads
+    that blank value straight into os.environ (override=False keeps it once no
+    earlier layer set it), so pydantic-settings must fall back to the field
+    default instead of raising on int_parsing -- regression test for the crash
+    every entrypoint hit on a real install (`ScopedLLMClientSettings /
+    OLLAMA_CODING_NUM_CTX: Input should be a valid integer ... input_value=''`).
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    settings = config.LLMClientSettings()
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
+def test_load_llm_settings_tolerates_blank_ollama_coding_num_ctx(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_CODING_NUM_CTX", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_CODING_NUM_CTX=\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
 def test_load_llm_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(tmp_path, monkeypatch):
     monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
     env_path = tmp_path / ".env"
@@ -2494,6 +2521,31 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.GPU_VRAM_MB == 24 * 1024
     assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
     assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
+
+
+def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must still allow GPU-VRAM auto-tuning.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) so a fresh
+    install still auto-tunes from GPU VRAM; `os.getenv(...) is not None` alone
+    treats that shipped blank string as an explicit override and skips
+    auto-tuning forever. A real explicit override (non-blank) must still win.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "GPU_VRAM_MB", 16384)
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
+
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "4096")
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 8192
 
 
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):
