@@ -4,7 +4,36 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Sayısal alanlar: bir .env dosyası bu anahtarlardan birini boş bırakırsa
+# (örn. "OLLAMA_CODING_NUM_CTX="), pydantic-settings bunu "" değeriyle int/float
+# alana enjekte eder ve ValidationError fırlatır — config.py'nin tamamı import
+# edilemez hale gelir. config.py'deki get_int_env()/get_float_env() yardımcıları
+# zaten boş değerleri "ayarlanmamış" sayıp varsayılana düşüyor; aynı davranışı
+# burada da uyguluyoruz ki bir .env şablonundaki tek boş satır tüm uygulama
+# başlangıcını kilitlemesin.
+_BLANK_FALLBACK_NUMERIC_FIELDS = frozenset(
+    {
+        "OPENAI_TIMEOUT",
+        "LLM_MAX_RETRIES",
+        "LLM_RETRY_BASE_DELAY",
+        "LLM_RETRY_MAX_DELAY",
+        "ANTHROPIC_TIMEOUT",
+        "LITELLM_TIMEOUT",
+        "OLLAMA_TIMEOUT",
+        "OLLAMA_NUM_BATCH",
+        "OLLAMA_CODING_NUM_CTX",
+        "OLLAMA_CONTEXT_MAX_CHARS",
+        "OLLAMA_STREAM_MAX_BUFFER_CHARS",
+        "REDIS_MAX_CONNECTIONS",
+        "SEMANTIC_CACHE_TTL",
+        "SEMANTIC_CACHE_MAX_ITEMS",
+        "SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD",
+        "SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS",
+    }
+)
 
 
 class OllamaBatchPolicy:
@@ -72,6 +101,26 @@ class LLMClientSettings(BaseSettings):
     SEMANTIC_CACHE_MAX_ITEMS: int = 500
     SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD: int = 3
     SEMANTIC_CACHE_REDIS_CB_COOLDOWN_SECONDS: int = 30
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_blank_numeric_overrides(cls, data: object) -> object:
+        """Ignore blank numeric env values so the field default applies instead of crashing.
+
+        Only numeric fields are covered: string settings (API keys, model names) already
+        treat "" as a legitimate "not configured" value and must not be touched here.
+        """
+        if not isinstance(data, dict):
+            return data
+        return {
+            key: value
+            for key, value in data.items()
+            if not (
+                key in _BLANK_FALLBACK_NUMERIC_FIELDS
+                and isinstance(value, str)
+                and not value.strip()
+            )
+        }
 
 
 def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClientSettings:

@@ -317,6 +317,40 @@ def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_llm_client_settings_blank_numeric_env_falls_back_to_default(monkeypatch):
+    """A blank numeric env value (e.g. ``OLLAMA_CODING_NUM_CTX=``) must not raise.
+
+    Regression test for a shipped install-blocking bug: .env.advanced.example carried
+    ``OLLAMA_CODING_NUM_CTX=`` with no value, which pydantic-settings fed straight into an
+    int field and crashed config.py on import for every install/test run.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+
+    settings = config.LLMClientSettings()
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
+def test_load_llm_settings_accepts_env_advanced_example_verbatim(tmp_path, monkeypatch):
+    """The shipped .env.advanced.example must load through LLMClientSettings without error.
+
+    This materializes the real template exactly as install_sidar.sh does when it copies
+    .env.advanced.example -> .env.advanced, so a blank/mistyped numeric default in the
+    template is caught in CI instead of surfacing as a runtime ValidationError during
+    install or `uv run pytest`.
+    """
+    monkeypatch.delenv("OLLAMA_CODING_NUM_CTX", raising=False)
+    repo_root = Path(__file__).resolve().parents[3]
+    template = (repo_root / ".env.advanced.example").read_text(encoding="utf-8")
+
+    env_path = tmp_path / ".env.advanced"
+    env_path.write_text(template, encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
 _QUALITY_GATE_ENV_KEYS = (
     "DLP_ENABLED",
     "HITL_ENABLED",
