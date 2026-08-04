@@ -2,15 +2,25 @@
 
 ## Durum
 
-Frontend `npm audit`, aynı bağımlılık zincirinden yayılan yedi `high` kayıt gösterir:
+**Güncelleme:** `GHSA-mh99-v99m-4gvg` istisnası artık aktif değil. `1.1.17` backport'unu
+bypass eden yeni bir advisory (`GHSA-rgw5-rvv9-x895`, "DoS via unbounded intermediate
+arrays") yayınlandığı için `overrides.brace-expansion`, gerçek upstream düzeltmesi olan
+`1.1.18`'e yükseltildi ve `npm audit --audit-level=high` artık sıfır bulgu raporluyor.
+`scripts/npm_audit_safe.js` içindeki `PATCHED_BRACE_EXPANSION_*` istisna kodu bu yüzden
+şu an tetiklenmiyor (advisory kaynak kimliği artık `1124334` ile eşleşmiyor); kod, aynı
+tarz bir registry-gecikmesi tekrar yaşanırsa diye kasıtlı olarak yerinde bırakıldı.
+Aşağıdaki tarihsel açıklama, istisnanın aktifken nasıl çalıştığını belgeler.
+
+Frontend `npm audit`, önceden aynı bağımlılık zincirinden yayılan yedi `high` kayıt
+gösteriyordu:
 
 `eslint` / ESLint yapılandırma paketleri ve React lint eklentileri → `minimatch` →
 `brace-expansion` → `GHSA-mh99-v99m-4gvg`.
 
 Bu kayıtlar yedi bağımsız güvenlik açığı değildir. Sidar, `brace-expansion` sürümünü
-upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitler. npm advisory
+upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitlemişti. npm advisory
 aralığı bu backport'u tanımadığı sürece `scripts/npm_audit_safe.js`, yalnız aşağıdaki
-koşulların tümü sağlanırsa bu tek advisory zincirini geçici olarak kabul eder:
+koşulların tümü sağlanırsa bu tek advisory zincirini geçici olarak kabul ediyordu:
 
 1. Advisory kaynak kimliği tam olarak `1124334` olmalıdır.
 2. `package.json` içindeki `overrides.brace-expansion` kalıcı pini ve lockfile içindeki
