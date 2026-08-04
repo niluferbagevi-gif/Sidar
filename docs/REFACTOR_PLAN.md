@@ -46,7 +46,10 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 ### `SEC-PLUGIN-001` — Plugin yürütmesini process/container sınırına taşı
 
 - **Öncelik:** P0 — production güvenlik sınırı; genel refactor maddelerinden önce ele alınır.
-- **Durum:** Planlandı; production process-içi yürütme koşulsuz fail-closed, izole backend henüz yok.
+- **Durum:** İlk izolasyon dilimi uygulandı; production varsayılanı sürümlü JSON RPC kullanan,
+  ephemeral ve fail-closed Docker worker'dır. Marketplace kayıtları host'a plugin sınıfını import
+  etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. Container integration
+  ve geniş kaçış matrisi tamamlanana kadar madde açık kalır.
 - **Sahip:** Backend/Güvenlik bakım ekibi.
 - **Hedef değerlendirme:** 2026-08-15.
 - **Hedef kapanış:** 2026-09-30.
@@ -59,10 +62,11 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   CPU/bellek/PID/timeout sınırları, ayrı düşük yetkili kullanıcı) çalıştır. Docker kullanılamıyorsa
   production çağrısı fallback yapmadan reddedilir. Process backend yalnız aynı limitleri işletim
   sistemi düzeyinde uygulayabilen destekli geliştirme ortamlarında seçilebilir.
-- **Geçiş sırası:** (1) RPC envelope ve backend protokolü, (2) container worker + kaynak
-  limitleri, (3) lifecycle/timeout/kill ve hata redaksiyonu, (4) marketplace registration'ı
-  doğrudan Python sınıfı yüklemek yerine izole agent proxy'sine taşıma, (5) legacy process-içi
-  backend'i ve `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağını kaldırma.
+- **Gerçekleşen geçiş:** (1) sürümlü RPC envelope/backend, (2) ağsız, read-only, capability'siz,
+  düşük yetkili kullanıcıyla ve CPU/bellek/PID/timeout limitli container worker, (3) bounded yanıt,
+  timeout ve redakte host hataları, (4) marketplace için izole agent proxy'si tamamlandı.
+  **Kalan:** release ortamında gerçek imajla container kaçış/integration matrisi ve ardından legacy
+  process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılması.
 - **Kabul kriterleri:**
   1. Production plugin yükleme/çalıştırma yolunda host process içinde `compile`/`exec` çağrısı yoktur.
   2. Ağ, dosya sistemi, environment/secret, subprocess ve host process erişim kaçış testleri

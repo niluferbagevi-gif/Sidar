@@ -5,9 +5,12 @@ from fastapi import HTTPException
 
 from agent.base_agent import BaseAgent
 from web.plugins.sandbox import (
+    DockerPluginSandboxBackend,
+    PluginSandboxError,
     assert_in_process_plugin_execution_allowed,
     execute_validated_plugin_source,
     in_process_plugin_execution_allowed,
+    plugin_sandbox_backend,
     plugin_source_filename,
     restricted_plugin_import,
     run_plugin_source_in_process,
@@ -28,13 +31,44 @@ def test_in_process_plugin_execution_env_matrix() -> None:
         assert not in_process_plugin_execution_allowed(
             {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "development"}
         )
-
     assert in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
     assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "production"})
     for explicit in ("1", "true", "yes", "on"):
         assert not in_process_plugin_execution_allowed(
             {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "production"}
         )
+
+
+def test_plugin_backend_defaults_production_to_docker_and_rejects_unknown() -> None:
+    assert plugin_sandbox_backend({"SIDAR_ENV": "production"}) == "docker"
+    assert plugin_sandbox_backend({"SIDAR_ENV": "development"}) == "in_process"
+    assert plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "docker"}) == "docker"
+    with pytest.raises(PluginSandboxError, match="Desteklenmeyen"):
+        plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "subprocess"})
+
+
+def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    command = DockerPluginSandboxBackend({})._command()
+
+    for expected in (
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+        "--memory=256m",
+        "--cpus=0.5",
+        "--pids-limit=64",
+    ):
+        assert expected in command
+    assert command[-3:] == ["python", "-m", "web.plugins.worker"]
+
+
+def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: None)
+    with pytest.raises(PluginSandboxError, match="fail-closed"):
+        DockerPluginSandboxBackend({}).describe("VALUE = 1", None, "missing")
 
 
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(

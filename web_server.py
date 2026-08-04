@@ -1438,6 +1438,12 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            return plugin_sandbox.build_isolated_plugin_proxy(source_code, class_name, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     def _baseagent_candidates() -> list[Any]:
         # Resolve the canonical class on every call so stale monkeypatches or reloads of
         # the web_server module cannot override an available agent.base_agent module.
@@ -1509,7 +1515,13 @@ def _load_plugin_agent_class(
 
 def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
     """Validate uploaded plugin source in the shared sandbox before persisting it."""
-    _run_plugin_source_in_sandbox(source_code, module_label)
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            plugin_sandbox.DockerPluginSandboxBackend().describe(source_code, None, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    else:
+        _run_plugin_source_in_sandbox(source_code, module_label)
 
     safe_name = Path(filename or "plugin.py").name
     if not safe_name.endswith(".py"):
