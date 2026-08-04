@@ -13,8 +13,6 @@ import asyncio
 import atexit
 import builtins
 import contextlib
-import hashlib
-import hmac
 import importlib
 import importlib.util
 import inspect
@@ -25,7 +23,6 @@ import re
 import secrets
 import signal
 import sys
-import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -121,6 +118,11 @@ from web.security import (
     require_metrics_access,
     resolve_user_from_token,
 )
+
+# Faz 4 compatibility aliases for callers that historically built signatures
+# through ``web_server.hmac`` / ``web_server.hashlib``.
+hmac = web_security.hmac
+hashlib = web_security.hashlib
 
 _ANYIO_CLOSED = anyio.ClosedResourceError
 WebSocketDisconnect = _FastAPIWebSocketDisconnect
@@ -2640,10 +2642,9 @@ _FederationTaskRequest = federation_routes.FederationTaskRequest
 _FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
 _AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
-_WEBHOOK_REPLAY_TTL_SECONDS = 600.0
-_WEBHOOK_REPLAY_MAX_ENTRIES = 10_000
-_webhook_replay_seen: dict[str, float] = {}
-_webhook_replay_lock = threading.Lock()
+_webhook_replay_guard = web_security.WebhookReplayGuard()
+# Faz 4 compatibility alias: direct imports/tests clear the historical mapping.
+_webhook_replay_seen = _webhook_replay_guard.seen
 
 
 def _verify_hmac_signature(
@@ -2654,35 +2655,14 @@ def _verify_hmac_signature(
     label: str,
     replay_key: str = "",
 ) -> None:
-    secret = str(secret_value or "").encode("utf-8")
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
-        )
-    if not signature_header:
-        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
-    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_signature, signature_header):
-        raise HTTPException(status_code=401, detail="Geçersiz imza.")
-    normalized_replay_key = str(replay_key or "").strip()
-    if normalized_replay_key:
-        cache_key = f"{label}:{normalized_replay_key}"
-        now = time.monotonic()
-        with _webhook_replay_lock:
-            expired = [
-                key
-                for key, seen_at in _webhook_replay_seen.items()
-                if now - seen_at >= _WEBHOOK_REPLAY_TTL_SECONDS
-            ]
-            for key in expired:
-                _webhook_replay_seen.pop(key, None)
-            if cache_key in _webhook_replay_seen:
-                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
-            if len(_webhook_replay_seen) >= _WEBHOOK_REPLAY_MAX_ENTRIES:
-                oldest_key = min(_webhook_replay_seen.items(), key=lambda item: item[1])[0]
-                _webhook_replay_seen.pop(oldest_key, None)
-            _webhook_replay_seen[cache_key] = now
+    web_security.verify_webhook_hmac_signature(
+        payload_body,
+        secret_value,
+        signature_header,
+        label=label,
+        replay_key=replay_key,
+        replay_guard=_webhook_replay_guard,
+    )
 
 
 def _build_autonomy_dependencies() -> SimpleNamespace:

@@ -33,6 +33,42 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
     assert protocol != token
 
 
+def test_webhook_replay_guard_expires_and_bounds_entries() -> None:
+    guard = security.WebhookReplayGuard(ttl_seconds=10, max_entries=2)
+    guard.reject_replay(label="GitHub", replay_key="old", now=0)
+    guard.reject_replay(label="GitHub", replay_key="new", now=5)
+
+    guard.reject_replay(label="GitHub", replay_key="latest", now=6)
+    assert set(guard.seen) == {"GitHub:new", "GitHub:latest"}
+
+    guard.reject_replay(label="GitHub", replay_key="old", now=20)
+    assert set(guard.seen) == {"GitHub:old"}
+
+
+def test_verify_webhook_hmac_signature_uses_replay_guard() -> None:
+    payload = b'{"delivery": true}'
+    secret = "webhook-secret"
+    signature = (
+        "sha256=" + security.hmac.new(secret.encode(), payload, security.hashlib.sha256).hexdigest()
+    )
+    guard = security.WebhookReplayGuard()
+
+    security.verify_webhook_hmac_signature(
+        payload, secret, signature, label="GitHub", replay_key="delivery-1", replay_guard=guard
+    )
+    with pytest.raises(HTTPException, match="replay") as exc_info:
+        security.verify_webhook_hmac_signature(
+            payload,
+            secret,
+            signature,
+            label="GitHub",
+            replay_key="delivery-1",
+            replay_guard=guard,
+        )
+
+    assert exc_info.value.status_code == 409
+
+
 def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -> None:
     token, protocol = security.extract_ws_header_token("raw-token-1")
 
