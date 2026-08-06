@@ -453,7 +453,10 @@ Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` en
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
 > varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
-> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir.
+> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir. **GPU'lu geliştirme
+> makinesinde hızlı bir varsayılan döngü isteyen geliştiriciler** için bu otomatik algılama bilinçli bir tasarım
+> kararıdır (GPU testleri sessizce atlanmasın diye), fakat `ENABLE_GPU_TESTS=0 bash run_tests.sh` ile açıkça
+> devre dışı bırakılabilir — `auto` değerini geçersiz kılar ve `nvidia-smi` bulunsa bile GPU testlerini atlar.
 
 ### Çevre Değişkenleri
 

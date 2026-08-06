@@ -450,6 +450,12 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
     assert "USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false" in env_utils
     assert "install_sidar.sh` GPU tespit ederse" in readme
     assert "varsayılan `REQUIRE_GPU=false`" in readme
+    # A friend code review noted ENABLE_GPU_TESTS=auto's opt-in-by-detection
+    # design is correct (not a bug) for a GPU-equipped dev machine, but the
+    # ENABLE_GPU_TESTS=0 override to skip GPU tests for a faster default loop
+    # was never documented anywhere.
+    assert "ENABLE_GPU_TESTS=0 bash run_tests.sh" in readme
+    assert "auto` değerini geçersiz kılar" in readme
 
 
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
