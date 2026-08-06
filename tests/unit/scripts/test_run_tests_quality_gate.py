@@ -1987,6 +1987,51 @@ def test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys()
     )
 
 
+def test_env_example_secret_keys_are_all_in_the_install_masking_allowlist() -> None:
+    """Every secret-shaped key shipped in .env*.example must be masked.
+
+    A friend code review suggested exactly this check: compare every
+    *_TOKEN/*_KEY/*_SECRET/*_PASSWORD-shaped key in the shipped .env*.example
+    templates against install_sidar.sh's SIDAR_INTERNAL_SECRET_ENV_KEYS/
+    SIDAR_USER_SECRET_ENV_KEYS allowlist (the single source both
+    mask_install_log_stream() and the interactive API-key collector read
+    from -- see test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys
+    above). Running it found 5 real, live gaps: REDIS_PASSWORD, JIRA_API_TOKEN,
+    and META_GRAPH_API_TOKEN were never masked at all; SIDAR_AUTONOMY_WEBHOOK_SECRET
+    and GOOGLE_API_KEY happened to be masked only by incidental substring overlap
+    with an unrelated allowlist/catch-all pattern entry (AUTONOMY_WEBHOOK_SECRET,
+    the case-insensitive api_key catch-all) rather than by design -- fragile,
+    not something to keep relying on. All five were added to the allowlist
+    explicitly; this test prevents the next one from going unnoticed.
+    """
+    installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    def _extract_array(name: str) -> set[str]:
+        marker = f"{name}=("
+        start = installer_root.index(marker) + len(marker)
+        block = installer_root[start : installer_root.index(")", start)]
+        return set(re.findall(r"[A-Z_][A-Z0-9_]*", block))
+
+    allowlist = _extract_array("SIDAR_INTERNAL_SECRET_ENV_KEYS") | _extract_array(
+        "SIDAR_USER_SECRET_ENV_KEYS"
+    )
+
+    secret_key_re = re.compile(
+        r"^([A-Z_][A-Z0-9_]*(?:_TOKEN|_KEY|_SECRET|_PASSWORD))=", re.MULTILINE
+    )
+    missing: dict[str, set[str]] = {}
+    for env_example in sorted(Path().glob(".env*.example")):
+        keys = set(secret_key_re.findall(env_example.read_text(encoding="utf-8")))
+        gap = keys - allowlist
+        if gap:
+            missing[env_example.name] = gap
+
+    assert not missing, (
+        "Secret-shaped keys shipped in .env*.example are missing from install_sidar.sh's "
+        f"SIDAR_INTERNAL_SECRET_ENV_KEYS/SIDAR_USER_SECRET_ENV_KEYS masking allowlist: {missing}"
+    )
+
+
 def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
     summary_start = finish_phase.index("print_summary()")
