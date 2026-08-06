@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/api.js";
 import { errorMessage } from "../lib/errors.js";
+import { useAsyncStatus } from "../hooks/useAsyncStatus.js";
 
 type MarketplaceAction = "install" | "reload" | "remove";
 
@@ -54,23 +55,16 @@ function marketplaceItems(payload: unknown): MarketplaceItem[] {
 
 export function PluginMarketplacePanel() {
   const [items, setItems] = useState<MarketplaceItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busyPluginId, setBusyPluginId] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [error, setError] = useState("");
+  const { loading, error, setError, run } = useAsyncStatus(true);
 
   const loadMarketplace = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
+    await run(async () => {
       const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
       setItems(marketplaceItems(data));
-    } catch (err: unknown) {
-      setError(errorMessage(err, "Plugin kataloğu yüklenemedi."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    }, "Plugin kataloğu yüklenemedi.");
+  }, [run]);
 
   useEffect(() => {
     loadMarketplace();
@@ -104,7 +98,7 @@ export function PluginMarketplacePanel() {
     } finally {
       setBusyPluginId("");
     }
-  }, [loadMarketplace]);
+  }, [loadMarketplace, setError]);
 
   return (
     <section className="panel panel--stacked">

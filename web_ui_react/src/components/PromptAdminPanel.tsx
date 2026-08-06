@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { fetchJson } from "../lib/api.js";
 import { errorMessage } from "../lib/errors.js";
+import { useAsyncStatus } from "../hooks/useAsyncStatus.js";
 
 interface PromptItem {
   id: string | number;
@@ -34,26 +35,19 @@ const EMPTY_FORM: PromptForm = {
 
 export function PromptAdminPanel() {
   const [items, setItems] = useState<PromptItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState("system");
   const [form, setForm] = useState(EMPTY_FORM);
   const [feedback, setFeedback] = useState("");
-  const [error, setError] = useState("");
+  const { loading, error, setError, run } = useAsyncStatus(true);
 
   const loadPrompts = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
+    await run(async () => {
       const query = filter.trim() ? `?role_name=${encodeURIComponent(filter.trim())}` : "";
       const data = await fetchJson<PromptListResponse>(`/admin/prompts${query}`);
       setItems(data.items || []);
-    } catch (err: unknown) {
-      setError(errorMessage(err, "Promptlar yüklenemedi."));
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
+    }, "Promptlar yüklenemedi.");
+  }, [filter, run]);
 
   useEffect(() => {
     loadPrompts();
@@ -90,7 +84,7 @@ export function PromptAdminPanel() {
     } finally {
       setSubmitting(false);
     }
-  }, [form, loadPrompts]);
+  }, [form, loadPrompts, setError]);
 
   const handleActivate = useCallback(async (promptId: PromptItem["id"]) => {
     setSubmitting(true);
@@ -109,7 +103,7 @@ export function PromptAdminPanel() {
     } finally {
       setSubmitting(false);
     }
-  }, [loadPrompts]);
+  }, [loadPrompts, setError]);
 
   return (
     <section className="panel panel--stacked">

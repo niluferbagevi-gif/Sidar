@@ -11,6 +11,7 @@ import {
 } from "../lib/api.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { useFormState } from "../hooks/useFormState.js";
+import { useAsyncStatus } from "../hooks/useAsyncStatus.js";
 import { errorMessage } from "../lib/errors.js";
 
 const OPS_ROOM_ID = "ops:control";
@@ -34,7 +35,7 @@ export function OperationsQaPanel() {
   const [events, setEvents] = useState<CollaborationEvent[]>([]);
   const [hitlPending, setHitlPending] = useState<HitlPendingItem[]>([]);
   const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const { error, setError, run } = useAsyncStatus();
   const [output, setOutput] = useState<unknown>(null);
   const [busyAction, setBusyAction] = useState("");
   const actionInFlightRef = useRef<boolean>(false);
@@ -65,14 +66,11 @@ export function OperationsQaPanel() {
   });
 
   const loadHitl = useCallback(async () => {
-    try {
+    await run(async () => {
       const data = await listHitlPending();
       setHitlPending(data.pending || []);
-      setError("");
-    } catch (exc: unknown) {
-      setError(errorMessage(exc));
-    }
-  }, []);
+    });
+  }, [run]);
 
   useEffect(() => {
     loadHitl();
@@ -97,7 +95,7 @@ export function OperationsQaPanel() {
       setBusyAction("");
     }
     return true;
-  }, [loadHitl]);
+  }, [loadHitl, setError]);
 
   const respond = useCallback(async (requestId: string, approved: boolean) => {
     await runAction(approved ? "HITL onay" : "HITL red", () => respondHitl(requestId, {

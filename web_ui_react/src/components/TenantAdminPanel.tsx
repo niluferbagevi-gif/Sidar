@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { fetchJson } from "../lib/api.js";
 import type { AccessPolicy, AuditLog, ItemsResponse } from "../lib/api.js";
 import { errorMessage } from "../lib/errors.js";
+import { useAsyncStatus } from "../hooks/useAsyncStatus.js";
 
 interface PolicyForm {
   user_id: string;
@@ -47,10 +48,13 @@ export function TenantAdminPanel() {
   const [policyForm, setPolicyForm] = useState(DEFAULT_POLICY_FORM);
   const [policies, setPolicies] = useState<AccessPolicy[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [error, setError] = useState("");
+  // loadTenantData below has its own abort/debounce/request-sequencing
+  // control flow (a real race guard across two parallel fetches), so it uses
+  // the raw loading/error setters directly instead of useAsyncStatus's run()
+  // convenience wrapper -- see that hook's docstring.
+  const { loading, setLoading, error, setError } = useAsyncStatus();
   const activeRequestRef = useRef<AbortController | null>(null);
   const requestSequenceRef = useRef(0);
 
@@ -96,7 +100,7 @@ export function TenantAdminPanel() {
         setLoading(false);
       }
     }
-  }, [currentTenantId, currentUserId]);
+  }, [currentTenantId, currentUserId, setError, setLoading]);
 
   useEffect(() => {
     const timeoutId = setTimeout(loadTenantData, TENANT_DATA_DEBOUNCE_MS);
@@ -135,7 +139,7 @@ export function TenantAdminPanel() {
     } finally {
       setSubmitting(false);
     }
-  }, [loadTenantData, policyForm]);
+  }, [loadTenantData, policyForm, setError]);
 
   const tenantStats = useMemo(() => {
     const allowed = auditLogs.filter((item) => item.allowed === true).length;
