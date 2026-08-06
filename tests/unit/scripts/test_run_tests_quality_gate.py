@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -234,6 +235,33 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert ".coveragerc" not in testing_docs
     assert ".coveragerc" not in tests_module_notes
     assert "[tool.coverage.report] fail_under" in tests_module_notes
+
+
+def test_test_optimization_plan_omit_examples_match_pyproject_omit_list() -> None:
+    """`docs/TEST_OPTIMIZATION_PLAN.md`'nin `omit` örnek dosyaları güncel kalmalı.
+
+    Belge, `[tool.coverage.run].omit` ile eşleşen (dolayısıyla coverage
+    artırma hedefi konmayan) dosyalara örnek olarak `(örn. ...)` kalıbıyla
+    belirli path'ler gösteriyor. Bir arkadaş kod incelemesi, bu örneklerin
+    `core/vision.py`/`core/voice.py`'yi -- ikisi de omit listesinden
+    kaldırılıp tam `%100` gate'ine dahil edildikten sonra -- hâlâ "kapsam
+    dışı" diye işaret ettiğini buldu. Bu test her `(örn. ...)` çağrısındaki
+    her path'in gerçekten bir `omit` glob'uyla eşleştiğini doğrular.
+    """
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    omit_patterns = pyproject["tool"]["coverage"]["run"]["omit"]
+
+    doc = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
+    example_blocks = re.findall(r"\(örn\. ([^)]+)\)", doc)
+    assert example_blocks, "expected at least one '(örn. ...)' omit callout"
+
+    for block in example_blocks:
+        example_paths = re.findall(r"`([^`]+)`", block)
+        assert example_paths
+        for example_path in example_paths:
+            assert any(fnmatch.fnmatch(example_path, pattern) for pattern in omit_patterns), (
+                f"{example_path!r} cited as omit-covered but matches no pyproject.toml omit pattern"
+            )
 
 
 def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:
