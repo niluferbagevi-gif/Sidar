@@ -186,8 +186,8 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
-make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget.
-make ci-parity             # dev-full ile aynı local/CI parite kısayolu.
+make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
+make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.

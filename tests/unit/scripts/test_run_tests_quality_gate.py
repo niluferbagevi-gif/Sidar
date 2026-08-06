@@ -2426,6 +2426,32 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır" in pr_template
 
 
+def test_ci_parity_actually_sets_the_ci_test_profile() -> None:
+    """`make ci-parity` must not silently run under local-profile defaults.
+
+    Regression test: ci-parity used to just forward FRONTEND_BUNDLE_BUDGET_LOCAL_FULL
+    to dev-full and nothing else -- no TEST_PROFILE=ci, no
+    FRONTEND_E2E_NPM_SCRIPT=test:e2e. That made it functionally identical to
+    plain dev-full while its name promised CI parity: run_tests.sh's
+    TEST_PROFILE branch controls (among other things) the benchmark regression
+    threshold -- mean:15% under the local-profile default ci-parity was
+    actually using vs. mean:10% under TEST_PROFILE=ci -- so `make ci-parity`
+    could pass locally on a change that would then fail real CI.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    # Bounded to ci-parity's own recipe (up to the next blank line), not the
+    # whole gap up to base-quality-gates: -- that gap also contains a comment
+    # above base-quality-gates that happens to mention
+    # "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in prose, which would make that
+    # specific assertion pass even without the fix.
+    ci_parity_start = makefile.index("ci-parity:")
+    ci_parity_block = makefile[ci_parity_start : makefile.index("\n\n", ci_parity_start)]
+
+    assert "TEST_PROFILE=ci" in ci_parity_block
+    assert "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in ci_parity_block
+    assert "$(MAKE) dev-full" in ci_parity_block
+
+
 def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
     """Operators must have a durable runbook for CI's external fail-closed gates."""
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
