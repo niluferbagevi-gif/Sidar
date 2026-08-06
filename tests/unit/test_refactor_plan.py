@@ -111,6 +111,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "test_sqlite_bootstrap_schema_matches_alembic_head_schema" in plan
         and "önerilen (b) seçeneği" in plan
     )
+    assert "core/doctor/__init__.py` (eski `core/doctor.py`; repo'nun en büyük dosyası" in plan
+    assert "yalnızca `redis.py::check_redis` gerçekten kendi kendine yeten" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
