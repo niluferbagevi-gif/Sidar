@@ -33,6 +33,41 @@ def test_v52_architecture_is_canonical_and_versioned_reports_are_historical() ->
     assert "Tarihsel Faz C–E evrim kaydıdır" in v51
 
 
+def test_readme_repo_tree_docs_entries_are_nested_under_docs() -> None:
+    """README's top-level repo-tree diagram must point at real paths.
+
+    A friend code review of docs/ bloat found `ARCHITECTURE.md`,
+    `PROJE_RAPORU.md`, `project-report/`, `AUDIT_REPORT_v5.0.md` and
+    `TEKNIK_REFERANS.md` listed as repo-root entries in README.md's tree
+    diagram, even though all five live under `docs/` and none exist at
+    repo root -- `docs/` itself never even appeared in the tree.
+    """
+    readme = Path("README.md").read_text(encoding="utf-8")
+    tree_start = readme.index("```\nSidar/\n")
+    tree_end = readme.index("```", tree_start + 4)
+    tree_lines = readme[tree_start:tree_end].splitlines()
+
+    top_level_names = {line.split()[1] for line in tree_lines if line.startswith(("├── ", "└── "))}
+
+    assert "docs/" in top_level_names
+
+    docs_only_entries = (
+        "ARCHITECTURE.md",
+        "PROJE_RAPORU.md",
+        "project-report/",
+        "AUDIT_REPORT_v5.0.md",
+        "module-notes/",
+        "TEKNIK_REFERANS.md",
+    )
+    for entry in docs_only_entries:
+        assert entry not in top_level_names, (
+            f"{entry!r} listed as a repo-root entry but actually lives under docs/"
+        )
+        bare_name = entry.rstrip("/")
+        assert (Path("docs") / bare_name).exists()
+        assert not Path(bare_name).exists()
+
+
 def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
     """The report must not hide tracked campaigns behind an absolute zero-debt claim."""
     debt = Path("docs/project-report/04-teknik-borc-ve-yapilandirma.md").read_text(encoding="utf-8")

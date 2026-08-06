@@ -1097,11 +1097,13 @@ Sidar/
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
-├── ARCHITECTURE.md         # Aktif v5.2.0 mimari doğruluk kaynağı
-├── PROJE_RAPORU.md         # Bölümlenmiş kapsamlı rapor indeksi
-├── project-report/         # Konu bazlı proje raporu bölümleri
-├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
-└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
+└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
+    ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
+    ├── PROJE_RAPORU.md      # Bölümlenmiş kapsamlı rapor indeksi
+    ├── project-report/      # Konu bazlı proje raporu bölümleri (6 dosya)
+    ├── AUDIT_REPORT_v5.0.md # Güvenlik/coverage denetim raporu (tarihsel snapshot, ARŞİV NOTU ile işaretli)
+    ├── module-notes/        # Modül bazlı geliştirici notları (77 dosya)
+    └── TEKNIK_REFERANS.md   # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
 ---
@@ -1375,7 +1377,7 @@ Bu proje Sidar ekosisteminin bir parçasıdır.
 ## 🧹 Depo Hijyeni
 
 - Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; güncel mimari kararları
-  için `ARCHITECTURE.md` ve `RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
-  bölümlenmiş `PROJE_RAPORU.md` indeksi kullanılmalıdır.
+  için `docs/ARCHITECTURE.md` ve `docs/RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
+  bölümlenmiş `docs/PROJE_RAPORU.md` indeksi kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.
