@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { fetchJson } from "../lib/api.js";
 import { errorMessage } from "../lib/errors.js";
-import { useAsyncStatus } from "../hooks/useAsyncStatus.js";
+import { useAsyncResource } from "../hooks/useAsyncResource.js";
 
 type MarketplaceAction = "install" | "reload" | "remove";
 
@@ -54,21 +54,21 @@ function marketplaceItems(payload: unknown): MarketplaceItem[] {
 }
 
 export function PluginMarketplacePanel() {
-  const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [busyPluginId, setBusyPluginId] = useState("");
   const [feedback, setFeedback] = useState("");
-  const { loading, error, setError, run } = useAsyncStatus(true);
 
   const loadMarketplace = useCallback(async () => {
-    await run(async () => {
-      const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
-      setItems(marketplaceItems(data));
-    }, "Plugin kataloğu yüklenemedi.");
-  }, [run]);
+    const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
+    return marketplaceItems(data);
+  }, []);
 
-  useEffect(() => {
-    loadMarketplace();
-  }, [loadMarketplace]);
+  const {
+    data: items,
+    loading,
+    error,
+    setError,
+    reload,
+  } = useAsyncResource<MarketplaceItem[]>([], loadMarketplace, "Plugin kataloğu yüklenemedi.");
 
   const installedCount = useMemo(
     () => items.filter((item) => item.installed || item.live_registered).length,
@@ -92,13 +92,13 @@ export function PluginMarketplacePanel() {
         });
       }
       setFeedback(`Plugin işlemi tamamlandı: ${pluginId} → ${ACTION_LABELS[action]}.`);
-      await loadMarketplace();
+      await reload();
     } catch (err: unknown) {
       setError(errorMessage(err, "Plugin işlemi tamamlanamadı."));
     } finally {
       setBusyPluginId("");
     }
-  }, [loadMarketplace, setError]);
+  }, [reload, setError]);
 
   return (
     <section className="panel panel--stacked">
@@ -111,7 +111,7 @@ export function PluginMarketplacePanel() {
         </div>
         <div className="inline-controls">
           <span className="pill pill--info">{installedCount} aktif plugin</span>
-          <button className="button-secondary" onClick={loadMarketplace} disabled={loading}>
+          <button className="button-secondary" onClick={reload} disabled={loading}>
             {loading ? "Yükleniyor…" : "Yenile"}
           </button>
         </div>
