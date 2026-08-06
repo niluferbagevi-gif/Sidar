@@ -68,6 +68,27 @@ def test_readme_repo_tree_docs_entries_are_nested_under_docs() -> None:
         assert not Path(bare_name).exists()
 
 
+def test_main_and_cli_docstrings_cross_reference_the_naming_split() -> None:
+    """`main.py`/`cli.py` naming is confusing without an explicit pointer.
+
+    A friend code review flagged that `main.py` is actually the launcher/
+    setup wizard while `cli.py` -- whose own docstring says it was
+    "previously named main.py" -- is the real agent REPL entry point.
+    Both files' module docstrings, and their docs/module-notes/*.md
+    companions, must say so explicitly so a reader of either file
+    understands the split without outside context.
+    """
+    main_py = Path("main.py").read_text(encoding="utf-8")
+    cli_py = Path("cli.py").read_text(encoding="utf-8")
+    main_notes = Path("docs/module-notes/main.py.md").read_text(encoding="utf-8")
+    cli_notes = Path("docs/module-notes/cli.py.md").read_text(encoding="utf-8")
+
+    assert "ajan REPL'i değildir" in main_py
+    assert "tamamen farklı bir modül" in cli_py
+    assert "docs/module-notes/cli.py.md" in main_notes
+    assert "docs/module-notes/main.py.md" in cli_notes
+
+
 def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
     """The report must not hide tracked campaigns behind an absolute zero-debt claim."""
     debt = Path("docs/project-report/04-teknik-borc-ve-yapilandirma.md").read_text(encoding="utf-8")
