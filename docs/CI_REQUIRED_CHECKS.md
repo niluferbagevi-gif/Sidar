@@ -25,7 +25,30 @@ is restored.
 The release-blocking `benchmark-compare` job and both baseline seed paths require a
 dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
 cache key, preventing a baseline produced on one hardware host from being restored on
-another host. Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
+another host. This is a deliberate, accepted single point of failure, not an oversight:
+an unrelated PR can be blocked at `production-readiness` by a benchmark-runner rename or
+a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
+narrow the blast radius but do not remove it.
+
+`benchmark-baseline-keepalive.yml` (Mondays/Thursdays, plus manual `workflow_dispatch`)
+exists specifically to restore-and-touch the reviewed default-branch baseline cache more
+often than GitHub's ~7-day cache inactivity eviction window, without regenerating a
+baseline. It **must** run on the same `[self-hosted, linux, benchmark]` runner pool and
+use the exact same `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-...`
+key prefix as `benchmark-compare`/the seed jobs — `${{ runner.name }}` only resolves to
+the value those jobs need on that runner pool. A version of this workflow once ran on
+`ubuntu-latest` with a key that omitted `${{ runner.name }}` entirely; it "passed" every
+scheduled run while silently restoring nothing, so the anti-eviction safety net did not
+actually work. `tests/unit/scripts/test_run_tests_quality_gate.py::test_benchmark_baseline_cache_key_prefix_is_identical_everywhere`
+guards all three files' cache-key declarations against drifting apart like that again — if
+you touch any of them, keep the prefix identical or that test fails.
+
+If the self-hosted benchmark runner is renamed or replaced, the previous baseline cache is
+orphaned by design (see above) and must be reseeded via `seed_benchmark_baseline=true`
+regardless of keepalive; keepalive only prevents inactivity eviction of a still-valid
+cache entry, it cannot survive a runner identity change.
+
+Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
 runners have variable CPU, storage and scheduler contention and are unsuitable for a
 strict latency comparison. An unavailable benchmark runner must leave readiness
 blocked rather than silently falling back to shared hardware.

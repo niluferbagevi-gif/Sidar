@@ -2486,6 +2486,74 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "benchmark çalıştırmaz, baseline üretmez" in testing
 
 
+def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
+    """Every benchmark-baseline cache key must share one ${{ runner.name }}-scoped prefix.
+
+    Regression test: `.github/workflows/benchmark-baseline-keepalive.yml` used to
+    restore with a key that omitted `${{ runner.name }}` (and ran on
+    `ubuntu-latest`, where `runner.name` wouldn't have matched anyway), so it
+    could never actually hit the cache entry `benchmark-compare`/the seed jobs
+    depend on -- the keepalive workflow "passed" while restoring nothing,
+    silently failing to do the one thing it exists for (both of its real runs
+    on GitHub Actions failed with "Cache not found"). Every
+    `benchmark-baseline-` cache key across ci.yml, benchmark-baseline-seed.yml
+    and benchmark-baseline-keepalive.yml must share the identical
+    `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-`
+    prefix so a keepalive/seed/compare cache key can never silently drift
+    apart again.
+    """
+    expected_prefix = (
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+    )
+    workflow_paths = [
+        Path(".github/workflows/ci.yml"),
+        Path(".github/workflows/benchmark-baseline-seed.yml"),
+        Path(".github/workflows/benchmark-baseline-keepalive.yml"),
+    ]
+
+    # Only lines that are actually a cache key value or a restore-keys list
+    # item, plus artifact `name:` values that opt into the same runner-scoped
+    # template (ci.yml's plain `name: benchmark-baseline-seed` artifact is a
+    # fixed display name, not part of this key family, and is deliberately
+    # not matched here) -- not step ids, concurrency group names, or prose
+    # mentioning a workflow filename, all of which also legitimately contain
+    # the literal substring "benchmark-baseline-".
+    cache_key_line = re.compile(
+        r"^\s*key:\s*(benchmark-baseline-.+)$"
+        r"|^\s*name:\s*(benchmark-baseline-\$\{\{.+)$"
+        r"|^\s*(benchmark-baseline-\$\{\{ runner\.name.+)$"
+    )
+
+    mismatches: list[str] = []
+    total_occurrences = 0
+    for workflow_path in workflow_paths:
+        text = workflow_path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            match = cache_key_line.match(line)
+            if not match:
+                continue
+            occurrence = match.group(1) or match.group(2) or match.group(3)
+            total_occurrences += 1
+            if not occurrence.startswith(expected_prefix):
+                mismatches.append(f"{workflow_path}:{line_no}: {occurrence!r}")
+
+    assert not mismatches, (
+        "benchmark-baseline cache key prefix drifted from "
+        f"{expected_prefix!r}:\n" + "\n".join(mismatches)
+    )
+    # Guard against the assertion above vacuously passing if the workflows are
+    # rewritten to not mention the prefix at all.
+    assert total_occurrences >= 8
+
+    keepalive_text = Path(".github/workflows/benchmark-baseline-keepalive.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "runs-on: [self-hosted, linux, benchmark]" in keepalive_text, (
+        "keepalive must run on the same runner pool as benchmark-compare/seed-baseline "
+        "for ${{ runner.name }} to resolve to the same value in its cache key"
+    )
+
+
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
