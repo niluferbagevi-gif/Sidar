@@ -115,6 +115,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "yalnızca `redis.py::check_redis` gerçekten kendi kendine yeten" in plan
     assert "core/ci_remediation/command_safety.py" in plan
     assert "otonom self-heal döngüsünün hangi shell komutlarını" in plan
+    assert "scripts/install_modules/utils/remote_module_fetch.sh" in plan
+    assert "trust-root chicken-and-egg sorunu" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
