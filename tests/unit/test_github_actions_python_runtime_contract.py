@@ -42,6 +42,29 @@ def test_required_workflows_pin_setup_python_to_311():
         assert versions == [PYTHON_MAJOR_MINOR] * len(versions)
 
 
+def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
+    """Guard the CodeQL semantic SAST workflow's coverage/cadence.
+
+    A friend code review flagged that no semantic/dataflow SAST (CodeQL,
+    Semgrep, ...) existed for either Python or JS/TS -- Bandit is
+    pattern/AST-based and Python-only, npm audit is dependency-only. This
+    was already closed by adding .github/workflows/codeql.yml; this test
+    pins its language/query/cadence contract so it can't silently regress
+    (e.g. someone drops the javascript-typescript matrix entry or narrows
+    the query suite back to the low-recall default).
+    """
+    workflow = (WORKFLOW_DIR / "codeql.yml").read_text(encoding="utf-8")
+
+    assert "language: python" in workflow
+    assert "language: javascript-typescript" in workflow
+    assert "queries: security-extended" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "schedule:" in workflow
+    assert "github/codeql-action/init@v3" in workflow
+    assert "github/codeql-action/analyze@v3" in workflow
+
+
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
     for workflow_path in WORKFLOW_DIR.glob("*.yml"):
         text = workflow_path.read_text()
