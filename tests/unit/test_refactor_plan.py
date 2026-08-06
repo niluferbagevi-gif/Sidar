@@ -107,6 +107,10 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "marketing/social entegrasyonları önce, en izole grup" in plan
     assert "en düşük riskli silinecek ikili" in plan
     assert "`main.py:874-903`'te de aynı desen" in plan
+    assert (
+        "test_sqlite_bootstrap_schema_matches_alembic_head_schema" in plan
+        and "önerilen (b) seçeneği" in plan
+    )
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
