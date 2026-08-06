@@ -711,6 +711,10 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
 - frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
   Playwright Chromium smoke hazırlığı/raporu;
 - Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- ayrı `.github/workflows/codeql.yml`: Python ve JS/TS için CodeQL semantic/dataflow
+  SAST taraması (push/PR/haftalık zamanlanmış), bulgular Security sekmesinde alert
+  olarak raporlanır — Bandit'in aksine fonksiyon/modül sınırları arası taint-tracking
+  yapar ve tek gerçek JS/TS güvenlik taramasıdır;
 - izole PostgreSQL test DB hazırlığı, Alembic upgrade, kritik smoke import gates ve
   installer/runtime smoke testleri;
 - `run_tests.sh` tam kalite kapısı: coverage ratchet, frontend E2E, benchmark JSON/trend
