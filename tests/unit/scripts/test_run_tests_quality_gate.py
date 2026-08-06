@@ -5407,6 +5407,55 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
 
+def test_ci_runs_full_frontend_e2e_suite_not_just_smoke() -> None:
+    """Pin CI to the full Playwright suite, not just the 1-file smoke script.
+
+    A friend code review flagged that only test:e2e:smoke (chat-websocket
+    only) ran anywhere in automation, so a regression in any of the other 7
+    named-panel specs (admin RBAC/plugin-install, agent manager, p2p
+    dialogue, prompt admin, swarm flow HITL rerun, operations tools, voice
+    assistant) could merge to main undetected -- unit tests mock the
+    backend/websocket entirely. This was already fixed (ci.yml's
+    FRONTEND_E2E_NPM_SCRIPT was switched from test:e2e:smoke to the
+    unfiltered test:e2e), but nothing pinned the fact that test:e2e is
+    genuinely unfiltered (playwright test with no path argument, so newly
+    added spec files are swept in automatically) and that all 8 named specs
+    still exist -- the dangling comment above referencing this test name
+    had no test behind it. Close that gap.
+    """
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    playwright_config = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
+
+    assert package_json["scripts"]["test:e2e"] == "playwright test"
+    assert 'testDir: "./e2e"' in playwright_config
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' not in ci
+
+    e2e_dir = Path("web_ui_react/e2e")
+    spec_files = {path.name for path in e2e_dir.glob("*.spec.js")}
+    expected_specs = {
+        "admin-panels.spec.js",
+        "agent-manager.spec.js",
+        "chat-websocket.spec.js",
+        "p2p-dialogue.spec.js",
+        "prompt-admin.spec.js",
+        "swarm-flow.spec.js",
+        "tools-panel.spec.js",
+        "voice-panel.spec.js",
+    }
+    assert spec_files == expected_specs
+
+    list_result = subprocess.run(
+        ["npx", "playwright", "test", "--list"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Total: 10 tests in 8 files" in list_result.stdout
+
+
 def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None:
     """Frontend audit must not cascade-skip lint/coverage on local registry outages."""
     script = _script()
