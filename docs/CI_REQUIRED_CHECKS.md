@@ -48,6 +48,36 @@ orphaned by design (see above) and must be reseeded via `seed_benchmark_baseline
 regardless of keepalive; keepalive only prevents inactivity eviction of a still-valid
 cache entry, it cannot survive a runner identity change.
 
+**Known follow-up improvements (not yet implemented, flagged in a friend code review):**
+
+- **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
+  it never re-runs the benchmark suite to refresh the baseline data itself, and nothing
+  proactively alerts (e.g. opens a GitHub issue) when the baseline cache is actually
+  missing/orphaned — today the first signal is an unrelated PR going red at
+  `production-readiness`. A scheduled job that periodically re-seeds for real (not just
+  touches) and/or auto-files an issue when the "Require reviewed baseline evidence" step
+  fails would close this gap. Not implemented here: it changes self-hosted runner load/
+  cadence and issue-creation behavior, decisions that deserve a dedicated PR validated
+  against the real `[self-hosted, linux, benchmark]` runner rather than a docs-only pass.
+- **`benchmark-baseline-seed.yml` and `ci.yml`'s `seed-benchmark-baseline` job duplicate
+  nearly the same seeding logic with real, not just cosmetic, drift** — confirmed by diff:
+  different pinned action versions (`actions/checkout@v5`/`setup-python@v6`/
+  `astral-sh/setup-uv@v6` vs `@v4`/`@v5`/`@v4`), `ci.yml`'s job runs
+  `scripts/install_ci_system_deps.sh` and restores any existing cache before overwriting,
+  `benchmark-baseline-seed.yml` does neither, retention-days differs (30 vs 90), the
+  uploaded artifact name differs (dynamic `benchmark-baseline-...-<compare_name>` vs the
+  fixed `benchmark-baseline-seed`), and `benchmark-baseline-seed.yml`'s manifest carries
+  `compare_name`/`next_strict_command` fields `ci.yml`'s does not. `benchmark-baseline-
+  seed.yml` also supports named/partial baselines (`compare_name`/`benchmark_filter`
+  inputs) that `ci.yml`'s boolean-only `seed_benchmark_baseline` input cannot express.
+  Merging both into a single `workflow_call` reusable workflow is the right fix, but it
+  first requires deciding which of these divergent behaviors is canonical for each call
+  site (e.g. should the shared workflow always restore-before-save? support partial
+  baselines everywhere?) and validating the merged workflow actually seeds/saves/restores
+  correctly on the real self-hosted runner — this area has already produced two real bugs
+  in this same review (the keepalive cache-key mismatch above), so a docs-only pass is not
+  the place to also rewire the release-blocking seed path itself.
+
 Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
 runners have variable CPU, storage and scheduler contention and are unsuitable for a
 strict latency comparison. An unavailable benchmark runner must leave readiness
