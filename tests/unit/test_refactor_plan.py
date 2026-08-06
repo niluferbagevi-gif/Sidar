@@ -71,7 +71,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/doctor/reporting.py",
         "core/doctor/launcher_preflight.py",
         "agent/roles/reviewer/judge.py",
-        "core/ci_remediation/validation.py",
+        "core/ci_remediation/command_safety.py",
         "managers/browser/visual_drift.py",
         "agent/swarm/handoff.py",
     ):
@@ -113,6 +113,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     )
     assert "core/doctor/__init__.py` (eski `core/doctor.py`; repo'nun en büyük dosyası" in plan
     assert "yalnızca `redis.py::check_redis` gerçekten kendi kendine yeten" in plan
+    assert "core/ci_remediation/command_safety.py" in plan
+    assert "otonom self-heal döngüsünün hangi shell komutlarını" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
