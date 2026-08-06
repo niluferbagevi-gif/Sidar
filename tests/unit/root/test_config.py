@@ -35,6 +35,25 @@ def test_rag_defaults_module_name_disambiguates_runtime_rag_modules() -> None:
     assert "config_rag_defaults.py" in refactor_plan
 
 
+def test_llm_and_quality_gate_loaders_share_the_scoped_settings_builder() -> None:
+    """Guard against reintroducing the duplicated scoped-settings block.
+
+    `load_llm_settings`/`load_quality_gate_settings` must not re-inline the
+    ~15-line dotenv-scoped `type(...)` subclass block; it was duplicated
+    verbatim across config_llm.py/config_quality.py before both were switched
+    to `core.config_scoped_settings.build_scoped_settings_type`.
+    """
+    llm_source = Path("config_llm.py").read_text(encoding="utf-8")
+    quality_source = Path("config_quality.py").read_text(encoding="utf-8")
+
+    for source in (llm_source, quality_source):
+        assert "from core.config_scoped_settings import build_scoped_settings_type" in source
+        assert "build_scoped_settings_type(" in source
+        # The old inlined metaprogramming block used this exact marker key;
+        # its presence would mean the duplication crept back in.
+        assert '"__module__": __name__,' not in source
+
+
 def test_config_reexports_split_env_helpers_and_validators() -> None:
     assert config.get_bool_env is config_env_helpers.get_bool_env
     assert config.get_web_scrape_max_chars is config_env_helpers.get_web_scrape_max_chars

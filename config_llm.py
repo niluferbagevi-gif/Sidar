@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.config_scoped_settings import build_scoped_settings_type
+
 
 class OllamaBatchPolicy:
     """Central Ollama num_batch bounds used by config and runtime clients."""
@@ -90,17 +92,7 @@ def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClient
     if env_file is None:
         return LLMClientSettings()
 
-    scoped_settings_type: type[LLMClientSettings] = type(
-        "ScopedLLMClientSettings",
-        (LLMClientSettings,),
-        {
-            "__module__": __name__,
-            "model_config": SettingsConfigDict(
-                env_file=env_file,
-                env_file_encoding="utf-8",
-                extra="ignore",
-                env_ignore_empty=True,
-            ),
-        },
+    scoped_settings_type = build_scoped_settings_type(
+        LLMClientSettings, env_file=env_file, env_ignore_empty=True
     )
     return scoped_settings_type()

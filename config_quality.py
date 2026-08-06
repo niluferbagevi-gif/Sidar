@@ -8,6 +8,8 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.config_scoped_settings import build_scoped_settings_type
+
 
 class QualityGateSettings(BaseSettings):
     """DLP/HITL/LLM-judge ortam değişkenlerini tip güvenli şekilde yükler."""
@@ -75,14 +77,5 @@ def load_quality_gate_settings(*, env_path: Path, skip_default_dotenv: bool) -> 
     if env_file is None:
         return QualityGateSettings()
 
-    scoped_settings_type: type[QualityGateSettings] = type(
-        "ScopedQualityGateSettings",
-        (QualityGateSettings,),
-        {
-            "__module__": __name__,
-            "model_config": SettingsConfigDict(
-                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
-            ),
-        },
-    )
+    scoped_settings_type = build_scoped_settings_type(QualityGateSettings, env_file=env_file)
     return scoped_settings_type()
