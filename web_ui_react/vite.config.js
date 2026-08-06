@@ -18,6 +18,19 @@ function createBundleAnalysisPlugins() {
 
 export function createSidarManualChunks(id) {
   if (!id.includes("node_modules")) {
+    // rehypeSidarHighlight.ts is Sidar's own rehype plugin, not a vendor
+    // dependency, but it's only ever imported from the lazy
+    // ChatMarkdownRenderer entry alongside react-markdown/remark-gfm and
+    // their (large, rarely-changing) transitive parser graph. Without its
+    // own chunk, Rollup co-locates it with that vendor graph by default --
+    // so touching Sidar's own highlight config (e.g. adding a language)
+    // busts the cache for the entire vendor markdown bundle too. Giving it
+    // a dedicated chunk keeps the vendor graph's cache stable across those
+    // edits; see scripts/check-bundle-budget.mjs's dedicated chunk budget
+    // for the remaining (vendor-heavy) ChatMarkdownRenderer chunk.
+    if (id.endsWith("/src/lib/rehypeSidarHighlight.ts")) {
+      return "rehype-sidar-highlight";
+    }
     return undefined;
   }
 

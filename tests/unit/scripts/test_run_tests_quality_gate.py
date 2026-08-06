@@ -5878,6 +5878,7 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-near-budget.js"
     chunk_path.write_text("a" * 950, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5913,6 +5914,9 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-test.js"
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text(
+        "console.log('markdown');\n", encoding="utf-8"
+    )
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5943,6 +5947,100 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
         "SIDAR_TOTAL_JS_BUDGET_KB",
         "SIDAR_TOTAL_GZIP_BUDGET_KB",
     ]
+
+
+def test_frontend_bundle_budget_gates_the_markdown_vendor_chunk_independently(
+    tmp_path: Path,
+) -> None:
+    """ChatMarkdownRenderer must have its own tripwire, not just the total budget.
+
+    A friend code review flagged that only the react-dom chunk had a
+    dedicated budget -- an accidentally-eager import or a new remark/rehype
+    plugin bloating the lazy markdown vendor graph (react-markdown +
+    remark-gfm + their transitive parser packages, the largest non-vendor
+    chunk) would only trip a gate once the *total* JS/gzip budget was
+    exceeded, by which point it's already grown a lot. Pin that the
+    ChatMarkdownRenderer chunk is now gated the same way react-dom is:
+    independently, regardless of how much total-budget headroom remains.
+    """
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-test.js").write_text("a" * 100, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text("a" * 2048, encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+            "SIDAR_MARKDOWN_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "500",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "500",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "ChatMarkdownRenderer chunk ChatMarkdownRenderer-test.js exceeds budget" in (
+        result.stdout + result.stderr
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    markdown_budget = next(
+        chunk for chunk in report["namedChunks"] if chunk["label"] == "ChatMarkdownRenderer"
+    )
+    assert markdown_budget["budgetKb"] == 1
+    assert markdown_budget["chunks"][0]["name"] == "ChatMarkdownRenderer-test.js"
+    # A well-within-budget total must not mask the per-chunk failure.
+    assert report["budgetUsage"]["totalJs"]["warning"] is False
+
+
+def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
+    """Pin the cache-isolation split behind the ChatMarkdownRenderer budget.
+
+    A friend code review pointed out that rehypeSidarHighlight.ts (Sidar's
+    own rehype plugin) was co-bundled with the large, rarely-changing
+    react-markdown/remark-gfm vendor parser graph in one lazy chunk --
+    editing Sidar's own highlight config (e.g. adding a language) busted
+    the cache for the entire vendor bundle too. vite.config.js now gives it
+    a dedicated manual chunk so the vendor graph's cache survives those
+    edits; scripts/check-bundle-budget.mjs gates the (now vendor-only)
+    ChatMarkdownRenderer chunk with its own budget instead of relying on
+    the total JS/gzip budget alone.
+    """
+    vite_config = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+    bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(
+        encoding="utf-8"
+    )
+    readme = Path("web_ui_react/README.md").read_text(encoding="utf-8")
+
+    assert 'id.endsWith("/src/lib/rehypeSidarHighlight.ts")' in vite_config
+    assert 'return "rehype-sidar-highlight";' in vite_config
+    assert "namedChunkBudgets" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB" in bundle_budget_script
+    assert "ChatMarkdownRenderer" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190" in readme
+    assert "rehype-sidar-highlight-*.js" in readme
+    assert "ChatMarkdownRenderer-*.js" in readme
+
+    build_result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert build_result.returncode == 0, build_result.stdout + build_result.stderr
+    emitted = [path.name for path in Path("web_ui_react/dist/assets").glob("*.js")]
+    assert any(name.startswith("rehype-sidar-highlight-") for name in emitted)
+    assert any(name.startswith("ChatMarkdownRenderer-") for name in emitted)
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
