@@ -6957,3 +6957,44 @@ def test_production_secret_rotation_gate_rejects_missing_production_profile(
     )
 
     assert probe.stdout.strip() == "blocked"
+
+
+def test_frontend_eslint_covers_typescript_sources_including_a11y_rules() -> None:
+    """Guard the .ts/.tsx lint-coverage fix so it can't silently regress.
+
+    A friend code review flagged (independently confirmed already fixed by
+    an earlier commit in this same PR) that eslint.config.js's rule block
+    only matched src/**/*.{js,jsx} and the lint script only passed
+    --ext .js,.jsx -- so once the TypeScript migration finished, jsx-a11y/
+    react/react-hooks rules covered zero production components, only test
+    files. A regressed disable comment (e.g. GraphView.tsx's
+    jsx-a11y/no-noninteractive-element-to-interactive-role suppression)
+    would go silently untracked. Pin the fix so the glob/ext can't drift
+    back to js/jsx-only without a test failure.
+    """
+    eslint_config = Path("web_ui_react/eslint.config.js").read_text(encoding="utf-8")
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    graph_view = Path("web_ui_react/src/components/panels/swarm/GraphView.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert package_json["scripts"]["lint"] == (
+        "eslint src --ext .js,.jsx,.ts,.tsx --report-unused-disable-directives"
+    )
+    assert 'files: ["src/**/*.{ts,tsx}"]' in eslint_config
+    assert "typescript-eslint" in eslint_config
+    assert "tseslint.configs.recommended" in eslint_config
+    ts_block_start = eslint_config.index('files: ["src/**/*.{ts,tsx}"]')
+    ts_block_end = eslint_config.index("}),", ts_block_start)
+    ts_block = eslint_config[ts_block_start:ts_block_end]
+    assert "reactAndA11yRules" in ts_block
+    assert "reactAndA11yPlugins" in ts_block
+    assert "jsx-a11y/no-noninteractive-element-to-interactive-role" in graph_view
+
+    lint = subprocess.run(
+        ["npm", "run", "lint"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert lint.returncode == 0, lint.stdout + lint.stderr
