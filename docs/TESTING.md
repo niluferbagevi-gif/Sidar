@@ -29,6 +29,33 @@ yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küç�
 test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
 uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
 
+## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
+
+`bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri
+ve production-readiness komutları (bkz. `tests/unit/scripts/test_run_tests_quality_gate.py::
+test_run_tests_help_lists_make_and_direct_production_readiness_commands`). Bu yalnızca CLI
+bayrağını (`--stage`) belgeler — `run_tests.sh`'in kendisi ~60-70 farklı `${VAR:-...}` env-var
+bayrağı okur, `scripts/test_gates/*.sh`+`summary.py` (10 dosya) ile birlikte toplam ~176 farklı
+env-var adı referanslanır; bunların hiçbiri `--help` çıktısında listelenmez.
+
+**Bilinen sınırlama (bir arkadaş kod incelemesinde tespit edildi):** Bilinmeyen `SIDAR_*`/
+`BENCHMARK_*`/`COVERAGE_*` değişkenlerini reddeden bir şema doğrulaması yok — örn.
+`BENCMARK_COMPARE_FAIL=mean:5%` (yazım hatası) sessizce yok sayılır, gerçek
+`BENCHMARK_COMPARE_FAIL` varsayılana düşer. Bunu kapatmak için "run_tests.sh/scripts/test_gates
+kaynağından `${VAR}` referanslarını grep'leyip otomatik bir allowlist türet, ortamdaki
+`SIDAR_*`/`BENCHMARK_*`/`COVERAGE_*` değişkenlerini bununla karşılaştır, tanınmayanları uyar"
+şeklinde bir tasarım denendi ve **gerçek bir false-positive'le karşılaşıldığı için ertelendi**:
+`SIDAR_ENV` — CI'da her zaman set edilen, gerçek ve gerekli bir değişken — `run_tests.sh` veya
+`scripts/test_gates/*.sh` içinde hiçbir yerde `${SIDAR_ENV}` olarak geçmiyor, çünkü bash
+orkestrasyonu tarafından değil `config.py`/Python runtime tarafından tüketiliyor. Yani kaynak
+dosyalardan otomatik türetilen bir allowlist, bu ve benzeri (aynı önekli ama uygulama
+config'ine ait, orkestrasyon knob'u olmayan) değişkenleri "tanınmayan/olası yazım hatası"
+diye sessizce yanlış işaretler — ilk gerçek CI çalıştırmasında güvenilirliğini kaybedip
+görmezden gelinecek bir araca dönüşür. Doğru bir çözüm ya uygulama config'ini de kapsayan
+daha geniş bir cross-reference (örn. `config.py`'nin kendi `os.getenv` yüzeyiyle birleştirme)
+ya da elle bakımı gereken, ayrı tutulan bir allowlist gerektirir — ikisi de bu notun ötesinde,
+ayrı bir iş kalemi olarak ele alınmalı.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest

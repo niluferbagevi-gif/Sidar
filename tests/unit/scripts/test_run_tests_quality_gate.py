@@ -1271,6 +1271,25 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
     )
 
 
+def test_testing_docs_explain_env_var_typo_safety_limitation() -> None:
+    """Guard the documented rationale for skipping an env-var typo checker.
+
+    A friend code review flagged run_tests.sh's large env-var surface (no
+    schema validation rejects unknown/typo'd SIDAR_*/BENCHMARK_*/COVERAGE_*
+    names). Confirmed --help exists (see the test above) but doesn't cover
+    env vars; a warn-only auto-derived allowlist design was tried and
+    rejected because SIDAR_ENV -- a real CI-set variable consumed by
+    config.py, not by run_tests.sh/scripts/test_gates -- would false-positive
+    immediately. This is documented as a known limitation rather than shipped
+    half-correct; pin the documented rationale so it doesn't silently drop.
+    """
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması" in testing_doc
+    assert "Bilinen sınırlama" in testing_doc
+    assert "SIDAR_ENV" in testing_doc and "false-positive" in testing_doc
+
+
 def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
     script = _script()
     body = _extract_run_tests_function("check_production_readiness_system_dependencies")
