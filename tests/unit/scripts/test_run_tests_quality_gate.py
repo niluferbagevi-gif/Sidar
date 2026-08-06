@@ -25,6 +25,31 @@ def _script() -> str:
     return expanded_bash_source(RUN_TESTS)
 
 
+def _skip_unless_frontend_dependencies_installed(*package_names: str) -> None:
+    """Skip (not fail) a test that shells out to a real `npm run ...`.
+
+    tests/unit must stay runnable standalone: github_upload.py's local
+    pre-push quality gate runs exactly `uv run pytest tests/unit -q --no-cov
+    -x` with no `cd web_ui_react && npm ci` step first -- by design, it's a
+    fast backend/installer-focused gate (see run_pre_push_quality_gate()'s
+    docstring in github_upload.py), not a full CI replica. CI's own
+    dedicated frontend lint/build steps always run `npm ci` first and stay
+    the authoritative gate regardless of this check; this live subprocess
+    call is a bonus for whoever already has web_ui_react/node_modules
+    populated (local frontend dev, or CI's own `pytest tests/unit` step,
+    which runs after `npm ci` within the same job) -- it must not turn into
+    a hard failure for anyone who doesn't.
+    """
+    node_modules = Path("web_ui_react/node_modules")
+    missing = [name for name in package_names if not (node_modules / name).exists()]
+    if missing:
+        pytest.skip(
+            f"web_ui_react/node_modules is missing {missing}; run "
+            "'cd web_ui_react && npm ci' first to exercise this live check "
+            "(CI's frontend lint/build steps always do)."
+        )
+
+
 def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
     """Return a run_tests.sh block for structure-oriented shell assertions."""
     script = _script()
@@ -5446,6 +5471,7 @@ def test_ci_runs_full_frontend_e2e_suite_not_just_smoke() -> None:
     }
     assert spec_files == expected_specs
 
+    _skip_unless_frontend_dependencies_installed("@playwright/test", "playwright")
     list_result = subprocess.run(
         ["npx", "playwright", "test", "--list"],
         cwd=Path("web_ui_react"),
@@ -6031,6 +6057,7 @@ def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
     assert "rehype-sidar-highlight-*.js" in readme
     assert "ChatMarkdownRenderer-*.js" in readme
 
+    _skip_unless_frontend_dependencies_installed("vite", "@vitejs/plugin-react", "react-markdown")
     build_result = subprocess.run(
         ["npm", "run", "build"],
         cwd=Path("web_ui_react"),
@@ -7138,6 +7165,7 @@ def test_frontend_eslint_covers_typescript_sources_including_a11y_rules() -> Non
     assert "reactAndA11yPlugins" in ts_block
     assert "jsx-a11y/no-noninteractive-element-to-interactive-role" in graph_view
 
+    _skip_unless_frontend_dependencies_installed("typescript-eslint", "eslint-plugin-jsx-a11y")
     lint = subprocess.run(
         ["npm", "run", "lint"],
         cwd=Path("web_ui_react"),
