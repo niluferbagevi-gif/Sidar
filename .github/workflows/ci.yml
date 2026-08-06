@@ -382,7 +382,21 @@ jobs:
 
       - name: Run base quality gates (performance isolated)
         env:
-          FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
+          # web_ui_react/e2e/ has 8 spec files; only chat-websocket.spec.js
+          # ("smoke") ever ran here, so the other 7 panel specs (admin-panels,
+          # agent-manager, p2p-dialogue, prompt-admin, swarm-flow, tools-panel,
+          # voice-panel) never executed in any automated path -- not in CI, not
+          # in any nightly/weekly/release workflow, and not even via `make
+          # production-readiness` despite docs/TESTING.md's "yalnız
+          # RUN_FRONTEND_E2E=1 ile tam gate'te tetiklenir" claim (that claim
+          # was aspirational; FRONTEND_E2E_NPM_SCRIPT was never actually set
+          # anywhere but here). Running the full suite surfaced two real,
+          # previously-undetected bugs (see the CHANGELOG entry) before this
+          # was turned on as release-blocking; test:e2e (all 8 specs, ~10
+          # tests) is fast (~12s locally with 2 workers) and self-contained
+          # (each spec starts its own mock backend + Vite server, no shared
+          # infra), so there's no cost reason to keep it scoped to one file.
+          FRONTEND_E2E_NPM_SCRIPT: "test:e2e"
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"

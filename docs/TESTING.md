@@ -77,14 +77,29 @@ frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulam
 
 ### Frontend Playwright kapsamı: smoke / critical / full
 
-`web_ui_react/e2e/` altında 8 spec dosyası var, ama günlük local `./run_tests.sh`
-akışı yalnız `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) çalıştırır — diğer 7
-panel spec'i (`admin-panels`, `agent-manager`, `p2p-dialogue`, `prompt-admin`,
-`swarm-flow`, `tools-panel`, `voice-panel`) yalnız `RUN_FRONTEND_E2E=1` ile tam
-gate'te (`make production-readiness` / `--stage frontend`) tetiklenir. Sık
-değişen panellerde (örn. Agent Manager, Swarm Flow) erken local sinyal için
-opsiyonel bir ara kademe var: `test:e2e:critical`, smoke kapsamına ek olarak bu
-iki paneli de çalıştırır.
+`web_ui_react/e2e/` altında 8 spec dosyası var. `FRONTEND_E2E_NPM_SCRIPT`
+belirtilmediğinde `run_tests.sh`'ın (ve dolayısıyla düz local `./run_tests.sh`
+akışının) varsayılanı hâlâ `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) —
+bu bilinçli, hızlı bir local iterasyon varsayılanıdır.
+
+**Release-blocking `.github/workflows/ci.yml` `test` job'ı ve `make
+base-quality-gates`/`make production-readiness` artık `FRONTEND_E2E_NPM_SCRIPT=test:e2e`
+ile açıkça override ediyor — yani diğer 7 panel spec'i de (`admin-panels`,
+`agent-manager`, `p2p-dialogue`, `prompt-admin`, `swarm-flow`, `tools-panel`,
+`voice-panel`) her PR'da ve her `make production-readiness` çalışmasında
+çalışıyor.** Bu, önceki bir sürümde yalnızca dokümantasyonda vaat edilen ama
+hiçbir otomatik yolda (ne CI'da, ne `make production-readiness`'te, ne başka
+bir workflow'da) gerçekten tetiklenmeyen bir kapsamdı — 7 spec hiçbir zaman
+çalışmamıştı. Bu boşluk kapatılırken iki gerçek, önceden hiç yakalanmamış bug
+ortaya çıktı (bkz. CHANGELOG): `voice-panel.spec.js`'in tarayıcı mock kurulumu
+(`navigator.mediaDevices = {...}`, Chromium'da sessizce no-op olan getter-only
+bir accessor'a düz atama) ve `useVoiceAssistant.ts`'nin `stop()` sonrası
+sunucudan gelen `voice_interruption` ack'ini "SİDAR sesi kesildi" olarak
+göstermesi (mikrofon zaten kapalıyken anlamsız/yanıltıcı bir durum).
+
+Sık değişen panellerde (örn. Agent Manager, Swarm Flow) local iterasyon için
+smoke ile full arası opsiyonel bir ara kademe var: `test:e2e:critical`, smoke
+kapsamına ek olarak bu iki paneli de çalıştırır.
 
 ```bash
 cd web_ui_react && npm run test:e2e:critical
@@ -92,11 +107,13 @@ cd web_ui_react && npm run test:e2e:critical
 FRONTEND_E2E_NPM_SCRIPT=test:e2e:critical RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
 ```
 
-Bu üçüncü kademe `test:e2e:smoke`'un "hızlı sinyal, full QA değil" sözleşmesini
-değiştirmez — varsayılan hâlâ `test:e2e:smoke`'tur; `test:e2e:critical` yalnız
-isteğe bağlı, daha geniş ama hâlâ hızlı bir local kontrol seçeneğidir. Tüm 8
-spec'in çalıştığı tam kapsam için hâlâ `test:e2e` (`RUN_FRONTEND_E2E=1` gate'i)
-gerekir.
+Bu ara kademe yalnızca local hızlı-iterasyon için bir seçenektir; local
+varsayılan hâlâ `test:e2e:smoke`'tur. Tüm 8 spec'in çalıştığı tam kapsamı
+local'de manuel istemek için:
+
+```bash
+FRONTEND_E2E_NPM_SCRIPT=test:e2e RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+```
 
 Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde kalite kapısı olarak
 geçerli kabul edilir. `run_tests.sh`, pytest/BATS/security gibi backend fazlarından

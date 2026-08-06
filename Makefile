@@ -78,8 +78,13 @@ ci-parity:
 		SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 		SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)
 
+# FRONTEND_E2E_NPM_SCRIPT=test:e2e mirrors ci.yml's "test" job exactly: all 8
+# web_ui_react/e2e/ specs, not just the smoke default. Without this override
+# `make production-readiness` silently ran a narrower e2e suite than CI itself
+# despite claiming full-gate parity.
 base-quality-gates:
 	TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1 \
+	FRONTEND_E2E_NPM_SCRIPT=test:e2e \
 	SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS) \
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \

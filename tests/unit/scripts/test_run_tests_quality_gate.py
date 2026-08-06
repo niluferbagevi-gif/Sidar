@@ -5161,7 +5161,10 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         "Install Playwright Chromium for frontend smoke tests"
     )
     assert "npx playwright install --with-deps chromium" in ci
-    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' in ci
+    # All 8 web_ui_react/e2e/ specs run here (not just the smoke default),
+    # see test_ci_runs_full_frontend_e2e_suite_not_just_smoke below for the
+    # regression this closes.
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci

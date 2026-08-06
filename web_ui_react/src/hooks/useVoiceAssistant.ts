@@ -459,7 +459,21 @@ export function useVoiceAssistant({
         }
         if (msg.voice_interruption) {
           stopPlayback(String(msg.voice_interruption));
-          setStatus("interrupted", `SİDAR sesi kesildi: ${msg.voice_interruption}`);
+          // stop() sends {action:"cancel"} unconditionally and the server
+          // acks every cancel with a voice_interruption message, including
+          // one the user themselves triggered by pressing the mic-stop
+          // button (mic already inactive by then). Without this check that
+          // ack overwrote stop()'s "idle" status with "interrupted"/"SİDAR
+          // sesi kesildi" -- confusing wording for a stop nothing was
+          // actually interrupting, and inconsistent with interrupt() below,
+          // which already treats an inactive mic as idle rather than
+          // interrupted.
+          setStatus(
+            stateRef.current.isMicActive ? "interrupted" : "idle",
+            stateRef.current.isMicActive
+              ? `SİDAR sesi kesildi: ${msg.voice_interruption}`
+              : undefined,
+          );
           pushDiagnostic("Kesinti", `${msg.voice_interruption} · iptal edilen ses #${msg.cancelled_audio_sequences ?? 0}`);
           return;
         }
