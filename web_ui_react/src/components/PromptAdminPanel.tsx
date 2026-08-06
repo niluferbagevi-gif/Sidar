@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { fetchJson } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
 
 interface PromptItem {
   id: string | number;
@@ -30,10 +31,6 @@ const EMPTY_FORM: PromptForm = {
   prompt_text: "",
   activate: true,
 };
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export function PromptAdminPanel() {
   const [items, setItems] = useState<PromptItem[]>([]);

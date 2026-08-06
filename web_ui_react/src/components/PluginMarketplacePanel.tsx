@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
 
 type MarketplaceAction = "install" | "reload" | "remove";
 
@@ -49,10 +50,6 @@ function marketplaceItems(payload: unknown): MarketplaceItem[] {
       live_registered: item.live_registered === true,
     }];
   });
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }
 
 export function PluginMarketplacePanel() {

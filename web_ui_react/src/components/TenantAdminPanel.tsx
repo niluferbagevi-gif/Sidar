@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { fetchJson } from "../lib/api.js";
 import type { AccessPolicy, AuditLog, ItemsResponse } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
 
 interface PolicyForm {
   user_id: string;
@@ -10,9 +11,6 @@ interface PolicyForm {
   action: string;
   effect: string;
 }
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const DEFAULT_POLICY_FORM: PolicyForm = {
   user_id: "",

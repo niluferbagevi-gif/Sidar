@@ -11,6 +11,7 @@ import {
 } from "../lib/api.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { useFormState } from "../hooks/useFormState.js";
+import { errorMessage } from "../lib/errors.js";
 
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
@@ -24,9 +25,6 @@ const FORM_FIELD_LABELS: Record<string, string> = {
   call_to_action: "Eylem çağrısı",
   tone: "Ton",
 };
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const typedEntries = <T extends Record<string, unknown>>(value: T) =>
   Object.entries(value) as [keyof T, T[keyof T]][];
