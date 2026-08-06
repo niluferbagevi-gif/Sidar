@@ -105,6 +105,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "hedef tamamlanma **2027-03-31**" in plan
     assert "hâlâ ham `os.getenv(...)` inline çözümlenen ~35 alan" in plan
     assert "marketing/social entegrasyonları önce, en izole grup" in plan
+    assert "en düşük riskli silinecek ikili" in plan
+    assert "`main.py:874-903`'te de aynı desen" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
