@@ -134,6 +134,19 @@ PY
   fi
 
   # Aşama 2: Integration/Smoke/E2E testleri (sınırlı paralellik)
+  # Varsayılan 2, Aşama 1'in PYTEST_WORKERS=auto'sundan (çekirdek sayısı kadar,
+  # örn. CI runner'da 8) kasıtlı olarak çok daha düşük: bu fazdaki testler
+  # (tests/integration, tests/smoke, tests/e2e) CI'da tek bir paylaşılan
+  # PostgreSQL servisine (DATABASE_URL=.../sidar_test, ci.yml'de job genelinde
+  # tanımlı, worker başına izole değil) bağlanır. Unit fazı mock/izole
+  # state kullandığı için yüksek paralellik güvenlidir; bu fazda ise
+  # aynı tabloları/satırları paylaşan testlerin fazla worker'la eşzamanlı
+  # çalışması sahte-flaky race condition'lara yol açar. 2, tam seri (1) ile
+  # tam paralel (auto) arasında ampirik olarak seçilmiş bir orta nokta —
+  # `tests/integration/db` gibi gerçekten izole ihtiyacı olan senaryolar
+  # ayrıca kendi geçici SQLite/testcontainers fixture'larını kullanır (bkz.
+  # tests/_fixtures/postgres.py). Yükseltmeden önce paylaşılan DB üzerinde
+  # gerçek eşzamanlılık kanıtı olmadan bu değeri artırmayın.
   local phase2_workers="${INTEGRATION_PYTEST_WORKERS:-2}"
   local phase2_cmd=("${base_pytest_cmd[@]}")
   local filtered_phase2_cmd=()
