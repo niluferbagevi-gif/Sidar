@@ -78,10 +78,15 @@ envanter 10 `.js`, 23 `.jsx`, 8 `.ts`, 19 `.tsx`; ratchet 33 untyped / 27 typed'
 component prop'unu, DOM root bootstrap kontrolünü ve tolerant HAST traversal tiplerini
 kapıya dahil etmiştir. Vite CSS side-effect tipi için `vite-env.d.ts` eklenmiştir.
 Güncel envanter 9 `.js`, 20 `.jsx`, 10 `.ts`, 22 `.tsx`; ratchet 29 untyped / 32 typed'dır.
-`checkJs: false` olduğu için `npm run typecheck`, JavaScript/JSX
-bileşen ağacına tam tip güvencesi sağlamaz. Yaklaşık 2974 mevcut hatayı tek seferde
-kalite kapısına taşımak yerine geçiş aşağıdaki ratchet ve küçük domain dilimleriyle
-yürütülür.
+`checkJs: false` olduğu için `npm run typecheck`, kalan `.js`/`.jsx` dosyalarına
+tam tip güvencesi sağlamaz. **2026-08-06 itibarıyla bileşen/hook/lib ağacının
+migrasyonu tamamlanmıştır** -- `src/` altında kalan 29 `.js`/`.jsx` dosyasının
+tamamı test dosyası (`*.test.jsx`, `*.test.js`) veya test altyapısıdır
+(`src/test/setup.js`); untyped uygulama kodu kalmamıştır. `checkJs: true`
+geçici olarak açılıp doğrulandığında (2026-08-06) ~2500 hata görülür ve bunların
+tamamı test dosyalarındadır, uygulama kaynağında sıfır hata vardır. Kalan geçiş
+artık "küçük domain dilimleri" değil, mekanik test dosyası dönüşümüdür; bkz.
+aşağıdaki Nüans notu.
 
 ## Zorunlu ratchet
 
@@ -105,8 +110,8 @@ değerleri `npm run typecheck:inventory` tarafından tarih geldiğinde fail-clos
 |---|---:|---:|---|
 | 2026-09-30 | 45 | 15 | Düşük bağımlılıklı hook/helper ve ortak API tipleri |
 | 2026-12-15 | 30 | 30 | `src/lib`, veri/state ve controller katmanı |
-| 2027-02-15 | 12 | 48 | Leaf React bileşenleri ve prop/event/ref tipleri |
-| 2027-03-31 | 0 | 60 | Tam `.ts/.tsx` kaynak ağacı ve compatibility kapısının kaldırılması |
+| 2027-02-15 | 12 | 48 | Kalan test dosyalarının bir kısmının `.test.ts`/`.test.tsx`'e dönüşümü |
+| 2027-03-31 | 0 | 60 | Tüm test dosyalarının dönüşümü, tam `.ts/.tsx` kaynak ağacı ve compatibility kapısının kaldırılması |
 
 Milestone zamanı geldiğinde baseline'daki genel ratchet daha gevşek kalsa bile tarihli hedef
 önceliklidir. Gecikme, baseline veya tarihi ileri taşıyarak gizlenemez; sahip onayı, gerekçe ve
@@ -116,14 +121,30 @@ yeni expiry tarihi içeren ayrı bir istisna kaydı gerekir.
    hook/helper dosyalarını taşı; `npm run typecheck`, lint ve ilgili Vitest testlerini çalıştır.
 2. **2026-12-15 — veri ve orchestration katmanı:** `src/lib` ve state/controller hook'larını
    taşı; API response tiplerini runtime doğrulamanın yerine geçecek şekilde kullanma.
-3. **2027-02-15 — React bileşenleri:** leaf bileşenlerden başlayıp props/event/ref tiplerini
-   ekleyerek `.tsx`'e geç; her dilimde component testleri ve accessibility lint korunur.
-4. **2027-03-31 — kapı aktivasyonu:** untyped kaynak kalmadığında `allowJs` ve `checkJs`
-   compatibility ayarlarını kaldır; envanter ratchet'ini tam TypeScript kapısıyla değiştir.
+3. **2027-02-15 — kalan test dosyaları (1. dilim):** (2026-08-06 itibarıyla bileşen/hook/lib
+   ağacı zaten tamamlandığı için) `*.test.jsx`/`*.test.js` dosyalarının bir kısmını
+   `.test.ts`/`.test.tsx`'e taşı; Vitest testleri ve coverage eşiği korunur.
+4. **2027-03-31 — kapı aktivasyonu:** kalan test dosyaları da dönüştürülüp untyped kaynak
+   kalmadığında `allowJs` ve `checkJs` compatibility ayarlarını kaldır; envanter ratchet'ini
+   tam TypeScript kapısıyla değiştir.
 
 Her taşıma PR'ı dönüştürülen dosyaları, baseline'ın eski/yeni değerini ve çalıştırılan
 Vitest kapsamını listelemelidir. `any`, geniş `unknown` cast'leri veya toplu `@ts-ignore`
 kullanımı dosya uzantısını değiştirmek için kabul kriteri değildir.
+
+**Nüans (bir arkadaş kod incelemesi, 2026-08-06):** İnceleme, install-log envanterinin
+(js=9, jsx=20, ts=10, tsx=22) doğru olduğunu ama yukarıdaki anlatımın eski kaldığını
+işaret etti -- kalan 29 untyped dosyanın tamamı test dosyası/altyapısıdır, sıfır
+uygulama bileşeni untyped kalmamıştır. Doğrulama: `find src -name "*.js" -o -name
+"*.jsx"` çıktısının 29 satırının tamamı `*.test.jsx`, `*.test.js` veya
+`src/test/setup.js`; `checkJs: true` geçici olarak açılıp `tsc --noEmit` çalıştırıldığında
+(2026-08-06) ~2500 hatanın tamamı test dosyalarında, uygulama kaynağında sıfır hata.
+Test dosyalarının dönüştürülmesini öncelik haline getirmeye değer mi sorusuna yanıt:
+hayır, ayrı bir sprint olarak değil -- kalan iş artık production risk taşımayan mekanik
+bir dönüşüm olduğundan, milestone tablosundaki tarihli hedefler yeterli bir zorlayıcıdır;
+her test dosyası zaten dokunulduğu (bugfix, yeni assertion) PR'da fırsatçı biçimde
+`.test.ts`/`.test.tsx`'e taşınmalı, komple bir "test dosyalarını taşı" PR'ı ayrıca
+planlanmamalıdır.
 
 ## Coverage ratchet'i
 
