@@ -202,8 +202,9 @@ print_release_readiness_next_action() {
 
     echo -e "  ${BOLD}🚦 Release / merge readiness:${NC}"
     if [[ "$production_ready" == "true" ]]; then
-        echo -e "       ${GREEN}✅ Production readiness geçti.${NC}"
-        echo "       Release/merge kapısı tamamlandı: make production-readiness"
+        echo -e "       ${GREEN}✅ Yerel/base production-readiness kapısı geçti.${NC}"
+        echo -e "       ${YELLOW}⚠️  Bu sonuç self-hosted GPU TTFT/latency kanıtını içermez.${NC}"
+        echo "       Release/merge için CI GPU Inference Required Evidence Gate ve aggregate sonucu zorunludur."
         return
     fi
 
@@ -225,9 +226,11 @@ print_release_readiness_next_action() {
     echo -e "       ${YELLOW}   bu gate'i (production-readiness job) her push/PR'da otomatik çalıştırır${NC}"
     echo -e "       ${YELLOW}   (bkz. .github/workflows/ci.yml). Aşağıdaki komut yereldeki eşdeğer çalıştırmadır.${NC}"
     echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
-    echo -e "       ${BOLD}Release/merge için tek zorunlu kapı:${NC}"
+    echo -e "       ${BOLD}Yerel ön doğrulama (merge kararı değildir):${NC}"
     echo "       make production-readiness"
     echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    echo -e "       ${BOLD}Asıl release/merge kararı:${NC} PR'ı açın ve required GitHub Actions"
+    echo "       'Production readiness aggregate' check'inin geçmesini bekleyin."
 }
 
 
@@ -241,9 +244,36 @@ sidar_summary_materialize_real_keys_to_env_enabled() {
     esac
 }
 
+sidar_summary_external_api_key_count() {
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local count=0
+    local key_name=""
+
+    [[ -f "$sidar_keys_file" ]] || { printf '0'; return 0; }
+    declare -F sidar_user_api_key_names >/dev/null 2>&1 || { printf '0'; return 0; }
+    declare -F read_env_value_from_file >/dev/null 2>&1 || { printf '0'; return 0; }
+    while IFS= read -r key_name; do
+        [[ -n "$key_name" ]] || continue
+        if [[ -n "$(read_env_value_from_file "$key_name" "$sidar_keys_file" | tr -d '[:space:]')" ]]; then
+            ((count+=1))
+        fi
+    done < <(sidar_user_api_key_names)
+    printf '%s' "$count"
+}
+
+print_optional_rag_next_step() {
+    echo -e "  7️⃣  RAG/GraphRAG hazır oluşunu doğrula:"
+    echo "       Geliştirici kurulumunda metadata seed varsayılan olarak migrasyondan sonra uygulanır."
+    echo "       Tam vektör seed veya yeniden oluşturma: uv run python -m scripts.seed_rag"
+    echo "       Sonucu doğrula: uv run python -m core.doctor artifacts/install/doctor.json"
+    echo "       Onboarding ve pgvector fallback teşhisi: docs/RAG_ONBOARDING.md"
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local external_api_keys_filled=0
     summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -261,8 +291,10 @@ print_summary() {
     if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
         echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
     elif ! sidar_summary_materialize_real_keys_to_env_enabled; then
+        external_api_keys_filled="$(sidar_summary_external_api_key_count)"
         echo -e "  ${BLUE}ℹ️  .env dosyasında ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL} API anahtarı dolu; bu beklenen güvenli kurulum davranışıdır.${NC}"
-        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE (${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}) kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
+        echo "  Secret overlay durumu: ${external_api_keys_filled}/${ENV_API_KEYS_TOTAL} dolu servis anahtarı (${sidar_keys_file})."
+        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
         echo "  .env içinde boş görünen servis anahtarları, SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 verilmedikçe uyarı değildir."
     else
         echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
@@ -325,6 +357,8 @@ print_summary() {
     echo "       ./run_tests.sh"
     echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
     echo ""
+    print_optional_rag_next_step
+    echo ""
     print_release_readiness_next_action
     echo ""
     print_install_validation_coverage
@@ -358,8 +392,9 @@ print_summary() {
     echo "  dev-full (local tam doğrulama; backend + frontend + benchmark + BATS + security):"
     echo "    make dev-full"
     echo "    # Eşdeğer: bash run_tests.sh --stage all"
-    echo "  production-readiness (merge/release kapısı):"
+    echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
     echo "    make production-readiness"
+    echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"

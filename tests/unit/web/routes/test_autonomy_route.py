@@ -166,6 +166,23 @@ def test_validate_autonomy_webhook_signature_delegates_to_shared_hmac_verifier()
     ]
 
 
+def test_validate_autonomy_webhook_signature_rejects_missing_delivery_id() -> None:
+    calls: list[tuple[Any, ...]] = []
+
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_autonomy_webhook_signature(
+            payload_body=b"{}",
+            cfg=SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="secret"),
+            signature_header="sha256=ok",
+            delivery_id="",
+            verify_hmac_signature=lambda *args, **kwargs: calls.append((*args, kwargs)),
+        )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Autonomy webhook delivery kimliği eksik."
+    assert calls == []
+
+
 def test_validate_autonomy_webhook_signature_preserves_verifier_http_errors() -> None:
     def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise HTTPException(status_code=401, detail="Autonomy webhook imza başlığı eksik.")

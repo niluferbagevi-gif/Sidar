@@ -467,9 +467,21 @@ class Database(DatabaseConnectionMixin):
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
 
+        # NOT NULL, added explicitly on every PRIMARY KEY column below (both TEXT
+        # and INTEGER AUTOINCREMENT ones): SQLite's PRIMARY KEY alone does not
+        # imply NOT NULL the way SQL:1999/Alembic's Column(primary_key=True)
+        # does — a bare `id TEXT PRIMARY KEY` still accepts NULL, and since
+        # SQLite's UNIQUE/PRIMARY KEY index never treats two NULLs as
+        # conflicting, that silently allowed multiple NULL-id rows. This also
+        # keeps this hand-written bootstrap DDL structurally comparable to the
+        # Alembic-managed PostgreSQL schema (see
+        # test_sqlite_bootstrap_schema_matches_alembic_head_schema in
+        # tests/integration/db/test_db_migrations_integration.py, which
+        # reflects both schemas and previously had to special-case this
+        # divergence).
         schema_sql = """
         CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT,
             role TEXT NOT NULL DEFAULT 'user',
@@ -478,7 +490,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS auth_tokens (
-            token TEXT PRIMARY KEY,
+            token TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -486,14 +498,14 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS user_quotas (
-            user_id TEXT PRIMARY KEY,
+            user_id TEXT PRIMARY KEY NOT NULL,
             daily_token_limit INTEGER NOT NULL DEFAULT 0,
             daily_request_limit INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS provider_usage_daily (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             provider TEXT NOT NULL,
             usage_date TEXT NOT NULL,
@@ -504,7 +516,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             title TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -513,7 +525,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -528,7 +540,7 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON
         provider_usage_daily(user_id);
         CREATE TABLE IF NOT EXISTS access_policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             resource_type TEXT NOT NULL,
@@ -545,7 +557,7 @@ class Database(DatabaseConnectionMixin):
             ON access_policies(user_id, tenant_id, resource_type, action);
 
         CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL DEFAULT '',
             tenant_id TEXT NOT NULL DEFAULT 'default',
             action TEXT NOT NULL,
@@ -558,7 +570,7 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 
         CREATE TABLE IF NOT EXISTS prompt_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             role_name TEXT NOT NULL,
             prompt_text TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 1,
@@ -572,7 +584,7 @@ class Database(DatabaseConnectionMixin):
         is_active);
 
         CREATE TABLE IF NOT EXISTS marketing_campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             name TEXT NOT NULL,
             channel TEXT NOT NULL DEFAULT '',
@@ -588,7 +600,7 @@ class Database(DatabaseConnectionMixin):
             ON marketing_campaigns(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS content_assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             asset_type TEXT NOT NULL,
@@ -604,7 +616,7 @@ class Database(DatabaseConnectionMixin):
             ON content_assets(campaign_id, tenant_id, asset_type);
 
         CREATE TABLE IF NOT EXISTS operation_checklists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             title TEXT NOT NULL,
@@ -619,7 +631,7 @@ class Database(DatabaseConnectionMixin):
             ON operation_checklists(campaign_id, tenant_id, status);
 
         CREATE TABLE IF NOT EXISTS coverage_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             requester_role TEXT NOT NULL DEFAULT 'coverage',
             command TEXT NOT NULL,
@@ -635,7 +647,7 @@ class Database(DatabaseConnectionMixin):
             ON coverage_tasks(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS coverage_findings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             task_id INTEGER NOT NULL,
             finding_type TEXT NOT NULL,
             target_path TEXT NOT NULL DEFAULT '',
@@ -747,8 +759,8 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT"
-                " NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
+                "applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(
                 f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -771,8 +783,8 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at "
-                f"TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
+                f"applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
             )
             current = await conn.fetchval(
                 f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -1284,42 +1296,7 @@ class Database(DatabaseConnectionMixin):
     async def upsert_user_quota(
         self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
     ) -> None:
-        tokens = max(0, int(daily_token_limit or 0))
-        requests = max(0, int(daily_request_limit or 0))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id)
-                    DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
-                                  daily_request_limit=EXCLUDED.daily_request_limit
-                    """,
-                    user_id,
-                    tokens,
-                    requests,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    daily_token_limit=excluded.daily_token_limit,
-                    daily_request_limit=excluded.daily_request_limit
-                """,
-                (user_id, tokens, requests),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_metrics.upsert_user_quota(self, user_id, daily_token_limit, daily_request_limit)
 
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1

@@ -52,11 +52,24 @@ async function installVoiceBrowserMocks(page) {
       }
     }
 
-    navigator.mediaDevices = {
-      getUserMedia: () => Promise.resolve({
-        getTracks: () => [{ stop() {} }],
-      }),
-    };
+    // Plain `navigator.mediaDevices = {...}` silently no-ops in Chromium:
+    // `mediaDevices` is a getter-only accessor on Navigator.prototype with no
+    // setter, and this init script runs as a non-strict classic script, so
+    // the assignment fails without throwing and every read keeps returning
+    // the real native object -- the app then calls the real getUserMedia,
+    // which rejects with "Requested device not found" in a headless/CI
+    // browser with no camera/mic device, and the whole voice flow never gets
+    // past that catch block. Object.defineProperty actually shadows the
+    // accessor.
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: {
+        getUserMedia: () => Promise.resolve({
+          getTracks: () => [{ stop() {} }],
+        }),
+      },
+      configurable: true,
+      writable: true,
+    });
     window.MediaRecorder = FakeMediaRecorder;
     window.AudioContext = FakeAudioContext;
   });
@@ -90,7 +103,13 @@ test.describe("Voice assistant panel e2e", () => {
 
     await page.getByRole("button", { name: "🎙 Mikrofonu Başlat" }).click();
 
-    await expect(page.getByText("Mock sesli komut")).toBeVisible({ timeout: 15_000 });
+    // "Mock sesli komut" also lands in the chat feed once the assistant
+    // replies, so scope this to the "Son transcript" readout the test
+    // actually means to assert on -- a bare getByText matches both and
+    // trips Playwright's strict-mode ambiguity check.
+    await expect(page.locator(".voice-panel__value").getByText("Mock sesli komut")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByText(/Voice durum: processed|Mikrofon açık/)).toBeVisible();
 
     await page.getByRole("button", { name: "■ Mikrofona Ara Ver" }).click();

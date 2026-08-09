@@ -7,8 +7,11 @@ wrapper names during the router modularization effort.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
+import threading
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -22,6 +25,67 @@ SIDAR_WS_VOICE_PROTOCOL = "sidar.voice.v1"
 SIDAR_WS_HITL_PROTOCOL = "sidar.hitl.v1"
 _WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
 METRICS_SERVICE_PATHS = frozenset({"/metrics", "/metrics/llm", "/metrics/llm/prometheus"})
+
+
+class WebhookReplayGuard:
+    """Bounded, thread-safe replay cache for signed webhook deliveries."""
+
+    def __init__(self, *, ttl_seconds: float = 600.0, max_entries: int = 10_000) -> None:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds pozitif olmalıdır")
+        if max_entries <= 0:
+            raise ValueError("max_entries pozitif olmalıdır")
+        self.ttl_seconds = ttl_seconds
+        self.max_entries = max_entries
+        self.seen: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def reject_replay(self, *, label: str, replay_key: str, now: float | None = None) -> None:
+        """Record a delivery key or reject it when it is still inside the TTL window."""
+        normalized_key = str(replay_key or "").strip()
+        if not normalized_key:
+            return
+        cache_key = f"{label}:{normalized_key}"
+        observed_at = time.monotonic() if now is None else now
+        with self._lock:
+            expired = [
+                key
+                for key, seen_at in self.seen.items()
+                if observed_at - seen_at >= self.ttl_seconds
+            ]
+            for key in expired:
+                self.seen.pop(key, None)
+            if cache_key in self.seen:
+                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
+            if len(self.seen) >= self.max_entries:
+                oldest_key = min(self.seen.items(), key=lambda item: item[1])[0]
+                self.seen.pop(oldest_key, None)
+            self.seen[cache_key] = observed_at
+
+
+def verify_webhook_hmac_signature(
+    payload_body: bytes,
+    secret_value: str,
+    signature_header: str,
+    *,
+    label: str,
+    replay_key: str = "",
+    replay_guard: WebhookReplayGuard | None = None,
+) -> None:
+    """Verify an HMAC-SHA256 webhook signature and optionally prevent replay."""
+    secret = str(secret_value or "").encode("utf-8")
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
+    if not signature_header:
+        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
+    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, signature_header):
+        raise HTTPException(status_code=401, detail="Geçersiz imza.")
+    if replay_guard is not None:
+        replay_guard.reject_replay(label=label, replay_key=replay_key)
 
 
 def parse_ws_subprotocol_values(raw_header: str) -> list[str]:

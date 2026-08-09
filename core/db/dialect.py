@@ -13,6 +13,7 @@ from core.db_components.dialect import (
 from core.db_components.dialect import (
     is_safe_sql_identifier as is_safe_sql_identifier,
 )
+from core.db_components.dialect import join_sql_identifiers as join_sql_identifiers
 from core.db_components.dialect import (
     parse_asyncpg_affected_rows as _parse_asyncpg_affected_rows,
 )

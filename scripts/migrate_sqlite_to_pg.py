@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from core.db_components.dialect import is_safe_sql_identifier
+from core.db.dialect import is_safe_sql_identifier, join_sql_identifiers
 
 TABLES_IN_ORDER = [
     "users",
@@ -77,7 +77,9 @@ async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -
         return 0
 
     placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
-    col_list = ", ".join(columns)
+    # Validate and interpolate the exact same immutable snapshot.  This closes the
+    # validate-then-join gap if introspection handling is changed in the future.
+    col_list = join_sql_identifiers(columns)
     query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608
 
     if dry_run:

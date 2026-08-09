@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from importlib import import_module
 from typing import Any
@@ -12,6 +13,14 @@ from agent.core.contracts_fallback import (
     default_derive_correlation_id,
 )
 from core.ci_remediation import build_ci_failure_prompt
+
+logger = logging.getLogger(__name__)
+
+# Safety net for federation/feedback/generic trigger prompts, which (unlike the CI
+# path) have no internal size budgeting: a malformed or oversized external trigger
+# (e.g. a federation partner submitting a huge context/meta payload) must not be
+# able to inflate the LLM prompt unbounded.
+_MAX_TRIGGER_PROMPT_CHARS = 60_000
 
 agent_contracts = sys.modules.get("agent.core.contracts") or import_module("agent.core.contracts")
 
@@ -118,6 +127,27 @@ def build_action_feedback_prompt(trigger: Any, payload_dict: dict[str, Any]) -> 
     ).to_prompt()
 
 
+def _cap_trigger_prompt(prompt: str, *, source_label: str) -> str:
+    """Bound an external-trigger prompt to ``_MAX_TRIGGER_PROMPT_CHARS``.
+
+    Federation/feedback/generic triggers are attacker- or partner-controlled
+    input rendered straight into an LLM prompt with no internal truncation
+    (unlike the CI path, which already budgets itself in ``core.ci_remediation``).
+    """
+    if len(prompt) <= _MAX_TRIGGER_PROMPT_CHARS:
+        return prompt
+    logger.warning(
+        "External trigger prompt (%s) exceeded %d chars (%d); truncating.",
+        source_label,
+        _MAX_TRIGGER_PROMPT_CHARS,
+        len(prompt),
+    )
+    return (
+        prompt[:_MAX_TRIGGER_PROMPT_CHARS].rstrip()
+        + "\n…[truncated: external trigger payload too large]"
+    )
+
+
 def build_trigger_prompt(
     trigger: Any,
     payload_dict: dict[str, Any],
@@ -128,10 +158,14 @@ def build_trigger_prompt(
         return build_ci_failure_prompt(ci_context)
 
     if payload_dict.get("kind") == "federation_task":
-        return build_federation_task_prompt(trigger, payload_dict)
+        return _cap_trigger_prompt(
+            build_federation_task_prompt(trigger, payload_dict), source_label="federation_task"
+        )
 
     event_name = str(trigger_attr(trigger, "event_name", "event"))
     if payload_dict.get("kind") == "action_feedback" or event_name == "action_feedback":
-        return build_action_feedback_prompt(trigger, payload_dict)
+        return _cap_trigger_prompt(
+            build_action_feedback_prompt(trigger, payload_dict), source_label="action_feedback"
+        )
 
-    return trigger_to_prompt(trigger)
+    return _cap_trigger_prompt(trigger_to_prompt(trigger), source_label="generic")

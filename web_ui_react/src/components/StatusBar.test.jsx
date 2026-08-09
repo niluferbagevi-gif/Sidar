@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StatusBar } from "./StatusBar.jsx";
+import { StatusBar } from "./StatusBar.tsx";
 
 const mockStore = {
   sessionId: "session-abc",

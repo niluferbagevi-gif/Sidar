@@ -1,17 +1,43 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import subprocess
+
 import pytest
 from fastapi import HTTPException
 
 from agent.base_agent import BaseAgent
 from web.plugins.sandbox import (
+    PLUGIN_RPC_MAX_RESPONSE_BYTES,
+    PLUGIN_RPC_VERSION,
+    DockerPluginSandboxBackend,
+    PluginSandboxError,
     assert_in_process_plugin_execution_allowed,
+    build_isolated_plugin_proxy,
     execute_validated_plugin_source,
     in_process_plugin_execution_allowed,
+    plugin_sandbox_backend,
     plugin_source_filename,
     restricted_plugin_import,
+    run_plugin_source_in_process,
     validate_plugin_source,
 )
+
+
+class _FakeCompletedProcess:
+    """Minimal stand-in for subprocess.CompletedProcess used by request() tests."""
+
+    def __init__(self, *, returncode: int = 0, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = ""
+
+
+def _docker_backend(monkeypatch: pytest.MonkeyPatch) -> DockerPluginSandboxBackend:
+    """Build a backend whose docker binary lookup always succeeds."""
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    return DockerPluginSandboxBackend({})
 
 
 def test_plugin_source_filename_sanitizes_label() -> None:
@@ -27,9 +53,44 @@ def test_in_process_plugin_execution_env_matrix() -> None:
         assert not in_process_plugin_execution_allowed(
             {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "development"}
         )
-
     assert in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
     assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "production"})
+    for explicit in ("1", "true", "yes", "on"):
+        assert not in_process_plugin_execution_allowed(
+            {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "production"}
+        )
+
+
+def test_plugin_backend_defaults_production_to_docker_and_rejects_unknown() -> None:
+    assert plugin_sandbox_backend({"SIDAR_ENV": "production"}) == "docker"
+    assert plugin_sandbox_backend({"SIDAR_ENV": "development"}) == "in_process"
+    assert plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "docker"}) == "docker"
+    with pytest.raises(PluginSandboxError, match="Desteklenmeyen"):
+        plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "subprocess"})
+
+
+def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    command = DockerPluginSandboxBackend({})._command()
+
+    for expected in (
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+        "--memory=256m",
+        "--cpus=0.5",
+        "--pids-limit=64",
+    ):
+        assert expected in command
+    assert command[-3:] == ["python", "-m", "web.plugins.worker"]
+
+
+def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: None)
+    with pytest.raises(PluginSandboxError, match="fail-closed"):
+        DockerPluginSandboxBackend({}).describe("VALUE = 1", None, "missing")
 
 
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(
@@ -121,3 +182,146 @@ def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:
     execute_validated_plugin_source("RESULT = 42", "plugin/name", namespace)
 
     assert namespace["RESULT"] == 42
+
+
+def test_in_process_backend_executes_only_outside_production(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    namespace = run_plugin_source_in_process("RESULT = 42", "safe_plugin")
+    assert namespace["RESULT"] == 42
+
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("RESULT = 42", "blocked_plugin")
+    assert exc.value.status_code == 403
+
+
+def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+
+    def _raise_timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _raise_timeout)
+
+    with pytest.raises(PluginSandboxError, match="zaman aşımına uğradı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_nonzero_returncode(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=1, stdout=""),
+    )
+
+    with pytest.raises(PluginSandboxError, match="güvenli biçimde tamamlanamadı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_oversized_response(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    oversized = "a" * (PLUGIN_RPC_MAX_RESPONSE_BYTES + 1)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=oversized),
+    )
+
+    with pytest.raises(PluginSandboxError, match="yanıt limiti aşıldı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_invalid_json(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout="not-json"),
+    )
+
+    with pytest.raises(PluginSandboxError, match="geçersiz RPC yanıtı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_rpc_version_mismatch(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(
+            returncode=0, stdout=json.dumps({"rpc_version": "0"})
+        ),
+    )
+
+    with pytest.raises(PluginSandboxError, match="RPC sürümü doğrulanamadı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_worker_reported_failure(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": False, "error": "leak"})
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=payload),
+    )
+
+    with pytest.raises(PluginSandboxError, match="güvenlik politikasıyla reddedildi"):
+        backend.request({"action": "describe"})
+
+
+async def test_docker_backend_run_task_returns_worker_result_off_the_event_loop(
+    monkeypatch,
+) -> None:
+    backend = _docker_backend(monkeypatch)
+    payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "result": "42"})
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=payload),
+    )
+
+    result = await backend.run_task("SOURCE", "EchoAgent", "echo", "prompt")
+
+    assert result == "42"
+
+
+def test_build_isolated_plugin_proxy_requires_resolved_class_name(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "class_name": ""})
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=payload),
+    )
+    monkeypatch.setattr("web.plugins.sandbox.DockerPluginSandboxBackend", lambda: backend)
+
+    with pytest.raises(PluginSandboxError, match="sınıf metadata"):
+        build_isolated_plugin_proxy("SOURCE", None, "echo")
+
+
+def test_build_isolated_plugin_proxy_creates_baseagent_subclass_that_delegates(
+    monkeypatch,
+) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr("web.plugins.sandbox.DockerPluginSandboxBackend", lambda: backend)
+
+    responses = iter(
+        [
+            json.dumps(
+                {
+                    "rpc_version": PLUGIN_RPC_VERSION,
+                    "ok": True,
+                    "class_name": "EchoAgent",
+                    "description": "Echo plugin.",
+                }
+            ),
+            json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "result": "isolated:hi"}),
+        ]
+    )
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=next(responses)),
+    )
+
+    proxy_cls = build_isolated_plugin_proxy("SOURCE", "EchoAgent", "echo")
+
+    assert proxy_cls.__name__ == "EchoAgent"
+    assert issubclass(proxy_cls, BaseAgent)
+    assert proxy_cls.__doc__ == "Echo plugin."
+    assert asyncio.run(proxy_cls().run_task("hi")) == "isolated:hi"

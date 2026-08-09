@@ -557,7 +557,9 @@ print_install_production_readiness_notice() {
 
     case "$status" in
         passed)
-            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            echo -e "   ${GREEN}✅ Yerel/base production readiness: GEÇTİ${NC}"
+            echo -e "   ${YELLOW}   ⚠️  GPU TTFT≤200ms / latency≤250ms kanıtı bu özete dahil değildir.${NC}"
+            echo -e "   ${YELLOW}   Release/merge için CI GPU Required Evidence Gate + aggregate zorunludur.${NC}"
             ;;
         failed)
             echo -e "   ${RED}${BOLD}❌ Production readiness: GEÇMEDİ${NC}"
@@ -571,9 +573,10 @@ print_install_production_readiness_notice() {
                 echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
                 print_install_dependency_profile_readiness_legend
             fi
-            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; production gate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; required GitHub Actions aggregate hâlâ zorunlu.${NC}"
             echo -e "   ${YELLOW}   DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS${NC}"
-            echo -e "   ${YELLOW}   Release/merge için tek zorunlu komut: ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Yerel ön doğrulama (merge kararı değildir): ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Asıl release/merge kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i.${NC}"
             ;;
         *)
             echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ / DURUM BİLİNMİYOR (${status:-yok})${NC}"
@@ -627,7 +630,15 @@ run_optional_dev_full_validation_prompt() {
     esac
 
     info "Development tam doğrulama başlıyor: ${optional_command}"
-    if (cd "$SCRIPT_DIR" && env AUTO_OPEN_ARTIFACTS=0 make dev-full); then
+    # Interactive TOFU pins are installer-session state.  Do not leak them into
+    # the repository test process: installer contract tests intentionally load
+    # their own checksum fixture/default environment.
+    if (cd "$SCRIPT_DIR" && env \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make dev-full); then
         ok "Development tam doğrulaması başarıyla tamamlandı (make dev-full)."
         info "Production readiness uyarısı final kurulum doğrulama özetinde tek merkezden raporlanacak."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
@@ -676,7 +687,16 @@ run_install_ci_full_validation() {
     fi
 
     info "Tam doğrulama başlıyor: make production-readiness"
-    if (cd "$script_dir" && env -u TEST_PROFILE -u RUN_BENCHMARKS -u RUN_FRONTEND_E2E -u SIDAR_PRODUCTION_READINESS AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
+    if (cd "$script_dir" && env \
+        -u TEST_PROFILE \
+        -u RUN_BENCHMARKS \
+        -u RUN_FRONTEND_E2E \
+        -u SIDAR_PRODUCTION_READINESS \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
         ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
@@ -957,7 +977,7 @@ print_install_validation_coverage() {
     fi
 
     if [[ "${summary_production_ready:-}" == true ]]; then
-        print_install_final_readiness_block "Evet — production-readiness gate geçti" "Evet — release/merge kapısı tamamlandı" ""
+        print_install_final_readiness_block "Evet — yerel/base production-readiness gate geçti" "CI aggregate bekleniyor" "Yerel production_ready=true self-hosted GPU TTFT/latency kanıtını içermez; release/merge için GPU Required Evidence Gate zorunludur."
     elif [[ "$ci_status" == "tamamlandi" ]]; then
         if sidar_install_production_gate_required; then
             print_install_final_readiness_block "Evet — tam doğrulama komutu tamamlandı" "Hayır — production-readiness özeti doğrulanamadı" "artifacts/test-summary.json içinde production_ready=true görülmeden release/merge onayı vermeyin."

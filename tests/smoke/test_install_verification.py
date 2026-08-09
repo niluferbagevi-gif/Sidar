@@ -83,53 +83,22 @@ def _normalize_bash_function(function_text: str) -> str:
     return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
 
 
-def test_dark_mode_assets_exist(tmp_path: Path) -> None:
+def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
     assert source_dark_css.exists()
-
-    script_dir = tmp_path / "sidar"
-    (script_dir / "assets").mkdir(parents=True)
-    (script_dir / "assets" / "dark_mode.css").write_text(
-        source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
+    repo_phase = (repo_root / "scripts/install_modules/phases/02_repo.sh").read_text(
+        encoding="utf-8"
     )
-    html_report = script_dir / "htmlcov" / "index.html"
-    html_report.parent.mkdir(parents=True)
-    html_report.write_text(
-        '<html><body class="light-mode"><a href="/light-mode/help">light-mode '
-        "text</a></body></html>",
-        encoding="utf-8",
+    coverage_helpers = (repo_root / "scripts/test_gates/coverage_helpers.sh").read_text(
+        encoding="utf-8"
     )
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 
-    repo_phase_script = textwrap.dedent(
-        """
-        set -euo pipefail
-        source scripts/install_modules/phases/02_repo.sh
-
-        warn(){ :; }
-        ok(){ :; }
-
-        export SCRIPT_DIR="$1"
-        sidar_phase_apply_coverage_dark_mode_assets
-        """
-    )
-
-    subprocess.run(
-        ["bash", "--noprofile", "--norc", "-c", repo_phase_script, "sidar-smoke", str(script_dir)],
-        cwd=repo_root,
-        env=_installer_test_env(tmp_path),
-        check=True,
-    )
-
-    coverage_css = script_dir / "htmlcov" / "assets" / "dark_mode.css"
-    artifact_coverage_css = script_dir / "artifacts" / "htmlcov" / "assets" / "dark_mode.css"
-    assert coverage_css.exists()
-    assert artifact_coverage_css.exists()
-    assert "background-color" in coverage_css.read_text(encoding="utf-8")
-    html = html_report.read_text(encoding="utf-8")
-    assert 'class="dark-mode"' in html
-    assert "/light-mode/help" in html
-    assert ">light-mode text<" in html
+    assert "sidar_phase_apply_coverage_dark_mode_assets" not in repo_phase
+    assert "htmlcov" not in repo_phase
+    assert "coverage html -d htmlcov" in coverage_helpers
+    assert 'extra_css = "assets/dark_mode.css"' in pyproject
 
 
 def test_python_version() -> None:
@@ -168,6 +137,100 @@ def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
     assert "git pull --rebase origin main" not in phase
     assert "git fetch origin main" not in phase
     assert "git reset --hard origin/main" not in phase
+
+
+@pytest.mark.parametrize(
+    ("doctor_exit", "write_report", "expected_status", "expected_message"),
+    [
+        (0, True, 0, "OK:Doctor raporu üretildi"),
+        (
+            1,
+            True,
+            1,
+            "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda",
+        ),
+        (1, False, 1, "WARN:Doctor çalıştırılamadı ve rapor üretilemedi"),
+        (0, False, 1, "WARN:Doctor tamamlandı ancak rapor üretilemedi"),
+    ],
+)
+def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
+    tmp_path: Path,
+    doctor_exit: int,
+    write_report: bool,
+    expected_status: int,
+    expected_message: str,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -u
+                step() { :; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; return 1; }
+                uv() {
+                    [[ "${SIDAR_CONFIG_QUIET:-}" == "true" ]] || return 90
+                    if [[ "$WRITE_REPORT" == "true" ]]; then
+                        printf '{"status":"test"}\n' > "${@: -1}"
+                    fi
+                    return "$DOCTOR_EXIT"
+                }
+                source scripts/install_modules/phases/11_post_install.sh
+                export SCRIPT_DIR="$1"
+                run_doctor_phase
+                """
+            ),
+            "doctor-phase-smoke",
+            str(tmp_path),
+        ],
+        cwd=Path(os.getcwd()),
+        env={
+            **_installer_test_env(tmp_path),
+            "DOCTOR_EXIT": str(doctor_exit),
+            "WRITE_REPORT": str(write_report).lower(),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_status, result.stderr + result.stdout
+    assert expected_message in result.stdout
+    assert "SIDAR_CONFIG_QUIET" not in result.stderr
+
+
+def test_default_install_runs_doctor_before_finish_and_preserves_diagnostics() -> None:
+    """Run Doctor before the success summary without making findings fatal."""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -Eeuo pipefail
+                events=()
+                sidar_run_install_phase() { events+=("$1"); }
+                sidar_fail_if_wsl_integration_autofix_applied_current_session_main() { :; }
+                sidar_phase_handle_early_exit() { return 1; }
+                cleanup_bootstrap_script_copy() { :; }
+                run_doctor_phase() { events+=("doctor"); return 1; }
+                source scripts/install_modules/install_dispatcher.sh
+                sidar_dispatch_install_phases
+                printf '%s\n' "${events[@]}"
+                """
+            ),
+            "default-install-doctor-smoke",
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    events = result.stdout.splitlines()
+    assert events[-3:] == ["06_services", "doctor", "07_finish"]
 
 
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:

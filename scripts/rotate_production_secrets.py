@@ -9,6 +9,7 @@ import secrets
 import stat
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from scripts.secret_strength import is_weak_secret
@@ -52,9 +53,22 @@ def _replace_values(content: str, replacements: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _generate_accepted_secret(factory: Callable[[], str], *, max_attempts: int = 100) -> str:
+    """Generate a secret that satisfies the same policy used by the post-write audit."""
+    for _attempt in range(max_attempts):
+        candidate = factory()
+        if not is_weak_secret(candidate):
+            return candidate
+    raise RuntimeError(f"could not generate an accepted secret after {max_attempts} attempts")
+
+
 def _generate_values() -> dict[str, str]:
-    generated = {key: secrets.token_urlsafe(48) for key in ROTATION_KEYS}
-    generated["MEMORY_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    generated = {
+        key: _generate_accepted_secret(lambda: secrets.token_urlsafe(48)) for key in ROTATION_KEYS
+    }
+    generated["MEMORY_ENCRYPTION_KEY"] = _generate_accepted_secret(
+        lambda: base64.urlsafe_b64encode(os.urandom(32)).decode()
+    )
     return generated
 
 
