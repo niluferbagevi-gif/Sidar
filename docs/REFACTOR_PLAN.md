@@ -112,14 +112,11 @@ tarihli fail-closed kilometre taşlarıyla aktif kampanyadır; kalan geniş bile
 taşımaları küçük domain PR'ları için backlog'da tutulur.
 
 - **TypeScript kademeli kapısı (aktif):** `tsconfig.json`
-  içinde `checkJs: false`; ağaç hâlâ ağırlıklı olarak `.jsx`/`.js`, ancak üç `.ts`
-  dosyası (`src/hooks/useThrottledStream.ts`, `src/hooks/useFormState.ts` ve
-  `src/lib/swarmFlowGraph.ts`) strict kapıya alınmış durumda; 0 `.tsx` var.
-  `npm run typecheck` bu yüzden yalnızca bu üç dosyayı ve TS tarafı modül
-  çözümlemesini denetliyor;
-  `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
-  `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
-  ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
+  içinde `checkJs: false`; production bileşen/hook/lib ağacında untyped kaynak kalmadı,
+  kalan `.js`/`.jsx` dosyaları test veya test altyapısıdır. 2026-08-09 envanteri
+  28 untyped / 39 typed dosyadır ve `npm run typecheck` typed production ağacının yanında
+  dönüştürülen testleri de strict kapıya alır. `checkJs: false` nedeniyle kalan legacy testler
+  henüz tam tip güvencesinde değildir; bunlar dokunuldukları PR'larda fırsatçı olarak taşınır.
   Kademeli `.jsx` → `.tsx` taşıması için sahip **Frontend bakım ekibi**, ilk değerlendirme
   **2026-09-30**, hedef tamamlanma **2027-03-31** olarak atanmıştır. JS/JSX toplamındaki
   net artış anlık ratchet ile engellenir; ayrıca 2026-09-30'dan başlayarak 45/15,
