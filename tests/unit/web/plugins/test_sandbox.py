@@ -71,7 +71,8 @@ def test_plugin_backend_defaults_production_to_docker_and_rejects_unknown() -> N
 
 def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
-    command = DockerPluginSandboxBackend({})._command()
+    backend = DockerPluginSandboxBackend({})
+    command = backend._command()
 
     for expected in (
         "--network=none",
@@ -84,7 +85,8 @@ def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
         "--pids-limit=64",
     ):
         assert expected in command
-    assert command[-3:] == ["python", "-m", "web.plugins.worker"]
+    assert "--entrypoint=python" in command
+    assert command[-3:] == [backend.image, "-m", "web.plugins.worker"]
 
 
 def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
