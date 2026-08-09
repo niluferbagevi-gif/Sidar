@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { buildAuthHeaders } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
 
 interface AgentRegistrationForm {
   roleName: string;
@@ -60,10 +61,6 @@ function registeredAgent(payload: unknown): RegisteredAgent {
   };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Ajan yüklenemedi";
-}
-
 export function AgentManagerPanel() {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [file, setFile] = useState<File | null>(null);
@@ -120,7 +117,7 @@ export function AgentManagerPanel() {
       setForm(DEFAULT_FORM);
       formElement.reset();
     } catch (err: unknown) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, "Ajan yüklenemedi"));
     } finally {
       setSubmitting(false);
     }

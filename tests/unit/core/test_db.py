@@ -2890,6 +2890,23 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     )
 
 
+def test_doctor_database_env_reason_returns_empty_when_env_check_does_not_fail(
+    monkeypatch,
+) -> None:
+    """A failing PostgreSQL connection can coexist with a healthy database_env probe."""
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(
+            status="pass", details={"failure_reason": "should be ignored"}, message="ignored too"
+        ),
+    )
+
+    assert core_db._doctor_database_env_failure_reason() == ""
+
+
 def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) -> None:
     import core.db.diagnostics as db_diagnostics
 

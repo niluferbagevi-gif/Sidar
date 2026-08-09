@@ -707,6 +707,7 @@ describe("SwarmFlowPanel", () => {
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Çalışıyor…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
 
     resolveSwarm({ results: [] });

@@ -173,12 +173,29 @@ PY_SECRET
 render_generated_secret_sentinels() {
   local target="$1"
   local generated_password=""
+  local reused_process_env_password=0
 
   if [ ! -f "${target}" ] || ! grep -q '^POSTGRES_PASSWORD=__GENERATE__$' "${target}"; then
     return 0
   fi
 
-  generated_password="$(generate_test_secret_value)"
+  # Process env is the single source of truth when it already defines
+  # POSTGRES_PASSWORD (e.g. a CI job's service-container credentials, or a
+  # developer's shell exporting it before a fresh `bash run_tests.sh`).
+  # Generating an unrelated random secret here instead would desync .env.test
+  # from the actual PostgreSQL role's password — and when the caller also
+  # skips the ALTER ROLE reconciliation step (AUTO_PREPARE_TEST_DB=0, as CI's
+  # "Base quality gates" job does because it prepares the test database
+  # itself), nothing ever applies the generated password to the live server,
+  # so every DB connection using .env.test's DATABASE_URL/POSTGRES_PASSWORD
+  # fails auth. Reuse the process env value instead of generating a
+  # disconnected one whenever it's available.
+  if [ -n "${POSTGRES_PASSWORD:-}" ]; then
+    generated_password="${POSTGRES_PASSWORD}"
+    reused_process_env_password=1
+  else
+    generated_password="$(generate_test_secret_value)"
+  fi
   if [ -z "${generated_password}" ]; then
     echo "⚠️ POSTGRES_PASSWORD=__GENERATE__ için parola üretilemedi; '${target}' dosyasını elle güncelleyin."
     return 1
@@ -200,7 +217,11 @@ path.write_text(
     encoding="utf-8",
 )
 PY_RENDER
-  echo "✅ '${target}' içindeki POSTGRES_PASSWORD=__GENERATE__ güçlü lokal parola ile değiştirildi."
+  if [ "${reused_process_env_password}" -eq 1 ]; then
+    echo "✅ '${target}' içindeki POSTGRES_PASSWORD=__GENERATE__ değeri mevcut process env POSTGRES_PASSWORD ile senkronize edildi."
+  else
+    echo "✅ '${target}' içindeki POSTGRES_PASSWORD=__GENERATE__ güçlü lokal parola ile değiştirildi."
+  fi
 }
 ensure_test_dotenv() {
   local target="${DOTENV_FILE:-.env.test}"

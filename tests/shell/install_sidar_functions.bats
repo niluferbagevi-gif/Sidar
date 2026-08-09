@@ -757,6 +757,15 @@ POSTGRES_PASSWORD=postgres
 ENV
 
   run_installer_function "
+    # harden_database_credentials is called with only \$env_file (no explicit
+    # variant specs) below, on purpose, to exercise its default variant-sync
+    # fallback. That fallback resolves .env.development/.env.test/.env.advanced
+    # relative to \$SCRIPT_DIR (see sidar_default_db_env_variant_specs), so
+    # SCRIPT_DIR must point at the isolated tmpdir here — otherwise it silently
+    # writes this fixture's generated password into the real repo's dotenv
+    # files, which previously broke unrelated CI steps (PostgreSQL smoke
+    # tests) that run later in the same job/workspace.
+    SCRIPT_DIR='$tmpdir'
     generate_secure_token() { printf '%s\\n' 'GeneratedStrongDbToken_1234567890'; }
     harden_database_credentials '$env_file'
     grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@localhost:5432/sidar?ssl=disable$' '$env_file'

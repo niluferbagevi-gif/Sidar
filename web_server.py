@@ -13,8 +13,8 @@ import asyncio
 import atexit
 import builtins
 import contextlib
-import hashlib
-import hmac
+import hashlib as hashlib  # explicit legacy module export
+import hmac as hmac  # explicit legacy module export
 import importlib
 import importlib.util
 import inspect
@@ -25,7 +25,6 @@ import re
 import secrets
 import signal
 import sys
-import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -48,7 +47,6 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -81,6 +79,7 @@ from web import autonomy_bridge, collaboration_service, process_lifecycle
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
+from web.middleware import access_policy as access_policy_helpers
 from web.middleware.access_policy import access_policy_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
@@ -97,6 +96,8 @@ from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
 from web.routes import operations_models as operations_route_models
 from web.routes import plugin_marketplace as plugin_marketplace_routes
+from web.routes import request_models as route_request_models
+from web.routes import serialization as route_serialization
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -1164,53 +1165,19 @@ def _require_metrics_access(request: Request, user: Any = Depends(_get_request_u
 
 
 def _get_user_tenant(user: Any) -> str:
-    return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
+    return access_policy_helpers.get_user_tenant(user)
 
 
 def _serialize_policy(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "resource_type": str(getattr(record, "resource_type", "") or ""),
-        "resource_id": str(getattr(record, "resource_id", "*") or "*"),
-        "action": str(getattr(record, "action", "") or ""),
-        "effect": str(getattr(record, "effect", "allow") or "allow"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return access_policy_helpers.serialize_policy(record)
 
 
 def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
-    path = request.url.path
-    if path.startswith("/rag/"):
-        action = "read" if request.method == "GET" else "write"
-        resource_id = path.rsplit("/", 1)[-1] if request.method == "DELETE" else "*"
-        return ("rag", action, resource_id)
-    if path.startswith("/github-") or path == "/set-repo":
-        action = "read" if request.method == "GET" else "write"
-        return ("github", action, "*")
-    if path.startswith("/api/agents/register"):
-        return ("agents", "register", "*")
-    if path.startswith("/api/swarm/"):
-        return ("swarm", "execute", "*")
-    if path.startswith("/api/operations/"):
-        return ("operations", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/api/qa/coverage/"):
-        return ("coverage", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/admin/"):
-        return ("admin", "manage", "*")
-    if path.startswith("/ws/"):
-        return ("swarm", "execute", "*")
-    return ("", "", "")
+    return access_policy_helpers.resolve_policy_from_request(request)
 
 
 def _build_audit_resource(resource_type: str, resource_id: str) -> str:
-    r_type = (resource_type or "").strip().lower()
-    r_id = (resource_id or "*").strip() or "*"
-    if not r_type:
-        return ""
-    return f"{r_type}:{r_id}"
+    return access_policy_helpers.build_audit_resource(resource_type, resource_id)
 
 
 def _schedule_access_audit_log(
@@ -1250,106 +1217,29 @@ def _schedule_access_audit_log(
         logger.debug("ACL audit log planlanamadı: event loop yok.")
 
 
-class _RegisterRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-
-
-class _LoginRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-
-
-class _PromptUpsertRequest(BaseModel):
-    role_name: str = Field(..., min_length=1, max_length=64)
-    prompt_text: str = Field(..., min_length=1)
-    activate: bool = Field(default=True)
-
-
-class _PromptActivateRequest(BaseModel):
-    prompt_id: int = Field(..., gt=0)
-
-
-class _PolicyUpsertRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-    resource_type: str = Field(..., min_length=1, max_length=64)
-    resource_id: str = Field(default="*", min_length=1, max_length=256)
-    action: str = Field(..., min_length=1, max_length=64)
-    effect: str = Field(default="allow", min_length=1, max_length=8)
-
-
-class _AgentPluginRegisterRequest(BaseModel):
-    role_name: str = Field(..., min_length=2, max_length=64)
-    source_code: str = Field(..., min_length=1)
-    class_name: str | None = Field(default=None, min_length=1, max_length=128)
-    capabilities: list[str] = Field(default_factory=list)
-    description: str = Field(default="", max_length=512)
-    version: str = Field(default="1.0.0", max_length=32)
-
-
-class _PluginMarketplaceInstallRequest(BaseModel):
-    plugin_id: str = Field(..., min_length=2, max_length=64)
-
-
-class _SwarmTaskRequest(BaseModel):
-    goal: str = Field(..., min_length=1)
-    intent: str = Field(default="mixed", min_length=1, max_length=64)
-    context: dict[str, str] = Field(default_factory=dict)
-    preferred_agent: str | None = Field(default=None, max_length=64)
-
-
-class _SwarmExecuteRequest(BaseModel):
-    mode: str = Field(default="parallel", pattern="^(parallel|pipeline)$")
-    tasks: list[_SwarmTaskRequest] = Field(..., min_length=1)
-    session_id: str = Field(default="", max_length=128)
-    max_concurrency: int = Field(default=4, ge=1, le=16)
+# Faz 4 compatibility aliases: direct imports retain their historical names while
+# route factories consume the focused request-model module.
+_RegisterRequest = route_request_models.RegisterRequest
+_LoginRequest = route_request_models.LoginRequest
+_PromptUpsertRequest = route_request_models.PromptUpsertRequest
+_PromptActivateRequest = route_request_models.PromptActivateRequest
+_PolicyUpsertRequest = route_request_models.PolicyUpsertRequest
+_AgentPluginRegisterRequest = route_request_models.AgentPluginRegisterRequest
+_PluginMarketplaceInstallRequest = route_request_models.PluginMarketplaceInstallRequest
+_SwarmTaskRequest = route_request_models.SwarmTaskRequest
+_SwarmExecuteRequest = route_request_models.SwarmExecuteRequest
 
 
 def _serialize_audit_log(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "action": str(getattr(record, "action", "") or ""),
-        "resource": str(getattr(record, "resource", "") or ""),
-        "ip_address": str(getattr(record, "ip_address", "") or ""),
-        "allowed": bool(getattr(record, "allowed", False)),
-        "timestamp": str(getattr(record, "timestamp", "") or ""),
-    }
+    return access_policy_helpers.serialize_audit_log(record)
 
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:
-    prompt_id = getattr(record, "id", 0)
-    serialized_id: int | str
-    try:
-        serialized_id = int(prompt_id)
-    except (TypeError, ValueError):
-        serialized_id = str(prompt_id or "")
-
-    return {
-        "id": serialized_id,
-        "role_name": str(getattr(record, "role_name", "") or ""),
-        "prompt_text": str(getattr(record, "prompt_text", "") or ""),
-        "version": int(getattr(record, "version", 1) or 1),
-        "is_active": bool(getattr(record, "is_active", False)),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return route_serialization.serialize_prompt(record)
 
 
 def _serialize_swarm_result(record: Any) -> dict[str, Any]:
-    return {
-        "task_id": str(getattr(record, "task_id", "") or ""),
-        "agent_role": str(getattr(record, "agent_role", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "summary": str(getattr(record, "summary", "") or ""),
-        "elapsed_ms": int(getattr(record, "elapsed_ms", 0) or 0),
-        "evidence": list(getattr(record, "evidence", []) or []),
-        "handoffs": list(getattr(record, "handoffs", []) or []),
-        "graph": dict(getattr(record, "graph", {}) or {}),
-    }
+    return route_serialization.serialize_swarm_result(record)
 
 
 _serialize_campaign = operations_routes.serialize_campaign
@@ -1438,6 +1328,12 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            return plugin_sandbox.build_isolated_plugin_proxy(source_code, class_name, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     def _baseagent_candidates() -> list[Any]:
         # Resolve the canonical class on every call so stale monkeypatches or reloads of
         # the web_server module cannot override an available agent.base_agent module.
@@ -1509,7 +1405,13 @@ def _load_plugin_agent_class(
 
 def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
     """Validate uploaded plugin source in the shared sandbox before persisting it."""
-    _run_plugin_source_in_sandbox(source_code, module_label)
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            plugin_sandbox.DockerPluginSandboxBackend().describe(source_code, None, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    else:
+        _run_plugin_source_in_sandbox(source_code, module_label)
 
     safe_name = Path(filename or "plugin.py").name
     if not safe_name.endswith(".py"):
@@ -2628,10 +2530,9 @@ _FederationTaskRequest = federation_routes.FederationTaskRequest
 _FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
 _AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
-_WEBHOOK_REPLAY_TTL_SECONDS = 600.0
-_WEBHOOK_REPLAY_MAX_ENTRIES = 10_000
-_webhook_replay_seen: dict[str, float] = {}
-_webhook_replay_lock = threading.Lock()
+_webhook_replay_guard = web_security.WebhookReplayGuard()
+# Faz 4 compatibility alias: direct imports/tests clear the historical mapping.
+_webhook_replay_seen = _webhook_replay_guard.seen
 
 
 def _verify_hmac_signature(
@@ -2642,35 +2543,14 @@ def _verify_hmac_signature(
     label: str,
     replay_key: str = "",
 ) -> None:
-    secret = str(secret_value or "").encode("utf-8")
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
-        )
-    if not signature_header:
-        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
-    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_signature, signature_header):
-        raise HTTPException(status_code=401, detail="Geçersiz imza.")
-    normalized_replay_key = str(replay_key or "").strip()
-    if normalized_replay_key:
-        cache_key = f"{label}:{normalized_replay_key}"
-        now = time.monotonic()
-        with _webhook_replay_lock:
-            expired = [
-                key
-                for key, seen_at in _webhook_replay_seen.items()
-                if now - seen_at >= _WEBHOOK_REPLAY_TTL_SECONDS
-            ]
-            for key in expired:
-                _webhook_replay_seen.pop(key, None)
-            if cache_key in _webhook_replay_seen:
-                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
-            if len(_webhook_replay_seen) >= _WEBHOOK_REPLAY_MAX_ENTRIES:
-                oldest_key = min(_webhook_replay_seen.items(), key=lambda item: item[1])[0]
-                _webhook_replay_seen.pop(oldest_key, None)
-            _webhook_replay_seen[cache_key] = now
+    web_security.verify_webhook_hmac_signature(
+        payload_body,
+        secret_value,
+        signature_header,
+        label=label,
+        replay_key=replay_key,
+        replay_guard=_webhook_replay_guard,
+    )
 
 
 def _build_autonomy_dependencies() -> SimpleNamespace:

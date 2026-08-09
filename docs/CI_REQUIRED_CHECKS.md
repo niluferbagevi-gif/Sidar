@@ -25,7 +25,60 @@ is restored.
 The release-blocking `benchmark-compare` job and both baseline seed paths require a
 dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
 cache key, preventing a baseline produced on one hardware host from being restored on
-another host. Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
+another host. This is a deliberate, accepted single point of failure, not an oversight:
+an unrelated PR can be blocked at `production-readiness` by a benchmark-runner rename or
+a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
+narrow the blast radius but do not remove it.
+
+`benchmark-baseline-keepalive.yml` (Mondays/Thursdays, plus manual `workflow_dispatch`)
+exists specifically to restore-and-touch the reviewed default-branch baseline cache more
+often than GitHub's ~7-day cache inactivity eviction window, without regenerating a
+baseline. It **must** run on the same `[self-hosted, linux, benchmark]` runner pool and
+use the exact same `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-...`
+key prefix as `benchmark-compare`/the seed jobs — `${{ runner.name }}` only resolves to
+the value those jobs need on that runner pool. A version of this workflow once ran on
+`ubuntu-latest` with a key that omitted `${{ runner.name }}` entirely; it "passed" every
+scheduled run while silently restoring nothing, so the anti-eviction safety net did not
+actually work. `tests/unit/scripts/test_run_tests_quality_gate.py::test_benchmark_baseline_cache_key_prefix_is_identical_everywhere`
+guards all three files' cache-key declarations against drifting apart like that again — if
+you touch any of them, keep the prefix identical or that test fails.
+
+If the self-hosted benchmark runner is renamed or replaced, the previous baseline cache is
+orphaned by design (see above) and must be reseeded via `seed_benchmark_baseline=true`
+regardless of keepalive; keepalive only prevents inactivity eviction of a still-valid
+cache entry, it cannot survive a runner identity change.
+
+**Known follow-up improvements (not yet implemented, flagged in a friend code review):**
+
+- **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
+  it never re-runs the benchmark suite to refresh the baseline data itself, and nothing
+  proactively alerts (e.g. opens a GitHub issue) when the baseline cache is actually
+  missing/orphaned — today the first signal is an unrelated PR going red at
+  `production-readiness`. A scheduled job that periodically re-seeds for real (not just
+  touches) and/or auto-files an issue when the "Require reviewed baseline evidence" step
+  fails would close this gap. Not implemented here: it changes self-hosted runner load/
+  cadence and issue-creation behavior, decisions that deserve a dedicated PR validated
+  against the real `[self-hosted, linux, benchmark]` runner rather than a docs-only pass.
+- **`benchmark-baseline-seed.yml` and `ci.yml`'s `seed-benchmark-baseline` job duplicate
+  nearly the same seeding logic with real, not just cosmetic, drift** — confirmed by diff:
+  different pinned action versions (`actions/checkout@v5`/`setup-python@v6`/
+  `astral-sh/setup-uv@v6` vs `@v4`/`@v5`/`@v4`), `ci.yml`'s job runs
+  `scripts/install_ci_system_deps.sh` and restores any existing cache before overwriting,
+  `benchmark-baseline-seed.yml` does neither, retention-days differs (30 vs 90), the
+  uploaded artifact name differs (dynamic `benchmark-baseline-...-<compare_name>` vs the
+  fixed `benchmark-baseline-seed`), and `benchmark-baseline-seed.yml`'s manifest carries
+  `compare_name`/`next_strict_command` fields `ci.yml`'s does not. `benchmark-baseline-
+  seed.yml` also supports named/partial baselines (`compare_name`/`benchmark_filter`
+  inputs) that `ci.yml`'s boolean-only `seed_benchmark_baseline` input cannot express.
+  Merging both into a single `workflow_call` reusable workflow is the right fix, but it
+  first requires deciding which of these divergent behaviors is canonical for each call
+  site (e.g. should the shared workflow always restore-before-save? support partial
+  baselines everywhere?) and validating the merged workflow actually seeds/saves/restores
+  correctly on the real self-hosted runner — this area has already produced two real bugs
+  in this same review (the keepalive cache-key mismatch above), so a docs-only pass is not
+  the place to also rewire the release-blocking seed path itself.
+
+Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
 runners have variable CPU, storage and scheduler contention and are unsuitable for a
 strict latency comparison. An unavailable benchmark runner must leave readiness
 blocked rather than silently falling back to shared hardware.

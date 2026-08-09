@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "./useChatStore.js";
 import { fetchJson } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
 import {
   buildAgentNodes,
   buildAutonomyEdges,
@@ -99,9 +100,6 @@ export interface SwarmGraphData {
   };
   nodeMap: Map<string, GraphNode>;
 }
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const DEFAULT_TASKS = [
   {

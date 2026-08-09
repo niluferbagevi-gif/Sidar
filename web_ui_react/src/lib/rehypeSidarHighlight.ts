@@ -17,11 +17,6 @@ const SIDAR_LANGUAGE_ALIASES = {
   python: ["py"],
 };
 
-interface HastText {
-  type: "text";
-  value: string;
-}
-
 interface HastElement {
   type: "element";
   tagName: string;
@@ -33,8 +28,6 @@ interface HastRoot {
   type?: "root";
   children: unknown[];
 }
-
-type HastNode = HastText | HastElement | HastRoot;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

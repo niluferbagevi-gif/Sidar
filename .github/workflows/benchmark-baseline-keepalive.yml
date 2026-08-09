@@ -17,7 +17,15 @@ concurrency:
 jobs:
   restore-reviewed-baseline:
     name: Restore reviewed benchmark baseline
-    runs-on: ubuntu-latest
+    # Must run on the same [self-hosted, linux, benchmark] runner pool as
+    # benchmark-compare/seed-baseline (ci.yml / benchmark-baseline-seed.yml):
+    # their cache key includes ${{ runner.name }} (see docs/CI_REQUIRED_CHECKS.md
+    # -- deliberate, prevents comparing against a baseline captured on
+    # different hardware). Restoring from ubuntu-latest resolves a different
+    # runner.name and can never match that key, so this job would silently
+    # "keep alive" a cache entry that benchmark-compare never reads while the
+    # real baseline still runs out its 7-day inactivity window unattended.
+    runs-on: [self-hosted, linux, benchmark]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -28,20 +36,28 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-keepalive-${{ github.run_id }}
+          # Deliberately never hits on the primary key (it's unique per run);
+          # falling through to the restore-keys prefix match is the point --
+          # that's what actually resets the cache's last-accessed clock. Keep
+          # this key/restore-keys list identical to benchmark-compare's in
+          # ci.yml and to seed-baseline's save key in
+          # benchmark-baseline-seed.yml, or a keepalive "success" here again
+          # stops meaning what it says.
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-keepalive-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
 
       - name: Require reviewed baseline evidence
         shell: bash
         run: |
           set -euo pipefail
           if ! find .benchmarks -type f -name '*_baseline.json' -print -quit | grep -q .; then
-            echo "::error title=Benchmark baseline cache missing::Run Benchmark baseline seed, review its artifact, then rerun this keepalive workflow."
+            echo "::error title=Benchmark baseline cache missing::Run Benchmark baseline seed, review its artifact, then rerun this keepalive workflow. If this runner was recently replaced/renamed, the previous baseline cache is orphaned by design (see docs/CI_REQUIRED_CHECKS.md) and must be reseeded regardless."
             exit 1
           fi
           echo "### Benchmark baseline cache keepalive" >> "$GITHUB_STEP_SUMMARY"
           echo "- Reviewed baseline cache restored; no benchmark was executed and no baseline was regenerated." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runner: \`${{ runner.name }}\`" >> "$GITHUB_STEP_SUMMARY"
           find .benchmarks -type f -name '*_baseline.json' -print | sed 's/^/- `/' | sed 's/$/`/' >> "$GITHUB_STEP_SUMMARY"
