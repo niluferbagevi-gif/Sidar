@@ -163,6 +163,25 @@ describe("AgentManagerPanel", () => {
     expect(await screen.findByText("Ajan kayıt cevabı geçersiz")).toBeInTheDocument();
   });
 
+  it.each([
+    ["missing agent object", {}],
+    ["non-object agent", { agent: null }],
+    ["non-array capabilities", { agent: { role_name: "invalid", version: "1", capabilities: "audit" } }],
+    ["non-string capability", { agent: { role_name: "invalid", version: "1", capabilities: [1] } }],
+  ])("rejects %s in a successful registration payload", async (_label, responsePayload) => {
+    const user = userEvent.setup();
+    global.fetch.mockResolvedValue({ ok: true, json: async () => responsePayload });
+
+    render(<AgentManagerPanel />);
+    await user.upload(
+      screen.getByLabelText(/Python dosyası/),
+      new File(["print('ok')"], "test.py", { type: "text/x-python" }),
+    );
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    expect(await screen.findByText("Ajan kayıt cevabı geçersiz")).toBeInTheDocument();
+  });
+
   it("normalizes non-Error request failures", async () => {
     const user = userEvent.setup();
     global.fetch.mockRejectedValue("network failure");

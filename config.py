@@ -1135,7 +1135,14 @@ class Config:
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
         """Auto-tune Ollama coding context from the loaded hardware inventory."""
-        if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
+        # Blank (`OLLAMA_CODING_NUM_CTX=`) counts as "not explicitly set", matching
+        # get_int_env()'s empty-string-is-unset convention and LLMClientSettings'
+        # env_ignore_empty=True. .env.advanced.example ships this key blank on
+        # purpose so a fresh install still auto-tunes from detected GPU VRAM;
+        # `is not None` alone treats that shipped blank as an explicit override
+        # and always skips auto-tuning.
+        raw_override = os.getenv("OLLAMA_CODING_NUM_CTX")
+        if raw_override is not None and raw_override.strip():
             return
         if not cls.USE_GPU:
             return

@@ -17,7 +17,33 @@ const distAssetsDir = resolve(
   repoRoot,
   process.env.SIDAR_BUNDLE_ASSETS_DIR || join(frontendRoot, "dist", "assets"),
 );
-const reactDomBudgetKb = Number(process.env.SIDAR_REACT_DOM_CHUNK_BUDGET_KB || "220");
+// Named per-chunk budgets. Each entry gates one specific, deliberately
+// high-signal chunk (a large, independently cacheable dependency graph) so
+// a regression there can't hide behind headroom in the total JS/gzip
+// budget. Add an entry here for any other chunk that deserves its own
+// tripwire -- see scripts/check-bundle-budget.mjs's own history for why
+// react-dom and the markdown vendor graph (react-markdown/remark-gfm and
+// their transitive parser packages) earned one: both are large, rarely
+// touched by app code changes, and a silently-growing import (e.g. a new
+// remark plugin, or a lazy import that stops being lazy) would otherwise
+// only trip the total budget once it's already grown a lot.
+const namedChunkBudgets = [
+  {
+    label: "React DOM",
+    envVar: "SIDAR_REACT_DOM_CHUNK_BUDGET_KB",
+    defaultKb: "220",
+    pattern: /^react-dom-[\w-]+\.js$/,
+  },
+  {
+    label: "ChatMarkdownRenderer",
+    envVar: "SIDAR_MARKDOWN_CHUNK_BUDGET_KB",
+    defaultKb: "190",
+    pattern: /^ChatMarkdownRenderer-[\w-]+\.js$/,
+  },
+];
+for (const budget of namedChunkBudgets) {
+  budget.budgetKb = Number(process.env[budget.envVar] || budget.defaultKb);
+}
 const totalJsBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_JS_BUDGET_KB);
 const totalGzipBudgetKb = optionalNumber(process.env.SIDAR_TOTAL_GZIP_BUDGET_KB);
 const gzipTrendWarnKb = optionalNumber(process.env.SIDAR_BUNDLE_GZIP_TREND_WARN_KB || "5");
@@ -195,7 +221,9 @@ try {
   process.exit();
 }
 
-validateBudget("SIDAR_REACT_DOM_CHUNK_BUDGET_KB", reactDomBudgetKb);
+for (const budget of namedChunkBudgets) {
+  validateBudget(budget.envVar, budget.budgetKb);
+}
 validateBudget("SIDAR_TOTAL_JS_BUDGET_KB", totalJsBudgetKb);
 validateBudget("SIDAR_TOTAL_GZIP_BUDGET_KB", totalGzipBudgetKb);
 validateNonNegativeBudget("SIDAR_BUNDLE_GZIP_TREND_WARN_KB", gzipTrendWarnKb);
@@ -217,12 +245,13 @@ const jsChunks = entries
   })
   .sort((left, right) => right.sizeBytes - left.sizeBytes);
 
-const reactDomChunks = jsChunks.filter((chunk) => /^react-dom-[\w-]+\.js$/.test(chunk.name));
-
-if (reactDomChunks.length === 0) {
-  fail(
-    "React DOM chunk was not emitted as its own manual chunk; check Vite manualChunks config.",
-  );
+for (const budget of namedChunkBudgets) {
+  budget.chunks = jsChunks.filter((chunk) => budget.pattern.test(chunk.name));
+  if (budget.chunks.length === 0) {
+    fail(
+      `${budget.label} chunk was not emitted as its own manual chunk; check Vite manualChunks config.`,
+    );
+  }
 }
 
 const totalJsBytes = jsChunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
@@ -235,14 +264,15 @@ const budgetUsage = {
 const gzipTrend = buildGzipTrend(previousReport, totalGzipBytes);
 const topChunks = jsChunks.slice(0, topChunkCount);
 
-const oversizedChunks = reactDomChunks.filter(
-  (chunk) => chunk.sizeBytes > reactDomBudgetKb * 1024,
-);
-
-for (const chunk of reactDomChunks) {
-  console.log(
-    `React DOM chunk: ${chunk.name} ${formatKb(chunk.sizeBytes)} KB (gzip ${formatKb(chunk.gzipBytes)} KB, budget ${reactDomBudgetKb} KB)`,
+for (const budget of namedChunkBudgets) {
+  budget.oversizedChunks = budget.chunks.filter(
+    (chunk) => chunk.sizeBytes > budget.budgetKb * 1024,
   );
+  for (const chunk of budget.chunks) {
+    console.log(
+      `${budget.label} chunk: ${chunk.name} ${formatKb(chunk.sizeBytes)} KB (gzip ${formatKb(chunk.gzipBytes)} KB, budget ${budget.budgetKb} KB)`,
+    );
+  }
 }
 
 console.log(
@@ -258,10 +288,11 @@ for (const [index, chunk] of topChunks.entries()) {
   );
 }
 
-if (oversizedChunks.length > 0) {
-  for (const chunk of oversizedChunks) {
+for (const budget of namedChunkBudgets) {
+  if (budget.oversizedChunks.length === 0) continue;
+  for (const chunk of budget.oversizedChunks) {
     console.error(
-      `React DOM chunk ${chunk.name} exceeds budget: ${formatKb(chunk.sizeBytes)} KB > ${reactDomBudgetKb} KB`,
+      `${budget.label} chunk ${chunk.name} exceeds budget: ${formatKb(chunk.sizeBytes)} KB > ${budget.budgetKb} KB`,
     );
   }
   process.exitCode = 1;
@@ -279,11 +310,23 @@ if (
   fail(`Total gzip JS exceeds budget: ${formatKb(totalGzipBytes)} KB > ${totalGzipBudgetKb} KB`);
 }
 
+const chunkWithKb = (chunk) => ({
+  ...chunk,
+  sizeKb: Number(formatKb(chunk.sizeBytes)),
+  gzipKb: Number(formatKb(chunk.gzipBytes)),
+});
+const reactDomBudget = namedChunkBudgets.find(
+  (budget) => budget.envVar === "SIDAR_REACT_DOM_CHUNK_BUDGET_KB",
+);
+
 writeReport({
   generatedAt: new Date().toISOString(),
   distAssetsDir,
   budgetsKb: {
-    reactDomChunk: reactDomBudgetKb,
+    // reactDomChunk kept at the top level for backward compatibility with
+    // existing report consumers; see namedChunks below for the full set
+    // (including reactDomChunk again, plus any other named budgets).
+    reactDomChunk: reactDomBudget.budgetKb,
     totalJs: totalJsBudgetKb,
     totalGzip: totalGzipBudgetKb,
     gzipTrendWarn: gzipTrendWarnKb,
@@ -300,21 +343,16 @@ writeReport({
   trend: {
     gzip: gzipTrend,
   },
-  reactDomChunks: reactDomChunks.map((chunk) => ({
-    ...chunk,
-    sizeKb: Number(formatKb(chunk.sizeBytes)),
-    gzipKb: Number(formatKb(chunk.gzipBytes)),
+  // reactDomChunks kept at the top level for backward compatibility.
+  reactDomChunks: reactDomBudget.chunks.map(chunkWithKb),
+  namedChunks: namedChunkBudgets.map((budget) => ({
+    label: budget.label,
+    envVar: budget.envVar,
+    budgetKb: budget.budgetKb,
+    chunks: budget.chunks.map(chunkWithKb),
   })),
-  topChunks: topChunks.map((chunk) => ({
-    ...chunk,
-    sizeKb: Number(formatKb(chunk.sizeBytes)),
-    gzipKb: Number(formatKb(chunk.gzipBytes)),
-  })),
-  allJsChunks: jsChunks.map((chunk) => ({
-    ...chunk,
-    sizeKb: Number(formatKb(chunk.sizeBytes)),
-    gzipKb: Number(formatKb(chunk.gzipBytes)),
-  })),
+  topChunks: topChunks.map(chunkWithKb),
+  allJsChunks: jsChunks.map(chunkWithKb),
 });
 
 if (process.exitCode && process.exitCode !== 0) {

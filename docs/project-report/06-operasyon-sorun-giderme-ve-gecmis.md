@@ -181,6 +181,12 @@ Son doğrulama turlarında migration akışları, swarm delegasyonları, audit t
 
 - Frontend bundle bütçesi kırmızı alarm seviyesinde olmasa da toplam JS/gzip kullanımının `%90+` bandına yaklaşması için `SIDAR_BUNDLE_BUDGET_WARN_RATIO` uyarı eşiği eklendi.
 - Mevcut hard gate (`SIDAR_TOTAL_JS_BUDGET_KB`, `SIDAR_TOTAL_GZIP_BUDGET_KB`) korunurken, yeni uyarı mekanizması dependency eklemelerinde bütçeye yaklaşmayı fail etmeden görünür kılar.
+- 2026-08-04 ölçümünde toplam gzip JS 153.06/170 KB (%90.04) ile uyarı eşiğine ulaştı.
+  İnceleme, syntax highlighter'ın zaten `highlight.js/lib/core` ve dört kayıtlı dille sınırlı,
+  markdown renderer'ın da lazy olduğunu doğruladı. Asıl gereksiz maliyet, markdown'ın küçük
+  transitif paketlerinin ayrı manual chunk/gzip stream'lerine zorlanmasıydı. Yalnız yüksek sinyalli
+  React ve highlight chunk'ları explicit bırakılıp kalan graph Rollup'a devredildi; aynı build
+  toplamı 148.71 KB'ye (%87.48) indi. 170 KB hard gate yükseltilmedi.
 
 ## Session: Installer Offline Bootstrap Guard
 

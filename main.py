@@ -5,6 +5,12 @@ Görsel olarak zenginleştirilmiş etkileşimli menüler ile
 argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.
 Kullanım: python main.py
 Hızlı Kullanım: python main.py --quick web --provider ollama --level full
+
+Not (isimlendirme): Bu dosya ajan REPL'i değildir -- yalnızca sihirbaz/preflight
+akışını çalıştırıp sonuçta `build_command()`/`execute_command()` ile `cli.py`
+(CLI REPL) veya `web_server.py`'yi alt süreçte başlatır. Gerçek ajan giriş
+noktası `cli.py`'dir; `python cli.py` ile bu sihirbazı hiç atlayarak doğrudan
+çalıştırılabilir. Bkz. `docs/module-notes/main.py.md`/`cli.py.md`.
 """
 
 from __future__ import annotations

@@ -29,6 +29,33 @@ yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küç�
 test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
 uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
 
+## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
+
+`bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri
+ve production-readiness komutları (bkz. `tests/unit/scripts/test_run_tests_quality_gate.py::
+test_run_tests_help_lists_make_and_direct_production_readiness_commands`). Bu yalnızca CLI
+bayrağını (`--stage`) belgeler — `run_tests.sh`'in kendisi ~60-70 farklı `${VAR:-...}` env-var
+bayrağı okur, `scripts/test_gates/*.sh`+`summary.py` (10 dosya) ile birlikte toplam ~176 farklı
+env-var adı referanslanır; bunların hiçbiri `--help` çıktısında listelenmez.
+
+**Bilinen sınırlama (bir arkadaş kod incelemesinde tespit edildi):** Bilinmeyen `SIDAR_*`/
+`BENCHMARK_*`/`COVERAGE_*` değişkenlerini reddeden bir şema doğrulaması yok — örn.
+`BENCMARK_COMPARE_FAIL=mean:5%` (yazım hatası) sessizce yok sayılır, gerçek
+`BENCHMARK_COMPARE_FAIL` varsayılana düşer. Bunu kapatmak için "run_tests.sh/scripts/test_gates
+kaynağından `${VAR}` referanslarını grep'leyip otomatik bir allowlist türet, ortamdaki
+`SIDAR_*`/`BENCHMARK_*`/`COVERAGE_*` değişkenlerini bununla karşılaştır, tanınmayanları uyar"
+şeklinde bir tasarım denendi ve **gerçek bir false-positive'le karşılaşıldığı için ertelendi**:
+`SIDAR_ENV` — CI'da her zaman set edilen, gerçek ve gerekli bir değişken — `run_tests.sh` veya
+`scripts/test_gates/*.sh` içinde hiçbir yerde `${SIDAR_ENV}` olarak geçmiyor, çünkü bash
+orkestrasyonu tarafından değil `config.py`/Python runtime tarafından tüketiliyor. Yani kaynak
+dosyalardan otomatik türetilen bir allowlist, bu ve benzeri (aynı önekli ama uygulama
+config'ine ait, orkestrasyon knob'u olmayan) değişkenleri "tanınmayan/olası yazım hatası"
+diye sessizce yanlış işaretler — ilk gerçek CI çalıştırmasında güvenilirliğini kaybedip
+görmezden gelinecek bir araca dönüşür. Doğru bir çözüm ya uygulama config'ini de kapsayan
+daha geniş bir cross-reference (örn. `config.py`'nin kendi `os.getenv` yüzeyiyle birleştirme)
+ya da elle bakımı gereken, ayrı tutulan bir allowlist gerektirir — ikisi de bu notun ötesinde,
+ayrı bir iş kalemi olarak ele alınmalı.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest
@@ -77,14 +104,29 @@ frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulam
 
 ### Frontend Playwright kapsamı: smoke / critical / full
 
-`web_ui_react/e2e/` altında 8 spec dosyası var, ama günlük local `./run_tests.sh`
-akışı yalnız `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) çalıştırır — diğer 7
-panel spec'i (`admin-panels`, `agent-manager`, `p2p-dialogue`, `prompt-admin`,
-`swarm-flow`, `tools-panel`, `voice-panel`) yalnız `RUN_FRONTEND_E2E=1` ile tam
-gate'te (`make production-readiness` / `--stage frontend`) tetiklenir. Sık
-değişen panellerde (örn. Agent Manager, Swarm Flow) erken local sinyal için
-opsiyonel bir ara kademe var: `test:e2e:critical`, smoke kapsamına ek olarak bu
-iki paneli de çalıştırır.
+`web_ui_react/e2e/` altında 8 spec dosyası var. `FRONTEND_E2E_NPM_SCRIPT`
+belirtilmediğinde `run_tests.sh`'ın (ve dolayısıyla düz local `./run_tests.sh`
+akışının) varsayılanı hâlâ `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) —
+bu bilinçli, hızlı bir local iterasyon varsayılanıdır.
+
+**Release-blocking `.github/workflows/ci.yml` `test` job'ı ve `make
+base-quality-gates`/`make production-readiness` artık `FRONTEND_E2E_NPM_SCRIPT=test:e2e`
+ile açıkça override ediyor — yani diğer 7 panel spec'i de (`admin-panels`,
+`agent-manager`, `p2p-dialogue`, `prompt-admin`, `swarm-flow`, `tools-panel`,
+`voice-panel`) her PR'da ve her `make production-readiness` çalışmasında
+çalışıyor.** Bu, önceki bir sürümde yalnızca dokümantasyonda vaat edilen ama
+hiçbir otomatik yolda (ne CI'da, ne `make production-readiness`'te, ne başka
+bir workflow'da) gerçekten tetiklenmeyen bir kapsamdı — 7 spec hiçbir zaman
+çalışmamıştı. Bu boşluk kapatılırken iki gerçek, önceden hiç yakalanmamış bug
+ortaya çıktı (bkz. CHANGELOG): `voice-panel.spec.js`'in tarayıcı mock kurulumu
+(`navigator.mediaDevices = {...}`, Chromium'da sessizce no-op olan getter-only
+bir accessor'a düz atama) ve `useVoiceAssistant.ts`'nin `stop()` sonrası
+sunucudan gelen `voice_interruption` ack'ini "SİDAR sesi kesildi" olarak
+göstermesi (mikrofon zaten kapalıyken anlamsız/yanıltıcı bir durum).
+
+Sık değişen panellerde (örn. Agent Manager, Swarm Flow) local iterasyon için
+smoke ile full arası opsiyonel bir ara kademe var: `test:e2e:critical`, smoke
+kapsamına ek olarak bu iki paneli de çalıştırır.
 
 ```bash
 cd web_ui_react && npm run test:e2e:critical
@@ -92,11 +134,13 @@ cd web_ui_react && npm run test:e2e:critical
 FRONTEND_E2E_NPM_SCRIPT=test:e2e:critical RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
 ```
 
-Bu üçüncü kademe `test:e2e:smoke`'un "hızlı sinyal, full QA değil" sözleşmesini
-değiştirmez — varsayılan hâlâ `test:e2e:smoke`'tur; `test:e2e:critical` yalnız
-isteğe bağlı, daha geniş ama hâlâ hızlı bir local kontrol seçeneğidir. Tüm 8
-spec'in çalıştığı tam kapsam için hâlâ `test:e2e` (`RUN_FRONTEND_E2E=1` gate'i)
-gerekir.
+Bu ara kademe yalnızca local hızlı-iterasyon için bir seçenektir; local
+varsayılan hâlâ `test:e2e:smoke`'tur. Tüm 8 spec'in çalıştığı tam kapsamı
+local'de manuel istemek için:
+
+```bash
+FRONTEND_E2E_NPM_SCRIPT=test:e2e RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+```
 
 Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde kalite kapısı olarak
 geçerli kabul edilir. `run_tests.sh`, pytest/BATS/security gibi backend fazlarından
@@ -169,8 +213,8 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
-make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget.
-make ci-parity             # dev-full ile aynı local/CI parite kısayolu.
+make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
+make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.

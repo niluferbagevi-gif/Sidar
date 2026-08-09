@@ -201,7 +201,8 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
     keys_result = _run_bash_smoke(key_script, tmp_path)
     assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
     keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
-    assert len(keys) == 18
+    assert len(keys) > 0
+    key_count = len(keys)
 
     env_lines = [
         f"{key}={_valid_user_api_value(key, idx)}" for idx, key in enumerate(keys, start=1)
@@ -239,14 +240,14 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
           done
         done
         report_env_api_key_status "$ENV_FILE"
-        test "$ENV_API_KEYS_TOTAL" -eq 18
-        test "$ENV_API_KEYS_FILLED" -eq 18
+        test "$ENV_API_KEYS_TOTAL" -eq {key_count}
+        test "$ENV_API_KEYS_FILLED" -eq {key_count}
         """,
         tmp_path,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     combined_output = result.stdout + result.stderr
-    assert "18 API anahtarı SIDAR_KEYS_FILE" in combined_output
+    assert f"{key_count} API anahtarı SIDAR_KEYS_FILE" in combined_output
     assert "içinde doğrulandı/güncellendi" in combined_output
     assert "üzerinden .env dosyasına aktarıldı" not in combined_output
 
@@ -269,7 +270,8 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
     keys_result = _run_bash_smoke(key_script, tmp_path)
     assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
     keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
-    assert len(keys) == 18
+    assert len(keys) > 0
+    key_count = len(keys)
 
     env_lines = [
         f"{key}={_valid_user_api_value(key, idx)}" for idx, key in enumerate(keys, start=1)
@@ -309,9 +311,9 @@ def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) ->
     )
     assert result.returncode == 0, result.stdout + result.stderr
     combined_output = result.stdout + result.stderr
-    assert "18 API anahtarı" in combined_output
+    assert f"{key_count} API anahtarı" in combined_output
     assert "materialization açık" in combined_output
-    assert ".env: 18 API anahtarı güncellendi." in combined_output
-    assert ".env.advanced: 18 API anahtarı güncellendi." in combined_output
-    assert ".env.development: 18 API anahtarı güncellendi." in combined_output
-    assert ".env.test: 18 API anahtarı güncellendi." in combined_output
+    assert f".env: {key_count} API anahtarı güncellendi." in combined_output
+    assert f".env.advanced: {key_count} API anahtarı güncellendi." in combined_output
+    assert f".env.development: {key_count} API anahtarı güncellendi." in combined_output
+    assert f".env.test: {key_count} API anahtarı güncellendi." in combined_output

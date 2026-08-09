@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { fetchJson } from "../lib/api.js";
+import { errorMessage } from "../lib/errors.js";
+import { useAsyncResource } from "../hooks/useAsyncResource.js";
 
 type MarketplaceAction = "install" | "reload" | "remove";
 
@@ -51,33 +53,22 @@ function marketplaceItems(payload: unknown): MarketplaceItem[] {
   });
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
-
 export function PluginMarketplacePanel() {
-  const [items, setItems] = useState<MarketplaceItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busyPluginId, setBusyPluginId] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [error, setError] = useState("");
 
   const loadMarketplace = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
-      setItems(marketplaceItems(data));
-    } catch (err: unknown) {
-      setError(errorMessage(err, "Plugin kataloğu yüklenemedi."));
-    } finally {
-      setLoading(false);
-    }
+    const data = await fetchJson<unknown>("/api/plugin-marketplace/catalog");
+    return marketplaceItems(data);
   }, []);
 
-  useEffect(() => {
-    loadMarketplace();
-  }, [loadMarketplace]);
+  const {
+    data: items,
+    loading,
+    error,
+    setError,
+    reload,
+  } = useAsyncResource<MarketplaceItem[]>([], loadMarketplace, "Plugin kataloğu yüklenemedi.");
 
   const installedCount = useMemo(
     () => items.filter((item) => item.installed || item.live_registered).length,
@@ -101,13 +92,13 @@ export function PluginMarketplacePanel() {
         });
       }
       setFeedback(`Plugin işlemi tamamlandı: ${pluginId} → ${ACTION_LABELS[action]}.`);
-      await loadMarketplace();
+      await reload();
     } catch (err: unknown) {
       setError(errorMessage(err, "Plugin işlemi tamamlanamadı."));
     } finally {
       setBusyPluginId("");
     }
-  }, [loadMarketplace]);
+  }, [reload, setError]);
 
   return (
     <section className="panel panel--stacked">
@@ -120,7 +111,7 @@ export function PluginMarketplacePanel() {
         </div>
         <div className="inline-controls">
           <span className="pill pill--info">{installedCount} aktif plugin</span>
-          <button className="button-secondary" onClick={loadMarketplace} disabled={loading}>
+          <button className="button-secondary" onClick={reload} disabled={loading}>
             {loading ? "Yükleniyor…" : "Yenile"}
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { HitlPendingItem } from "../lib/api.js";
 import type { CollaborationEvent } from "../hooks/useWebSocket.js";
 import {
@@ -11,6 +11,8 @@ import {
 } from "../lib/api.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 import { useFormState } from "../hooks/useFormState.js";
+import { useAsyncResource } from "../hooks/useAsyncResource.js";
+import { errorMessage } from "../lib/errors.js";
 
 const OPS_ROOM_ID = "ops:control";
 const QA_ROOM_ID = "qa:coverage";
@@ -25,18 +27,13 @@ const FORM_FIELD_LABELS: Record<string, string> = {
   tone: "Ton",
 };
 
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 const typedEntries = <T extends Record<string, unknown>>(value: T) =>
   Object.entries(value) as [keyof T, T[keyof T]][];
 
 export function OperationsQaPanel() {
   const [activeRoom, setActiveRoom] = useState(OPS_ROOM_ID);
   const [events, setEvents] = useState<CollaborationEvent[]>([]);
-  const [hitlPending, setHitlPending] = useState<HitlPendingItem[]>([]);
   const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
   const [output, setOutput] = useState<unknown>(null);
   const [busyAction, setBusyAction] = useState("");
   const actionInFlightRef = useRef<boolean>(false);
@@ -58,6 +55,18 @@ export function OperationsQaPanel() {
   const [coverageForm, setCoverageField] = useFormState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 10 });
   const [batchForm, setBatchField] = useFormState({ coverage_xml: "coverage.xml", coveragerc: ".coveragerc", limit: 5, batch_size: 1, append: true });
 
+  const loadHitl = useCallback(async () => {
+    const data = await listHitlPending();
+    return data.pending || [];
+  }, []);
+
+  const {
+    data: hitlPending,
+    error,
+    setError,
+    reload,
+  } = useAsyncResource<HitlPendingItem[]>([], loadHitl);
+
   const ws = useWebSocket("ops-qa", {
     roomId: activeRoom,
     displayName: "Ops QA Panel",
@@ -65,20 +74,6 @@ export function OperationsQaPanel() {
     onStatus: (message) => setStatus(message),
     onError: (message) => setError(message),
   });
-
-  const loadHitl = useCallback(async () => {
-    try {
-      const data = await listHitlPending();
-      setHitlPending(data.pending || []);
-      setError("");
-    } catch (exc: unknown) {
-      setError(errorMessage(exc));
-    }
-  }, []);
-
-  useEffect(() => {
-    loadHitl();
-  }, [loadHitl]);
 
   const runAction = useCallback(async (label: string, fn: () => Promise<unknown>): Promise<boolean> => {
     if (actionInFlightRef.current) return false;
@@ -90,7 +85,7 @@ export function OperationsQaPanel() {
       const result = await fn();
       setOutput(result);
       setStatus(`${label} tamamlandı.`);
-      await loadHitl();
+      await reload();
     } catch (exc: unknown) {
       setError(errorMessage(exc));
       setStatus(`${label} başarısız.`);
@@ -99,7 +94,7 @@ export function OperationsQaPanel() {
       setBusyAction("");
     }
     return true;
-  }, [loadHitl]);
+  }, [reload, setError]);
 
   const respond = useCallback(async (requestId: string, approved: boolean) => {
     await runAction(approved ? "HITL onay" : "HITL red", () => respondHitl(requestId, {
@@ -208,7 +203,7 @@ export function OperationsQaPanel() {
         <div className="card">
           <div className="data-list__header">
             <h3>HITL Onay Kuyruğu</h3>
-            <button type="button" className="button-secondary" onClick={loadHitl}>Yenile</button>
+            <button type="button" className="button-secondary" onClick={reload}>Yenile</button>
           </div>
           <div className="data-list">
             {hitlPending.length === 0 && <p className="empty-state">Bekleyen HITL isteği yok.</p>}

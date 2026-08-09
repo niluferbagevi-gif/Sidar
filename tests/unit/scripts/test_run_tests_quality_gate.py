@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -22,6 +23,31 @@ RUN_TESTS = Path("run_tests.sh")
 def _script() -> str:
     """Return run_tests.sh with sourced test gate modules expanded in-place."""
     return expanded_bash_source(RUN_TESTS)
+
+
+def _skip_unless_frontend_dependencies_installed(*package_names: str) -> None:
+    """Skip (not fail) a test that shells out to a real `npm run ...`.
+
+    tests/unit must stay runnable standalone: github_upload.py's local
+    pre-push quality gate runs exactly `uv run pytest tests/unit -q --no-cov
+    -x` with no `cd web_ui_react && npm ci` step first -- by design, it's a
+    fast backend/installer-focused gate (see run_pre_push_quality_gate()'s
+    docstring in github_upload.py), not a full CI replica. CI's own
+    dedicated frontend lint/build steps always run `npm ci` first and stay
+    the authoritative gate regardless of this check; this live subprocess
+    call is a bonus for whoever already has web_ui_react/node_modules
+    populated (local frontend dev, or CI's own `pytest tests/unit` step,
+    which runs after `npm ci` within the same job) -- it must not turn into
+    a hard failure for anyone who doesn't.
+    """
+    node_modules = Path("web_ui_react/node_modules")
+    missing = [name for name in package_names if not (node_modules / name).exists()]
+    if missing:
+        pytest.skip(
+            f"web_ui_react/node_modules is missing {missing}; run "
+            "'cd web_ui_react && npm ci' first to exercise this live check "
+            "(CI's frontend lint/build steps always do)."
+        )
 
 
 def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
@@ -236,6 +262,33 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert "[tool.coverage.report] fail_under" in tests_module_notes
 
 
+def test_test_optimization_plan_omit_examples_match_pyproject_omit_list() -> None:
+    """`docs/TEST_OPTIMIZATION_PLAN.md`'nin `omit` örnek dosyaları güncel kalmalı.
+
+    Belge, `[tool.coverage.run].omit` ile eşleşen (dolayısıyla coverage
+    artırma hedefi konmayan) dosyalara örnek olarak `(örn. ...)` kalıbıyla
+    belirli path'ler gösteriyor. Bir arkadaş kod incelemesi, bu örneklerin
+    `core/vision.py`/`core/voice.py`'yi -- ikisi de omit listesinden
+    kaldırılıp tam `%100` gate'ine dahil edildikten sonra -- hâlâ "kapsam
+    dışı" diye işaret ettiğini buldu. Bu test her `(örn. ...)` çağrısındaki
+    her path'in gerçekten bir `omit` glob'uyla eşleştiğini doğrular.
+    """
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    omit_patterns = pyproject["tool"]["coverage"]["run"]["omit"]
+
+    doc = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
+    example_blocks = re.findall(r"\(örn\. ([^)]+)\)", doc)
+    assert example_blocks, "expected at least one '(örn. ...)' omit callout"
+
+    for block in example_blocks:
+        example_paths = re.findall(r"`([^`]+)`", block)
+        assert example_paths
+        for example_path in example_paths:
+            assert any(fnmatch.fnmatch(example_path, pattern) for pattern in omit_patterns), (
+                f"{example_path!r} cited as omit-covered but matches no pyproject.toml omit pattern"
+            )
+
+
 def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:
     script = _script()
 
@@ -422,6 +475,12 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
     assert "USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false" in env_utils
     assert "install_sidar.sh` GPU tespit ederse" in readme
     assert "varsayılan `REQUIRE_GPU=false`" in readme
+    # A friend code review noted ENABLE_GPU_TESTS=auto's opt-in-by-detection
+    # design is correct (not a bug) for a GPU-equipped dev machine, but the
+    # ENABLE_GPU_TESTS=0 override to skip GPU tests for a faster default loop
+    # was never documented anywhere.
+    assert "ENABLE_GPU_TESTS=0 bash run_tests.sh" in readme
+    assert "auto` değerini geçersiz kılar" in readme
 
 
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
@@ -478,6 +537,17 @@ def test_prepare_test_database_rejects_case_folded_primary_database_collision(
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # This harness's parent pytest process may itself be running
+                # under a caller (e.g. CI's "Base quality gates" job) that
+                # sets AUTO_PREPARE_TEST_DB/SMOKE_SKIP_EXTERNAL_INFRA at its
+                # own job/shell level to skip run_tests.sh's *outer* DB prep
+                # (it prepares the DB itself in a separate step). subprocess.run
+                # inherits that ambient environment by default, which would
+                # make prepare_test_database's own early-return guards fire
+                # before ever reaching the case-folded-collision check this
+                # test exercises. Reset them so this harness's behavior only
+                # depends on what it explicitly sets below.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=()",
                 _extract_run_tests_function("is_safe_postgres_identifier"),
@@ -505,6 +575,13 @@ def test_service_readiness_timeout_fails_without_enabling_smoke_skip(tmp_path: P
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # See the same reset in test_prepare_test_database_rejects_
+                # case_folded_primary_database_collision above: this test
+                # asserts SMOKE_SKIP_EXTERNAL_INFRA is unset, which only holds
+                # if the ambient caller environment (e.g. CI's "Base quality
+                # gates" job, which sets it to "0" at job level) hasn't leaked
+                # into this subprocess.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=(fake-compose)",
                 "fake-compose() { return 1; }",
@@ -1148,6 +1225,7 @@ FRONTEND_COVERAGE_RAN=1
 FRONTEND_COVERAGE_EXIT_CODE=0
 FRONTEND_E2E_RAN=1
 FRONTEND_E2E_EXIT_CODE=0
+FRONTEND_E2E_NPM_SCRIPT=test:e2e:smoke
 RUN_BENCHMARKS=required
 BENCHMARK_EXIT_CODE=0
 BENCHMARK_COMPARE_STATUS=seeded_not_compared
@@ -1222,6 +1300,25 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
         "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
         "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
     )
+
+
+def test_testing_docs_explain_env_var_typo_safety_limitation() -> None:
+    """Guard the documented rationale for skipping an env-var typo checker.
+
+    A friend code review flagged run_tests.sh's large env-var surface (no
+    schema validation rejects unknown/typo'd SIDAR_*/BENCHMARK_*/COVERAGE_*
+    names). Confirmed --help exists (see the test above) but doesn't cover
+    env vars; a warn-only auto-derived allowlist design was tried and
+    rejected because SIDAR_ENV -- a real CI-set variable consumed by
+    config.py, not by run_tests.sh/scripts/test_gates -- would false-positive
+    immediately. This is documented as a known limitation rather than shipped
+    half-correct; pin the documented rationale so it doesn't silently drop.
+    """
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması" in testing_doc
+    assert "Bilinen sınırlama" in testing_doc
+    assert "SIDAR_ENV" in testing_doc and "false-positive" in testing_doc
 
 
 def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
@@ -1915,6 +2012,51 @@ def test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys()
     )
 
 
+def test_env_example_secret_keys_are_all_in_the_install_masking_allowlist() -> None:
+    """Every secret-shaped key shipped in .env*.example must be masked.
+
+    A friend code review suggested exactly this check: compare every
+    *_TOKEN/*_KEY/*_SECRET/*_PASSWORD-shaped key in the shipped .env*.example
+    templates against install_sidar.sh's SIDAR_INTERNAL_SECRET_ENV_KEYS/
+    SIDAR_USER_SECRET_ENV_KEYS allowlist (the single source both
+    mask_install_log_stream() and the interactive API-key collector read
+    from -- see test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys
+    above). Running it found 5 real, live gaps: REDIS_PASSWORD, JIRA_API_TOKEN,
+    and META_GRAPH_API_TOKEN were never masked at all; SIDAR_AUTONOMY_WEBHOOK_SECRET
+    and GOOGLE_API_KEY happened to be masked only by incidental substring overlap
+    with an unrelated allowlist/catch-all pattern entry (AUTONOMY_WEBHOOK_SECRET,
+    the case-insensitive api_key catch-all) rather than by design -- fragile,
+    not something to keep relying on. All five were added to the allowlist
+    explicitly; this test prevents the next one from going unnoticed.
+    """
+    installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    def _extract_array(name: str) -> set[str]:
+        marker = f"{name}=("
+        start = installer_root.index(marker) + len(marker)
+        block = installer_root[start : installer_root.index(")", start)]
+        return set(re.findall(r"[A-Z_][A-Z0-9_]*", block))
+
+    allowlist = _extract_array("SIDAR_INTERNAL_SECRET_ENV_KEYS") | _extract_array(
+        "SIDAR_USER_SECRET_ENV_KEYS"
+    )
+
+    secret_key_re = re.compile(
+        r"^([A-Z_][A-Z0-9_]*(?:_TOKEN|_KEY|_SECRET|_PASSWORD))=", re.MULTILINE
+    )
+    missing: dict[str, set[str]] = {}
+    for env_example in sorted(Path().glob(".env*.example")):
+        keys = set(secret_key_re.findall(env_example.read_text(encoding="utf-8")))
+        gap = keys - allowlist
+        if gap:
+            missing[env_example.name] = gap
+
+    assert not missing, (
+        "Secret-shaped keys shipped in .env*.example are missing from install_sidar.sh's "
+        f"SIDAR_INTERNAL_SECRET_ENV_KEYS/SIDAR_USER_SECRET_ENV_KEYS masking allowlist: {missing}"
+    )
+
+
 def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
     summary_start = finish_phase.index("print_summary()")
@@ -2408,6 +2550,32 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır" in pr_template
 
 
+def test_ci_parity_actually_sets_the_ci_test_profile() -> None:
+    """`make ci-parity` must not silently run under local-profile defaults.
+
+    Regression test: ci-parity used to just forward FRONTEND_BUNDLE_BUDGET_LOCAL_FULL
+    to dev-full and nothing else -- no TEST_PROFILE=ci, no
+    FRONTEND_E2E_NPM_SCRIPT=test:e2e. That made it functionally identical to
+    plain dev-full while its name promised CI parity: run_tests.sh's
+    TEST_PROFILE branch controls (among other things) the benchmark regression
+    threshold -- mean:15% under the local-profile default ci-parity was
+    actually using vs. mean:10% under TEST_PROFILE=ci -- so `make ci-parity`
+    could pass locally on a change that would then fail real CI.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    # Bounded to ci-parity's own recipe (up to the next blank line), not the
+    # whole gap up to base-quality-gates: -- that gap also contains a comment
+    # above base-quality-gates that happens to mention
+    # "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in prose, which would make that
+    # specific assertion pass even without the fix.
+    ci_parity_start = makefile.index("ci-parity:")
+    ci_parity_block = makefile[ci_parity_start : makefile.index("\n\n", ci_parity_start)]
+
+    assert "TEST_PROFILE=ci" in ci_parity_block
+    assert "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in ci_parity_block
+    assert "$(MAKE) dev-full" in ci_parity_block
+
+
 def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
     """Operators must have a durable runbook for CI's external fail-closed gates."""
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
@@ -2466,6 +2634,74 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "timeout-minutes: 45" in testing
     assert "benchmark-baseline-keepalive.yml" in testing
     assert "benchmark çalıştırmaz, baseline üretmez" in testing
+
+
+def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
+    """Every benchmark-baseline cache key must share one ${{ runner.name }}-scoped prefix.
+
+    Regression test: `.github/workflows/benchmark-baseline-keepalive.yml` used to
+    restore with a key that omitted `${{ runner.name }}` (and ran on
+    `ubuntu-latest`, where `runner.name` wouldn't have matched anyway), so it
+    could never actually hit the cache entry `benchmark-compare`/the seed jobs
+    depend on -- the keepalive workflow "passed" while restoring nothing,
+    silently failing to do the one thing it exists for (both of its real runs
+    on GitHub Actions failed with "Cache not found"). Every
+    `benchmark-baseline-` cache key across ci.yml, benchmark-baseline-seed.yml
+    and benchmark-baseline-keepalive.yml must share the identical
+    `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-`
+    prefix so a keepalive/seed/compare cache key can never silently drift
+    apart again.
+    """
+    expected_prefix = (
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+    )
+    workflow_paths = [
+        Path(".github/workflows/ci.yml"),
+        Path(".github/workflows/benchmark-baseline-seed.yml"),
+        Path(".github/workflows/benchmark-baseline-keepalive.yml"),
+    ]
+
+    # Only lines that are actually a cache key value or a restore-keys list
+    # item, plus artifact `name:` values that opt into the same runner-scoped
+    # template (ci.yml's plain `name: benchmark-baseline-seed` artifact is a
+    # fixed display name, not part of this key family, and is deliberately
+    # not matched here) -- not step ids, concurrency group names, or prose
+    # mentioning a workflow filename, all of which also legitimately contain
+    # the literal substring "benchmark-baseline-".
+    cache_key_line = re.compile(
+        r"^\s*key:\s*(benchmark-baseline-.+)$"
+        r"|^\s*name:\s*(benchmark-baseline-\$\{\{.+)$"
+        r"|^\s*(benchmark-baseline-\$\{\{ runner\.name.+)$"
+    )
+
+    mismatches: list[str] = []
+    total_occurrences = 0
+    for workflow_path in workflow_paths:
+        text = workflow_path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            match = cache_key_line.match(line)
+            if not match:
+                continue
+            occurrence = match.group(1) or match.group(2) or match.group(3)
+            total_occurrences += 1
+            if not occurrence.startswith(expected_prefix):
+                mismatches.append(f"{workflow_path}:{line_no}: {occurrence!r}")
+
+    assert not mismatches, (
+        "benchmark-baseline cache key prefix drifted from "
+        f"{expected_prefix!r}:\n" + "\n".join(mismatches)
+    )
+    # Guard against the assertion above vacuously passing if the workflows are
+    # rewritten to not mention the prefix at all.
+    assert total_occurrences >= 8
+
+    keepalive_text = Path(".github/workflows/benchmark-baseline-keepalive.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "runs-on: [self-hosted, linux, benchmark]" in keepalive_text, (
+        "keepalive must run on the same runner pool as benchmark-compare/seed-baseline "
+        "for ${{ runner.name }} to resolve to the same value in its cache key"
+    )
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
@@ -5075,7 +5311,10 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         "Install Playwright Chromium for frontend smoke tests"
     )
     assert "npx playwright install --with-deps chromium" in ci
-    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' in ci
+    # All 8 web_ui_react/e2e/ specs run here (not just the smoke default),
+    # see test_ci_runs_full_frontend_e2e_suite_not_just_smoke below for the
+    # regression this closes.
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
@@ -5191,6 +5430,56 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "await page.context().clearCookies()" in websocket_spec
     assert "await page.addInitScript(() => localStorage.clear())" in websocket_spec
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
+
+
+def test_ci_runs_full_frontend_e2e_suite_not_just_smoke() -> None:
+    """Pin CI to the full Playwright suite, not just the 1-file smoke script.
+
+    A friend code review flagged that only test:e2e:smoke (chat-websocket
+    only) ran anywhere in automation, so a regression in any of the other 7
+    named-panel specs (admin RBAC/plugin-install, agent manager, p2p
+    dialogue, prompt admin, swarm flow HITL rerun, operations tools, voice
+    assistant) could merge to main undetected -- unit tests mock the
+    backend/websocket entirely. This was already fixed (ci.yml's
+    FRONTEND_E2E_NPM_SCRIPT was switched from test:e2e:smoke to the
+    unfiltered test:e2e), but nothing pinned the fact that test:e2e is
+    genuinely unfiltered (playwright test with no path argument, so newly
+    added spec files are swept in automatically) and that all 8 named specs
+    still exist -- the dangling comment above referencing this test name
+    had no test behind it. Close that gap.
+    """
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    playwright_config = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
+
+    assert package_json["scripts"]["test:e2e"] == "playwright test"
+    assert 'testDir: "./e2e"' in playwright_config
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' not in ci
+
+    e2e_dir = Path("web_ui_react/e2e")
+    spec_files = {path.name for path in e2e_dir.glob("*.spec.js")}
+    expected_specs = {
+        "admin-panels.spec.js",
+        "agent-manager.spec.js",
+        "chat-websocket.spec.js",
+        "p2p-dialogue.spec.js",
+        "prompt-admin.spec.js",
+        "swarm-flow.spec.js",
+        "tools-panel.spec.js",
+        "voice-panel.spec.js",
+    }
+    assert spec_files == expected_specs
+
+    _skip_unless_frontend_dependencies_installed("@playwright/test", "playwright")
+    list_result = subprocess.run(
+        ["npx", "playwright", "test", "--list"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Total: 10 tests in 8 files" in list_result.stdout
 
 
 def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None:
@@ -5615,6 +5904,7 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-near-budget.js"
     chunk_path.write_text("a" * 950, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5650,6 +5940,9 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-test.js"
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text(
+        "console.log('markdown');\n", encoding="utf-8"
+    )
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5680,6 +5973,101 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
         "SIDAR_TOTAL_JS_BUDGET_KB",
         "SIDAR_TOTAL_GZIP_BUDGET_KB",
     ]
+
+
+def test_frontend_bundle_budget_gates_the_markdown_vendor_chunk_independently(
+    tmp_path: Path,
+) -> None:
+    """ChatMarkdownRenderer must have its own tripwire, not just the total budget.
+
+    A friend code review flagged that only the react-dom chunk had a
+    dedicated budget -- an accidentally-eager import or a new remark/rehype
+    plugin bloating the lazy markdown vendor graph (react-markdown +
+    remark-gfm + their transitive parser packages, the largest non-vendor
+    chunk) would only trip a gate once the *total* JS/gzip budget was
+    exceeded, by which point it's already grown a lot. Pin that the
+    ChatMarkdownRenderer chunk is now gated the same way react-dom is:
+    independently, regardless of how much total-budget headroom remains.
+    """
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-test.js").write_text("a" * 100, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text("a" * 2048, encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+            "SIDAR_MARKDOWN_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "500",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "500",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "ChatMarkdownRenderer chunk ChatMarkdownRenderer-test.js exceeds budget" in (
+        result.stdout + result.stderr
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    markdown_budget = next(
+        chunk for chunk in report["namedChunks"] if chunk["label"] == "ChatMarkdownRenderer"
+    )
+    assert markdown_budget["budgetKb"] == 1
+    assert markdown_budget["chunks"][0]["name"] == "ChatMarkdownRenderer-test.js"
+    # A well-within-budget total must not mask the per-chunk failure.
+    assert report["budgetUsage"]["totalJs"]["warning"] is False
+
+
+def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
+    """Pin the cache-isolation split behind the ChatMarkdownRenderer budget.
+
+    A friend code review pointed out that rehypeSidarHighlight.ts (Sidar's
+    own rehype plugin) was co-bundled with the large, rarely-changing
+    react-markdown/remark-gfm vendor parser graph in one lazy chunk --
+    editing Sidar's own highlight config (e.g. adding a language) busted
+    the cache for the entire vendor bundle too. vite.config.js now gives it
+    a dedicated manual chunk so the vendor graph's cache survives those
+    edits; scripts/check-bundle-budget.mjs gates the (now vendor-only)
+    ChatMarkdownRenderer chunk with its own budget instead of relying on
+    the total JS/gzip budget alone.
+    """
+    vite_config = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+    bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(
+        encoding="utf-8"
+    )
+    readme = Path("web_ui_react/README.md").read_text(encoding="utf-8")
+
+    assert 'id.endsWith("/src/lib/rehypeSidarHighlight.ts")' in vite_config
+    assert 'return "rehype-sidar-highlight";' in vite_config
+    assert "namedChunkBudgets" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB" in bundle_budget_script
+    assert "ChatMarkdownRenderer" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190" in readme
+    assert "rehype-sidar-highlight-*.js" in readme
+    assert "ChatMarkdownRenderer-*.js" in readme
+
+    _skip_unless_frontend_dependencies_installed("vite", "@vitejs/plugin-react", "react-markdown")
+    build_result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert build_result.returncode == 0, build_result.stdout + build_result.stderr
+    emitted = [path.name for path in Path("web_ui_react/dist/assets").glob("*.js")]
+    assert any(name.startswith("rehype-sidar-highlight-") for name in emitted)
+    assert any(name.startswith("ChatMarkdownRenderer-") for name in emitted)
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
@@ -6743,3 +7131,45 @@ def test_production_secret_rotation_gate_rejects_missing_production_profile(
     )
 
     assert probe.stdout.strip() == "blocked"
+
+
+def test_frontend_eslint_covers_typescript_sources_including_a11y_rules() -> None:
+    """Guard the .ts/.tsx lint-coverage fix so it can't silently regress.
+
+    A friend code review flagged (independently confirmed already fixed by
+    an earlier commit in this same PR) that eslint.config.js's rule block
+    only matched src/**/*.{js,jsx} and the lint script only passed
+    --ext .js,.jsx -- so once the TypeScript migration finished, jsx-a11y/
+    react/react-hooks rules covered zero production components, only test
+    files. A regressed disable comment (e.g. GraphView.tsx's
+    jsx-a11y/no-noninteractive-element-to-interactive-role suppression)
+    would go silently untracked. Pin the fix so the glob/ext can't drift
+    back to js/jsx-only without a test failure.
+    """
+    eslint_config = Path("web_ui_react/eslint.config.js").read_text(encoding="utf-8")
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    graph_view = Path("web_ui_react/src/components/panels/swarm/GraphView.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert package_json["scripts"]["lint"] == (
+        "eslint src --ext .js,.jsx,.ts,.tsx --report-unused-disable-directives"
+    )
+    assert 'files: ["src/**/*.{ts,tsx}"]' in eslint_config
+    assert "typescript-eslint" in eslint_config
+    assert "tseslint.configs.recommended" in eslint_config
+    ts_block_start = eslint_config.index('files: ["src/**/*.{ts,tsx}"]')
+    ts_block_end = eslint_config.index("}),", ts_block_start)
+    ts_block = eslint_config[ts_block_start:ts_block_end]
+    assert "reactAndA11yRules" in ts_block
+    assert "reactAndA11yPlugins" in ts_block
+    assert "jsx-a11y/no-noninteractive-element-to-interactive-role" in graph_view
+
+    _skip_unless_frontend_dependencies_installed("typescript-eslint", "eslint-plugin-jsx-a11y")
+    lint = subprocess.run(
+        ["npm", "run", "lint"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert lint.returncode == 0, lint.stdout + lint.stderr

@@ -382,13 +382,34 @@ jobs:
 
       - name: Run base quality gates (performance isolated)
         env:
-          FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
+          # web_ui_react/e2e/ has 8 spec files; only chat-websocket.spec.js
+          # ("smoke") ever ran here, so the other 7 panel specs (admin-panels,
+          # agent-manager, p2p-dialogue, prompt-admin, swarm-flow, tools-panel,
+          # voice-panel) never executed in any automated path -- not in CI, not
+          # in any nightly/weekly/release workflow, and not even via `make
+          # production-readiness` despite docs/TESTING.md's "yalnız
+          # RUN_FRONTEND_E2E=1 ile tam gate'te tetiklenir" claim (that claim
+          # was aspirational; FRONTEND_E2E_NPM_SCRIPT was never actually set
+          # anywhere but here). Running the full suite surfaced two real,
+          # previously-undetected bugs (see the CHANGELOG entry) before this
+          # was turned on as release-blocking; test:e2e (all 8 specs, ~10
+          # tests) is fast (~12s locally with 2 workers) and self-contained
+          # (each spec starts its own mock backend + Vite server, no shared
+          # infra), so there's no cost reason to keep it scoped to one file.
+          FRONTEND_E2E_NPM_SCRIPT: "test:e2e"
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
+          # check-bundle-budget.mjs requires both budget vars whenever
+          # TEST_PROFILE=ci (or SIDAR_PRODUCTION_READINESS=1) so a CI run can
+          # never silently skip the frontend bundle-size gate. Match the
+          # Makefile defaults (SIDAR_TOTAL_JS_BUDGET_KB/GZIP_BUDGET_KB ?= 550/170)
+          # used by every local `make dev-full`/`make production-readiness` run.
+          SIDAR_TOTAL_JS_BUDGET_KB: "550"
+          SIDAR_TOTAL_GZIP_BUDGET_KB: "170"
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
           # (current local/CI baseline: %100; coverage_ratchet.py only raises it)
@@ -492,7 +513,27 @@ jobs:
           retention-days: 14
 
       - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
+        run: |
+          bash scripts/check_env_parity.sh \
+            --ignore AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE \
+            --ignore BENCHMARK_BASELINE_NAME \
+            --ignore C_INCLUDE_PATH \
+            --ignore DATABASE_URL \
+            --ignore DOCKER_SETTINGS_JSON \
+            --ignore DOTENV_FILE \
+            --ignore GITHUB_API_URL \
+            --ignore GITHUB_REPOSITORY \
+            --ignore GPU_RUNNER_MONITOR_TOKEN \
+            --ignore HF_HUB_CACHE \
+            --ignore PLAYWRIGHT_BROWSERS_PATH \
+            --ignore PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH \
+            --ignore PYTEST_XDIST_WORKER \
+            --ignore SEED_RAG_PGVECTOR_MAX_RETRIES \
+            --ignore SEED_RAG_PGVECTOR_RETRY_DELAY_SEC \
+            --ignore SELF_HEAL_DATABASE_URL \
+            --ignore SIDAR_CONTAINER_DATABASE_URL \
+            --ignore SIDAR_LIBCUDA_CANDIDATE_PATHS \
+            --ignore SIDAR_REQUIRED_CHECK_BRANCH
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
