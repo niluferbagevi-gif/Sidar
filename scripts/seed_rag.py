@@ -26,8 +26,10 @@ DEFAULT_INCLUDE_PATTERNS = (
     "README.md",
     "AGENTS.md",
     "docs/SIDAR.md",
+    "docs/ARCHITECTURE.md",
     "docs/TEKNIK_REFERANS.md",
     "docs/PROJE_RAPORU.md",
+    "docs/project-report/*.md",
     "docs/SIDAR_v5_0_MIMARI_RAPORU.md",
     "docs/SIDAR_v5_1_MIMARI_RAPORU.md",
     # Curated architecture/runtime code entry points.  This keeps the seed
@@ -340,7 +342,8 @@ def _wait_for_pgvector_readiness() -> None:
         )
     else:
         print(
-            f"⚠️ pgvector extension not visible after {max_retries} attempts; proceeding with normal startup.",
+            f"⚠️ pgvector extension not visible after {max_retries} attempts; proceeding with "
+            "normal startup.",
             file=sys.stderr,
         )
 

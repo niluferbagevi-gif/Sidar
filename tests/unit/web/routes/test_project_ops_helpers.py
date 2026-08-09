@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ from web.routes.project_ops import (
     _is_allowed_git_command,
     _resolve_web_server_helper,
     build_project_ops_router,
+    is_valid_git_ref_name,
 )
 
 
@@ -21,6 +23,50 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
         _is_allowed_git_command(["git", "remote", "get-url", "origin\x00--upload-pack=evil"])
         is False
     )
+
+
+@pytest.mark.parametrize(
+    "branch_name",
+    [
+        "-upload-pack=evil",
+        "--upload-pack=evil",
+        "-rf",
+        "-B",
+    ],
+)
+def test_is_valid_git_ref_name_rejects_leading_dash_argument_injection(branch_name: str) -> None:
+    """Regression test: a branch name starting with "-" must be rejected.
+
+    Git subprocess calls use argv (shell=False) so shell metacharacters are
+    already safe, but a leading "-" lets git itself misinterpret the value as a flag
+    (e.g. `git checkout -upload-pack=evil`). This is the same validator
+    github_upload.py already used (managers.code.git_validation), now shared
+    with web/routes/project_ops.py's /set-branch endpoint.
+    """
+    assert is_valid_git_ref_name(branch_name) is False
+
+
+def test_is_valid_git_ref_name_accepts_normal_branch_names() -> None:
+    for branch_name in ("feature/safe-branch_1", "main", "release-1.0"):
+        assert is_valid_git_ref_name(branch_name) is True
+
+
+def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from subprocess import CalledProcessError
+
+    from web.routes.project_ops import _git_run
+
+    warnings: list[tuple[Any, ...]] = []
+    logger = SimpleNamespace(warning=lambda *args: warnings.append(args))
+
+    def _raise_called_process_error(*_args: Any, **_kwargs: Any) -> bytes:
+        raise CalledProcessError(7, "git")
+
+    monkeypatch.setattr("subprocess.check_output", _raise_called_process_error)
+
+    assert _git_run(["git"], ".", logger=logger) == ""
+    assert warnings
+    assert "Git komutu başarısız oldu" in warnings[0][0]
 
 
 @pytest.mark.parametrize(
@@ -169,6 +215,16 @@ async def test_project_session_handlers_cover_create_load_list_and_delete(tmp_pa
     assert (await exports["delete_session"]("missing", request, user)).status_code == 500
 
 
+def test_project_file_handlers_require_authenticated_user_dependency(tmp_path: Path) -> None:
+    exports = _build_project_exports(tmp_path, SimpleNamespace())
+
+    list_user_default = inspect.signature(exports["list_project_files"]).parameters["_user"].default
+    content_user_default = inspect.signature(exports["file_content"]).parameters["_user"].default
+
+    assert getattr(list_user_default, "dependency", None) is not None
+    assert getattr(content_user_default, "dependency", None) is not None
+
+
 @pytest.mark.asyncio
 async def test_project_file_handlers_cover_listing_content_and_security_edges(
     tmp_path: Path,
@@ -203,7 +259,7 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     web_server = SimpleNamespace(
-        _git_run=lambda cmd, _cwd, _logger: ("feature\nmain" if cmd[1] == "branch" else "feature")
+        _git_run=lambda cmd, _cwd, _logger: "feature\nmain" if cmd[1] == "branch" else "feature"
     )
     monkeypatch.setitem(sys.modules, "web_server", web_server)
     exports = _build_project_exports(tmp_path, SimpleNamespace())
@@ -212,6 +268,9 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     assert branches == {"branches": ["feature", "main"], "current": "feature"}
     assert (await exports["set_branch"](_JsonRequest({"branch": " "}))).status_code == 400
     assert (await exports["set_branch"](_JsonRequest({"branch": "bad branch"}))).status_code == 400
+    assert (
+        await exports["set_branch"](_JsonRequest({"branch": "-upload-pack=evil"}))
+    ).status_code == 400
 
     monkeypatch.setattr("subprocess.check_output", lambda *_args, **_kwargs: b"")
     assert _json_body(await exports["set_branch"](_JsonRequest({"branch": "feature"}))) == {

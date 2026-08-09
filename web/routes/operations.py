@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -35,6 +36,7 @@ ALLOWED_POYRAZ_REST_TOOLS = frozenset(
 
 _deps_factory: Callable[[], Any] | None = None
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # Legacy exports kept for direct web_server/tests imports while endpoint implementations
@@ -45,6 +47,7 @@ api_qa_coverage_generate = coverage_ops.api_qa_coverage_generate
 api_qa_coverage_batch = coverage_ops.api_qa_coverage_batch
 decode_agent_tool_result = coverage_ops.decode_agent_tool_result
 serialize_coverage_task = coverage_ops.serialize_coverage_task
+
 
 def configure_operations_dependencies(deps_factory: Callable[[], Any]) -> None:
     global _deps_factory
@@ -113,8 +116,8 @@ def serialize_operation_checklist(record: Any) -> dict[str, Any]:
     }
 
 
-
-def _database_unavailable_response() -> JSONResponse:
+def _database_unavailable_response(*, operation: str, exc: Exception) -> JSONResponse:
+    logger.warning("Operations database unavailable during %s: %s", operation, exc)
     return JSONResponse(
         {
             "success": False,
@@ -125,10 +128,21 @@ def _database_unavailable_response() -> JSONResponse:
     )
 
 
+def _poyraz_unavailable_response(*, operation: str, exc: Exception) -> JSONResponse:
+    logger.warning("Poyraz operation unavailable during %s: %s", operation, exc)
+    return JSONResponse(
+        {
+            "success": False,
+            "error": "poyraz_unavailable",
+            "message": "Poyraz operasyon aracı geçici olarak kullanılamıyor.",
+        },
+        status_code=503,
+    )
+
+
 async def _resolve_operations_db(deps: Any) -> Any:
     agent = await deps.resolve_agent_instance()
     return agent.memory.db
-
 
 
 @router.get(
@@ -145,8 +159,11 @@ async def api_operations_list_campaigns(
         campaigns = await db.list_marketing_campaigns(
             tenant_id=deps.get_user_tenant(_user), status=status, limit=limit
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse(
         {"success": True, "campaigns": [serialize_campaign(item) for item in campaigns]}
     )
@@ -196,8 +213,11 @@ async def api_operations_create_campaign(
             )
             for item in req.initial_checklists
         ]
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse(
         {
             "success": True,
@@ -224,8 +244,11 @@ async def api_operations_list_assets(
         assets = await db.list_content_assets(
             tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse(
         {"success": True, "assets": [serialize_content_asset(item) for item in assets]}
     )
@@ -253,8 +276,11 @@ async def api_operations_add_asset(
             channel=req.channel,
             metadata=dict(req.metadata or {}),
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse({"success": True, "asset": serialize_content_asset(asset)})
 
 
@@ -274,8 +300,11 @@ async def api_operations_list_checklists(
         checklists = await db.list_operation_checklists(
             tenant_id=deps.get_user_tenant(_user), campaign_id=campaign_id, limit=limit
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse(
         {
             "success": True,
@@ -305,8 +334,11 @@ async def api_operations_add_checklist(
             status=req.status,
             owner_user_id=str(getattr(_user, "id", "") or ""),
         )
-    except Exception:
-        return _database_unavailable_response()
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _database_unavailable_response(operation="database_operation", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during database_operation")
+        return _database_unavailable_response(operation="database_operation", exc=exc)
     return JSONResponse({"success": True, "checklist": serialize_operation_checklist(checklist)})
 
 
@@ -348,7 +380,13 @@ async def api_operations_poyraz_run(
     payload = {**dict(req.payload or {}), "tenant_id": deps.get_user_tenant(_user)}
     if "owner_user_id" not in payload:
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    _raw_result, result = await _run_poyraz_tool(req, _user, tool_name, payload)
+    try:
+        _raw_result, result = await _run_poyraz_tool(req, _user, tool_name, payload)
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _poyraz_unavailable_response(operation="poyraz_tool_bridge", exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during poyraz_tool_bridge")
+        return _poyraz_unavailable_response(operation="poyraz_tool_bridge", exc=exc)
     return JSONResponse(
         {"success": bool(result.get("success", True)), "tool": tool_name, "result": result}
     )
@@ -363,21 +401,27 @@ async def _run_named_poyraz_request(
     payload["tenant_id"] = deps.get_user_tenant(_user)
     if tool_name == "plan_service_operations":
         payload["owner_user_id"] = str(getattr(_user, "id", "") or "")
-    await deps.emit_control_room_event(
-        req.room_id, kind="tool_call", source="poyraz", content=started
-    )
-    poyraz = await deps.await_if_needed(deps.get_poyraz_agent_instance())
-    raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
-    result = decode_agent_tool_result(raw_result)
-    await deps.emit_control_room_event(
-        req.room_id,
-        kind="status",
-        source="poyraz",
-        content=completed,
-        payload={"success": bool(result.get("success", True))}
-        if tool_name == "plan_service_operations"
-        else None,
-    )
+    try:
+        await deps.emit_control_room_event(
+            req.room_id, kind="tool_call", source="poyraz", content=started
+        )
+        poyraz = await deps.await_if_needed(deps.get_poyraz_agent_instance())
+        raw_result = await poyraz.run_task(f"{tool_name}|{json.dumps(payload, ensure_ascii=False)}")
+        result = decode_agent_tool_result(raw_result)
+        await deps.emit_control_room_event(
+            req.room_id,
+            kind="status",
+            source="poyraz",
+            content=completed,
+            payload={"success": bool(result.get("success", True))}
+            if tool_name == "plan_service_operations"
+            else None,
+        )
+    except (RuntimeError, OSError, AttributeError) as exc:
+        return _poyraz_unavailable_response(operation=tool_name, exc=exc)
+    except Exception as exc:
+        logger.exception("Unexpected operations route failure during %s", tool_name)
+        return _poyraz_unavailable_response(operation=tool_name, exc=exc)
     if tool_name == "plan_service_operations":
         return JSONResponse({"success": bool(result.get("success", True)), "result": result})
     return JSONResponse(
@@ -433,5 +477,6 @@ async def api_operations_plan_service(
         "Servis operasyon planı başlatıldı.",
         "Servis operasyon planı tamamlandı.",
     )
+
 
 router.routes.extend(coverage_ops.router.routes)

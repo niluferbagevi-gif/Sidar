@@ -1,5 +1,5 @@
-"""
-Sidar Project - Paket Bilgi Yöneticisi
+"""Sidar Project - Paket Bilgi Yöneticisi.
+
 PyPI, npm Registry ve GitHub Releases entegrasyonu (Asenkron).
 
 Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları.
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class PackageInfoManager:
-    """
-    Python (PyPI), JavaScript (npm) ve GitHub projeleri için
-    paket bilgisi sorgular. (Tamamen asenkron mimari).
+    """Python (PyPI), JavaScript (npm) ve GitHub projeleri için paket bilgisi sorgular.
+
+    Tamamen asenkron mimari.
     """
 
     # Varsayılan değerler (Config verilmezse kullanılır)
@@ -125,8 +125,7 @@ class PackageInfoManager:
         return False, {}, f"[HATA] PyPI: {err}"
 
     async def pypi_info(self, package: str) -> tuple[bool, str]:
-        """
-        PyPI JSON API'den paket bilgisi çek (Asenkron).
+        """PyPI JSON API'den paket bilgisi çek (Asenkron).
 
         Args:
             package: Paket adı (örn: "fastapi", "httpx")
@@ -185,9 +184,7 @@ class PackageInfoManager:
         return True, f"{package}=={version}"
 
     async def pypi_compare(self, package: str, current_version: str) -> tuple[bool, str]:
-        """
-        Kurulu sürümü PyPI'deki güncel sürümle karşılaştır (Asenkron).
-        """
+        """Kurulu sürümü PyPI'deki güncel sürümle karşılaştır (Asenkron)."""
         ok, data, err = await self._fetch_pypi_json(package)
         if not ok:
             return False, err
@@ -215,9 +212,7 @@ class PackageInfoManager:
     # ─────────────────────────────────────────────
 
     async def npm_info(self, package: str) -> tuple[bool, str]:
-        """
-        npm Registry'den paket bilgisi çek (Asenkron).
-        """
+        """Npm Registry'den paket bilgisi çek (Asenkron)."""
         url = f"https://registry.npmjs.org/{package}/latest"
         ok, data, err = await self._get_json(url, cache_key=f"npm:{package.lower()}")
         if not ok:
@@ -262,9 +257,7 @@ class PackageInfoManager:
     # ─────────────────────────────────────────────
 
     async def github_releases(self, repo: str, limit: int = 5) -> tuple[bool, str]:
-        """
-        GitHub Releases API ile sürümleri listele (Asenkron).
-        """
+        """GitHub Releases API ile sürümleri listele (Asenkron)."""
         url = f"https://api.github.com/repos/{repo}/releases"
         ok, data, err = await self._get_json(url, cache_key=f"ghrel:{repo.lower()}:{limit}")
         if not ok:
@@ -337,8 +330,8 @@ class PackageInfoManager:
 
     @staticmethod
     def _version_sort_key(version: object) -> Version:
-        """
-        Sürüm dizisini PEP 440 uyumlu şekilde sırala.
+        """Sürüm dizisini PEP 440 uyumlu şekilde sırala.
+
         packaging.version.Version kullanımı: 1.0.0 > 1.0.0rc1 > 1.0.0b2 > 1.0.0a1
         Geçersiz sürüm formatlarında 0.0.0 döndürülür (sona düşer).
         """

@@ -1,4 +1,4 @@
-"""Active Learning + LoRA/QLoRA Fine-tuning Döngüsü (v6.0)
+"""Active Learning + LoRA/QLoRA Fine-tuning Döngüsü (v6.0).
 
 Kullanıcı geri bildirimlerini (thumbs-up/down, correction) toplayarak
 LoRA/QLoRA fine-tuning için dataset üretir ve isteğe bağlı HuggingFace
@@ -68,8 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_ftfb_exported ON finetune_feedback(exported_at);
 
 
 class FeedbackStore:
-    """
-    Kullanıcı geri bildirimlerini SQLite/PostgreSQL'de saklar.
+    """Kullanıcı geri bildirimlerini SQLite/PostgreSQL'de saklar.
 
     rating: +1 = olumlu, -1 = olumsuz, 0 = nötr
     correction: kullanıcı tarafından düzeltilmiş ideal yanıt (varsa)
@@ -283,8 +282,7 @@ class FeedbackStore:
 
 
 class DatasetExporter:
-    """
-    FeedbackStore'daki kayıtları fine-tuning formatına dönüştürür.
+    """FeedbackStore'daki kayıtları fine-tuning formatına dönüştürür.
 
     Desteklenen formatlar:
     - jsonl: Her satır {"prompt": "...", "completion": "..."} (OpenAI / Axolotl uyumlu)
@@ -304,9 +302,9 @@ class DatasetExporter:
         min_rating: int = 1,
         mark_done: bool = True,
     ) -> dict[str, Any]:
-        """
-        Kayıtları belirtilen formata dönüştürüp dosyaya yazar.
-        Döner: {"path": str, "count": int, "format": str}
+        """Kayıtları belirtilen formata dönüştürüp dosyaya yazar.
+
+        Döner: {"path": str, "count": int, "format": str}.
         """
         fmt = fmt.lower()
         if fmt not in self.SUPPORTED_FORMATS:
@@ -343,22 +341,22 @@ class DatasetExporter:
 
         content = "".join(lines)
 
-        def _write_file() -> None:
+        def _write_file() -> str:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(content, encoding="utf-8")
+            return str(out.resolve())
 
-        await asyncio.to_thread(_write_file)
+        resolved_path = await asyncio.to_thread(_write_file)
 
         if mark_done and ids:
             await self.store.mark_exported(ids)
 
         logger.info("DatasetExporter: %d kayıt → %s (%s)", len(ids), output_path, fmt)
-        return {"path": str(out.resolve()), "count": len(ids), "format": fmt}
+        return {"path": resolved_path, "count": len(ids), "format": fmt}
 
 
 class ContinuousLearningPipeline:
-    """
-    Judge ve Active Learning sinyallerini SFT + preference dataset bundle'ına dönüştürür.
+    """Judge ve Active Learning sinyallerini SFT + preference dataset bundle'ına dönüştürür.
 
     Amaç:
     - İnsan düzeltmelerini LoRA/QLoRA için SFT dataseti'ne aktarmak
@@ -637,8 +635,7 @@ class ContinuousLearningPipeline:
 
 
 class LoRATrainer:
-    """
-    HuggingFace PEFT/LoRA ile yerel model fine-tuning tetikleyicisi.
+    """HuggingFace PEFT/LoRA ile yerel model fine-tuning tetikleyicisi.
 
     peft, transformers, bitsandbytes, datasets kütüphaneleri kurulu değilse
     sessizce devre dışı kalır.
@@ -678,8 +675,8 @@ class LoRATrainer:
         return self._peft_available
 
     def train(self, dataset_path: str) -> dict[str, Any]:
-        """
-        Senkron fine-tuning başlatır.
+        """Senkron fine-tuning başlatır.
+
         asyncio.to_thread(trainer.train, path) ile çağrılması önerilir.
         """
         if not self.enabled:

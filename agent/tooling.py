@@ -247,5 +247,5 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
         raise ValueError("Argüman JSON object olmalıdır")
     except json.JSONDecodeError as err:
         raise ValueError(
-            f"'{tool_name}' için legacy '|||' formatı kaldırıldı. " "JSON object argümanı gönderin."
+            f"'{tool_name}' için legacy '|||' formatı kaldırıldı. JSON object argümanı gönderin."
         ) from err

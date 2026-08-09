@@ -96,6 +96,8 @@ class AgentEventBus:
         )
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
+        self._consumer_offsets: dict[str, str] = {}
+        self._missing_optional_dependency_warnings: set[str] = set()
         self._backends: dict[str, BaseEventBusBackend] = self._build_backends()
 
     def _build_backends(self) -> dict[str, BaseEventBusBackend]:
@@ -112,6 +114,35 @@ class AgentEventBus:
             backend_cls = getattr(module, class_name)
             loaded[backend_name] = backend_cls(self)
         return loaded
+
+    def get_consumer_offsets(self) -> dict[str, str]:
+        """Return the latest acknowledged/processed remote consumer offset per stream/topic."""
+        return dict(self._consumer_offsets)
+
+    def _record_consumer_offset(self, stream_name: object, offset: object) -> None:
+        """Track the latest successfully processed consumer-group offset."""
+        self._consumer_offsets[str(stream_name)] = str(offset)
+
+    def _warn_missing_optional_backend_dependency(
+        self, *, backend: str, package: str, install_hint: str
+    ) -> None:
+        """Log a visible warning once when an optional remote backend dependency is missing."""
+        key = f"{backend}:{package}"
+        if key in self._missing_optional_dependency_warnings:
+            return
+        self._missing_optional_dependency_warnings.add(key)
+        display_backend = {"rabbitmq": "RabbitMQ", "kafka": "Kafka", "redis": "Redis"}.get(
+            backend, backend
+        )
+        logger.warning(
+            "AgentEventBus %s backend bağımlılığı bulunamadı (%s); "
+            "remote transport devre dışı, process-içi fanout ve varsa Redis fallback korunacak. "
+            "SIDAR_EVENT_BUS_BACKEND=%s kullanacaksanız kurulum: %s",
+            display_backend,
+            package,
+            backend,
+            install_hint,
+        )
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
@@ -223,6 +254,17 @@ class AgentEventBus:
                 )
             self._rabbit_available = True
             self._rabbit_listener_task = asyncio.create_task(self._rabbit_listener_loop())
+        except ModuleNotFoundError as exc:
+            self._rabbit_available = False
+            self._warn_missing_optional_backend_dependency(
+                backend="rabbitmq", package="aio_pika", install_hint="uv pip install aio-pika"
+            )
+            logger.debug(
+                "AgentEventBus RabbitMQ bootstrap bağımlılığı eksik, local fallback kullanılacak: "
+                "%s",
+                exc,
+            )
+            await self._cleanup_rabbit()
         except Exception as exc:
             self._rabbit_available = False
             logger.debug(
@@ -253,6 +295,16 @@ class AgentEventBus:
                 await self._kafka_consumer.start()
             self._kafka_available = True
             self._kafka_listener_task = asyncio.create_task(self._kafka_listener_loop())
+        except ModuleNotFoundError as exc:
+            self._kafka_available = False
+            self._warn_missing_optional_backend_dependency(
+                backend="kafka", package="aiokafka", install_hint="uv pip install aiokafka"
+            )
+            logger.debug(
+                "AgentEventBus Kafka bootstrap bağımlılığı eksik, local fallback kullanılacak: %s",
+                exc,
+            )
+            await self._cleanup_kafka()
         except Exception as exc:
             self._kafka_available = False
             logger.debug(
@@ -426,6 +478,7 @@ class AgentEventBus:
                                 await self._redis_client.xack(
                                     self._channel, self._consumer_group, msg_id
                                 )
+                                self._record_consumer_offset(_stream_name, msg_id)
                             except Exception as exc:
                                 await self._write_dead_letter(
                                     reason="ack_failed",
@@ -470,6 +523,16 @@ class AgentEventBus:
                 evt = self._deserialize_event_payload(message.value.decode("utf-8"))
                 if evt is not None:
                     self._fanout_local(evt)
+                kafka_offset = getattr(message, "offset", None)
+                if kafka_offset is not None:
+                    kafka_topic = getattr(message, "topic", self._kafka_topic)
+                    kafka_partition = getattr(message, "partition", None)
+                    stream_name = (
+                        f"{kafka_topic}:{kafka_partition}"
+                        if kafka_partition is not None
+                        else str(kafka_topic)
+                    )
+                    self._record_consumer_offset(stream_name, kafka_offset)
             except Exception as exc:
                 await self._write_dead_letter(
                     reason="invalid_payload",
@@ -626,7 +689,6 @@ class AgentEventBus:
         Resetting runtime state makes the singleton safe to reuse without changing
         subscription or publish semantics in production.
         """
-
         await self._cancel_background_task(self._dlq_persist_flush_task)
         self._dlq_persist_flush_task = None
         if self._dlq_persist_pending:
@@ -642,6 +704,7 @@ class AgentEventBus:
         self._kafka_available = None
         self._remote_circuit_consecutive_failures = 0
         self._remote_circuit_open_until = 0.0
+        self._consumer_offsets.clear()
 
     async def _ensure_redis_loop_compatibility(self) -> None:
         if self._backend != "redis":

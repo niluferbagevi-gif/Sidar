@@ -12,5 +12,5 @@ def configure_loopback_cors(app: FastAPI) -> None:
         CORSMiddleware,
         allow_origin_regex=LOOPBACK_ORIGIN_REGEX,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],
     )

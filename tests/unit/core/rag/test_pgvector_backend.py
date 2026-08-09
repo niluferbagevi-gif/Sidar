@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 
 from core.rag.backends import pgvector as pgvector_module
 
@@ -31,3 +32,21 @@ def test_pgvector_failure_action_message_non_auth_path(monkeypatch):
     message = pgvector.pgvector_failure_action_message(RuntimeError("extension missing"))
 
     assert message == "pgvector pasif, BM25 fallback aktif. Teşhis: pgvector extension missing."
+
+
+def test_reject_if_invalid_pg_table_blocks_sql_injection_identifier(monkeypatch):
+    """Keep attacker-controlled table syntax out of every pgvector SQL builder."""
+    pgvector = importlib.reload(pgvector_module)
+    store = SimpleNamespace(_pgvector_available=True)
+    diagnostics = []
+    monkeypatch.setattr(pgvector.logger, "warning", lambda message: diagnostics.append(message))
+
+    accepted = pgvector._reject_if_invalid_pg_table(
+        store,
+        "x; DROP TABLE users--",
+    )
+
+    assert accepted is False
+    assert store._pgvector_available is False
+    assert len(diagnostics) == 1
+    assert "pgvector pasif, BM25 fallback aktif" in diagnostics[0]

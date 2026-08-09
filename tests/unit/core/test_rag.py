@@ -23,10 +23,11 @@ import core.rag as rag
 @pytest.fixture(autouse=True)
 def _clear_embedding_function_cache() -> Iterator[None]:
     """Keep monkeypatched embedding factories isolated between RAG tests."""
-
     rag._build_embedding_function_cached.cache_clear()
+    rag._DOCUMENT_STORE_SINGLETONS.clear()
     yield
     rag._build_embedding_function_cached.cache_clear()
+    rag._DOCUMENT_STORE_SINGLETONS.clear()
 
 
 def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
@@ -46,6 +47,7 @@ def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
     store._pg_table = "rag_embeddings"
     store._pg_embedding_dim = 384
     store._pg_embedding_model_name = "all-MiniLM-L6-v2"
+    store._graph_index = rag.GraphIndex(tmp_path)
     return store
 
 
@@ -264,7 +266,8 @@ async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> 
     root = tmp_path
     (root / "dep.py").write_text("", encoding="utf-8")
     (root / "api.py").write_text(
-        "import dep\n@app.get('/health')\ndef health():\n    return 'ok'\nrequests.get('/health')\n",
+        "import dep\n@app.get('/health')\ndef health():\n    return "
+        "'ok'\nrequests.get('/health')\n",
         encoding="utf-8",
     )
     (root / "caller.js").write_text("fetch('/health')", encoding="utf-8")
@@ -396,6 +399,31 @@ async def test_shared_document_store_keys_custom_embedding_builders(tmp_path: Pa
     assert store_two._embedding_function_builder is builder_two
 
 
+async def test_shared_document_store_reuses_cached_store_for_same_key(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        RAG_VECTOR_BACKEND="chroma",
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=1000,
+        RAG_CHUNK_OVERLAP=200,
+        USE_GPU=False,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+    )
+
+    store_one = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+    )
+    store_two = rag.get_shared_document_store(
+        store_dir=tmp_path / "shared",
+        cfg=cfg,
+        initialize_vector=False,
+    )
+
+    assert store_one is store_two
+
+
 async def test_public_build_embedding_function_delegates_to_internal_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -480,6 +508,103 @@ async def test_document_store_validate_url_safe_accepts_and_blocks() -> None:
         rag.DocumentStore._validate_url_safe("http://[::1]/loopback")
     with pytest.raises(ValueError):
         rag.DocumentStore._validate_url_safe("http://[fd00::1]/private-v6")
+
+
+async def test_document_store_validate_url_safe_resolves_dns_to_public_addresses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _public_getaddrinfo(*_args, **_kwargs):
+        return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _public_getaddrinfo)
+
+    rag.DocumentStore._validate_url_safe("https://public.example/resource", resolve_dns=True)
+
+
+async def test_document_store_validate_url_safe_handles_invalid_and_unresolved_dns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert rag.DocumentStore._is_public_ip_address("not-an-ip") is False
+
+    def _raise_gaierror(*_args, **_kwargs):
+        raise rag.socket.gaierror("no dns")
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _raise_gaierror)
+    with pytest.raises(ValueError, match="Hostname çözümlenemedi"):
+        rag.DocumentStore._validate_url_safe("https://missing.example", resolve_dns=True)
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", lambda *_args, **_kwargs: [])
+    with pytest.raises(ValueError, match="Hostname çözümlenemedi"):
+        rag.DocumentStore._validate_url_safe("https://empty.example", resolve_dns=True)
+
+
+async def test_document_store_validate_url_safe_blocks_dns_private_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _private_getaddrinfo(*_args, **_kwargs):
+        return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("169.254.169.254", 80))]
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _private_getaddrinfo)
+
+    with pytest.raises(ValueError, match="public olmayan"):
+        rag.DocumentStore._validate_url_safe("http://metadata-proxy.example", resolve_dns=True)
+
+
+async def test_document_store_add_url_blocks_redirect_to_private_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    add_calls: list[tuple[str, str, str]] = []
+
+    async def _add_document(title: str, content: str, source: str, *_args, **_kwargs) -> str:
+        add_calls.append((title, content, source))
+        return "doc-1"
+
+    store.add_document = _add_document  # type: ignore[method-assign]
+
+    def _getaddrinfo(host: str, port: int, *_args, **_kwargs):
+        if host == "public.example":
+            return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+        if host == "169.254.169.254":
+            return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("169.254.169.254", port))]
+        raise AssertionError(f"unexpected host: {host}")
+
+    monkeypatch.setattr(rag.socket, "getaddrinfo", _getaddrinfo)
+
+    class _Response:
+        def __init__(self, url: str, status_code: int, *, location: str = "", text: str = ""):
+            self.url = url
+            self.status_code = status_code
+            self.headers = {"Location": location} if location else {}
+            self.text = text
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+    class _AsyncClient:
+        def __init__(self, **_kwargs):
+            self.calls: list[str] = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str):
+            self.calls.append(url)
+            return _Response(url, 302, location="http://169.254.169.254/latest/meta-data")
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _AsyncClient)
+
+    ok, message = await store.add_document_from_url("https://public.example/start")
+
+    assert ok is False
+    assert "İç ağ" in message or "Engellenen hostname" in message
+    assert add_calls == []
 
 
 async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> None:
@@ -1286,6 +1411,55 @@ async def test_document_store_add_document_from_url_success_and_failure(
     assert "URL belge eklenemedi" in msg
 
 
+async def test_document_store_add_document_from_url_redirect_error_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = _make_store_stub(tmp_path)
+    monkeypatch.setattr(
+        rag.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    class _Response:
+        def __init__(self, url: str, status_code: int, location: str = "") -> None:
+            self.url = url
+            self.status_code = status_code
+            self.headers = {"Location": location} if location else {}
+            self.text = ""
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _MissingLocationClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url: str):
+            return _Response(url, 302)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _MissingLocationClient())
+    ok, message = await store.add_document_from_url("https://public.example/start")
+    assert ok is False
+    assert "Location başlığı yok" in message
+
+    class _LoopingRedirectClient(_MissingLocationClient):
+        async def get(self, url: str):
+            return _Response(url, 302, location="/again")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _LoopingRedirectClient())
+    ok, message = await store.add_document_from_url("https://public.example/start")
+    assert ok is False
+    assert "Redirect limiti" in message
+
+
 @pytest.mark.parametrize(
     ("exc_name", "expected_hint"),
     [
@@ -1430,6 +1604,41 @@ async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -
 
     store._init_pgvector()
 
+    assert store._pgvector_available is False
+
+
+async def test_pgvector_call_sites_reject_table_name_mutated_after_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every SQL-building call site must re-validate _pg_table, not just init.
+
+    init_pgvector validates _pg_table once; every SQL-building call site must
+    re-validate too, in case something mutates the attribute afterwards (e.g. a
+    future config hot-reload path) — regression test for that defense-in-depth
+    gap: no SQL should ever reach the fake connection below.
+    """
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = True
+    store._pg_table = "rag_embeddings; DROP TABLE docs;"
+    store._is_local_llm_provider = False
+    store._pgvector_embed_texts = lambda *_a: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+
+    class _Conn:
+        def execute(self, *_a, **_k):
+            raise AssertionError("SQL must not be built/executed for an invalid table name")
+
+    store.pg_engine = SimpleNamespace(begin=lambda: contextlib.nullcontext(_Conn()))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+
+    assert store._fetch_pgvector("q", 2, "s1") == []
+    assert store._pgvector_available is False
+
+    store._pgvector_available = True
+    store._delete_pgvector_parent("p1", "s1")
+    assert store._pgvector_available is False
+
+    store._pgvector_available = True
+    store._upsert_pgvector_chunks("d1", "p1", "s1", "title", "src", ["content"])
     assert store._pgvector_available is False
 
 
@@ -2280,7 +2489,8 @@ obj.session.post("/y")
     assert {item["path"] for item in calls} == {"/x", "/y"}
 
     calls = gi._extract_script_endpoint_calls(
-        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new WebSocket("/ws"); new WebSocket("/ws")'
+        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new '
+        'WebSocket("/ws"); new WebSocket("/ws")'
     )
     assert len(calls) == 1
 
@@ -2450,6 +2660,9 @@ async def test_document_store_url_file_delete_and_graph_branches(
 
     class _Resp:
         text = "<html><body>x</body></html>"
+        status_code = 200
+        url = "https://example.com/x"
+        headers: dict[str, str] = {}
 
         def raise_for_status(self):
             return None
@@ -3330,7 +3543,10 @@ async def test_analyze_graph_impact_returns_format_error_when_analysis_not_dict(
 
 
 async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None:
-    """Branch 1873->1875: bm25 sonucu zaten docs_map'te varsa skoru güncellenmeli ama tekrar eklenmemeli."""
+    """Branch 1873->1875: docs_map'te olan bm25 sonucu tekrar eklenmemeli.
+
+    Skoru güncellenmeli ama tekrar eklenmemeli.
+    """
     store = _make_store_stub(tmp_path)
     store._index = {"d-shared": {"session_id": "s1", "title": "Shared", "source": "src://shared"}}
     store._pgvector_available = True
@@ -3451,6 +3667,100 @@ async def test_entity_graph_loading_normalization_and_json_extraction_branches(
     assert len(store._entity_slug("!!!")) == 12
     assert store._extract_json_entities({"campaign": "Launch", "nested": {"brand": "Sidar"}})
     assert store._extract_json_entities([{"platform": "LinkedIn"}])[0].label == "Channel"
+
+
+async def test_document_store_llm_entity_extraction_feature_flag_merges_payload(
+    tmp_path: Path,
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+    store._llm_entity_extraction_settings = rag.LLMEntityExtractionSettings(enabled=True)
+
+    def fake_extractor(title, content, tags, source, settings):
+        assert title == "Launch brief"
+        assert "Brand: Sidar" in content
+        assert tags == ["channel:Email"]
+        assert source == "memory://launch"
+        assert settings.enabled is True
+        return {
+            "schema_version": rag.LLM_ENTITY_SCHEMA_VERSION,
+            "entities": [
+                {"label": "Campaign", "name": "LLM Launch"},
+                {"label": "Audience", "name": "Developers"},
+            ],
+            "relations": [
+                {
+                    "source_label": "Campaign",
+                    "source_name": "LLM Launch",
+                    "target_label": "Audience",
+                    "target_name": "Developers",
+                    "type": "TARGETS_AUDIENCE",
+                }
+            ],
+        }
+
+    store._llm_entity_extractor = fake_extractor
+
+    entities, relations = store.extract_document_entities(
+        "Launch brief", "Brand: Sidar", tags=["channel:Email"], source="memory://launch"
+    )
+
+    entity_names = {(entity.label, entity.name) for entity in entities}
+    assert ("Campaign", "LLM Launch") in entity_names
+    assert ("Audience", "Developers") in entity_names
+    assert any(relation.relation == "TARGETS_AUDIENCE" for relation in relations)
+
+
+async def test_document_store_llm_entity_extraction_builds_configured_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _make_store_stub(tmp_path)
+    store._entity_max_per_doc = 24
+    store.cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        RAG_LLM_ENTITY_PROVIDER="anthropic",
+        RAG_LLM_ENTITY_MODEL="entity-model",
+    )
+    store._llm_entity_extraction_settings = rag.LLMEntityExtractionSettings(enabled=True)
+
+    calls: dict[str, object] = {}
+
+    class FakeLLMClient:
+        def __init__(self, provider: str, cfg: object) -> None:
+            calls["provider"] = provider
+            calls["cfg"] = cfg
+
+        async def chat(self, messages, *, model, temperature, stream, json_mode):
+            calls["messages"] = messages
+            calls["model"] = model
+            calls["temperature"] = temperature
+            calls["stream"] = stream
+            calls["json_mode"] = json_mode
+            return {
+                "schema_version": rag.LLM_ENTITY_SCHEMA_VERSION,
+                "entities": [{"label": "Campaign", "name": "Constructor Path"}],
+                "relations": [],
+            }
+
+    monkeypatch.setattr("core.llm_client.LLMClient", FakeLLMClient)
+
+    entities, relations = store.extract_document_entities(
+        "Constructor brief",
+        "Brand: Sidar",
+        tags=["channel:Email"],
+        source="memory://constructor",
+    )
+
+    assert calls["provider"] == "anthropic"
+    assert calls["cfg"] is store.cfg
+    assert calls["model"] == "entity-model"
+    assert calls["temperature"] == 0.0
+    assert calls["stream"] is False
+    assert calls["json_mode"] is True
+    assert "Constructor brief" in calls["messages"][0]["content"]
+    entity_pairs = {(entity.label, entity.name) for entity in entities}
+    assert ("Campaign", "Constructor Path") in entity_pairs
+    assert all(relation.source or relation.target for relation in relations)
 
 
 async def test_extract_document_entities_json_tags_empty_and_invalid_branches(

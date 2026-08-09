@@ -15,6 +15,14 @@ from agent.base_agent import BaseAgent
 from agent.core.contracts import DelegationRequest
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentCatalog
+from agent.roles.reviewer.judge import (
+    build_test_candidate_review_prompt,
+    candidate_preview,
+    coerce_review_approved,
+    coerce_review_weaknesses,
+    derive_review_weaknesses_from_reason,
+    normalize_test_candidate_verdict,
+)
 from config import Config
 from core.rag import DocumentStore
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
@@ -34,15 +42,18 @@ class ReviewerAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "
-        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte çalıştırır ve "
+        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte "
+        "çalıştırır ve "
         "sonuçlara göre onay/red kararı verirsin. "
         "Kararını P2P geri bildirim olarak coder ajanına iletebilirsin."
     )
 
     TEST_GENERATION_PROMPT = (
-        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca ham pytest "
+        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca "
+        "ham pytest "
         "test kodu üret. Yanıtında açıklama, markdown çiti veya ek anlatım olmasın. "
-        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere odaklanmalıdır. "
+        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere "
+        "odaklanmalıdır. "
         f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Dinamik import gerekiyorsa standart kütüphane ile güvenli yaklaşım kullan."
     )
@@ -100,63 +111,30 @@ class ReviewerAgent(BaseAgent):
     @staticmethod
     def _coerce_review_approved(raw_approved: object) -> bool:
         """LLM reviewer onay alanını bool dışı JSON varyantlarından güvenli dönüştürür."""
-        if isinstance(raw_approved, bool):
-            return raw_approved
-        if isinstance(raw_approved, int | float):
-            return bool(raw_approved)
-        approved_text = str(raw_approved or "").strip().lower()
-        if approved_text in {"true", "yes", "evet", "approved", "approve", "1"}:
-            return True
-        if approved_text in {"false", "no", "hayır", "hayir", "rejected", "reject", "0"}:
-            return False
-        return False
+        return coerce_review_approved(raw_approved)
 
     @staticmethod
     def _coerce_review_weaknesses(raw_weaknesses: object) -> list[str]:
         """LLM reviewer zayıflık sinyallerini görünür, sınırlı listeye dönüştürür."""
-        if isinstance(raw_weaknesses, list):
-            return [str(item).strip() for item in raw_weaknesses if str(item).strip()]
-        weakness_text = str(raw_weaknesses or "").strip()
-        return [weakness_text] if weakness_text else []
+        return coerce_review_weaknesses(raw_weaknesses)
 
     @staticmethod
     def _derive_review_weaknesses_from_reason(reason: str) -> list[str]:
         """Weakness listesi boşsa somut reason metnini görünür sinyale dönüştürür."""
-        normalized = " ".join(str(reason or "").split())
-        if not normalized:
-            return []
-        return [normalized[:240]]
+        return derive_review_weaknesses_from_reason(reason)
 
     @classmethod
     def _normalize_test_candidate_verdict(cls, verdict: object) -> dict[str, object]:
-        """Reviewer LLM çıktısını doğrudan veya tool/argument sarmalından karar JSON'una indirger."""
-        if not isinstance(verdict, dict):
-            return {}
+        """Reviewer LLM çıktısını karar JSON'una indirger.
 
-        verdict_keys = {"approved", "reason", "weaknesses"}
-        if verdict_keys & set(verdict):
-            return verdict
-
-        tool_name = str(verdict.get("tool") or "").strip().lower()
-        argument = verdict.get("argument")
-        if tool_name == "json" or argument is not None:
-            if isinstance(argument, str):
-                try:
-                    parsed_argument = json.loads(argument)
-                except json.JSONDecodeError:
-                    return verdict
-                if isinstance(parsed_argument, dict) and verdict_keys & set(parsed_argument):
-                    return parsed_argument
-            elif isinstance(argument, dict) and verdict_keys & set(argument):
-                return argument
-
-        return verdict
+        Doğrudan veya tool/argument sarmalından gelen çıktıyı kabul eder.
+        """
+        return normalize_test_candidate_verdict(verdict)
 
     @staticmethod
     def _candidate_preview(candidate: str, *, max_lines: int = 3) -> str:
         """ReviewerGate logları için aday testin ilk satırlarını tek satırlı özetler."""
-        lines = [line.rstrip() for line in str(candidate or "").splitlines()[:max_lines]]
-        return " | ".join(line for line in lines if line.strip())[:500] or "<empty>"
+        return candidate_preview(candidate, max_lines=max_lines)
 
     @staticmethod
     def _build_test_candidate_review_prompt(
@@ -166,25 +144,11 @@ class ReviewerAgent(BaseAgent):
         retry: bool = False,
     ) -> str:
         """Coverage test adayı için JSON sözleşmeli reviewer promptu üretir."""
-        retry_clause = (
-            "\nÖNEMLİ: Önceki reviewer çıktısı geçersizdi çünkü approved=false iken reason boştu. "
-            "Bu tekrar değerlendirmesinde red veriyorsan reason alanını mutlaka somut, "
-            "insan-okunur en az bir cümleyle doldur; weaknesses alanına 1-2 sinyal ekle. "
-            if retry
-            else ""
-        )
-        return (
-            "Aşağıdaki pytest test önerisini anlamsal kalite açısından incele. "
-            "Özellikle 'assert True' gibi anlamsız assertion, zayıf doğrulama, "
-            "yan etkili/deterministik olmayan kullanım, eksik exception path'i veya "
-            "tautolojik mock kontrolü var mı değerlendir. "
-            "Yanıt yalnızca ve yalnızca şu şemada tek JSON nesnesi olmalı; markdown, "
-            "thought/tool/argument sarmalı veya ek anahtar kullanma: "
-            "{\"approved\": bool, \"reason\": str (red ise mutlaka somut neden, "
-            "en az 1 cümle), \"weaknesses\": [str]}. "
-            f"{retry_clause}\n\n"
-            f"[COVERAGE_FINDING]\n{json.dumps(dict(finding), ensure_ascii=False)}\n\n"
-            f"[TEST_CANDIDATE]\n{str(candidate or '')[:6000]}"
+        return build_test_candidate_review_prompt(
+            candidate,
+            finding,
+            shared_test_fixture_guidance=SHARED_TEST_FIXTURE_GUIDANCE,
+            retry=retry,
         )
 
     async def review_test_candidate(
@@ -226,7 +190,8 @@ class ReviewerAgent(BaseAgent):
                 reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
                 logger.warning(
                     "ReviewerAgent semantic review failed candidate_path=%s target_path=%s "
-                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s reason=%s",
+                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s "
+                    "reason=%s",
                     visible_candidate_path,
                     target_path or "<unknown>",
                     suggested_test_path or "<unknown>",
@@ -307,7 +272,7 @@ class ReviewerAgent(BaseAgent):
                 "weaknesses_missing": weaknesses_missing,
             }
 
-        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar.
+        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar
             "approved": False,
             "reason": "Geçersiz reviewer çıktısı: reason doğrulanamadı.",
             "weaknesses": last_weaknesses,
@@ -367,7 +332,7 @@ class ReviewerAgent(BaseAgent):
             self.code.write_file, str(dynamic_path), test_content, False
         )
         if not ok:
-            return "[TEST:FAIL-CLOSED] komut=dynamic_pytest\n" f"[STDOUT]\n-\n[STDERR]\n{write_msg}"
+            return f"[TEST:FAIL-CLOSED] komut=dynamic_pytest\n[STDOUT]\n-\n[STDERR]\n{write_msg}"
 
         relative_path = dynamic_path.relative_to(self.config.BASE_DIR).as_posix()
         try:
@@ -798,7 +763,8 @@ class ReviewerAgent(BaseAgent):
                                 "path": normalized,
                                 "reason": "graph",
                                 "action": (
-                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada import/sözleşme "
+                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada "
+                                    "import/sözleşme "
                                     "uyumunu ve etkilenen çağrı zincirini doğrula."
                                 ),
                                 "lsp_messages": [],
@@ -922,8 +888,8 @@ class ReviewerAgent(BaseAgent):
                 "path": str(browser_summary.get("current_url", "") or "browser:session"),
                 "reason": "browser-signal",
                 "action": (
-                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden üret; "
-                    "selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
+                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden "
+                    "üret; selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
                 ),
                 "failed_actions": failed_actions[:4],
                 "pending_actions": pending_actions[:4],
@@ -1011,7 +977,8 @@ class ReviewerAgent(BaseAgent):
                     "name": "handoff",
                     "status": "pending" if is_blocked else "ready",
                     "detail": (
-                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir plan devredilecek."
+                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir "
+                        "plan devredilecek."
                         if needs_human_approval
                         else "Plan coder ajanına doğrudan uygulanabilir şekilde devredilecek."
                     ),
@@ -1285,7 +1252,8 @@ class ReviewerAgent(BaseAgent):
                     "decision": decision,
                     "risk": risk,
                     "summary": (
-                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
+                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri "
+                        f"değerlendirildi. "
                         f"{semantic_report['summary']} {graph_summary['summary']} "
                         f"{browser_summary['summary']} {combined_impact['summary']}"
                     ),

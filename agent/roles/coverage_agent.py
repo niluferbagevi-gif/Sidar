@@ -41,7 +41,8 @@ class CoverageAgent(BaseAgent):
     )
 
     TEST_GENERATION_PROMPT = (
-        "Yalnızca çalıştırılabilir pytest kodu üret. Ağ erişimi veya dış servis bağımlılığı kullanma. "
+        "Yalnızca çalıştırılabilir pytest kodu üret. Ağ erişimi veya dış servis bağımlılığı "
+        "kullanma. "
         f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Yanıtında markdown çiti kullanma."
     )
@@ -831,8 +832,10 @@ class CoverageAgent(BaseAgent):
                         "finding_type": "coverage_gap",
                         "target_path": filename,
                         "summary": (
-                            f"line={round(line_rate * 100, 2)}% branch={round(branch_rate * 100, 2)}% "
-                            f"missing_lines={len(missed_lines)} missing_branches={len(missed_branches)}"
+                            f"line={round(line_rate * 100, 2)}% "
+                            f"branch={round(branch_rate * 100, 2)}% "
+                            f"missing_lines={len(missed_lines)} "
+                            f"missing_branches={len(missed_branches)}"
                         ),
                         "missing_lines": missed_lines[:200],
                         "missing_branches": missed_branches[:200],
@@ -927,7 +930,8 @@ class CoverageAgent(BaseAgent):
                     "finding_type": "terminal_coverage_gap",
                     "target_path": item.get("path", ""),
                     "summary": (
-                        f"line={item.get('line_rate')}% missing_lines={item.get('missing_lines_count')} "
+                        f"line={item.get('line_rate')}% "
+                        f"missing_lines={item.get('missing_lines_count')} "
                         f"missing_branches={item.get('missing_branches_count')}"
                     ),
                     "missing_lines_hint": item.get("missing_hint", ""),
@@ -982,7 +986,8 @@ class CoverageAgent(BaseAgent):
             "- Her test fonksiyonu en az 1 anlamlı assertion içermeli.\n"
             "- Assertion, hedef modülden çağrılan fonksiyon/metot sonucuna bağlanmalı; "
             "sadece import, module is not None, __name__ veya ilgisiz lokal hesap kontrolü YASAK.\n"
-            "- Dış servis/LLM/DB/event/agent bağımlılıklarında tests/conftest.py ortak fixture'larını kullan; "
+            "- Dış servis/LLM/DB/event/agent bağımlılıklarında tests/conftest.py ortak "
+            "fixture'larını kullan; "
             "unittest.mock ile yeni Mock/MagicMock/AsyncMock nesnesi üretme.\n"
             f"- {SHARED_TEST_FIXTURE_GUIDANCE}\n"
             "- Hem başarılı hem hata (exception/edge-case) akışları için test üret.\n"
@@ -1152,7 +1157,9 @@ class CoverageAgent(BaseAgent):
             write_result = {
                 "success": False,
                 "suggested_test_path": suggested_test_path,
-                "message": f"Üretilen test kalite kapısından geçemedi: {candidate_rejection_reason}",
+                "message": (
+                    f"Üretilen test kalite kapısından geçemedi: {candidate_rejection_reason}"
+                ),
                 "validation": {"quality_rejection_reason": candidate_rejection_reason},
             }
         else:

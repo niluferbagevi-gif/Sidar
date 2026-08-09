@@ -6,6 +6,7 @@ import asyncio
 import logging
 import threading
 import time
+from base64 import urlsafe_b64decode
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ _config_get_config = cast(
 )
 
 logger = logging.getLogger(__name__)
+_ENCRYPTED_CONTENT_PREFIX = "fernet:v1:"
 
 
 def get_config() -> Config:
@@ -42,9 +44,11 @@ class ConversationMemory:
         file_path: Path | None = None,
         max_turns: int = 20,
         encryption_key: str = "",
+        previous_encryption_keys: Sequence[str] | str = (),
         keep_last: int = 4,
     ) -> None:
-        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API base_dir/database_url'dur.
+        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API
+        # base_dir/database_url'dur.
         resolved_base_dir = Path(base_dir) if base_dir is not None else None
         if resolved_base_dir is None and file_path is not None:
             resolved_base_dir = Path(file_path).parent
@@ -57,6 +61,18 @@ class ConversationMemory:
         self.max_turns = max_turns
         self.keep_last = keep_last
         self._lock = threading.RLock()
+        self._fernet: Any | None = self._build_fernet(encryption_key)
+        raw_previous_keys = (
+            previous_encryption_keys.split(",")
+            if isinstance(previous_encryption_keys, str)
+            else previous_encryption_keys
+        )
+        current_key = str(encryption_key or "").strip()
+        self._previous_fernets = [
+            self._build_fernet(key)
+            for key in dict.fromkeys(str(item or "").strip() for item in raw_previous_keys)
+            if key and key != current_key
+        ]
 
         # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; varsa singleton kullanılıyor.
         self.cfg = get_config()
@@ -100,6 +116,72 @@ class ConversationMemory:
         self._dirty = False
         self._initialized = False
         self._init_lock: asyncio.Lock | None = None
+
+    @staticmethod
+    def _build_fernet(encryption_key: str) -> Any | None:
+        """Build a Fernet instance from the configured memory encryption key."""
+        key = str(encryption_key or "").strip()
+        if not key:
+            return None
+        try:
+            from cryptography.fernet import Fernet
+
+            # Validate early so health/config cannot claim encryption while writes are plaintext.
+            urlsafe_b64decode(key.encode("utf-8"))
+            return Fernet(key.encode("utf-8"))
+        except Exception as exc:
+            raise ValueError("MEMORY_ENCRYPTION_KEY geçerli bir Fernet anahtarı olmalıdır") from exc
+
+    @property
+    def encryption_enabled(self) -> bool:
+        """Return whether conversation message content is encrypted at rest."""
+        return self._fernet is not None
+
+    def _encrypt_content(self, content: str | None) -> str:
+        """Encrypt message content for storage when Fernet encryption is enabled."""
+        plaintext = content if content is not None else ""
+        if self._fernet is None or plaintext.startswith(_ENCRYPTED_CONTENT_PREFIX):
+            return plaintext
+        token = self._fernet.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+        return f"{_ENCRYPTED_CONTENT_PREFIX}{token}"
+
+    def _decrypt_content(self, content: str | None) -> str:
+        """Decrypt stored message content, leaving legacy plaintext untouched."""
+        value = content if content is not None else ""
+        if not value.startswith(_ENCRYPTED_CONTENT_PREFIX):
+            return value
+        if self._fernet is None:
+            raise MemoryAuthError("Encrypted memory content requires MEMORY_ENCRYPTION_KEY.")
+        token = value.removeprefix(_ENCRYPTED_CONTENT_PREFIX).encode("utf-8")
+        from cryptography.fernet import InvalidToken
+
+        for decryptor in (self._fernet, *self._previous_fernets):
+            try:
+                decrypted: bytes = decryptor.decrypt(token)
+                return decrypted.decode("utf-8")
+            except InvalidToken:
+                continue
+            except UnicodeDecodeError as exc:
+                raise MemoryAuthError("Encrypted memory content is not valid UTF-8.") from exc
+        raise MemoryAuthError(
+            "Encrypted memory content cannot be decrypted with the configured current or "
+            "previous MEMORY_ENCRYPTION_KEY values."
+        )
+
+    def _message_plain_content(self, message: MessageRecord) -> str:
+        """Return decrypted message content for DB-backed memory rows."""
+        return self._decrypt_content(str(getattr(message, "content", "") or ""))
+
+    def _encrypt_turns_for_storage(
+        self, turns: Sequence[dict[str, object]]
+    ) -> list[dict[str, object]]:
+        """Return DB-writeable turn dictionaries with encrypted content fields."""
+        encrypted_turns: list[dict[str, object]] = []
+        for turn in turns:
+            item = dict(turn)
+            item["content"] = self._encrypt_content(str(item.get("content", "") or ""))
+            encrypted_turns.append(item)
+        return encrypted_turns
 
     def _require_active_user(self) -> str:
         if not self.active_user_id:
@@ -179,7 +261,7 @@ class ConversationMemory:
             self._turns = [
                 {
                     "role": m.role,
-                    "content": m.content,
+                    "content": self._message_plain_content(m),
                     "timestamp": self._safe_ts(m.created_at),
                     "tokens_used": m.tokens_used,
                 }
@@ -226,11 +308,36 @@ class ConversationMemory:
         session_id = self.active_session_id
         if not session_id:
             return
-        await self.db.add_message(session_id, role, resolved_content, tokens_used=0)
+        await self.db.add_message(
+            session_id, role, self._encrypt_content(resolved_content), tokens_used=0
+        )
         self._dirty = False
+
+    def _message_record_to_turn(self, message: MessageRecord) -> dict[str, Any]:
+        """Convert a DB message row to the legacy in-memory turn dictionary shape."""
+        return {
+            "role": message.role,
+            "content": self._message_plain_content(message),
+            "timestamp": self._safe_ts(message.created_at),
+            "tokens_used": message.tokens_used,
+        }
+
+    async def get_session_history(
+        self, session_id: str, n_last: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return conversation history from the database-backed messages table."""
+        await self._ensure_initialized()
+        normalized_session_id = str(session_id or "").strip()
+        if not normalized_session_id:
+            return []
+        messages = await self.db.get_session_messages(normalized_session_id)
+        turns = [self._message_record_to_turn(message) for message in messages]
+        return turns if n_last is None else turns[-n_last:]
 
     async def get_history(self, n_last: int | None = None) -> list[dict[str, Any]]:
         await self._ensure_initialized()
+        if self.active_session_id:
+            return await self.get_session_history(self.active_session_id, n_last=n_last)
         with self._lock:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
@@ -384,15 +491,29 @@ class ConversationMemory:
 
         keep_count = self.keep_last if keep_last is None else max(0, int(keep_last))
         kept_messages = messages[-keep_count:] if keep_count > 0 else []
-        summary_text = self._build_compaction_summary(session.title, messages)
+        plain_messages = [
+            MessageRecord(
+                id=getattr(item, "id", 0),
+                session_id=getattr(item, "session_id", session_id),
+                role=str(getattr(item, "role", "") or ""),
+                content=self._message_plain_content(item),
+                tokens_used=int(getattr(item, "tokens_used", 0) or 0),
+                created_at=str(getattr(item, "created_at", "") or ""),
+            )
+            for item in messages
+        ]
+        summary_text = self._build_compaction_summary(session.title, plain_messages)
         compact_turns: list[dict[str, object]] = [
             {"role": "user", "content": "[GECE DÖNGÜSÜ] Önceki konuşmalar sıkıştırıldı."},
             {"role": "assistant", "content": f"[GECE KONSOLİDASYON ÖZETİ]\n{summary_text}"},
         ]
         compact_turns.extend(
-            {"role": str(item.role), "content": str(item.content)} for item in kept_messages
+            {"role": str(item.role), "content": self._message_plain_content(item)}
+            for item in kept_messages
         )
-        written = await self.db.replace_session_messages(session_id, compact_turns)
+        written = await self.db.replace_session_messages(
+            session_id, self._encrypt_turns_for_storage(compact_turns)
+        )
 
         if self.active_user_id == user_id and self.active_session_id == session_id:
             with self._lock:

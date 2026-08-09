@@ -1,7 +1,6 @@
-import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StatusBar } from "./StatusBar.jsx";
+import { StatusBar } from "./StatusBar.tsx";
 
 const mockStore = {
   sessionId: "session-abc",
@@ -9,7 +8,7 @@ const mockStore = {
 };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => mockStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
 }));
 
 describe("StatusBar — bağlantı durumu göstergesi", () => {

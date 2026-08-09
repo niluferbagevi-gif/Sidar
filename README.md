@@ -22,7 +22,9 @@
 
 > **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
-> **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
+> **Mimari belgeler:** Aktif v5.2.0 bileşen ve sahiplik haritası
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasındadır. v5.0/v5.1 adlı raporlar
+> tarihsel vizyon ve faz evrim kayıtlarıdır; güncel dosya/API doğruluk kaynağı değildir.
 
 ### v5.0 Co-Worker Öne Çıkan Özellikler
 
@@ -267,9 +269,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 | Yöntem | Komut | Kullanım | Avantaj |
 |---|---|---|---|
-| Online modüler | `wget .../install_sidar.sh && ./install_sidar.sh` | Hızlı tek seferlik | Modülleri runtime indirir |
+| Release bundle (önerilen) | `curl .../releases/latest/download/install_sidar.sh && ./install_sidar.sh` | Normal kullanıcı / temiz kurulum | Tek dosya; bootstrap sırasında çoklu GitHub raw modül isteği yapmaz |
 | Geliştirme | `git clone && ./install_sidar.sh` | Geliştirme | Tüm modüller lokal |
-| Offline bundle | `./dist/install_sidar.sh` (CI release) | Air-gapped | Tek dosya, ağ gerektirmez |
+| Raw modüler fallback | `curl .../raw/.../install_sidar.sh && ./install_sidar.sh` | Release bundle yoksa son çare | Modülleri runtime indirir; varsayılan olarak commit SHA'ya pinler; GitHub raw 429/5xx ve installer manifest ↔ pin-drift riskine daha açıktır |
 
 ### Sistem Gereksinimleri
 
@@ -281,6 +283,26 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 - İsteğe bağlı: Docker, Ollama, PostgreSQL/pgvector, Playwright tarayıcıları
 
 ### Önerilen: `.venv` + `uv` ile kurulum
+
+#### Geliştirici ön koşulu
+
+```bash
+bash scripts/install_ci_system_deps.sh   # portaudio, shellcheck, bats
+uv sync --frozen --all-extras
+# veya aynı sıralamayı Make hedefiyle çalıştırmak için:
+make deps-full
+```
+
+> `sidar[voice]` içindeki `pyaudio` için platform marker eklenmedi; sorun çoğu zaman
+> işletim sisteminden bağımsız olarak eksik PortAudio header'ıdır. Bu yüzden standart
+> çözüm, `uv sync` öncesinde yukarıdaki sistem bağımlılığı scriptini çalıştırmaktır.
+> Hızlı PR kontrollerinde voice/browser/GPU gibi sistem bağımlılıkları gerekmiyorsa
+> `uv sync --frozen --extra dev-light` veya `make deps-dev-light` kullanılabilir.
+
+> Linter notu: `ruff` Python dosyaları içindir; shell script'ler için ShellCheck
+> kullanın. Örn. `uv run ruff check tests/unit/scripts/test_run_tests_quality_gate.py`
+> ve `uv run shellcheck --severity=warning -x run_tests.sh`. Repo geneli shell
+> doğrulaması için `make lint-shell` kullanılabilir.
 
 ```bash
 cd Sidar
@@ -306,11 +328,58 @@ quality-gate koşusu baseline üretmelidir. Yerel profil varsayılanı
 seed eder ve sonraki koşularda `--benchmark-compare` otomatik devreye girer:
 
 ```bash
-BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh
+# Önerilen yerel kısayol: Makefile hedefi benchmark baseline bootstrap akışını görünür kılar.
+make benchmark-seed
+
+# Eşdeğer açık komut:
+BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all
 ```
+
+### Playwright Chromium cache / CDN 403 hazırlığı
+
+Production-readiness ve frontend gate `RUN_FRONTEND_E2E=1` ile Playwright smoke
+testlerini zorunlu çalıştırır. Temiz yerel ortamda Chromium browser cache'i yoksa
+önce şu hazırlığı yapın:
+
+```bash
+cd web_ui_react
+npx playwright install chromium
+cd ..
+make production-readiness
+```
+
+Kurumsal ağ, DNS, firewall veya proxy Playwright CDN erişimini `403 Domain forbidden`
+ile engelliyorsa `~/.cache/ms-playwright` browser cache'ini önceden hazırlayın ya da
+CI runner'da cache/artifact olarak restore edin. CI workflow'u bu dizini
+`playwright-<OS>-<package-lock hash>` anahtarıyla cache'ler; cache restore edilirse
+`npx playwright install --with-deps chromium` indirme yapmadan mevcut Chromium
+binary'sini kullanabilir.
 
 CI profilinde bu bayrağı gevşetmeyin; CI cache/artifact restore sonrası
 `BENCHMARK_COMPARE_REQUIRED=1` ile baseline yokluğu fail-closed kalmalıdır.
+GitHub Actions tarafında boş cache / yeni branch / yeni runner durumunda önce manuel
+**Benchmark baseline seed** workflow'unu (`.github/workflows/benchmark-baseline-seed.yml`,
+`workflow_dispatch`) çalıştırın. Bu job `BENCHMARK_COMPARE_REQUIRED=0` ve
+`BENCHMARK_ENFORCE_COMPARE=0` ile yalnız baseline üretir, CI ile aynı
+`--benchmark-warmup-iterations=100000` ayarını kullanır, `.benchmarks/` dizinini ve
+`artifacts/benchmark/baseline-seed-manifest.json` manifestini artifact olarak yükler ve
+`benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'iyle kaydeder.
+Ana `CI` workflow'u daha sonra aynı branch, `main/master` veya genel restore-key
+zincirinden bu cache'i bulamazsa production-readiness gate'i seed moduna düşmeden
+fail-closed durmaya devam eder.
+Önerilen sıra: yerelde oluşan ilk baseline'ı normal kabul edin; CI/main için önce
+`seed_benchmark_baseline=true` workflow_dispatch job'ını çalıştırın; cache/artifact
+oluştuktan sonra normal CI veya production readiness gate'ini tekrar koşun.
+
+> **CI ilk kez kırılırsa hızlı çözüm:** GitHub Actions → **CI** → **Run workflow**
+> ekranında `seed_benchmark_baseline=true` seçeneğini işaretleyin. Bu koşu
+> production-readiness gate'ini çalıştırmadan yalnız benchmark baseline cache/artifact
+> üretir. Job tamamlandıktan sonra normal CI veya `make production-readiness` gate'ini
+> tekrar çalıştırın. Baseline olmadan gated CI'ın fail-closed kırılması beklenen
+> güvenli davranıştır; testlerin bozuk olduğu anlamına tek başına gelmez. Seed artifact
+> retention süresi 30 gündür; aktif geliştirmede cache/artifact düşerse aynı uyarının
+> tekrar görünmesi hata değil, aynı bootstrap prosedürünün yeniden uygulanması gerektiği
+> anlamına gelir.
 Sabit yerel runner üzerinde CI benzeri sıkı doğrulama istiyorsanız ilk seed sonrası
 `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`
 çalıştırın.
@@ -325,10 +394,20 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 ./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
 ./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
 ./install_sidar.sh doctor              # sadece doctor raporu
+./install_sidar.sh doctor --fix        # izinli DATABASE_URL onarımını uygula ve yeniden denetle
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
-`sidar doctor`; `uv`, `uv.lock`, Prometheus runtime bağımlılığı (`prometheus-client`), veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir; indeks boşsa repo dokümantasyonunu tek adımda yüklemek için `uv run python -m scripts.seed_rag`, dış kaynak eklemek için `uv run python cli.py -c "belge ekle <url>"` komutlarını önerir. `scripts.seed_rag`, README/AGENTS ve seçili `docs/*.md` kaynaklarını aynı `DocumentStore` yoluyla index, BM25, opsiyonel Chroma/pgvector ve `entity_graph.json` GraphRAG projection'ına yazar; hızlı/offline metadata doğrulaması için `--metadata-only`, özel kaynaklar için tekrarlanabilir `--include <repo-göreli-yol-veya-glob>` kullanılabilir. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+`./install_sidar.sh doctor --fix`, Doctor'ın izinli ve shell-free veritabanı ortam onarımını aynı rapor akışında çalıştırır. Varsayılan geliştirici kurulumunda başarılı migrasyonun ardından `AUTO_SEED_RAG_METADATA=true` ile hafif RAG/GraphRAG metadata seed'i; tam Docker kurulumunda ayrıca `AUTO_SEED_RAG_DOCKER_WARMUP=true` ile container içi warmup seed'i otomatik uygulanır. Her iki otomasyon açıkça `false` verilerek kapatılabilir; tam vektör seed veya yeniden oluşturma için `uv run python -m scripts.seed_rag` kullanılabilir. Ayrıntılı başlangıç, doğrulama ve pgvector→BM25 fallback teşhisi için [RAG onboarding rehberine](docs/RAG_ONBOARDING.md) bakın. `sidar doctor`; `uv`, `uv.lock`, Prometheus runtime bağımlılığı (`prometheus-client`), veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir; indeks boşsa repo dokümantasyonunu tek adımda yüklemek için `uv run python -m scripts.seed_rag`, dış kaynak eklemek için `uv run python cli.py -c "belge ekle <url>"` komutlarını önerir. `scripts.seed_rag`, README/AGENTS ve seçili `docs/*.md` kaynaklarını aynı `DocumentStore` yoluyla index, BM25, opsiyonel Chroma/pgvector ve `entity_graph.json` GraphRAG projection'ına yazar; hızlı/offline metadata doğrulaması için `--metadata-only`, özel kaynaklar için tekrarlanabilir `--include <repo-göreli-yol-veya-glob>` kullanılabilir. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+
+> **`database_env` ve üst shell önceliği:** Doctor, `DATABASE_URL` veya
+> `SIDAR_CONTAINER_DATABASE_URL` değerinin parent/üst shell'den miras kaldığını ve
+> dotenv zincirinden farklı olduğunu doğru biçimde raporlayabilir; ancak `--fix` çalışan
+> prosesin ebeveyn shell ortamını değiştiremez. Bu durumda önce `unset DATABASE_URL
+> SIDAR_CONTAINER_DATABASE_URL` çalıştırın (veya terminal/launcher oturumunu yeniden
+> başlatın), ardından `./install_sidar.sh doctor --fix` ve `./install_sidar.sh doctor`
+> komutlarını yeniden çalıştırın. Kalıcı değer gerekiyorsa shell profilini değil,
+> seçili `.env`/`DOTENV_FILE` kaynağını güncelleyin.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
@@ -374,7 +453,10 @@ Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` en
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
 > varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
-> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir.
+> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir. **GPU'lu geliştirme
+> makinesinde hızlı bir varsayılan döngü isteyen geliştiriciler** için bu otomatik algılama bilinçli bir tasarım
+> kararıdır (GPU testleri sessizce atlanmasın diye), fakat `ENABLE_GPU_TESTS=0 bash run_tests.sh` ile açıkça
+> devre dışı bırakılabilir — `auto` değerini geçersiz kılar ve `nvidia-smi` bulunsa bile GPU testlerini atlar.
 
 ### Çevre Değişkenleri
 
@@ -404,11 +486,14 @@ OLLAMA_NUM_PARALLEL=4 OLLAMA_KEEP_ALIVE=30m ollama serve
 > betiği inceleyip aynı içerikten hash üretmeli veya risk kabulüyle doğrulamayı
 > açıkça devre dışı bırakmalıdır.
 
-#### Ollama/uv uzak betik hash doğrulaması
+#### Remote script checksum
 
 Yeni Ubuntu/WSL kurulumunda sistemde `ollama` veya `uv` yoksa, doğrulanmamış uzak
-betik çalıştırmayı önlemek için aşağıdaki değişkenlerden ilgili olanı kurulumdan
-önce ayarlayın. Bu akış TOFU (trust-on-first-use) hazırlığıdır: indirilen betiği
+betik çalıştırmayı önlemek için kurulum önce
+`scripts/install_modules/remote_checksums.env` dosyasındaki reviewed default hash
+değerlerini yükler; operatörün shell'de verdiği `OLLAMA_INSTALL_SHA256` /
+`UV_INSTALL_SHA256` değerleri her zaman bu dosyadan önceliklidir. Hash yoksa
+aşağıdaki değişkenlerden ilgili olanı kurulumdan önce ayarlayın. Bu akış TOFU (trust-on-first-use) hazırlığıdır: indirilen betiği
 önce inceleyin, sonra hash'i aynı dosyadan üretin.
 
 ```bash
@@ -467,15 +552,19 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 > - `DOCKER_CLI_INSTALL_MODE=auto|always|never`: Varsayılan `auto` (Linux hostta eksik CLI için tamamlamayı dener, WSL2'de entegrasyon öncelikli), `always` (WSL2 dahil APT kurulumunu zorlar), `never` (otomatik CLI kurulumu kapalı).
 > - Geriye dönük uyumluluk için `DOCKER_CLI_INSTALL=always`/`true` kullanımları `always` olarak yorumlanır; yeni dokümantasyonda kanonik değişken `DOCKER_CLI_INSTALL_MODE` kullanılmalıdır.
 
+> **Docker Socket Proxy notu:** `sidar-ai`/`sidar-gpu` (CLI modu), AI-üretimi kodu izole "sibling" container'larda çalıştırmak için Docker daemon'ına erişir. Ham `/var/run/docker.sock`'u doğrudan mount etmek host-root-eşdeğeri erişim (container escape) verir ve `ACCESS_LEVEL=sandbox` adlandırmasıyla çelişir; bu yüzden `docker-compose.yml` bu servisleri host socket'ine değil, aradaki `docker-socket-proxy` servisine (`tecnativa/docker-socket-proxy`) bağlar. Proxy yalnızca container create/start/stop/logs uçlarını açar; `EXEC`, `VOLUMES`, `NETWORKS`, `SYSTEM` gibi tehlikeli uçları kapatır ve host'a hiçbir port açmaz — ham socket yalnızca proxy'ye salt-okunur (`:ro`) mount edilir.
+>
 > **WSL2 entegrasyon notu:** Kurulumun ilk saniyelerinde Docker CLI bulunamadı veya daemon erişilemedi uyarısı görülüp sonraki adımlarda `docker compose` çalışıyorsa bu çoğunlukla Docker Desktop ↔ WSL2 entegrasyonunun geç senkronize olmasından kaynaklanır. `sidar-gpu`/`sidar-web-gpu` gibi servisleri yönetmeden önce Docker Desktop **Settings → Resources → WSL Integration** ekranında kullanılan Ubuntu dağıtımının sürekli açık olduğundan emin olun; gerekirse Docker Desktop ve WSL oturumunu yeniden başlatın.
 >
 > **⚠️ Kritik uyarı:** `wsl --unregister docker-desktop` komutunu **ASLA** çalıştırmayın. Bu komut Docker Desktop'ın engine backend dağıtımını siler; genellikle yalnızca **Docker Desktop → Settings → Troubleshoot → Reset to factory defaults** veya Docker Desktop'ı tamamen yeniden kurma ile geri gelir.
 
-> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir. Sidar istemcisindeki güvenli `OLLAMA_NUM_BATCH=2048` ve Ollama servis tarafındaki `OLLAMA_NUM_CTX=8192` varsayılanları, uzun prompt/GPU smoke isteklerinin Ollama `n_batch=512` / düşük context varsayılanlarına çarpıp `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` ile düşmesini önlemek içindir. Küçük/CPU-only makinelerde bilinçli olarak `OLLAMA_NUM_BATCH=0` verilirse küçük bağlamlarda Ollama sunucu varsayılanı korunur; `OLLAMA_CODING_NUM_CTX>2048` olduğunda istemci yine güvenli `num_batch` değerini otomatik ekler ve en fazla `4096` olarak sınırlar. Throughput tuning gerektiğinde `.env` üzerinden örneğin `1024`, `2048` veya `4096` verilebilir. GPU işi harici Ollama sürecinde yürüdüğünden Sidar sürecine `torch.cuda.Stream` veya `torch.cuda.empty_cache()` eklemek Ollama VRAM yönetimini değiştirmez.
+> **GPU benchmark notu:** `test_gpu_concurrent_throughput` ve `test_gpu_vram_peak_under_load` testlerinin skip olmaması için Ollama servisini `OLLAMA_NUM_PARALLEL>=GPU_BENCH_CONCURRENCY` ile başlatın (varsayılan benchmark concurrency: 4). `qwen2.5-coder:7b` için `ollama ps` çıktısında `PROCESSOR` sütununun `100% GPU` görünmesi sağlıklı offload sinyalidir; bu tek başına hata değildir, aksine inference'ın GPU üzerinde çalıştığını doğrular. `test_gpu_time_to_first_token` outlier/cold-start dalgalanmalarını azaltmak için Sidar, Ollama `/api/chat` çağrılarına varsayılan `OLLAMA_KEEP_ALIVE=30m` değerini `keep_alive` olarak ekler; VRAM baskısı olan makinelerde `.env` üzerinden daha düşük süre veya `0` verilebilir. Sidar istemcisindeki güvenli `OLLAMA_NUM_BATCH=2048` ve Ollama servis tarafındaki `OLLAMA_NUM_CTX=8192` varsayılanları, uzun prompt/GPU smoke isteklerinin Ollama `n_batch=512` / düşük context varsayılanlarına çarpıp `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` ile düşmesini önlemek içindir. Küçük/CPU-only makinelerde bilinçli olarak `OLLAMA_NUM_BATCH=0` verilirse küçük bağlamlarda Ollama sunucu varsayılanı korunur; `OLLAMA_CODING_NUM_CTX>2048` olduğunda istemci yine güvenli `num_batch` değerini otomatik ekler ve en fazla `4096` olarak sınırlar. Throughput tuning gerektiğinde `.env` üzerinden örneğin `1024`, `2048` veya `4096` verilebilir. GPU işi harici Ollama sürecinde yürüdüğünden Sidar sürecine `torch.cuda.Stream` veya `torch.cuda.empty_cache()` eklemek Ollama VRAM yönetimini değiştirmez.
 
 > **GPU Driver Uyarısı:** `sidar-gpu`/`sidar-web-gpu` servisleri `nvidia/cuda:13.0.0-runtime-ubuntu22.04` tabanı kullanır.
 > Host makinede en az **NVIDIA Driver v535+ (CUDA 12.2+)** önerilir; CUDA 13.x imajları için pratikte **v550+** sürücü serisi gerekir.
 > Sürücü daha eskiyse konteyner GPU ile ayağa kalkmayabilir.
+
+> **Build context güvenlik notu:** `Dockerfile`/`Dockerfile.production` `COPY . .` kullanır. `.gitignore` yalnızca git'i etkiler, Docker build context'ini etkilemez — bu yüzden repo kökü `.dockerignore` ile korunur. `install_sidar.sh` sonrası kökte oluşabilecek `.env`/`.env.production`/`.env.test` gibi secret dosyaları (bkz. `runbooks/production-cutover-playbook.md` §1.5 production secret rotasyonu) bu sayede `docker build .` sırasında image katmanlarına gömülmez. Yeni bir "asla imaja dahil edilmemeli" dosya deseni eklerken hem `.gitignore` hem `.dockerignore`'ı güncelleyin — ikisi bağımsız mekanizmalardır.
 
 ```bash
 # CPU modu
@@ -517,12 +606,17 @@ Dış servis sırları için `.env.test` dosyasına gerçek anahtar yazmak yerin
 
 ### Otomatik Kurulum Betiği (Ubuntu/WSL)
 
-**Varsayılan çevrimiçi kurulum yöntemi bootstrap clone + re-exec akışıdır.**
-Kullanıcı yalnızca kök `install_sidar.sh` dosyasını indirip çalıştırdığında betik önce `~/Sidar` altına depoyu (dar bant için `--depth=1 --branch <ref>` ile) klonlar ve ardından klonlanan kopyadaki `install_sidar.sh` üzerinden kendini yeniden başlatır (re-exec). Kurulum zaten klonlanmış repo dizininden başlatıldıysa bu bootstrap adımı atlanır; böylece tek komut ergonomisi korunurken modüler `scripts/install_modules` yapısı ile güncel modüller güvenli şekilde kullanılır.
+**Varsayılan çevrimiçi kurulum yöntemi Release bundle artefaktıdır.**
+Kullanıcıya öncelikle GitHub Release üzerinden yayınlanan tek dosyalık
+`install_sidar.sh` bundle'ı verilmelidir; bu dosya `scripts/tools/bundle_install_sidar.sh`
+tarafından üretildiği için bootstrap sırasında `scripts/install_modules/*`
+dosyalarını GitHub raw üzerinden tek tek indirmez. Raw `main/install_sidar.sh`
+yalnız hedef ref için Release bundle henüz yoksa son çare fallback olarak
+kullanılmalıdır.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
-# veya: wget -O install_sidar.sh https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
 chmod +x install_sidar.sh
 ./install_sidar.sh
 
@@ -531,11 +625,128 @@ chmod +x install_sidar.sh
 ./install_sidar.sh --ci
 
 # Uzak uv/Ollama kurulum betikleri gerekiyorsa önce SHA-256 değişkenlerini
-# hazırlayın (yukarıdaki "Ollama/uv uzak betik hash doğrulaması" bölümüne bakın).
+# hazırlayın (bkz. [Remote script checksum](#remote-script-checksum)).
 ./install_sidar.sh
 
 # İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
 ALLOW_APT_UPGRADE=1 ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh
+```
+
+raw fallback gerektiğinde kullanılan URL aşağıdadır; bu yol runtime'da dinamik
+modül indirme yapabildiği için GitHub raw 429/5xx riskine Release bundle'a göre
+daha açıktır. Ayrıca raw installer, embedded manifestteki hash'leri
+`SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT` üzerinden indirilen modüllerle
+doğruladığı için manifest güncellenip commit pin'i ileri alınmazsa pin-drift
+kurulumu kırabilir. Bu sınıf hata `make check-install-manifests` ve CI'daki
+`--check-pin` gate'iyle yakalanır; yine de son kullanıcı için Release bundle
+tercih edilmelidir. Dış wrapper indirme adımında GitHub raw rate-limit/429
+yanıtlarına karşı retry/backoff seçenekleriyle indirin; installer'ın kendi modül
+fallback indiricisi retryable HTTP statüleri, `Retry-After` ve cache davranışını
+ayrıca yönetir. Modül indirme aşamasında mutable `main` ref'i güvenlik nedeniyle
+reddedilir; installer önce embedded commit pin'ini kullanır, pin yoksa GitHub
+REST API üzerinden `main` ref'ini 40 karakterlik commit SHA'ya çözer. Kapalı ağ,
+API erişimi olmayan veya deterministik pin istenen ortamlarda commit SHA'yı açıkça
+verin:
+
+```bash
+# En güvenli raw fallback: modül kaynağını aynı commit SHA'ya açıkça pinleyin.
+SIDAR_BOOTSTRAP_PINNED_REF="$(git ls-remote https://github.com/niluferbagevi-gif/Sidar.git refs/heads/main | awk '{print $1}')"
+export SIDAR_BOOTSTRAP_PINNED_REF
+curl -fL --retry 5 --retry-all-errors --retry-delay 2 \
+  -o install_sidar.sh \
+  https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+# veya:
+wget --tries=5 --waitretry=2 \
+  -O install_sidar.sh \
+  https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh
+
+# Geçici ve önerilmeyen bypass: mutable raw ref riskini operatör kabul eder.
+# SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ./install_sidar.sh
+```
+
+Smoke test ve servis öncesi smoke gate opt-out değerleri için `--skip-smoke-test`,
+`RUN_SMOKE_TESTS_MODE=never` ve `SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=0`
+seçenekleri `docs/install-script-options.md` içinde belgelenmiştir. Normal
+geliştirme ve CI akışlarında bu gate'leri açık bırakın; opt-out değerlerini
+yalnız geçici tanılama veya ayrı doğrulama gate'leri bulunan ortamlarda kullanın.
+Yavaş WSL2/Defender/CI runner ortamlarında smoke gate'i kapatmadan önce
+`SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 ./install_sidar.sh` gibi daha geniş bir
+timeout deneyin; `--skip-smoke-test` son çare olarak kullanılmalı ve ardından
+ayrı smoke/CI doğrulamasıyla telafi edilmelidir.
+
+### Terminoloji: smoke / dev-full / production-readiness
+
+Bu repo ve installer çıktıları aynı üçlü sözlüğü kullanır:
+
+- **smoke = hızlı sağlık kontrolü.** Boot/import, temel servis, migration ve erken
+  kurulum hatalarını yakalar; full QA veya merge/release kanıtı değildir.
+- **dev-full = local tam doğrulama.** `make dev-full` veya eşdeğer `run_tests.sh --stage all`
+  geliştirme profiliyle backend, frontend, benchmark ve BATS kapsamını doğrular; yine de
+  production-readiness değildir.
+- **production-readiness = merge/release kapısı.** CI profili, benchmark compare,
+  frontend E2E ve `SIDAR_PRODUCTION_READINESS=1` birlikte geçmeden merge/release onayı
+  verilmemelidir.
+
+`./install_sidar.sh` development/local akışında kurulumun çalışabilirliğini hızlıca
+kanıtlayan smoke kontrollerini hedefler. Bu kapsam; boot/import, installer manifest
+uyumluluğu, temel runtime hazırlığı, Alembic/servis smoke ve varsa GPU smoke gibi erken
+hata sinyallerini yakalar, ancak main CI hattının tamamıyla aynı güvenceyi vermez.
+Özellikle `npm run build` başarısı React uygulamasının üretilebilir olduğunu gösterir;
+frontend `lint`, `typecheck`, Vitest `coverage` ve Playwright smoke doğrulamalarının
+geçtiği anlamına gelmez.
+
+Varsayılan development/local kurulumda `--stage all` otomatik çalıştırılmaz;
+installer frontend kalite kapısını kullanıcıya/operatöre opt-in olarak bırakır.
+`--with-integration` verilmediğinde loglarda frontend stage'in atlandığı bilgisi
+beklenen bir durumdur. Frontend kalite kapısını kurulumdan bağımsız doğrulamak için
+`RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend`, tam doğrulama için
+`RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all` kullanın.
+
+Main CI (`.github/workflows/ci.yml`) local installer smoke kapsamının üzerine şu kapıları
+ekler ve bunları merge öncesi sinyal olarak kullanır:
+
+- core installer manifest ve installer modül hash doğrulamaları;
+- installer shell gates (`make lint`, `make test-shell`) ve standalone installer bundle
+  üretimi;
+- Python `ruff check` ve `ruff format --check`;
+- frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
+  Playwright Chromium smoke hazırlığı/raporu;
+- Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- ayrı `.github/workflows/codeql.yml`: Python ve JS/TS için CodeQL semantic/dataflow
+  SAST taraması (push/PR/haftalık zamanlanmış), bulgular Security sekmesinde alert
+  olarak raporlanır — Bandit'in aksine fonksiyon/modül sınırları arası taint-tracking
+  yapar ve tek gerçek JS/TS güvenlik taramasıdır;
+- izole PostgreSQL test DB hazırlığı, Alembic upgrade, kritik smoke import gates ve
+  installer/runtime smoke testleri;
+- `run_tests.sh` tam kalite kapısı: coverage ratchet, frontend E2E, benchmark JSON/trend
+  artifact'leri ve Docker test image hazırlığı;
+- ayrı `installer-smoke` job'ı ile raw GitHub installer hash/manifest smoke doğrulaması.
+
+Yerelde yalnız “kurulum başarılı / smoke geçti” gördüyseniz bunu `smoke = hızlı sağlık kontrolü`
+olarak yorumlayın; full validation veya merge/release kanıtı değildir. Kapsama göre önerilen
+tek komutlar:
+
+Net ayrım:
+
+- **“smoke geçti”**: hızlı sağlık kontrolü tamamlandı; tam QA/coverage anlamına gelmez.
+- **“dev-full geçti” / “Development full validation geçti”**: local tam doğrulama başarılı;
+  geliştirici ortamı sağlıklı, fakat merge/release kapısı hâlâ ayrı.
+- **“production-readiness çalıştırılmadı”**: merge/release öncesinde hâlâ ayrı production
+  gate gerekir; dev-full tek başına production-ready kabulü değildir.
+
+```bash
+# Hızlı entegrasyon kontrolü
+bash run_tests.sh --stage integration
+
+# dev-full: local tam doğrulama (GPU varsa installer bu komuta RUN_GPU_STRESS=1 önerir)
+RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
+
+# production-readiness: merge/release kapısı
+./install_sidar.sh --production-readiness
+# veya kanonik komut:
+TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all
 ```
 
 Geliştirici katkısı, test yazımı, self-healing patch/rollback incelemesi veya
@@ -549,17 +760,35 @@ cd Sidar
 uv sync --all-extras
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 ./install_sidar.sh
+
+# Local tam doğrulama: geliştirme ortamı için güçlü sinyal, release onayı değildir.
+make dev-full
+
+# Merge/release öncesi zorunlu kapı: artifacts/test-summary.json -> production_ready=true üretmelidir.
+make production-readiness
 ```
 
 > Geliştirici makinelerinde `pre-commit` ve `pre-push` hook'larının ikisi de
 > kurulmalıdır. `.pre-commit-config.yaml` içindeki `check-core-install-manifest`
-> ve `check-install-module-hashes` kontrolleri her iki aşamada da çalışarak
-> installer manifest drift'ini commit/push öncesi yakalar. Hook kurulumu
-> yapılmadıysa aynı koruma yalnızca CI/branch protection tarafında kalır.
+> ve `check-install-module-hashes` kontrolleri pre-commit aşamasında çalışma ağacı
+> manifest drift'ini; `check-install-module-pin` ise pre-push aşamasında, iki fazlı
+> fixup commit'i oluşturulduktan sonra pinlenen commit bütünlüğünü;
+> `pytest-meta-contracts` ise pre-push aşamasında hızlı script/config
+> sözleşme regresyonlarını yakalar. Hook kurulumu yapılmadıysa aynı koruma yalnızca
+> CI/branch protection tarafında kalır.
 
-Kurumsal, offline veya interneti kısıtlı ortamlarda tek parçalık monolitik Release
-bundle artefaktını kullanın; bu dosya CI/CD tarafından `bundle_install_sidar.sh`
-ile üretilir ve modül indirme ihtiyacı olmadan çalışır:
+Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı ortamlar için
+öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya
+CI/CD tarafından `bundle_install_sidar.sh` ile üretilir ve bootstrap sırasında
+30+ ayrı GitHub raw modül isteğini ortadan kaldırır:
+
+> **Raw fallback notu:** `~/Sidar` gibi mevcut yerel repo dizinini silip yalnız
+> raw `main/install_sidar.sh` dosyasını çalıştırırsanız installer yerel
+> `scripts/install_modules` ağacını bulamaz ve kendini bootstrap etmek için
+> `raw.githubusercontent.com` üzerinden modül setini indirir. Bu durumda özetlerde
+> `Raw fallback modül indirme: 30 modül indirildi` benzeri bir satır görmek
+> beklenen davranıştır; kusur değildir. Bunu istemiyorsanız Release bundle'ı veya
+> `git clone && ./install_sidar.sh` yolunu kullanın.
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
@@ -606,7 +835,7 @@ doğrulamasını bypass etmez.
 Ne yapmalısınız:
 
 - **Normal kullanıcı**: Kurulumu zorlamayın. Güncellenmiş installer/release'in
-  yayınlanmasını bekleyin veya bakım ekibinin önerdiği belirli commit/tag üzerinden
+  yayınlanmasını bekleyin veya bakım ekibinin önerdiği belirli bir commit/tag üzerinden
   kurulum yapın. Main dalındaki manifest senkronizasyonu düzeltilmeden temiz kurulum
   güvenlik nedeniyle durmaya devam eder.
 - **Geliştirici (repo üzerinde çalışıyorsanız)**: Çekirdek manifesti senkronlayıp
@@ -642,6 +871,18 @@ içine gömülü modül hash listesi ile bootstrap sırasında klonlanan repo'da
 modül dosyalarının SHA-256'sı eşleşmiyor. Geçersiz bir modülün yüklenmesini
 önlemek için kurulum bilinçli olarak durduruldu.
 
+> **Güven kökü notu:** Raw installer tek dosya olarak indirildiğinde bu gömülü
+> hash manifesti bağımsız bir imza veya ayrı kanaldan doğrulanan kök güven
+> sağlamaz; aynı `install_sidar.sh` hem indirme mantığını hem beklenen hash'leri
+> taşır. Bu nedenle fallback modül bootstrap doğrulaması, installer içeriğinin
+> kendisine duyulan güvene bağlıdır (TOFU sınırı). Release/production kurulumlarında
+> installer'ı güvenilir bir tag/release üzerinden doğrulayın; ideal akış GPG/Sigstore
+> imzalı release asset'i veya hash manifestinin ayrı imzalı kanaldan pinlenmesidir.
+> Fallback modül indirme cache'i varsayılan olarak `mktemp -d` ile oluşturulan
+> UID kapsamlı, tahmin edilemeyen bir dizindir; kalıcı cache gerekiyorsa
+> `SIDAR_INSTALL_MODULE_CACHE_ROOT` bilinçli override edilmeli ve dizin sahibi/izinleri
+> installer tarafından doğrulanır.
+
 Ne yapmalısınız:
 
 - **Normal kullanıcı**: Bu hatayı raporlayın
@@ -665,16 +906,11 @@ Ne yapmalısınız:
 
 - **Bilinçli risk kabulü (yalnızca güvenilir, izole test ortamlarında ve yalnız
   modül/uzak betik doğrulaması için)**:
-  Çalıştırılacak modül kodunu doğrulamadan devam etmeyi kabul ediyorsanız:
-
-  ```bash
-  ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 bash install_sidar.sh
-  ```
-
-  Üretim/host makinelerde **kullanmayın**; uzaktan tedarik edilen scriptlere
-  karşı SHA-256 doğrulaması bu bayrak ile devre dışı kalır. Çekirdek manifest
-  hatalarında bu bayrak çözüm değildir; ana çözüm main branch manifest sync veya
-  manifesti güncel belirli bir commit/tag kullanmaktır.
+  Doğrulanmamış modül veya uzak betik çalıştırma bypass'ı için tek kaynak
+  [Remote script checksum](#remote-script-checksum) bölümüdür. Üretim/host
+  makinelerde **kullanmayın**; çekirdek manifest hatalarında bu bypass çözüm
+  değildir. Ana çözüm main branch manifest sync veya manifesti güncel belirli
+  bir commit/tag kullanmaktır.
 
 ---
 
@@ -862,11 +1098,15 @@ Sidar/
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
-├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
+├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
-├── PROJE_RAPORU.md         # Mimari + kalite raporu
-├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
-└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
+└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
+    ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
+    ├── PROJE_RAPORU.md      # Bölümlenmiş kapsamlı rapor indeksi
+    ├── project-report/      # Konu bazlı proje raporu bölümleri (6 dosya)
+    ├── AUDIT_REPORT_v5.0.md # Güvenlik/coverage denetim raporu (tarihsel snapshot, ARŞİV NOTU ile işaretli)
+    ├── module-notes/        # Modül bazlı geliştirici notları (77 dosya)
+    └── TEKNIK_REFERANS.md   # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
 ---
@@ -944,9 +1184,15 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > Yerel çalışmada `run_tests.sh` varsayılanı `RUN_BENCHMARKS=required` olarak ayarlanmıştır;
 > benchmark fazı quality gate olarak zorunlu çalışır. Kayıtlı `.benchmarks` baseline'ı yoksa
 > CI profili varsayılan `BENCHMARK_COMPARE_REQUIRED=1` nedeniyle fail-closed durur; yerel profil varsayılanı `BENCHMARK_COMPARE_REQUIRED=0` olduğu için ilk koşuda otomatik bootstrap yapar.
+> GitHub Actions'ta ilk/boş cache bootstrap için **Benchmark baseline seed** workflow'unu
+> manuel çalıştırın; workflow `.benchmarks/` artifact'i üretir ve CI'ın restore edeceği
+> `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'ini kaydeder.
+> Artifact'i review etmeden cache'i kalıcı güven sinyali kabul etmeyin.
 > Yeni makine veya boş cache/bootstrap durumunda ilk baseline'ı üretmek için
-> `RUN_BENCHMARKS=required ./run_tests.sh` çalıştırın; bu koşu
-> `--benchmark-save=baseline` ile `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.
+> `make benchmark-seed` çalıştırın; bu Makefile hedefi
+> `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all`
+> akışına bağlanır. Bu koşu `--benchmark-save=baseline` ile
+> `.benchmarks/.../0001_baseline.json` benzeri bir aday üretir.
 > Sonraki koşularda `./run_tests.sh` otomatik olarak version-sort ile en güncel `*_baseline.json`
 > kaydını `--benchmark-compare` hedefi yapar. Yeni `*_baseline.json` artifact'ini commit etmeden
 > önce `mean`, `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin;
@@ -1009,6 +1255,8 @@ başında açıklanır. Runtime yükleme zinciri özetle `config.py` varsayılan
 `DOTENV_FILE` → `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` şeklindedir. İzole süreçlerde
 `SIDAR_SKIP_DEFAULT_DOTENV=1`, repo içindeki `.env`, `.env.advanced` ve `.env.${SIDAR_ENV}`
 katmanlarını atlar; açık `DOTENV_FILE` ve `SIDAR_KEYS_FILE` katmanları yüklenmeye devam eder.
+Ayrıntılı dosya sorumluluğu, override önceliği ve drift giderme akışı için
+[`docs/ENVIRONMENT_CONFIGURATION.md`](docs/ENVIRONMENT_CONFIGURATION.md) dosyasını kullanın.
 
 **API anahtarı politikası:** OpenAI/Gemini/Anthropic/GitHub/Slack/Jira/Teams gibi gerçek
 servis anahtarları için kalıcı kaynak olarak yalnız `.env` ve repo dışındaki
@@ -1064,8 +1312,10 @@ böylece temel/production `POSTGRES_DB=sidar` verisiyle aynı veritabanına yazm
 Ollama + `qwen2.5-coder:7b` kullanımında CPU-only geliştirme şablonu `USE_GPU=false` / `REQUIRE_GPU=false`
 ile başlar; `install_sidar.sh` yalnız GPU tespit ettiğinde oluşturulan `.env` dosyasında bu değerleri
 `true` yapar. `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
-`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
-aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında
+`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı güvenli
+0.8 hedefini aşarsa (0.8–1.0 arasındaki gri bölge dahil) Sidar oranları koruyarak
+0.8 toplamına normalize eder. Güncel geliştirme şablonu doğrudan güvenli
+`0.53 + 0.27 = 0.8` bütçesiyle başlar; WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API
 tokenlarını ise `.env` veya tercihen repo dışında `~/.sidar_keys.env` içinde tutun;
 `.env.advanced` yalnız referans/override şablonudur ve güncel anahtar şablonu
@@ -1081,6 +1331,17 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy .
 ```
+
+`run_tests.sh` varsayılan olarak Ruff kontrollerini düzeltme modunda çalıştırmaz;
+kaynak kodu değiştirmeden `uv run ruff check .` ve `uv run ruff format --check .`
+kapılarını uygular. Otomatik düzeltme gerekiyorsa bilinçli opt-in kullanın:
+
+```bash
+RUFF_AUTOFIX=1 bash run_tests.sh --stage all
+```
+
+Bu opt-in modunda betik başlangıç ve bitiş için `git diff --exit-code` durumunu
+raporlar.
 
 ---
 
@@ -1118,6 +1379,8 @@ Bu proje Sidar ekosisteminin bir parçasıdır.
 
 ## 🧹 Depo Hijyeni
 
-- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` kullanılmalıdır.
+- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; güncel mimari kararları
+  için `docs/ARCHITECTURE.md` ve `docs/RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
+  bölümlenmiş `docs/PROJE_RAPORU.md` indeksi kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.

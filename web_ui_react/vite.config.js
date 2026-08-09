@@ -1,6 +1,68 @@
-import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
+
+function createBundleAnalysisPlugins() {
+  if (process.env.BUNDLE_ANALYZE !== "1") {
+    return [];
+  }
+  return [
+    visualizer({
+      filename: "dist/bundle-stats.html",
+      gzipSize: true,
+      brotliSize: true,
+      template: "treemap",
+    }),
+  ];
+}
+
+export function createSidarManualChunks(id) {
+  if (!id.includes("node_modules")) {
+    // rehypeSidarHighlight.ts is Sidar's own rehype plugin, not a vendor
+    // dependency, but it's only ever imported from the lazy
+    // ChatMarkdownRenderer entry alongside react-markdown/remark-gfm and
+    // their (large, rarely-changing) transitive parser graph. Without its
+    // own chunk, Rollup co-locates it with that vendor graph by default --
+    // so touching Sidar's own highlight config (e.g. adding a language)
+    // busts the cache for the entire vendor markdown bundle too. Giving it
+    // a dedicated chunk keeps the vendor graph's cache stable across those
+    // edits; see scripts/check-bundle-budget.mjs's dedicated chunk budget
+    // for the remaining (vendor-heavy) ChatMarkdownRenderer chunk.
+    if (id.endsWith("/src/lib/rehypeSidarHighlight.ts")) {
+      return "rehype-sidar-highlight";
+    }
+    return undefined;
+  }
+
+  const modulePath = id.split("node_modules/")[1];
+  if (!modulePath) {
+    return "vendor";
+  }
+
+  if (modulePath.startsWith("react-dom/client")) {
+    return "react-dom-client";
+  }
+  if (modulePath.startsWith("react-dom/server")) {
+    return "react-dom-server";
+  }
+  if (modulePath.startsWith("react-dom/")) {
+    return "react-dom";
+  }
+  if (modulePath.startsWith("react/")) {
+    return "react";
+  }
+  if (modulePath.startsWith("highlight.js/")) {
+    return "highlight-js-core";
+  }
+
+  // Do not force every transitive package into its own chunk. In particular the
+  // lazy Markdown graph contains many tiny unified/micromark packages; splitting
+  // each one adds module wrappers and a separate gzip stream, inflating the total
+  // budget without improving the initial route. Rollup can co-locate that graph
+  // with its lazy entry while the deliberately high-signal React/highlight chunks
+  // above remain independently observable and cacheable.
+  return undefined;
+}
 
 export function createSidarProxyConfig(
   backendUrl = process.env.SIDAR_BACKEND_URL || "http://127.0.0.1:7860",
@@ -12,6 +74,14 @@ export function createSidarProxyConfig(
       target: webSocketUrl,
       ws: true,
       changeOrigin: true,
+      configure(proxy) {
+        proxy.on("proxyReqWs", (proxyReq, req) => {
+          const subprotocol = req.headers["sec-websocket-protocol"];
+          if (subprotocol) {
+            proxyReq.setHeader("sec-websocket-protocol", subprotocol);
+          }
+        });
+      },
     },
     "/admin": { target: backendUrl, changeOrigin: true },
     "/sessions": { target: backendUrl, changeOrigin: true },
@@ -21,17 +91,12 @@ export function createSidarProxyConfig(
 
 export default defineConfig(() => {
   return {
-    plugins: [react()],
-    resolve: {
-      alias: {
-        "react-router-dom": path.resolve(__dirname, "src/lib/routerShim.jsx"),
-      },
-    },
+    plugins: [react(), ...createBundleAnalysisPlugins()],
     optimizeDeps: {
       entries: [
         "index.html",
-        "src/main.jsx",
-        "src/App.jsx",
+        "src/main.tsx",
+        "src/App.tsx",
         "src/components/*.jsx",
         "!src/**/*.test.{js,jsx}",
         "!e2e/**",
@@ -46,23 +111,7 @@ export default defineConfig(() => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
-          manualChunks(id) {
-            if (!id.includes("node_modules")) {
-              return undefined;
-            }
-
-            const modulePath = id.split("node_modules/")[1];
-            if (!modulePath) {
-              return "vendor";
-            }
-
-            const parts = modulePath.split("/");
-            if (parts[0]?.startsWith("@") && parts.length > 1) {
-              return `${parts[0]}/${parts[1]}`;
-            }
-
-            return parts[0] || "vendor";
-          },
+          manualChunks: createSidarManualChunks,
         },
       },
     },
@@ -72,26 +121,25 @@ export default defineConfig(() => {
       css: false,
       globals: true,
       pool: "forks",
-      include: ["src/**/*.{test,spec}.{js,jsx}"],
+      include: ["src/**/*.{test,spec}.{js,jsx,ts,tsx}"],
       exclude: ["e2e/**", "dist/**", "node_modules/**"],
       coverage: {
         provider: "v8",
         reporter: [["text", { skipFull: false }], "text-summary", "html", "lcov"],
         skipFull: false,
-        include: ["src/**/*.{js,jsx}"],
+        include: ["src/**/*.{js,jsx,ts,tsx}"],
         exclude: [
           "src/test/setup.js",
-          "src/main.jsx",
-          "src/**/*.test.{js,jsx}",
+          "src/main.tsx",
+          "src/**/*.test.{js,jsx,ts,tsx}",
           "src/test/**",
-          "src/components/PanelErrorBoundary.jsx", // minimal fallback boundary; behavior is covered by dedicated tests
-          "src/lib/routerShim.jsx", // shim behavior is covered by dedicated router tests
+          "src/lib/routerShim.tsx", // shim behavior is covered by dedicated router tests
         ],
         thresholds: {
-          lines: 90,
-          functions: 90,
-          branches: 90,
-          statements: 90,
+          lines: 98,
+          functions: 98,
+          branches: 98,
+          statements: 98,
         },
       },
     },

@@ -8,9 +8,28 @@ from pathlib import Path
 
 import pytest
 
+from tests._helpers.source_contracts import expanded_bash_source
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _installer_full_text() -> str:
+    """Concatenate install_sidar.sh with every sourced install_modules/*.sh file.
+
+    install_sidar.sh was split into scripts/install_modules/{phases,utils}/*.sh;
+    terminology/default-value contracts that used to live inline now live in
+    whichever module owns that concern, so contract tests must search the
+    combined text rather than the entrypoint file alone.
+    """
+    root = _repo_root()
+    parts = [(root / "install_sidar.sh").read_text(encoding="utf-8")]
+    parts.extend(
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "scripts" / "install_modules").rglob("*.sh"))
+    )
+    return "\n".join(parts)
 
 
 def _extract_builtin_import_modules() -> set[str]:
@@ -154,9 +173,9 @@ def test_builtin_role_classes_keep_documented_agent_contracts() -> None:
 
     assert set(documented_classes) == expected_classes
     for class_name, docstring in documented_classes.items():
-        assert (
-            len(docstring.split()) >= 6
-        ), f"{class_name} needs a meaningful role contract docstring"
+        assert len(docstring.split()) >= 6, (
+            f"{class_name} needs a meaningful role contract docstring"
+        )
 
 
 def test_agents_documentation_covers_specialized_roles_and_interactions() -> None:
@@ -200,19 +219,25 @@ def test_agents_documentation_covers_self_healing_loop_contract() -> None:
 
 
 def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
-    script = (_repo_root() / "run_tests.sh").read_text(encoding="utf-8")
+    script = expanded_bash_source(
+        _repo_root() / "run_tests.sh",
+        root=_repo_root(),
+    )
 
     assert 'AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"' in script
     assert 'AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"' in script
     assert 'AUTO_HEAL_BATCH_RETRIES="${AUTO_HEAL_BATCH_RETRIES:-0}"' in script
     assert (
-        'uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy --batch-retries "${AUTO_HEAL_BATCH_RETRIES}"'
-        in script
+        'uv run python -m scripts.auto_heal --log "${AUTO_HEAL_LOG_PATH}" --source mypy '
+        '--batch-retries "${AUTO_HEAL_BATCH_RETRIES}"' in script
     )
 
 
 def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
-    script = (_repo_root() / "autonomous_loop.sh").read_text(encoding="utf-8")
+    script = expanded_bash_source(
+        _repo_root() / "autonomous_loop.sh",
+        root=_repo_root(),
+    )
 
     assert "@@ -" not in script
     assert "async def _review_with_reviewer_agent" in script
@@ -313,7 +338,7 @@ def test_readme_uses_sidar_uv_qwen_terminology_standards() -> None:
 
 
 def test_install_script_defaults_match_terminology_standards() -> None:
-    script = (_repo_root() / "install_sidar.sh").read_text(encoding="utf-8")
+    script = _installer_full_text()
 
     assert 'CODE_MOD="qwen2.5-coder:7b"' in script
     assert 'CODE_MOD="qwen2.5-coder:3b"' not in script
@@ -368,17 +393,20 @@ def test_sidar_uv_qwen_development_contract() -> None:
         for rel_path in [
             "AGENTS.md",
             "README.md",
-            "install_sidar.sh",
             "agent/registry.py",
             "config.py",
+            "config_llm.py",
             "gui_launcher.py",
         ]
     }
+    # install_sidar.sh was split into scripts/install_modules/{phases,utils}/*.sh;
+    # search the combined text so moved terminology contracts still get checked.
+    text_by_file["install_sidar.sh"] = _installer_full_text()
 
     assert "Güncel ürün adı **Sidar**" in text_by_file["AGENTS.md"]
     assert "uv sync --all-extras" in text_by_file["AGENTS.md"]
     assert "CODING_MODEL=qwen2.5-coder:7b" in text_by_file["README.md"]
-    assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["config.py"]
+    assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["config_llm.py"]
     assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
     assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
     assert "uv run pytest" in text_by_file["install_sidar.sh"]
@@ -390,9 +418,9 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert "pyright>=1.1.409,<2.0.0" in pyproject["project"]["optional-dependencies"]["dev"]
 
     forbidden_terms = [
-        "Lot" "us",
-        "qwen2.5-coder:" "3b",
-        "python -m " "pip install",
+        "Lotus",
+        "qwen2.5-coder:3b",
+        "python -m pip install",
     ]
     for rel_path, text in text_by_file.items():
         for term in forbidden_terms:

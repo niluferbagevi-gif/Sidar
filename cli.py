@@ -1,10 +1,10 @@
-"""
-Sidar Project - CLI Arayüzü
+"""Sidar Project - CLI Arayüzü.
+
 ==================================
 
-Bu modül, proje için terminal tabanlı etkileşimli arayüzün giriş noktasıdır.
-Önceden `main.py` olarak adlandırılıyordu. İsim değişikliği yapılarak
-`cli.py` olarak taşınmıştır. Dosyanın geri kalanı, önceki sürümdeki
+Bu modül, proje için terminal tabanlı etkileşimli arayüzün (ajan REPL'i) gerçek
+giriş noktasıdır. Önceden `main.py` olarak adlandırılıyordu; isim değişikliği
+yapılarak `cli.py` olarak taşınmıştır. Dosyanın geri kalanı, önceki sürümdeki
 komut satırı argüman işleme, yapılandırma override etme ve `SidarAgent`
 oluşturma mantığını korur.
 
@@ -18,6 +18,12 @@ Kullanım:
 
 Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
 noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
+
+Not (isimlendirme): Bu tarihsel taşıma, kökteki GÜNCEL `main.py`'den bahsetmiyor
+-- o dosya sonradan eklenen, tamamen farklı bir modül: etkileşimli sihirbaz/
+preflight başlatıcısı ("Ultimate Launcher"), ajan REPL mantığı içermez ve
+sonunda bu dosyayı (`cli.py`) veya `web_server.py`'yi alt süreçte başlatır.
+Yani `python main.py` sihirbazdan geçer, `python cli.py` doğrudan bu REPL'e girer.
 """
 
 import argparse
@@ -40,8 +46,8 @@ from config import Config
 
 
 def _setup_logging(level: str) -> None:
-    """
-    config.py zaten logging.basicConfig'i RotatingFileHandler ile kurmuştur.
+    """config.py zaten logging.basicConfig'i RotatingFileHandler ile kurmuştur.
+
     Burada yalnızca CLI --log argümanına göre kök logger seviyesini güncelliyoruz.
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
@@ -114,8 +120,7 @@ Doğrudan Komutlar (serbest metin):
 
 
 async def _interactive_loop_async(agent: SidarAgent) -> None:
-    """
-    Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
+    """Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
 
     Sorun (eski kod): while döngüsü içinde her mesajda asyncio.run() çağrılıyordu.
     Her çağrı yeni bir Event Loop açıp kapattığından, ikinci mesajda
@@ -164,14 +169,16 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             print(f"  GPU             : ℹ CPU modu ({gpu_info or 'GPU devre dışı'})")
     print(f"  GitHub          : {'Hazır' if agent.github.is_available() else 'Hazır değil'}")
     print(
-        f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
+        f"  Web Arama       : "
+        f"{'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}"
     )
     print(f"  Paket Bilgi     : {agent.pkg.status()}")
     docs_status = agent.docs.status()
     print(f"  Belge Deposu    : {docs_status}")
     if "pgvector (pasif)" in docs_status:
         print(
-            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
+            "  RAG Uyarısı     : pgvector pasif; `uv run python -m core.doctor "
+            "artifacts/install/doctor.json` ile DB/pgvector teşhislerini çalıştırın."
         )
     if "RAG: 0 belge" in docs_status:
         print("  RAG İpucu       : indeks boş; `belge ekle <url>` komutuyla belge ekleyin.")
@@ -296,15 +303,23 @@ async def _run_interactive_session(agent: SidarAgent) -> None:
 # ─────────────────────────────────────────────
 
 
-def _run_doctor_command(output_path: str = "artifacts/install/doctor.json") -> int:
+def _run_doctor_command(
+    output_path: str = "artifacts/install/doctor.json", *, fix: bool = False
+) -> int:
     """Run the install/readiness doctor and persist its JSON report."""
-    from core.doctor import run_doctor_report
+    from core.doctor import _apply_database_env_fix, run_doctor_report
+    from core.doctor.reporting import write_doctor_report
 
+    repair = _apply_database_env_fix() if fix else None
     report = run_doctor_report(output_path=Path(output_path))
+    if repair is not None:
+        report["repairs"] = [repair]
+        write_doctor_report(report, Path(output_path))
     print(f"Sidar Doctor overall_status={report['overall_status']}")
     print(f"Rapor: {output_path}")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["overall_status"] in {"pass", "warn"} else 1
+    repair_failed = repair is not None and repair.get("attempted") and not repair.get("success")
+    return 0 if report["overall_status"] in {"pass", "warn"} and not repair_failed else 1
 
 
 # ─────────────────────────────────────────────
@@ -323,7 +338,14 @@ def main_cli(argv: list[str] | None = None) -> int:
             default="artifacts/install/doctor.json",
             help="Doctor JSON rapor yolu",
         )
+        doctor_parser.add_argument(
+            "--fix",
+            action="store_true",
+            help="Düzenlenebilir veritabanı ortam sapmasını güvenli biçimde onar",
+        )
         doctor_args = doctor_parser.parse_args(argv)
+        if doctor_args.fix:
+            return _run_doctor_command(doctor_args.output, fix=True)
         return _run_doctor_command(doctor_args.output)
 
     cfg_defaults = Config()

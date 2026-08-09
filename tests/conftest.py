@@ -20,7 +20,12 @@ if str(PROJECT_ROOT) not in sys.path:
 # Pytest collection aşamasında test-env işaretleri henüz garanti olmadığından
 # kritik ayarların boş gelmesini önlemek için en erken noktada varsayılanları set ediyoruz.
 os.environ.setdefault("SIDAR_ENV", "test")
+if os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() not in {"1", "true", "yes"}:
+    os.environ["SIDAR_KEYS_FILE"] = ""
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
+os.environ.setdefault("CODE_EXECUTION_BACKEND", "disabled")
+os.environ.setdefault("DOCKER_AUTODETECT", "0")
+os.environ.setdefault("PROMPT_GUARD_ENABLED", "0")
 
 import pytest
 
@@ -31,6 +36,26 @@ from tests._fixtures.dotenv import (
 from tests._fixtures.dotenv import (
     load_pytest_dotenv_chain as _fixture_load_pytest_dotenv_chain,
 )
+
+
+def _is_truthy_env(value: str | None) -> bool:
+    """Return whether an environment flag is explicitly enabled."""
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _isolate_github_env_for_tests() -> None:
+    """Keep real GitHub credentials/repositories out of default pytest runs."""
+    if _is_truthy_env(os.getenv("SIDAR_TEST_LOAD_REAL_GITHUB")):
+        return
+    os.environ["GITHUB_TOKEN"] = ""
+    os.environ["GITHUB_REPO"] = ""
+
+
+def _disable_prompt_guard_for_tests() -> None:
+    """Avoid eager NeMo Guardrails imports during default unit-test collection."""
+    if _is_truthy_env(os.getenv("SIDAR_TEST_ENABLE_PROMPT_GUARD")):
+        return
+    os.environ["PROMPT_GUARD_ENABLED"] = "0"
 
 
 def _sync_dotenv_fixture_project_root() -> None:
@@ -51,6 +76,8 @@ def _assert_test_dotenv_postgres_parity() -> None:
 
 
 _load_pytest_dotenv_chain()
+_isolate_github_env_for_tests()
+_disable_prompt_guard_for_tests()
 _assert_test_dotenv_postgres_parity()
 
 _REQUIRED_TEST_MODULES = {
@@ -73,15 +100,6 @@ if _missing_test_deps:
 import pytest_asyncio
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
-
-try:
-    importlib.import_module("agent.sidar_agent")
-    importlib.import_module("agent.core.event_stream")
-    importlib.import_module("core.db")
-except ModuleNotFoundError as exc:
-    raise pytest.UsageError(
-        "Proje runtime bağımlılıkları eksik görünüyor. Önce `uv sync --all-extras` çalıştırın."
-    ) from exc
 
 from tests._fixtures.agent import agent_factory as agent_factory
 from tests._fixtures.agent import fake_event_stream as fake_event_stream
@@ -131,16 +149,58 @@ _CONTRACTS_MODULE_SENTINEL = object()
 
 @pytest.fixture(autouse=True)
 def _isolate_contracts_module() -> Generator[None, None, None]:
-    """sys.modules['agent.core.contracts'] üzerinde test pollutionunu engelle."""
+    """Test pollutionunu runtime koduna taşımadan contracts modülünü izole et."""
     original = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
     yield
     current = sys.modules.get("agent.core.contracts", _CONTRACTS_MODULE_SENTINEL)
-    if current is original:
+    if current is not original:
+        if original is _CONTRACTS_MODULE_SENTINEL:
+            sys.modules.pop("agent.core.contracts", None)
+        else:
+            sys.modules["agent.core.contracts"] = cast(ModuleType, original)
+
+    swarm_module = sys.modules.get("agent.swarm")
+    if swarm_module is not None:
+        contracts_module = (
+            importlib.import_module("agent.core.contracts")
+            if original is _CONTRACTS_MODULE_SENTINEL
+            else cast(ModuleType, original)
+        )
+        sys.modules["agent.core.contracts"] = contracts_module
+        swarm_module._CONTRACTS_MODULE_CACHE = None
+        ensure_aliases = getattr(swarm_module, "_ensure_contract_aliases", None)
+        if callable(ensure_aliases):
+            ensure_aliases()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_supervisor_module() -> Generator[None, None, None]:
+    """Restore supervisor imports so production code does not need reload guards."""
+    module_name = "agent.core.supervisor"
+    package_name = "agent.core"
+    package = sys.modules.get(package_name)
+    original_module = sys.modules.get(module_name, _CONTRACTS_MODULE_SENTINEL)
+    original_package_attr = (
+        getattr(package, "supervisor", _CONTRACTS_MODULE_SENTINEL)
+        if package is not None
+        else _CONTRACTS_MODULE_SENTINEL
+    )
+
+    yield
+
+    if original_module is _CONTRACTS_MODULE_SENTINEL:
+        sys.modules.pop(module_name, None)
+    else:
+        sys.modules[module_name] = cast(ModuleType, original_module)
+
+    current_package = sys.modules.get(package_name)
+    if current_package is None:
         return
-    if original is _CONTRACTS_MODULE_SENTINEL:
-        sys.modules.pop("agent.core.contracts", None)
-        return
-    sys.modules["agent.core.contracts"] = cast(ModuleType, original)
+    if original_package_attr is _CONTRACTS_MODULE_SENTINEL:
+        with contextlib.suppress(AttributeError):
+            delattr(current_package, "supervisor")
+    else:
+        current_package.supervisor = original_package_attr
 
 
 @pytest.fixture(autouse=True)
@@ -148,6 +208,21 @@ def _set_default_llm_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gemini/Google istemci yolları için testte güvenli sahte anahtarlar tanımlar."""
     monkeypatch.setenv("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", "test_key"))
     monkeypatch.setenv("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", "test_key"))
+
+
+def _test_needs_web_server_runtime(request: pytest.FixtureRequest) -> bool:
+    """Return whether a test path intentionally exercises the root web_server module."""
+    nodeid = str(request.node.nodeid)
+    return nodeid.startswith(
+        (
+            "tests/unit/root/",
+            "tests/unit/web/",
+            "tests/integration/api/",
+            "tests/integration/web/",
+            "tests/e2e/web/",
+            "tests/smoke/test_boot.py",
+        )
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -174,8 +249,13 @@ def _isolate_root_web_server_database_url(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_webhook_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_webhook_secrets(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
     """Prevent local webhook secrets from leaking into signature-optional tests."""
+    if not _test_needs_web_server_runtime(request):
+        return
+
     for key in (
         "GITHUB_WEBHOOK_SECRET",
         "AUTONOMY_WEBHOOK_SECRET",
@@ -204,7 +284,9 @@ def _reset_web_route_dependency_factories() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _reset_route_dependency_factories() -> Generator[None, None, None]:
+def _reset_route_dependency_factories(
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
     """Keep module-scoped web route dependency factories isolated between tests.
 
     ``web.routes.federation`` and ``web.routes.autonomy`` keep their dependency
@@ -214,6 +296,10 @@ def _reset_route_dependency_factories() -> Generator[None, None, None]:
     worker can inherit those stubs and bypass monkeypatched ``web_server``
     dependencies, which makes xdist ordering affect HMAC/signature behavior.
     """
+    if not _test_needs_web_server_runtime(request):
+        yield
+        return
+
     _reset_web_route_dependency_factories()
     yield
     _reset_web_route_dependency_factories()
@@ -247,7 +333,6 @@ def _critical_sys_module_pollution_errors(
     the test exits; otherwise later tests in the same xdist worker can import a
     fake ``core.db``/``core.llm_client`` and fail nondeterministically.
     """
-
     errors: list[str] = []
     for name, required_attrs in _CRITICAL_SYS_MODULE_CONTRACTS.items():
         original = snapshot.get(name, _MISSING_SYS_MODULE)
@@ -277,7 +362,6 @@ def _critical_sys_module_pollution_errors(
 @pytest.fixture(autouse=True)
 def _restore_polluted_sys_modules(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Restore process-global modules and reload-sensitive class identities."""
-
     snapshot = {name: sys.modules.get(name, _MISSING_SYS_MODULE) for name in _SENSITIVE_SYS_MODULES}
     attribute_snapshot = {
         name: {
@@ -323,7 +407,6 @@ async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
     sonraki testlerde `Task was destroyed but it is pending` ve un-awaited Redis
     connection uyarıları `filterwarnings = error` nedeniyle suite'i düşürebilir.
     """
-
     yield
 
     bus_module = sys.modules.get("agent.core.event_stream")
@@ -536,7 +619,7 @@ def mock_sentence_transformer_class(monkeypatch: pytest.MonkeyPatch) -> Callable
 
 @pytest.fixture
 def mock_requests(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
-    """requests bağımlılığını gerçek modül üstünden patch eder."""
+    """Requests bağımlılığını gerçek modül üstünden patch eder."""
 
     def _install(*, get_impl: Callable[..., Any]) -> None:
         requests = pytest.importorskip("requests")
