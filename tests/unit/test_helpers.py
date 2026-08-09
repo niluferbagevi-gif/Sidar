@@ -35,6 +35,13 @@ def test_make_test_config_uses_spec_set_with_full_app_config(
         LLM_RETRY_BASE_DELAY = 0.1
         LLM_RETRY_MAX_DELAY = 0.2
         SWARM_TASK_TIMEOUT_SECONDS = 60
+        GITHUB_TOKEN = ""
+        GITHUB_REPO = ""
+        PROMPT_GUARD_ENABLED = False
+        CODE_EXECUTION_BACKEND = "disabled"
+        DOCKER_AUTODETECT = False
+        DOCKER_TEST_IMAGE = ""
+        DOCKER_TEST_IMAGE_EXPLICIT = False
         ENABLE_SEMANTIC_CACHE = True
         SEMANTIC_CACHE_THRESHOLD = 0.9
         SEMANTIC_CACHE_TTL = 60

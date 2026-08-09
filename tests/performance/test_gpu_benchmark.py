@@ -71,6 +71,21 @@ _CONCURRENT_BENCH_ROUNDS: int = _gpu_smoke._env_int(
     min_value=10,
     max_value=50,
 )
+_OOM_BENCH_ROUNDS: int = _gpu_smoke._env_int(
+    "GPU_BENCH_OOM_ROUNDS",
+    5 if _GPU_BENCHMARK_PROFILE == "smoke" else _BENCH_ROUNDS,
+    min_value=5,
+    max_value=50,
+)
+_OOM_PROMPT_REPEAT: int = _gpu_smoke._env_int(
+    "GPU_BENCH_OOM_PROMPT_REPEAT",
+    256,
+    min_value=64,
+    max_value=4096,
+)
+_MAX_OOM_FAILURES: int = _gpu_smoke._env_int(
+    "GPU_BENCH_MAX_OOM_FAILURES", 0, min_value=0, max_value=10
+)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -214,6 +229,21 @@ async def _chat_content(prompt: str, http: httpx.AsyncClient) -> str:
     return str(data.get("message", {}).get("content", ""))
 
 
+def _is_gpu_oom_error(exc: BaseException) -> bool:
+    """Return whether an inference failure looks like a GPU OOM regression."""
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "out of memory",
+            "cuda out of memory",
+            "cuda error: out of memory",
+            "memory allocation",
+            "oom",
+        )
+    )
+
+
 async def _model_runtime_profile(http: httpx.AsyncClient) -> dict[str, str]:
     """Model runtime profilini döndürür (quantization / attention mimarisi ipuçları)."""
     payload = {"name": _MODEL}
@@ -337,9 +367,9 @@ def test_gpu_single_inference_latency(benchmark) -> None:
 
     assert isinstance(result, str) and result.strip(), "Benchmark yanıtı boş döndü."
     mean_s: float = benchmark.stats["mean"]
-    assert (
-        mean_s <= _LATENCY_BUDGET_S
-    ), f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
+    assert mean_s <= _LATENCY_BUDGET_S, (
+        f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
+    )
     stddev_s: float = benchmark.stats["stddev"]
     iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
     _record_runtime_options(benchmark)
@@ -506,6 +536,79 @@ def test_gpu_vram_peak_under_load(benchmark) -> None:
     benchmark.extra_info["vram_peak_mean_mib"] = round(sum(observed_peaks) / len(observed_peaks), 3)
 
 
+@pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=5)
+@pytest.mark.gpu
+@pytest.mark.gpu_stress
+def test_gpu_oom_regression_under_load(benchmark) -> None:
+    """Fail the GPU benchmark gate when concurrent inference triggers OOM-like errors.
+
+    The smoke stress test proves requests complete, but production readiness also needs
+    a benchmark artifact that records whether a tuned workload regressed into CUDA/VRAM
+    allocation failures. The default gate is fail-closed: any OOM-like error fails the
+    benchmark unless GPU_BENCH_MAX_OOM_FAILURES is deliberately raised.
+    """
+    _require_gpu_stress()
+    if not shutil.which("ollama"):
+        pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
+    num_parallel = _ollama_num_parallel()
+    if num_parallel < _CONCURRENCY:
+        pytest.skip(
+            "OOM regresyon ölçümünde gerçek paralellik için OLLAMA_NUM_PARALLEL yetersiz: "
+            f"{num_parallel} < {_CONCURRENCY}."
+        )
+
+    client = _make_ollama_client()
+    loop = asyncio.new_event_loop()
+    http = httpx.AsyncClient(timeout=_http_timeout())
+    oom_failures: list[str] = []
+    try:
+        loop.run_until_complete(_prepare_client(client, http))
+
+        prompt = "GPU OOM regresyon benchmark: kısa özet üret.\n" + (
+            "Kontrollü VRAM baskısı için benchmark metni. " * _OOM_PROMPT_REPEAT
+        )
+
+        async def _oom_guarded_round() -> int:
+            try:
+                responses = await asyncio.gather(
+                    *[_chat_content(prompt, http) for _ in range(_CONCURRENCY)]
+                )
+            except Exception as exc:
+                if _is_gpu_oom_error(exc):
+                    oom_failures.append(str(exc))
+                    return 1
+                raise
+            assert all(response.strip() for response in responses), (
+                "GPU OOM benchmark yanıtı boş döndü."
+            )
+            return 0
+
+        def _run() -> int:
+            return loop.run_until_complete(_oom_guarded_round())
+
+        result: int = benchmark.pedantic(
+            _run,
+            warmup_rounds=_CONCURRENT_WARMUP_ROUNDS,
+            rounds=_OOM_BENCH_ROUNDS,
+            iterations=1,
+        )
+    finally:
+        loop.run_until_complete(http.aclose())
+        loop.close()
+
+    total_oom_failures = sum(1 for failure in oom_failures if failure)
+    benchmark.extra_info["oom_failures"] = total_oom_failures
+    benchmark.extra_info["oom_regression_failures"] = total_oom_failures
+    benchmark.extra_info["oom_benchmark_rounds"] = _OOM_BENCH_ROUNDS
+    benchmark.extra_info["oom_prompt_repeat"] = _OOM_PROMPT_REPEAT
+    _record_runtime_options(benchmark)
+    assert result == 0 or total_oom_failures > 0
+    assert total_oom_failures <= _MAX_OOM_FAILURES, (
+        "GPU OOM regresyonu algılandı: "
+        f"{total_oom_failures} OOM-like failure > izin verilen {_MAX_OOM_FAILURES}."
+    )
+
+
 @pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=10)
 @pytest.mark.gpu
 @pytest.mark.gpu_stress
@@ -562,7 +665,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     assert result.content.strip(), "Benchmark yanıtı boş döndü."
     assert result.eval_count > 0, (
-        "Ollama eval_count=0: token sayısı alınamadı. " "Model veya Ollama sürümünü kontrol edin."
+        "Ollama eval_count=0: token sayısı alınamadı. Model veya Ollama sürümünü kontrol edin."
     )
     tps = result.tokens_per_second
     benchmark.extra_info["tokens_per_second"] = round(tps, 3)
@@ -573,9 +676,9 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     benchmark.extra_info["tps_iqr_ms"] = round(tps_iqr_s * 1000, 3)
     if tps_mean_s > 0:
         benchmark.extra_info["tps_cv_percent"] = round((tps_stddev_s / tps_mean_s) * 100, 3)
-    assert (
-        tps >= _MIN_TOKENS_PER_SEC
-    ), f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
+    assert tps >= _MIN_TOKENS_PER_SEC, (
+        f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
+    )
 
 
 @pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=20)
@@ -629,9 +732,9 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     mean_ttft: float = benchmark.stats["mean"]
     _record_runtime_options(benchmark)
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
-    assert (
-        mean_ttft <= _TTFT_BUDGET_S
-    ), f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
+    assert mean_ttft <= _TTFT_BUDGET_S, (
+        f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
+    )
 
 
 def test_runtime_options_metadata_records_workload_shape() -> None:

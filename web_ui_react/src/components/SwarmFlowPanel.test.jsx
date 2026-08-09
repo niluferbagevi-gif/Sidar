@@ -1,4 +1,3 @@
-import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -10,7 +9,7 @@ import {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "./SwarmFlowPanel.jsx";
+} from "./SwarmFlowPanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({
@@ -23,9 +22,10 @@ const { telemetryState } = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => ({
-    telemetryEvents: telemetryState.events,
-  }),
+  useChatStore: (selector) => {
+    const state = { telemetryEvents: telemetryState.events };
+    return typeof selector === "function" ? selector(state) : state;
+  },
 }));
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));
@@ -72,6 +72,14 @@ describe("SwarmFlowPanel", () => {
       { id: "evt-1", kind: "status", ts: "2025-01-01T10:00:00Z", content: "supervisor: plan created" },
       { id: "evt-2", kind: "tool_call", ts: "2025-01-01T10:00:01Z", content: "reviewer: code_search" },
     ];
+  });
+
+  it("renders non-Error loader failures", async () => {
+    fetchJson.mockRejectedValue("swarm ham hata");
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("swarm ham hata")).toBeInTheDocument();
   });
 
   it("loads autonomy activity and pending approvals, then refreshes activity on demand", async () => {
@@ -699,6 +707,7 @@ describe("SwarmFlowPanel", () => {
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Çalışıyor…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
 
     resolveSwarm({ results: [] });
@@ -1101,6 +1110,27 @@ describe("SwarmFlowPanel error and pending approval fallbacks", () => {
 
     expect(await screen.findByText("activity unavailable")).toBeInTheDocument();
     expect(await screen.findByText(/Autonomy aktivitesi alınamadı/)).toBeInTheDocument();
+  });
+
+  it("clears the activity error banner after a successful activity refresh", async () => {
+    const user = userEvent.setup();
+    let activityAttempt = 0;
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        activityAttempt += 1;
+        if (activityAttempt === 1) throw new Error("temporary activity error");
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("temporary activity error")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
+
+    await waitFor(() => expect(screen.queryByText("temporary activity error")).not.toBeInTheDocument());
   });
 
   it("logs approval response errors when HITL decision endpoint fails", async () => {

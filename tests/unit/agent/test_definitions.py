@@ -66,5 +66,8 @@ def test_default_system_prompt_has_hallucination_guard():
 
 
 def test_sidar_system_prompt_is_backward_compat_alias():
-    """SIDAR_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT ile aynı nesne olmalıdır (geriye dönük uyumluluk)."""
+    """SIDAR_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT ile aynı nesne olmalıdır.
+
+    Geriye dönük uyumluluk için.
+    """
     assert SIDAR_SYSTEM_PROMPT is DEFAULT_SYSTEM_PROMPT

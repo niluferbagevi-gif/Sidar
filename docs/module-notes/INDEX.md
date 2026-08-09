@@ -40,7 +40,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `cli.py` → `docs/module-notes/cli.py.md`
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
-- `core/db.py` → `docs/module-notes/core/db.py.md`
+- `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
@@ -79,10 +79,4 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `scripts/load_test_db_pool.py` → `docs/module-notes/scripts/load_test_db_pool.py.md`
 - `scripts/migrate_sqlite_to_pg.py` → `docs/module-notes/scripts/migrate_sqlite_to_pg.py.md`
 - `web_server.py` → `docs/module-notes/web_server.py.md`
-- `web_ui/app.js` → `docs/module-notes/web_ui/app.js.md`
-- `web_ui/chat.js` → `docs/module-notes/web_ui/chat.js.md`
-- `web_ui/index.html` → `docs/module-notes/web_ui/index.html.md`
-- `web_ui/rag.js` → `docs/module-notes/web_ui/rag.js.md`
-- `web_ui/sidebar.js` → `docs/module-notes/web_ui/sidebar.js.md`
-- `web_ui/style.css` → `docs/module-notes/web_ui/style.css.md`
 - `tests/*` → `docs/module-notes/tests.md`

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Web Arama Yöneticisi
+"""Sidar Project - Web Arama Yöneticisi.
+
 Tavily, Google Custom Search ve DuckDuckGo motorları ile asenkron web araması.
 Sürüm: 2.7.0
 
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 
 class WebSearchManager:
-    """
-    Gelişmiş, çoklu motor destekli ve asenkron web arama yöneticisi.
+    """Gelişmiş, çoklu motor destekli ve asenkron web arama yöneticisi.
+
     DuckDuckGo, Tavily ve Google Custom Search API'lerini destekler.
     """
 
@@ -102,9 +102,7 @@ class WebSearchManager:
     # ─────────────────────────────────────────────
 
     async def search(self, query: str, max_results: int | None = None) -> tuple[bool, str]:
-        """
-        Belirlenen motora veya fallback (yedek) mantığına göre arama yapar.
-        """
+        """Belirlenen motora veya fallback (yedek) mantığına göre arama yapar."""
         n = max_results or self.MAX_RESULTS
         try:
             n = int(n)
@@ -189,8 +187,8 @@ class WebSearchManager:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
                 logger.error(
-                    "Tavily kimlik doğrulama hatası (%d) — API anahtarı geçersiz veya süresi dolmuş; "
-                    "Tavily bu oturum için devre dışı bırakıldı.",
+                    "Tavily kimlik doğrulama hatası (%d) — API anahtarı geçersiz veya süresi "
+                    "dolmuş; Tavily bu oturum için devre dışı bırakıldı.",
                     exc.response.status_code,
                 )
                 self.tavily_key = ""  # 401/403 sonrası gereksiz istekleri önle

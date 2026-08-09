@@ -63,3 +63,15 @@ def test_devcontainer_bootstraps_pyright_lsp_tool_with_uv_tool_install():
     assert "pyright-langserver" in setup_script
     assert "${REPO_ROOT}/${UV_PROJECT_ENVIRONMENT}/bin" in setup_script
     assert "${HOME}/.local/bin" in setup_script
+
+
+def test_devcontainer_installs_pre_commit_hooks_after_uv_sync():
+    setup_script = _read(".devcontainer/setup-codespaces.sh")
+
+    assert "install_pre_commit_hooks()" in setup_script
+    assert "uv run pre-commit install --hook-type pre-commit --hook-type pre-push" in setup_script
+    sync_call = setup_script.index("uv sync --frozen --all-extras")
+    hook_call = setup_script.index("  install_pre_commit_hooks", sync_call)
+    pyright_call = setup_script.index("  ensure_pyright_lsp_tool", hook_call)
+
+    assert sync_call < hook_call < pyright_call

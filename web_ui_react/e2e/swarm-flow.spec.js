@@ -26,10 +26,16 @@ test.describe("Swarm flow operation surface e2e", () => {
   });
 
   test("node seçimi üzerinden hedefli rerun ve HITL isteği çalışır", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Swarm Görev Akışı" })).toBeVisible();
-    await expect(page.getByText("nightly_scan")).toBeVisible();
+    await page.getByRole("link", { name: "Swarm Akışı" }).click();
 
-    await page.getByRole("button", { name: "Supervisor" }).click();
+    await expect(page.getByRole("heading", { name: "Swarm Görev Akışı" })).toBeVisible();
+    // "nightly_scan" appears twice (graph node + activity timeline); either is fine here.
+    await expect(page.getByText("nightly_scan").first()).toBeVisible();
+
+    // Two graph nodes have the title "Supervisor" (the root orchestration node and
+    // the "agent-supervisor" role card) — target the root node by its node-type class
+    // instead of an ambiguous accessible-name match.
+    await page.locator(".swarm-graph__node--root").click();
     await page.getByRole("button", { name: "Bu Node’u Çalıştır" }).click();
     await expect(page.getByText("Seçili düğüm için hedefli swarm çalıştı: Supervisor")).toBeVisible();
     await expect(page.getByText("Mock swarm sonucu")).toBeVisible();

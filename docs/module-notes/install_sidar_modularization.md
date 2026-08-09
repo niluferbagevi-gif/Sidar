@@ -22,13 +22,88 @@ Bu yaklaşım ile:
 - bakım/debug kolaylaşır,
 - dağıtımda tek dosya avantajı korunur.
 
-## Kullanıcı yönlendirmesi: çevrimiçi varsayılan dinamik modül indirme
 
-Standart çevrimiçi kullanıcı akışında ana yöntem, kök `install_sidar.sh` dosyasının
-indirilmesi ve bu betiğin eksik `scripts/install_modules/` modüllerini GitHub'dan
-dinamik olarak çekmesidir. Bu yaklaşım kurulum deneyimini tek parça bir araç gibi
-sunar; bakım tarafında ise yardımcı/faz dosyaları modüler kalır ve yeni kurulumlar
-GitHub'daki düzeltilmiş modülleri hemen alabilir:
+## Modularization roadmap / TODOs
+
+- [ ] **Ollama install step extraction (A/Sorun 2):** İlk taşıma
+  `scripts/install_modules/phases/03_runtime_ollama.sh` içindeki
+  `_ollama_install_step` ile başlatıldı ve uzak betik doğrulaması
+  `scripts/install_modules/utils/remote_script.sh` altında ortaklaştırıldı. Bu TODO,
+  kalan takip işlerini görünür tutar: Ollama kurulum adımının monolitik
+  `install_sidar.sh` içindeki legacy yardımcı fonksiyon bağımlılıkları azaltılmalı,
+  phase modülü tek başına test edilebilir hale getirilmeli ve release bundle üretimi
+  sonrasında bu sınırın korunması CI dokümantasyonunda açıkça izlenmelidir.
+- [ ] **Bootstrap facade inceltme (2026-07-16 durum notu):** `install_sidar.sh`
+  hâlâ remote module bootstrap, embedded manifest/hash doğrulama ve fallback cache
+  orchestration sorumluluklarını taşıyor. UID-scoped `mktemp -d` cache, symlink/owner guard ve
+  TOFU dokümantasyonu eklendi; sıradaki düşük riskli adım bu bootstrap/hash guard
+  akışını `scripts/install_modules/bootstrap.sh` gibi ayrı bir modüle taşırken raw
+  fallback modül indirme testlerini korumaktır.
+
+## Cross-module değişken lint sözleşmesi
+
+`install_sidar.sh` ve `scripts/install_modules/` altındaki faz/yardımcı modüller
+aynı Bash sürecinde `source` edilerek çalışır. Bu nedenle ana betikte hazırlanan
+bazı durum değişkenleri, ShellCheck'in tek dosya analizinde okunmuyor gibi görünse
+de sourced modüller tarafından tüketilir. Yeni modülerleştirme veya taşıma
+çalışmalarında bu değişkenler için aşağıdaki kural zorunludur:
+
+- Cross-module okunan her değişkenin ilk atamasının hemen üstüne tek satırlık
+  `# shellcheck disable=SC2034` yorumu eklenmelidir.
+- Yorum, değişkeni okuyan sourced modül yolunu açıkça belirtmelidir; örn.
+  `scripts/install_modules/phases/12_alembic.sh reads this sourced state`.
+- Aynı değişken runtime içinde başka dallarda tekrar atanıyor ve ShellCheck aynı
+  atama noktasında SC2034 üretiyorsa, ilgili atamanın hemen üstünde de aynı
+  kapsamı açıklayan dar yorum kullanılmalıdır.
+- Sadece SC2034'ü susturmak için değişken `export` edilmemelidir; `export` yalnız
+  gerçekten child process ortamına aktarılması gereken değerlerde tercih edilir.
+- Yeni faz veya yardımcı modül eklendiğinde, ana betikte hazırlanan cross-module
+  state değişkenleri için bu dosyadaki sözleşme ve ilgili yorumlar PR içinde
+  birlikte güncellenmelidir.
+
+Örnek:
+
+```bash
+# shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced state.
+MIGRATION_DOCKER_POLICY="auto"
+```
+
+## DB credential hardening sorumluluk sınırı
+
+Veritabanı parola güçlendirme akışının canonical implementation'ı
+`scripts/install_modules/utils/db_credentials.sh` içindedir. Kök `install_sidar.sh`
+dosyasındaki aynı isimli fonksiyon, eski monolitik/source test akışları ve geçiş
+dönemi için tutulan uyumluluk katmanıdır; workspace fazı çalışırken
+`scripts/install_modules/phases/04_workspace.sh` ilgili utility dosyalarını tekrar
+source ederek modüler implementation'ı etkin hale getirir.
+
+`PRE_HARDEN_DB_PASSWORD` değişkeni sadece Alembic auth-repair aşamasına eski
+parolayı recovery adayı olarak aktarmak için kullanılmalıdır. Yeni kod,
+bu değişkeni doğrudan set etmek yerine `db_credentials.sh` içindeki
+`sidar_record_pre_harden_db_password` yardımcısını çağırmalıdır. Böylece
+`scripts/install_modules/phases/12_alembic.sh` tarafından okunan recovery handoff
+tek yazıcı üzerinden yönetilir; `12_alembic.sh` bu değeri üretmez veya değiştirmez,
+yalnızca okur.
+
+## Kullanıcı yönlendirmesi: varsayılan Release bundle, raw fallback son çare
+
+Standart çevrimiçi kullanıcı akışında ana yöntem, GitHub Release üzerinden
+yayınlanan tek dosyalık bundle `install_sidar.sh` artefaktının indirilmesidir.
+Bundle, `scripts/tools/bundle_install_sidar.sh` tarafından üretildiği için
+kurulum bootstrap aşamasında `scripts/install_modules/` altındaki modülleri
+GitHub raw üzerinden tek tek indirmez; bu da 429/5xx edge throttling riskini
+azaltır:
+
+```bash
+curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
+# veya: wget -O install_sidar.sh https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh
+chmod +x install_sidar.sh
+./install_sidar.sh
+```
+
+Raw `main/install_sidar.sh` URL'i yalnız hedef ref için Release bundle henüz yoksa
+son çare fallback olarak kullanılmalıdır; bu yol eksik modülleri runtime'da
+indirebildiği için GitHub raw 429/5xx kısıtlarına daha açıktır:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/install_sidar.sh -o install_sidar.sh
@@ -50,8 +125,9 @@ uv sync --all-extras
 
 ## Standalone / offline dağıtım sözleşmesi
 
-Kurumsal, offline veya interneti kısıtlı ortamlarda ağdan modül indiren varsayılan
-yol yerine CI tarafından üretilen monolitik Release bundle artefaktı kullanılmalıdır:
+Kurumsal, offline, interneti kısıtlı ve normal temiz kurulum ortamlarında ağdan
+modül indiren raw fallback yerine CI tarafından üretilen monolitik Release bundle
+artefaktı kullanılmalıdır:
 
 ```bash
 curl -fsSL https://github.com/niluferbagevi-gif/Sidar/releases/latest/download/install_sidar.sh -o install_sidar.sh
@@ -65,18 +141,25 @@ komutunu çalıştırır, `dist/install_sidar.sh` dosyasını syntax-check'ten g
 `standalone-install-sidar` artefaktı olarak yükler ve `v*` tag release'lerinde aynı
 dosyayı GitHub Release asset'i olarak yayınlar.
 
-Böylece hibrit dağıtım korunur: çevrimiçi standart kullanıcılar dinamik modül
+Böylece hibrit dağıtım korunur: standart kullanıcılar Release bundle kullanır; raw fallback dinamik modül
 indiren kök betiği kullanır; kurumsal/offline kullanıcılar ise modül indirme ihtiyacı
 olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
 
 ## Uzak kurulum betikleri ve SHA-256 sözleşmesi
 
-`install_sidar.sh`, eksik `uv` veya `ollama` için resmi uzak kurulum betiklerini
-çalıştırmadan önce `UV_INSTALL_SHA256` ve `OLLAMA_INSTALL_SHA256` değişkenlerini
-kontrol eder. Bu değişkenler boşsa ve `ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça
-verilmemişse kurulum fail-fast durur. Amaç, `https://astral.sh/uv/install.sh` veya
-`https://ollama.com/install.sh` üzerinde upstream içerik değişimi/supply-chain riski
-oluştuğunda sessizce doğrulanmamış betik çalıştırmamaktır.
+`install_sidar.sh`, eksik `uv`, `ollama`, `volta` veya `nvm` için resmi uzak kurulum betiklerini
+çalıştırmadan önce `scripts/install_modules/remote_checksums.env` içindeki reviewed
+default checksum değerlerini yükler, ardından `UV_INSTALL_SHA256`,
+`OLLAMA_INSTALL_SHA256`, `VOLTA_INSTALL_SHA256` ve `NVM_INSTALL_SHA256`
+değişkenlerini kontrol eder. Shell ortamında açıkça verilen
+değerler dosyadaki default değerlerden önceliklidir. Uzak betik indirme/doğrulama
+yardımcıları `scripts/install_modules/utils/remote_script.sh` dosyasındadır; Ollama
+kurulum adımı da `scripts/install_modules/phases/03_runtime_ollama.sh` içinde
+`_ollama_install_step` olarak tutulur. Bu değişkenler boşsa ve
+`ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça verilmemişse kurulum fail-fast durur.
+Amaç, refresh aracının yönettiği dört uzak kurulum endpoint'inden birinde
+upstream içerik değişimi/supply-chain riski oluştuğunda sessizce doğrulanmamış betik
+çalıştırmamaktır.
 
 Operatör yeni bir WSL/Ubuntu makinede önce betiği indirip incelemeli, sonra aynı
 dosyadan SHA-256 üretip export etmelidir:

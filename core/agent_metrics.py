@@ -142,7 +142,8 @@ class AgentMetricsCollector:
             for i, bound in enumerate(_BUCKETS):
                 le = "+Inf" if math.isinf(bound) else str(bound)
                 lines.append(
-                    f'sidar_agent_delegation_duration_seconds_bucket{{{labels},le="{le}"}} {snap["counts"][i]}'
+                    f'sidar_agent_delegation_duration_seconds_bucket{{{labels},le="{le}"}} '
+                    f"{snap['counts'][i]}"
                 )
             lines.append(
                 f"sidar_agent_delegation_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}"
@@ -175,7 +176,8 @@ class AgentMetricsCollector:
             for i, bound in enumerate(_BUCKETS):
                 le = "+Inf" if math.isinf(bound) else str(bound)
                 lines.append(
-                    f'sidar_agent_step_duration_seconds_bucket{{{labels},le="{le}"}} {snap["counts"][i]}'
+                    f'sidar_agent_step_duration_seconds_bucket{{{labels},le="{le}"}} '
+                    f"{snap['counts'][i]}"
                 )
             lines.append(f"sidar_agent_step_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}")
             lines.append(f"sidar_agent_step_duration_seconds_count{{{labels}}} {snap['count']}")
@@ -204,7 +206,8 @@ class AgentMetricsCollector:
             for i, bound in enumerate(_AUTH_HASH_BUCKETS):
                 le = "+Inf" if math.isinf(bound) else str(bound)
                 lines.append(
-                    f'sidar_auth_password_hash_duration_seconds_bucket{{{labels},le="{le}"}} {snap["counts"][i]}'
+                    f'sidar_auth_password_hash_duration_seconds_bucket{{{labels},le="{le}"}} '
+                    f"{snap['counts'][i]}"
                 )
             lines.append(
                 f"sidar_auth_password_hash_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}"
@@ -224,7 +227,8 @@ class AgentMetricsCollector:
             lines.append(f"sidar_auth_password_hash_total{{{labels}}} {count}")
 
         lines.append(
-            "# HELP sidar_auth_password_hash_slo_warnings_total Parola hash/verify süresi SLO eşiğini aşan ölçüm sayısı"
+            "# HELP sidar_auth_password_hash_slo_warnings_total Parola hash/verify süresi SLO "
+            "eşiğini aşan ölçüm sayısı"
         )
         lines.append("# TYPE sidar_auth_password_hash_slo_warnings_total counter")
         for (operation, status, slo_ms), count in auth_hash_slo_warning_items:

@@ -421,6 +421,108 @@ async def test_is_retryable_exception_for_non_retryable_status() -> None:
     assert status == 400
 
 
+def test_provider_specific_retry_mapping_and_context_limit() -> None:
+    anthropic_529 = llm_client.LLMAPIError(
+        "anthropic", "overloaded", status_code=529, retryable=False
+    )
+    retryable, status = llm_client._is_retryable_exception(anthropic_529, provider="anthropic")
+    assert (retryable, status) == (True, 529)
+
+    context_error = llm_client.LLMAPIError(
+        "openai", "maximum context length reached", status_code=400, retryable=True
+    )
+    retryable, status = llm_client._is_retryable_exception(context_error, provider="openai")
+    assert (retryable, status) == (False, 400)
+
+
+def test_retry_mapping_handles_response_status_retryable_and_missing_status() -> None:
+    response_error = RuntimeError("upstream busy")
+    response_error.response = SimpleNamespace(status_code="503")  # type: ignore[attr-defined]
+    retryable, status = llm_client._is_retryable_exception(response_error, provider="openai")
+    assert (retryable, status) == (True, 503)
+
+    retryable_error = llm_client.LLMAPIError("ollama", "busy", retryable=True)
+    retryable, status = llm_client._is_retryable_exception(retryable_error)
+    assert (retryable, status) == (True, None)
+
+    plain_error = llm_client.LLMAPIError("ollama", "plain")
+    retryable, status = llm_client._is_retryable_exception(plain_error)
+    assert (retryable, status) == (False, None)
+
+
+def test_context_limit_error_without_status_is_non_retryable() -> None:
+    context_error = llm_client.LLMAPIError(
+        "openai", "input is too long for this model", retryable=True
+    )
+
+    retryable, status = llm_client._is_retryable_exception(context_error, provider="openai")
+
+    assert (retryable, status) == (False, None)
+
+
+def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
+    exc = Exception("bad status")
+    exc.status_code = "not-a-status"
+
+    assert llm_client._extract_status_code(exc) is None
+
+
+def test_token_estimate_and_prompt_limit_fallback_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        token_counter,
+        "estimate_tokens",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("tokenizer down")),
+    )
+    assert llm_client._estimate_tokens_bounded("hello", model="m") == 0
+
+    cfg = _make_config(LLM_MAX_PROMPT_TOKENS="invalid", MAX_INPUT_TOKENS=42)
+    assert llm_client._configured_prompt_token_limit(cfg) == 42
+
+
+def test_usage_token_counts_are_bounded_on_overflow() -> None:
+    huge = str(llm_client.MAX_SAFE_TOKEN_COUNT + 999_999)
+
+    assert llm_client._extract_usage_tokens(
+        {"usage": {"prompt_tokens": huge, "completion_tokens": -10}}
+    ) == (llm_client.MAX_SAFE_TOKEN_COUNT, 0)
+
+    usage = {"prompt_token_count": huge, "candidates_token_count": huge}
+    assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage)) == (
+        llm_client.MAX_SAFE_TOKEN_COUNT,
+        llm_client.MAX_SAFE_TOKEN_COUNT,
+    )
+
+
+@pytest.mark.asyncio
+async def test_prompt_token_budget_rejects_over_limit_before_provider_call(
+    monkeypatch: pytest.MonkeyPatch, mock_config
+) -> None:
+    class BudgetClient(llm_client.BaseLLMClient):
+        def __init__(self, config: Any) -> None:
+            super().__init__(config)
+            self.called = False
+
+        def json_mode_config(self) -> dict[str, Any]:
+            return {}
+
+        async def chat(self, *args: Any, **kwargs: Any) -> str:
+            self.called = True
+            return "should-not-run"
+
+    monkeypatch.setitem(llm_client.LLMClient.PROVIDER_REGISTRY, "budget", BudgetClient)
+    monkeypatch.setattr(llm_client.token_counter, "estimate_tokens", lambda *_args, **_kwargs: 100)
+
+    client = llm_client.LLMClient("budget", mock_config(LLM_MAX_PROMPT_TOKENS=10))
+    with pytest.raises(llm_client.LLMAPIError, match="Prompt token budget exceeded") as exc:
+        await client.chat([{"role": "user", "content": "hello"}], json_mode=False)
+
+    assert exc.value.status_code == 413
+    assert exc.value.retryable is False
+    assert client._client.called is False
+
+
 @pytest.mark.asyncio
 async def test_retry_with_backoff_wraps_litellm_api_connection_error(mock_config) -> None:
     class APIConnectionError(Exception):
@@ -815,6 +917,30 @@ async def test_semantic_cache_set_records_item(
 
 
 @pytest.mark.asyncio
+async def test_semantic_cache_ttl_zero_skips_expire(
+    monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
+) -> None:
+    manager = SemanticCacheManager(mock_config(SEMANTIC_CACHE_TTL=0))
+
+    async def _get_redis():
+        return fake_redis
+
+    pipeline = fake_redis.pipeline(transaction=True)
+    expire_spy = MagicMock(wraps=pipeline.expire)
+    monkeypatch.setattr(manager, "_get_redis", _get_redis)
+    monkeypatch.setattr(manager, "_embed_prompt", lambda _p: [0.1, 0.2])
+    monkeypatch.setattr(pipeline, "expire", expire_spy)
+    monkeypatch.setattr(fake_redis, "pipeline", lambda transaction=True: pipeline)
+
+    await manager.set("forever", "cached")
+
+    assert manager.ttl == 0
+    expire_spy.assert_not_called()
+    item_key = "sidar:semantic_cache:item:" + hashlib.sha256(b"forever").hexdigest()
+    assert (await fake_redis.hgetall(item_key))["response"] == "cached"
+
+
+@pytest.mark.asyncio
 async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
     manager = SemanticCacheManager(mock_config())
     assert await manager.set("prompt", "") is None
@@ -823,11 +949,13 @@ async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
 @pytest.mark.asyncio
 async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyPatch) -> None:
     events = []
+    logs = []
 
     def recorder(**kwargs):
         events.append(kwargs)
 
     monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+    monkeypatch.setattr(llm_client.logger, "warning", lambda *args, **_kwargs: logs.append(args))
 
     async def broken_stream():
         yield "a"
@@ -845,6 +973,124 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
     chunks = await consume()
     assert chunks == ["a"]
     assert events[-1]["success"] is False
+    assert logs[-1][2] == 1
+    assert logs[-1][3] == "a"
+
+
+@pytest.mark.asyncio
+async def test_track_stream_completion_records_success_with_empty_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = []
+
+    def recorder(**kwargs):
+        events.append(kwargs)
+
+    monkeypatch.setattr(llm_client, "_record_llm_metric", recorder)
+
+    async def stream():
+        yield ""
+        yield "ok"
+
+    chunks = [
+        token
+        async for token in llm_client._track_stream_completion(
+            stream(), provider="openai", model="m", started_at=0.0
+        )
+    ]
+
+    assert chunks == ["", "ok"]
+    assert events[-1]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_track_stream_completion_reraises_stream_error_when_metric_recording_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logs = []
+
+    def failing_recorder(**_kwargs):
+        raise RuntimeError("metrics backend unavailable")
+
+    monkeypatch.setattr(llm_client, "_record_llm_metric", failing_recorder)
+    monkeypatch.setattr(llm_client.logger, "debug", lambda *args, **_kwargs: logs.append(args))
+
+    async def broken_stream():
+        yield "partial"
+        raise RuntimeError("stream interrupted")
+
+    with pytest.raises(RuntimeError, match="stream interrupted"):
+        async for _token in llm_client._track_stream_completion(
+            broken_stream(), provider="openai", model="m", started_at=0.0
+        ):
+            pass
+
+    assert logs[-1][0] == "%s stream failure metric could not be recorded: %s"
+    assert logs[-1][1] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_config) -> None:
+    class StrategyClient(llm_client.BaseLLMClient):
+        def __init__(self, config):
+            super().__init__(config)
+
+        def json_mode_config(self):
+            return {}
+
+        async def chat(
+            self,
+            messages,
+            model=None,
+            temperature=0.3,
+            stream=False,
+            json_mode=True,
+        ):
+            assert messages[0]["content"] == "hello"
+            if stream:
+
+                async def _stream():
+                    yield "strategy"
+                    yield "-ok"
+
+                return _stream()
+            return "strategy-ok"
+
+    monkeypatch.setitem(llm_client.LLMClient.PROVIDER_REGISTRY, "strategy", StrategyClient)
+    llm_client.LLMClient.register_provider("strategy", StrategyClient)
+
+    client = llm_client.LLMClient("strategy", mock_config())
+    chunks = [
+        chunk async for chunk in client._client.generate([{"role": "user", "content": "hello"}])
+    ]
+    assert chunks == ["strategy", "-ok"]
+
+
+@pytest.mark.asyncio
+async def test_base_llm_client_generate_yields_string_chat_response(mock_config) -> None:
+    class StringClient(llm_client.BaseLLMClient):
+        async def chat(self, *_args, **_kwargs):
+            return "single-response"
+
+        def json_mode_config(self):
+            return {}
+
+    client = StringClient(mock_config())
+
+    assert [chunk async for chunk in client.generate([{"role": "user", "content": "hello"}])] == [
+        "single-response"
+    ]
+
+
+def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> None:
+    with pytest.raises(ValueError, match="Provider adı boş"):
+        llm_client.LLMClient.register_provider("  ", llm_client.OllamaClient)
+
+    with pytest.raises(TypeError, match="BaseLLMClient"):
+        llm_client.LLMClient.register_provider("invalid", object)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Bilinmeyen AI sağlayıcısı"):
+        llm_client.LLMClient("missing-provider", _make_config())
 
 
 @pytest.mark.asyncio
@@ -923,6 +1169,31 @@ async def test_track_stream_routing_cost_records_on_stream_error(
             config=_make_config(),
         ):
             pass
+
+    assert recorded and recorded[0] > 0
+
+
+@pytest.mark.asyncio
+async def test_track_stream_routing_cost_records_when_stream_is_closed_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[float] = []
+    monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
+    monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
+
+    async def _stream():
+        yield "abc"
+        yield "def"
+
+    tracked = llm_client._track_stream_routing_cost(
+        _stream(),
+        messages=[{"content": "prompt"}],
+        config=_make_config(),
+        model="m",
+    )
+
+    assert await tracked.__anext__() == "abc"
+    await tracked.aclose()
 
     assert recorded and recorded[0] > 0
 
@@ -2762,7 +3033,7 @@ async def test_ollama_stream_trailing_decoder_branch(
             return " \n"
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -2983,7 +3254,7 @@ async def test_ollama_stream_additional_json_branches(
             return '{"message":{"content":""}}\n'
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -3234,7 +3505,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
             return "" if final else '{"message":{"content":""}}'
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderA())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _DecoderA()
     )
 
     respx_mock_router.post("http://u").mock(return_value=httpx.Response(200, content=b"x"))
@@ -3248,7 +3519,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
             return "" if final else "{not-json"
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _DecoderB())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _DecoderB()
     )
     assert (
         await _collect(c._stream_response("http://u", {}, llm_client.httpx.Timeout(10, connect=1)))
@@ -3520,7 +3791,10 @@ async def test_ollama_do_request_json_parse_error_with_text(respx_mock_router) -
 
 @pytest.mark.asyncio
 async def test_ollama_do_request_json_parse_error_empty_text_fallthrough(respx_mock_router) -> None:
-    """Branch 527->536: resp.json() raises, resp.text is empty → detail="" → raise_for_status() called."""
+    """Branch 527->536: empty resp.text with a json() error still calls raise_for_status().
+
+    resp.json() raises, resp.text is empty → detail="" → raise_for_status() called.
+    """
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="m")
     )
@@ -3536,7 +3810,10 @@ async def test_ollama_do_request_json_parse_error_empty_text_fallthrough(respx_m
 async def test_ollama_chat_generic_exception_model_not_found_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 561-562: non-LLMAPIError with model-not-found text → warning logged + LLMAPIError with guidance."""
+    """Lines 561-562: a model-not-found exception must be logged and re-raised with guidance.
+
+    non-LLMAPIError with model-not-found text → warning logged + LLMAPIError with guidance.
+    """
     client = llm_client.OllamaClient(_make_config(CODING_MODEL="xyz"))
 
     async def _raise_model_not_found(*_a, **_kw):
@@ -3551,7 +3828,10 @@ async def test_ollama_chat_generic_exception_model_not_found_guidance(
 
 @pytest.mark.asyncio
 async def test_ollama_stream_inline_error_guidance_none_branch(respx_mock_router) -> None:
-    """Branch 609->618: stream line has error but guidance is None → falls through to chunk parsing."""
+    """Branch 609->618: a None guidance value must fall through to normal chunk parsing.
+
+    stream line has error but guidance is None → falls through to chunk parsing.
+    """
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="m")
     )
@@ -3572,7 +3852,10 @@ async def test_ollama_stream_inline_error_guidance_none_branch(respx_mock_router
 async def test_ollama_stream_trailing_newline_error_with_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 636-645: trailing decoded bytes contain a newline-terminated model-not-found error → guidance yielded."""
+    """Lines 636-645: a newline-terminated model-not-found error in trailing bytes yields guidance.
+
+    Trailing decoded bytes contain a newline-terminated model-not-found error → guidance yielded.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3581,7 +3864,7 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3602,7 +3885,10 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(
 async def test_ollama_stream_remaining_buffer_error_with_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 657-666: remaining buffer without newline has model-not-found error → guidance yielded."""
+    """Lines 657-666: a model-not-found error in the remaining buffer must yield guidance.
+
+    Remaining buffer without newline has model-not-found error → guidance yielded.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3611,7 +3897,7 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3632,7 +3918,10 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(
 async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Branch 637->646: trailing line has error but guidance is None → falls through to chunk parsing."""
+    """Branch 637->646: a None guidance value on the trailing line falls through to chunk parsing.
+
+    Trailing line has error but guidance is None → falls through to chunk parsing.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3641,7 +3930,7 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -3661,7 +3950,10 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
 async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Branch 658->667: remaining buffer has error but guidance is None → falls through to chunk parsing."""
+    """Branch 658->667: a None guidance value in the remaining buffer falls through to parsing.
+
+    Remaining buffer has error but guidance is None → falls through to chunk parsing.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3670,7 +3962,7 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
             return ""
 
     monkeypatch.setattr(
-        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: (lambda **_kw2: _Decoder())
+        llm_client.codecs, "getincrementaldecoder", lambda *_a, **_kw: lambda **_kw2: _Decoder()
     )
 
     async def _fake_retry(_provider, operation, *, config, retry_hint):
@@ -4394,6 +4686,49 @@ async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
 
 
 @pytest.mark.asyncio
+async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+
+    first = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+    second = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+    different_pool = await llm_client._ollama_gpu_limiter("http://ollama.local", 3)
+    disabled = await llm_client._ollama_gpu_limiter("http://ollama.local", 0)
+
+    assert first is second
+    assert different_pool is not first
+    assert disabled is None
+
+
+@pytest.mark.asyncio
+async def test_ollama_gpu_limiter_reuses_limiter_created_while_waiting_for_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
+
+    class _PopulatingLock:
+        async def __aenter__(self):
+            llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)] = asyncio.Semaphore(2)
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS_LOCK", _PopulatingLock())
+
+    limiter = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
+
+    assert limiter is llm_client._OLLAMA_GPU_LIMITERS[("http://ollama.local", 2)]
+
+
+@pytest.mark.asyncio
+async def test_llm_provider_protocol_stubs_are_import_coverage_only() -> None:
+    assert await llm_client.LLMProvider.generate(object(), []) is None  # type: ignore[arg-type]
+    assert await llm_client.LLMProvider.chat(object(), []) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
 async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
     cfg = _make_config(
         OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=1,
@@ -4463,3 +4798,78 @@ async def test_ollama_stream_without_gpu_limiter_returns_traced_stream(
 
     assert [chunk async for chunk in stream] == ["chunk-cpu"]
     assert key not in llm_client._OLLAMA_GPU_LIMITERS
+
+
+@pytest.mark.asyncio
+async def test_anthropic_non_stream_closes_client(monkeypatch) -> None:
+    class _Response:
+        usage = SimpleNamespace(input_tokens=1, output_tokens=2)
+        content = [SimpleNamespace(text='{"tool":"final_answer","argument":"ok","thought":"done"}')]
+
+    class _Messages:
+        async def create(self, **_kwargs):
+            return _Response()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    raw_client = _Client()
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: raw_client)
+
+    result = await client.chat([{"role": "user", "content": "x"}], json_mode=False)
+
+    assert result == '{"tool":"final_answer","argument":"ok","thought":"done"}'
+    assert raw_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_closes_client_after_iteration(monkeypatch) -> None:
+    class _Event:
+        type = "content_block_delta"
+        delta = SimpleNamespace(type="text_delta", text="chunk")
+
+    class _CM:
+        async def __aenter__(self):
+            async def _stream():
+                yield _Event()
+
+            return _stream()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Messages:
+        def stream(self, **_kwargs):
+            return _CM()
+
+    class _Client:
+        def __init__(self):
+            self.messages = _Messages()
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    async def _fake_retry(_provider, operation, *, config, retry_hint):
+        _ = (config, retry_hint)
+        return await operation()
+
+    raw_client = _Client()
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _fake_retry)
+    client = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
+    monkeypatch.setattr(client, "_get_client", lambda: raw_client)
+
+    stream = await client.chat([{"role": "user", "content": "x"}], stream=True, json_mode=False)
+    assert [chunk async for chunk in stream] == ["chunk"]
+    assert raw_client.closed is True

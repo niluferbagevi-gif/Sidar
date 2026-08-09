@@ -1,7 +1,9 @@
 # Çözülen Teknik Borçlar ve Hata Kapanışları — v3.x Arşivi
 
 > Bu belge, v3.0 serisinde kapatılan teknik borçları, kalite sorunlarını ve doğrulama turlarını arşivler.
-> Ana durum özeti için [PROJE_RAPORU.md](../../PROJE_RAPORU.md) §11'e bakınız.
+> Ana durum özeti için proje raporunun
+> [11. bölümü](../project-report/04-teknik-borc-ve-yapilandirma.md#11-mevcut-sorunlar-ve-teknik-borç)
+> kullanılmalıdır.
 
 ## Durum Özeti
 
@@ -77,4 +79,8 @@
 
 ## Arşiv Kullanım Notu
 
-Bu belge aktif risk listesi değildir. Güncel risk durumu, durum özeti paneli ve arşiv bağlantıları için [PROJE_RAPORU.md](../../PROJE_RAPORU.md) §11; denetim özeti için [AUDIT_REPORT_v4.0.md](../../AUDIT_REPORT_v4.0.md); sürümler arası özet farklar için [CHANGELOG.md](../../CHANGELOG.md) kullanılmalıdır.
+Bu belge aktif risk listesi değildir. Güncel risk durumu, durum özeti paneli ve arşiv
+bağlantıları için proje raporunun
+[11. bölümü](../project-report/04-teknik-borc-ve-yapilandirma.md#11-mevcut-sorunlar-ve-teknik-borç);
+denetim özeti için [AUDIT_REPORT_v4.0.md](../AUDIT_REPORT_v4.0.md); sürümler arası
+özet farklar için [CHANGELOG.md](../../CHANGELOG.md) kullanılmalıdır.

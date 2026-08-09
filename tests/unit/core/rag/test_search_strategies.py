@@ -15,6 +15,7 @@ class FakeStore:
         self.pgvector_results: list[dict[str, object]] = []
         self.chroma_results: list[dict[str, object]] = []
         self.bm25_results: list[dict[str, object]] = []
+        self.formatted_results: list[dict[str, object]] = []
 
     def _pgvector_search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
         self.calls.append(("pgvector_search", query, top_k, session_id))
@@ -47,6 +48,7 @@ class FakeStore:
     def _format_results_from_struct(
         self, results: list[dict[str, object]], query: str, source_name: str
     ) -> tuple[bool, str]:
+        self.formatted_results = results
         ordered_ids = ",".join(str(item["id"]) for item in results)
         return True, f"{source_name}:{query}:{ordered_ids}"
 
@@ -99,6 +101,37 @@ def test_hybrid_strategy_merges_vector_and_bm25_with_rrf() -> None:
         ("fetch_pgvector", "sidar", 3, "global"),
         ("fetch_bm25", "sidar", 3, "global"),
     ]
+    assert store.formatted_results[0]["id"] == "shared"
+    assert store.formatted_results[0]["title"] == "shared"
+    assert store.formatted_results[0]["score"] > store.formatted_results[1]["score"]
+
+
+def test_hybrid_strategy_uses_chroma_vector_candidates_when_pgvector_unavailable() -> None:
+    store = FakeStore()
+    store._chroma_available = True
+    store.collection = object()
+    store.chroma_results = [_doc("chroma-only")]
+    store.bm25_results = [_doc("bm25-only")]
+
+    result = HybridStrategy(store).search("sidar", 2, "global")
+
+    assert result == (True, "Hibrit RRF (ChromaDB + BM25):sidar:chroma-only,bm25-only")
+    assert store.calls == [
+        ("fetch_chroma", "sidar", 2, "global"),
+        ("fetch_bm25", "sidar", 2, "global"),
+    ]
+
+
+def test_hybrid_strategy_formats_empty_result_when_top_k_zero() -> None:
+    store = FakeStore()
+    store._pgvector_available = True
+    store.pgvector_results = [_doc("vector")]
+    store.bm25_results = [_doc("bm25")]
+
+    result = HybridStrategy(store).search("sidar", 0, "global")
+
+    assert result == (True, "Hibrit RRF (pgvector + BM25):sidar:")
+    assert store.formatted_results == []
 
 
 def test_hybrid_strategy_falls_back_to_keyword_when_no_candidates() -> None:
@@ -113,3 +146,26 @@ def test_hybrid_strategy_falls_back_to_keyword_when_no_candidates() -> None:
         ("fetch_bm25", "missing", 5, "global"),
         ("keyword_search", "missing", 5, "global"),
     ]
+
+
+def test_hybrid_strategy_logs_when_bm25_is_only_available_candidate(caplog) -> None:
+    store = FakeStore()
+    store._bm25_available = True
+    store.bm25_results = [_doc("bm25-only")]
+
+    with caplog.at_level("INFO", logger="core.rag.strategies"):
+        result = HybridStrategy(store).search("sidar", 2, "s1")
+
+    assert result == (True, "Hibrit RRF (ChromaDB + BM25):sidar:bm25-only")
+    assert "reason=vector_candidates_empty" in caplog.text
+
+
+def test_bm25_strategy_logs_explicit_fallback_selection(caplog) -> None:
+    store = FakeStore()
+    store._bm25_available = True
+
+    with caplog.at_level("INFO", logger="core.rag.strategies"):
+        result = BM25OnlyStrategy(store).search("sidar", 2, "s1")
+
+    assert result == (True, "bm25")
+    assert "reason=explicit_bm25 mode" in caplog.text

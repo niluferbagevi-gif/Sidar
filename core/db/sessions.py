@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -47,7 +46,8 @@ async def list_sessions(db: Any, record_cls: Callable[..., T], user_id: str) -> 
         def _run() -> list[Any]:
             assert db._sqlite_conn is not None
             cur = db._sqlite_conn.execute(
-                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
+                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? "
+                "ORDER BY updated_at DESC",
                 (user_id,),
             )
             return cast(list[Any], cur.fetchall())
@@ -86,7 +86,8 @@ async def load_session(
         async with db._pg_pool.acquire() as conn:
             if user_id:
                 row = await conn.fetchrow(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1 AND user_id=$2",
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions"
+                    " WHERE id=$1 AND user_id=$2",
                     session_id,
                     user_id,
                 )
@@ -102,7 +103,8 @@ async def load_session(
             assert db._sqlite_conn is not None
             if user_id:
                 cur = db._sqlite_conn.execute(
-                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=? AND user_id=?",
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions"
+                    " WHERE id=? AND user_id=?",
                     (session_id, user_id),
                 )
             else:
@@ -187,7 +189,8 @@ async def create_session(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES ($1, $2, "
+                "$3, $4, $5)",
                 session_id,
                 user_id,
                 title,
@@ -200,7 +203,8 @@ async def create_session(
         def _run() -> None:
             assert db._sqlite_conn is not None
             db._sqlite_conn.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
                 (session_id, user_id, title, now, now),
             )
             db._sqlite_conn.commit()
@@ -249,7 +253,8 @@ async def add_message(
         def _run() -> int:
             assert db._sqlite_conn is not None
             cur = db._sqlite_conn.execute(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES "
+                "(?, ?, ?, ?, ?)",
                 (session_id, role, content, tokens, now),
             )
             db._sqlite_conn.commit()
@@ -293,8 +298,8 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
     if not prepared:
         return 0
 
-    async with db.transaction() as conn:
-        if db._backend == "postgresql":
+    if db._backend == "postgresql":
+        async with db.transaction() as conn:
             await conn.executemany(
                 """
                 INSERT INTO messages (session_id, role, content, tokens_used, created_at)
@@ -304,14 +309,17 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
             )
             return len(prepared)
 
-        def _run() -> int:
-            conn.executemany(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
-                [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
-            )
-            return len(prepared)
+    def _run() -> int:
+        assert db._sqlite_conn is not None
+        db._sqlite_conn.executemany(
+            "INSERT INTO messages (session_id, role, content, tokens_used, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [(s, r, c, t, iso) for s, r, c, t, _dt, iso in prepared],
+        )
+        db._sqlite_conn.commit()
+        return len(prepared)
 
-        return await asyncio.to_thread(_run)
+    return cast(int, await db._run_sqlite_op(_run))
 
 
 async def get_session_messages(db: Any, session_id: str) -> list[Any]:
@@ -383,7 +391,8 @@ async def replace_session_messages(
         db._sqlite_conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
         for item in normalized_messages:
             db._sqlite_conn.execute(
-                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES "
+                "(?, ?, ?, ?, ?)",
                 (session_id, item["role"], item["content"], 0, now),
             )
         db._sqlite_conn.execute(

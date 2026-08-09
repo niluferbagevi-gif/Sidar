@@ -4,6 +4,7 @@ import types
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 
 # core.db imports jwt at module import time in test env
 sys.modules.setdefault("jwt", types.SimpleNamespace())
@@ -151,6 +152,110 @@ def test_init_replaces_placeholder_sqlite_database_url_from_config(monkeypatch, 
     assert "sidar_memory.db" in mem.cfg.DATABASE_URL
 
 
+def test_memory_encrypts_db_content_and_decrypts_history(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    key = Fernet.generate_key().decode("utf-8")
+    mem = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+
+    async def scenario():
+        await mem.initialize()
+        await mem.set_active_user("u-encrypted", "ada")
+        session_id = mem.active_session_id
+        await mem.add("user", "gizli konuşma")
+
+        stored = mem.db.messages[session_id][0].content
+        assert stored.startswith("fernet:v1:")
+        assert "gizli konuşma" not in stored
+
+        history = await mem.get_session_history(session_id)
+        assert history[0]["content"] == "gizli konuşma"
+
+        assert await mem.load_session(session_id) is True
+        assert mem.get_messages_for_llm() == [{"role": "user", "content": "gizli konuşma"}]
+
+    asyncio.run(scenario())
+
+
+def test_memory_rejects_invalid_fernet_key_and_skips_double_encryption(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+
+    with pytest.raises(ValueError, match="Fernet"):
+        ConversationMemory(base_dir=tmp_path, encryption_key="not-a-valid-fernet-key")
+
+    key = Fernet.generate_key().decode("utf-8")
+    encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+    plaintext = ConversationMemory(base_dir=tmp_path)
+    already_encrypted = "fernet:v1:existing-token"
+
+    assert encrypted.encryption_enabled is True
+    assert plaintext.encryption_enabled is False
+    assert encrypted._encrypt_content(already_encrypted) == already_encrypted
+
+
+def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    key = Fernet.generate_key().decode("utf-8")
+    encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+    plaintext = ConversationMemory(base_dir=tmp_path)
+
+    token = encrypted._encrypt_content("saklı")
+    assert token.startswith("fernet:v1:")
+    with pytest.raises(MemoryAuthError):
+        plaintext._decrypt_content(token)
+
+
+def test_decrypt_content_raises_memory_auth_error_on_invalid_utf8(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    key = Fernet.generate_key().decode("utf-8")
+    encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
+    token = encrypted._encrypt_content("saklı")
+
+    monkeypatch.setattr(encrypted._fernet, "decrypt", lambda _token: b"\xff\xfe")
+
+    with pytest.raises(MemoryAuthError, match="not valid UTF-8"):
+        encrypted._decrypt_content(token)
+
+
+def test_memory_rotation_decrypts_with_previous_key_and_encrypts_with_current(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    previous_key = Fernet.generate_key().decode("utf-8")
+    unrelated_key = Fernet.generate_key().decode("utf-8")
+    current_key = Fernet.generate_key().decode("utf-8")
+    previous_memory = ConversationMemory(base_dir=tmp_path, encryption_key=previous_key)
+    rotated_memory = ConversationMemory(
+        base_dir=tmp_path,
+        encryption_key=current_key,
+        previous_encryption_keys=f"{unrelated_key},{previous_key}",
+    )
+
+    old_token = previous_memory._encrypt_content("eski kayıt")
+    new_token = rotated_memory._encrypt_content("yeni kayıt")
+
+    assert rotated_memory._decrypt_content(old_token) == "eski kayıt"
+    assert rotated_memory._decrypt_content(new_token) == "yeni kayıt"
+    with pytest.raises(MemoryAuthError, match="current or previous"):
+        previous_memory._decrypt_content(new_token)
+    with pytest.raises(MemoryAuthError, match="current or previous"):
+        rotated_memory._decrypt_content("fernet:v1:not-a-valid-token")
+
+
+def test_memory_rotation_rejects_invalid_previous_key(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+
+    with pytest.raises(ValueError, match="Fernet"):
+        ConversationMemory(
+            base_dir=tmp_path,
+            encryption_key=Fernet.generate_key().decode("utf-8"),
+            previous_encryption_keys="not-a-fernet-key",
+        )
+
+
 def test_user_required_and_repr_len(mem):
     assert "session=None" in repr(mem)
     assert len(mem) == 0
@@ -224,6 +329,55 @@ def test_async_main_flows(mem):
 
         not_ok = await mem.delete_session("404")
         assert not_ok is False
+
+    asyncio.run(scenario())
+
+
+def test_history_reads_from_database_when_cache_is_compacted(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(memory_module, "Database", FakeDB)
+    mem = ConversationMemory(base_dir=tmp_path, max_turns=1, keep_last=1)
+
+    async def scenario() -> None:
+        await mem.initialize()
+        await mem.set_active_user("u1")
+        sid = mem.active_session_id
+        assert sid is not None
+
+        await mem.add("user", "one")
+        await mem.add("assistant", "two")
+        await mem.add("user", "three")
+
+        assert [turn["content"] for turn in mem._turns] == ["two", "three"]
+        assert [turn["content"] for turn in await mem.get_history()] == ["one", "two", "three"]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=2)] == [
+            "two",
+            "three",
+        ]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=-1)] == [
+            "two",
+            "three",
+        ]
+        assert [turn["content"] for turn in await mem.get_session_history(sid, n_last=1)] == [
+            "three",
+        ]
+        assert await mem.get_session_history("   ") == []
+
+    asyncio.run(scenario())
+
+
+def test_get_history_without_active_session_respects_n_last(mem) -> None:
+    async def scenario() -> None:
+        await mem.initialize()
+        mem.active_session_id = None
+        mem._turns = [
+            {"role": "user", "content": "one"},
+            {"role": "assistant", "content": "two"},
+            {"role": "user", "content": "three"},
+        ]
+
+        assert [turn["content"] for turn in await mem.get_history()] == ["one", "two", "three"]
+        assert [turn["content"] for turn in await mem.get_history(n_last=2)] == ["two", "three"]
+        assert [turn["content"] for turn in await mem.get_history(n_last=-1)] == ["two", "three"]
 
     asyncio.run(scenario())
 

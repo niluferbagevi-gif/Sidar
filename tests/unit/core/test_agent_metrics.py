@@ -80,38 +80,38 @@ def test_render_prometheus_renders_delegation_and_step_metrics() -> None:
     text = collector.render_prometheus()
 
     assert (
-        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",status="ok",le="0.1"} 1'
-        in text
+        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",'
+        'status="ok",le="0.1"} 1' in text
     )
     assert (
-        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",status="ok",le="10.0"} 2'
-        in text
+        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",'
+        'status="ok",le="10.0"} 2' in text
     )
     assert (
-        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",status="ok",le="+Inf"} 2'
-        in text
+        'sidar_agent_delegation_duration_seconds_bucket{receiver="reviewer",intent="audit",'
+        'status="ok",le="+Inf"} 2' in text
     )
     assert (
-        'sidar_agent_delegation_duration_seconds_sum{receiver="reviewer",intent="audit",status="ok"} 7.100000'
-        in text
+        'sidar_agent_delegation_duration_seconds_sum{receiver="reviewer",intent="audit",'
+        'status="ok"} 7.100000' in text
     )
     assert (
-        'sidar_agent_delegation_duration_seconds_count{receiver="reviewer",intent="audit",status="ok"} 2'
-        in text
+        'sidar_agent_delegation_duration_seconds_count{receiver="reviewer",intent="audit",'
+        'status="ok"} 2' in text
     )
     assert 'sidar_agent_delegation_total{receiver="reviewer",intent="audit",status="ok"} 2' in text
 
     assert (
-        'sidar_agent_step_duration_seconds_bucket{agent="coder",step="delegate",target="qa",status="error",le="+Inf"} 1'
-        in text
+        'sidar_agent_step_duration_seconds_bucket{agent="coder",step="delegate",target="qa",'
+        'status="error",le="+Inf"} 1' in text
     )
     assert (
-        'sidar_agent_step_duration_seconds_sum{agent="coder",step="delegate",target="qa",status="error"} inf'
-        in text
+        'sidar_agent_step_duration_seconds_sum{agent="coder",step="delegate",target="qa",'
+        'status="error"} inf' in text
     )
     assert (
-        'sidar_agent_step_duration_seconds_count{agent="coder",step="delegate",target="qa",status="error"} 1'
-        in text
+        'sidar_agent_step_duration_seconds_count{agent="coder",step="delegate",target="qa",'
+        'status="error"} 1' in text
     )
     assert (
         'sidar_agent_step_total{agent="coder",step="delegate",target="qa",status="error"} 1' in text
@@ -128,12 +128,12 @@ def test_render_prometheus_renders_auth_hash_latency_and_slo_warnings() -> None:
 
     assert "# HELP sidar_auth_password_hash_duration_seconds" in text
     assert (
-        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",le="0.12"} 0'
-        in text
+        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",'
+        'le="0.12"} 0' in text
     )
     assert (
-        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",le="0.15"} 1'
-        in text
+        'sidar_auth_password_hash_duration_seconds_bucket{operation="verify",status="ok",'
+        'le="0.15"} 1' in text
     )
     assert 'sidar_auth_password_hash_total{operation="hash",status="mismatch"} 1' in text
     assert (

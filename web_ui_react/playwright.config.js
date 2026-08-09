@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 const playwrightHostPlatformOverride =
   process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE || "auto-detect";
+const chromiumExecutablePath =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
 export default defineConfig({
   testDir: "./e2e",
   metadata: { playwrightHostPlatformOverride },
@@ -19,5 +21,8 @@ export default defineConfig({
   use: {
     storageState: undefined,
     trace: "on-first-retry",
+    launchOptions: chromiumExecutablePath
+      ? { executablePath: chromiumExecutablePath }
+      : undefined,
   },
 });

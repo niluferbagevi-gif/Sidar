@@ -1,5 +1,5 @@
-"""
-Sidar Project - Tarayıcı Otomasyon Yöneticisi
+"""Sidar Project - Tarayıcı Otomasyon Yöneticisi.
+
 Playwright öncelikli, Selenium fallback'li dinamik web etkileşim katmanı.
 """
 
@@ -579,7 +579,11 @@ class BrowserManager:
         if not ok:
             return {"ok": False, "reason": current_path}
         current = Path(current_path)
-        baseline = Path(baseline_path).expanduser().resolve() if baseline_path.strip() else None
+        baseline = (
+            await asyncio.to_thread(lambda: Path(baseline_path).expanduser().resolve())
+            if baseline_path.strip()
+            else None
+        )
 
         if baseline is None:
             return {
@@ -625,7 +629,8 @@ class BrowserManager:
         if should_run_multimodal:
             prompt = (
                 "Bu ekran görüntüsünü UI regresyon açısından analiz et. "
-                "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift bulgularını listele."
+                "Buton kayması, hizalama bozulması, görünürlük sorunları ve layout drift "
+                "bulgularını listele."
             )
             with contextlib.suppress(Exception):
                 mm = await self._analyze_screenshot_with_multimodal(str(current), prompt)

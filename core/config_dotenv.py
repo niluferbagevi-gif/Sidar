@@ -8,6 +8,63 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class DotenvReloadPlan(BaseModel):
+    """Validated plan for the dotenv precedence chain used during reloads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    profile: str = ""
+    base_path: Path
+    advanced_path: Path
+    explicit_path: str = ""
+    sidar_keys_file: str = "~/.sidar_keys.env"
+    skip_default_layers: bool = False
+    labels: tuple[str, ...] = Field(
+        default=(
+            "base",
+            "advanced",
+            "environment",
+            "explicit:DOTENV_FILE",
+            "secret:SIDAR_KEYS_FILE",
+        ),
+        min_length=5,
+        max_length=5,
+    )
+
+    @field_validator("profile")
+    @classmethod
+    def _normalize_profile(cls, value: str) -> str:
+        """Normalize profile names before environment-specific file lookup."""
+        normalized = str(value or "").strip().lower()
+        if any(char in normalized for char in ("/", "\\", "..")):
+            raise ValueError("SIDAR_ENV profile cannot contain path separators")
+        return normalized
+
+
+def build_dotenv_reload_plan(
+    effective_env: dict[str, str],
+    *,
+    profile: str | None,
+    base_dir: Path,
+    skip_default_layers: bool,
+    validate_secret_overlay: Any,
+) -> DotenvReloadPlan:
+    """Build and validate the dotenv precedence plan without facade globals."""
+    selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
+    plan = DotenvReloadPlan(
+        profile=selected_profile,
+        base_path=base_dir / ".env",
+        advanced_path=base_dir / ".env.advanced",
+        explicit_path=effective_env.get("DOTENV_FILE", "").strip(),
+        sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
+        skip_default_layers=skip_default_layers,
+    )
+    validate_secret_overlay(plan.sidar_keys_file)
+    return plan
+
 
 def parse_dotenv_source_values(path: Path) -> dict[str, str]:
     """Parse simple dotenv assignments for source attribution without logging values."""
@@ -118,6 +175,23 @@ def resolve_dotenv_path(raw_path: str, *, base_dir: Path) -> Path:
     if not dotenv_path.is_absolute():
         dotenv_path = base_dir / dotenv_path
     return dotenv_path
+
+
+def validate_secret_overlay_outside_repo(raw_path: str, *, base_dir: Path) -> Path | None:
+    """Resolve a secret overlay and reject paths located inside the repository tree."""
+    cleaned_path = str(raw_path or "").strip()
+    if not cleaned_path:
+        return None
+    resolved_path = resolve_dotenv_path(cleaned_path, base_dir=base_dir).resolve()
+    resolved_base = base_dir.resolve()
+    try:
+        resolved_path.relative_to(resolved_base)
+    except ValueError:
+        return resolved_path
+    raise ValueError(
+        "SIDAR_KEYS_FILE repository dışında bulunmalıdır; repo içi dotenv dosyaları secret "
+        "overlay olarak kullanılamaz."
+    )
 
 
 def load_dotenv_if_exists(

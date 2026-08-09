@@ -16,7 +16,11 @@ except subprocess.CalledProcessError:
 
 py_files = [f for f in files if f.endswith('.py')]
 md_files = [f for f in files if f.endswith('.md')]
-test_files = [f for f in files if f.startswith('tests/test_') and f.endswith('.py')]
+test_files = [
+    f
+    for f in files
+    if f.startswith('tests/') and Path(f).name.startswith('test_') and f.endswith('.py')
+]
 production_py = [f for f in py_files if not f.startswith('tests/')]
 
 def line_count(rel_paths):

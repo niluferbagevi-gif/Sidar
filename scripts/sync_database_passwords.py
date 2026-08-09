@@ -21,7 +21,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 DATABASE_URL_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL")
-ALL_ENVIRONMENT_NAMES = ("development", "test")
+ALL_ENVIRONMENT_NAMES = ("development", "test", "production")
 ENV_CHAIN_KEYS = (
     *DATABASE_URL_KEYS,
     "POSTGRES_PASSWORD",
@@ -545,7 +545,9 @@ def sync_env_chain(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL parolalarını POSTGRES_PASSWORD ile eşitle",
+        description=(
+            "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL parolalarını POSTGRES_PASSWORD ile eşitle"
+        ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

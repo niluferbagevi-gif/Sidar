@@ -1,10 +1,11 @@
-"""
-Sidar Project - Otomatik Komut İşleyici
+"""Sidar Project - Otomatik Komut İşleyici.
+
 Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Asenkron Uyumlu).
 """
 
 import asyncio
 import inspect
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -19,11 +20,13 @@ from managers.package_info import PackageInfoManager
 from managers.system_health import SystemHealthManager
 from managers.web_search import WebSearchManager
 
+logger = logging.getLogger(__name__)
+
 
 class AutoHandle:
-    """
-    Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder
-    ve uygun manager metodunu çağırır.
+    """Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder.
+
+    Uygun manager metodunu çağırır.
 
     Dönen değer: (işlendi_mi: bool, yanıt: str)
     """
@@ -65,8 +68,7 @@ class AutoHandle:
     _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu|heal)\b", re.IGNORECASE)
 
     async def handle(self, text: str) -> tuple[bool, str]:
-        """
-        text: kullanıcı mesajı
+        """text: kullanıcı mesajı.
 
         Returns:
             (True, yanıt)  — otomatik işlendiyse
@@ -215,11 +217,12 @@ class AutoHandle:
             return True, "⚠ Kullanım: .heal <log_dosyası>"
         log_path = m.group(1).strip().strip("'\"")
         candidate = Path(log_path)
-        if not candidate.exists():
+        if not await asyncio.to_thread(candidate.exists):
             return True, f"⚠ Log dosyası bulunamadı: {log_path}"
         try:
             log_text = await asyncio.to_thread(candidate.read_text, encoding="utf-8")
         except Exception as exc:
+            logger.exception("AutoHandle .heal log file read failed: path=%s", candidate)
             return True, f"⚠ Log dosyası okunamadı: {exc}"
 
         context = build_local_failure_context(log_text, source="mypy", log_path=str(candidate))
@@ -291,6 +294,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ Denetim işlemi zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle audit command failed")
                 return True, f"⚠ Denetim sırasında hata oluştu: {exc}"
         return False, ""
 
@@ -311,6 +315,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ Sağlık raporu zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle health report command failed")
                 return True, f"⚠ Sağlık raporu alınamadı: {exc}"
         return False, ""
 
@@ -324,6 +329,7 @@ class AutoHandle:
             except TimeoutError:
                 return True, "⚠ GPU optimizasyonu zaman aşımına uğradı."
             except Exception as exc:
+                logger.exception("AutoHandle GPU optimization command failed")
                 return True, f"⚠ GPU optimizasyonu başarısız: {exc}"
         return False, ""
 
@@ -546,7 +552,7 @@ class AutoHandle:
         return False, ""
 
     async def _try_npm(self, t: str, raw: str) -> tuple[bool, str]:
-        """npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
+        """Npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
         m = re.search(
             r"(?:npm|node\s+paketi?|js\s+paketi?)\s*[:\-]?\s*([@\w\-_./]+)",
             t,
@@ -647,6 +653,7 @@ class AutoHandle:
 
     def _extract_dir_path(self, text: str) -> str | None:
         """Metinden dizin yolu çıkar (dosya adı içermeyen yollar için).
+
         Uzantılı dosya adlarını dizin olarak döndürmez; yalnızca açık dizin yolları alınır.
         """
         # Tırnak içindeki yol varsa ve uzantı içermiyorsa dizin say

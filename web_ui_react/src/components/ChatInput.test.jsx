@@ -1,4 +1,3 @@
-import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatInput } from "./ChatInput.jsx";
@@ -7,7 +6,7 @@ import { ChatInput } from "./ChatInput.jsx";
 const mockStore = { isStreaming: false };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => mockStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
 }));
 
 describe("ChatInput", () => {

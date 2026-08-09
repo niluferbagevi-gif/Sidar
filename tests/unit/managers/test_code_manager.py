@@ -7,13 +7,16 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import managers.code_manager as cm
+from managers.code import runner as code_runner
 from managers.security import FULL, SANDBOX
 
 # Capture the real _init_docker before any fixture patches it
@@ -52,6 +55,8 @@ def manager(tmp_path, monkeypatch):
     monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: None)
     sec = DummySecurity()
     cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
         DOCKER_RUNTIME="",
         DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
@@ -115,6 +120,27 @@ def test_runtime_and_limits_resolution(manager):
     assert limits["memory"] == "256m"
     assert limits["pids_limit"] == 64
     assert limits["timeout"] == 10
+
+
+def test_resolve_runtime_skips_allowlist_warning_when_unset(manager, caplog):
+    # Real installs write DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime (no
+    # empty-string sentinel, since get_list_env() always filters blank CSV
+    # items). An unset DOCKER_RUNTIME ("") should not trigger the allowlist
+    # warning on every sandbox call — it never changed the outcome anyway
+    # (code_manager.py only sets the Docker `runtime` kwarg when non-empty).
+    manager.docker_allowed_runtimes = ["runc", "runsc", "kata-runtime"]
+    manager.docker_runtime = ""
+    with caplog.at_level("WARNING"):
+        assert manager._resolve_runtime() == ""
+    assert "izinli listede değil" not in caplog.text
+
+    # An explicitly configured, disallowed runtime must still warn and fall
+    # back — only the "nothing configured" case is exempted.
+    caplog.clear()
+    manager.docker_runtime = "unknown"
+    with caplog.at_level("WARNING"):
+        assert manager._resolve_runtime() == ""
+    assert "izinli listede değil" in caplog.text
 
 
 def test_build_and_execute_docker_cli_command(manager, monkeypatch):
@@ -268,17 +294,11 @@ def test_execute_code_without_docker_branches(manager, monkeypatch):
     manager.security.exec_ok = True
     manager.security.level = SANDBOX
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "güvenlik politikası" in msg
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
     manager.security.level = FULL
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", True, raising=False)
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "DOCKER_REQUIRED=true" in msg
-
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", False, raising=False)
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local"))
-    ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local"
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
 
 def test_execute_code_with_mocked_docker_success(manager, monkeypatch):
@@ -579,6 +599,28 @@ def test_run_shell_rejects_nul_bytes(manager):
     assert "NUL" in msg
 
 
+def test_glob_search_filters_matches_denied_by_security(manager, tmp_path):
+    (tmp_path / "visible.py").write_text("print('x')", encoding="utf-8")
+    manager.security.read_ok = False
+
+    ok, msg = manager.glob_search("*.py", base_path=str(tmp_path))
+
+    assert ok is True
+    assert "Eşleşen dosya bulunamadı" in msg
+
+
+def test_find_destructive_shell_pattern_skips_empty_segments_and_empty_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert code_runner.find_destructive_shell_pattern("echo ok && ;") is None
+    assert code_runner.find_destructive_shell_pattern("cat data > /etc/passwd") == "> /etc/passwd"
+    assert code_runner.find_destructive_shell_pattern("chown -R app /srv/app") is None
+
+    monkeypatch.setattr(code_runner.shlex, "split", lambda _segment: [])
+
+    assert code_runner.find_destructive_shell_pattern("echo") is None
+
+
 def test_run_shell_paths(manager, monkeypatch, tmp_path):
     manager.security.shell_ok = False
     ok, _ = manager.run_shell("echo 1")
@@ -598,6 +640,68 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
     )
     ok, out = manager.run_shell("echo hello", cwd=str(tmp_path))
     assert ok and out == "hello"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Boşluk/bayrak sırası varyasyonları — eski sabit alt-dizge kontrolü
+        # ("rm -rf /" in command.lower()) bunları atlıyordu.
+        "rm  -rf  /",
+        "rm -r -f /",
+        "rm -fr /",
+        "rm --recursive --force /",
+        "rm -Rf /",
+        # Değişken/komut ikamesi — gerçek kabuk (bash -lc) çalışma zamanında
+        # çözülür, statik metin üzerinde hiç görünmez.
+        "x=/; rm -rf $x",
+        "rm -rf $TARGET",
+        "rm -rf `echo /`",
+        "rm -rf $(echo /)",
+        # Diğer yıkıcı komut aileleri, aynı bayrak/hedef varyasyonlarıyla.
+        "mkfs.ext4 /dev/sdb1",
+        "shred -n 1 /dev/sda",
+        "wipefs --all /dev/nvme0n1",
+        "dd if=image.raw of=/dev/sda bs=4M",
+        "chmod --recursive 777 /",
+        "chmod -R a+rwx /",
+        "chown -R root /",
+        "chown --recursive root:root /home",
+        # Hatalı tırnaklama statik ayrıştırmayı bozuyorsa yıkıcı komutlar
+        # güvenli kabul edilmemeli.
+        'rm -rf "/',
+        'mkfs.ext4 "/dev/sdb1',
+        # Dinamik hedefler bash çalışma zamanında çözüleceği için fail-closed.
+        "dd if=image.raw of=$TARGET",
+        "shred $TARGET",
+    ],
+)
+def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):
+    """Regression test: the destructive-pattern check must resist bypass attempts.
+
+    It must not be defeated by whitespace/flag-order variations or by hiding
+    the target behind shell variable/command substitution (see
+    managers/code/runner.py's find_destructive_shell_pattern for the
+    documented limits of this check).
+    """
+    ok, msg = manager.run_shell(command, allow_shell_features=True)
+    assert not ok and "Engellendi" in msg, (command, msg)
+
+
+def test_run_shell_allows_non_destructive_shell_features(manager, monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="ok", stderr=""),
+    )
+    for command in (
+        "rm -rf ./build",
+        "rm -rf node_modules",
+        "chmod 755 ./scripts",
+        "echo hello && git status",
+    ):
+        ok, _ = manager.run_shell(command, allow_shell_features=True)
+        assert ok, command
 
 
 def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
@@ -742,7 +846,7 @@ def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(manager, tmp
 
 
 def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(manager, tmp_path, monkeypatch):
-    """uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
+    """Uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
     py_file = tmp_path / "sample.py"
     py_file.write_text("value = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -879,9 +983,188 @@ def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
     assert ok and report["issues"][0]["message"] == "warn"
 
 
+def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=True,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    calls = []
+
+    def _init_success(self):
+        calls.append("init")
+        self.docker_available = True
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _init_success)
+    monkeypatch.setattr(
+        cm.CodeManager, "_autodetect_project_test_image", lambda self: calls.append("autodetect")
+    )
+
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    assert calls == []
+    assert manager._docker_initialized is False
+    manager.ensure_docker_initialized()
+    assert calls == ["init", "autodetect"]
+    assert manager._docker_state is cm.DockerState.READY
+    manager.ensure_docker_initialized()
+    assert calls == ["init", "autodetect"]
+
+
+def test_code_manager_disabled_backend_skips_docker_initialization(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="disabled",
+        DOCKER_AUTODETECT=True,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    monkeypatch.setattr(
+        cm.CodeManager,
+        "_init_docker",
+        lambda self: (_ for _ in ()).throw(AssertionError("unexpected docker init")),
+    )
+
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+    ok, message = manager.execute_code("print(1)")
+
+    assert ok is False
+    assert "CODE_EXECUTION_BACKEND=disabled" in message
+    assert manager._docker_initialized is False
+    assert manager._docker_state is cm.DockerState.UNINITIALIZED
+
+
+def test_code_manager_retries_after_failed_lazy_docker_init(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
+        DOCKER_INIT_MAX_ATTEMPTS=2,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    attempts = []
+
+    def _flaky_init(self):
+        attempts.append("init")
+        self.docker_available = len(attempts) == 2
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _flaky_init)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    manager.ensure_docker_initialized()
+    assert manager._docker_state is cm.DockerState.FAILED
+    assert manager._docker_initialized is False
+
+    manager.ensure_docker_initialized()
+    assert manager._docker_state is cm.DockerState.READY
+    assert attempts == ["init", "init"]
+
+
+def test_code_manager_lazy_docker_init_is_thread_safe(tmp_path, monkeypatch) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    calls = []
+
+    def _slow_init(self):
+        time.sleep(0.01)
+        calls.append("init")
+        self.docker_available = True
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _slow_init)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    threads = [threading.Thread(target=manager.ensure_docker_initialized) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert calls == ["init"]
+    assert manager._docker_state is cm.DockerState.READY
+
+
+def test_code_manager_rejects_unknown_backend(tmp_path) -> None:
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="podman",
+        DOCKER_AUTODETECT=False,
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=False,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported CODE_EXECUTION_BACKEND"):
+        cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+
+def test_code_manager_bool_coercion_uses_default_for_unknown_text(caplog) -> None:
+    assert cm._coerce_bool("maybe", default=False) is False
+    assert cm._coerce_bool("maybe", default=True) is True
+    assert "Unknown boolean value" in caplog.text
+
+
 def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     sec = DummySecurity()
     cfg = SimpleNamespace(
+        CODE_EXECUTION_BACKEND="docker",
+        DOCKER_AUTODETECT=False,
         DOCKER_RUNTIME="",
         DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
         DOCKER_MICROVM_MODE="off",
@@ -905,8 +1188,10 @@ def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(cm.CodeManager, "_try_docker_cli_fallback", lambda _self: False)
     monkeypatch.setattr(cm.CodeManager, "_try_wsl_socket_fallback", lambda _self, _mod: False)
     monkeypatch.delitem(sys.modules, "docker", raising=False)
+    lazy_manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+    assert lazy_manager._docker_initialized is False
     with pytest.raises(ImportError):
-        cm.CodeManager(sec, tmp_path, cfg=cfg)
+        lazy_manager.ensure_docker_initialized()
 
     monkeypatch.setattr(cm.CodeManager, "_init_docker", original_init)
     m = cm.CodeManager(sec, tmp_path, cfg=cfg)
@@ -995,6 +1280,35 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
     monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is err_docker)
     manager._init_docker()
     assert manager.docker_available is False
+
+
+def test_init_docker_uses_cached_docker_module_from_sys_modules(manager, monkeypatch):
+    original_import = builtins.__import__
+
+    def _fail_if_docker_imported(name, *args, **kwargs):
+        if name == "docker":
+            raise AssertionError("cached docker module should avoid import")
+        return original_import(name, *args, **kwargs)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.pinged = False
+
+        def ping(self) -> None:
+            self.pinged = True
+
+    fake_client = FakeClient()
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: fake_client
+
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    monkeypatch.setattr(builtins, "__import__", _fail_if_docker_imported)
+
+    _real_init_docker(manager)
+
+    assert manager.docker_available is True
+    assert manager.docker_client is fake_client
+    assert fake_client.pinged is True
 
 
 def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
@@ -1135,9 +1449,8 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
         "_execute_code_with_docker_cli",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")),
     )
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
     ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local-fallback"
+    assert not ok and "host üzerinde izolasyonsuz" in msg
 
 
 def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
@@ -2017,9 +2330,11 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "read_text",
-        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("nope"))
-        if self == py_bad
-        else original_read_text(self, *a, **k),
+        lambda self, *a, **k: (
+            (_ for _ in ()).throw(RuntimeError("nope"))
+            if self == py_bad
+            else original_read_text(self, *a, **k)
+        ),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="**/*.py")
     assert ok and "ok.py" in msg
@@ -2030,9 +2345,11 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
     monkeypatch.setattr(
         cm.Path,
         "relative_to",
-        lambda self, *_a, **_k: (_ for _ in ()).throw(ValueError("forced"))
-        if self == py_ok
-        else original_relative_to(self, *_a, **_k),
+        lambda self, *_a, **_k: (
+            (_ for _ in ()).throw(ValueError("forced"))
+            if self == py_ok
+            else original_relative_to(self, *_a, **_k)
+        ),
     )
     ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.py")
     assert ok and "ok.py" in msg
@@ -2133,8 +2450,11 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
 
 
 def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, monkeypatch):
-    """Satır 334: except ImportError bloğunda docker_module None değil ve
-    _try_wsl_socket_fallback True döndürünce erken return yapılır."""
+    """Satır 334: except ImportError bloğunda erken dönüş kapsamını test eder.
+
+    docker_module None değil ve _try_wsl_socket_fallback True döndürünce erken
+    return yapılır.
+    """
 
     class _ImportErrDocker(ModuleType):
         @staticmethod
@@ -2165,9 +2485,11 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
 
 
 def test_init_docker_exception_fallback_module_none_import_error(manager, monkeypatch):
-    """Satırlar 343-346: except Exception bloğunda docker_module None (ilk import non-ImportError
-    fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı."""
+    """Satırlar 343-346: except Exception bloğunda fallback_module = None dalını test eder.
 
+    docker_module None (ilk import non-ImportError fırlattı), ikinci import
+    ImportError fırlatır → fallback_module = None dalı kapsamı.
+    """
     import builtins as _builtins
 
     # Fixture _init_docker'ı lambda self: None olarak patchiyor; gerçek implementasyonu
@@ -2638,3 +2960,190 @@ def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
 
     assert ok is False
     assert "Listeleme dizini proje kökü dışında" in msg
+
+
+def test_shell_sandbox_selects_explicit_and_default_images(manager) -> None:
+    adapter = manager.shell_sandbox
+
+    assert adapter.select_shell_sandbox_image("python -V", "custom:image") == "custom:image"
+    assert adapter.select_shell_sandbox_image("python -V", None) == manager.docker_image
+    assert adapter.select_shell_sandbox_image("uv run pytest -q", None) == manager.docker_test_image
+
+
+def test_shell_sandbox_command_invokes_pytest_static_helper() -> None:
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("pytest -q") is True
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m pytest tests") is True
+    assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m unittest") is False
+
+
+def test_shell_sandbox_builds_preflight_via_orchestrator(manager, monkeypatch) -> None:
+    def fake_build(owner, command):
+        assert owner is manager
+        assert command == "pytest -q"
+        return "preflight"
+
+    monkeypatch.setattr(cm.test_runner_orchestrator, "build_shell_preflight_command", fake_build)
+
+    assert manager.shell_sandbox.build_shell_preflight_command("pytest -q") == "preflight"
+
+
+def test_shell_sandbox_run_initializes_docker_and_delegates(manager, monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_ensure() -> None:
+        calls["initialized"] = True
+
+    def fake_run(owner, command, cwd=None, image=None):
+        calls["owner"] = owner
+        calls["command"] = command
+        calls["cwd"] = cwd
+        calls["image"] = image
+        return True, "ok"
+
+    manager.code_execution_backend = "docker"
+    monkeypatch.setattr(manager, "ensure_docker_initialized", fake_ensure)
+    monkeypatch.setattr(cm.test_runner_orchestrator, "run_shell_in_sandbox", fake_run)
+
+    assert manager.shell_sandbox.run_shell_in_sandbox("pytest -q", cwd="/repo", image="img") == (
+        True,
+        "ok",
+    )
+    assert calls == {
+        "initialized": True,
+        "owner": manager,
+        "command": "pytest -q",
+        "cwd": "/repo",
+        "image": "img",
+    }
+
+
+def test_canonical_project_image_alias_facade_uses_legacy_prefixes() -> None:
+    assert cm._canonical_project_image_alias("sidar-ai:dev") == "sidar:dev"
+    assert cm._canonical_project_image_alias("external:dev") is None
+
+
+def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch) -> None:
+    original_import = builtins.__import__
+
+    class _Client:
+        def __init__(self) -> None:
+            self.ping_called = False
+
+        def ping(self) -> None:
+            self.ping_called = True
+
+    client = _Client()
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: client
+
+    def _import_fake_docker(name, *args, **kwargs):
+        if name == "docker":
+            return fake_docker
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(builtins, "__import__", _import_fake_docker)
+
+    _real_init_docker(manager)
+
+    assert manager.docker_client is client
+    assert manager.docker_available is True
+    assert client.ping_called is True
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "old"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_directly_when_file_does_not_exist(
+    manager, tmp_path, monkeypatch
+):
+    target = tmp_path / "brand_new.txt"
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "fresh content", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "fresh content"
+    gate.request_approval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "new"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "bye world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_blocks_when_approval_rejected(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_file_missing(manager, tmp_path):
+    missing = tmp_path / "does_not_exist.txt"
+
+    ok, message = await manager.patch_file_hitl(str(missing), "hello", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_target_block_not_found(manager, tmp_path):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+
+    ok, message = await manager.patch_file_hitl(str(target), "not-in-file", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"
