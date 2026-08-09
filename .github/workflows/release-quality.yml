@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: anchore/sbom-action/download-syft@v0.24.0
       - uses: sigstore/cosign-installer@v3.7.0
       - name: Generate CycloneDX SBOM
         run: syft dir:. -o cyclonedx-json=artifacts/sbom/sidar.cdx.json
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Docker image
         run: docker build -t sidar:${{ github.sha }} .
-      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: anchore/sbom-action/download-syft@v0.24.0
       - uses: sigstore/cosign-installer@v3.7.0
       - name: Generate Docker image SBOM
         run: syft sidar:${{ github.sha }} -o cyclonedx-json=artifacts/sbom/sidar-image.cdx.json
@@ -160,7 +160,7 @@ jobs:
             benchmark-coverage-trend-${{ runner.os }}-py311-main-
             benchmark-coverage-trend-${{ runner.os }}-py311-
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
