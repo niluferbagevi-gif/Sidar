@@ -26,6 +26,8 @@ test.describe("Operations tools panel e2e", () => {
   });
 
   test("Poyraz ve Coverage araçları REST çıktısı üretir", async ({ page }) => {
+    await page.getByRole("link", { name: "Poyraz & Coverage" }).click();
+
     await expect(page.getByRole("heading", { name: "Poyraz & Coverage Kontrol Paneli" })).toBeVisible();
 
     await page.getByRole("button", { name: "Landing üret" }).click();

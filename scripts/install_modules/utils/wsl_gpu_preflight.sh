@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_WSL_GPU_PREFLIGHT_SH_LOADED=1
 
-# Early WSL2 + NVIDIA/RTX health gate.  This runs before package installation so
+# Early WSL2 + NVIDIA health gate.  This runs before package installation so
 # driver passthrough problems are reported before the installer spends time on
 # uv, Docker, Ollama models, or frontend assets.
 
@@ -94,12 +95,22 @@ run_wsl2_gpu_preflight() {
             driver_version="$($smi_cmd --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 || true)"
             vram_mb="$($smi_cmd --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1 | tr -d ' ,' || true)"
             compute_capability="$($smi_cmd --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
-            cuda_version="$($smi_cmd 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' | head -n1 || true)"
+            if declare -F detect_cuda_driver_capability >/dev/null 2>&1; then
+                cuda_version=$(detect_cuda_driver_capability "$smi_cmd")
+            else
+                cuda_version="$($smi_cmd 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' | head -n1 || true)"
+            fi
 
             [[ -n "$gpu_name" ]] && ok "GPU: $gpu_name"
             [[ -n "$driver_version" ]] && ok "Windows NVIDIA sürücüsü: $driver_version"
-            [[ -n "$cuda_version" ]] && ok "WSL2 CUDA passthrough sürümü: $cuda_version"
+            [[ -n "$cuda_version" ]] && ok "Driver CUDA API capability: $cuda_version"
             [[ -n "$compute_capability" ]] && ok "Compute capability: $compute_capability"
+            export SIDAR_GPU_PREFLIGHT_NAME="$gpu_name"
+            export SIDAR_GPU_PREFLIGHT_DRIVER_VERSION="$driver_version"
+            export SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY="$cuda_version"
+            export SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="$compute_capability"
+            export SIDAR_GPU_PREFLIGHT_VRAM_MB="$vram_mb"
+            export SIDAR_USE_GPU_PREFLIGHT_FACTS=true
             if [[ "$vram_mb" =~ ^[0-9]+$ ]]; then
                 ok "VRAM: ${vram_mb} MiB"
                 if (( vram_mb < 8192 )); then
@@ -107,9 +118,10 @@ run_wsl2_gpu_preflight() {
                 fi
             fi
 
-            if [[ -n "$gpu_name" && ! "$gpu_name" =~ (RTX|Blackwell|Ada|Ampere|NVIDIA) ]]; then
-                sidar_report_wsl_gpu_problem warn "GPU adı RTX/NVIDIA LLM hızlandırma profiline benzemiyor: $gpu_name"
-            fi
+            # GPU product names are informational only: Tesla, Quadro, OEM and
+            # virtualized devices may omit consumer architecture/brand tokens.
+            # Capability decisions use nvidia-smi success, VRAM, compute capability,
+            # driver CUDA capability and the WSL libcuda bridge instead.
         fi
     fi
 
@@ -122,7 +134,9 @@ run_wsl2_gpu_preflight() {
 
     if [[ -e /usr/lib/wsl/lib/libcuda.so || -e /usr/lib/wsl/lib/libcuda.so.1 ]] || ldconfig -p 2>/dev/null | grep -q 'libcuda.so'; then
         ok "libcuda WSL2 içinde görünür durumda."
+        export SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=true
     else
+        export SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=false
         sidar_report_wsl_gpu_problem fail "libcuda.so WSL2 içinde bulunamadı. NVIDIA Windows sürücüsü WSL2'ye aktarılmamış görünüyor."
         failures=$((failures + 1))
     fi

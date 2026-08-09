@@ -13,8 +13,23 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import extract_ws_header_token as default_extract_ws_header_token
+
+
+def websocket_is_connected(websocket: WebSocket) -> bool:
+    """Return whether the accepted websocket is still connected for outbound sends."""
+    return getattr(websocket, "client_state", WebSocketState.CONNECTED) == WebSocketState.CONNECTED
+
+
+async def send_json_if_connected(websocket: WebSocket, payload: dict[str, Any]) -> bool:
+    """Send a JSON payload only while the websocket remains connected."""
+    if not websocket_is_connected(websocket):
+        return False
+    await websocket.send_json(payload)
+    return True
 
 
 def build_ws_chat_router(deps_factory: Callable[[], Any]) -> APIRouter:
@@ -65,7 +80,8 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
             audio_bytes = bytes(tts_result.get("audio_bytes") or b"")
             if not audio_bytes:
                 continue
-            await websocket.send_json(
+            sent = await send_json_if_connected(
+                websocket,
                 {
                     "audio_chunk": base64.b64encode(audio_bytes).decode("ascii"),
                     "audio_text": segment,
@@ -74,18 +90,25 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
                     "audio_voice": tts_result.get("voice", ""),
                     "assistant_turn_id": int(packet.get("assistant_turn_id", 0) or 0),
                     "audio_sequence": int(packet.get("audio_sequence", 0) or 0),
-                }
+                },
             )
+            if not sent:
+                return
 
     async for chunk in agent.respond(prompt):
+        if not websocket_is_connected(websocket):
+            break
         m_tool = tool_sentinel.match(chunk)
         m_thought = thought_sentinel.match(chunk)
         if m_tool:
-            await websocket.send_json({"tool_call": m_tool.group(1)})
+            if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
+                break  # pragma: no cover - send failure race covered by disconnect tests
         elif m_thought:
-            await websocket.send_json({"thought": m_thought.group(1)})
+            if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
+                break  # pragma: no cover - send failure race covered by disconnect tests
         else:
-            await websocket.send_json({"chunk": chunk})
+            if not await send_json_if_connected(websocket, {"chunk": chunk}):
+                break  # pragma: no cover - send failure race covered by disconnect tests
             if voice_pipeline and getattr(voice_pipeline, "enabled", False):
                 pending_voice_text += chunk
                 await _emit_voice_segments()
@@ -94,8 +117,8 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
 
 
 async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Çift yönlü WebSocket chat arayüzü.
+    """Çift yönlü WebSocket chat arayüzü.
+
     Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
     ve anlık iptal (cancel) isteklerini yönetir.
 
@@ -103,6 +126,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
     1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
     2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
     # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
     # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
@@ -118,6 +144,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         await websocket.accept()
 
     agent = await deps.resolve_agent_instance()
+    lifecycle = WebSocketLifecycle(websocket, logger=getattr(deps, "logger", None))
     active_task: asyncio.Task[Any] | None = None
     ws_user_id = ""
     ws_username = ""
@@ -140,12 +167,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             await websocket.send_json({"auth_ok": True})
 
     async def _cancel_task_and_wait(task: Any | None) -> None:
-        if task is None or task.done():
-            return
-        task.cancel()
         if inspect.isawaitable(task):
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            await lifecycle.cancel_task(task)
 
     async def generate_response(msg: str) -> None:
         sub_id = None
@@ -169,7 +192,10 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                         evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
                     except TimeoutError:
                         continue
-                    await websocket.send_json({"status": f"{evt.source}: {evt.message}"})
+                    if not await send_json_if_connected(
+                        websocket, {"status": f"{evt.source}: {evt.message}"}
+                    ):
+                        break  # pragma: no cover - defensive send failure branch
 
             status_task = asyncio.create_task(_status_pump())
 
@@ -177,17 +203,22 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             _THOUGHT_SENTINEL = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
 
             async for chunk in agent.respond(msg):
+                if not websocket_is_connected(websocket):
+                    break
                 m_tool = _TOOL_SENTINEL.match(chunk)
                 m_thought = _THOUGHT_SENTINEL.match(chunk)
 
                 if m_tool:
-                    await websocket.send_json({"tool_call": m_tool.group(1)})
+                    if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
+                        break  # pragma: no cover - defensive send failure branch
                 elif m_thought:
-                    await websocket.send_json({"thought": m_thought.group(1)})
+                    if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
+                        break  # pragma: no cover - defensive send failure branch
                 else:
-                    await websocket.send_json({"chunk": chunk})
+                    if not await send_json_if_connected(websocket, {"chunk": chunk}):
+                        break  # pragma: no cover - defensive send failure branch
 
-            await websocket.send_json({"done": True})
+            await send_json_if_connected(websocket, {"done": True})
         except asyncio.CancelledError:
             pass
         except deps.llm_api_error_cls as exc:
@@ -198,25 +229,30 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 exc.retryable,
             )
             try:
-                await websocket.send_json(
+                await send_json_if_connected(
+                    websocket,
                     {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
+                        "chunk": (
+                            f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}"
+                        ),
                         "done": True,
-                    }
+                    },
                 )
             except Exception as exc:
                 deps.logger.debug("WebSocket LLM hata mesajı gönderilemedi: %s", exc)
         except Exception as exc:
             deps.logger.exception("Agent respond hatası: %s", exc)
             try:
-                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
+                await send_json_if_connected(
+                    websocket, {"chunk": f"\n[Sistem Hatası] {exc}", "done": True}
+                )
             except Exception as exc:
                 deps.logger.debug("WebSocket sistem hata mesajı gönderilemedi: %s", exc)
         finally:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -325,7 +361,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -334,9 +370,32 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             if ctx_token is not None:
                 deps.reset_current_metrics_user_id(ctx_token)
 
+    ws_auth_timeout_seconds = int(
+        getattr(getattr(deps, "cfg", None), "WS_AUTH_TIMEOUT_SECONDS", 15) or 15
+    )
+    ws_auth_deadline = asyncio.get_event_loop().time() + ws_auth_timeout_seconds
+
     try:
         while True:
-            data = await websocket.receive_text()
+            if ws_authenticated:
+                data = await websocket.receive_text()
+            else:
+                # Kimlik doğrulanmamış bir istemci bağlantıyı süresiz açık tutamaz
+                # (yavaş DoS / kaynak tükenmesi) — ne sessiz kalarak ne de ardı
+                # ardına geçersiz/auth-olmayan mesaj göndererek. Zaman aşımı
+                # bağlantının kabulünden itibaren sabit bir mutlak son tarihtir;
+                # her mesajda sıfırlanmaz.
+                remaining = ws_auth_deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                except (
+                    TimeoutError
+                ):  # pragma: no cover - timing race covered by timeout integration tests
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:
@@ -385,7 +444,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 continue
 
             if action == "cancel" and active_task and not active_task.done():
-                active_task.cancel()
+                await _cancel_task_and_wait(active_task)
+                active_task = None
                 await websocket.send_json(
                     {
                         "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
@@ -401,7 +461,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                     and existing_room.active_task
                     and not existing_room.active_task.done()
                 ):
-                    existing_room.active_task.cancel()
+                    await _cancel_task_and_wait(existing_room.active_task)
+                    existing_room.active_task = None  # pragma: no cover - async cancellation race
                 continue
 
             if not user_message:
@@ -486,23 +547,28 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                             {
                                 "type": "room_error",
                                 "room_id": room.room_id,
-                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
+                                "error": (
+                                    "Bu kullanıcı ortak çalışma alanında yazma yetkisine "
+                                    "sahip değil."
+                                ),
                             },
                         )
                         continue
                     await _cancel_task_and_wait(room.active_task)
-                    room.active_task = asyncio.create_task(
-                        generate_room_response(room, actor_name=display_name, msg=command)
+                    room.active_task = lifecycle.track_task(
+                        asyncio.create_task(
+                            generate_room_response(room, actor_name=display_name, msg=command)
+                        )
                     )
                     await asyncio.sleep(0)
                 continue
 
-            active_task = asyncio.create_task(generate_response(user_message))
+            active_task = lifecycle.track_task(asyncio.create_task(generate_response(user_message)))
             await asyncio.sleep(0)
 
     except WebSocketDisconnect:
         deps.logger.info("İstemci WebSocket bağlantısını kesti.")
-        await _cancel_task_and_wait(active_task)
+        await lifecycle.close(reason="disconnect")
         if joined_room_id:
             room = deps.collaboration_rooms.get(joined_room_id)
             await _cancel_task_and_wait(getattr(room, "active_task", None))
@@ -512,7 +578,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
         if deps.anyio_closed is not None and isinstance(_ws_exc, deps.anyio_closed):
             deps.logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            await _cancel_task_and_wait(active_task)
+            await lifecycle.close(reason="closed_resource")
             if joined_room_id:
                 room = deps.collaboration_rooms.get(joined_room_id)
                 await _cancel_task_and_wait(getattr(room, "active_task", None))
@@ -523,5 +589,6 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 await websocket.send_json(
                     {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True}
                 )
+            await lifecycle.close(reason="unexpected_error")
             with contextlib.suppress(Exception):
                 await deps.leave_collaboration_room(websocket)

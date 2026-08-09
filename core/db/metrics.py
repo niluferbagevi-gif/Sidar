@@ -6,6 +6,48 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 
+async def upsert_user_quota(
+    db: Any, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
+) -> None:
+    """Create or update a user's non-negative daily usage limits."""
+    tokens = max(0, int(daily_token_limit or 0))
+    requests = max(0, int(daily_request_limit or 0))
+    if db._backend == "postgresql":
+        assert db._pg_pool is not None
+        async with db._pg_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id)
+                DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
+                              daily_request_limit=EXCLUDED.daily_request_limit
+                """,
+                user_id,
+                tokens,
+                requests,
+            )
+        return
+
+    assert db._sqlite_conn is not None
+
+    def _run() -> None:
+        assert db._sqlite_conn is not None
+        db._sqlite_conn.execute(
+            """
+            INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                daily_token_limit=excluded.daily_token_limit,
+                daily_request_limit=excluded.daily_request_limit
+            """,
+            (user_id, tokens, requests),
+        )
+        db._sqlite_conn.commit()
+
+    await db._run_sqlite_op(_run)
+
+
 async def record_provider_usage_daily(
     db: Any, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
 ) -> None:
@@ -19,10 +61,12 @@ async def record_provider_usage_daily(
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used,
+                tokens_used)
                 VALUES ($1, $2, $3::date, $4, $5)
                 ON CONFLICT (user_id, provider, usage_date)
-                DO UPDATE SET requests_used=provider_usage_daily.requests_used + EXCLUDED.requests_used,
+                DO UPDATE SET requests_used=provider_usage_daily.requests_used +
+                EXCLUDED.requests_used,
                               tokens_used=provider_usage_daily.tokens_used + EXCLUDED.tokens_used
                 """,
                 user_id,
@@ -39,7 +83,8 @@ async def record_provider_usage_daily(
         assert db._sqlite_conn is not None
         db._sqlite_conn.execute(
             """
-            INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+            INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used,
+            tokens_used)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id, provider, usage_date)
             DO UPDATE SET requests_used=requests_used + excluded.requests_used,
@@ -86,13 +131,15 @@ async def get_user_quota_status(
             assert db._sqlite_conn is not None
             q = sqlite_fetchone(
                 db._sqlite_conn.execute(
-                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
+                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE "
+                    "user_id=?",
                     (user_id,),
                 )
             )
             u = sqlite_fetchone(
                 db._sqlite_conn.execute(
-                    "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
+                    "SELECT requests_used, tokens_used FROM provider_usage_daily"
+                    " WHERE user_id=? AND provider=? AND usage_date=?",
                     (user_id, provider_name, today),
                 )
             )

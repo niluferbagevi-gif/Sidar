@@ -237,6 +237,36 @@ def test_build_command_cli_non_ollama_omits_model() -> None:
     assert "--model" not in cmd
 
 
+def test_launcher_event_loop_manager_runs_coroutine() -> None:
+    async def _coro() -> str:
+        return "ok"
+
+    assert main.LauncherEventLoopManager().run(_coro()) == "ok"
+
+
+@pytest.mark.asyncio
+async def test_launcher_event_loop_manager_rejects_nested_loop() -> None:
+    async def _coro() -> str:
+        return "nested"
+
+    coro = _coro()
+    with pytest.raises(main.LauncherEventLoopError):
+        main.LauncherEventLoopManager().run(coro)
+    coro.close()
+
+
+def test_reload_config_environment_reports_typed_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_config = types.SimpleNamespace(
+        reload_environment=lambda **_kwargs: (_ for _ in ()).throw(ValueError("bad env"))
+    )
+    monkeypatch.setattr(main, "config_module", fake_config)
+
+    assert main._reload_config_environment(profile="development", reason="test") is False
+    assert "Environment reload başarısız" in capsys.readouterr().out
+
+
 def test_launcher_doctor_preflight_prints_actionable_guidance(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -503,6 +533,94 @@ def test_launcher_doctor_preflight_skips_database_dependents_after_failed_databa
     assert "database_connectivity ve rag_readiness kontrolleri atlandı" in output
 
 
+def test_launcher_doctor_preflight_prompts_for_apply_all_when_interactive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.doctor as doctor
+    from core.doctor.launcher_preflight import (
+        LauncherDoctorPreflightHooks,
+        LauncherDoctorPreflightStyle,
+        run_launcher_doctor_preflight,
+    )
+
+    def _pass_check(name: str) -> SimpleNamespace:
+        return SimpleNamespace(name=name, status="pass", message="ok", details={})
+
+    for check_name in (
+        "check_database_env",
+        "check_database_connectivity",
+        "check_rag_readiness",
+        "check_graphrag_entity_memory_ready",
+        "check_gpu_memory_config",
+    ):
+        monkeypatch.setattr(doctor, check_name, lambda name=check_name: _pass_check(name))
+
+    confirm_calls: list[tuple[str, bool]] = []
+
+    def _confirm(prompt: str, default: bool) -> bool:
+        confirm_calls.append((prompt, default))
+        return True
+
+    run_launcher_doctor_preflight(
+        doctor_apply_all_yes=False,
+        hooks=LauncherDoctorPreflightHooks(
+            confirm=_confirm,
+            print_check_summary=lambda _check: None,
+            doctor_auto_fix_commands=lambda _details: [],
+            invoke_auto_fix=lambda *_args, **_kwargs: False,
+            clear_revalidation_cache=lambda: None,
+            final_check_after_auto_fix=lambda check, _applied: check,
+        ),
+        style=LauncherDoctorPreflightStyle(),
+        stdin_isatty=lambda: True,
+    )
+
+    assert confirm_calls == [
+        ("Doctor için bulunan tüm auto-fix önerileri tek seferde otomatik uygulansın mı?", False)
+    ]
+
+
+def test_launcher_doctor_preflight_reports_parallel_check_exception(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: SimpleNamespace(name="database_env", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_database_connectivity",
+        lambda: SimpleNamespace(
+            name="database_connectivity", status="pass", message="ok", details={}
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_readiness",
+        lambda: SimpleNamespace(name="rag_readiness", status="pass", message="ok", details={}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: SimpleNamespace(
+            name="graphrag_entity_memory_ready", status="pass", message="ok", details={}
+        ),
+    )
+
+    def _boom_gpu_check() -> SimpleNamespace:
+        raise RuntimeError("gpu telemetry unavailable")
+
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", _boom_gpu_check)
+
+    main._run_launcher_doctor_preflight()
+
+    output = capsys.readouterr().out
+    assert "Doctor ön kontrolü çalıştırılamadı: gpu telemetry unavailable" in output
+
+
 def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -660,6 +778,35 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     output = capsys.readouterr().out
     assert "scripts.unused_follow_up" not in output
     assert "Auto-fix Doctor/rag_readiness kontrolünü düzeltti" in output
+
+
+def test_doctor_auto_fix_runs_fallback_when_primary_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands: list[list[str]] = []
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={
+            "auto_fix": "uv run python -m scripts.primary_fix",
+            "auto_fix_fallback": "uv run python -m scripts.fallback_fix",
+        },
+    )
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: True)
+
+    def _run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(cmd)
+        return SimpleNamespace(returncode=1 if len(commands) == 1 else 0)
+
+    monkeypatch.setattr(main.subprocess, "run", _run)
+
+    assert main._run_doctor_auto_fix(check) is True
+    assert commands == [
+        ["uv", "run", "python", "-m", "scripts.primary_fix"],
+        ["uv", "run", "python", "-m", "scripts.fallback_fix"],
+    ]
+    assert "fallback komutları denenecek" in capsys.readouterr().out
 
 
 def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -880,6 +1027,100 @@ def test_launcher_session_save_load_normalizes_values(
     assert loaded["extra_args"]["port"] == "9999"
 
 
+def test_launcher_session_save_load_uses_file_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[int] = []
+
+    def _fake_flock(_fd: int, operation: int) -> None:
+        calls.append(operation)
+
+    monkeypatch.setattr(main.fcntl, "flock", _fake_flock)
+    session_path = tmp_path / ".sidar_session.json"
+
+    main._save_launcher_session(
+        {
+            "mode": "web",
+            "provider": "ollama",
+            "level": "full",
+            "log": "info",
+            "extra_args": {"host": "127.0.0.1", "port": "7860"},
+        },
+        session_path,
+    )
+    assert main._load_launcher_session(session_path) is not None
+
+    assert main.fcntl.LOCK_EX in calls
+    assert main.fcntl.LOCK_SH in calls
+    assert calls.count(main.fcntl.LOCK_UN) == 2
+    assert (session_path.with_suffix(session_path.suffix + ".lock").stat().st_mode & 0o777) == 0o600
+
+
+def test_run_doctor_auto_fix_stops_at_retry_limit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 2)
+    monkeypatch.setattr(main, "_run_doctor_auto_fix_command", lambda _cmd: True)
+
+    commands = [
+        "uv run python -m scripts.one",
+        "uv run python -m scripts.two",
+        "uv run python -m scripts.three",
+    ]
+    check = SimpleNamespace(
+        name="database_env",
+        status="fail",
+        details={"auto_fix_steps": commands, "status": "fail"},
+    )
+
+    assert main._run_doctor_auto_fix(check, apply_all_mode=True) is True
+
+    output = capsys.readouterr().out
+    assert "Auto-fix tekrar limiti aşıldı" in output
+
+
+def test_launcher_doctor_preflight_limits_total_auto_fix_attempts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import core.doctor as doctor
+
+    monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 1)
+    monkeypatch.setattr(main, "_DOCTOR_APPLY_ALL_APPROVED", True)
+
+    def _warn_check(name: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            name=name,
+            status="warn",
+            message=name,
+            details={"auto_fix": "uv run python -m scripts.seed_rag"},
+        )
+
+    monkeypatch.setattr(doctor, "check_database_env", lambda: _warn_check("database_env"))
+    monkeypatch.setattr(
+        doctor, "check_database_connectivity", lambda: _warn_check("database_connectivity")
+    )
+    monkeypatch.setattr(doctor, "check_rag_readiness", lambda: _warn_check("rag_readiness"))
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: _warn_check("graphrag_entity_memory_ready"),
+    )
+    monkeypatch.setattr(doctor, "check_gpu_memory_config", lambda: _warn_check("gpu_memory_config"))
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main,
+        "_invoke_doctor_auto_fix",
+        lambda check, _check_func, _apply_all_mode: calls.append(check.name) or True,
+    )
+
+    main._run_launcher_doctor_preflight(doctor_apply_all_yes=True)
+
+    output = capsys.readouterr().out
+    assert calls == ["database_env"]
+    assert "Doctor auto-fix toplam tekrar limiti aşıldı" in output
+
+
 def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SIDAR_CONFIG_QUIET", "false")
     monkeypatch.setenv("CUSTOM_ENV", "kept")
@@ -889,6 +1130,26 @@ def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch
     assert child_env["SIDAR_CONFIG_QUIET"] == "true"
     assert child_env["SIDAR_LAUNCHED_BY_MAIN"] == "true"
     assert child_env["CUSTOM_ENV"] == "kept"
+
+
+def test_launcher_child_env_does_not_force_skip_boot_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SIDAR_SKIP_BOOT_CHECKS", raising=False)
+
+    child_env = main._launcher_child_env()
+
+    assert "SIDAR_SKIP_BOOT_CHECKS" not in child_env
+
+
+def test_launcher_child_env_preserves_explicit_skip_boot_checks_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SIDAR_SKIP_BOOT_CHECKS", "1")
+
+    child_env = main._launcher_child_env()
+
+    assert child_env["SIDAR_SKIP_BOOT_CHECKS"] == "1"
 
 
 def test_maybe_bootstrap_development_env_runs_bootstrap_command(
@@ -1013,6 +1274,7 @@ def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch)
         ["main.py", "--quick", "cli", "--provider", "ollama", "--level", "full"],
     )
     monkeypatch.setattr(main, "validate_runtime_dependencies", lambda _mode: (True, None))
+    monkeypatch.setattr(main, "preflight", lambda _provider, **_: None)
 
     seen: dict[str, object] = {}
 
@@ -1326,10 +1588,7 @@ def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
 
     child_log = tmp_path / "logs" / "child.log"
     assert child_log.read_text(encoding="utf-8") == (
-        "$ python cli.py\n\n"
-        "[stdout] hello stdout\n"
-        "[stderr] warn stderr\n"
-        "\n[exit_code]\n0\n"
+        "$ python cli.py\n\n[stdout] hello stdout\n[stderr] warn stderr\n\n[exit_code]\n0\n"
     )
     out = capsys.readouterr().out
     assert "[stdout]" in out

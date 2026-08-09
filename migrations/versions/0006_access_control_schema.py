@@ -54,10 +54,10 @@ UUID_TYPE = SidarUUID()
 def _resolve_engine_name(bind: object) -> str:
     engine = getattr(bind, "engine", None)
     if engine is not None and getattr(engine, "name", None):
-        return str(getattr(engine, "name")).strip().lower()
+        return str(engine.name).strip().lower()
     dialect = getattr(bind, "dialect", None)
     if dialect is not None and getattr(dialect, "name", None):
-        return str(getattr(dialect, "name")).strip().lower()
+        return str(dialect.name).strip().lower()
     return ""
 
 

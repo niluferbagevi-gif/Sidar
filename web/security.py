@@ -7,7 +7,12 @@ wrapper names during the router modularization effort.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
+import threading
+import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -19,11 +24,72 @@ SIDAR_WS_CHAT_PROTOCOL = "sidar.chat.v1"
 SIDAR_WS_VOICE_PROTOCOL = "sidar.voice.v1"
 SIDAR_WS_HITL_PROTOCOL = "sidar.hitl.v1"
 _WS_PROTOCOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{3,4096}$")
+METRICS_SERVICE_PATHS = frozenset({"/metrics", "/metrics/llm", "/metrics/llm/prometheus"})
+
+
+class WebhookReplayGuard:
+    """Bounded, thread-safe replay cache for signed webhook deliveries."""
+
+    def __init__(self, *, ttl_seconds: float = 600.0, max_entries: int = 10_000) -> None:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds pozitif olmalıdır")
+        if max_entries <= 0:
+            raise ValueError("max_entries pozitif olmalıdır")
+        self.ttl_seconds = ttl_seconds
+        self.max_entries = max_entries
+        self.seen: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def reject_replay(self, *, label: str, replay_key: str, now: float | None = None) -> None:
+        """Record a delivery key or reject it when it is still inside the TTL window."""
+        normalized_key = str(replay_key or "").strip()
+        if not normalized_key:
+            return
+        cache_key = f"{label}:{normalized_key}"
+        observed_at = time.monotonic() if now is None else now
+        with self._lock:
+            expired = [
+                key
+                for key, seen_at in self.seen.items()
+                if observed_at - seen_at >= self.ttl_seconds
+            ]
+            for key in expired:
+                self.seen.pop(key, None)
+            if cache_key in self.seen:
+                raise HTTPException(status_code=409, detail=f"{label} replay isteği reddedildi.")
+            if len(self.seen) >= self.max_entries:
+                oldest_key = min(self.seen.items(), key=lambda item: item[1])[0]
+                self.seen.pop(oldest_key, None)
+            self.seen[cache_key] = observed_at
+
+
+def verify_webhook_hmac_signature(
+    payload_body: bytes,
+    secret_value: str,
+    signature_header: str,
+    *,
+    label: str,
+    replay_key: str = "",
+    replay_guard: WebhookReplayGuard | None = None,
+) -> None:
+    """Verify an HMAC-SHA256 webhook signature and optionally prevent replay."""
+    secret = str(secret_value or "").encode("utf-8")
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=f"{label} secret yapılandırılmadığı için imza doğrulanamadı.",
+        )
+    if not signature_header:
+        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
+    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, signature_header):
+        raise HTTPException(status_code=401, detail="Geçersiz imza.")
+    if replay_guard is not None:
+        replay_guard.reject_replay(label=label, replay_key=replay_key)
 
 
 def parse_ws_subprotocol_values(raw_header: str) -> list[str]:
     """Return comma-separated WebSocket subprotocol values without empty items."""
-
     return [item.strip() for item in str(raw_header or "").split(",") if item.strip()]
 
 
@@ -31,7 +97,6 @@ def extract_ws_header_token(
     raw_header: str, accepted_protocol: str = SIDAR_WS_CHAT_PROTOCOL
 ) -> tuple[str, str | None]:
     """Extract a websocket auth token without echoing raw tokens as subprotocols."""
-
     protocols = parse_ws_subprotocol_values(raw_header)
     if not protocols:
         return "", None
@@ -44,35 +109,49 @@ def extract_ws_header_token(
     return "", accept_subprotocol
 
 
+def is_valid_user_id(value: str) -> bool:
+    """Return whether a claimed user id is a syntactically valid UUID.
+
+    ``users.id`` is a UUID column in PostgreSQL, so an unvalidated JWT ``sub``
+    claim (e.g. from a hand-crafted or externally-issued token) can reach
+    asyncpg as a non-UUID string and raise ``DataError`` deep inside a DB
+    call instead of failing auth cleanly. Reject it here, before any DB call.
+    """
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def build_user_from_jwt_payload(payload: dict[str, Any]) -> Any:
     """Build the lightweight request user object from validated JWT claims."""
-
     user_id = str(payload.get("sub", "") or "").strip()
     username = str(payload.get("username", "") or "").strip()
     role = str(payload.get("role", "user") or "user").strip() or "user"
     tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
-    if not user_id or not username:
+    if not user_id or not username or not is_valid_user_id(user_id):
         return None
     return SimpleNamespace(id=user_id, username=username, role=role, tenant_id=tenant_id)
 
 
 def get_jwt_secret(config: Any, logger_obj: Any) -> str:
-    """Read the JWT secret from config and log a critical development fallback warning."""
-
+    """Read the JWT secret from config; fail closed instead of using a known constant."""
     key = str(getattr(config, "JWT_SECRET_KEY", "") or "")
     if not key:
         logger_obj.critical(
-            "JWT_SECRET_KEY yapılandırılmamış! Geliştirme ortamında geçici bir "
-            "anahtar kullanılıyor. Üretim ortamında .env dosyasına güçlü bir "
-            "JWT_SECRET_KEY değeri eklemelisiniz."
+            "JWT_SECRET_KEY yapılandırılmamış! Tahmin edilebilir sabit bir anahtara "
+            "sessizce düşmek yerine JWT imzalama/doğrulama reddediliyor. .env dosyasına "
+            "güçlü bir JWT_SECRET_KEY değeri eklemelisiniz."
         )
-        key = "sidar-dev-secret"
+        raise RuntimeError(
+            "JWT_SECRET_KEY yapılandırılmamış; JWT imzalama/doğrulama güvenli değil."
+        )
     return key
 
 
 async def resolve_user_from_token(agent: Any, token: str, *, config: Any, logger_obj: Any) -> Any:
     """Resolve a stateless JWT user, falling back to the legacy DB token lookup."""
-
     secret_key = get_jwt_secret(config, logger_obj)
     algorithm = str(getattr(config, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
@@ -90,7 +169,6 @@ async def resolve_user_from_token(agent: Any, token: str, *, config: Any, logger
 
 async def issue_auth_token(_agent: Any, user: Any, *, config: Any, logger_obj: Any) -> str:
     """Issue a stateless JWT for an authenticated Sidar user."""
-
     secret_key = get_jwt_secret(config, logger_obj)
     algorithm = str(getattr(config, "JWT_ALGORITHM", "HS256") or "HS256")
     ttl_days = max(1, int(getattr(config, "JWT_TTL_DAYS", 7) or 7))
@@ -108,37 +186,61 @@ async def issue_auth_token(_agent: Any, user: Any, *, config: Any, logger_obj: A
 
 def get_request_user(request: Request) -> Any:
     """Return the authenticated request user or raise a 401 response."""
-
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Yetkisiz erişim")
     return user
 
 
+RESERVED_USERNAMES = frozenset({"default_admin"})
+
+
+def normalize_username(value: Any) -> str:
+    """Return a canonical username for security-sensitive comparisons."""
+    return str(value or "").strip().lower()
+
+
+def is_reserved_username(username: Any) -> bool:
+    """Return whether a username is reserved for Sidar internals/bootstrap flows."""
+    return normalize_username(username) in RESERVED_USERNAMES
+
+
 def is_admin_user(user: Any) -> bool:
     """Return whether the request user has Sidar admin privileges."""
-
     role = str(getattr(user, "role", "") or "").strip().lower()
-    username = str(getattr(user, "username", "") or "").strip()
-    return role == "admin" or username == "default_admin"
+    return role == "admin"
 
 
 def require_admin_user(user: Any = Depends(get_request_user)) -> Any:
     """FastAPI dependency enforcing admin access."""
-
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
     return user
 
 
+def authenticate_metrics_service(request: Request, *, config: Any) -> Any | None:
+    """Return a scoped service principal for a valid metrics bearer token."""
+    if request.method != "GET" or request.url.path not in METRICS_SERVICE_PATHS:
+        return None
+    configured_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
+    auth_header = request.headers.get("Authorization", "")
+    if not configured_token or not auth_header.startswith("Bearer "):
+        return None
+    supplied_token = auth_header[7:].strip()
+    if not supplied_token or not hmac.compare_digest(supplied_token, configured_token):
+        return None
+    return SimpleNamespace(
+        id="metrics-service",
+        username="metrics-service",
+        role="metrics",
+        tenant_id="system",
+    )
+
+
 def require_metrics_access(request: Request, user: Any, *, config: Any) -> Any:
     """Allow metrics access for admin users or requests carrying METRICS_TOKEN."""
-
-    metrics_token = str(getattr(config, "METRICS_TOKEN", "") or "").strip()
-    if metrics_token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
-            return user
+    if authenticate_metrics_service(request, config=config) is not None:
+        return user
     if is_admin_user(user):
         return user
     raise HTTPException(

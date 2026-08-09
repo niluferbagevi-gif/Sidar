@@ -35,8 +35,10 @@ def build_pytest_preflight_command(manager: Any, command: str) -> str:
             f"{pytest_args}",
             "  cat /tmp/sidar-uv-sync.log >&2 || true",
             "fi",
-            "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv bootstrap başarısız. '"
-            "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına ayarlayın '"
+            "echo 'pytest bulunamadı: sandbox imajında pytest yok ve proje/image venv veya uv "
+            "bootstrap başarısız. '"
+            "'DOCKER_TEST_IMAGE değerini proje Dockerfile ile build edilmiş Sidar imajına "
+            "ayarlayın '"
             "'ya da uv sync --frozen --all-extras ile .venv hazırlayın.' >&2",
             "exit 127",
         ]
@@ -49,7 +51,8 @@ def build_shell_preflight_command(manager: Any, command: str) -> str:
         return cast(str, manager._build_pytest_preflight_command(command))
 
     preflight = [
-        "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
+        "export PATH=/workspace/.venv/bin:/app/.venv/bin:/root/.local/bin:"
+        "/home/sidaruser/.local/bin:/usr/local/bin:/bin:/usr/bin:$PATH",
     ]
     if manager._command_requires_uv_tooling(command):
         preflight.extend(
@@ -65,13 +68,16 @@ def build_shell_preflight_command(manager: Any, command: str) -> str:
                 "fi",
                 "if ! command -v uv >/dev/null 2>&1; then",
                 "  if command -v python >/dev/null 2>&1; then",
-                "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || true",
+                "    python -m pip install --no-cache-dir uv >/tmp/sidar-uv-bootstrap.log 2>&1 || "
+                "true",
                 "    if [ -x /usr/local/bin/uv ]; then export PATH=/usr/local/bin:$PATH; fi",
                 "  fi",
                 "fi",
                 "if ! command -v uv >/dev/null 2>&1; then",
-                "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap başarısız oldu. '"
-                "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak ayarlayın. '"
+                "  echo 'uv bulunamadı: sandbox imajında uv bulunamadı ve otomatik bootstrap "
+                "başarısız oldu. '"
+                "'Proje Dockerfile imajını build edip DOCKER_TEST_IMAGE=sidar:latest olarak "
+                "ayarlayın. '"
                 "'Bootstrap logu: /tmp/sidar-uv-bootstrap.log' >&2",
                 "  cat /tmp/sidar-uv-bootstrap.log >&2 || true",
                 "  exit 127",
@@ -140,7 +146,8 @@ def run_shell_in_sandbox(
     except subprocess.TimeoutExpired:
         return (
             False,
-            f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu.",
+            f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve "
+            f"durduruldu.",
         )
     except Exception as exc:
         return False, f"Sandbox komutu hatası: {exc}"
@@ -153,7 +160,8 @@ def run_shell_in_sandbox(
     combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
     if len(combined) > manager.max_output_chars:
         combined = combined[: manager.max_output_chars] + (
-            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] ..."
+            f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] "
+            f"..."
         )
     if result.returncode != 0:
         return False, f"Sandbox komutu başarısız (çıkış kodu: {result.returncode}):\n{combined}"

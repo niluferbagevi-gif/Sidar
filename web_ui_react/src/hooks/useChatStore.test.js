@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import { __chatStoreTestUtils, useChatStore } from "./useChatStore.js";
 
 // Her testten önce store'u sıfırla
@@ -260,6 +261,18 @@ describe("useChatStore — commitAssistantMessage", () => {
     expect(useChatStore.getState().messages[0].content).toBe("özel içerik");
   });
 
+  it("converts a legacy string completion into a structured assistant message", () => {
+    useChatStore.getState().commitAssistantMessage("legacy tamamlandı", "legacy-req");
+
+    const [message] = useChatStore.getState().messages;
+    expect(message).toEqual(expect.objectContaining({
+      role: "assistant",
+      content: "legacy tamamlandı",
+      request_id: "legacy-req",
+    }));
+    expect(message.id).toBeTruthy();
+  });
+
   it("uses streamingText if provided message object lacks content", () => {
     useChatStore.setState({ streamingText: "akış metni", isStreaming: true });
     useChatStore.getState().commitAssistantMessage({ id: "custom-1", role: "assistant" });
@@ -499,5 +512,39 @@ describe("useChatStore — stream flush yardımcıları", () => {
 
     setTimeoutSpy.mockRestore();
     vi.useRealTimers();
+  });
+});
+
+describe("useChatStore — field-scoped selector subscriptions", () => {
+  it("does not re-render a component subscribed only to isStreaming when an unrelated field changes", () => {
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount += 1;
+      return useChatStore((s) => s.isStreaming);
+    });
+    const rendersBeforeUnrelatedUpdate = renderCount;
+
+    act(() => {
+      useChatStore.getState().addTelemetryEvent("status", "unrelated update");
+    });
+
+    expect(renderCount).toBe(rendersBeforeUnrelatedUpdate);
+    expect(result.current).toBe(false);
+  });
+
+  it("re-renders a component subscribed to isStreaming when isStreaming actually changes", () => {
+    let renderCount = 0;
+    const { result } = renderHook(() => {
+      renderCount += 1;
+      return useChatStore((s) => s.isStreaming);
+    });
+    const rendersBeforeStreamStart = renderCount;
+
+    act(() => {
+      useChatStore.getState().startAssistantStream("req-1");
+    });
+
+    expect(renderCount).toBeGreaterThan(rendersBeforeStreamStart);
+    expect(result.current).toBe(true);
   });
 });

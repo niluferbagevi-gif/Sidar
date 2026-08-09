@@ -109,6 +109,8 @@ def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) ->
 
 
 def test_default_seed_patterns_include_curated_code_context() -> None:
+    assert "docs/ARCHITECTURE.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert "docs/project-report/*.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "core/rag.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "agent/sidar_agent.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "run_tests.sh" in seed_rag.DEFAULT_INCLUDE_PATTERNS

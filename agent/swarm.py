@@ -1,5 +1,4 @@
-"""
-Sidar Swarm Orchestrator — Dinamik Çoklu Ajan Koordinasyonu.
+"""Sidar Swarm Orchestrator — Dinamik Çoklu Ajan Koordinasyonu.
 
 Karmaşık görevleri alt görevlere böler, uygun uzman ajanlara yönlendirir
 ve sonuçları birleştirir. Agent Registry ile entegre çalışır.
@@ -21,14 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import importlib.util
+import inspect
 import json
 import logging
-import sys
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -88,42 +86,14 @@ _CONTRACTS_MODULE_CACHE: ModuleType | None = None
 
 
 def _contracts_module(*, force_refresh: bool = False) -> ModuleType:
+    """Return the imported contracts module without runtime test-pollution repair."""
     global _CONTRACTS_MODULE_CACHE
     if _CONTRACTS_MODULE_CACHE is not None and not force_refresh:
         return _CONTRACTS_MODULE_CACHE
 
     module = importlib.import_module("agent.core.contracts")
-    if _is_contracts_module_healthy(module):
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-
-    module_path = Path(__file__).resolve().parent / "core" / "contracts.py"
-    spec = importlib.util.spec_from_file_location("agent.core.contracts", module_path)
-    if spec is None or spec.loader is None:
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-    repaired = importlib.util.module_from_spec(spec)
-    previous = sys.modules.get("agent.core.contracts")
-    sys.modules["agent.core.contracts"] = repaired
-    try:
-        spec.loader.exec_module(repaired)
-    except Exception:
-        if previous is not None:
-            sys.modules["agent.core.contracts"] = previous
-        else:
-            sys.modules.pop("agent.core.contracts", None)
-        raise
-
-    if not _is_contracts_module_healthy(repaired):
-        if previous is not None:
-            sys.modules["agent.core.contracts"] = previous
-        else:
-            sys.modules.pop("agent.core.contracts", None)
-        _CONTRACTS_MODULE_CACHE = module
-        return module
-
-    _CONTRACTS_MODULE_CACHE = repaired
-    return repaired
+    _CONTRACTS_MODULE_CACHE = module
+    return module
 
 
 if TYPE_CHECKING:
@@ -287,8 +257,8 @@ class InMemoryDelegationBackend:
 
 
 class TaskRouter:
-    """
-    Görev intent'ine göre uygun ajan rolünü seçer.
+    """Görev intent'ine göre uygun ajan rolünü seçer.
+
     AgentRegistry üzerinden çalışır — yeni kayıtlı ajanlar otomatik görünür.
     """
 
@@ -313,16 +283,18 @@ class TaskRouter:
         return live_catalog
 
     def route(self, intent: str) -> AgentSpec | None:
-        """
-        Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
+        """Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
+
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
         """
         catalog = self._catalog()
         capability = _INTENT_CAPABILITY_MAP.get(intent, intent)
-        candidates = catalog.find_by_capability(capability)
+        finder = getattr(catalog, "find_by_capability", None)
+        candidates = finder(capability) if callable(finder) else []
         if not candidates:
             # Fallback: herhangi bir kayıtlı ajan
-            all_agents = catalog.list_all()
+            lister = getattr(catalog, "list_all", None)
+            all_agents = lister() if callable(lister) else []
             return all_agents[0] if all_agents else None
         preferred_role = _INTENT_ROLE_PREFERENCE.get(intent)
         if preferred_role:
@@ -358,8 +330,7 @@ def _looks_like_delegation_request(value: object) -> bool:
 
 
 class SwarmOrchestrator:
-    """
-    Dinamik çoklu ajan orkestrasyon motoru.
+    """Dinamik çoklu ajan orkestrasyon motoru.
 
     Görevleri ajanlar arasında dağıtır, paralel yürütmeyi yönetir
     ve sonuçları birleştirir.
@@ -370,10 +341,117 @@ class SwarmOrchestrator:
         self.router = TaskRouter()
         self._active_agents: dict[str, object] = {}  # task_id → agent instance
         self.delegation_backend: AsyncDelegationBackend | None = None
+        self._distributed_idempotency_cache: OrderedDict[str, BrokerTaskResult] = OrderedDict()
+        self._distributed_idempotency_cache_max = max(
+            1, int(getattr(cfg, "SWARM_IDEMPOTENCY_CACHE_MAX", 1024) or 1024)
+        )
+
+    def _get_distributed_idempotency_cache(self, key: str) -> BrokerTaskResult | None:
+        """Return cached dispatch result and refresh LRU position when present."""
+        cached = self._distributed_idempotency_cache.get(key)
+        if cached is not None:
+            self._distributed_idempotency_cache.move_to_end(key)
+        return cached
+
+    def _remember_distributed_idempotency_result(self, key: str, result: BrokerTaskResult) -> None:
+        """Store distributed dispatch result in a bounded LRU cache."""
+        self._distributed_idempotency_cache[key] = result
+        self._distributed_idempotency_cache.move_to_end(key)
+        while len(self._distributed_idempotency_cache) > self._distributed_idempotency_cache_max:
+            self._distributed_idempotency_cache.popitem(last=False)
 
     def configure_delegation_backend(self, backend: AsyncDelegationBackend | None) -> None:
         """Broker tabanlı delegasyon backend'ini enjekte eder."""
         self.delegation_backend = backend
+
+    @staticmethod
+    def _distributed_idempotency_key(task: SwarmTask, *, session_id: str, receiver: str) -> str:
+        """Return a stable duplicate-suppression key for distributed dispatch."""
+        explicit = str(
+            task.context.get("idempotency_key")
+            or task.context.get("correlation_id")
+            or task.context.get("webhook_delivery_id")
+            or ""
+        ).strip()
+        if explicit:
+            return explicit
+        return f"{session_id}:{receiver}:{task.task_id}"
+
+    def _task_timeout_seconds(self, task: SwarmTask) -> float:
+        """Resolve timeout with task, model, provider and global fallbacks."""
+        explicit = str(task.context.get("timeout_seconds", "") or "").strip()
+        if explicit:
+            try:
+                return max(0.001, float(explicit))
+            except ValueError:
+                logger.debug("Invalid task timeout_seconds ignored: %s", explicit)
+
+        model = str(
+            task.context.get("model")
+            or getattr(self.cfg, "CODING_MODEL", "")
+            or getattr(self.cfg, "TEXT_MODEL", "")
+            or ""
+        ).strip()
+        raw_model_map = getattr(self.cfg, "SWARM_TASK_TIMEOUT_BY_MODEL", {}) or {}
+        model_map: dict[str, Any] = {}
+        if isinstance(raw_model_map, str) and raw_model_map.strip():
+            try:
+                parsed = json.loads(raw_model_map)
+                if isinstance(parsed, dict):
+                    model_map = parsed
+            except json.JSONDecodeError:
+                logger.debug("Invalid SWARM_TASK_TIMEOUT_BY_MODEL JSON ignored")
+        elif isinstance(raw_model_map, dict):
+            model_map = raw_model_map
+        if model and model in model_map:
+            try:
+                return max(0.001, float(model_map[model]))
+            except (TypeError, ValueError):
+                logger.debug("Invalid model timeout ignored for %s: %s", model, model_map[model])
+
+        provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").strip().upper()
+        provider_key = f"SWARM_TASK_TIMEOUT_SECONDS_{provider}" if provider else ""
+        provider_timeout = getattr(self.cfg, provider_key, None) if provider_key else None
+        if provider_timeout is not None:
+            try:
+                return max(0.001, float(provider_timeout))
+            except (TypeError, ValueError):
+                logger.debug("Invalid provider timeout ignored for %s", provider_key)
+
+        raw_timeout = (
+            getattr(
+                self.cfg,
+                "SWARM_TASK_TIMEOUT_SECONDS",
+                getattr(self.cfg, "REACT_TIMEOUT", 60),
+            )
+            or getattr(self.cfg, "REACT_TIMEOUT", 60)
+            or 60
+        )
+        try:
+            return max(0.001, float(raw_timeout))
+        except (TypeError, ValueError):
+            logger.debug("Invalid global swarm task timeout ignored: %s", raw_timeout)
+        try:
+            return max(0.001, float(getattr(self.cfg, "REACT_TIMEOUT", 60) or 60))
+        except (TypeError, ValueError):
+            logger.debug("Invalid REACT_TIMEOUT ignored for swarm task timeout fallback")
+        return 60.0
+
+    async def _attempt_task_rollback(self, agent: Any, envelope: Any, exc: Exception) -> str:
+        """Run best-effort rollback hook exposed by an agent after task failure."""
+        for hook_name in ("rollback_task", "rollback"):
+            hook = getattr(agent, hook_name, None)
+            if not callable(hook):
+                continue
+            try:
+                result = hook(envelope, exc)
+                if inspect.isawaitable(result):
+                    result = await result
+                return f"rollback:{hook_name}:{result or 'completed'}"
+            except Exception as rollback_exc:
+                logger.warning("Swarm rollback hook failed [%s]: %s", hook_name, rollback_exc)
+                return f"rollback:{hook_name}:failed:{rollback_exc}"
+        return ""
 
     async def dispatch_distributed(
         self,
@@ -403,6 +481,13 @@ class SwarmOrchestrator:
         if spec is None:
             raise RuntimeError("Dağıtık delegasyon için uygun ajan bulunamadı.")
 
+        idempotency_key = self._distributed_idempotency_key(
+            task, session_id=session_id, receiver=spec.role_name
+        )
+        cached_result = self._get_distributed_idempotency_cache(idempotency_key)
+        if cached_result is not None:
+            return cached_result
+
         envelope = TaskEnvelope(
             task_id=task.task_id,
             sender=sender,
@@ -423,7 +508,9 @@ class SwarmOrchestrator:
             reply_queue=reply_queue,
             headers={"session_id": session_id},
         )
-        return await self.delegation_backend.dispatch(broker_envelope)
+        result = await self.delegation_backend.dispatch(broker_envelope)
+        self._remember_distributed_idempotency_result(idempotency_key, result)
+        return result
 
     def _loop_repeat_limit(self) -> int:
         """Yerel modellerde daha sıkı, uzak modellerde daha esnek tekrar limiti."""
@@ -484,6 +571,22 @@ class SwarmOrchestrator:
             return True
         return False
 
+    def _remaining_supervisor_turn_budget(self, route_trace: list[str]) -> int:
+        """Cap the supervisor fallback's turn budget by hops the swarm already spent.
+
+        Without this, a supervisor fallback after N swarm hops would always start
+        a brand-new SupervisorAgent.MAX_TURNS budget from zero, so a single failing
+        task could cost up to (swarm hops already spent + a full supervisor turn
+        budget) LLM calls instead of one shared budget across both stages.
+        """
+        from agent.core.supervisor import SupervisorAgent
+
+        default_max_turns = getattr(SupervisorAgent, "MAX_TURNS", 10)
+        full_budget = max(
+            0, int(getattr(self.cfg, "MAX_TURNS", default_max_turns) or default_max_turns)
+        )
+        return max(1, full_budget - len(route_trace))
+
     async def _run_supervisor_fallback(
         self,
         task: SwarmTask,
@@ -499,7 +602,8 @@ class SwarmOrchestrator:
 
         supervisor = SupervisorAgent(self.cfg)
         fallback_prompt = self._compose_goal_with_context(task.goal, task.context)
-        fallback_output = await supervisor.run_task(fallback_prompt)
+        remaining_turns = self._remaining_supervisor_turn_budget(route_trace)
+        fallback_output = await supervisor.run_task(fallback_prompt, max_turns=remaining_turns)
         if not isinstance(fallback_output, str) or not fallback_output.strip():
             raise RuntimeError("Supervisor fallback geçerli bir çıktı üretemedi.")
 
@@ -705,8 +809,8 @@ class SwarmOrchestrator:
         session_id: str = "",
         max_concurrency: int = 4,
     ) -> list[SwarmResult]:
-        """
-        Görev listesini eş zamanlı olarak çalıştır.
+        """Görev listesini eş zamanlı olarak çalıştır.
+
         max_concurrency limiti aşıldığında semafore ile kısıtlanır.
         """
         sem = asyncio.Semaphore(max_concurrency)
@@ -725,8 +829,8 @@ class SwarmOrchestrator:
         *,
         session_id: str = "",
     ) -> list[SwarmResult]:
-        """
-        Görevleri sırayla yürüt; her görevin özeti bir sonrakinin context'ine eklenir.
+        """Görevleri sırayla yürüt; her görevin özeti bir sonrakinin context'ine eklenir.
+
         Kod üretimi → inceleme → güvenlik denetimi gibi akışlar için kullanışlıdır.
         """
         results: list[SwarmResult] = []
@@ -760,18 +864,7 @@ class SwarmOrchestrator:
         started_at = time.monotonic()
         max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
-        task_timeout = max(
-            0.001,
-            float(
-                getattr(
-                    self.cfg,
-                    "SWARM_TASK_TIMEOUT_SECONDS",
-                    getattr(self.cfg, "REACT_TIMEOUT", 60),
-                )
-                or getattr(self.cfg, "REACT_TIMEOUT", 60)
-                or 60
-            ),
-        )
+        task_timeout = self._task_timeout_seconds(task)
         max_hops = max(1, int(getattr(self.cfg, "SWARM_MAX_HANDOFF_HOPS", 4) or 4))
         route_trace = list(_route_trace or [])
         handoff_chain = list(_handoff_chain or [])
@@ -889,9 +982,19 @@ class SwarmOrchestrator:
                         )
                     break
                 except TimeoutError as exc:
-                    raise TimeoutError(
-                        f"Swarm task timeout exceeded ({task_timeout:.3f}s)."
-                    ) from exc
+                    last_exc = TimeoutError(f"Swarm task timeout exceeded ({task_timeout:.3f}s).")
+                    if attempt >= max_retries:
+                        raise last_exc from exc
+                    logger.warning(
+                        "SwarmOrchestrator: [%s] timeout retry %d/%d [%s] timeout=%.3fs",
+                        task.task_id,
+                        attempt + 1,
+                        max_retries,
+                        spec.role_name,
+                        task_timeout,
+                    )
+                    if retry_delay_ms > 0:
+                        await asyncio.sleep(retry_delay_ms / 1000)
                 except Exception as exc:  # pragma: no cover - branch specific tests verify behavior
                     last_exc = exc
                     if attempt >= max_retries:
@@ -981,6 +1084,8 @@ class SwarmOrchestrator:
         except Exception as exc:
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.error("SwarmOrchestrator: [%s] hata [%s]: %s", task.task_id, spec.role_name, exc)
+            rollback_evidence = await self._attempt_task_rollback(agent, envelope, exc)
+            failure_evidence = [rollback_evidence] if rollback_evidence else []
             if self._should_fallback_to_supervisor(exc):
                 reason = f"fallback:{type(exc).__name__}"
                 logger.warning(
@@ -1015,6 +1120,7 @@ class SwarmOrchestrator:
                             f"Supervisor fallback da başarısız oldu: {fallback_exc}"
                         ),
                         elapsed_ms=elapsed,
+                        evidence=failure_evidence,
                         handoffs=handoff_chain,
                     )
             return SwarmResult(
@@ -1023,6 +1129,7 @@ class SwarmOrchestrator:
                 status="failed",
                 summary=f"Görev başarısız: {exc}",
                 elapsed_ms=elapsed,
+                evidence=failure_evidence,
                 handoffs=handoff_chain,
             )
         finally:

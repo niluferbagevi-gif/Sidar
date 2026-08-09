@@ -1,0 +1,7 @@
+# Git merge hygiene for files that are regularly regenerated or appended to by tools.
+# Keep executable source/test files on Git's default merge driver: union merging Python
+# or shell can silently create invalid or duplicate logic, so conflicts should stay explicit.
+
+# The install manifest is a deterministic line-oriented inventory; union keeps independent
+# additions visible while existing manifest drift hooks verify canonical ordering/hash state.
+.sidar_manifest.txt merge=union

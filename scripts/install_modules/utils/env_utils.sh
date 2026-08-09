@@ -1,12 +1,40 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_ENV_UTILS_SH_LOADED=1
 
 # Functional install helpers for the phase-based Sidar installer.
 # These definitions intentionally override the legacy monolithic fallbacks in
 # install_sidar.sh when sourced by the relevant phase module.
+umask 077
+
+read_env_value_from_file() {
+    local key="$1"
+    local file_path="$2"
+    [[ -f "$file_path" ]] || return 0
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*#/ { next }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            line = $0
+            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            gsub(/\r/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            gsub(/^'\''|'\''$/, "", line)
+            print line
+            exit
+        }
+    ' "$file_path"
+}
+
 
 sync_database_env_chain_after_setup() {
+    # Eski installer turlarından kalmış açık URL'leri uv/Python helper'ına
+    # bağımlı olmadan tüm mevcut runtime dotenv varyantlarında da onar.
+    ensure_database_url_defaults_for_variants
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
@@ -17,12 +45,16 @@ sync_database_env_chain_after_setup() {
         return 0
     fi
 
-    info "Ortam değişkenlerindeki veritabanı şifre çakışmaları temizleniyor..."
-    if (cd "$SCRIPT_DIR" && uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1); then
+    info "Ortam değişkenlerindeki PostgreSQL şifreleri tek Python helper ile eşitleniyor..."
+    if (
+        cd "$SCRIPT_DIR" && \
+            uv run python -m scripts.sync_database_passwords --all-envs >/dev/null 2>&1 && \
+            uv run python -m scripts.sync_database_passwords --remove-explicit-urls >/dev/null 2>&1
+    ); then
         ok ".env zincirindeki PostgreSQL şifreleri kalıcı olarak eşitlendi."
     else
         warn "PostgreSQL dotenv zinciri Python senkronizasyonu tamamlanamadı; gerekirse manuel çalıştırın: "\
-            "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+            "uv run python -m scripts.sync_database_passwords --all-envs && uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     fi
 }
 
@@ -38,7 +70,7 @@ setup_env_file() {
     # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
     # ile .env dosyasından senkronize edilir.
     if [[ ! -f "$ADVANCED_ENV_FILE" && -f "$ADVANCED_EXAMPLE_FILE" ]]; then
-        cp "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"
+        install -m 600 "$ADVANCED_EXAMPLE_FILE" "$ADVANCED_ENV_FILE"
         ok ".env.advanced dosyası .env.advanced.example'dan oluşturuldu."
     fi
 
@@ -67,7 +99,7 @@ setup_env_file() {
         return
     fi
 
-    cp "$EXAMPLE_FILE" "$ENV_FILE"
+    install -m 600 "$EXAMPLE_FILE" "$ENV_FILE"
     ok ".env dosyası .env.example'dan oluşturuldu."
     ensure_sidar_env_default "$ENV_FILE"
     ensure_database_url_defaults "$ENV_FILE"

@@ -4,7 +4,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -36,6 +36,7 @@ def build_integrations_router(
     slack_cache: dict[str, Any],
     jira_cache: dict[str, Any],
     teams_cache: dict[str, Any],
+    require_admin_user: Callable[..., Any],
 ) -> LegacyExportRouter:
     router = LegacyExportRouter()
 
@@ -76,7 +77,9 @@ def build_integrations_router(
         return teams_cache["instance"]
 
     @router.post("/api/integrations/slack/send", summary="Slack Mesajı Gönder", tags=["Slack"])
-    async def api_slack_send(req: SlackSendRequest) -> Any:
+    async def api_slack_send(
+        req: SlackSendRequest, _user: Any = Depends(require_admin_user)
+    ) -> Any:
         maybe_mgr = get_slack_manager()
         mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
         if not mgr.is_available():
@@ -89,7 +92,7 @@ def build_integrations_router(
         return JSONResponse({"success": True})
 
     @router.get("/api/integrations/slack/channels", summary="Slack Kanal Listesi", tags=["Slack"])
-    async def api_slack_channels() -> Any:
+    async def api_slack_channels(_user: Any = Depends(require_admin_user)) -> Any:
         maybe_mgr = get_slack_manager()
         mgr = await maybe_mgr if inspect.isawaitable(maybe_mgr) else maybe_mgr
         if not mgr.is_available():
@@ -100,7 +103,9 @@ def build_integrations_router(
         return JSONResponse({"success": True, "channels": channels})
 
     @router.post("/api/integrations/jira/issue", summary="Jira Issue Oluştur", tags=["Jira"])
-    async def api_jira_create_issue(req: JiraCreateRequest) -> Any:
+    async def api_jira_create_issue(
+        req: JiraCreateRequest, _user: Any = Depends(require_admin_user)
+    ) -> Any:
         mgr = get_jira_manager()
         if not mgr.is_available():
             raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
@@ -116,7 +121,9 @@ def build_integrations_router(
         return JSONResponse({"success": True, "issue": issue})
 
     @router.get("/api/integrations/jira/issues", summary="Jira Issue Arama", tags=["Jira"])
-    async def api_jira_search_issues(jql: str = "", max_results: int = 20) -> Any:
+    async def api_jira_search_issues(
+        jql: str = "", max_results: int = 20, _user: Any = Depends(require_admin_user)
+    ) -> Any:
         mgr = get_jira_manager()
         if not mgr.is_available():
             raise HTTPException(status_code=503, detail="Jira entegrasyonu yapılandırılmamış.")
@@ -126,7 +133,9 @@ def build_integrations_router(
         return JSONResponse({"success": True, "issues": issues, "total": len(issues)})
 
     @router.post("/api/integrations/teams/send", summary="Teams Mesajı Gönder", tags=["Teams"])
-    async def api_teams_send(req: TeamsSendRequest) -> Any:
+    async def api_teams_send(
+        req: TeamsSendRequest, _user: Any = Depends(require_admin_user)
+    ) -> Any:
         mgr = get_teams_manager()
         if not mgr.is_available():
             raise HTTPException(status_code=503, detail="Teams entegrasyonu yapılandırılmamış.")

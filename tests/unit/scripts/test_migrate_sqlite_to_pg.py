@@ -28,6 +28,27 @@ def test_load_rows_reads_columns_and_data(tmp_path: Path):
     assert rows == [(1, "alice@example.com")]
 
 
+def test_safe_column_names_rejects_unsafe_identifier():
+    with pytest.raises(ValueError, match="Geçersiz sütun adı"):
+        migrate_sqlite_to_pg._safe_column_names("users", ["id", "email); DROP TABLE users; --"])
+
+
+def test_load_rows_rejects_table_with_malicious_column_name(tmp_path: Path):
+    db_path = tmp_path / "sample.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        # sqlite sütun adlarını tırnak içinde neredeyse serbest karakterlerle kabul eder;
+        # bozuk/kötü niyetli bir kaynak dosyayı simüle ediyoruz.
+        conn.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, "email); --" TEXT)')
+        conn.execute('INSERT INTO users ("email); --") VALUES (?)', ("x",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(ValueError, match="Geçersiz sütun adı"):
+        migrate_sqlite_to_pg._load_rows(db_path, "users")
+
+
 def test_load_rows_returns_columns_for_empty_table(tmp_path: Path):
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)

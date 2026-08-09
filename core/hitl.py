@@ -1,5 +1,5 @@
-"""
-Sidar Project — Human-in-the-Loop (HITL) Onay Geçidi
+"""Sidar Project — Human-in-the-Loop (HITL) Onay Geçidi.
+
 Yıkıcı/kritik işlemlerin gerçekleşmeden önce insan onayına sunulmasını sağlar.
 
 Mimari:
@@ -15,7 +15,7 @@ Entegrasyon noktaları:
   - managers/github_manager.py → PR oluşturma, dal silme
 
 Yapılandırma (.env):
-  HITL_ENABLED=true
+  HITL_ENABLED=true  # güvenli varsayılan; yalnız bilinçli local/test akışında false
   HITL_TIMEOUT_SECONDS=120
 """
 
@@ -146,8 +146,8 @@ _broadcast_hook: Callable[[dict[str, Any]], Awaitable[None]] | None = None
 
 
 def set_hitl_broadcast_hook(hook: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
-    """
-    WebSocket yayın fonksiyonunu kaydet.
+    """WebSocket yayın fonksiyonunu kaydet.
+
     web_server.py başlangıcında çağrılır:
         from core.hitl import set_hitl_broadcast_hook
         set_hitl_broadcast_hook(broadcast_fn)
@@ -180,8 +180,7 @@ async def notify(req: HITLRequest) -> None:
 
 
 class HITLGate:
-    """
-    Kritik işlemler için onay geçidi.
+    """Kritik işlemler için onay geçidi.
 
     Kullanım (managers'da):
         gate = get_hitl_gate()
@@ -196,7 +195,7 @@ class HITLGate:
     """
 
     def __init__(self) -> None:
-        self.enabled = os.getenv("HITL_ENABLED", "false").lower() in ("1", "true", "yes")
+        self.enabled = os.getenv("HITL_ENABLED", "true").lower() in ("1", "true", "yes")
         self.timeout = max(
             10, int(os.getenv("HITL_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT)) or _DEFAULT_TIMEOUT)
         )
@@ -209,8 +208,7 @@ class HITLGate:
         payload: dict[str, Any] | None = None,
         requested_by: str = "system",
     ) -> bool:
-        """
-        Onay ister; HITL devre dışıysa doğrudan True döner.
+        """Onay ister; HITL devre dışıysa doğrudan True döner.
 
         Returns:
             True  → onaylandı (veya HITL kapalı)
@@ -275,8 +273,7 @@ class HITLGate:
         decided_by: str = "operator",
         rejection_reason: str = "",
     ) -> HITLRequest | None:
-        """
-        Onay veya red kararını kaydet.
+        """Onay veya red kararını kaydet.
 
         Returns:
             Güncellenen HITLRequest veya None (bulunamadıysa).

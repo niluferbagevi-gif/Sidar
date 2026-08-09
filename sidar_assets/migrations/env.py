@@ -9,72 +9,48 @@ from configparser import ConfigParser
 from logging.config import fileConfig
 from os import PathLike
 from pathlib import Path
-from typing import Protocol, TextIO, cast
+from typing import TYPE_CHECKING, Any, cast
 
+import sqlalchemy as sa
 from alembic import context
-from sqlalchemy import create_engine, pool
-from sqlalchemy.engine import Connection, Engine
-from sqlalchemy.exc import InvalidRequestError
+from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from core.models import Base
 
-
-class DotenvLoader(Protocol):
-    def __call__(
-        self,
-        dotenv_path: str | PathLike[str] | None = None,
-        stream: TextIO | None = None,
-        verbose: bool = False,
-        override: bool = False,
-        interpolate: bool = True,
-        encoding: str | None = "utf-8",
-    ) -> bool: ...
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection, Engine
 
 
-def _missing_load_dotenv(
-    dotenv_path: str | PathLike[str] | None = None,
-    stream: TextIO | None = None,
-    verbose: bool = False,
-    override: bool = False,
-    interpolate: bool = True,
-    encoding: str | None = "utf-8",
-) -> bool:
-    del dotenv_path, stream, verbose, override, interpolate, encoding
+LoadDotenv = Callable[..., bool]
+CreateEngine = Callable[..., "Engine"]
+
+
+def _noop_load_dotenv(*_args: Any, **_kwargs: Any) -> bool:
     return False
 
 
-def _resolve_dotenv_loader() -> DotenvLoader:
+def _resolve_load_dotenv() -> LoadDotenv:
+    """Return python-dotenv's loader when available without conditional redefinition."""
+
     if importlib.util.find_spec("dotenv") is None:
-        return _missing_load_dotenv
+        return _noop_load_dotenv
     dotenv_module = importlib.import_module("dotenv")
-    return cast(DotenvLoader, dotenv_module.load_dotenv)
+    candidate = getattr(dotenv_module, "load_dotenv", None)
+    if not callable(candidate):
+        return _noop_load_dotenv
+    return cast(LoadDotenv, candidate)
 
 
-_load_dotenv = _resolve_dotenv_loader()
-
-LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@127.0.0.1:5432/sidar"
-PRODUCTION_ENV_NAMES = {"prod", "production"}
-
-
-def _is_production_environment() -> bool:
-    return os.getenv("SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES
-
-
-def _ensure_database_url_allowed(url: str, *, source: str) -> str:
-    normalized_url = str(url or "").strip()
-    if (
-        source == "alembic.ini"
-        and normalized_url == LOCAL_DEV_FALLBACK_DATABASE_URL
-        and _is_production_environment()
-    ):
-        raise RuntimeError(
-            "Alembic local development fallback database URL is disabled when "
-            "SIDAR_ENV=production. Set DATABASE_URL or pass "
-            "-x database_url=... with production credentials."
-        )
-    return normalized_url
-
+_load_dotenv: LoadDotenv = _resolve_load_dotenv()
+_create_engine_candidate = getattr(sa, "create_engine", None)
+_create_engine: CreateEngine | None = (
+    cast(CreateEngine, _create_engine_candidate) if callable(_create_engine_candidate) else None
+)
+_InvalidRequestError = cast(
+    type[BaseException],
+    getattr(getattr(sa, "exc", None), "InvalidRequestError", RuntimeError),
+)
 
 config = context.config
 
@@ -92,6 +68,7 @@ def _configure_logging_from_ini(config_file_name: str | PathLike[str]) -> None:
 
 if config.config_file_name is not None:
     _configure_logging_from_ini(config.config_file_name)
+
 
 target_metadata = Base.metadata
 
@@ -117,6 +94,29 @@ def _load_database_url() -> str | None:
         return env_value
 
     return None
+
+
+LOCAL_DEV_FALLBACK_DATABASE_URL = "postgresql+asyncpg://sidar:sidar@127.0.0.1:5432/sidar"
+PRODUCTION_ENV_NAMES = {"prod", "production"}
+
+
+def _is_production_environment() -> bool:
+    return os.getenv("SIDAR_ENV", "").strip().lower() in PRODUCTION_ENV_NAMES
+
+
+def _ensure_database_url_allowed(url: str, *, source: str) -> str:
+    normalized_url = str(url or "").strip()
+    if (
+        source == "alembic.ini"
+        and normalized_url == LOCAL_DEV_FALLBACK_DATABASE_URL
+        and _is_production_environment()
+    ):
+        raise RuntimeError(
+            "Alembic local development fallback database URL is disabled when "
+            "SIDAR_ENV=production. Set DATABASE_URL or pass "
+            "-x database_url=... with production credentials."
+        )
+    return normalized_url
 
 
 def _configured_database_url(section: dict[str, str] | None = None) -> str:
@@ -154,12 +154,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = cast(
-        "AsyncEngine | Engine | None", context.config.attributes.get("connection", None)
-    )
+    connectable = context.config.attributes.get("connection", None)
 
     if connectable is None:
-        section = dict(config.get_section(config.config_ini_section) or {})
+        section = config.get_section(config.config_ini_section) or {}
         x_database_url = _load_database_url()
         if x_database_url:
             section["sqlalchemy.url"] = x_database_url
@@ -167,8 +165,16 @@ async def run_async_migrations() -> None:
         url = _configured_database_url(section)
         try:
             connectable = create_async_engine(url, poolclass=pool.NullPool)
-        except InvalidRequestError:
-            connectable = create_engine(url, poolclass=pool.NullPool)
+        except ModuleNotFoundError as exc:
+            if exc.name == "asyncpg":
+                raise ModuleNotFoundError(
+                    "asyncpg kurulu değil. Çözüm: uv sync --frozen --all-extras veya uv sync --extra postgres."
+                ) from exc
+            raise
+        except _InvalidRequestError:
+            if _create_engine is None:
+                raise
+            connectable = _create_engine(url, poolclass=pool.NullPool)
 
     if not isinstance(connectable, AsyncEngine):
         with connectable.connect() as connection:
@@ -177,8 +183,7 @@ async def run_async_migrations() -> None:
         return
 
     async with connectable.connect() as connection:
-        sync_runner: Callable[[Connection], None] = do_run_migrations
-        await connection.run_sync(sync_runner)
+        await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()
 

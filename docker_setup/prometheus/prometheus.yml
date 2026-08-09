@@ -7,6 +7,11 @@ scrape_configs:
     static_configs:
       - targets: ["sidar-web:7860"]
 
+  - job_name: "sidar-gpu"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["sidar-web:7860"]
+
   - job_name: "redis-exporter"
     static_configs:
       - targets: ["redis-exporter:9121"]

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.0", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -58,6 +58,9 @@ dependencies = [
   "cryptography>=46.0.6",
   "argon2-cffi>=25.1.0,<26.0.0",
   "PyJWT>=2.12.0",
+  # Pin transitive pyasn1 above CVE-2026-59885/CVE-2026-59886 fix (google-auth ->
+  # pyasn1-modules -> pyasn1); needed until google-auth upstream tightens its own floor.
+  "pyasn1>=0.6.4",
   # ── HTTP istemcisi ─────────────────────────────────────────────────────
   "requests>=2.32.5",
   "tenacity>=8.0.0,<10.0.0",
@@ -139,7 +142,8 @@ rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
   # Keep torch below 2.12 while CVE-2025-3000 is tracked by security/pip-audit-ignores.tsv.
-  # Re-evaluate together with torchvision before the dated policy exception expires.
+  # Current lock target is torch 2.11.0; re-check upstream patches by 2026-08-15
+  # before the dated policy exception expires.
   "torch>=2.4.1,<2.12",
   "torchvision>=0.19,<0.27",
   "sentence-transformers>=3.0.1,<6.0.0",
@@ -171,6 +175,9 @@ browser = [
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
+  # PyAudio is intentionally not hidden behind a platform marker: failures are
+  # usually missing PortAudio headers on otherwise supported developer hosts.
+  # Run scripts/install_ci_system_deps.sh before uv sync to prepare them.
   "pyaudio~=0.2.14",
   "openai-whisper>=20231117",
 ]
@@ -192,11 +199,22 @@ teams = [
 all = [
   "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,lora,gpu,sandbox,gui,slack,browser,voice,tools,aws,jira,teams,dev]",
 ]
+# Fast PR/local profile with no system-header-dependent voice/browser/media extras.
+# Use this when PortAudio/Playwright/GPU packages are irrelevant to the change.
+dev-light = [
+  "sidar[postgres,dev]",
+]
+dev-gpu = [
+  "sidar[postgres,dev,rag,gpu]",
+]
+gpu-runtime = [
+  "sidar[rag,gpu]",
+]
 production = [
   "sidar[postgres,telemetry]",
 ]
 production-minimal = [
-  "sidar[postgres,telemetry]",
+  "sidar[postgres]",
 ]
 dev = [
   "sidar[postgres]",
@@ -212,7 +230,7 @@ dev = [
   "respx>=0.21.1",
   "fakeredis>=2.20.0",
   "testcontainers>=4.0.0",
-  "ruff~=0.8.1",
+  "ruff>=0.15,<0.16",
   "mypy~=1.11.2",
   "pyright>=1.1.409,<2.0.0",
   "pre-commit>=4.0.0,<5.0.0",
@@ -280,6 +298,7 @@ pydantic = "runtime"
 "pydantic-settings" = "runtime"
 PyGithub = "integration"
 PyJWT = "runtime"
+pyasn1 = "runtime"
 pyright = "dev"
 pytest = "dev"
 "pytest-asyncio" = "dev"
@@ -315,14 +334,83 @@ uvicorn = "runtime"
 websockets = "runtime"
 
 [tool.sidar.dependency_profile_plan]
-current_install_standard = "uv sync --all-extras"
+current_install_standard = "installer default developer-full; uv sync --all-extras"
+installer_default_profile = "dev-full"
+developer_full_sync = "uv sync --all-extras"
+ci_full_sync = "uv sync --all-extras"
+production_profile = "production"
+production_minimal_profile = "production-minimal"
 status = "phase-1-dev-split"
 owner_doc = "docs/DEPENDENCY_PROFILE_PLAN.md"
 preserve_all_extras_standard = true
 planned_profile_groups = ["base", "web", "rag", "multimodal", "dev", "test", "gpu"]
 requirements_exporter = "scripts/export_production_requirements.sh"
 production_dockerfile = "Dockerfile.production"
-summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares production/production-minimal extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
+summary = "Phase 1 moved dev/test quality tools out of the main runtime dependencies, declares distinct production (postgres+telemetry) and production-minimal (postgres-only) extras for web/API deploys, adds a requirements export helper, and provides a no-dev production Dockerfile while preserving uv sync --all-extras for development."
+
+[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
+status = "release-blocking"
+owner = "qa+release"
+review_by = "2026-08-15"
+required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction"
+web_boot_smoke_command = "uv run --no-sync python -c \"from web.app_factory import create_app; app = create_app(register_handlers=False); assert '/docs' in [route.path for route in app.routes]\""
+db_migration_smoke_command = "DATABASE_URL=sqlite+aiosqlite:///./artifacts/production-minimal/migration-smoke.db uv run --no-sync alembic upgrade head"
+follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+current_ci_job = "production-profile-dry-run"
+release_artifact = "production-minimal-runtime-evidence"
+release_artifact_path = "artifacts/production-minimal/runtime-evidence.json"
+next_action = "Keep the production-minimal runtime validation job release-blocking and review evidence freshness by 2026-08-15."
+blocking_transition_pr_required = false
+summary = "production-minimal is now backed by a release-blocking CI gate that runs installer sync, web boot smoke, DB migration smoke, and uploads runtime evidence artifacts."
+
+[tool.sidar.dependency_profile_plan.installer_profile_visibility]
+default_profile = "dev-full"
+default_command = "./install_sidar.sh --dev-full"
+production_minimal_command = "./install_sidar.sh --production-minimal"
+status = "visible-opt-in"
+summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-full is the normal recommended default via uv sync --all-extras, dev-light remains an opt-in fast local profile, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
+
+[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
+current_lock = "torch 2.11.0"
+tracked_policy_exception = "CVE-2025-3000"
+advisory_checked_on = "2026-07-16"
+upstream_last_affected = "2.12.0"
+upstream_patched_versions = "none"
+review_by = "2026-08-15"
+expires = "2026-09-15"
+warning_window_days = 45
+calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
+runbook_file = "docs/runbooks/torch-cve-upgrade.md"
+tracked_files = [
+  "pyproject.toml",
+  "security/pip-audit-ignores.tsv",
+  "docs/runbooks/torch-cve-upgrade.md",
+  "docs/DEPENDENCY_PROFILE_PLAN.md",
+]
+upgrade_command = "uv lock --upgrade-package torch --upgrade-package torchvision"
+validation_commands = [
+  "uv sync --all-extras",
+  "uv run --with pip-audit pip-audit --skip-editable --timeout 30",
+]
+
+[tool.sidar.ruff_debt]
+line_length = 100
+close_docstring_campaign_by = "2026-09-30"
+close_async240_campaign_by = "2026-09-30"
+tracking_owner = "qa+reviewer"
+global_ignores_removed_on = "2026-08-02"
+planned_validation_commands = [
+  "uv run ruff check . --select D,ASYNC",
+  "uv run python scripts/ci/check_ruff_debt_baseline.py",
+  "uv run ruff check .",
+]
+e501_global_ignore_review_by = "2026-09-30"
+e501_global_ignore_reason = "Global ignore removed early on 2026-08-02; the zero ratchet remains as defense-in-depth until the scheduled review."
+e501_debt_baseline = 0
+async240_global_ignore_review_by = "2026-09-30"
+async240_global_ignore_reason = "Global ignore removed early on 2026-08-02; new async I/O paths remain directly enforced by Ruff and the zero ratchet."
+legacy_hotspots = ["web_server.py", "main.py"]
+docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"
@@ -331,6 +419,10 @@ intent = "Minimum library/runtime dependencies required by core Sidar imports."
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "dev"
 intent = "pytest, lint, type-check and security-audit tools used by local/CI gates."
+
+[[tool.sidar.dependency_profile_plan.profiles]]
+name = "dev-light"
+intent = "Fast PR/local profile: postgres + dev tools without voice/browser/GPU system dependencies."
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "all"
@@ -342,7 +434,7 @@ intent = "Web/API runtime plus postgres and telemetry extras; no pytest/ruff/myp
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "production-minimal"
-intent = "Alias of the production web/API deploy surface used by Dockerfile.production and requirements export checks."
+intent = "Postgres-only no-dev Web/API smoke surface used by the CI dry-run before telemetry is opted in via production."
 
 [tool.bandit]
 exclude_dirs = [
@@ -359,8 +451,12 @@ exclude_dirs = [
 skips = [
   "B101", # Assertions kullanımı
   "B404", # subprocess import uyarısı; B603/B607 çağrı bazında değerlendiriliyor
-  "B608", # Dinamik SQL ifadeleri için kontrollü kullanım (whitelist + parametreli değerler)
 ]
+# B608 (dinamik SQL) global olarak skip edilmiyor: gerçek riskler satır bazlı
+# `# nosec B608  # <gerekçe>` ile bastırılır (bkz. core/router.py, core/db/monolith.py,
+# core/db/prompt_registry.py, core/rag/backends/pgvector.py, scripts/migrate_sqlite_to_pg.py).
+# Global skip, yeni yazılacak kodda gerçek bir SQL injection riskini de sessizce
+# gizleyebileceği için tercih edilmiyor.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -379,6 +475,8 @@ markers = [
   "integration: harici sistem entegrasyonları",
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
+  "installer_smoke: release-critical installer smoke tests",
+  "allow_unit_network: explicit opt-out for rare unit tests that must exercise real sockets",
 ]
 filterwarnings = [
   "error",
@@ -386,11 +484,24 @@ filterwarnings = [
   "ignore::FutureWarning:torch",
   "ignore::UserWarning:torch",
   "ignore::ResourceWarning",
-  "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+  # Keep this as a message/module filter instead of importing the pydantic
+  # warning class during pytest config parsing. If a developer has not run
+  # `uv sync --all-extras` yet, pytest should reach tests/conftest.py and
+  # emit the project's actionable missing-dependency message rather than
+  # failing early while resolving this warning category.
+  "ignore::DeprecationWarning:pydantic.*",
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
+  # GitHub-hosted runners provision heterogeneous CPU models between the cached
+  # baseline run and later PR runs, so this informational mismatch is expected
+  # and must not crash benchmark-compare with an INTERNALERROR.
+  "ignore:Benchmark machine_info is different\\..*:pytest_benchmark.logger.PytestBenchmarkWarning",
   "ignore:invalid escape sequence '\\\\g':DeprecationWarning:sentence_transformers.evaluation.SentenceEvaluator",
   "ignore:invalid escape sequence.*:DeprecationWarning:sentence_transformers.*",
+  # httpx2 migration was deliberately retired (see dependencies comment in this
+  # file); production and tests intentionally stay on httpx, so silence
+  # starlette's testclient nudge instead of adding the extra dependency back.
+  "ignore:Using .httpx. with .starlette\\.testclient. is deprecated; install .httpx2. instead\\.:starlette.exceptions.StarletteDeprecationWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"
@@ -419,13 +530,16 @@ omit = [
   ".env",
   "setup.py",
   "web_ui_react/*",
-  "web_ui/*",
   "tests/*",
 ]
 
 [tool.coverage.report]
-# Coverage gate threshold is intentionally owned by .coveragerc [report].fail_under.
-# run_tests.sh reads that value and applies it once at the final combined report.
+# Ratchet-managed quality gate baseline: the measured %100 coverage is committed
+# as the local/CI floor. scripts/coverage_ratchet.py never lowers this value, and
+# run_tests.sh uses the same %100 default cap for every profile. Explicit profile
+# overrides remain available for diagnostics, but the standard merge gate has no
+# one-point slack that could hide a coverage regression.
+fail_under = 100
 show_missing = true
 skip_covered = true
 precision = 2
@@ -452,6 +566,7 @@ extra_css = "assets/dark_mode.css"
 [tool.uv]
 index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
+override-dependencies = ["setuptools>=83.0.0"]
 
 [tool.uv.sources]
 torch = [
@@ -476,12 +591,28 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "managers*", "plugins*", "sidar_assets*", "web*"]
+include = ["agent*", "core*", "launcher*", "managers*", "plugins*", "sidar_assets*", "web*"]
 exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["cli", "main", "web_server", "gui_launcher", "config", "sidar_version", "github_upload"]
+py-modules = [
+  "cli",
+  "main",
+  "web_server",
+  "gui_launcher",
+  "config",
+  "config_autonomy",
+  "config_gpu",
+  "config_llm",
+  "config_quality",
+  "config_rag",
+  "config_rag_defaults",
+  "config_security",
+  "scripts.version_probe",
+  "sidar_version",
+  "github_upload",
+]
 
 
 [tool.setuptools.package-data]
@@ -495,7 +626,6 @@ sidar_assets = [
 ]
 
 [tool.setuptools.data-files]
-"share/sidar/web_ui" = ["web_ui/*.html", "web_ui/*.css", "web_ui/*.js"]
 "share/sidar/launcher_gui" = ["launcher_gui/*.html", "launcher_gui/*.css", "launcher_gui/*.js"]
 "share/sidar/helm" = [
   "helm/sidar/Chart.yaml",
@@ -552,7 +682,6 @@ select = [
   "D",
 ]
 ignore = [
-  "E501",
   # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
   # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik
   # tests/unit/agent/test_builtin_role_contracts.py ile korunur.
@@ -564,16 +693,6 @@ ignore = [
   "D105",
   "D106",
   "D107",
-  # D200-D417 stil ignore'ları aynı kampanyanın 2026-09-30 kapanış kapısında
-  # kaldırılacaktır; yeni dokümantasyon Google convention'a uymalıdır.
-  "D200",
-  "D202",
-  "D205",
-  "D209",
-  "D212",
-  "D403",
-  "D415",
-  "D417",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -626,7 +745,6 @@ exclude = [
   "^temp/",
   "^migrations/",
   "^build/",
-  "^web_ui/",
   "^web_ui_react/",
   "^launcher_gui/",
   "^\\.venv/",

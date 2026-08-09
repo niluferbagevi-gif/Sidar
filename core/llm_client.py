@@ -1,5 +1,5 @@
-"""
-Sidar Project - LLM İstemcisi
+"""Sidar Project - LLM İstemcisi.
+
 Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP tabanlı).
 """
 
@@ -15,23 +15,35 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import nullcontext
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from opentelemetry import trace
 
 import core.utils.token_counter as token_counter
 from config import OLLAMA_BATCH_POLICY
-from core.cache.semantic_cache import SemanticCacheManager
 from core.cache_metrics import record_cache_skip
 from core.dlp import mask_messages as _dlp_mask_messages
+from core.llm.cache import SemanticChatCache
+from core.llm.facade import LLMProvider as LLMProvider
+from core.llm.router import LLMRoutingService
+from core.llm.streaming import (
+    fallback_stream,
+    trace_stream_metrics,
+    track_stream_completion,
+    track_stream_routing_cost,
+)
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
-from core.router import CostAwareRouter, record_routing_cost
+from core.router import record_routing_cost
 from core.utils.json_repair import (
     is_safe_literal_eval_candidate,
     repair_json_text,
     repair_json_text_async,
 )
+
+if TYPE_CHECKING:
+    from core.llm.gemini import GeminiClient
+    from core.llm.ollama import OllamaClient
 
 logger = logging.getLogger(__name__)
 _COMPAT_IMPORTED_MODULES = (codecs, importlib)
@@ -57,6 +69,24 @@ OLLAMA_NUM_BATCH_MAX = OLLAMA_BATCH_POLICY.maximum
 OLLAMA_NUM_BATCH_AUTO_MIN = OLLAMA_BATCH_POLICY.auto_min
 _OLLAMA_GPU_LIMITERS: dict[tuple[str, int], asyncio.Semaphore] = {}
 _OLLAMA_GPU_LIMITERS_LOCK = asyncio.Lock()
+MAX_SAFE_TOKEN_COUNT = 2_147_483_647
+_PROVIDER_RETRYABLE_STATUS_CODES: dict[str, set[int]] = {
+    "ollama": {408, 409, 425, 429, 500, 502, 503, 504},
+    "gemini": {408, 409, 429, 500, 502, 503, 504},
+    "openai": {408, 409, 429, 500, 502, 503, 504},
+    "anthropic": {408, 409, 429, 500, 502, 503, 504, 529},
+    "litellm": {408, 409, 425, 429, 500, 502, 503, 504},
+}
+_CONTEXT_LIMIT_MARKERS = (
+    "context length",
+    "context_length",
+    "maximum context",
+    "token limit",
+    "too many tokens",
+    "input is too long",
+    "prompt is too long",
+    "reduce the length",
+)
 MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
     "gpt-4o": 5e-6,
     "gpt-4o-mini": 2e-6,
@@ -185,7 +215,6 @@ async def _acquire_ollama_gpu_limiter(limiter: asyncio.Semaphore, config: Any) -
     Returns the queue wait in milliseconds. A zero timeout keeps the historical
     behavior: wait until a GPU slot is available.
     """
-
     timeout_s = _ollama_gpu_backpressure_timeout_s(config)
     started_at = time.monotonic()
     if timeout_s <= 0:
@@ -210,13 +239,58 @@ async def _acquire_ollama_gpu_limiter(limiter: asyncio.Semaphore, config: Any) -
             continue
 
 
-def _is_retryable_exception(exc: Exception) -> tuple[bool, int | None]:
+def _safe_token_count(value: Any) -> int:
+    """Return a non-negative bounded token count for provider usage payloads."""
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if parsed <= 0:
+        return 0
+    return min(parsed, MAX_SAFE_TOKEN_COUNT)
+
+
+def _extract_status_code(exc: Exception) -> int | None:
+    """Extract an HTTP-like status code from SDK/httpx exceptions."""
     status_code = getattr(exc, "status_code", None)
     http_status_error = getattr(httpx, "HTTPStatusError", None)
     if http_status_error and isinstance(exc, http_status_error):
         status_code = exc.response.status_code
-    if status_code == 429 or (status_code is not None and 500 <= int(status_code) < 600):
-        return True, int(status_code)
+    response = getattr(exc, "response", None)
+    if status_code is None and response is not None:
+        status_code = getattr(response, "status_code", None)
+    try:
+        return int(status_code) if status_code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_context_limit_error(exc: Exception) -> bool:
+    detail = _format_exception_message(exc).lower()
+    return any(marker in detail for marker in _CONTEXT_LIMIT_MARKERS)
+
+
+def _is_retryable_exception(exc: Exception, provider: str = "") -> tuple[bool, int | None]:
+    provider_key = (provider or getattr(exc, "provider", "") or "").strip().lower()
+    status_code = _extract_status_code(exc)
+
+    if isinstance(exc, LLMAPIError):
+        if _is_context_limit_error(exc):
+            return False, status_code
+        if exc.retryable:
+            return True, status_code
+        if status_code is None:
+            return False, None
+
+    if _is_context_limit_error(exc):
+        return False, status_code
+
+    retryable_statuses = _PROVIDER_RETRYABLE_STATUS_CODES.get(
+        provider_key, _PROVIDER_RETRYABLE_STATUS_CODES["openai"]
+    )
+    if status_code is not None:
+        return status_code in retryable_statuses, status_code
+
     if isinstance(
         exc, httpx.TimeoutException | httpx.ConnectError | httpx.ReadError | asyncio.TimeoutError
     ):
@@ -248,7 +322,7 @@ async def _retry_with_backoff(
         try:
             return await operation()
         except Exception as exc:
-            retryable, status_code = _is_retryable_exception(exc)
+            retryable, status_code = _is_retryable_exception(exc, provider=provider)
             err_detail = _format_exception_message(exc)
             if (not retryable) or attempt >= max_retries:
                 message = f"{retry_hint}: {err_detail}"
@@ -320,7 +394,8 @@ async def _ensure_json_text_async(text: str, provider: str) -> str:
 
 async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
     """Hata durumlarında tek elemanlı asenkron akış döndürür."""
-    yield msg
+    async for chunk in fallback_stream(msg):
+        yield chunk
 
 
 def _get_tracer(config: Any) -> Any:
@@ -334,14 +409,8 @@ def _extract_usage_tokens(data: dict[str, Any]) -> tuple[int, int]:
     if not isinstance(usage, dict):
         return 0, 0
 
-    def _safe_int(value: Any) -> int:
-        try:
-            return int(value or 0)
-        except Exception:
-            return 0
-
-    prompt = _safe_int(usage.get("prompt_tokens", 0))
-    completion = _safe_int(usage.get("completion_tokens", usage.get("output_tokens", 0)))
+    prompt = _safe_token_count(usage.get("prompt_tokens", 0))
+    completion = _safe_token_count(usage.get("completion_tokens", usage.get("output_tokens", 0)))
     return prompt, completion
 
 
@@ -351,13 +420,12 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
         return 0, 0
 
     if isinstance(usage, dict):
-        prompt = int(
+        prompt = _safe_token_count(
             usage.get(
                 "prompt_token_count", usage.get("input_token_count", usage.get("prompt_tokens", 0))
             )
-            or 0
         )
-        completion = int(
+        completion = _safe_token_count(
             usage.get(
                 "candidates_token_count",
                 usage.get(
@@ -365,18 +433,18 @@ def _extract_gemini_usage_tokens(response: Any) -> tuple[int, int]:
                     usage.get("completion_tokens", usage.get("output_tokens", 0)),
                 ),
             )
-            or 0
         )
         return prompt, completion
 
-    prompt = int(getattr(usage, "prompt_token_count", getattr(usage, "input_token_count", 0)) or 0)
-    completion = int(
+    prompt = _safe_token_count(
+        getattr(usage, "prompt_token_count", getattr(usage, "input_token_count", 0))
+    )
+    completion = _safe_token_count(
         getattr(
             usage,
             "candidates_token_count",
             getattr(usage, "output_token_count", getattr(usage, "completion_tokens", 0)),
         )
-        or 0
     )
     return prompt, completion
 
@@ -408,6 +476,49 @@ def _resolve_cost_per_token_usd(config: Any, model: str = "") -> float:
         return DEFAULT_COST_PER_TOKEN_USD
 
 
+def _estimate_tokens_bounded(text: str, *, model: str = "") -> int:
+    """Estimate tokens with overflow/negative protection."""
+    try:
+        return _safe_token_count(token_counter.estimate_tokens(text, model=model))
+    except Exception as exc:
+        logger.debug("Token estimate failed; treating prompt as zero tokens: %s", exc)
+        return 0
+
+
+def _estimate_message_tokens(messages: list[dict[str, str]], *, model: str = "") -> int:
+    """Estimate bounded tokens for a chat message list."""
+    prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
+    return _estimate_tokens_bounded(prompt_text, model=model)
+
+
+def _configured_prompt_token_limit(config: Any) -> int:
+    """Return configured prompt token limit; zero disables preflight rejection."""
+    for key in ("LLM_MAX_PROMPT_TOKENS", "MAX_INPUT_TOKENS"):
+        raw_limit = getattr(config, key, 0)
+        if not isinstance(raw_limit, str | int | float | bool):
+            continue
+        limit = _safe_token_count(raw_limit)
+        if limit > 0:
+            return limit
+    return 0
+
+
+def _validate_prompt_token_budget(
+    *, provider: str, messages: list[dict[str, str]], config: Any, model: str = ""
+) -> int:
+    """Validate estimated prompt tokens before dispatching to a provider."""
+    prompt_tokens = _estimate_message_tokens(messages, model=model)
+    limit = _configured_prompt_token_limit(config)
+    if limit > 0 and prompt_tokens > limit:
+        raise LLMAPIError(
+            provider,
+            f"Prompt token budget exceeded: estimated={prompt_tokens} limit={limit}",
+            status_code=413,
+            retryable=False,
+        )
+    return prompt_tokens
+
+
 def _record_llm_metric(
     *,
     provider: str,
@@ -437,15 +548,14 @@ async def _track_stream_completion(
     model: str,
     started_at: float,
 ) -> AsyncIterator[str]:
-    try:
-        async for chunk in stream_iter:
-            yield chunk
-        _record_llm_metric(provider=provider, model=model, started_at=started_at, success=True)
-    except Exception as exc:
-        _record_llm_metric(
-            provider=provider, model=model, started_at=started_at, success=False, error=str(exc)
-        )
-        raise
+    async for chunk in track_stream_completion(
+        stream_iter,
+        provider=provider,
+        model=model,
+        started_at=started_at,
+        record_metric=_record_llm_metric,
+    ):
+        yield chunk
 
 
 async def _track_stream_routing_cost(
@@ -455,39 +565,27 @@ async def _track_stream_routing_cost(
     config: Any,
     model: str = "",
 ) -> AsyncIterator[str]:
-    response_parts: list[str] = []
+    tracked = track_stream_routing_cost(
+        stream_iter,
+        messages=messages,
+        config=config,
+        model=model,
+        estimate_tokens=lambda text: _estimate_tokens_bounded(text, model=model),
+        resolve_cost_per_token=_resolve_cost_per_token_usd,
+        record_cost=record_routing_cost,
+    )
     try:
-        async for chunk in stream_iter:
-            if chunk:
-                response_parts.append(chunk)
+        async for chunk in tracked:
             yield chunk
     finally:
-        prompt_text = "\n".join(str(m.get("content") or "") for m in messages)
-        completion_text = "".join(response_parts)
-        est_tokens = token_counter.estimate_tokens(
-            prompt_text, model=model
-        ) + token_counter.estimate_tokens(completion_text, model=model)
-        if est_tokens > 0:
-            cost_per_token = _resolve_cost_per_token_usd(config, model=model)
-            record_routing_cost(est_tokens * cost_per_token)
+        await cast(Any, tracked).aclose()
 
 
 async def _trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
-    first_token_at = None
-    try:
-        async for chunk in stream_iter:
-            if first_token_at is None and chunk:
-                first_token_at = time.monotonic()
-            yield chunk
-        if span is not None:
-            span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-            if first_token_at is not None:
-                span.set_attribute("sidar.llm.ttft_ms", (first_token_at - started_at) * 1000)
-    finally:
-        if span is not None:
-            span.end()
+    async for chunk in trace_stream_metrics(stream_iter, span, started_at):
+        yield chunk
 
 
 class BaseLLMClient(ABC):
@@ -502,7 +600,10 @@ class BaseLLMClient(ABC):
 
     @staticmethod
     def _inject_json_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Mesaj listesindeki system mesajına JSON şema talimatını ekler (system yoksa başa ekler)."""
+        """Mesaj listesindeki system mesajına JSON şema talimatını ekler.
+
+        System mesajı yoksa listenin başına yeni bir tane eklenir.
+        """
         result = list(messages)
         for i, msg in enumerate(result):
             if msg.get("role") == "system":
@@ -543,48 +644,108 @@ class BaseLLMClient(ABC):
     ) -> str | AsyncIterator[str]:
         """Sağlayıcıya özel chat çağrısı."""
 
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Strategy API: stream generated chunks regardless of provider implementation."""
+        response = await self.chat(messages, stream=True, **kwargs)
+        if isinstance(response, str):
+            yield response
+            return
+        async for chunk in response:
+            yield chunk
 
-from core.llm.anthropic import AnthropicClient  # noqa: E402
-from core.llm.gemini import GeminiClient  # noqa: E402
-from core.llm.litellm import LiteLLMClient  # noqa: E402
-from core.llm.ollama import OllamaClient  # noqa: E402
-from core.llm.openai import OpenAIClient  # noqa: E402
+
+ProviderRegistryEntry = tuple[str, str] | type[BaseLLMClient]
+
+_PROVIDER_IMPORTS: dict[str, ProviderRegistryEntry] = {
+    "ollama": ("core.llm.ollama", "OllamaClient"),
+    "gemini": ("core.llm.gemini", "GeminiClient"),
+    "openai": ("core.llm.openai", "OpenAIClient"),
+    "anthropic": ("core.llm.anthropic", "AnthropicClient"),
+    "litellm": ("core.llm.litellm", "LiteLLMClient"),
+}
+_PROVIDER_CLASS_NAMES = {
+    class_name: provider
+    for provider, entry in _PROVIDER_IMPORTS.items()
+    if isinstance(entry, tuple)
+    for _, class_name in (entry,)
+}
+_PROVIDER_REGISTRY_CACHE: dict[str, type[BaseLLMClient]] = {}
+
+
+def _provider_class(provider: str) -> type[BaseLLMClient]:
+    provider_name = (provider or "").strip().lower()
+    cached = _PROVIDER_REGISTRY_CACHE.get(provider_name)
+    if cached is not None:
+        return cached
+    entry = _PROVIDER_IMPORTS[provider_name]
+    if isinstance(entry, type):
+        provider_cls = entry
+        class_name = entry.__name__
+    else:
+        module_name, class_name = entry
+        provider_cls = getattr(importlib.import_module(module_name), class_name)
+    if not isinstance(provider_cls, type) or not issubclass(
+        provider_cls, BaseLLMClient
+    ):  # pragma: no cover - corrupted registry guard
+        raise TypeError(f"{class_name} BaseLLMClient alt sınıfı olmalıdır.")
+    _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
+    return provider_cls
+
+
+def __getattr__(name: str) -> Any:
+    """Expose provider classes lazily for backward-compatible imports."""
+    provider = _PROVIDER_CLASS_NAMES.get(name)
+    if provider is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return _provider_class(provider)
 
 
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
-    PROVIDER_REGISTRY: dict[str, type[BaseLLMClient]] = {
-        "ollama": OllamaClient,
-        "gemini": GeminiClient,
-        "openai": OpenAIClient,
-        "anthropic": AnthropicClient,
-        "litellm": LiteLLMClient,
-    }
+    PROVIDER_REGISTRY = _PROVIDER_IMPORTS
 
     def __init__(self, provider: str, config: Any) -> None:
         self.provider = provider.lower()
         self.config = config
-        self._semantic_cache = SemanticCacheManager(config)
-        self._router = CostAwareRouter(config)
-        client_cls = self.PROVIDER_REGISTRY.get(self.provider)
-        if client_cls is None:
+        self._semantic_cache = SemanticChatCache(config)
+        self._router = LLMRoutingService(config)
+        if self.provider not in self.PROVIDER_REGISTRY:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
-        self._client = client_cls(config)
+        self._client = _provider_class(self.provider)(config)
+
+    @classmethod
+    def register_provider(cls, name: str, provider_cls: type[BaseLLMClient]) -> None:
+        """Register a provider strategy without editing the facade dispatch code."""
+        provider_name = (name or "").strip().lower()
+        if not provider_name:
+            raise ValueError("Provider adı boş olamaz.")
+        if not isinstance(provider_cls, type) or not issubclass(provider_cls, BaseLLMClient):
+            raise TypeError("Provider sınıfı BaseLLMClient alt sınıfı olmalıdır.")
+        cls.PROVIDER_REGISTRY[provider_name] = (provider_cls.__module__, provider_cls.__name__)
+        _PROVIDER_REGISTRY_CACHE[provider_name] = provider_cls
 
     @property
     def _ollama_base_url(self) -> str:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
-        if isinstance(self._client, OllamaClient):
-            return self._client.base_url
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return ollama_client.base_url
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
         )
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
-        if isinstance(self._client, OllamaClient):
-            return self._client._build_timeout()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return ollama_client._build_timeout()
         timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
@@ -720,6 +881,10 @@ class LLMClient:
             for message in masked_messages
         ]
 
+        _validate_prompt_token_budget(
+            provider=self.provider, messages=messages, config=self.config, model=str(model or "")
+        )
+
         user_prompt = ""
         for message in reversed(messages):
             if message.get("role") == "user":
@@ -756,9 +921,9 @@ class LLMClient:
         # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
         if (not stream) and isinstance(response, str) and self.provider != "ollama":
             _msg_text = "\n".join(m.get("content") or "" for m in messages)
-            _est_tokens = token_counter.estimate_tokens(
+            _est_tokens = _estimate_tokens_bounded(
                 _msg_text, model=str(model or "")
-            ) + token_counter.estimate_tokens(response, model=str(model or ""))
+            ) + _estimate_tokens_bounded(response, model=str(model or ""))
             _cost_per_token = _resolve_cost_per_token_usd(self.config, model=str(model or ""))
             record_routing_cost(_est_tokens * _cost_per_token)
 
@@ -768,23 +933,28 @@ class LLMClient:
         return response
 
     async def list_ollama_models(self) -> list[str]:
-        if isinstance(self._client, OllamaClient):
-            return await self._client.list_models()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return await ollama_client.list_models()
         return []
 
     async def is_ollama_available(self) -> bool:
-        if isinstance(self._client, OllamaClient):
-            return await self._client.is_available()
+        ollama_cls = _provider_class("ollama")
+        if isinstance(self._client, ollama_cls):
+            ollama_client = cast("OllamaClient", self._client)
+            return await ollama_client.is_available()
         return False
 
     async def _stream_gemini_generator(
         self, response_stream: AsyncIterator[Any]
     ) -> AsyncGenerator[str, None]:
         """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
-        if isinstance(self._client, GeminiClient):
-            async for chunk in self._client._stream_gemini_generator(response_stream):
-                yield chunk
-            return
-
-        async for chunk in GeminiClient(self.config)._stream_gemini_generator(response_stream):
+        gemini_cls = _provider_class("gemini")
+        gemini_client = (
+            cast("GeminiClient", self._client)
+            if isinstance(self._client, gemini_cls)
+            else cast("GeminiClient", gemini_cls(self.config))
+        )
+        async for chunk in gemini_client._stream_gemini_generator(response_stream):
             yield chunk

@@ -118,6 +118,55 @@ def build_metrics_router(
                     Gauge(
                         "sidar_rate_limit_requests", "Rate limit penceredeki istek", registry=reg
                     ).set(rl_total)
+
+                    health = getattr(agent, "health", None)
+                    get_gpu_info = getattr(health, "get_gpu_info", None)
+                    gpu_info = get_gpu_info() if callable(get_gpu_info) else {}
+                    check_ollama = getattr(health, "check_ollama", None)
+                    ollama_online = bool(check_ollama()) if callable(check_ollama) else False
+
+                    Gauge("sidar_gpu_available", "GPU kullanılabilir mi (1/0)", registry=reg).set(
+                        1 if gpu_info.get("available") else 0
+                    )
+                    Gauge(
+                        "sidar_ollama_online",
+                        "Ollama servisine erişilebiliyor mu (1/0)",
+                        registry=reg,
+                    ).set(1 if ollama_online else 0)
+
+                    devices = gpu_info.get("devices") or []
+                    primary_device = devices[0] if gpu_info.get("available") and devices else {}
+                    if "utilization_pct" in primary_device:
+                        Gauge(
+                            "sidar_gpu_utilization_percent",
+                            "Birincil GPU kullanım yüzdesi",
+                            registry=reg,
+                        ).set(primary_device["utilization_pct"])
+                    if "temperature_c" in primary_device:
+                        Gauge(
+                            "sidar_gpu_temperature_celsius",
+                            "Birincil GPU sıcaklığı (°C)",
+                            registry=reg,
+                        ).set(primary_device["temperature_c"])
+                    if "mem_utilization_pct" in primary_device:
+                        Gauge(
+                            "sidar_gpu_memory_utilization_percent",
+                            "Birincil GPU bellek kullanım yüzdesi",
+                            registry=reg,
+                        ).set(primary_device["mem_utilization_pct"])
+                    if "total_vram_gb" in primary_device:
+                        Gauge(
+                            "sidar_gpu_vram_total_gb",
+                            "Birincil GPU toplam VRAM (GB)",
+                            registry=reg,
+                        ).set(primary_device["total_vram_gb"])
+                    if "allocated_gb" in primary_device:
+                        Gauge(
+                            "sidar_gpu_vram_allocated_gb",
+                            "Birincil GPU ayrılmış VRAM (GB)",
+                            registry=reg,
+                        ).set(primary_device["allocated_gb"])
+
                     return _PromeResp(generate_latest(reg), media_type=CONTENT_TYPE_LATEST)
                 except ImportError:
                     pass

@@ -116,7 +116,6 @@ def _shannon_bits(value: str) -> float:
 
 def estimated_entropy_bits(value: str) -> float:
     """Return a conservative entropy estimate for deterministic policy checks."""
-
     pool_entropy = len(value) * math.log2(_charset_pool(value))
     shannon_entropy = _shannon_bits(value)
     unique_bonus = min(len(set(value)) * 2.0, 40.0)
@@ -131,7 +130,6 @@ def is_weak_secret(
     min_shannon_bits: float = DEFAULT_MIN_SHANNON_BITS,
 ) -> bool:
     """Return True when *value* is missing, placeholder-like, or low entropy."""
-
     stripped = value.strip()
     if not stripped:
         return True

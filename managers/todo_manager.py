@@ -1,5 +1,5 @@
-"""
-Sidar Project - Görev Takip Yöneticisi
+"""Sidar Project - Görev Takip Yöneticisi.
+
 Claude Code'daki TodoWrite/TodoRead araçlarına eşdeğer görev listesi yönetimi.
 """
 
@@ -45,8 +45,8 @@ class Task:
 
 
 class TodoManager:
-    """
-    Görev listesi yöneticisi.
+    """Görev listesi yöneticisi.
+
     Claude Code'daki TodoWrite/TodoRead araçlarına eşdeğer.
 
     Thread-safe: threading.RLock ile korunur.
@@ -133,8 +133,7 @@ class TodoManager:
     # ─────────────────────────────────────────────
 
     def add_task(self, content: str, status: str = STATUS_PENDING) -> str:
-        """
-        Yeni görev ekle.
+        """Yeni görev ekle.
 
         Args:
             content: Görev açıklaması
@@ -169,8 +168,7 @@ class TodoManager:
         return f"✅ Görev eklendi (#{task_id}): {content}"
 
     def set_tasks(self, tasks_data: list[dict[str, Any]]) -> str:
-        """
-        Görev listesini toplu olarak ayarla (Claude Code TodoWrite gibi).
+        """Görev listesini toplu olarak ayarla (Claude Code TodoWrite gibi).
 
         Args:
             tasks_data: [{"content": "...", "status": "..."}, ...] listesi
@@ -216,8 +214,7 @@ class TodoManager:
     # ─────────────────────────────────────────────
 
     def update_task(self, task_id: int, new_status: str) -> str:
-        """
-        Görev durumunu güncelle.
+        """Görev durumunu güncelle.
 
         Args:
             task_id: Görev numarası
@@ -267,11 +264,11 @@ class TodoManager:
     # ─────────────────────────────────────────────
 
     def list_tasks(self, filter_status: str | None = None, limit: int = 50) -> str:
-        """
-        Görev listesini okunabilir formatta döndür.
+        """Görev listesini okunabilir formatta döndür.
 
         Args:
             filter_status: Belirli duruma filtrele (None = hepsi)
+            limit: Döndürülecek maksimum görev sayısı
 
         Returns:
             Biçimlendirilmiş görev listesi
@@ -297,7 +294,8 @@ class TodoManager:
 
         lines = ["📋 Görev Listesi"]
         lines.append(
-            f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} | ✅ Tamamlanan: {len(completed)}"
+            f"   Toplam: {len(tasks)} | 🔄 Aktif: {len(in_progress)} | ⬜ Bekleyen: {len(pending)} "
+            f"| ✅ Tamamlanan: {len(completed)}"
         )
         lines.append("")
 
@@ -348,8 +346,8 @@ class TodoManager:
     # ─────────────────────────────────────────────
 
     def get_tasks(self, status: str | None = None, limit: int = 50) -> list[dict[str, int | str]]:
-        """
-        Görev listesini dict listesi olarak döndürür.
+        """Görev listesini dict listesi olarak döndürür.
+
         REST endpoint ve UI entegrasyonu için kullanılır.
         """
         with self._lock:
@@ -387,7 +385,10 @@ class TodoManager:
     def scan_project_todos(
         self, directory: str | None = None, extensions: list[str] | None = None
     ) -> str:
-        """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarayarak TODO ve FIXME etiketlerini bulur."""
+        """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarar.
+
+        TODO ve FIXME etiketlerini bulur.
+        """
         import os
 
         try:
