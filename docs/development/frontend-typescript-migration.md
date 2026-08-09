@@ -78,6 +78,12 @@ envanter 10 `.js`, 23 `.jsx`, 8 `.ts`, 19 `.tsx`; ratchet 33 untyped / 27 typed'
 component prop'unu, DOM root bootstrap kontrolünü ve tolerant HAST traversal tiplerini
 kapıya dahil etmiştir. Vite CSS side-effect tipi için `vite-env.d.ts` eklenmiştir.
 Güncel envanter 9 `.js`, 20 `.jsx`, 10 `.ts`, 22 `.tsx`; ratchet 29 untyped / 32 typed'dır.
+Bu tarihten sonra eklenen typed test/helper dosyaları baseline'a yansıtılmadan typed toplamı
+38'e yükselmişti. `useFormState.test.ts` dönüşümüyle birlikte 2026-08-09 envanteri
+8 `.js`, 20 `.jsx`, 17 `.ts`, 22 `.tsx`; ratchet 28 untyped / 39 typed olarak yeniden
+sıkılaştırılmıştır. Böylece hem bir test dosyası strict TypeScript kapısına alınmış hem de
+baseline'ın gerçek typed ilerlemenin gerisinde kalıp altı dosyalık gerilemeye izin vermesi
+önlenmiştir.
 `checkJs: false` olduğu için `npm run typecheck`, kalan `.js`/`.jsx` dosyalarına
 tam tip güvencesi sağlamaz. **2026-08-06 itibarıyla bileşen/hook/lib ağacının
 migrasyonu tamamlanmıştır** -- `src/` altında kalan 29 `.js`/`.jsx` dosyasının
@@ -90,8 +96,8 @@ aşağıdaki Nüans notu.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 29 untyped (`.js` + `.jsx`) ve en az
-32 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 28 untyped (`.js` + `.jsx`) ve en az
+39 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;

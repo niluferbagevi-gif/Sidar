@@ -1,0 +1,30 @@
+name: Pull request hygiene audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  inventory:
+    name: Inventory overlapping open PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate read-only triage report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/audit_open_pull_requests.py >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload triage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-pr-hygiene-report
+          path: artifacts/pr-hygiene/
+          retention-days: 30

@@ -91,8 +91,8 @@ class DockerPluginSandboxBackend:
             f"--cpus={self.cpus}",
             f"--pids-limit={self.pids}",
             "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
+            "--entrypoint=python",
             self.image,
-            "python",
             "-m",
             "web.plugins.worker",
         ]

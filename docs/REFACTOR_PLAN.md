@@ -46,10 +46,11 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 ### `SEC-PLUGIN-001` — Plugin yürütmesini process/container sınırına taşı
 
 - **Öncelik:** P0 — production güvenlik sınırı; genel refactor maddelerinden önce ele alınır.
-- **Durum:** İlk izolasyon dilimi uygulandı; production varsayılanı sürümlü JSON RPC kullanan,
+- **Durum:** Container izolasyonu ve release imajı kaçış matrisi uygulandı; production varsayılanı sürümlü JSON RPC kullanan,
   ephemeral ve fail-closed Docker worker'dır. Marketplace kayıtları host'a plugin sınıfını import
-  etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. Container integration
-  ve geniş kaçış matrisi tamamlanana kadar madde açık kalır.
+  etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. Release kapısı gerçek
+  imajda ağ, dosya sistemi, environment, subprocess, kimlik, timeout ve RPC hata senaryolarını
+  fail-closed doğrular; legacy process-içi backend kaldırılana kadar madde açık kalır.
 - **Sahip:** Backend/Güvenlik bakım ekibi.
 - **Hedef değerlendirme:** 2026-08-15.
 - **Hedef kapanış:** 2026-09-30.
@@ -64,9 +65,10 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   sistemi düzeyinde uygulayabilen destekli geliştirme ortamlarında seçilebilir.
 - **Gerçekleşen geçiş:** (1) sürümlü RPC envelope/backend, (2) ağsız, read-only, capability'siz,
   düşük yetkili kullanıcıyla ve CPU/bellek/PID/timeout limitli container worker, (3) bounded yanıt,
-  timeout ve redakte host hataları, (4) marketplace için izole agent proxy'si tamamlandı.
-  **Kalan:** release ortamında gerçek imajla container kaçış/integration matrisi ve ardından legacy
-  process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılması.
+  timeout ve redakte host hataları, (4) marketplace için izole agent proxy'si, (5) gerçek release
+  imajına karşı ağ, dosya sistemi, environment, subprocess, düşük yetkili kullanıcı, timeout ve
+  malformed RPC kaçış matrisi tamamlandı. **Kalan:** legacy process-içi backend ile
+  `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılması.
 - **Kabul kriterleri:**
   1. Production plugin yükleme/çalıştırma yolunda host process içinde `compile`/`exec` çağrısı yoktur.
   2. Ağ, dosya sistemi, environment/secret, subprocess ve host process erişim kaçış testleri
@@ -110,14 +112,11 @@ tarihli fail-closed kilometre taşlarıyla aktif kampanyadır; kalan geniş bile
 taşımaları küçük domain PR'ları için backlog'da tutulur.
 
 - **TypeScript kademeli kapısı (aktif):** `tsconfig.json`
-  içinde `checkJs: false`; ağaç hâlâ ağırlıklı olarak `.jsx`/`.js`, ancak üç `.ts`
-  dosyası (`src/hooks/useThrottledStream.ts`, `src/hooks/useFormState.ts` ve
-  `src/lib/swarmFlowGraph.ts`) strict kapıya alınmış durumda; 0 `.tsx` var.
-  `npm run typecheck` bu yüzden yalnızca bu üç dosyayı ve TS tarafı modül
-  çözümlemesini denetliyor;
-  `.jsx`/`.js` bileşen/hook mantığı için gerçek bir tip güvencesi vermiyor.
-  `checkJs: true` denendiğinde (yerel diagnostik, commit edilmedi) ağaç genelinde
-  ~2974 önceden var olan hata çıktı — kapıyı kırmadan tek adımda açılamaz.
+  içinde `checkJs: false`; production bileşen/hook/lib ağacında untyped kaynak kalmadı,
+  kalan `.js`/`.jsx` dosyaları test veya test altyapısıdır. 2026-08-09 envanteri
+  28 untyped / 39 typed dosyadır ve `npm run typecheck` typed production ağacının yanında
+  dönüştürülen testleri de strict kapıya alır. `checkJs: false` nedeniyle kalan legacy testler
+  henüz tam tip güvencesinde değildir; bunlar dokunuldukları PR'larda fırsatçı olarak taşınır.
   Kademeli `.jsx` → `.tsx` taşıması için sahip **Frontend bakım ekibi**, ilk değerlendirme
   **2026-09-30**, hedef tamamlanma **2027-03-31** olarak atanmıştır. JS/JSX toplamındaki
   net artış anlık ratchet ile engellenir; ayrıca 2026-09-30'dan başlayarak 45/15,
