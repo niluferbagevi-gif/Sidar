@@ -142,6 +142,11 @@ def build_docker_cli_command(code: str, limits: dict[str, object], *, image: str
         "run",
         "--rm",
         f"--memory={safe_memory}",
+        # Pin memory-swap to the same value as --memory so the container cannot
+        # double its effective ceiling via swap before the OOM killer engages;
+        # Docker otherwise defaults memory-swap to 2x --memory when host swap
+        # is available.
+        f"--memory-swap={safe_memory}",
         f"--cpus={safe_cpus}",
         f"--pids-limit={safe_pids}",
         f"--network={safe_network}",

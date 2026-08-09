@@ -72,7 +72,14 @@ class DockerPluginSandboxBackend:
         )
         self.pids = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_PIDS", "64")))
 
-    def _command(self) -> list[str]:
+    def _isolation_argv(self) -> list[str]:
+        """Return the ``docker run`` isolation flags shared by every invocation.
+
+        Kept separate from the worker entrypoint so tests can reuse the exact
+        production isolation contract (network/fs/user/resource limits) against
+        arbitrary in-container commands instead of maintaining a second,
+        independently-drifting copy of these security-critical flags.
+        """
         docker = shutil.which("docker")
         if not docker:
             raise PluginSandboxError("Docker bulunamadı; plugin sandbox fail-closed reddedildi.")
@@ -88,14 +95,29 @@ class DockerPluginSandboxBackend:
             "--security-opt=no-new-privileges",
             "--user=65534:65534",
             f"--memory={self.memory}",
+            # Pin memory-swap to the same value as --memory so the container cannot
+            # double its effective ceiling via swap before the OOM killer engages;
+            # Docker otherwise defaults memory-swap to 2x --memory when swap is
+            # available on the host.
+            f"--memory-swap={self.memory}",
             f"--cpus={self.cpus}",
             f"--pids-limit={self.pids}",
             "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
-            self.image,
-            "python",
-            "-m",
-            "web.plugins.worker",
         ]
+
+    def _command(self) -> list[str]:
+        return [*self._isolation_argv(), self.image, "python", "-m", "web.plugins.worker"]
+
+    def container_command(self, *entrypoint: str) -> list[str]:
+        """Build the production isolation argv with a caller-supplied entrypoint.
+
+        Exposed for integration tests that need to run arbitrary in-container
+        probes (escape attempts) under the exact same isolation flags the RPC
+        worker runs under, rather than re-deriving them.
+        """
+        if not entrypoint:
+            raise ValueError("entrypoint boş olamaz.")
+        return [*self._isolation_argv(), self.image, *entrypoint]
 
     def request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Send one RPC envelope and validate the worker's bounded response."""

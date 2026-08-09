@@ -80,6 +80,7 @@ def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
         "--security-opt=no-new-privileges",
         "--user=65534:65534",
         "--memory=256m",
+        "--memory-swap=256m",
         "--cpus=0.5",
         "--pids-limit=64",
     ):
@@ -91,6 +92,26 @@ def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: None)
     with pytest.raises(PluginSandboxError, match="fail-closed"):
         DockerPluginSandboxBackend({}).describe("VALUE = 1", None, "missing")
+
+
+def test_docker_backend_container_command_reuses_isolation_flags_with_custom_entrypoint(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    backend = DockerPluginSandboxBackend({})
+
+    command = backend.container_command("python", "-c", "print('probe')")
+
+    assert command[: len(backend._isolation_argv())] == backend._isolation_argv()
+    assert command[-3:] == ["python", "-c", "print('probe')"]
+
+
+def test_docker_backend_container_command_requires_entrypoint(monkeypatch) -> None:
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    backend = DockerPluginSandboxBackend({})
+
+    with pytest.raises(ValueError, match="boş olamaz"):
+        backend.container_command()
 
 
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(

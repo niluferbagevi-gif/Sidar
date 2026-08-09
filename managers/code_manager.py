@@ -443,6 +443,11 @@ class CodeManager:
                 "remove": False,
                 "working_dir": tempfile.gettempdir(),
                 "mem_limit": sandbox_limits["memory"],
+                # Pin memswap_limit to mem_limit so the container cannot double its
+                # effective memory ceiling via swap before the OOM killer engages;
+                # the Docker Engine otherwise defaults memswap_limit to 2x mem_limit
+                # when host swap is available.
+                "memswap_limit": sandbox_limits["memory"],
                 "nano_cpus": sandbox_limits["nano_cpus"],
                 "pids_limit": sandbox_limits["pids_limit"],
             }

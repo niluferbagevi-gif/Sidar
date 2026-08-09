@@ -114,6 +114,30 @@ jobs:
         with:
           name: sidar-docker-sbom-and-signature
           path: artifacts/sbom/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Cache APT packages (PortAudio)
+        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        with:
+          packages: portaudio19-dev
+          version: ci-portaudio-v1
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+      # SEC-PLUGIN-001 (docs/REFACTOR_PLAN.md): release-gate container
+      # escape/integration matrix against the just-built release candidate
+      # image, not the dev-profile sidar:latest that ci.yml auto-builds.
+      - name: Plugin sandbox container escape/integration matrix
+        env:
+          SIDAR_PLUGIN_SANDBOX_IMAGE: sidar:${{ github.sha }}
+        run: >-
+          uv run pytest -q --no-cov -m docker
+          tests/integration/web/test_plugin_sandbox_container_escape.py
 
   benchmark-coverage-trend:
     name: Benchmark and coverage trend gate

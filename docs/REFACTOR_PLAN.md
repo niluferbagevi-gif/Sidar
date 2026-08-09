@@ -48,8 +48,12 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 - **Öncelik:** P0 — production güvenlik sınırı; genel refactor maddelerinden önce ele alınır.
 - **Durum:** İlk izolasyon dilimi uygulandı; production varsayılanı sürümlü JSON RPC kullanan,
   ephemeral ve fail-closed Docker worker'dır. Marketplace kayıtları host'a plugin sınıfını import
-  etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. Container integration
-  ve geniş kaçış matrisi tamamlanana kadar madde açık kalır.
+  etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. 2026-08-09'da gerçek
+  Docker daemon'ı ve build edilmiş imaj gerektiren container kaçış/integration matrisi eklendi
+  (`tests/integration/web/test_plugin_sandbox_container_escape.py`) — kabul kriteri 2, 3 ve 6
+  artık argv-mock unit testlerin ötesinde gerçek container'a karşı doğrulanıyor. Madde, legacy
+  process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılmasına kadar açık
+  kalır (bkz. Kalan).
 - **Sahip:** Backend/Güvenlik bakım ekibi.
 - **Hedef değerlendirme:** 2026-08-15.
 - **Hedef kapanış:** 2026-09-30.
@@ -64,19 +68,35 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   sistemi düzeyinde uygulayabilen destekli geliştirme ortamlarında seçilebilir.
 - **Gerçekleşen geçiş:** (1) sürümlü RPC envelope/backend, (2) ağsız, read-only, capability'siz,
   düşük yetkili kullanıcıyla ve CPU/bellek/PID/timeout limitli container worker, (3) bounded yanıt,
-  timeout ve redakte host hataları, (4) marketplace için izole agent proxy'si tamamlandı.
-  **Kalan:** release ortamında gerçek imajla container kaçış/integration matrisi ve ardından legacy
-  process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılması.
+  timeout ve redakte host hataları, (4) marketplace için izole agent proxy'si tamamlandı, (5) gerçek
+  imajla çalışan container kaçış/integration matrisi: ağ, dosya sistemi (read-only kök + noexec
+  tmpfs), environment/secret sızıntısı, ayrıcalık yükseltme (setuid/privileged port/raw socket),
+  pids-limit (fork bomb), OOM fail-closed, timeout fail-closed ve worker hata redaksiyonu gerçek
+  `docker run` çağrılarıyla doğrulanıyor; ayrıca memory-swap artık `--memory` ile eşit pinlenerek
+  swap üzerinden bellek limiti aşımı kapatıldı (aynı sertleştirme `managers/code/docker.py` CLI
+  fallback'i ve `managers/code_manager.py` Docker SDK yoluna da uygulandı). `ci.yml`
+  `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest` ile bu matrisi her PR'da
+  `sidar:latest` imajına karşı, `release-quality.yml`'deki `docker-smoke` job'u ise
+  `SIDAR_PLUGIN_SANDBOX_IMAGE=sidar:${{ github.sha }}` ile gerçek release aday imajına karşı
+  çalıştırır (Docker/imaj yoksa modül fail-closed değil skip olur — bu bilinçli bir tercih, zira
+  matris yalnızca gerçek altyapı olan ortamlarda anlam taşır).
+  **Kalan:** legacy process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının
+  kaldırılması — bu adım henüz yapılmadı çünkü geliştirme/test profilinde process-içi yürütmeyi
+  kaldırmak ayrı, geriye dönük uyumluluk etkisi olan bir değişikliktir ve container kaçış
+  matrisinin release kapısında en az bir tam döngü kanıtlanmasından sonra ele alınmalıdır.
 - **Kabul kriterleri:**
   1. Production plugin yükleme/çalıştırma yolunda host process içinde `compile`/`exec` çağrısı yoktur.
   2. Ağ, dosya sistemi, environment/secret, subprocess ve host process erişim kaçış testleri
-     container sınırında reddedilir.
+     container sınırında reddedilir. ✅ `test_plugin_sandbox_container_escape.py` ile gerçek
+     container'a karşı doğrulandı (2026-08-09).
   3. Timeout, OOM, worker crash ve malformed RPC cevapları fail-closed sonuçlanır; worker zorla
-     sonlandırılır ve hassas veri loglanmaz.
+     sonlandırılır ve hassas veri loglanmaz. ✅ Timeout/OOM/redaksiyon gerçek container'a karşı
+     ayrıca doğrulandı (worker crash/malformed RPC unit contract testlerinde mock ile kalır).
   4. Agent çağrı/yetenek/hata şeması sürümlüdür; uyumsuz plugin host'a import edilmeden reddedilir.
   5. Docker bulunmayan production ortamında yerel subprocess veya process-içi fallback oluşmaz.
   6. Unit sandbox contract testlerine ek olarak container integration ve marketplace smoke testleri
-     release kapısında geçer.
+     release kapısında geçer. ✅ `test_isolated_plugin_proxy_executes_successfully_against_the_real_image`
+     marketplace proxy akışını gerçek imaja karşı çalıştırır.
 - **Bloklayıcı kural:** Yeni plugin özelliği process-içi backend yüzeyini genişletemez. Bu madde
   kapanana kadar yalnız izolasyon geçişi, fail-closed sertleştirmesi ve test değişiklikleri kabul edilir.
 
